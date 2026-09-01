@@ -14,6 +14,8 @@ interface Store {
   setLang: (l: 'ru' | 'en') => void
   inviteTpl: number
   setInviteTpl: (t: number) => void
+  inviteText: string
+  setInviteText: (t: string) => void
   city: string
   cityRegion: string
   setCity: (name: string, region: string) => void
@@ -27,6 +29,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [favorites, setFavorites] = useState<string[]>(['v1'])
   const [lang, setLang] = useState<'ru' | 'en'>('ru')
   const [inviteTpl, setInviteTplState] = useState(() => Number(localStorage.getItem('tt_invite_tpl') ?? 0))
+  const [inviteText, setInviteTextState] = useState(() => localStorage.getItem('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
   const [city, setCityState] = useState(() => localStorage.getItem('tt_city') ?? 'Уфа')
   const [cityRegion, setCityRegion] = useState(() => localStorage.getItem('tt_city_region') ?? 'Башкортостан')
 
@@ -45,12 +48,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     lang, setLang,
     inviteTpl,
     setInviteTpl: (t: number) => { localStorage.setItem('tt_invite_tpl', String(t)); setInviteTplState(t) },
+    inviteText,
+    setInviteText: (t: string) => { localStorage.setItem('tt_invite_text', t); setInviteTextState(t) },
     city, cityRegion,
     setCity: (name: string, region: string) => {
       localStorage.setItem('tt_city', name); localStorage.setItem('tt_city_region', region)
       setCityState(name); setCityRegion(region)
     },
-  }), [onboarded, slots, favorites, lang, inviteTpl, city, cityRegion])
+  }), [onboarded, slots, favorites, lang, inviteTpl, inviteText, city, cityRegion])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

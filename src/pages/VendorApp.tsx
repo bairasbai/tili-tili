@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check, ChevronRight, Eye, MessageCircle, CalendarDays, TrendingUp, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
+import { CityPicker } from '@/components/CityPicker'
 import { cn } from '@/lib/utils'
 
 /* Кабинет подрядчика: дашборд */
@@ -109,6 +110,9 @@ export function VendorProfileWizard() {
   const [photos, setPhotos] = useState(3)
   const [published, setPublished] = useState(false)
   const [busyDays, setBusyDays] = useState<number[]>([5, 6, 20, 26])
+  const [workCity, setWorkCity] = useState('Уфа')
+  const [workRegion, setWorkRegion] = useState('Башкортостан')
+  const [cityPick, setCityPick] = useState(false)
   const [cat, setCat] = useState('📸 Фотограф')
   const [packages, setPackages] = useState<string[][]>([['Утро и церемония', '45 000 ₽'], ['Полный день', '85 000 ₽'], ['Люкс', '130 000 ₽']])
   const [pkgForm, setPkgForm] = useState(false)
@@ -160,6 +164,15 @@ export function VendorProfileWizard() {
             <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[#93897F] font-semibold">Имя / бренд</span><p className="text-[14px] font-medium mt-1">Елена Смирнова</p></div>
             <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[#93897F] font-semibold">Опыт</span><p className="text-[14px] font-medium mt-1">5 лет · 120+ свадеб</p></div>
             <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[#93897F] font-semibold">О себе</span><p className="text-[12.5px] text-[#5C554B] mt-1 font-light leading-relaxed">Светлый живой стиль, ловлю эмоции, а не постановку…</p></div>
+            <button onClick={() => setCityPick(true)} className="press w-full card p-4 flex items-center gap-3 text-left">
+              <span className="text-[18px]">📍</span>
+              <div className="flex-1">
+                <span className="text-[10px] tracking-[.14em] uppercase text-[#93897F] font-semibold block">Город работы</span>
+                <p className="text-[13.5px] font-medium mt-0.5">{workCity}{workRegion ? ` · ${workRegion}` : ''}</p>
+              </div>
+              <span className="text-[10.5px] font-bold text-[#B57171]">Изменить</span>
+            </button>
+            {cityPick && <CityPicker onClose={() => setCityPick(false)} onPick={(c) => { setWorkCity(c.n); setWorkRegion(c.r); setCityPick(false) }} />}
           </div>
         )}
         {step === 2 && (

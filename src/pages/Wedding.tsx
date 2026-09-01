@@ -357,15 +357,40 @@ export function Timeline() {
 /* Гости */
 export function Guests() {
   const nav = useNavigate()
+  const [list, setList] = useState(guests)
   const [filter, setFilter] = useState('all')
-  const yes = guests.filter(g => g.status === 'yes').length
-  const pending = guests.filter(g => g.status === 'pending').length
-  const shown = filter === 'all' ? guests : guests.filter(g => g.status === filter)
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [plus, setPlus] = useState(false)
+  const add = () => {
+    if (!name.trim()) return
+    setList(l => [...l, { id: `g${Date.now()}`, name: name.trim(), status: 'pending' as const, plus }])
+    setName(''); setPlus(false); setAdding(false)
+  }
+  const yes = list.filter(g => g.status === 'yes').length
+  const pending = list.filter(g => g.status === 'pending').length
+  const shown = filter === 'all' ? list : list.filter(g => g.status === filter)
   return (
     <div className="pb-28">
-      <TopBar back title="Гости" sub={`${couple.guestsTotal} приглашено · ${yes * 3}+ ответили`} right={
-        <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-white text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} /> Пригласить</button>
+      <TopBar back title="Гости" sub={`${list.length} в списке · ${yes} подтвердили`} right={
+        <div className="flex gap-2">
+          <button onClick={() => setAdding(!adding)} className="press h-10 w-10 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Добавить гостя"><Plus size={16} /></button>
+          <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-white text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} /> Пригласить</button>
+        </div>
       } />
+      {adding && (
+        <div className="px-5 mt-3 fade-up">
+          <div className="card p-4 space-y-2.5">
+            <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Имя гостя или семьи" className="w-full h-11 px-4 rounded-full bg-[#FBF6F1] text-[13px] outline-none" />
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPlus(!plus)} className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', plus ? 'grad text-white' : 'bg-[#FBF6F1] text-[#93897F]')}>с +1</button>
+              <div className="flex-1" />
+              <button onClick={() => setAdding(false)} className="press px-4 py-2 text-[12px] font-semibold text-[#93897F]">Отмена</button>
+              <button onClick={add} className="press px-5 py-2 rounded-full grad text-white text-[12px] font-bold">Добавить</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="px-5 mt-3 grid grid-cols-3 gap-2.5">
         {[['42', 'придут', 'text-[#7E9A74]'], [String(pending * 4), 'ждём ответ', 'text-[#B98A2F]'], ['2', 'не смогут', 'text-[#B57171]']].map(([v, l, c]) => (
           <div key={l} className="card-s p-3.5 text-center">
@@ -401,7 +426,7 @@ export function Guests() {
         <div className="grid grid-cols-2 gap-2.5 mt-3.5">
           <button onClick={() => nav('/wedding/seating')} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Armchair size={15} /> Рассадка</button>
           <button onClick={() => {
-            const csv = 'Имя;Статус;+1;Стол\n' + guests.map(g => `${g.name};${g.status === 'yes' ? 'Придёт' : g.status === 'no' ? 'Не придёт' : 'Ждём'};${g.plus ? 'да' : 'нет'};${g.table ?? ''}`).join('\n')
+            const csv = 'Имя;Статус;+1;Стол\n' + list.map(g => `${g.name};${g.status === 'yes' ? 'Придёт' : g.status === 'no' ? 'Не придёт' : 'Ждём'};${g.plus ? 'да' : 'нет'};${g.table ?? ''}`).join('\n')
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv' }))
             a.download = 'gosti-alina-timur.csv'

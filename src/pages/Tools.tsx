@@ -244,10 +244,9 @@ export function Seating() {
 /* Редактор приглашений: сценарий → текст → вопросы гостям → рассылка */
 export function InviteEditor() {
   const nav = useNavigate()
-  const { inviteTpl, setInviteTpl } = useStore()
+  const { inviteTpl, setInviteTpl, inviteText, setInviteText } = useStore()
   const theme = inviteTpl
   const [count, setCount] = useState(42)
-  const [inviteText, setInviteText] = useState('Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
   const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
   const [sentInvites, setSentInvites] = useState(false)
   const qRow = (key: keyof typeof questions, label: string) => (

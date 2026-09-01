@@ -20,7 +20,7 @@ function downloadICS(title: string, start: string, end: string, location: string
 
 /* Гостевое приглашение: кинематографичная скролл-история (2026) */
 export default function Invite() {
-  const { inviteTpl } = useStore()
+  const { inviteTpl, inviteText } = useStore()
   const T = inviteThemes[inviteTpl] ?? inviteThemes[0]
   const [opened, setOpened] = useState(false)
   const [scrollY, setScrollY] = useState(0)
@@ -136,7 +136,7 @@ export default function Invite() {
         {/* Обращение */}
         <div className="px-8 rv relative z-10">
           <p className={cn('text-[17px] leading-relaxed text-center font-serif-d')} style={{ color: T.ink }}>
-            «Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент».
+            «{inviteText}»
           </p>
         </div>
 

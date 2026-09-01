@@ -103,19 +103,20 @@ export function Auth() {
 
 /* Центр уведомлений */
 export function Notifications() {
-  const [read, setRead] = useState(false)
+  const nav = useNavigate()
+  const [readIds, setReadIds] = useState<number[]>([])
   const items = [
-    { icon: '💰', tile: 'bg-[#F0DCB8]', title: 'Аванс подтверждён', text: 'Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.', time: '14:20', unread: true, today: true },
-    { icon: '✦', tile: 'bg-[#F2DFDC]', title: 'Тиль', text: 'Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.', time: '11:05', unread: true, today: true },
-    { icon: '💌', tile: 'bg-[#D9CCE3]', title: 'RSVP', text: 'Ольга и Денис Соколовы подтвердили приезд с +1.', time: 'вчера', unread: false, today: false },
-    { icon: '📄', tile: 'bg-[#C3D5E8]', title: 'Договор готов', text: 'Договор с фотографом сгенерирован — скачайте и подпишите.', time: 'вчера', unread: false, today: false },
-    { icon: '⏳', tile: 'bg-[#E6EEE2]', title: 'Hold истекает', text: 'Студия «Пион»: мягкая бронь истекает через 12 часов.', time: 'пн', unread: false, today: false },
+    { icon: '💰', tile: 'bg-[#F0DCB8]', title: 'Аванс подтверждён', text: 'Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.', time: '14:20', unread: true, today: true, to: '/deal' },
+    { icon: '✦', tile: 'bg-[#F2DFDC]', title: 'Тиль', text: 'Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.', time: '11:05', unread: true, today: true, to: '/assistant' },
+    { icon: '💌', tile: 'bg-[#D9CCE3]', title: 'RSVP', text: 'Ольга и Денис Соколовы подтвердили приезд с +1.', time: 'вчера', unread: false, today: false, to: '/wedding/guests' },
+    { icon: '📄', tile: 'bg-[#C3D5E8]', title: 'Договор готов', text: 'Договор с фотографом сгенерирован — скачайте и подпишите.', time: 'вчера', unread: false, today: false, to: '/wedding/documents' },
+    { icon: '⏳', tile: 'bg-[#E6EEE2]', title: 'Hold истекает', text: 'Студия «Пион»: мягкая бронь истекает через 12 часов.', time: 'пн', unread: false, today: false, to: '/wedding' },
   ]
   const groups: [string, typeof items][] = [['Сегодня', items.filter(n => n.today)], ['Ранее', items.filter(n => !n.today)]]
   return (
     <div className="pb-28">
       <TopBar back title="Уведомления" sub="Тихие часы 22:00–09:00" right={
-        <button onClick={() => setRead(true)} className="press text-[11px] font-bold text-[#B57171]">Прочитать все</button>
+        <button onClick={() => setReadIds(items.map((_, k) => k))} className="press text-[11px] font-bold text-[#B57171]">Прочитать все</button>
       } />
       {groups.map(([label, list]) => (
         <div key={label}>
@@ -123,17 +124,19 @@ export function Notifications() {
             <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold px-1">{label}</span>
           </div>
           <div className="px-5 mt-2 space-y-2.5 stagger">
-            {list.map((n, k) => (
-              <div key={k} className="card-s p-4 flex gap-3 fade-up relative">
-                {n.unread && !read && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
+            {list.map((n) => {
+              const k = items.indexOf(n)
+              return (
+              <button key={k} onClick={() => { setReadIds(r => [...r, k]); nav(n.to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
+                {n.unread && !readIds.includes(k) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
                 <Tile icon={n.icon} tile={n.tile} size={42} />
                 <div className="min-w-0">
                   <b className="text-[13px]">{n.title}</b>
                   <p className="text-[11.5px] text-[#93897F] leading-relaxed mt-0.5 pr-4">{n.text}</p>
                   <span className="text-[10px] text-[#BFB5AA]">{n.time}</span>
                 </div>
-              </div>
-            ))}
+              </button>
+            )})}
           </div>
         </div>
       ))}
