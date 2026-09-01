@@ -19,6 +19,7 @@ import { Team, Join } from '@/pages/Team'
 import { Inspiration, VenuesMap } from '@/pages/Discover'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 import { WishlistManage, GiftPick } from '@/pages/Wishlist'
+import { Logistics, Catering } from '@/pages/Logistics'
 
 function Shell() {
   const { onboarded, theme, lang } = useStore()
@@ -58,6 +59,8 @@ function Shell() {
         <Route path="/wedding/guests" element={<Guests />} />
         <Route path="/wedding/seating" element={<Seating />} />
         <Route path="/wedding/wishlist" element={<WishlistManage />} />
+        <Route path="/wedding/logistics" element={<Logistics />} />
+        <Route path="/wedding/catering" element={<Catering />} />
         <Route path="/wedding/album" element={<Album />} />
         <Route path="/gifts" element={<GiftPick />} />
         <Route path="/wedding/invites" element={<InviteEditor />} />

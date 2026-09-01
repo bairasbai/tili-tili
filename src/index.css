@@ -218,3 +218,34 @@ input[type="range"] { accent-color: var(--rose-deep); }
   .floaty, .floaty-slow, .shimmer-text, .grad-anim, .sheen::after, .halo::before, .skeleton { animation: none; }
   .sheen::after, .halo::before { display: none; }
 }
+
+/* ---------- Десктоп (≥900px): сайдбар слева, широкая колонка ---------- */
+@media (min-width: 900px) {
+  .app-shell { max-width: 1180px; padding-left: 232px; }
+  .glass-tab {
+    top: 0 !important; bottom: 0 !important;
+    left: 50% !important; right: auto !important;
+    transform: translateX(-590px) !important;
+    width: 216px !important; max-width: none !important;
+    height: 100dvh;
+    border-top: none !important;
+    border-right: 1px solid rgba(46,42,38,.07);
+    display: flex; align-items: center;
+    border-radius: 0;
+  }
+  .glass-tab > div {
+    flex-direction: column; align-items: stretch; justify-content: center;
+    gap: 4px; width: 100%; padding: 24px 12px;
+  }
+  .glass-tab > div > button {
+    width: 100% !important; flex-direction: row; align-items: center;
+    gap: 12px; padding: 11px 14px; border-radius: 14px;
+  }
+  .glass-tab > div > button > span { font-size: 12.5px !important; }
+  .glass-tab > div > button.halo {
+    margin: 4px 0 4px 0 !important; width: 46px !important; height: 46px !important;
+    min-width: 46px; border-width: 3px; align-self: center;
+  }
+  .glass-tab .tab-dot { display: none; }
+}
+@media (min-width: 900px) and (prefers-color-scheme: dark) { :root { color-scheme: dark; } }

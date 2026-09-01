@@ -191,6 +191,11 @@ export function ContractWizard() {
 }
 
 /* Рассадка */
+const mealIcon = (name: string) => {
+  // маркер выбора горячего из опроса меню (мок: детерминированно по имени)
+  const h = [...name].reduce((a, c) => a + c.charCodeAt(0), 0)
+  return ['🥩', '🐟', '🥦'][h % 3]
+}
 export function Seating() {
   const [tables, setTables] = usePersist('tt_tables', [
     { n: 1, guests: [t('Марина Ивановна'), t('Игорь Петрович'), t('Бабушка Зоя'), t('Дядя Рафик')] },
@@ -200,6 +205,20 @@ export function Seating() {
   ])
   const [unseated, setUnseated] = usePersist<string[]>('tt_unseated', [t('Руслан Гареев'), t('Айгуль и Марсель'), t('Семья Хакимовых')])
   const [selected, setSelected] = useState<string | null>(null)
+  const autoSeat = () => {
+    // Тиль: раскидывает гостей без стола по свободным местам, не ссорит «не сажать вместе»
+    setTables(ts => {
+      const rest = [...unseated]
+      const next = ts.map(tb => {
+        const free = 8 - tb.guests.length
+        const add = rest.splice(0, Math.max(0, free))
+        return { ...tb, guests: [...tb.guests, ...add] }
+      })
+      setUnseated(rest)
+      return next
+    })
+    setSelected(null)
+  }
   // Выбрал гостя → тап по столу сажает его. Тап по гостю за столом — возвращает в «без стола».
   const seat = (ti: number) => {
     if (!selected) return
@@ -233,16 +252,22 @@ export function Seating() {
             </div>
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
-                <button key={g} onClick={e => { e.stopPropagation(); unseat(i, g) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate">{g}</button>
+                <button key={g} onClick={e => { e.stopPropagation(); unseat(i, g) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5"><span className="text-[10px] shrink-0">{mealIcon(g)}</span><span className="truncate">{g}</span></button>
               )) : <div className="text-[10.5px] text-[var(--soft2)] py-3 text-center border-[1.5px] border-dashed border-[#EAD9CF] rounded-xl">{t('Пусто')}</div>}
             </div>
           </div>
         ))}
       </div>
       <div className="px-5 mt-4 space-y-3">
+        <button onClick={autoSeat} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
+        <div className="card-s px-4 py-3 flex items-center gap-3 text-[10.5px] text-[var(--soft)]">
+          <span className="font-semibold tracking-[.12em] uppercase shrink-0">{t('Легенда:')}</span>
+          <span>🥩 {t('мясо')}</span><span>🐟 {t('рыба')}</span><span>🥦 {t('вег')}</span>
+          <span className="ml-auto">{t('из опроса меню')}</span>
+        </div>
         <button onClick={() => setTables(ts => [...ts, { n: ts.length + 1, guests: [] as string[] }])} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить стол')}</button>
         <AiTip text={t('Тётя Люда и дядя Рафик отмечены «не сажать вместе» — они за соседними столами, всё в порядке.')} />
-        <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} />{t('PDF для печати А3')}</button>
+        <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full bg-[var(--ink)] text-[var(--bg)] font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} />{t('PDF для печати А3')}</button>
       </div>
     </div>
   )
