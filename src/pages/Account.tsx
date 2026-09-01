@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ChevronLeft, Shield, Smartphone, ChevronRight, HelpCircle, LogOut, MonitorSmartphone, Moon } from 'lucide-react'
+import { ChevronLeft, Shield, Smartphone, ChevronRight, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
+import { CityPicker } from '@/components/CityPicker'
+import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 /* Вход: телефон → OTP → роль */
@@ -148,6 +150,8 @@ export function Settings() {
   const [editName, setEditName] = useState(false)
   const [androidGone, setAndroidGone] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [cityPick, setCityPick] = useState(false)
+  const { city, cityRegion, setCity } = useStore()
   const Row = ({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) => (
     <div className="flex items-center justify-between py-3.5 border-b border-[#F1E9E2] last:border-none">
       <span className="text-[13px] font-medium">{label}</span>
@@ -176,6 +180,10 @@ export function Settings() {
           <Row label="Push: сообщения" value={push.chats} onChange={v => setPush(p => ({ ...p, chats: v }))} />
           <Row label="Push: сделки и оплаты" value={push.deals} onChange={v => setPush(p => ({ ...p, deals: v }))} />
           <Row label="Советы ИИ-координатора" value={push.tips} onChange={v => setPush(p => ({ ...p, tips: v }))} />
+          <button onClick={() => setCityPick(true)} className="press w-full flex items-center justify-between py-3.5 border-b border-[#F1E9E2] last:border-none text-left">
+            <span className="text-[13px] font-medium">Город свадьбы</span>
+            <span className="flex items-center gap-1.5 text-[12px] text-[#93897F]"><MapPin size={13} className="text-[#C98A8A]" />{city} · {cityRegion}</span>
+          </button>
         </div>
         <div className="card px-4 py-1.5">
           <div className="flex items-center gap-3 py-3.5 border-b border-[#F1E9E2]">
@@ -208,6 +216,7 @@ export function Settings() {
         )}
         <p className="flex items-center justify-center gap-1.5 text-[10px] text-[#BFB5AA]"><Shield size={11} /> Данные защищены по 152-ФЗ · удаление аккаунта — по запросу</p>
       </div>
+      {cityPick && <CityPicker onClose={() => setCityPick(false)} onPick={(c) => { setCity(c.n, c.r); setCityPick(false) }} />}
     </div>
   )
 }

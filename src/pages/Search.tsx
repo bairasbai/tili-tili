@@ -9,14 +9,14 @@ import { cn } from '@/lib/utils'
 /* Каталог категорий */
 export function SearchCategories() {
   const nav = useNavigate()
-  const { slots } = useStore()
+  const { slots, city } = useStore()
   const [q, setQ] = useState('')
   const stateOf = (id: string) => slots.find(s => s.categoryId === id)?.state
   const list = categories.filter(c => c.name.toLowerCase().includes(q.toLowerCase()))
 
   return (
     <div className="pb-28">
-      <TopBar title="Все специалисты" sub={`${categories.length} категорий · Уфа · 14.06.2027`} />
+      <TopBar title="Все специалисты" sub={`${categories.length} категорий · ${city} · 14.06.2027`} />
       <div className="px-5 mt-2">
         <div className="card-s flex items-center gap-2.5 px-4 py-3.5">
           <SearchIcon size={17} className="text-[#93897F]" />
@@ -95,7 +95,7 @@ export function VendorList() {
 export function VendorDetail() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { slots, bookVendor } = useStore()
+  const { slots, bookVendor, city } = useStore()
   const v = vendors.find(x => x.id === id) ?? vendors[0]
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
@@ -131,7 +131,7 @@ export function VendorDetail() {
           <div>
             <h1 className="font-serif-d text-[26px]">{v.name}</h1>
             <p className="text-[12px] text-[#93897F] mt-1 flex items-center gap-1.5">
-              <MapPin size={12} /> Уфа + 100 км
+              <MapPin size={12} /> {city} + 100 км
               {v.reviews > 0 ? <span>· ★ {v.rating} · {v.reviews} отзывов</span> : <span>· Новый на платформе</span>}
             </p>
           </div>

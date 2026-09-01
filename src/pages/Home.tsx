@@ -6,7 +6,7 @@ import { useStore } from '@/lib/store'
 
 export default function Home() {
   const nav = useNavigate()
-  const { slots } = useStore()
+  const { slots, city } = useStore()
   const booked = slots.filter(s => s.state === 'booked')
   const teamPct = Math.round((couple.teamBooked / couple.teamTotal) * 100)
   const budgetPct = Math.round((couple.budgetSpent / couple.budgetTotal) * 100)
@@ -51,7 +51,7 @@ export default function Home() {
             <div className="w-14 h-14 rounded-full bg-[#A9BCA0] text-white font-serif-d text-[22px] flex items-center justify-center border-[3.5px] border-white">Т</div>
           </div>
           <b className="font-serif-d text-[16px] block mt-2.5">{couple.full}</b>
-          <p className="text-[11px] text-[#93897F] mt-1">📍 {couple.city} · 🎨 {couple.style} · 🥂 {couple.guestsTotal} гостей</p>
+          <p className="text-[11px] text-[#93897F] mt-1">📍 {city} · 🎨 {couple.style} · 🥂 {couple.guestsTotal} гостей</p>
           <div className="grid grid-cols-4 gap-2 mt-4">
             {[[couple.countdown.m, 'МЕС'], [couple.countdown.d, 'ДН'], [couple.countdown.h, 'ЧАС'], [couple.countdown.min, 'МИН']].map(([v, l]) => (
               <div key={String(l)} className="bg-[#FBF6F1] rounded-2xl py-3">
