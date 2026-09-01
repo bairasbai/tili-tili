@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 export function TopBar({ title, sub, back, right }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode }) {
   const nav = useNavigate()
   return (
-    <div className="px-5 pt-6 pb-2 flex items-start justify-between gap-3">
+    <div className="px-5 pt-6 pb-2 flex items-start justify-between gap-3 fade-in">
       <div className="flex items-center gap-3 min-w-0">
         {back && (
           <button onClick={() => nav(-1)} className="press w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0" style={{ boxShadow: 'var(--shadow)' }} aria-label="Назад">
@@ -45,7 +45,7 @@ export function TabBar() {
         {tabs.map(t => {
           if (t.icon === null)
             return (
-              <button key="w" onClick={() => nav('/wedding')} className="press -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-white text-[22px] border-4 border-[#FBF6F1]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label="Свадьба">
+              <button key="w" onClick={() => nav('/wedding')} className="press halo relative -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-white text-[22px] border-4 border-[#FBF6F1]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label="Свадьба">
                 💍
               </button>
             )
@@ -55,6 +55,7 @@ export function TabBar() {
             <button key={t.to} onClick={() => nav(t.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[#B57171]' : 'text-[#93897F]')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
               <span className="text-[9.5px] font-medium tracking-wide">{tt(t.label)}</span>
+              {on && <span className="tab-dot" />}
             </button>
           )
         })}
@@ -68,9 +69,9 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
   const { favorites, toggleFav } = useStore()
   const fav = favorites.includes(v.id)
   return (
-    <div className="card overflow-hidden fade-up">
+    <div className="card overflow-hidden fade-up group">
       <button className="w-full text-left" onClick={onOpen}>
-        <div className={cn('h-[104px] relative', v.tile)}>
+        <div className={cn('h-[104px] relative transition-transform duration-700 group-hover:scale-[1.03]', v.tile)} style={{ transitionTimingFunction: 'var(--ease)' }}>
           <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 70% 25%, rgba(255,255,255,.65), transparent 55%)' }} />
           <span className="absolute top-3 left-3 text-[26px]">{v.categoryIcon}</span>
           {v.freeOnDate
@@ -121,7 +122,7 @@ export function Tile({ icon, tile, size = 46 }: { icon: string; tile: string; si
 /* Совет ИИ-координатора */
 export function AiTip({ text, onPress }: { text: string; onPress?: () => void }) {
   return (
-    <button onClick={onPress} className="press w-full text-left card p-3.5 flex gap-3 items-start" style={{ background: 'linear-gradient(135deg,#fff,#F2DFDC)', border: '1px solid rgba(201,138,138,.25)' }}>
+    <button onClick={onPress} className="press sheen w-full text-left card p-3.5 flex gap-3 items-start" style={{ background: 'linear-gradient(135deg,#fff,#F2DFDC)', border: '1px solid rgba(201,138,138,.25)' }}>
       <div className="w-[30px] h-[30px] rounded-full grad flex items-center justify-center text-white text-[13px] shrink-0">✦</div>
       <p className="text-[11.5px] leading-relaxed text-[#93897F]"><b className="text-[#2E2A26]">Тиль:</b> {text}</p>
     </button>

@@ -24,8 +24,10 @@ export default function Home() {
 
       {/* Hero-карточка пары */}
       <div className="px-5 mt-3 fade-up">
-        <div className="grad rounded-[32px] p-6 text-white relative overflow-hidden">
+        <div className="grad-anim sheen rounded-[32px] p-6 text-white relative overflow-hidden" style={{ boxShadow: '0 24px 60px -20px rgba(201,138,138,.55)' }}>
           <div className="absolute w-56 h-56 rounded-full bg-white/15 -top-24 -right-16" />
+          <div className="absolute w-40 h-40 rounded-full bg-white/10 -bottom-16 -left-10" />
+          <div className="absolute inset-0 rounded-[32px]" style={{ border: '1px solid rgba(255,255,255,.35)' }} />
           <h1 className="font-serif-d text-[28px] relative">{couple.bride} & {couple.groom}</h1>
           <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {couple.date} · {couple.venue} · 16:00</p>
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
@@ -48,8 +50,12 @@ export default function Home() {
       <div className="px-5 fade-up" style={{ animationDelay: '.1s' }}>
         <div className="card p-5 mt-4 text-center">
           <div className="flex justify-center -space-x-3.5">
-            <div className="w-14 h-14 rounded-full bg-[#C98A8A] text-white font-serif-d text-[22px] flex items-center justify-center border-[3.5px] border-white">А</div>
-            <div className="w-14 h-14 rounded-full bg-[#A9BCA0] text-white font-serif-d text-[22px] flex items-center justify-center border-[3.5px] border-white">Т</div>
+            <div className="w-14 h-14 rounded-full grad p-[2.5px]">
+              <div className="w-full h-full rounded-full bg-[#C98A8A] text-white font-serif-d text-[22px] flex items-center justify-center border-2 border-white">А</div>
+            </div>
+            <div className="w-14 h-14 rounded-full grad p-[2.5px]">
+              <div className="w-full h-full rounded-full bg-[#A9BCA0] text-white font-serif-d text-[22px] flex items-center justify-center border-2 border-white">Т</div>
+            </div>
           </div>
           <b className="font-serif-d text-[16px] block mt-2.5">{couple.full}</b>
           <p className="text-[11px] text-[#93897F] mt-1">📍 {city} · 🎨 {couple.style} · 🥂 {couple.guestsTotal} гостей</p>
