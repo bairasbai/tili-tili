@@ -251,3 +251,31 @@ export const initialGifts: Gift[] = [
   { id: 'gf7', name: t('Блендер стационарный'), icon: '🥤', tile: 'bg-[var(--sage-soft)]', price: 9500, group: false, funded: 0, reserved: false },
   { id: 'gf8', name: t('Ужин в ресторане'), icon: '🕯', tile: 'bg-[var(--rose-soft)]', price: 15000, desc: t('Сертификат на двоих'), group: false, funded: 0, reserved: true },
 ]
+
+/* ── Денежные фонды («конверт» онлайн) ── */
+export interface Fund { id: string; name: string; icon: string; tile: string; target: number; collected: number }
+export const initialFunds: Fund[] = [
+  { id: 'f1', name: t('Медовый месяц в Каппадокии'), icon: '🎈', tile: 'bg-[var(--peach)]', target: 200000, collected: 67500 },
+  { id: 'f2', name: t('Первый семейный автомобиль'), icon: '🚗', tile: 'bg-[var(--blue)]', target: 500000, collected: 40000 },
+]
+
+/* ── Анти-вишлист: что просим НЕ дарить ── */
+export const initialAntiGifts: string[] = [t('Сервизы'), t('Картины'), t('Сувенирная посуда'), t('Пылесос — уже есть')]
+
+/* ── Общий фотоальбом гостей (модерация парой) ── */
+export interface AlbumPhoto { id: string; emoji: string; tile: string; approved: boolean; at: string }
+export const initialAlbum: AlbumPhoto[] = [
+  { id: 'p1', emoji: '💃', tile: 'bg-[var(--rose-soft)]', approved: true, at: '21:14' },
+  { id: 'p2', emoji: '🥂', tile: 'bg-[var(--honey)]', approved: true, at: '19:02' },
+  { id: 'p3', emoji: '🎆', tile: 'bg-[var(--blue)]', approved: false, at: '22:41' },
+  { id: 'p4', emoji: '🤳', tile: 'bg-[var(--lav)]', approved: true, at: '16:20' },
+  { id: 'p5', emoji: '🍰', tile: 'bg-[var(--sage-soft)]', approved: false, at: '21:33' },
+]
+
+/* Палитры дресс-кода для приглашения */
+export const dressPalettes = [
+  { id: 'd1', name: t('Пудровая классика'), colors: ['#E8C4C4', '#D9A8A0', '#C98A8A', '#8FB08A', '#EFE9DF'] },
+  { id: 'd2', name: t('Шалфей и сливки'), colors: ['#A9BCA0', '#DCE5D4', '#EFE9DF', '#C9B458', '#5F7A56'] },
+  { id: 'd3', name: t('Лавандовый вечер'), colors: ['#D9CCE3', '#B9A7CC', '#8E7AA6', '#EFE9DF', '#3A322B'] },
+  { id: 'd4', name: t('Медовый закат'), colors: ['#E3C892', '#D4A96A', '#B98A2F', '#F0DCB8', '#3A322B'] },
+]

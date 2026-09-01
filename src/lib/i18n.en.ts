@@ -1,4 +1,4 @@
-import { EN_DATA, EN_DATA_GIFTS } from './i18n.en.data'
+import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
@@ -820,6 +820,7 @@ export const EN: Record<string, string> = {
 
   ...EN_DATA,
   ...EN_DATA_GIFTS,
+  ...EN_DATA_GIFTS2,
 }
 
 // Вишлист подарков (EN)
@@ -863,4 +864,51 @@ Object.assign(EN, {
   'Занято': 'Taken',
   'Назад': 'Back',
   'Желания': 'Wishes',
+})
+
+// Фонды, анти-вишлист, RSVP+, альбом, дресс-код, SOS (EN)
+Object.assign(EN, {
+  'Денежные фонды': 'Money funds',
+  'гости переводят на цель вместо вещей': 'guests contribute to a goal instead of things',
+  'цель': 'goal',
+  'Добавить фонд': 'Add a fund',
+  'Название цели': 'Goal name',
+  'Сумма цели, ₽': 'Target amount, ₽',
+  'Просим не дарить': 'Please don’t gift',
+  'анти-вишлист': 'anti-wishlist',
+  'Например: сервизы': 'E.g.: dinner sets',
+  'анонимный перевод на цель': 'anonymous contribution to a goal',
+  'Перевести на цель': 'Contribute to goal',
+  'Молодожёны просят не дарить': 'The couple asks not to gift',
+  'Деликатный ориентир: банкет на гостя ≈': 'A gentle hint: banquet per guest ≈',
+  'Заказ оформлен': 'Order placed',
+  'Купить в приложении': 'Buy in the app',
+  'веган': 'vegan',
+  'аллергия': 'allergy',
+  'всё ест': 'eats everything',
+  'трансфер': 'transfer',
+  'Для кейтеринга': 'For catering',
+  'персон': 'guests',
+  'нужен трансфер': 'need transfer',
+  'Автоматически уйдёт кейтерингу и площадке 1 июня — обновляется по RSVP': 'Automatically sent to catering and venue on June 1 — updates with RSVPs',
+  'Напоминания отправлены 8 гостям · повторим за 3 дня до дедлайна': 'Reminders sent to 8 guests · we’ll repeat 3 days before the deadline',
+  'Фотоальбом гостей': 'Guest photo album',
+  'кадров ·': 'photos ·',
+  'на модерации': 'pending review',
+  'QR-код для столов': 'QR code for tables',
+  'Гости сканируют и загружают фото и видео без регистрации — всё попадает сюда.': 'Guests scan and upload photos and videos without signing up — everything lands here.',
+  '＋ Загрузить фото (демо)': '＋ Upload photo (demo)',
+  'Новых на модерации:': 'New pending review:',
+  'Одобрить все': 'Approve all',
+  'Все кадры одобрены и видны гостям': 'All photos approved and visible to guests',
+  'Тап по фото — одобрить/скрыть. Скрытые видите только вы.': 'Tap a photo to approve/hide. Hidden ones are visible only to you.',
+  'сейчас': 'now',
+  'Альбом': 'Album',
+  'Дресс-код и палитра': 'Dress code and palette',
+  'Комментарий: например, дамы — без белого': 'Note: e.g., ladies — no white',
+  'SOS — координатор дня': 'SOS — day coordinator',
+  'Алсу · онлайн': 'Alsu · online',
+  'отвечает за ~2 мин · знает весь тайминг': 'replies in ~2 min · knows the whole timeline',
+  'Написать': 'Message',
+  'Позвонить': 'Call',
 })

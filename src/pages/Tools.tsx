@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-react'
-import { contractTemplates, couple, guests, fmt } from '@/lib/data'
+import { contractTemplates, dressPalettes, couple, guests, fmt } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
@@ -256,6 +256,8 @@ export function InviteEditor() {
   const [count, setCount] = useState(42)
   const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
   const [sentInvites, setSentInvites] = useState(false)
+  const [dress, setDress] = usePersist('tt_dress', 'd1')
+  const [dressNote, setDressNote] = usePersist('tt_dress_note', '')
   const qRow = (key: keyof typeof questions, label: string) => (
     <div className="flex items-center justify-between py-3 border-b border-[var(--track)] last:border-none">
       <span className="text-[12.5px] font-medium">{label}</span>
@@ -292,6 +294,24 @@ export function InviteEditor() {
               <span className="text-[9px] text-[var(--soft)] block px-1 pb-1 leading-tight">{th.desc}</span>
             </button>
           ))}
+        </div>
+
+        {/* Дресс-код и палитра */}
+        <div className="card p-4 mt-4">
+          <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Дресс-код и палитра')}</span>
+          <div className="space-y-2.5 mt-3">
+            {dressPalettes.map(p => (
+              <button key={p.id} onClick={() => setDress(p.id)} className={cn('press w-full flex items-center gap-3 rounded-[14px] p-2 text-left', dress === p.id && 'ring-2 ring-[#C98A8A] bg-[var(--track)]')}>
+                <span className="flex -space-x-1.5">
+                  {p.colors.map(c => <span key={c} className="w-6 h-6 rounded-full border-2 border-[var(--card)]" style={{ background: c }} />)}
+                </span>
+                <span className="text-[12px] font-medium flex-1">{p.name}</span>
+                {dress === p.id && <span className="text-[#7E9A74] text-[13px]">✓</span>}
+              </button>
+            ))}
+          </div>
+          <input value={dressNote} onChange={e => setDressNote(e.target.value)} placeholder={t('Комментарий: например, дамы — без белого')}
+            className="w-full bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none mt-3" />
         </div>
 
         {/* Текст */}

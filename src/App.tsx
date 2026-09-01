@@ -7,7 +7,7 @@ import Onboarding from '@/pages/Onboarding'
 import Quiz from '@/pages/Quiz'
 import Home from '@/pages/Home'
 import { SearchCategories, VendorList, VendorDetail } from '@/pages/Search'
-import { WeddingTeam, SlotDetail, Budget, Checklist, Timeline, Guests, Documents } from '@/pages/Wedding'
+import { WeddingTeam, SlotDetail, Budget, Checklist, Timeline, Guests, Documents, Album } from '@/pages/Wedding'
 import { Us, Chats, Chat } from '@/pages/Us'
 import Invite from '@/pages/Invite'
 import { Auth, Notifications, Settings, Support } from '@/pages/Account'
@@ -58,6 +58,7 @@ function Shell() {
         <Route path="/wedding/guests" element={<Guests />} />
         <Route path="/wedding/seating" element={<Seating />} />
         <Route path="/wedding/wishlist" element={<WishlistManage />} />
+        <Route path="/wedding/album" element={<Album />} />
         <Route path="/gifts" element={<GiftPick />} />
         <Route path="/wedding/invites" element={<InviteEditor />} />
         <Route path="/wedding/documents" element={<Documents />} />

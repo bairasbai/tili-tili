@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift } from 'lucide-react'
-import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt } from '@/lib/data'
+import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera } from 'lucide-react'
+import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt, initialAlbum } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
@@ -20,6 +20,7 @@ function WeddingNav() {
     { to: '/favorites', icon: Heart, label: t('Избранное'), tile: 'bg-[var(--rose-soft)]' },
     { to: '/notes', icon: NotebookPen, label: t('Заметки'), tile: 'bg-[var(--peach)]' },
     { to: '/wedding/wishlist', icon: Gift, label: t('Желания'), tile: 'bg-[var(--rose-soft)]' },
+    { to: '/wedding/album', icon: Camera, label: t('Альбом'), tile: 'bg-[var(--blue)]' },
     { to: '/tools/alcohol', icon: Wine, label: t('Алко-кальк.'), tile: 'bg-[var(--sage-soft)]' },
   ]
   return (
@@ -361,6 +362,8 @@ export function Timeline() {
 export function Guests() {
   const nav = useNavigate()
   const [list, setList] = usePersist('tt_guests', guests)
+  const [extras, setExtras] = usePersist<Record<string, { diet?: string; transfer?: boolean }>>('tt_rsvp', {})
+  const [reminded, setReminded] = useState(false)
   const [filter, setFilter] = useState('all')
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -418,6 +421,18 @@ export function Guests() {
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{g.name}</b>
                 <span className="text-[10px] text-[var(--soft)]">{g.plus ? 'с +1' : t('один/одна')}{g.table ? `${t(' · стол №')}${g.table}` : ''}</span>
+                {g.status === 'yes' && (
+                  <div className="flex gap-1.5 mt-1.5">
+                    <button onClick={() => setExtras(x => { const d = x[g.id]?.diet; const next = !d ? t('веган') : d === t('веган') ? t('аллергия') : undefined; const n = { ...x }; if (next) n[g.id] = { ...n[g.id], diet: next }; else delete n[g.id]; return n })}
+                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.diet ? 'bg-[var(--lav)] text-[#8E7AA6]' : 'bg-[var(--track)] text-[var(--soft)]')}>
+                      🍽 {extras[g.id]?.diet ?? t('всё ест')}
+                    </button>
+                    <button onClick={() => setExtras(x => ({ ...x, [g.id]: { ...x[g.id], transfer: !x[g.id]?.transfer } }))}
+                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.transfer ? 'bg-[var(--blue)] text-[#5B7BA3]' : 'bg-[var(--track)] text-[var(--soft)]')}>
+                      🚌 {t('трансфер')}
+                    </button>
+                  </div>
+                )}
               </div>
               <button onClick={() => setList(l => l.map(x => x.id === g.id ? { ...x, status: x.status === 'yes' ? 'no' : x.status === 'no' ? 'pending' : 'yes' } : x))} title={t('Нажмите, чтобы сменить статус')} className={cn('press text-[9px] font-bold px-2.5 py-1 rounded-full transition-all',
                 g.status === 'yes' ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : g.status === 'no' ? 'bg-[var(--rose-soft)] text-[#B57171]' : 'bg-[var(--honey)] text-[#B98A2F]')}>
@@ -436,8 +451,76 @@ export function Guests() {
             a.click()
           }} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Список CSV')}</button>
         </div>
-        <div className="mt-3.5"><AiTip text={t('8 гостей не ответили — дедлайн RSVP 1 мая. Отправить напоминание одной кнопкой?')} /></div>
+        <div className="mt-3.5">
+          {(() => {
+            const yesGuests = list.filter(g => g.status === 'yes')
+            const vegan = yesGuests.filter(g => extras[g.id]?.diet === t('веган')).length
+            const allergy = yesGuests.filter(g => extras[g.id]?.diet === t('аллергия')).length
+            const transfer = yesGuests.filter(g => extras[g.id]?.transfer).length
+            const seats = yesGuests.reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
+            return (
+              <div className="card p-4">
+                <p className="text-[12px] font-semibold mb-1.5">🍽 {t('Для кейтеринга')}</p>
+                <p className="text-[11px] text-[var(--soft)] leading-relaxed">
+                  {seats} {t('персон')} · {vegan} {t('веган')} · {allergy} {t('аллергия')} · {transfer} {t('нужен трансфер')}
+                </p>
+                <p className="text-[10px] text-[#7E9A74] font-medium mt-1.5">✓ {t('Автоматически уйдёт кейтерингу и площадке 1 июня — обновляется по RSVP')}</p>
+              </div>
+            )
+          })()}
+        </div>
+        <div className="mt-3.5">
+          {reminded
+            ? <div className="card p-3.5 text-[12px] font-medium text-[#5F7A56]">✓ {t('Напоминания отправлены 8 гостям · повторим за 3 дня до дедлайна')}</div>
+            : <AiTip text={t('8 гостей не ответили — дедлайн RSVP 1 мая. Отправить напоминание одной кнопкой?')} onPress={() => setReminded(true)} />}
+        </div>
       </div>
+    </div>
+  )
+}
+
+/* Общий фотоальбом гостей: QR на столах + модерация парой */
+export function Album() {
+  const [photos, setPhotos] = usePersist('tt_album', initialAlbum)
+  const [moderated, setModerated] = useState(0)
+  const pool = ['💃', '🥂', '🎆', '🤳', '🍰', '💐', '🎤', '🕺', '📸', '❤️']
+  const pending = photos.filter(p => !p.approved).length
+  const addPhoto = () => setPhotos(ps => [...ps, { id: 'p' + Date.now(), emoji: pool[ps.length % pool.length], tile: ['bg-[var(--rose-soft)]', 'bg-[var(--sage-soft)]', 'bg-[var(--honey)]', 'bg-[var(--lav)]'][ps.length % 4], approved: false, at: t('сейчас') }])
+  return (
+    <div className="pb-28">
+      <TopBar back title={t('Фотоальбом гостей')} sub={`${photos.length} ${t('кадров ·')} ${pending} ${t('на модерации')}`} />
+      <div className="px-5 mt-3 space-y-3">
+        <div className="card p-4 flex items-center gap-4">
+          <div className="w-[76px] h-[76px] rounded-[16px] bg-[var(--ink)] grid grid-cols-4 gap-[3px] p-2.5 shrink-0">
+            {Array.from({ length: 16 }).map((_, i) => <span key={i} className="rounded-[2px]" style={{ background: (i * 7 + 3) % 3 ? '#EFE9DF' : 'transparent' }} />)}
+          </div>
+          <div className="flex-1">
+            <p className="text-[13px] font-semibold">{t('QR-код для столов')}</p>
+            <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-0.5">{t('Гости сканируют и загружают фото и видео без регистрации — всё попадает сюда.')}</p>
+            <button onClick={addPhoto} className="press mt-2 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('＋ Загрузить фото (демо)')}</button>
+          </div>
+        </div>
+        {pending > 0 && (
+          <div className="card p-3.5 flex items-center justify-between">
+            <p className="text-[12px] font-medium">{t('Новых на модерации:')} {pending}</p>
+            <button onClick={() => { setPhotos(ps => ps.map(p => ({ ...p, approved: true }))); setModerated(m => m + 1) }} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-white">{t('Одобрить все')}</button>
+          </div>
+        )}
+        {moderated > 0 && pending === 0 && <p className="text-[11px] text-[#7E9A74] font-medium px-1">✓ {t('Все кадры одобрены и видны гостям')}</p>}
+      </div>
+      <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
+        {photos.map((p, i) => (
+          <button key={p.id} onClick={() => setPhotos(ps => ps.map(x => x.id === p.id ? { ...x, approved: !x.approved } : x))}
+            className={cn('press relative aspect-square rounded-[20px] flex items-center justify-center text-[38px]', p.tile, !p.approved && 'opacity-50')} style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
+            {p.emoji}
+            <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[#A9BCA0] text-white' : 'bg-[var(--ink)] text-[#EFE9DF]')}>
+              {p.approved ? '✓' : '…'}
+            </span>
+            <span className="absolute bottom-1.5 left-2 text-[8.5px] text-[var(--soft)]">{p.at}</span>
+          </button>
+        ))}
+      </div>
+      <p className="px-6 mt-3 text-center text-[10.5px] text-[var(--soft)]">{t('Тап по фото — одобрить/скрыть. Скрытые видите только вы.')}</p>
     </div>
   )
 }

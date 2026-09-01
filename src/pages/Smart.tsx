@@ -134,6 +134,7 @@ export function DayX() {
   const nav = useNavigate()
   const [delay, setDelay] = useState(0)
   const [planB, setPlanB] = useState(false)
+  const [sos, setSos] = useState(false)
   return (
     <div className="min-h-dvh pb-10" style={{ background: 'linear-gradient(180deg,#1E1A16,#0E0C0A)', color: '#EFE9DF' }}>
       <div className="px-5 pt-7 flex items-center justify-between">
@@ -159,6 +160,23 @@ export function DayX() {
             <button onClick={() => setDelay(d => d + 15)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold" style={{ background: '#C9A96A', color: '#141210' }}>{t('+15 мин задержка')}</button>
             <button onClick={() => nav('/us/chats/ch5')} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[#4a443c]">{t('Чат дня X')}</button>
           </div>
+          <button onClick={() => setSos(s2 => !s2)} className="press w-full mt-2.5 h-[44px] rounded-full text-[12px] font-bold" style={{ background: '#C4705A', color: '#fff' }}>🆘 {t('SOS — координатор дня')}</button>
+          {sos && (
+            <div className="rounded-[20px] p-4 mt-2.5 fade-up" style={{ background: '#38312A' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-[16px]" style={{ background: '#C9A96A' }}>👩‍💼</div>
+                <div className="flex-1">
+                  <b className="text-[13px]">{t('Алсу · онлайн')}</b>
+                  <p className="text-[10px] opacity-60">{t('отвечает за ~2 мин · знает весь тайминг')}</p>
+                </div>
+                <span className="w-2 h-2 rounded-full" style={{ background: '#8FB08A' }} />
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => nav('/us/chats/ch2')} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c]">{t('Написать')}</button>
+                <button onClick={() => setSos(false)} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold" style={{ background: '#C9A96A', color: '#141210' }}>{t('Позвонить')}</button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 relative pl-6">

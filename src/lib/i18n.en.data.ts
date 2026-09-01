@@ -182,3 +182,17 @@ export const EN_DATA_GIFTS: Record<string, string> = {
   'Ужин в ресторане': 'Restaurant dinner',
   'Сертификат на двоих': 'Certificate for two',
 }
+
+// Фонды, анти-вишлист, палитры (EN)
+export const EN_DATA_GIFTS2: Record<string, string> = {
+  'Медовый месяц в Каппадокии': 'Honeymoon in Cappadocia',
+  'Первый семейный автомобиль': 'First family car',
+  'Сервизы': 'Dinner sets',
+  'Картины': 'Paintings',
+  'Сувенирная посуда': 'Souvenir tableware',
+  'Пылесос — уже есть': 'Vacuum cleaner — already have one',
+  'Пудровая классика': 'Powdery classics',
+  'Шалфей и сливки': 'Sage and cream',
+  'Лавандовый вечер': 'Lavender evening',
+  'Медовый закат': 'Honey sunset',
+}
