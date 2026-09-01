@@ -41,6 +41,16 @@ export function WeddingTeam() {
     <div className="pb-28">
       <TopBar title="Наш день" sub={`${booked} забронировано · ${progress - booked} в работе · ${slots.length - progress} пустых`} />
       <WeddingNav />
+      <div className="px-5 mt-3.5">
+        <button onClick={() => nav('/dayx')} className="press w-full rounded-[22px] p-4 flex items-center gap-3 text-left text-white" style={{ background: 'linear-gradient(120deg,#3A322B,#1E1A16)', boxShadow: 'var(--shadow)' }}>
+          <span className="text-[22px]">🎬</span>
+          <span className="flex-1">
+            <b className="text-[13px] block">Режим дня X</b>
+            <span className="text-[10px] text-white/60">Live-тайминг, задержки, план Б и SOS</span>
+          </span>
+          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-white/15">демо</span>
+        </button>
+      </div>
       <div className="px-5 mt-5">
         <div className="grid grid-cols-3 gap-2.5 stagger">
           {slots.map(s => (
@@ -92,7 +102,7 @@ export function SlotDetail() {
         </div>
         <div className="grid grid-cols-2 gap-2.5 mt-3">
           <button onClick={() => nav('/us/chats/ch1')} className="press card-s py-3.5 text-[13px] font-semibold">Написать</button>
-          <button onClick={() => nav('/wedding/documents')} className="press card-s py-3.5 text-[13px] font-semibold">Договор</button>
+          <button onClick={() => nav('/deal')} className="press card-s py-3.5 text-[13px] font-semibold">Сделка</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">Заменить</button>
           <button className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить бронь</button>
         </div>
@@ -208,12 +218,13 @@ export function Timeline() {
 
 /* Гости */
 export function Guests() {
+  const nav = useNavigate()
   const yes = guests.filter(g => g.status === 'yes').length
   const pending = guests.filter(g => g.status === 'pending').length
   return (
     <div className="pb-28">
       <TopBar back title="Гости" sub={`${couple.guestsTotal} приглашено · ${yes * 3}+ ответили`} right={
-        <button className="press h-10 px-4 rounded-full grad text-white text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} /> Пригласить</button>
+        <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-white text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} /> Пригласить</button>
       } />
       <div className="px-5 mt-3 grid grid-cols-3 gap-2.5">
         {[['42', 'придут', 'text-[#7E9A74]'], [String(pending * 4), 'ждём ответ', 'text-[#B98A2F]'], ['2', 'не смогут', 'text-[#B57171]']].map(([v, l, c]) => (
@@ -243,7 +254,7 @@ export function Guests() {
           ))}
         </div>
         <div className="grid grid-cols-2 gap-2.5 mt-3.5">
-          <button className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Armchair size={15} /> Рассадка</button>
+          <button onClick={() => nav('/wedding/seating')} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Armchair size={15} /> Рассадка</button>
           <button className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} /> Список PDF</button>
         </div>
         <div className="mt-3.5"><AiTip text="8 гостей не ответили — дедлайн RSVP 1 мая. Отправить напоминание одной кнопкой?" /></div>
@@ -254,12 +265,13 @@ export function Guests() {
 
 /* Документы */
 export function Documents() {
+  const nav = useNavigate()
   return (
     <div className="pb-28">
       <TopBar back title="Документы" sub="Договоры из шаблонов — за 2 минуты" />
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {contractTemplates.map(c => (
-          <button key={c.id} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
+          <button key={c.id} onClick={() => nav('/wedding/documents/new')} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
             <Tile icon={c.icon} tile={c.tile} />
             <div className="flex-1 min-w-0">
               <b className="text-[13.5px] block">{c.name}</b>

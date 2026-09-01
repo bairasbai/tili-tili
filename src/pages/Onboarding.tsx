@@ -23,7 +23,7 @@ export default function Onboarding() {
 
       <div className="flex justify-between items-center px-6 pt-8">
         <span className="font-serif-d text-[20px]">Тили-<em className="grad-text not-italic font-semibold">тили</em></span>
-        <button onClick={() => nav('/quiz')} className="text-[12px] text-[#93897F] font-medium press">Пропустить</button>
+        <button onClick={() => nav('/auth')} className="text-[12px] text-[#93897F] font-medium press">Пропустить</button>
       </div>
 
       <div key={i} className="flex-1 flex flex-col items-center justify-center px-8 text-center fade-up">
@@ -47,7 +47,7 @@ export default function Onboarding() {
             </button>
           )}
           <button
-            onClick={() => (last ? nav('/quiz') : setI(i + 1))}
+            onClick={() => (last ? nav('/auth') : setI(i + 1))}
             className="press flex-1 h-[54px] rounded-full grad text-white font-semibold text-[14px] tracking-wide flex items-center justify-center gap-2"
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >

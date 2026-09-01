@@ -63,6 +63,7 @@ export function VendorList() {
             {label}
           </button>
         ))}
+        <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-white text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>⇄ Сравнить</button>
       </div>
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {shown.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}

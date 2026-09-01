@@ -15,7 +15,7 @@ export default function Home() {
     <div className="pb-28">
       <div className="flex items-center justify-between px-5 pt-7 pb-1">
         <span className="font-serif-d text-[20px]">Тили-<em className="grad-text not-italic font-semibold">тили</em></span>
-        <button className="press w-10 h-10 rounded-full bg-white flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label="Уведомления">
+        <button onClick={() => nav('/notifications')} className="press w-10 h-10 rounded-full bg-white flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label="Уведомления">
           <Bell size={17} />
           <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />
         </button>
@@ -80,7 +80,7 @@ export default function Home() {
 
       {/* Совет ИИ */}
       <div className="px-5 fade-up" style={{ animationDelay: '.2s' }}>
-        <div className="mt-4"><AiTip text={aiTips[0]} onPress={() => nav('/search/photo')} /></div>
+        <div className="mt-4"><AiTip text={aiTips[0]} onPress={() => nav('/assistant')} /></div>
       </div>
 
       {/* Команда */}

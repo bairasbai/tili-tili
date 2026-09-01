@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, ImagePlus } from 'lucide-react'
+import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, ImagePlus, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
 import { chats, chatMessages, couple } from '@/lib/data'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 /* «Мы» — профиль пары */
 export function Us() {
   const { lang, setLang } = useStore()
+  const nav = useNavigate()
   return (
     <div className="pb-28">
       <TopBar title="Мы" sub="Профиль пары и настройки" />
@@ -27,12 +28,13 @@ export function Us() {
 
         <div className="card px-4 py-1.5 mt-4">
           {[
-            { icon: Settings, label: 'Настройки', tile: 'bg-[#F3E3D3]' },
-            { icon: Bell, label: 'Уведомления и тихие часы', tile: 'bg-[#F0DCB8]', badge: '22:00–09:00' },
-            { icon: FileText, label: 'Оферта и конфиденциальность', tile: 'bg-[#C3D5E8]' },
-            { icon: Shield, label: 'Сессии и устройства', tile: 'bg-[#E6EEE2]' },
+            { icon: Settings, label: 'Настройки', tile: 'bg-[#F3E3D3]', to: '/settings' },
+            { icon: Bell, label: 'Уведомления и тихие часы', tile: 'bg-[#F0DCB8]', badge: '22:00–09:00', to: '/settings' },
+            { icon: LifeBuoy, label: 'Поддержка и FAQ', tile: 'bg-[#F2DFDC]', to: '/support' },
+            { icon: FileText, label: 'Оферта и конфиденциальность', tile: 'bg-[#C3D5E8]', to: '/support' },
+            { icon: Shield, label: 'Сессии и устройства', tile: 'bg-[#E6EEE2]', to: '/settings' },
           ].map(it => (
-            <button key={it.label} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[#F1E9E2] last:border-none">
+            <button key={it.label} onClick={() => nav(it.to)} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[#F1E9E2] last:border-none">
               <Tile icon="" tile={it.tile} size={38} />
               <span className="absolute ml-3"><it.icon size={16} className="text-[#5C554B]" /></span>
               <span className="flex-1 text-[13px] font-medium ml-1">{it.label}</span>
@@ -51,7 +53,22 @@ export function Us() {
           </div>
         </div>
 
-        <button className="press w-full card-s mt-4 py-4 text-[13px] font-semibold text-[#B57171] flex items-center justify-center gap-2">
+        <div className="card px-4 py-1.5 mt-3.5">
+          {[
+            { icon: GitCompareArrows, label: 'Сравнение подрядчиков', tile: 'bg-[#D9CCE3]', to: '/compare' },
+            { icon: PartyPopper, label: 'После свадьбы', tile: 'bg-[#F0DCB8]', to: '/after' },
+            { icon: Store, label: 'Кабинет подрядчика', tile: 'bg-[#E6EEE2]', badge: 'демо', to: '/vendor-app' },
+          ].map(it => (
+            <button key={it.label} onClick={() => nav(it.to)} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[#F1E9E2] last:border-none">
+              <Tile icon="" tile={it.tile} size={38} />
+              <span className="absolute ml-3"><it.icon size={16} className="text-[#5C554B]" /></span>
+              <span className="flex-1 text-[13px] font-medium ml-1">{it.label}</span>
+              {it.badge && <span className="text-[9.5px] text-[#93897F]">{it.badge}</span>}
+            </button>
+          ))}
+        </div>
+
+        <button onClick={() => nav('/auth')} className="press w-full card-s mt-4 py-4 text-[13px] font-semibold text-[#B57171] flex items-center justify-center gap-2">
           <LogOut size={15} /> Выйти из аккаунта
         </button>
         <p className="text-center text-[10px] text-[#BFB5AA] mt-4">Тили-тили v0.1 · MVP · сделано с любовью в Уфе</p>
