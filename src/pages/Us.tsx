@@ -136,10 +136,16 @@ export function Chat() {
   const chat = chats.find(c => c.id === id) ?? chats[0]
   const [msgs, setMsgs] = usePersist(`tt_chat_${id}`, chatMessages)
   const [text, setText] = useState('')
+  const [typing, setTyping] = useState(false)
   const send = () => {
     if (!text.trim()) return
     setMsgs(m => [...m, { id: `m${m.length + 1}`, me: false, text: text.trim(), time: 'сейчас' }])
     setText('')
+    setTyping(true)
+    setTimeout(() => {
+      setMsgs(m => [...m, { id: `m${m.length + 1}`, me: true, text: 'Отлично, принято! Отвечу подробно чуть позже сегодня 🙌', time: 'сейчас' }])
+      setTyping(false)
+    }, 1600)
   }
   return (
     <div className="h-dvh flex flex-col">
@@ -167,6 +173,13 @@ export function Chat() {
             </div>
           </div>
         ))}
+        {typing && (
+          <div className="flex justify-start fade-up">
+            <div className="card rounded-[18px] px-4 py-3 flex gap-1">
+              {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#C98A8A] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="glass-tab border-t-0 border-b-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">

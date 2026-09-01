@@ -122,7 +122,13 @@ export function VendorDetail() {
 
   return (
     <div className="pb-32">
-      <TopBar back title={v.category} sub="Анкета подрядчика" />
+      <TopBar back title={v.category} sub="Анкета подрядчика" right={
+        <button onClick={() => {
+          const data = { title: `${v.name} — Тили-тили`, text: `${v.category} · ${city} · от ${fmt(v.priceFrom)}`, url: location.href }
+          if (navigator.share) navigator.share(data).catch(() => {})
+          else { navigator.clipboard?.writeText(`${data.title}\n${data.text}\n${data.url}`) }
+        }} className="press h-10 px-4 rounded-full bg-white text-[11.5px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>Поделиться</button>
+      } />
       {/* Галерея */}
       <div className="px-5 mt-2">
         <div className="flex gap-2 overflow-x-auto no-scrollbar">

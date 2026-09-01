@@ -30,10 +30,10 @@ export default function Home() {
           <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {couple.date} · {couple.venue} · 16:00</p>
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
             {[
-              [couple.daysLeft, 'дней до'],
+              [Math.max(0, Math.ceil((Date.UTC(2027, 5, 14) - Date.now()) / 86400000)), 'дней до'],
               [`${teamPct}%`, 'готово'],
               [couple.guestsConfirmed, 'гостей'],
-              ['4/14', 'команда'],
+              [`${booked.length}/${couple.teamTotal}`, 'команда'],
             ].map(([v, l]) => (
               <div key={String(l)} className="bg-white/25 rounded-2xl py-3 text-center backdrop-blur-sm">
                 <b className="text-[19px] block tabular">{v}</b>

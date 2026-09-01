@@ -187,13 +187,13 @@ export function Budget() {
           <p className="text-[11.5px] text-[#93897F] mt-1">из {couple.budgetTotal.toLocaleString('ru-RU')} ₽ запланировано · осталось {(couple.budgetTotal - total).toLocaleString('ru-RU')} ₽</p>
           <div className="mt-3"><Bar pct={pct} /></div>
           <div className="mt-4 space-y-4">
-            {items.map(b => {
+            {items.map((b, bi) => {
               const p = Math.round((b.amount / b.limit) * 100)
               return (
                 <div key={b.name}>
                   <div className="flex justify-between text-[12.5px] items-center">
                     <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[#E6EEE2] text-[#7E9A74]">из команды</span>}</span>
-                    <b className="tabular">{(b.amount / 1000).toFixed(0)}К <span className="text-[#93897F] font-normal text-[10.5px]">/ {(b.limit / 1000).toFixed(0)}К</span></b>
+                    <b className="tabular">{(b.amount / 1000).toFixed(0)}К <span className="text-[#93897F] font-normal text-[10.5px]">/ {(b.limit / 1000).toFixed(0)}К</span>{bi >= budgetItems.length && <button onClick={() => setCustom(c => c.filter((_, ci) => ci !== bi - budgetItems.length))} className="press text-[#C98A8A] text-[12px] ml-1.5" aria-label="Удалить статью">×</button>}</b>
                   </div>
                   <div className="h-1.5 rounded-full bg-[#F1E9E2] mt-1.5 overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${p}%`, background: b.color }} />
@@ -417,10 +417,10 @@ export function Guests() {
                 <b className="text-[12.5px] block truncate">{g.name}</b>
                 <span className="text-[10px] text-[#93897F]">{g.plus ? 'с +1' : 'один/одна'}{g.table ? ` · стол №${g.table}` : ''}</span>
               </div>
-              <span className={cn('text-[9px] font-bold px-2.5 py-1 rounded-full',
+              <button onClick={() => setList(l => l.map(x => x.id === g.id ? { ...x, status: x.status === 'yes' ? 'no' : x.status === 'no' ? 'pending' : 'yes' } : x))} title="Нажмите, чтобы сменить статус" className={cn('press text-[9px] font-bold px-2.5 py-1 rounded-full transition-all',
                 g.status === 'yes' ? 'bg-[#E6EEE2] text-[#7E9A74]' : g.status === 'no' ? 'bg-[#F2DFDC] text-[#B57171]' : 'bg-[#F7ECD9] text-[#B98A2F]')}>
                 {g.status === 'yes' ? 'Придёт' : g.status === 'no' ? 'Не придёт' : 'Ждём'}
-              </span>
+              </button>
             </div>
           ))}
         </div>
