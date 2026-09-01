@@ -12,6 +12,7 @@ import { Auth, Notifications, Settings, Support } from '@/pages/Account'
 import { Deal, ContractWizard, Seating, InviteEditor } from '@/pages/Tools'
 import { Assistant, Compare, DayX, After } from '@/pages/Smart'
 import { VendorDashboard, VendorProfileWizard, VendorDeals } from '@/pages/VendorApp'
+import { VendorLead, VendorReviews, VendorAnalytics } from '@/pages/VendorExtras'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 
 function Shell() {
@@ -57,6 +58,9 @@ function Shell() {
         <Route path="/vendor-app" element={<VendorDashboard />} />
         <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />
         <Route path="/vendor-app/deals" element={<VendorDeals />} />
+        <Route path="/vendor-app/leads/:id" element={<VendorLead />} />
+        <Route path="/vendor-app/reviews" element={<VendorReviews />} />
+        <Route path="/vendor-app/analytics" element={<VendorAnalytics />} />
         <Route path="/us" element={<Us />} />
         <Route path="/us/chats" element={<Chats />} />
         <Route path="/us/chats/:id" element={<Chat />} />

@@ -35,7 +35,7 @@ export function VendorDashboard() {
         </div>
 
         {/* Рейтинг и отзывы */}
-        <div className="card p-4 mt-3.5 flex items-center gap-4">
+        <button onClick={() => nav('/vendor-app/reviews')} className="press w-full card p-4 mt-3.5 flex items-center gap-4 text-left">
           <div className="text-center">
             <b className="font-serif-d text-[30px] tabular">4.9</b>
             <p className="text-[9.5px] text-[#B98A2F]">★★★★★</p>
@@ -49,7 +49,18 @@ export function VendorDashboard() {
               </div>
             ))}
           </div>
-        </div>
+          <span className="text-[9px] font-bold text-[#7E9A74] shrink-0">Отзывы →</span>
+        </button>
+
+        {/* Аналитика */}
+        <button onClick={() => nav('/vendor-app/analytics')} className="press w-full card-s p-4 mt-2.5 flex items-center gap-3 text-left">
+          <Tile icon="📈" tile="bg-[#E6EEE2]" size={42} />
+          <div className="flex-1">
+            <b className="text-[13px]">Аналитика анкеты</b>
+            <p className="text-[10.5px] text-[#93897F]">воронка: 1 240 просмотров → 34 заявки → 8 сделок</p>
+          </div>
+          <span className="text-[11px] font-bold text-[#7E9A74]">+38% ↑</span>
+        </button>
 
         {/* Календарь июня */}
         <div className="card p-4 mt-3.5">
@@ -72,11 +83,11 @@ export function VendorDashboard() {
         </div>
         <div className="space-y-2.5 stagger">
           {[
-            { n: 'Алина и Тимур', d: '14 июня 2027 · до 90 тыс ₽', st: 'Новая', hot: true },
-            { n: 'Дина и Руслан', d: '5 сентября 2027 · пакет «Полный день»', st: 'Hold 72 ч', hot: false },
-            { n: 'Анна и Марк', d: '18 июля 2027 · церемония', st: 'Новая', hot: true },
+            { id: 'ch1', n: 'Алина и Тимур', d: '14 июня 2027 · до 90 тыс ₽', st: 'Новая', hot: true },
+            { id: 'ch2', n: 'Дина и Руслан', d: '5 сентября 2027 · пакет «Полный день»', st: 'Hold 72 ч', hot: false },
+            { id: 'ch3', n: 'Анна и Марк', d: '18 июля 2027 · церемония', st: 'Новая', hot: true },
           ].map(r => (
-            <button key={r.n} onClick={() => nav('/vendor-app/deals')} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
+            <button key={r.n} onClick={() => nav(`/vendor-app/leads/${r.id}`)} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
               <div className="w-11 h-11 rounded-full grad flex items-center justify-center text-white font-serif-d text-[15px] shrink-0">{r.n[0]}</div>
               <div className="flex-1 min-w-0">
                 <b className="text-[13.5px]">{r.n}</b>
