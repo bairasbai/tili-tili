@@ -26,7 +26,7 @@ const Ctx = createContext<Store | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('tt_onboarded') === '1')
   const [slots, setSlots] = useState<Slot[]>(initialSlots)
-  const [favorites, setFavorites] = useState<string[]>(['v1'])
+  const [favorites, setFavorites] = useState<string[]>(() => JSON.parse(localStorage.getItem('tt_fav') ?? '["v1"]'))
   const [lang, setLang] = useState<'ru' | 'en'>('ru')
   const [inviteTpl, setInviteTplState] = useState(() => Number(localStorage.getItem('tt_invite_tpl') ?? 0))
   const [inviteText, setInviteTextState] = useState(() => localStorage.getItem('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
@@ -44,7 +44,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     paySlot: (slotId) =>
       setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, status: 'Оплачено полностью' } : sl)),
     favorites,
-    toggleFav: id => setFavorites(f => f.includes(id) ? f.filter(x => x !== id) : [...f, id]),
+    toggleFav: id => setFavorites(f => {
+      const next = f.includes(id) ? f.filter(x => x !== id) : [...f, id]
+      localStorage.setItem('tt_fav', JSON.stringify(next))
+      return next
+    }),
     lang, setLang,
     inviteTpl,
     setInviteTpl: (t: number) => { localStorage.setItem('tt_invite_tpl', String(t)); setInviteTplState(t) },

@@ -465,13 +465,20 @@ export function Documents() {
             ['Договор с фотографом', 'подписан обеими сторонами · PDF', '✓'],
             ['Аренда усадьбы «Липовый сад»', 'подписан · скан загружен', '✓'],
           ].map(([n, d]) => (
-            <div key={n} className="card-s p-4 flex items-center gap-3">
+            <button key={n} onClick={() => {
+              const html = `<html><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.7"><h1>${n}</h1><p>г. Уфа · подписан обеими сторонами</p><p>Заказчик: Алина Козлова и Тимур Волков. Предмет, стоимость, ответственность сторон — по шаблону «Тили-тили».</p><p><i>Сформировано tili-tili.ru</i></p></body></html>`
+              const a = document.createElement('a')
+              a.href = URL.createObjectURL(new Blob(['﻿', html], { type: 'application/msword' }))
+              a.download = `${n.replace(/[«»\s]+/g, '-').toLowerCase()}.doc`
+              a.click(); URL.revokeObjectURL(a.href)
+            }} className="press w-full card-s p-4 flex items-center gap-3 text-left">
               <div className="w-10 h-10 rounded-[14px] bg-[#E6EEE2] flex items-center justify-center">📄</div>
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{n}</b>
                 <span className="text-[10px] text-[#7E9A74]">{d}</span>
               </div>
-            </div>
+              <Download size={14} className="text-[#BFB5AA] shrink-0" />
+            </button>
           ))}
         </div>
       </div>

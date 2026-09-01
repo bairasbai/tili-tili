@@ -36,15 +36,18 @@ export function Favorites() {
 
 /* Заметки и идеи (боль: «референсы в трёх мессенджерах») */
 export function Notes() {
-  const [notes, setNotes] = useState([
-    { id: 'n1', icon: '💐', tile: 'bg-[#F2DFDC]', text: 'Букет: пионы + эвкалипт, показать флористу референс из Pinterest' },
-    { id: 'n2', icon: '🎵', tile: 'bg-[#D9CCE3]', text: 'Первый танец — обсудить с DJ песню «Perfect»' },
-    { id: 'n3', icon: '📸', tile: 'bg-[#E6EEE2]', text: 'Спросить у фотографа про съёмку утра невесты' },
-  ])
+  const [notes, setNotes] = useState<{ id: string; icon: string; tile: string; text: string }[]>(() => {
+    try { return JSON.parse(localStorage.getItem('tt_notes') ?? 'null') ?? [
+      { id: 'n1', icon: '💐', tile: 'bg-[#F2DFDC]', text: 'Букет: пионы + эвкалипт, показать флористу референс из Pinterest' },
+      { id: 'n2', icon: '🎵', tile: 'bg-[#D9CCE3]', text: 'Первый танец — обсудить с DJ песню «Perfect»' },
+      { id: 'n3', icon: '📸', tile: 'bg-[#E6EEE2]', text: 'Спросить у фотографа про съёмку утра невесты' },
+    ] } catch { return [] }
+  })
+  const save = (n: typeof notes) => { setNotes(n); localStorage.setItem('tt_notes', JSON.stringify(n)) }
   const [text, setText] = useState('')
   const add = () => {
     if (!text.trim()) return
-    setNotes(n => [{ id: `n${Date.now()}`, icon: '📌', tile: 'bg-[#F0DCB8]', text: text.trim() }, ...n])
+    save([{ id: `n${Date.now()}`, icon: '📌', tile: 'bg-[#F0DCB8]', text: text.trim() }, ...notes])
     setText('')
   }
   return (
@@ -61,7 +64,7 @@ export function Notes() {
             <div key={n.id} className="card-s p-4 flex items-center gap-3 fade-up">
               <Tile icon={n.icon} tile={n.tile} size={40} />
               <p className="flex-1 text-[12.5px] leading-relaxed">{n.text}</p>
-              <button onClick={() => setNotes(x => x.filter(y => y.id !== n.id))} className="press text-[#CFC5BA]" aria-label="Удалить"><Trash2 size={15} /></button>
+              <button onClick={() => save(notes.filter(y => y.id !== n.id))} className="press text-[#CFC5BA]" aria-label="Удалить"><Trash2 size={15} /></button>
             </div>
           ))}
           {notes.length === 0 && <p className="text-center text-[12px] text-[#BFB5AA] py-10">Все заметки разобраны ✨</p>}

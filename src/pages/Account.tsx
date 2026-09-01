@@ -76,7 +76,7 @@ export function Auth() {
               <div className="flex-1"><b className="text-[15px]">Мы планируем свадьбу</b><p className="text-[11.5px] text-[#93897F] mt-0.5">Конструктор, бюджет, гости, день X</p></div>
               <ChevronRight size={18} className="text-[#BFB5AA]" />
             </button>
-            <button onClick={() => nav('/vendor-app')} className="press w-full card p-5 flex items-center gap-4 text-left fade-up">
+            <button onClick={() => nav('/vendor-app/profile')} className="press w-full card p-5 flex items-center gap-4 text-left fade-up">
               <div className="w-[52px] h-[52px] rounded-[18px] bg-[#E6EEE2] flex items-center justify-center text-[24px]">✨</div>
               <div className="flex-1"><b className="text-[15px]">Я подрядчик</b><p className="text-[11.5px] text-[#93897F] mt-0.5">Анкета-витрина, заявки, календарь, сделки</p></div>
               <ChevronRight size={18} className="text-[#BFB5AA]" />
