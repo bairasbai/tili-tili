@@ -126,7 +126,7 @@ export const vendors: Vendor[] = [
   },
 ]
 
-export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string }
+export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string; external?: boolean; invited?: boolean; phone?: string }
 
 export const initialSlots: Slot[] = [
   { id: 's1', categoryId: 'venue', label: t('Площадка'), icon: '🏛️', tile: 'bg-[#F0DCB8]', state: 'booked', vendor: t('Усадьба «Липовый сад»'), price: 250000, status: t('Забронировано') },

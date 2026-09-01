@@ -63,7 +63,7 @@ export function WeddingTeam() {
           {slots.map(s => (
             <button
               key={s.id}
-              onClick={() => (s.state === 'empty' ? nav(`/search/${s.categoryId}`) : nav(`/wedding/slot/${s.id}`))}
+              onClick={() => nav(`/wedding/slot/${s.id}`)}
               className={cn('press rounded-[18px] p-3 flex flex-col items-center justify-center gap-1.5 aspect-[0.85] fade-up',
                 s.state === 'empty' ? 'border-[1.5px] border-dashed border-[#D8B4AE] bg-[var(--rose-soft)]/30' : 'card-s')}
             >
@@ -94,10 +94,64 @@ export function WeddingTeam() {
 /* Деталь слота */
 export function SlotDetail() {
   const nav = useNavigate()
-  const { slots, cancelBooking } = useStore()
+  const { slots, cancelBooking, bookExternal, inviteExternal } = useStore()
   const id = location.pathname.split('/').pop()
   const s = slots.find(x => x.id === id) ?? slots[0]
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const [ownName, setOwnName] = useState('')
+  const [ownPrice, setOwnPrice] = useState('')
+  const [ownPhone, setOwnPhone] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
+  const addOwn = () => {
+    if (!ownName.trim() || !Number(ownPrice)) return
+    bookExternal(s.id, ownName.trim(), Number(ownPrice), ownPhone.trim() || undefined)
+    setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
+  }
+  const inviteLink = `tili-tili.ru/join/ТИЛИ-СВОЙ-${s.id.toUpperCase()}`
+
+  /* Свой подрядчик: форма добавления/приглашения (пустой слот или внешний) */
+  const ownBlock = (
+    <div className="card p-4 mt-3.5">
+      <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Свой подрядчик')}</span>
+      <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1.5">
+        {t('Нашли на Авито или по знакомству? Добавьте его сюда — он впишется в команду, бюджет и тайминг. Приложение ему не обязательно.')}
+      </p>
+      {!ownOpen ? (
+        <button onClick={() => setOwnOpen(true)} className="press mt-3 w-full card-s py-3 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Plus size={14} />{t('Добавить своего специалиста')}</button>
+      ) : (
+        <div className="space-y-2.5 mt-3 fade-up">
+          <input autoFocus value={ownName} onChange={e => setOwnName(e.target.value)} placeholder={t('Имя / название (напр. Фотограф Ирек)')} className="w-full h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
+          <div className="flex gap-2">
+            <input value={ownPrice} onChange={e => setOwnPrice(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Цена, ₽')} className="flex-1 h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
+            <input value={ownPhone} onChange={e => setOwnPhone(e.target.value)} inputMode="tel" placeholder={t('Телефон')} className="flex-1 h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setOwnOpen(false)} className="press flex-1 card-s py-3 text-[12px] font-semibold">{t('Отмена')}</button>
+            <button onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-white text-[12px] font-bold">{t('Добавить в команду')}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  if (s.state === 'empty') {
+    return (
+      <div className="pb-28">
+        <TopBar back title={s.label} sub={t('Слот команды')} />
+        <div className="px-5 mt-3">
+          <div className="card p-5 text-center">
+            <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center text-[28px]', s.tile)}>{s.icon}</div>
+            <b className="font-serif-d text-[19px] block mt-3">{t('Исполнитель не выбран')}</b>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Подберите в каталоге или добавьте своего')}</p>
+          </div>
+          <button onClick={() => nav(`/search/${s.categoryId}`)} className="press w-full mt-3 py-4 rounded-[20px] grad text-white text-[14px] font-semibold">{t('Выбрать из каталога')}</button>
+          {ownBlock}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="pb-28">
       <TopBar back title={s.label} sub={t('Слот команды')} />
@@ -106,8 +160,31 @@ export function SlotDetail() {
           <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center text-[28px]', s.tile)}>{s.icon}</div>
           <b className="font-serif-d text-[19px] block mt-3">{s.vendor ?? t('Исполнитель не выбран')}</b>
           {s.price && <span className="font-serif-d text-[17px] text-[#B57171] block mt-1 tabular">{fmt(s.price)}</span>}
-          {s.status && <span className="inline-block mt-2 text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74]">{s.status}</span>}
+          <div className="flex justify-center gap-1.5 mt-2">
+            {s.status && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74]">{s.status}</span>}
+            {s.external && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--honey)] text-[#B98A2F]">{t('не из каталога')}</span>}
+          </div>
+          {s.external && s.phone && <p className="text-[11px] text-[var(--soft)] mt-2">📞 {s.phone}</p>}
         </div>
+
+        {/* Приглашение внешнего подрядчика в приложение (гость-подрядчик) */}
+        {s.external && (
+          <div className="card p-4 mt-3.5">
+            <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Пригласить в приложение')}</span>
+            <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1.5">
+              {t('По ссылке он зайдёт как гость-подрядчик — без регистрации в каталоге: увидит дату, тайминг и чат с вами.')}
+            </p>
+            {s.invited ? (
+              <div className="flex items-center gap-2 mt-3">
+                <code className="flex-1 text-[10.5px] bg-[var(--track)] rounded-[12px] px-3 py-2.5 truncate">{inviteLink}</code>
+                <button onClick={() => { navigator.clipboard?.writeText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-white">{linkCopied ? '✓' : t('Копия')}</button>
+              </div>
+            ) : (
+              <button onClick={() => inviteExternal(s.id)} className="press mt-3 w-full py-3 rounded-[16px] grad text-white text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2.5 mt-3">
           <button onClick={() => nav('/us/chats/ch1')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button onClick={() => nav('/deal')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Сделка')}</button>
@@ -115,7 +192,7 @@ export function SlotDetail() {
           {confirmCancel ? (
             <button onClick={() => { cancelBooking(s.id); nav('/wedding') }} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#C98A8A' }}>{t('Точно отменить?')}</button>
           ) : (
-            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">{t('Отменить бронь')}</button>
+            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
         </div>
 

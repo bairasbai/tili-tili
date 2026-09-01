@@ -924,3 +924,21 @@ Object.assign(EN, {
   'Координатор · главная в день X': 'Coordinator · runs day X',
   'ТИЛИ-КООРД-5520': 'TILI-COORD-5520',
 })
+
+// Свои подрядчики (EN)
+Object.assign(EN, {
+  'Свой подрядчик': 'Own vendor',
+  'Нашли на Авито или по знакомству? Добавьте его сюда — он впишется в команду, бюджет и тайминг. Приложение ему не обязательно.': 'Found someone on Avito or through friends? Add them here — they’ll join the team, budget and timeline. The app is optional for them.',
+  'Добавить своего специалиста': 'Add your own vendor',
+  'Имя / название (напр. Фотограф Ирек)': 'Name (e.g. Irek the Photographer)',
+  'Телефон': 'Phone',
+  'Добавить в команду': 'Add to the team',
+  'Подберите в каталоге или добавьте своего': 'Pick from the catalog or add your own',
+  'Выбрать из каталога': 'Choose from catalog',
+  'не из каталога': 'not from catalog',
+  'Пригласить в приложение': 'Invite to the app',
+  'По ссылке он зайдёт как гость-подрядчик — без регистрации в каталоге: увидит дату, тайминг и чат с вами.': 'Via the link they join as a guest vendor — no catalog signup: they’ll see the date, timeline and your chat.',
+  'Копия': 'Copy',
+  'Создать ссылку-приглашение': 'Create invite link',
+  'Удалить подрядчика': 'Remove vendor',
+})

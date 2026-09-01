@@ -1,12 +1,14 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { initialGifts, initialSlots, type Gift, type Slot } from './data'
-import { setI18nLang, type Lang } from './i18n'
+import { setI18nLang, t, type Lang } from './i18n'
 
 interface Store {
   onboarded: boolean
   finishOnboarding: () => void
   slots: Slot[]
   bookVendor: (slotId: string, vendorName: string, price: number) => void
+  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => void
+  inviteExternal: (slotId: string) => void
   cancelBooking: (slotId: string) => void
   paySlot: (slotId: string) => void
   favorites: string[]
@@ -71,7 +73,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bookVendor: (slotId, vendorName, price) =>
       setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'booked', vendor: vendorName, price, status: 'Забронировано' } : sl)),
     cancelBooking: (slotId) =>
-      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'empty', vendor: undefined, price: undefined, status: undefined } : sl)),
+      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'empty', vendor: undefined, price: undefined, status: undefined, external: undefined, invited: undefined, phone: undefined } : sl)),
+    bookExternal: (slotId, vendorName, price, phone) =>
+      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'booked', vendor: vendorName, price, status: t('Свой подрядчик'), external: true, phone } : sl)),
+    inviteExternal: (slotId) =>
+      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, invited: true } : sl)),
     paySlot: (slotId) =>
       setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, status: 'Оплачено полностью' } : sl)),
     favorites,
