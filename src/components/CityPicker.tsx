@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { MapPin, Search, X, Navigation, ChevronRight } from 'lucide-react'
 import { POPULAR_CITIES, searchCities, nearestCity, type City } from '@/lib/cities'
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 
 /** Пикер города: полноэкранный оверлей с автопоиском. Используется в квизе, настройках, кабинете подрядчика. */
 export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onClose: () => void }) {
@@ -41,15 +42,15 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
       <div className="px-5 pt-6 pb-3 flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2.5 bg-[var(--card)] rounded-full px-4 h-12" style={{ boxShadow: 'var(--shadow)' }}>
           <Search size={15} className="text-[var(--soft2)]" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Начните вводить: Сибай, Баймак…" className="flex-1 bg-transparent text-[13.5px] outline-none" />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={t('Начните вводить: Сибай, Баймак…')} className="flex-1 bg-transparent text-[13.5px] outline-none" />
           {q && <button onClick={() => setQ('')} className="press text-[var(--soft2)]"><X size={15} /></button>}
         </div>
-        <button onClick={onClose} className="press text-[12px] font-bold text-[var(--soft)]">Отмена</button>
+        <button onClick={onClose} className="press text-[12px] font-bold text-[var(--soft)]">{t('Отмена')}</button>
       </div>
 
       <button onClick={locate} disabled={geo === 'loading'} className="press mx-5 mb-3 flex items-center gap-2.5 text-[12px] font-bold text-[#7E9A74] px-1">
         <Navigation size={13} className={geo === 'loading' ? 'animate-pulse' : ''} />
-        {geo === 'loading' ? 'Определяем…' : geo === 'error' ? 'Не получилось — введите вручную' : 'Определить автоматически'}
+        {geo === 'loading' ? t('Определяем…') : geo === 'error' ? t('Не получилось — введите вручную') : t('Определить автоматически')}
       </button>
 
       <div className="flex-1 overflow-y-auto no-scrollbar pb-8">
@@ -61,21 +62,21 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
           ) : (
             <div className="text-center pt-16 px-8">
               <span className="text-[34px]">🗺</span>
-              <p className="font-serif-d text-[17px] mt-2">Такого города пока нет</p>
-              <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">Проверьте написание — или выберите ближайший райцентр, гости всё равно увидят точный адрес в приглашении</p>
+              <p className="font-serif-d text-[17px] mt-2">{t('Такого города пока нет')}</p>
+              <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Проверьте написание — или выберите ближайший райцентр, гости всё равно увидят точный адрес в приглашении')}</p>
             </div>
           )
         ) : (
           <>
-            <p className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-6 mb-2">Башкортостан</p>
+            <p className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-6 mb-2">{t('Башкортостан')}</p>
             <div className="card mx-5 overflow-hidden !p-0 mb-4">{bashkir.map(c => <Row key={c.n} c={c} />)}</div>
-            <p className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-6 mb-2">Популярные</p>
+            <p className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-6 mb-2">{t('Популярные')}</p>
             <div className="flex flex-wrap gap-2 px-5">
               {russia.map(c => (
                 <button key={c.n} onClick={() => onPick(c)} className={cn('press px-3.5 py-2 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--ink2)]')} style={{ boxShadow: 'var(--shadow)' }}>{c.n}</button>
               ))}
             </div>
-            <p className="text-[10px] text-[var(--soft2)] px-6 mt-5 leading-relaxed">В базе {POPULAR_CITIES.length > 0 ? '' : ''}все райцентры Башкортостана и соседних регионов. Не нашли свой — напишите в поддержку, добавим за день.</p>
+            <p className="text-[10px] text-[var(--soft2)] px-6 mt-5 leading-relaxed">{t('В базе')}{POPULAR_CITIES.length > 0 ? '' : ''}{t('все райцентры Башкортостана и соседних регионов. Не нашли свой — напишите в поддержку, добавим за день.')}</p>
           </>
         )}
       </div>

@@ -4,15 +4,16 @@ import { Check, ChevronRight, Copy, Crown, Heart, Link2, QrCode, Shield, Users, 
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { t } from '@/lib/i18n'
 
 /* «Наша команда» — единое пространство свадьбы: роли и приглашения.
  * Бэкенд-модель: Wedding 1—n Member(userId, role: couple|helper|vendor|guest, joinedAt).
  * Приглашение: POST /weddings/:id/invites { role } → { code, url, expiresAt: now+7d }.
  * Принятие: POST /invites/:code/accept { userId } → member создан, код погашен (одноразовый). */
 const ROLES = [
-  { id: 'partner', icon: '💞', tile: 'bg-[var(--rose-soft)]', name: 'Партнёр', desc: 'Полный доступ: бюджет, сделки, документы, команда — всё как у вас.', rights: ['Бюджет и сделки', 'Команда и документы', 'Гости и приглашения', 'Чек-лист и тайминг'] },
-  { id: 'helper', icon: '🤝', tile: 'bg-[var(--sage-soft)]', name: 'Помощник', desc: 'Свидетель, мама, подруга. Организация без финансов.', rights: ['Чек-лист и тайминг', 'Гости и рассадка', 'Заметки', 'Без бюджета и сделок'] },
-  { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: 'Подрядчик', desc: 'Видит только свои сделки, чаты с вами и вашу дату в календаре.', rights: ['Свои сделки', 'Чат с парой', 'Календарь даты'] },
+  { id: 'partner', icon: '💞', tile: 'bg-[var(--rose-soft)]', name: t('Партнёр'), desc: t('Полный доступ: бюджет, сделки, документы, команда — всё как у вас.'), rights: [t('Бюджет и сделки'), t('Команда и документы'), t('Гости и приглашения'), t('Чек-лист и тайминг')] },
+  { id: 'helper', icon: '🤝', tile: 'bg-[var(--sage-soft)]', name: t('Помощник'), desc: t('Свидетель, мама, подруга. Организация без финансов.'), rights: [t('Чек-лист и тайминг'), t('Гости и рассадка'), t('Заметки'), t('Без бюджета и сделок')] },
+  { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: t('Подрядчик'), desc: t('Видит только свои сделки, чаты с вами и вашу дату в календаре.'), rights: [t('Свои сделки'), t('Чат с парой'), t('Календарь даты')] },
 ] as const
 
 export function Team() {
@@ -22,19 +23,19 @@ export function Team() {
   const [copied, setCopied] = useState(false)
   const [revoked, setRevoked] = useState<number[]>([])
   const members = [
-    { n: 'Алина (вы)', role: 'Пара · создатель', icon: '👰', tile: 'bg-[var(--rose-soft)]', online: true },
-    { n: 'Тимур', role: 'Пара · приглашён', icon: '🤵', tile: 'bg-[var(--blue)]', online: false },
+    { n: t('Алина (вы)'), role: t('Пара · создатель'), icon: '👰', tile: 'bg-[var(--rose-soft)]', online: true },
+    { n: t('Тимур'), role: t('Пара · приглашён'), icon: '🤵', tile: 'bg-[var(--blue)]', online: false },
   ]
   const invites = [
-    { code: 'ТИЛИ-ДРУГ-3310', role: 'Помощник', left: '6 дней' },
-    { code: 'ТИЛИ-ФОТО-0917', role: 'Подрядчик · Елена Смирнова', left: '2 дня' },
+    { code: t('ТИЛИ-ДРУГ-3310'), role: t('Помощник'), left: t('6 дней') },
+    { code: t('ТИЛИ-ФОТО-0917'), role: t('Подрядчик · Елена Смирнова'), left: t('2 дня') },
   ]
   const copy = (text: string) => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) }
   const url = (code: string) => `tili-tili.ru/join/${code}`
 
   return (
     <div className="pb-28">
-      <TopBar back title="Наша команда" sub={`единое пространство · ${city}`} />
+      <TopBar back title={t('Наша команда')} sub={`${t('единое пространство · ')}${city}`} />
       <div className="px-5 mt-3 space-y-3.5">
         {/* Кто уже внутри */}
         <div className="card px-4 py-1.5">
@@ -52,11 +53,11 @@ export function Team() {
             </div>
           ))}
         </div>
-        <p className="text-[10.5px] text-[var(--soft)] px-1 leading-relaxed">💡 Все правки синхронизируются мгновенно: Тимур добавит расход — вы увидите его в бюджете сразу.</p>
+        <p className="text-[10.5px] text-[var(--soft)] px-1 leading-relaxed">{t('💡 Все правки синхронизируются мгновенно: Тимур добавит расход — вы увидите его в бюджете сразу.')}</p>
 
         {/* Пригласить */}
         <div className="flex justify-between items-baseline px-1 mt-2">
-          <h2 className="font-serif-d text-[18px]">Пригласить</h2>
+          <h2 className="font-serif-d text-[18px]">{t('Пригласить')}</h2>
         </div>
         <div className="space-y-2.5">
           {ROLES.map(r => (
@@ -73,8 +74,8 @@ export function Team() {
 
         {/* Активные приглашения */}
         <div className="flex justify-between items-baseline px-1 mt-2">
-          <h2 className="font-serif-d text-[18px]">Активные ссылки</h2>
-          <span className="text-[10px] text-[var(--soft)]">{invites.length - revoked.length} действуют</span>
+          <h2 className="font-serif-d text-[18px]">{t('Активные ссылки')}</h2>
+          <span className="text-[10px] text-[var(--soft)]">{invites.length - revoked.length}{t('действуют')}</span>
         </div>
         <div className="card px-4 py-1.5">
           {invites.map((iv, k) => !revoked.includes(k) && (
@@ -84,7 +85,7 @@ export function Team() {
                 <b className="text-[12.5px] tabular">{iv.code}</b>
                 <p className="text-[10px] text-[var(--soft)]">{iv.role} · истекает через {iv.left}</p>
               </div>
-              <button onClick={() => copy(url(iv.code))} className="press text-[10.5px] font-bold text-[#7E9A74]">{copied ? '✓' : 'Копия'}</button>
+              <button onClick={() => copy(url(iv.code))} className="press text-[10.5px] font-bold text-[#7E9A74]">{copied ? '✓' : t('Копия')}</button>
               <button onClick={() => setRevoked(r => [...r, k])} className="press text-[#C7BCB0]"><X size={14} /></button>
             </div>
           ))}
@@ -92,7 +93,7 @@ export function Team() {
 
         <div className="card-s px-4 py-3 flex gap-2.5">
           <Shield size={15} className="text-[#7E9A74] shrink-0 mt-0.5" />
-          <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>Безопасность:</b> каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — человек сразу потеряет доступ.</p>
+          <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Безопасность:')}</b>{t('каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — человек сразу потеряет доступ.')}</p>
         </div>
       </div>
 
@@ -103,8 +104,8 @@ export function Team() {
             <div className="flex items-center gap-3">
               <Tile icon={invite.icon} tile={invite.tile} size={46} />
               <div className="flex-1">
-                <b className="font-serif-d text-[19px]">Пригласить: {invite.name}</b>
-                <p className="text-[10.5px] text-[var(--soft)]">ссылка одноразовая · живёт 7 дней</p>
+                <b className="font-serif-d text-[19px]">{t('Пригласить:')}{invite.name}</b>
+                <p className="text-[10.5px] text-[var(--soft)]">{t('ссылка одноразовая · живёт 7 дней')}</p>
               </div>
               <button onClick={() => setInvite(null)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center"><X size={15} /></button>
             </div>
@@ -117,14 +118,14 @@ export function Team() {
               <QrCode size={40} className="text-[var(--ink)] shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-bold tabular truncate">{url(`ТИЛИ-${invite.id === 'partner' ? 'ПАРА' : invite.id === 'helper' ? 'ДРУГ' : 'ПОДР'}-${Math.floor(1000 + Math.random() * 9000)}`)}</p>
-                <p className="text-[9.5px] text-[var(--soft)]">отправьте ссылку или покажите QR</p>
+                <p className="text-[9.5px] text-[var(--soft)]">{t('отправьте ссылку или покажите QR')}</p>
               </div>
-              <button onClick={() => copy(url('ТИЛИ-ПАРА-7421'))} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+              <button onClick={() => copy(url(t('ТИЛИ-ПАРА-7421')))} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
             </div>
-            <button onClick={() => { copy(url('ТИЛИ-ПАРА-7421')); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-              {copied ? '✓ Скопировано!' : 'Скопировать ссылку'}
+            <button onClick={() => { copy(url(t('ТИЛИ-ПАРА-7421'))); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+              {copied ? '✓ Скопировано!' : t('Скопировать ссылку')}
             </button>
-            <button onClick={() => nav('/us/chats')} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>Отправить в чат</button>
+            <button onClick={() => nav('/us/chats')} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>{t('Отправить в чат')}</button>
           </div>
         </div>
       )}
@@ -144,27 +145,27 @@ export function Join() {
   if (joined) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
       <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-white pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Heart size={36} fill="#fff" /></div>
-      <h1 className="font-serif-d text-[28px] mt-7">Вы в команде!</h1>
+      <h1 className="font-serif-d text-[28px] mt-7">{t('Вы в команде!')}</h1>
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
-        {isPartner ? 'Теперь у вас с Алиной одна общая свадьба: бюджет, команда, гости — всё синхронизировано.' : 'Алина и Тимур добавили вас в пространство свадьбы. Организуем вместе!'}
+        {isPartner ? 'Теперь у вас с Алиной одна общая свадьба: бюджет, команда, гости — всё синхронизировано.' : t('Алина и Тимур добавили вас в пространство свадьбы. Организуем вместе!')}
       </p>
-      <button onClick={() => { finishOnboarding(); nav('/home') }} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-8" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>Открыть нашу свадьбу ✨</button>
+      <button onClick={() => { finishOnboarding(); nav('/home') }} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-8" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Открыть нашу свадьбу ✨')}</button>
     </div>
   )
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <Tile icon={role.icon} tile={role.tile} size={72} />
-      <h1 className="font-serif-d text-[26px] mt-6">Алина и Тимур<br />приглашают вас</h1>
-      <p className="text-[12.5px] text-[var(--soft)] mt-2">как <b className="text-[#B57171]">{role.name.toLowerCase()}</b> · свадьба 14 июня 2027</p>
+      <h1 className="font-serif-d text-[26px] mt-6">{t('Алина и Тимур')}<br />{t('приглашают вас')}</h1>
+      <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[#B57171]">{role.name.toLowerCase()}</b>{t('· свадьба 14 июня 2027')}</p>
       <div className="card p-4 mt-6 w-full text-left">
-        <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold">Вам будет доступно</span>
+        <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold">{t('Вам будет доступно')}</span>
         <div className="mt-2.5 space-y-1.5">
           {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[#7E9A74]" />{r}</p>)}
         </div>
       </div>
-      <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>Принять приглашение</button>
-      <p className="text-[10px] text-[var(--soft2)] mt-4 flex items-center gap-1.5"><Users size={11} /> код {code} · одноразовый</p>
+      <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Принять приглашение')}</button>
+      <p className="text-[10px] text-[var(--soft2)] mt-4 flex items-center gap-1.5"><Users size={11} />{t('код')}{code}{t('· одноразовый')}</p>
     </div>
   )
 }

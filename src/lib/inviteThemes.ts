@@ -1,3 +1,4 @@
+import { t } from './i18n'
 /* 10 сценариев приглашений — каждый со своим характером */
 export interface InviteTheme {
   id: string
@@ -19,7 +20,7 @@ export interface InviteTheme {
 
 export const inviteThemes: InviteTheme[] = [
   {
-    id: 'teatro', name: 'Театро', desc: 'Бархатный занавес и премьера вашей истории', emoji: '🎭',
+    id: 'teatro', name: t('Театро'), desc: t('Бархатный занавес и премьера вашей истории'), emoji: '🎭',
     opening: 'curtains',
     overlay: 'repeating-linear-gradient(90deg,#8E3B3B 0 14px,#7C3232 14px 28px,#964242 28px 42px)',
     overlayInk: '#FFF7F0',
@@ -28,7 +29,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['🎭', '🌹', '🕯'],
   },
   {
-    id: 'bloom', name: 'Bloom', desc: 'Воздушные цветы и мягкая романтика', emoji: '🌸',
+    id: 'bloom', name: 'Bloom', desc: t('Воздушные цветы и мягкая романтика'), emoji: '🌸',
     opening: 'fade',
     overlay: 'linear-gradient(160deg,#F2DFDC,#FBF6F1)',
     overlayInk: '#8E5A5A',
@@ -37,7 +38,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['🌸', '🌷', '🌺'],
   },
   {
-    id: 'sage', name: 'Шалфей', desc: 'Природная спокойная элегантность', emoji: '🌿',
+    id: 'sage', name: t('Шалфей'), desc: t('Природная спокойная элегантность'), emoji: '🌿',
     opening: 'lift',
     overlay: 'linear-gradient(160deg,#7E9A74,#A9BCA0)',
     overlayInk: '#F4F8F0',
@@ -46,7 +47,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['🌿', '🍃', '🕊'],
   },
   {
-    id: 'editorial', name: 'Editorial', desc: 'Журнальная типографика, строгая композиция', emoji: '◻️',
+    id: 'editorial', name: 'Editorial', desc: t('Журнальная типографика, строгая композиция'), emoji: '◻️',
     opening: 'lift',
     overlay: 'linear-gradient(180deg,#1E1A16,#3A322B)',
     overlayInk: '#EFE9DF',
@@ -55,7 +56,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: false, deco: ['◻️', '◼️', '—'],
   },
   {
-    id: 'dolce', name: 'Dolce Vita', desc: 'Итальянское лето и кинематографичный свет', emoji: '🍋',
+    id: 'dolce', name: 'Dolce Vita', desc: t('Итальянское лето и кинематографичный свет'), emoji: '🍋',
     opening: 'fade',
     overlay: 'linear-gradient(160deg,#E3A86A,#C4705A)',
     overlayInk: '#FFF6EC',
@@ -64,7 +65,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['🍋', '🫒', '🌻'],
   },
   {
-    id: 'boho', name: 'Boho', desc: 'Тёплая богемная палитра и свободная композиция', emoji: '🌾',
+    id: 'boho', name: 'Boho', desc: t('Тёплая богемная палитра и свободная композиция'), emoji: '🌾',
     opening: 'doors',
     overlay: 'linear-gradient(90deg,#B98A5A 0 50%,#A87A4C 50% 100%)',
     overlayInk: '#FBF1E2',
@@ -73,7 +74,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['🌾', '🪶', '🌙'],
   },
   {
-    id: 'garden', name: 'Secret Garden', desc: 'Таинственный сад и камерная романтика', emoji: '🗝',
+    id: 'garden', name: 'Secret Garden', desc: t('Таинственный сад и камерная романтика'), emoji: '🗝',
     opening: 'doors',
     overlay: 'linear-gradient(90deg,#2E4638 0 50%,#243A2D 50% 100%)',
     overlayInk: '#E6EEE2',
@@ -82,7 +83,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['🗝', '🌹', '🍄'],
   },
   {
-    id: 'maestoso', name: 'Маджестик', desc: 'Жемчуг, золото и вышивка ручной работы', emoji: '👑',
+    id: 'maestoso', name: t('Маджестик'), desc: t('Жемчуг, золото и вышивка ручной работы'), emoji: '👑',
     opening: 'curtains',
     overlay: 'repeating-linear-gradient(90deg,#2A3140 0 14px,#232B38 14px 28px,#313A4C 28px 42px)',
     overlayInk: '#F0DCB8',
@@ -91,7 +92,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: true, deco: ['👑', '⚜️', '🕯'],
   },
   {
-    id: 'minimal', name: 'Minimal Fun', desc: 'Современная типографика с лёгким характером', emoji: '✌️',
+    id: 'minimal', name: 'Minimal Fun', desc: t('Современная типографика с лёгким характером'), emoji: '✌️',
     opening: 'lift',
     overlay: 'linear-gradient(160deg,#F0DCB8,#F7ECD9)',
     overlayInk: '#4A3A22',
@@ -100,7 +101,7 @@ export const inviteThemes: InviteTheme[] = [
     serif: false, deco: ['✌️', '⚡️', '💛'],
   },
   {
-    id: 'nautical', name: 'Nautical', desc: 'Морская графика и свежий синий акцент', emoji: '⚓️',
+    id: 'nautical', name: 'Nautical', desc: t('Морская графика и свежий синий акцент'), emoji: '⚓️',
     opening: 'fade',
     overlay: 'linear-gradient(160deg,#5B7A99,#3E5872)',
     overlayInk: '#EDF3F8',

@@ -1,7 +1,7 @@
 import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
-import { useT } from '@/lib/i18n'
+import { useT, t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 /* Верхняя шапка страницы */
@@ -11,7 +11,7 @@ export function TopBar({ title, sub, back, right }: { title: string; sub?: strin
     <div className="px-5 pt-6 pb-2 flex items-start justify-between gap-3 fade-in">
       <div className="flex items-center gap-3 min-w-0">
         {back && (
-          <button onClick={() => nav(-1)} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center shrink-0" style={{ boxShadow: 'var(--shadow)' }} aria-label="Назад">
+          <button onClick={() => nav(-1)} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center shrink-0" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
             <ArrowLeft size={18} />
           </button>
         )}
@@ -27,11 +27,11 @@ export function TopBar({ title, sub, back, right }: { title: string; sub?: strin
 
 /* Нижняя стеклянная навигация */
 const tabs = [
-  { to: '/home', label: 'Главная', icon: Home },
-  { to: '/search', label: 'Поиск', icon: Search },
+  { to: '/home', label: t('Главная'), icon: Home },
+  { to: '/search', label: t('Поиск'), icon: Search },
   { to: '/wedding', label: '', icon: null }, // центральная кнопка
-  { to: '/us/chats', label: 'Чаты', icon: Sparkles },
-  { to: '/us', label: 'Мы', icon: User },
+  { to: '/us/chats', label: t('Чаты'), icon: Sparkles },
+  { to: '/us', label: t('Мы'), icon: User },
 ]
 
 export function TabBar() {
@@ -42,19 +42,19 @@ export function TabBar() {
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab z-40">
       <div className="flex items-end justify-around px-2 pt-2 pb-[max(14px,env(safe-area-inset-bottom))]">
-        {tabs.map(t => {
-          if (t.icon === null)
+        {tabs.map(tb => {
+          if (tb.icon === null)
             return (
-              <button key="w" onClick={() => nav('/wedding')} className="press halo relative -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-white text-[22px] border-4 border-[var(--bg)]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label="Свадьба">
+              <button key="w" onClick={() => nav('/wedding')} className="press halo relative -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-white text-[22px] border-4 border-[var(--bg)]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label={t('Свадьба')}>
                 💍
               </button>
             )
-          const Icon = t.icon
-          const on = active(t.to)
+          const Icon = tb.icon
+          const on = active(tb.to)
           return (
-            <button key={t.to} onClick={() => nav(t.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[#B57171]' : 'text-[var(--soft)]')}>
+            <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[#B57171]' : 'text-[var(--soft)]')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
-              <span className="text-[9.5px] font-medium tracking-wide">{tt(t.label)}</span>
+              <span className="text-[9.5px] font-medium tracking-wide">{tt(tb.label)}</span>
               {on && <span className="tab-dot" />}
             </button>
           )
@@ -75,21 +75,21 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
           <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 70% 25%, rgba(255,255,255,.65), transparent 55%)' }} />
           <span className="absolute top-3 left-3 text-[26px]">{v.categoryIcon}</span>
           {v.freeOnDate
-            ? <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-white">● Свободен на вашу дату</span>
-            : <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--card)]/80 text-[var(--soft)]">Дата занята</span>}
-          {v.hasVideo && <span className="absolute bottom-3 right-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-black/45 text-white">▶ Видео</span>}
+            ? <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-white">{t('● Свободен на вашу дату')}</span>
+            : <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--card)]/80 text-[var(--soft)]">{t('Дата занята')}</span>}
+          {v.hasVideo && <span className="absolute bottom-3 right-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-black/45 text-white">{t('▶ Видео')}</span>}
         </div>
       </button>
       <div className="p-3.5 flex items-start justify-between gap-2">
         <button className="text-left min-w-0" onClick={onOpen}>
           <b className="font-serif-d text-[15px] block truncate">{v.name}</b>
           <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
-            {v.category}{v.years ? ` · ${v.years} лет опыта` : ''}
-            {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : ' · Новый на платформе'}
+            {v.category}{v.years ? ` · ${v.years}${t(' лет опыта')}` : ''}
+            {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : t(' · Новый на платформе')}
           </span>
-          <span className="font-serif-d text-[14px] text-[#B57171] font-semibold block mt-1">от {v.priceFrom.toLocaleString('ru-RU')} ₽</span>
+          <span className="font-serif-d text-[14px] text-[#B57171] font-semibold block mt-1">{t('от')}{v.priceFrom.toLocaleString('ru-RU')} ₽</span>
         </button>
-        <button onClick={() => toggleFav(v.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label="В избранное">
+        <button onClick={() => toggleFav(v.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
           <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[#C98A8A]' : 'text-[var(--soft)]'} />
         </button>
       </div>
@@ -124,7 +124,7 @@ export function AiTip({ text, onPress }: { text: string; onPress?: () => void })
   return (
     <button onClick={onPress} className="press sheen w-full text-left card p-3.5 flex gap-3 items-start" style={{ background: 'linear-gradient(135deg,var(--card),var(--rose-soft))', border: '1px solid rgba(201,138,138,.25)' }}>
       <div className="w-[30px] h-[30px] rounded-full grad flex items-center justify-center text-white text-[13px] shrink-0">✦</div>
-      <p className="text-[11.5px] leading-relaxed text-[var(--soft)]"><b className="text-[var(--ink)]">Тиль:</b> {text}</p>
+      <p className="text-[11.5px] leading-relaxed text-[var(--soft)]"><b className="text-[var(--ink)]">{t('Тиль:')}</b> {text}</p>
     </button>
   )
 }
