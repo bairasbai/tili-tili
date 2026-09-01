@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils'
 export function Us() {
   const { lang, setLang } = useStore()
   const nav = useNavigate()
-  const [showCode, setShowCode] = useState(false)
   const [copied, setCopied] = useState(false)
   const copy = (text: string, cb: () => void) => {
     navigator.clipboard?.writeText(text).catch(() => {})
@@ -28,16 +27,9 @@ export function Us() {
           </div>
           <b className="font-serif-d text-[20px] block mt-3">{couple.full}</b>
           <p className="text-[11.5px] text-[#93897F] mt-1">{couple.date} · {couple.city} · {couple.venue}</p>
-          <button onClick={() => setShowCode(!showCode)} className="press mt-4 px-5 h-[42px] rounded-full bg-[#FBF6F1] text-[12px] font-semibold text-[#B57171]">
-            + Пригласить партнёра кодом
+          <button onClick={() => nav('/us/team')} className="press mt-4 px-5 h-[42px] rounded-full bg-[#FBF6F1] text-[12px] font-semibold text-[#B57171]">
+            + Пригласить в команду (партнёр, помощники, подрядчики)
           </button>
-          {showCode && (
-            <div className="mt-3 bg-[#FBF6F1] rounded-2xl p-4 pop">
-              <p className="text-[10px] text-[#93897F]">Партнёр вводит этот код при входе:</p>
-              <b className="text-[17px] tracking-[.2em] block mt-1.5">ТИЛИ-ПАРА-7421</b>
-              <button onClick={() => copy('ТИЛИ-ПАРА-7421', () => setCopied(true))} className="press mt-2.5 text-[11px] font-bold text-[#B57171]">{copied ? '✓ Скопировано' : 'Скопировать'}</button>
-            </div>
-          )}
         </div>
 
         <div className="card p-5 mt-4 relative overflow-hidden">

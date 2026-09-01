@@ -13,6 +13,7 @@ import { Deal, ContractWizard, Seating, InviteEditor } from '@/pages/Tools'
 import { Assistant, Compare, DayX, After } from '@/pages/Smart'
 import { VendorDashboard, VendorProfileWizard, VendorDeals } from '@/pages/VendorApp'
 import { VendorLead, VendorReviews, VendorAnalytics } from '@/pages/VendorExtras'
+import { Team, Join } from '@/pages/Team'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 
 function Shell() {
@@ -21,6 +22,7 @@ function Shell() {
   const p = loc.pathname
   const noTab =
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant'].includes(p) ||
+    p.startsWith('/join') ||
     p.startsWith('/us/chats/') ||
     p.startsWith('/vendor-app')
   return (
@@ -30,6 +32,7 @@ function Shell() {
         <Route path="/quiz" element={<Quiz />} />
         <Route path="/invite" element={<Invite />} />
         <Route path="/auth" element={<Auth />} />
+        <Route path="/join/:code" element={<Join />} />
         <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/settings" element={<Settings />} />
@@ -62,6 +65,7 @@ function Shell() {
         <Route path="/vendor-app/reviews" element={<VendorReviews />} />
         <Route path="/vendor-app/analytics" element={<VendorAnalytics />} />
         <Route path="/us" element={<Us />} />
+        <Route path="/us/team" element={<Team />} />
         <Route path="/us/chats" element={<Chats />} />
         <Route path="/us/chats/:id" element={<Chat />} />
         <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />
