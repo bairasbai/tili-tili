@@ -224,3 +224,30 @@ export const aiTips = [
 ]
 
 export const fmt = (n: number) => new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
+
+/* ── Вишлист подарков ─────────────────────────────────────────
+   Пара составляет список желаний; гости резервируют подарки анонимно.
+   reserved=true → подарок закрыт для остальных (нельзя подарить дважды).
+   group=true → складчина: несколько гостей частями закрывают сумму. */
+export interface Gift {
+  id: string
+  name: string
+  icon: string
+  tile: string
+  price: number
+  desc?: string
+  group: boolean          // можно складчину
+  funded: number          // собрано складчиной (₽)
+  reserved: boolean       // зарезервирован целиком (анонимно для пары)
+}
+
+export const initialGifts: Gift[] = [
+  { id: 'gf1', name: t('Телевизор 65"'), icon: '📺', tile: 'bg-[var(--blue)]', price: 89990, desc: t('В гостиную, OLED'), group: true, funded: 30000, reserved: false },
+  { id: 'gf2', name: t('Робот-пылесос'), icon: '🤖', tile: 'bg-[var(--sage-soft)]', price: 45000, group: false, funded: 0, reserved: true },
+  { id: 'gf3', name: t('Кофемашина'), icon: '☕', tile: 'bg-[var(--honey)]', price: 62000, desc: t('Зерновая, с капучинатором'), group: true, funded: 0, reserved: false },
+  { id: 'gf4', name: t('Набор посуды'), icon: '🍽', tile: 'bg-[var(--rose-soft)]', price: 18000, group: false, funded: 0, reserved: false },
+  { id: 'gf5', name: t('Постельное бельё'), icon: '🛏', tile: 'bg-[var(--lav)]', price: 12000, group: false, funded: 0, reserved: false },
+  { id: 'gf6', name: t('Сертификат на путешествие'), icon: '✈️', tile: 'bg-[var(--peach)]', price: 150000, desc: t('Мечта — Каппадокия'), group: true, funded: 45000, reserved: false },
+  { id: 'gf7', name: t('Блендер стационарный'), icon: '🥤', tile: 'bg-[var(--sage-soft)]', price: 9500, group: false, funded: 0, reserved: false },
+  { id: 'gf8', name: t('Ужин в ресторане'), icon: '🕯', tile: 'bg-[var(--rose-soft)]', price: 15000, desc: t('Сертификат на двоих'), group: false, funded: 0, reserved: true },
+]

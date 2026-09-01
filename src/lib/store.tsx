@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import { initialSlots, type Slot } from './data'
+import { initialGifts, initialSlots, type Gift, type Slot } from './data'
 import { setI18nLang, type Lang } from './i18n'
 
 interface Store {
@@ -22,6 +22,13 @@ interface Store {
   setCity: (name: string, region: string) => void
   theme: 'light' | 'dark'
   setTheme: (t: 'light' | 'dark') => void
+  gifts: Gift[]
+  reserveGift: (id: string) => void
+  releaseGift: (id: string) => void
+  fundGift: (id: string, amount: number) => void
+  addGift: (g: Omit<Gift, 'id' | 'funded' | 'reserved'>) => void
+  removeGift: (id: string) => void
+  myGifts: string[]
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -44,6 +51,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
     localStorage.getItem('tt_theme') === 'dark' ||
     (!localStorage.getItem('tt_theme') && window.matchMedia?.('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light')
+  const [gifts, setGifts] = useState<Gift[]>(() => {
+    try {
+      const raw = localStorage.getItem('tt_gifts')
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p }
+    } catch { /* noop */ }
+    return initialGifts
+  })
+  const [myGifts, setMyGifts] = useState<string[]>(() => {
+    try { const p = JSON.parse(localStorage.getItem('tt_my_gifts') ?? '[]'); return Array.isArray(p) ? p : [] } catch { return [] }
+  })
+  const persistGifts = (next: Gift[]) => { localStorage.setItem('tt_gifts', JSON.stringify(next)); return next }
+  const persistMine = (next: string[]) => { localStorage.setItem('tt_my_gifts', JSON.stringify(next)); return next }
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -74,7 +93,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('tt_city', name); localStorage.setItem('tt_city_region', region)
       setCityState(name); setCityRegion(region)
     },
-  }), [onboarded, slots, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
+    gifts, myGifts,
+    reserveGift: (id) => {
+      setGifts(gs => persistGifts(gs.map(g => g.id === id && !g.reserved ? { ...g, reserved: true } : g)))
+      setMyGifts(m => persistMine(m.includes(id) ? m : [...m, id]))
+    },
+    releaseGift: (id) => {
+      setGifts(gs => persistGifts(gs.map(g => g.id === id ? { ...g, reserved: false } : g)))
+      setMyGifts(m => persistMine(m.filter(x => x !== id)))
+    },
+    fundGift: (id, amount) =>
+      setGifts(gs => persistGifts(gs.map(g => {
+        if (g.id !== id || !g.group || g.reserved) return g
+        const funded = Math.min(g.price, g.funded + Math.max(0, amount))
+        return { ...g, funded, reserved: funded >= g.price }
+      }))),
+    addGift: (g) => setGifts(gs => persistGifts([...gs, { ...g, id: 'gf' + Date.now(), funded: 0, reserved: false }])),
+    removeGift: (id) => {
+      setGifts(gs => persistGifts(gs.filter(g => g.id !== id)))
+      setMyGifts(m => persistMine(m.filter(x => x !== id)))
+    },
+  }), [onboarded, slots, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

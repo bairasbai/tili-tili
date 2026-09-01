@@ -18,6 +18,7 @@ import { VendorLead, VendorReviews, VendorAnalytics } from '@/pages/VendorExtras
 import { Team, Join } from '@/pages/Team'
 import { Inspiration, VenuesMap } from '@/pages/Discover'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
+import { WishlistManage, GiftPick } from '@/pages/Wishlist'
 
 function Shell() {
   const { onboarded, theme, lang } = useStore()
@@ -56,6 +57,8 @@ function Shell() {
         <Route path="/wedding/timeline" element={<Timeline />} />
         <Route path="/wedding/guests" element={<Guests />} />
         <Route path="/wedding/seating" element={<Seating />} />
+        <Route path="/wedding/wishlist" element={<WishlistManage />} />
+        <Route path="/gifts" element={<GiftPick />} />
         <Route path="/wedding/invites" element={<InviteEditor />} />
         <Route path="/wedding/documents" element={<Documents />} />
         <Route path="/wedding/documents/new" element={<ContractWizard />} />

@@ -166,3 +166,19 @@ export const EN_DATA: Record<string, string> = {
   'до 1 мая': 'by May 1',
   'до 15 мая': 'by May 15',
 }
+
+// Вишлист — данные (EN)
+export const EN_DATA_GIFTS: Record<string, string> = {
+  'Телевизор 65"': '65" TV',
+  'В гостиную, OLED': 'Living room, OLED',
+  'Робот-пылесос': 'Robot vacuum',
+  'Кофемашина': 'Coffee machine',
+  'Зерновая, с капучинатором': 'Bean-to-cup, with cappuccinatore',
+  'Набор посуды': 'Dinnerware set',
+  'Постельное бельё': 'Bed linen',
+  'Сертификат на путешествие': 'Travel certificate',
+  'Мечта — Каппадокия': 'Dream — Cappadocia',
+  'Блендер стационарный': 'Countertop blender',
+  'Ужин в ресторане': 'Restaurant dinner',
+  'Сертификат на двоих': 'Certificate for two',
+}

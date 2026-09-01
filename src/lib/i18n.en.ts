@@ -1,4 +1,4 @@
-import { EN_DATA } from './i18n.en.data'
+import { EN_DATA, EN_DATA_GIFTS } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
@@ -819,4 +819,48 @@ export const EN: Record<string, string> = {
   '🤍 Классика': '🤍 Classic',
 
   ...EN_DATA,
+  ...EN_DATA_GIFTS,
 }
+
+// Вишлист подарков (EN)
+Object.assign(EN, {
+  'Список желаний': 'Wishlist',
+  'Что подарить вам на свадьбу': 'What guests can gift you',
+  'Гости выбирают подарки анонимно — вы видите только статус «Зарезервирован», но не видите, кто именно. Выбранный подарок закрывается для остальных, дублей не будет.': 'Guests pick gifts anonymously — you only see the "Reserved" status, never who picked it. A chosen gift is locked for everyone else, so no duplicates.',
+  'Зарезервировано гостями': 'Reserved by guests',
+  'из': 'of',
+  'Добавьте подарки разной цены — от 5 000 до складчины на мечту. Так каждый гость найдёт вариант по бюджету.': 'Add gifts at different prices — from 5,000 to a group-funded dream. Every guest will find an option for their budget.',
+  'Добавить желание': 'Add a wish',
+  'Название подарка': 'Gift name',
+  'Цена, ₽': 'Price, ₽',
+  'Можно складчину (дорогой подарок)': 'Allow group funding (expensive gift)',
+  'Отмена': 'Cancel',
+  'Добавить': 'Add',
+  'Наши желания': 'Our wishes',
+  'видно гостям по ссылке-приглашению': 'visible to guests via the invite link',
+  'Зарезервирован': 'Reserved',
+  'Свободен': 'Available',
+  'складчина': 'group gift',
+  'Собрано': 'Collected',
+  'Удалить': 'Delete',
+  'Точно?': 'Sure?',
+  'Открыть глазами гостя': 'Preview as a guest',
+  'Подарки': 'Gifts',
+  'Алина & Тимур · 14 июня 2027': 'Alina & Timur · June 14, 2027',
+  'Полностью анонимно: молодожёны увидят только, что подарок зарезервирован, но не кем. Выбранный подарок сразу закрывается для других гостей.': 'Fully anonymous: the couple only sees that a gift is reserved, never by whom. A chosen gift is instantly locked for other guests.',
+  'Мой выбор': 'My pick',
+  'Вы зарезервировали этот подарок': 'You reserved this gift',
+  'Снять резерв': 'Release',
+  'Свободные желания': 'Available wishes',
+  'Подтвердить': 'Confirm',
+  'Подарю': 'I’ll gift it',
+  'Скинуться': 'Chip in',
+  'осталось': 'left',
+  'Сумма, ₽': 'Amount, ₽',
+  'Внести': 'Contribute',
+  'Все желания уже зарезервированы 🎉': 'All wishes are already reserved 🎉',
+  'Уже выбрано другими гостями': 'Already picked by other guests',
+  'Занято': 'Taken',
+  'Назад': 'Back',
+  'Желания': 'Wishes',
+})
