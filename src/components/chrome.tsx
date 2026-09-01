@@ -88,6 +88,7 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
           <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
             {v.category}{v.years ? ` · ${v.years}${t(' лет опыта')}` : ''}
             {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : t(' · Новый на платформе')}
+            <i className="not-italic text-[#7E9A74] font-bold"> {t('· ✓ проверен')}</i>
           </span>
           <span className="font-serif-d text-[14px] text-[#B57171] font-semibold block mt-1">{t('от')}{v.priceFrom.toLocaleString('ru-RU')} ₽</span>
         </button>

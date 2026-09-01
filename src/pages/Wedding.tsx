@@ -261,6 +261,12 @@ export function Budget() {
   }).concat(custom)
   const total = items.reduce((a, b) => a + b.amount, 0)
   const pct = Math.round((total / couple.budgetTotal) * 100)
+  // Умный бюджет: fact (оплаченные авансы) vs предстоящие платежи + резерв 10%
+  const paidFact = Math.round(booked.reduce((a, s) => a + (s.price ?? 0), 0) * 0.5)
+  const upcoming = booked.map(s => ({ vendor: s.vendor ?? s.label, amount: Math.round((s.price ?? 0) * 0.5) }))
+  const upcomingTotal = upcoming.reduce((a, u) => a + u.amount, 0)
+  const reserve = Math.round(couple.budgetTotal * 0.1)
+  const freeAfterReserve = couple.budgetTotal - total - reserve
   return (
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
@@ -291,18 +297,30 @@ export function Budget() {
         </div>
         <div className="mt-3.5"><AiTip text={t('«Площадка и кейтеринг» на 86% лимита. Зафиксируйте меню до 1 марта — дальше цены вырастут ~10%.')} /></div>
 
-        {/* Ожидают оплаты */}
+        {/* Fact: оплачено · предстоит · резерв */}
         <div className="card p-4 mt-3.5">
-          <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Ожидают оплаты')}</span>
-          {[
-            [t('Флорист · доплата'), '45 000 ₽', t('до 7 июн')],
-            [t('Ведущий · аванс'), '35 000 ₽', t('до 15 мар')],
-          ].map(([l, v, d]) => (
-            <div key={l} className="flex items-center justify-between mt-3">
-              <span className="text-[12px] font-medium">{l}</span>
-              <span className="text-right"><b className="text-[12.5px] tabular block">{v}</b><span className="text-[9.5px] text-[#B98A2F] font-semibold">{d}</span></span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Деньги: факт и план')}</span>
+            <span className={cn('text-[9.5px] font-bold px-2 py-1 rounded-full', freeAfterReserve >= 0 ? 'bg-[var(--sage-soft)] text-[#4C5B45]' : 'bg-[var(--rose-soft)] text-[#B57171]')}>
+              {freeAfterReserve >= 0 ? `${t('свободно')} ${fmt(Math.max(0, freeAfterReserve))}` : t('бюджет превышен')}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[#7E9A74]">{fmt(paidFact)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('оплачено (авансы)')}</p></div>
+            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[#B98A2F]">{fmt(upcomingTotal)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('предстоит доплат')}</p></div>
+            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular">{fmt(reserve)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('резерв 10%')}</p></div>
+          </div>
+          {upcoming.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-[var(--track)] space-y-2">
+              {upcoming.slice(0, 3).map(u => (
+                <div key={u.vendor} className="flex items-center justify-between">
+                  <span className="text-[12px] font-medium truncate">{u.vendor} · {t('доплата')}</span>
+                  <span className="text-right shrink-0"><b className="text-[12.5px] tabular">{fmt(u.amount)}</b><span className="text-[9.5px] text-[#B98A2F] font-semibold block">{t('за 7 дней до даты')}</span></span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+          <p className="text-[10px] text-[var(--soft2)] mt-3 leading-relaxed">{t('Резерв 10% не трогаем: он закрывает форс-мажоры (горячая замена, +2 гостя, доп. час фотографа).')}</p>
         </div>
 
         {adding ? (
@@ -337,13 +355,33 @@ export function Checklist() {
     setExtra(x => [...x, { id: `x${x.length + 1}`, title: title.trim(), period, due: t('без срока') }])
     setTitle(''); setAdding(false)
   }
+  // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
+  const daysLeft = Math.max(0, Math.ceil((new Date(2027, 5, 14).getTime() - Date.now()) / 86400000))
+  const curPeriod = daysLeft > 270 ? '9' : daysLeft > 180 ? '6' : daysLeft > 90 ? '3' : '1'
+  const nextTask = allTasks.find(tk => !done.includes(tk.id) && tk.period === curPeriod) ?? allTasks.find(tk => !done.includes(tk.id))
 
   return (
     <div className="pb-28">
       <TopBar back title={t('Чек-лист')} sub={t('Что уже сделано, что впереди')} right={
         <button onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{t('+ Задача')}</button>
       } />
-      <div className="px-5 mt-3">
+      <div className="px-5 mt-3 space-y-3">
+        <div className="card p-4 flex items-center gap-4">
+          <div className="text-center shrink-0 w-[72px]">
+            <b className="font-serif-d text-[28px] tabular leading-none">{daysLeft}</b>
+            <p className="text-[9.5px] text-[var(--soft)] mt-1">{t('дней до дня X')}</p>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{curPeriod === '9' ? t('За 9 мес') : curPeriod === '6' ? t('За 6 мес') : curPeriod === '3' ? t('За 3 мес') : t('За 1 мес')}</b></p>
+            {nextTask && (
+              <button onClick={() => setPeriod(nextTask.period)} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-[#B57171]">{t('Следующий шаг →')}</p>
+                <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.title}</p>
+              </button>
+            )}
+            {!nextTask && <p className="text-[12px] font-semibold text-[#7E9A74] mt-2">{t('Всё сделано — вы полностью готовы ✓')}</p>}
+          </div>
+        </div>
         <div className="card-s px-4 py-3 flex items-center gap-3">
           <b className="text-[12px] whitespace-nowrap">{done.length} из {allTasks.length}</b>
           <div className="flex-1 h-1.5 rounded-full bg-[var(--track)] overflow-hidden">

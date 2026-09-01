@@ -160,6 +160,23 @@ export function VendorDetail() {
         <p className="text-[13px] text-[var(--ink2)] leading-relaxed mt-3 font-light">{v.desc}</p>
       </div>
 
+      {/* Проверка подрядчика */}
+      <div className="px-5 mt-4">
+        <div className="card p-4" style={{ border: '1.5px solid rgba(126,154,116,.4)' }}>
+          <div className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-full bg-[var(--sage-soft)] flex items-center justify-center text-[14px]">🛡</span>
+            <b className="text-[13px]">{t('Проверен «Тили-тили»')}</b>
+            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[#4C5B45]">{t('✓ верифицирован')}</span>
+          </div>
+          <div className="mt-3 space-y-1.5 text-[11.5px] text-[var(--soft)]">
+            <p>✓ {t('Паспорт / ИП сверены с базой ФНС')}</p>
+            <p>✓ {t('Отзывы — только от пар после реальной сделки')}</p>
+            <p>✓ {t('Оплата через эскроу: деньги заморожены до дня X')}</p>
+            <p>✓ {t('За отмену в последний момент — штраф рейтинга и горячая замена вам')}</p>
+          </div>
+        </div>
+      </div>
+
       {/* Пакеты */}
       <div className="px-5 mt-5">
         <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Пакеты и цены')}</h2>
@@ -191,16 +208,18 @@ export function VendorDetail() {
             {Array.from({ length: 30 }).map((_, k) => {
               const day = k + 1
               const isWedding = day === 14
-              const busy = [5, 6, 19, 20, 26].includes(day)
+              // реальный календарь занятости подрядчика (мок: детерминированно по id)
+              const h = [...v.id].reduce((a, c) => a + c.charCodeAt(0), 0)
+              const busy = [3 + (h % 4), 6 + (h % 3), 12 + (h % 5), 19 + (h % 3), 25 + (h % 4)].includes(day) || (!v.freeOnDate && isWedding)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding ? 'grad text-white font-bold' : busy ? 'bg-[var(--rose-soft)] text-[#B57171] line-through' : 'text-[var(--ink)]')}>
+                  isWedding && v.freeOnDate ? 'grad text-white font-bold' : busy ? 'bg-[var(--rose-soft)] text-[#B57171] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[#B57171] font-bold' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
             })}
           </div>
-          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{t('14 июня свободна · зачёркнуты занятые даты')}</p>
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{v.freeOnDate ? t('14 июня свободна · зачёркнуты занятые даты') : t('14 июня занята — посмотрите похожих свободных ниже')}</p>
         </div>
       </div>
 
@@ -218,6 +237,7 @@ export function VendorDetail() {
                 <span className="text-[10px] text-[#B98A2F] tracking-wide">{st}</span>
               </div>
               <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{tx}</p>
+              <p className="text-[9px] font-bold text-[#7E9A74] mt-2">✓ {t('сделка через «Тили-тили» — отзыв подтверждён')}</p>
             </div>
           ))}
         </div>

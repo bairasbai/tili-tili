@@ -1066,3 +1066,29 @@ Object.assign(EN, {
   'вчера': 'yesterday',
   'Вы видите изменения мгновенно — переспрашивать пару не нужно. Подтвердите получение одним тапом.': 'You see changes instantly — no need to re-ask the couple. Confirm receipt with one tap.',
 })
+
+// Этап 2026-09-02 (3): план от даты, умный бюджет, верификация, календарь занятости
+Object.assign(EN, {
+  'дней до дня X': 'days until day X',
+  'Ваш этап сейчас:': 'Your current stage:',
+  'Следующий шаг →': 'Next step →',
+  'Всё сделано — вы полностью готовы ✓': 'All done — you’re fully ready ✓',
+  'Деньги: факт и план': 'Money: fact vs plan',
+  'свободно': 'free',
+  'бюджет превышен': 'budget exceeded',
+  'оплачено (авансы)': 'paid (deposits)',
+  'предстоит доплат': 'payments due',
+  'резерв 10%': '10% reserve',
+  'доплата': 'final payment',
+  'за 7 дней до даты': '7 days before the date',
+  'Резерв 10% не трогаем: он закрывает форс-мажоры (горячая замена, +2 гостя, доп. час фотографа).': 'Don’t touch the 10% reserve: it covers force majeure (hot replacement, +2 guests, an extra photo hour).',
+  'Проверен «Тили-тили»': 'Verified by Tili-tili',
+  '✓ верифицирован': '✓ verified',
+  'Паспорт / ИП сверены с базой ФНС': 'Passport / tax ID checked against the FNS database',
+  'Отзывы — только от пар после реальной сделки': 'Reviews — only from couples after a real deal',
+  'Оплата через эскроу: деньги заморожены до дня X': 'Escrow payments: funds frozen until day X',
+  'За отмену в последний момент — штраф рейтинга и горячая замена вам': 'Last-minute cancellation = rating penalty + a hot replacement for you',
+  '14 июня занята — посмотрите похожих свободных ниже': 'June 14 is taken — see similar available pros below',
+  'сделка через «Тили-тили» — отзыв подтверждён': 'deal via Tili-tili — verified review',
+  '· ✓ проверен': '· ✓ verified',
+})
