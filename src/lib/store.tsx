@@ -10,6 +10,8 @@ interface Store {
   toggleFav: (id: string) => void
   lang: 'ru' | 'en'
   setLang: (l: 'ru' | 'en') => void
+  inviteTpl: number
+  setInviteTpl: (t: number) => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -19,6 +21,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [slots, setSlots] = useState<Slot[]>(initialSlots)
   const [favorites, setFavorites] = useState<string[]>(['v1'])
   const [lang, setLang] = useState<'ru' | 'en'>('ru')
+  const [inviteTpl, setInviteTplState] = useState(() => Number(localStorage.getItem('tt_invite_tpl') ?? 0))
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -29,7 +32,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     favorites,
     toggleFav: id => setFavorites(f => f.includes(id) ? f.filter(x => x !== id) : [...f, id]),
     lang, setLang,
-  }), [onboarded, slots, favorites, lang])
+    inviteTpl,
+    setInviteTpl: (t: number) => { localStorage.setItem('tt_invite_tpl', String(t)); setInviteTplState(t) },
+  }), [onboarded, slots, favorites, lang, inviteTpl])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -76,3 +76,37 @@ body {
 input[type="range"] { accent-color: var(--rose-deep); }
 
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* Scroll-reveal для приглашений (2026 scroll narrative) */
+.rv { opacity: 0; transform: translateY(34px); transition: opacity 1s var(--ease), transform 1s var(--ease); }
+.rv.rv-in { opacity: 1; transform: none; }
+.rv-scale { transform: translateY(34px) scale(.94); }
+.rv-scale.rv-in { transform: none; }
+.rv-left { transform: translateX(-40px); }
+.rv-right { transform: translateX(40px); }
+.rv-left.rv-in, .rv-right.rv-in { transform: none; }
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-14px) rotate(4deg); }
+}
+.floaty { animation: floaty 6s ease-in-out infinite; }
+.floaty-slow { animation: floaty 9s ease-in-out infinite; }
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to { background-position: 200% center; }
+}
+.shimmer-text {
+  background: linear-gradient(110deg, currentColor 40%, rgba(255,255,255,.9) 50%, currentColor 60%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv, .rv-scale, .rv-left, .rv-right { opacity: 1; transform: none; transition: none; }
+  .floaty, .floaty-slow, .shimmer-text { animation: none; }
+}
