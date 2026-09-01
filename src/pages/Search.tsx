@@ -41,8 +41,8 @@ export function SearchCategories() {
         <div className="px-5 mt-10 text-center fade-up">
           <div className="w-16 h-16 rounded-[22px] bg-[#F2DFDC] mx-auto flex items-center justify-center text-[26px]">🔍</div>
           <b className="text-[15px] block mt-4">Ничего не нашлось</b>
-          <p className="text-[12px] text-[#93897F] mt-1.5">Попробуйте другое слово — или спросите Светлану, она подскажет категорию</p>
-          <button onClick={() => nav('/assistant')} className="press mt-5 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">Спросить Светлану</button>
+          <p className="text-[12px] text-[#93897F] mt-1.5">Попробуйте другое слово — или спросите Тиля — он подскажет категорию</p>
+          <button onClick={() => nav('/assistant')} className="press mt-5 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">Спросить Тиля</button>
         </div>
       )}
     </div>

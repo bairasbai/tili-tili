@@ -121,7 +121,7 @@ export function AiTip({ text, onPress }: { text: string; onPress?: () => void })
   return (
     <button onClick={onPress} className="press w-full text-left card p-3.5 flex gap-3 items-start" style={{ background: 'linear-gradient(135deg,#fff,#F2DFDC)', border: '1px solid rgba(201,138,138,.25)' }}>
       <div className="w-[30px] h-[30px] rounded-full grad flex items-center justify-center text-white text-[13px] shrink-0">✦</div>
-      <p className="text-[11.5px] leading-relaxed text-[#93897F]"><b className="text-[#2E2A26]">Светлана:</b> {text}</p>
+      <p className="text-[11.5px] leading-relaxed text-[#93897F]"><b className="text-[#2E2A26]">Тиль:</b> {text}</p>
     </button>
   )
 }

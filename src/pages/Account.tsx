@@ -95,7 +95,7 @@ export function Auth() {
 export function Notifications() {
   const items = [
     { icon: '💰', tile: 'bg-[#F0DCB8]', title: 'Аванс подтверждён', text: 'Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.', time: '14:20', unread: true },
-    { icon: '✦', tile: 'bg-[#F2DFDC]', title: 'Светлана', text: 'Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.', time: '11:05', unread: true },
+    { icon: '✦', tile: 'bg-[#F2DFDC]', title: 'Тиль', text: 'Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.', time: '11:05', unread: true },
     { icon: '💌', tile: 'bg-[#D9CCE3]', title: 'RSVP', text: 'Ольга и Денис Соколовы подтвердили приезд с +1.', time: 'вчера', unread: false },
     { icon: '📄', tile: 'bg-[#C3D5E8]', title: 'Договор готов', text: 'Договор с фотографом сгенерирован — скачайте и подпишите.', time: 'вчера', unread: false },
     { icon: '⏳', tile: 'bg-[#E6EEE2]', title: 'Hold истекает', text: 'Студия «Пион»: мягкая бронь истекает через 12 часов.', time: 'пн', unread: false },

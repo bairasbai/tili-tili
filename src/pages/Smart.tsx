@@ -5,11 +5,11 @@ import { vendors, timeline } from '@/lib/data'
 import { TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 
-/* ИИ-координатор «Светлана» */
+/* ИИ-координатор «Тиль» */
 export function Assistant() {
   const nav = useNavigate()
   const [msgs, setMsgs] = useState([
-    { me: false, text: 'Здравствуйте, Алина и Тимур! Я Светлана — ваш ИИ-координатор. Слежу за бюджетом, дедлайнами и датами подрядчиков. Что обсудим?' },
+    { me: false, text: 'Здравствуйте, Алина и Тимур! Я Тиль — ваш ИИ-координатор. Слежу за бюджетом, дедлайнами и датами подрядчиков. Что обсудим?' },
   ])
   const [text, setText] = useState('')
   const canned: Record<string, string> = {}
@@ -17,8 +17,8 @@ export function Assistant() {
     canned[q] ?? (q.includes('алкогол')
       ? 'На 80 гостей банкетного формата закладывайте: игристое 0,5 л/чел, вино 0,4 л/чел, крепкое 0,25 л/чел + безалкогольное 1,5 л/чел. Для усадьбы уточните пробковый сбор.'
       : q.includes('забыл') || q.includes('забыли')
-      ? 'Проверила проект: пустые слоты — DJ, декоратор, транспорт, платье, кольца. Ближайший дедлайн — приглашения до 1 марта. С чего начнём?'
-      : 'Принято! Записала в план. Хотите, добавлю задачу в чек-лист с дедлайном?')
+      ? 'Проверил проект: пустые слоты — DJ, декоратор, транспорт, платье, кольца. Ближайший дедлайн — приглашения до 1 марта. С чего начнём?'
+      : 'Принято! Записал в план. Хотите, добавлю задачу в чек-лист с дедлайном?')
   const quick = ['Что мы забыли?', 'Сколько алкоголя на 80 гостей?', 'Найди DJ до 40 тыс ₽', 'Собери план дня']
   const send = (t: string) => {
     if (!t.trim()) return
@@ -31,7 +31,7 @@ export function Assistant() {
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
         <button onClick={() => nav(-1)} className="press w-9 h-9 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Назад"><ChevronLeft size={17} /></button>
         <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-white text-[15px]">✦</div>
-        <div className="flex-1"><b className="text-[14px]">Светлана</b><p className="text-[10px] text-[#7E9A74]">ИИ-координатор · на связи · 42/50 сообщений сегодня</p></div>
+        <div className="flex-1"><b className="text-[14px]">Тиль</b><p className="text-[10px] text-[#7E9A74]">ИИ-координатор · на связи · 42/50 сообщений сегодня</p></div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
         {msgs.map((m, k) => (
@@ -44,7 +44,7 @@ export function Assistant() {
         {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-white text-[11px] font-semibold whitespace-nowrap text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
       </div>
       <div className="glass-tab border-t-0 px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder="Спросите Светлану…" className="flex-1 bg-white rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[#CFC5BA]" style={{ boxShadow: 'var(--shadow)' }} />
+        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder="Спросите Тиля…" className="flex-1 bg-white rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[#CFC5BA]" style={{ boxShadow: 'var(--shadow)' }} />
         <button onClick={() => send(text)} className="press w-[48px] h-[48px] rounded-full grad text-white flex items-center justify-center shrink-0" aria-label="Отправить"><Send size={17} /></button>
       </div>
     </div>
@@ -100,7 +100,7 @@ export function Compare() {
       </div>
       <div className="px-5 mt-4">
         <div className="card-s p-4 text-[11.5px] text-[#5C554B] leading-relaxed">
-          ✦ <b>Совет Светланы:</b> {list[0].name} — лучшее соотношение цены и рейтинга, и свободен на вашу дату. «Выбрать» создаст hold на 72 часа — дата никому не уйдёт, пока вы решаете.
+          ✦ <b>Совет Тиля:</b> {list[0].name} — лучшее соотношение цены и рейтинга, и свободен на вашу дату. «Выбрать» создаст hold на 72 часа — дата никому не уйдёт, пока вы решаете.
         </div>
       </div>
     </div>
