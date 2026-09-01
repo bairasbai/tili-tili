@@ -202,43 +202,70 @@ export function Seating() {
   )
 }
 
-/* Редактор приглашений */
+/* Редактор приглашений: сценарий → текст → вопросы гостям → рассылка */
 export function InviteEditor() {
-  const themes = [
-    { name: 'Пыльная роза', g: 'linear-gradient(120deg,#D9A8A0,#C98A8A)' },
-    { name: 'Шалфей', g: 'linear-gradient(120deg,#A9BCA0,#7E9A74)' },
-    { name: 'Мёд', g: 'linear-gradient(120deg,#F0DCB8,#E3C892)' },
-    { name: 'Лаванда', g: 'linear-gradient(120deg,#D9CCE3,#B8A7CC)' },
+  const nav = useNavigate()
+  const scenarios = [
+    { name: 'Театро', desc: 'Бархатный занавес раскрывается', g: 'linear-gradient(120deg,#8E3B3B,#5C2626)', preview: '🎭' },
+    { name: 'Bloom', desc: 'Воздушные цветы, мягкая романтика', g: 'linear-gradient(120deg,#D9A8A0,#C98A8A)', preview: '🌸' },
+    { name: 'Шалфей', desc: 'Природная спокойная элегантность', g: 'linear-gradient(120deg,#A9BCA0,#7E9A74)', preview: '🌿' },
+    { name: 'Editorial', desc: 'Журнальная типографика, строго', g: 'linear-gradient(120deg,#2E2A26,#5C554B)', preview: '◻️' },
   ]
   const [theme, setTheme] = useState(0)
   const [count, setCount] = useState(42)
-  const [inviteText, setInviteText] = useState('Приглашаем вас разделить с нами самый важный день. Выездная церемония — усадьба «Липовый сад», сбор гостей в 15:30.')
+  const [inviteText, setInviteText] = useState('Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
+  const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
+  const qRow = (key: keyof typeof questions, label: string) => (
+    <div className="flex items-center justify-between py-3 border-b border-[#F1E9E2] last:border-none">
+      <span className="text-[12.5px] font-medium">{label}</span>
+      <button onClick={() => setQuestions(q => ({ ...q, [key]: !q[key] }))} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative', questions[key] ? 'grad' : 'bg-[#EADFD6]')} aria-label={label}>
+        <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-white shadow transition-all', questions[key] ? 'left-[22px]' : 'left-[3px]')} />
+      </button>
+    </div>
+  )
   return (
     <div className="pb-28">
-      <TopBar back title="Приглашения" sub="Именная ссылка или QR каждому гостю" />
+      <TopBar back title="Приглашения" sub="Сценарий · ссылка · RSVP" />
       <div className="px-5 mt-3">
+        {/* Превью сценария */}
         <div className="card p-6 text-center relative overflow-hidden">
-          <div className="absolute inset-x-0 top-0 h-2" style={{ background: themes[theme].g }} />
-          <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: themes[theme].g }}>А♥Т</div>
-          <p className="font-serif-d italic text-[14px] text-[#93897F] mt-4">Дорогие гости!</p>
+          <div className="absolute inset-x-0 top-0 h-2" style={{ background: scenarios[theme].g }} />
+          <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: scenarios[theme].g }}>А♥Т</div>
+          <p className="font-serif-d italic text-[14px] text-[#93897F] mt-4">Дорогая Марина Ивановна!</p>
           <h2 className="font-serif-d text-[26px] mt-2">{couple.bride} & {couple.groom}</h2>
           <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>{couple.date} · {couple.city}</p>
           <p className="text-[11.5px] text-[#5C554B] font-light leading-relaxed mt-3">{inviteText}</p>
+          <button onClick={() => nav('/invite')} className="press mt-4 px-5 h-[40px] rounded-full bg-[#FBF6F1] text-[11.5px] font-semibold text-[#B57171]">Смотреть как гость →</button>
         </div>
+
+        {/* Сценарии */}
+        <div className="grid grid-cols-2 gap-2.5 mt-4">
+          {scenarios.map((t, k) => (
+            <button key={t.name} onClick={() => setTheme(k)} className={cn('press rounded-[20px] p-2 text-left bg-white', theme === k && 'ring-2 ring-[#C98A8A]')} style={{ boxShadow: 'var(--shadow)' }}>
+              <div className="h-[72px] rounded-[14px] flex items-center justify-center text-[24px]" style={{ background: t.g }}>{t.preview}</div>
+              <b className="text-[11.5px] block mt-2 px-1">«{t.name}»</b>
+              <span className="text-[9px] text-[#93897F] block px-1 pb-1 leading-tight">{t.desc}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Текст */}
         <div className="card p-4 mt-4">
           <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold">Текст приглашения</span>
           <textarea value={inviteText} onChange={e => setInviteText(e.target.value)} rows={3}
             className="w-full mt-2 bg-[#FBF6F1] rounded-xl px-4 py-3 text-[12.5px] outline-none leading-relaxed resize-none" />
           <p className="text-[9.5px] text-[#BFB5AA] mt-1.5">Имя гостя подставляется автоматически в начало</p>
         </div>
-        <div className="grid grid-cols-4 gap-2.5 mt-4">
-          {themes.map((t, k) => (
-            <button key={t.name} onClick={() => setTheme(k)} className={cn('press rounded-2xl p-1.5', theme === k && 'ring-2 ring-[#C98A8A]')}>
-              <div className="h-16 rounded-xl" style={{ background: t.g }} />
-              <span className="text-[9px] text-[#93897F] block mt-1.5">{t.name}</span>
-            </button>
-          ))}
+
+        {/* Вопросы гостям */}
+        <div className="card px-4 py-1.5 mt-4">
+          <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold block pt-3 pb-1">Вопросы в RSVP</span>
+          {qRow('plus', 'Придёте с +1?')}
+          {qRow('meal', 'Предпочтения по еде')}
+          {qRow('transfer', 'Нужен ли трансфер')}
         </div>
+
+        {/* Рассылка */}
         <div className="card p-5 mt-4">
           <div className="flex items-center justify-between">
             <b className="text-[13px]">Гостей в рассылке</b>
@@ -248,8 +275,10 @@ export function InviteEditor() {
               <button onClick={() => setCount(Math.min(guests.length * 10, count + 1))} className="press w-8 h-8 rounded-full bg-[#FBF6F1] flex items-center justify-center"><Plus size={14} /></button>
             </div>
           </div>
-          <p className="text-[10.5px] text-[#93897F] mt-3">Каждому — именная ссылка и QR. RSVP приходят в раздел «Гости» в реальном времени.</p>
+          <p className="text-[10.5px] text-[#93897F] mt-3">Каждому — именная ссылка и QR. Ответы RSVP приходят в раздел «Гости» в реальном времени.</p>
         </div>
+
+        {/* Ссылка и QR */}
         <div className="card p-5 mt-4">
           <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold">Ссылка и QR</span>
           <div className="flex items-center gap-3 mt-3">
@@ -260,10 +289,11 @@ export function InviteEditor() {
             </div>
             <div className="flex-1 min-w-0">
               <b className="text-[12px] block truncate">tili-tili.ru/i/alina-timur</b>
-              <p className="text-[10px] text-[#93897F] mt-1">Общая ссылка + именные для каждого гостя. QR — для печати на приглашениях.</p>
+              <p className="text-[10px] text-[#93897F] mt-1">Мессенджер сам подтянет обложку и имена — гость увидит приглашение ещё до клика.</p>
             </div>
           </div>
         </div>
+
         <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           <Send size={15} /> Разослать приглашения
         </button>
