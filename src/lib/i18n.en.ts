@@ -912,3 +912,15 @@ Object.assign(EN, {
   'Написать': 'Message',
   'Позвонить': 'Call',
 })
+
+// Роль координатора (EN)
+Object.assign(EN, {
+  'Координатор': 'Coordinator',
+  'Главный по дню X: командует подрядчиками в чате команды, правит тайминг. Финансы — только у пары.': 'Runs day X: directs vendors in the team chat, edits the timeline. Money stays with the couple only.',
+  'Тайминг и план Б': 'Timeline and plan B',
+  'Чаты с подрядчиками': 'Chats with vendors',
+  'Чек-лист и гости': 'Checklist and guests',
+  'Без бюджета и оплат': 'No budget or payments',
+  'Координатор · главная в день X': 'Coordinator · runs day X',
+  'ТИЛИ-КООРД-5520': 'TILI-COORD-5520',
+})

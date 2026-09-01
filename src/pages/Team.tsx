@@ -13,6 +13,7 @@ import { t } from '@/lib/i18n'
 const ROLES = [
   { id: 'partner', icon: '💞', tile: 'bg-[var(--rose-soft)]', name: t('Партнёр'), desc: t('Полный доступ: бюджет, сделки, документы, команда — всё как у вас.'), rights: [t('Бюджет и сделки'), t('Команда и документы'), t('Гости и приглашения'), t('Чек-лист и тайминг')] },
   { id: 'helper', icon: '🤝', tile: 'bg-[var(--sage-soft)]', name: t('Помощник'), desc: t('Свидетель, мама, подруга. Организация без финансов.'), rights: [t('Чек-лист и тайминг'), t('Гости и рассадка'), t('Заметки'), t('Без бюджета и сделок')] },
+  { id: 'coordinator', icon: '🎖', tile: 'bg-[var(--honey)]', name: t('Координатор'), desc: t('Главный по дню X: командует подрядчиками в чате команды, правит тайминг. Финансы — только у пары.'), rights: [t('Тайминг и план Б'), t('Чаты с подрядчиками'), t('Чек-лист и гости'), t('Без бюджета и оплат')] },
   { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: t('Подрядчик'), desc: t('Видит только свои сделки, чаты с вами и вашу дату в календаре.'), rights: [t('Свои сделки'), t('Чат с парой'), t('Календарь даты')] },
 ] as const
 
@@ -25,9 +26,11 @@ export function Team() {
   const members = [
     { n: t('Алина (вы)'), role: t('Пара · создатель'), icon: '👰', tile: 'bg-[var(--rose-soft)]', online: true },
     { n: t('Тимур'), role: t('Пара · приглашён'), icon: '🤵', tile: 'bg-[var(--blue)]', online: false },
+    { n: t('Алсу'), role: t('Координатор · главная в день X'), icon: '🎖', tile: 'bg-[var(--honey)]', online: true },
   ]
   const invites = [
     { code: t('ТИЛИ-ДРУГ-3310'), role: t('Помощник'), left: t('6 дней') },
+    { code: t('ТИЛИ-КООРД-5520'), role: t('Координатор'), left: t('5 дней') },
     { code: t('ТИЛИ-ФОТО-0917'), role: t('Подрядчик · Елена Смирнова'), left: t('2 дня') },
   ]
   const copy = (text: string) => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) }
