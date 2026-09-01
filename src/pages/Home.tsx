@@ -85,12 +85,14 @@ export default function Home() {
       </div>
 
       {/* Быстрые действия */}
-      <div className="px-5 mt-4 grid grid-cols-4 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
+      <div className="px-5 mt-4 grid grid-cols-3 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
         {[
           ['✦', 'bg-[#F2DFDC]', 'Спросить', '/assistant'],
           ['📅', 'bg-[#F0DCB8]', 'Тайминг', '/wedding/timeline'],
           ['💌', 'bg-[#D9CCE3]', 'Пригласить', '/wedding/invites'],
           ['📊', 'bg-[#E6EEE2]', 'Сравнить', '/compare'],
+          ['🗺', 'bg-[#C3D5E8]', 'Площадки', '/venues'],
+          ['✨', 'bg-[#F2DFDC]', 'Идеи', '/inspiration'],
         ].map(([ic, tile, l, to]) => (
           <button key={l} onClick={() => nav(to)} className="press card-s py-3 flex flex-col items-center gap-1.5">
             <span className={`w-9 h-9 rounded-[12px] ${tile} flex items-center justify-center text-[15px]`}>{ic}</span>

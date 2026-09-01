@@ -4,6 +4,7 @@ import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armc
 import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
+import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 
 /* Навигация раздела «Свадьба» */
@@ -238,11 +239,11 @@ export function Budget() {
 /* Чек-лист */
 export function Checklist() {
   const [period, setPeriod] = useState('9')
-  const [extra, setExtra] = useState<{ id: string; title: string; period: string; due: string; urgent?: boolean }[]>([])
+  const [extra, setExtra] = usePersist<{ id: string; title: string; period: string; due: string; urgent?: boolean }[]>('tt_tasks_extra', [])
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const allTasks = [...tasks, ...extra.map(t => ({ ...t, done: false }))]
-  const [done, setDone] = useState<string[]>(tasks.filter(t => t.done).map(t => t.id))
+  const [done, setDone] = usePersist<string[]>('tt_tasks_done', tasks.filter(t => t.done).map(t => t.id))
   const list = allTasks.filter(t => t.period === period)
   const toggle = (id: string) => setDone(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])
   const addTask = () => {
@@ -357,7 +358,7 @@ export function Timeline() {
 /* Гости */
 export function Guests() {
   const nav = useNavigate()
-  const [list, setList] = useState(guests)
+  const [list, setList] = usePersist('tt_guests', guests)
   const [filter, setFilter] = useState('all')
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')

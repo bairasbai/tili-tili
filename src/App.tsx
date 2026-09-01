@@ -14,6 +14,7 @@ import { Assistant, Compare, DayX, After } from '@/pages/Smart'
 import { VendorDashboard, VendorProfileWizard, VendorDeals } from '@/pages/VendorApp'
 import { VendorLead, VendorReviews, VendorAnalytics } from '@/pages/VendorExtras'
 import { Team, Join } from '@/pages/Team'
+import { Inspiration, VenuesMap } from '@/pages/Discover'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 
 function Shell() {
@@ -66,6 +67,8 @@ function Shell() {
         <Route path="/vendor-app/analytics" element={<VendorAnalytics />} />
         <Route path="/us" element={<Us />} />
         <Route path="/us/team" element={<Team />} />
+        <Route path="/inspiration" element={<Inspiration />} />
+        <Route path="/venues" element={<VenuesMap />} />
         <Route path="/us/chats" element={<Chats />} />
         <Route path="/us/chats/:id" element={<Chat />} />
         <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />

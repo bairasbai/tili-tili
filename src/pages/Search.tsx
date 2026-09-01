@@ -13,6 +13,9 @@ export function SearchCategories() {
   const [q, setQ] = useState('')
   const stateOf = (id: string) => slots.find(s => s.categoryId === id)?.state
   const list = categories.filter(c => c.name.toLowerCase().includes(q.toLowerCase()))
+  const foundVendors = q.trim().length >= 2
+    ? vendors.filter(v => `${v.name} ${v.category} ${v.desc}`.toLowerCase().includes(q.toLowerCase())).slice(0, 5)
+    : []
 
   return (
     <div className="pb-28">
@@ -37,7 +40,17 @@ export function SearchCategories() {
           )
         })}
       </div>
-      {list.length === 0 && (
+      {foundVendors.length > 0 && (
+        <div className="px-5 mt-5">
+          <span className="text-[10px] tracking-[.16em] uppercase text-[#93897F] font-semibold px-1">Подрядчики</span>
+          <div className="space-y-2.5 mt-2 stagger">
+            {foundVendors.map(v => (
+              <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />
+            ))}
+          </div>
+        </div>
+      )}
+      {list.length === 0 && !foundVendors.length && (
         <div className="px-5 mt-10 text-center fade-up">
           <div className="w-16 h-16 rounded-[22px] bg-[#F2DFDC] mx-auto flex items-center justify-center text-[26px]">🔍</div>
           <b className="text-[15px] block mt-4">Ничего не нашлось</b>

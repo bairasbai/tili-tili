@@ -1,6 +1,7 @@
 import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
+import { useT } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 /* Верхняя шапка страницы */
@@ -36,6 +37,7 @@ const tabs = [
 export function TabBar() {
   const nav = useNavigate()
   const loc = useLocation()
+  const tt = useT()
   const active = (to: string) => (to === '/wedding' ? loc.pathname.startsWith('/wedding') : loc.pathname.startsWith(to))
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab z-40">
@@ -52,7 +54,7 @@ export function TabBar() {
           return (
             <button key={t.to} onClick={() => nav(t.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[#B57171]' : 'text-[#93897F]')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
-              <span className="text-[9.5px] font-medium tracking-wide">{t.label}</span>
+              <span className="text-[9.5px] font-medium tracking-wide">{tt(t.label)}</span>
             </button>
           )
         })}

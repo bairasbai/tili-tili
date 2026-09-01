@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router'
 import { Check, ChevronRight, Eye, MessageCircle, CalendarDays, TrendingUp, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { CityPicker } from '@/components/CityPicker'
+import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 
 /* Кабинет подрядчика: дашборд */
 export function VendorDashboard() {
   const nav = useNavigate()
-  const [busyDays, setBusyDays] = useState<number[]>([5, 6, 14, 26])
+  const [busyDays, setBusyDays] = usePersist<number[]>('tt_vendor_busy', [5, 6, 14, 26])
   const toggleDay = (day: number) => setBusyDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort((a, b) => a - b))
   return (
     <div className="pb-28">
@@ -109,7 +110,7 @@ export function VendorProfileWizard() {
   const [step, setStep] = useState(0)
   const [photos, setPhotos] = useState(3)
   const [published, setPublished] = useState(false)
-  const [busyDays, setBusyDays] = useState<number[]>([5, 6, 20, 26])
+  const [busyDays, setBusyDays] = usePersist<number[]>('tt_vendor_busy', [5, 6, 20, 26])
   const [workCity, setWorkCity] = useState('Уфа')
   const [workRegion, setWorkRegion] = useState('Башкортостан')
   const [cityPick, setCityPick] = useState(false)

@@ -4,6 +4,7 @@ import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, Ima
 import { chats, chatMessages, couple } from '@/lib/data'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
+import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 
 /* «Мы» — профиль пары */
@@ -133,7 +134,7 @@ export function Chat() {
   const { id } = useParams()
   const nav = useNavigate()
   const chat = chats.find(c => c.id === id) ?? chats[0]
-  const [msgs, setMsgs] = useState(chatMessages)
+  const [msgs, setMsgs] = usePersist(`tt_chat_${id}`, chatMessages)
   const [text, setText] = useState('')
   const send = () => {
     if (!text.trim()) return

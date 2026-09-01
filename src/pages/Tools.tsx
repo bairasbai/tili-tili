@@ -4,6 +4,7 @@ import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-r
 import { contractTemplates, couple, guests, fmt } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
+import { usePersist } from '@/lib/usePersist'
 import { AiTip, Tile, TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 
@@ -190,46 +191,51 @@ export function ContractWizard() {
 
 /* Рассадка */
 export function Seating() {
-  const [tables, setTables] = useState([
+  const [tables, setTables] = usePersist('tt_tables', [
     { n: 1, guests: ['Марина Ивановна', 'Игорь Петрович', 'Бабушка Зоя', 'Дядя Рафик'] },
     { n: 2, guests: ['Тётя Люда', 'Айгуль и Марсель', 'Кузина Дина'] },
     { n: 3, guests: ['Ольга и Денис', 'Коллеги Тимура (4)'] },
     { n: 4, guests: [] as string[] },
   ])
-  const move = (from: number) => {
-    setTables(ts => {
-      const g = ts[from].guests
-      if (!g.length) return ts
-      const to = ts.findIndex((t, i) => i !== from && t.guests.length < 8)
-      const next = ts.map(t => ({ ...t, guests: [...t.guests] }))
-      next[to].guests.push(next[from].guests.pop()!)
-      return next
-    })
+  const [unseated, setUnseated] = usePersist<string[]>('tt_unseated', ['Руслан Гареев', 'Айгуль и Марсель', 'Семья Хакимовых'])
+  const [selected, setSelected] = useState<string | null>(null)
+  // Выбрал гостя → тап по столу сажает его. Тап по гостю за столом — возвращает в «без стола».
+  const seat = (ti: number) => {
+    if (!selected) return
+    if (tables[ti].guests.length >= 8) return
+    setTables(ts => ts.map((t, i) => i === ti ? { ...t, guests: [...t.guests, selected] } : t))
+    setUnseated(u => u.filter(g => g !== selected))
+    setSelected(null)
+  }
+  const unseat = (ti: number, g: string) => {
+    setTables(ts => ts.map((t, i) => i === ti ? { ...t, guests: t.guests.filter(x => x !== g) } : t))
+    setUnseated(u => [...u, g])
   }
   return (
     <div className="pb-28">
-      <TopBar back title="Рассадка" sub="Нажмите на стол — последний гость перейдёт дальше" />
+      <TopBar back title="Рассадка" sub={selected ? `Сажаем: ${selected} — выберите стол` : 'Выберите гостя, затем стол'} />
       <div className="px-5 mt-3">
         <div className="card-s px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <span className="text-[10px] tracking-[.14em] uppercase text-[#93897F] font-semibold shrink-0">Без стола:</span>
-          {['Руслан Гареев', 'Коллеги Тимура (4)', 'Айгуль и Марсель'].map(g => (
-            <span key={g} className="text-[10.5px] font-medium px-3 py-1.5 rounded-full bg-[#FBF6F1] whitespace-nowrap shrink-0">{g}</span>
+          {unseated.map(g => (
+            <button key={g} onClick={() => setSelected(s => s === g ? null : g)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g ? 'grad text-white' : 'bg-[#FBF6F1]')}>{g}</button>
           ))}
+          {!unseated.length && <span className="text-[10.5px] text-[#7E9A74] font-semibold">все рассажены ✓</span>}
         </div>
       </div>
       <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
         {tables.map((t, i) => (
-          <button key={t.n} onClick={() => move(i)} className="press card p-4 text-left fade-up">
+          <div key={t.n} onClick={() => seat(i)} className={cn('card p-4 text-left fade-up transition-all', selected && t.guests.length < 8 && 'ring-2 ring-[#A9BCA0] cursor-pointer')}>
             <div className="flex items-center justify-between">
               <b className="font-serif-d text-[16px]">Стол №{t.n}</b>
               <span className="text-[9px] text-[#93897F] flex items-center gap-1"><Armchair size={10} /> {t.guests.length}/8</span>
             </div>
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {t.guests.length ? t.guests.map(g => (
-                <div key={g} className="text-[11px] bg-[#FBF6F1] rounded-lg px-2.5 py-1.5 truncate">{g}</div>
+                <button key={g} onClick={e => { e.stopPropagation(); unseat(i, g) }} className="press w-full text-left text-[11px] bg-[#FBF6F1] rounded-lg px-2.5 py-1.5 truncate">{g}</button>
               )) : <div className="text-[10.5px] text-[#CFC5BA] py-3 text-center border-[1.5px] border-dashed border-[#EAD9CF] rounded-xl">Пусто</div>}
             </div>
-          </button>
+          </div>
         ))}
       </div>
       <div className="px-5 mt-4 space-y-3">
