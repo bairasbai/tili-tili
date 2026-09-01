@@ -10,13 +10,16 @@ import { cn } from '@/lib/utils'
 /* Карточка сделки */
 export function Deal() {
   const nav = useNavigate()
+  const [paid, setPaid] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancelled, setCancelled] = useState(false)
   const steps = [
     { label: 'Кандидат', done: true },
     { label: 'Переговоры', done: true },
     { label: 'Договор', done: true },
     { label: 'Аванс 50%', done: true },
-    { label: 'День X', done: false },
-    { label: 'Доплата', done: false },
+    { label: 'День X', done: paid },
+    { label: 'Доплата', done: paid },
   ]
   return (
     <div className="pb-28">
@@ -52,7 +55,7 @@ export function Deal() {
           </div>
           <div className="flex justify-between items-center mt-2.5">
             <span className="text-[12.5px]">Доплата · 14 июн</span>
-            <b className="tabular text-[13px] text-[#93897F]">{fmt(30000)}</b>
+            <b className={cn('tabular text-[13px]', paid ? 'text-[#7E9A74]' : 'text-[#93897F]')}>{paid ? `✓ ${fmt(30000)}` : fmt(30000)}</b>
           </div>
           <div className="h-[1.5px] bg-[#F1E9E2] my-3" />
           <div className="flex justify-between items-center">
@@ -64,8 +67,18 @@ export function Deal() {
         <div className="grid grid-cols-2 gap-2.5">
           <button onClick={() => nav('/us/chats/ch3')} className="press card-s py-3.5 text-[13px] font-semibold">Написать</button>
           <button onClick={() => nav('/wedding/documents/new')} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} /> Договор</button>
-          <button className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74]">✓ Отметить доплату</button>
-          <button className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить сделку</button>
+          {paid ? (
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[#7E9A74] text-center">✓ Оплачено полностью</div>
+          ) : (
+            <button onClick={() => setPaid(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74]">✓ Отметить доплату</button>
+          )}
+          {cancelled ? (
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[#93897F] text-center">Сделка отменена</div>
+          ) : confirmCancel ? (
+            <button onClick={() => { setCancelled(true); setConfirmCancel(false) }} className="press py-3.5 rounded-[18px] bg-[#B57171] text-white text-[13px] font-semibold">Точно отменить?</button>
+          ) : (
+            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить сделку</button>
+          )}
         </div>
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[#93897F] font-semibold">История</span>
@@ -196,9 +209,9 @@ export function Seating() {
         ))}
       </div>
       <div className="px-5 mt-4 space-y-3">
-        <button className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Добавить стол</button>
+        <button onClick={() => setTables(ts => [...ts, { n: ts.length + 1, guests: [] as string[] }])} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Добавить стол</button>
         <AiTip text="Тётя Люда и дядя Рафик отмечены «не сажать вместе» — они за соседними столами, всё в порядке." />
-        <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} /> PDF для печати А3</button>
+        <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} /> PDF для печати А3</button>
       </div>
     </div>
   )
@@ -212,6 +225,7 @@ export function InviteEditor() {
   const [count, setCount] = useState(42)
   const [inviteText, setInviteText] = useState('Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
   const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
+  const [sentInvites, setSentInvites] = useState(false)
   const qRow = (key: keyof typeof questions, label: string) => (
     <div className="flex items-center justify-between py-3 border-b border-[#F1E9E2] last:border-none">
       <span className="text-[12.5px] font-medium">{label}</span>
@@ -295,9 +309,17 @@ export function InviteEditor() {
           </div>
         </div>
 
-        <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          <Send size={15} /> Разослать приглашения
-        </button>
+        {sentInvites ? (
+          <div className="card p-5 mt-4 text-center pop">
+            <b className="text-[15px]">✓ Отправлено {count} гостям</b>
+            <p className="text-[11px] text-[#93897F] mt-1.5">Ответы RSVP появятся в разделе «Гости» в реальном времени</p>
+            <button onClick={() => nav('/wedding/guests')} className="press mt-4 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">К списку гостей →</button>
+          </div>
+        ) : (
+          <button onClick={() => setSentInvites(true)} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+            <Send size={15} /> Разослать приглашения
+          </button>
+        )}
       </div>
     </div>
   )

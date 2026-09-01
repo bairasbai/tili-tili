@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
-import { vendors, timeline } from '@/lib/data'
+import { vendors, timeline, categories } from '@/lib/data'
+import { useStore } from '@/lib/store'
 import { TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 
@@ -62,7 +63,16 @@ export function Assistant() {
 
 /* Сравнение кандидатов */
 export function Compare() {
+  const nav = useNavigate()
+  const { slots, bookVendor } = useStore()
+  const [picked, setPicked] = useState<string | null>(null)
   const list = vendors.slice(0, 3)
+  const pick = (v: typeof list[0]) => {
+    const slot = slots.find(s => s.categoryId === categories.find(c => c.name === v.category)?.id) ?? slots.find(s => s.state === 'empty')
+    if (slot) bookVendor(slot.id, v.name, v.priceFrom)
+    setPicked(v.id)
+    setTimeout(() => nav('/wedding'), 900)
+  }
   const rows: [string, (v: typeof list[0]) => string][] = [
     ['Цена «от»', v => `${v.priceFrom.toLocaleString('ru-RU')} ₽`],
     ['Рейтинг', v => (v.reviews ? `★ ${v.rating} · ${v.reviews} отзывов` : 'Новый')],
@@ -100,7 +110,9 @@ export function Compare() {
               <td />
               {list.map(v => (
                 <td key={v.id} className="p-1.5">
-                  <button className="press w-full h-[40px] rounded-full grad text-white text-[11px] font-bold">Выбрать</button>
+                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[#E6EEE2] text-[#7E9A74]' : 'grad text-white')}>
+                    {picked === v.id ? '✓ В команде' : 'Выбрать'}
+                  </button>
                 </td>
               ))}
             </tr>
@@ -202,9 +214,9 @@ export function DayX() {
           </div>
         </div>
 
-        <button className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2" style={{ background: '#C4705A' }}>
+        <a href="tel:+70000000000" className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2" style={{ background: '#C4705A' }}>
           <Zap size={16} /> SOS · Координатору
-        </button>
+        </a>
       </div>
     </div>
   )
@@ -212,6 +224,10 @@ export function DayX() {
 
 /* После свадьбы */
 export function After() {
+  const [dl, setDl] = useState(0)
+  const [rating, setRating] = useState(false)
+  const [stars, setStars] = useState<Record<string, number>>({})
+  const reviewList = ['Елена Смирнова · фотограф', 'Артём Краснов · ведущий', 'Студия «Пион» · флористика', 'Усадьба «Липовый сад»', '«Марципан» · торт']
   const stats = [
     ['14', 'подрядчиков', '🤝'],
     ['76', 'гостей', '🥂'],
@@ -241,8 +257,30 @@ export function After() {
           <div className="h-1.5 rounded-full bg-[#F1E9E2] overflow-hidden"><div className="h-full grad rounded-full" style={{ width: '64%' }} /></div>
           <p className="text-[10.5px] text-[#93897F] mt-2.5">Отзывы помогают другим парам и поднимают рейтинг тех, кто сделал ваш день.</p>
         </div>
-        <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>Скачать общий альбом (ZIP)</button>
-        <button className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">Оставить отзывы команде</button>
+        <button onClick={() => {
+            if (dl !== 0) return
+            setDl(1)
+            const t = setInterval(() => setDl(d => { if (d >= 100) { clearInterval(t); return 100 } return d + 5 }), 120)
+          }}
+          className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          {dl === 0 ? 'Скачать общий альбом (ZIP)' : dl < 100 ? `Собираем архив… ${dl}%` : '✓ Архив готов · ссылка отправлена'}
+        </button>
+        {dl > 0 && dl < 100 && <div className="h-1.5 rounded-full bg-[#F1E9E2] mt-2.5 overflow-hidden"><div className="h-full grad rounded-full transition-all" style={{ width: `${dl}%` }} /></div>}
+        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">{rating ? 'Скрыть' : 'Оставить отзывы команде'}</button>
+        {rating && (
+          <div className="card px-4 py-1.5 mt-3 fade-up">
+            {reviewList.map((r, i) => (
+              <div key={r} className={cn('flex items-center justify-between py-3', i !== reviewList.length - 1 && 'border-b border-[#F1E9E2]')}>
+                <span className="text-[12px] font-medium flex-1">{r}</span>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map(s => (
+                    <button key={s} onClick={() => setStars(x => ({ ...x, [r]: s }))} className="press text-[15px]" style={{ color: (stars[r] ?? 0) >= s ? '#E3C892' : '#EADFD6' }}>★</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <p className="text-center text-[10.5px] text-[#BFB5AA] mt-5">Проект и документы хранятся бессрочно. Встретимся в годовщину 💌</p>
       </div>
     </div>

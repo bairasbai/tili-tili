@@ -55,6 +55,7 @@ export function VendorList() {
   const list = vendors.filter(v => v.category === cat.name || (catId === 'photo' && v.category === 'Фотограф'))
   const base = list.length ? list : vendors
   const [filter, setFilter] = useState('free')
+  const [showFilters, setShowFilters] = useState(true)
   const shown = base.filter(v =>
     filter === 'free' ? v.freeOnDate :
     filter === 'video' ? v.hasVideo :
@@ -65,18 +66,18 @@ export function VendorList() {
   return (
     <div className="pb-28">
       <TopBar back title={cat.name} sub={`${shown.length} рядом · сортировка: рекомендованные`} right={
-        <button className="press w-10 h-10 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Фильтры">
+        <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-white' : 'bg-white')} style={{ boxShadow: 'var(--shadow)' }} aria-label="Фильтры">
           <SlidersHorizontal size={16} />
         </button>
       } />
-      <div className="px-5 flex gap-2 mt-2 overflow-x-auto no-scrollbar">
+      {showFilters && <div className="px-5 flex gap-2 mt-2 overflow-x-auto no-scrollbar">
         {[['free', 'Свободны 14.06'], ['video', 'С видео'], ['top', 'Рейтинг 4.8+'], ['budget', 'до 100 тыс ₽']].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-white' : 'bg-white text-[#93897F]')} style={{ boxShadow: 'var(--shadow)' }}>
             {label}
           </button>
         ))}
         <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-white text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>⇄ Сравнить</button>
-      </div>
+      </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {shown.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}
         {shown.length === 0 && (

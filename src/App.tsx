@@ -12,6 +12,7 @@ import { Auth, Notifications, Settings, Support } from '@/pages/Account'
 import { Deal, ContractWizard, Seating, InviteEditor } from '@/pages/Tools'
 import { Assistant, Compare, DayX, After } from '@/pages/Smart'
 import { VendorDashboard, VendorProfileWizard, VendorDeals } from '@/pages/VendorApp'
+import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 
 function Shell() {
   const { onboarded } = useStore()
@@ -36,6 +37,9 @@ function Shell() {
         <Route path="/search/:catId" element={<VendorList />} />
         <Route path="/vendor/:id" element={<VendorDetail />} />
         <Route path="/compare" element={<Compare />} />
+        <Route path="/favorites" element={<Favorites />} />
+        <Route path="/notes" element={<Notes />} />
+        <Route path="/tools/alcohol" element={<AlcoholCalc />} />
         <Route path="/wedding" element={<WeddingTeam />} />
         <Route path="/wedding/slot/:id" element={<SlotDetail />} />
         <Route path="/wedding/budget" element={<Budget />} />

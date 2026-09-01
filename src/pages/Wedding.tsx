@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair } from 'lucide-react'
+import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine } from 'lucide-react'
 import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -15,9 +15,12 @@ function WeddingNav() {
     { to: '/wedding/timeline', icon: Clock3, label: 'Тайминг', tile: 'bg-[#F0DCB8]' },
     { to: '/wedding/guests', icon: Users, label: 'Гости', tile: 'bg-[#D9CCE3]' },
     { to: '/wedding/documents', icon: FileText, label: 'Документы', tile: 'bg-[#C3D5E8]' },
+    { to: '/favorites', icon: Heart, label: 'Избранное', tile: 'bg-[#F2DFDC]' },
+    { to: '/notes', icon: NotebookPen, label: 'Заметки', tile: 'bg-[#F3E3D3]' },
+    { to: '/tools/alcohol', icon: Wine, label: 'Алко-кальк.', tile: 'bg-[#E6EEE2]' },
   ]
   return (
-    <div className="grid grid-cols-5 gap-2 px-5 mt-3">
+    <div className="grid grid-cols-4 gap-2 px-5 mt-3">
       {items.map(it => (
         <button key={it.to} onClick={() => nav(it.to)} className="press flex flex-col items-center gap-1.5">
           <div className={cn('w-[52px] h-[52px] rounded-[18px] flex items-center justify-center', it.tile)} style={{ boxShadow: 'var(--shadow)' }}>
@@ -87,9 +90,10 @@ export function WeddingTeam() {
 /* Деталь слота */
 export function SlotDetail() {
   const nav = useNavigate()
-  const { slots } = useStore()
+  const { slots, cancelBooking } = useStore()
   const id = location.pathname.split('/').pop()
   const s = slots.find(x => x.id === id) ?? slots[0]
+  const [confirmCancel, setConfirmCancel] = useState(false)
   return (
     <div className="pb-28">
       <TopBar back title={s.label} sub="Слот команды" />
@@ -104,7 +108,11 @@ export function SlotDetail() {
           <button onClick={() => nav('/us/chats/ch1')} className="press card-s py-3.5 text-[13px] font-semibold">Написать</button>
           <button onClick={() => nav('/deal')} className="press card-s py-3.5 text-[13px] font-semibold">Сделка</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">Заменить</button>
-          <button className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить бронь</button>
+          {confirmCancel ? (
+            <button onClick={() => { cancelBooking(s.id); nav('/wedding') }} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#C98A8A' }}>Точно отменить?</button>
+          ) : (
+            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить бронь</button>
+          )}
         </div>
 
         {s.price && (
@@ -287,10 +295,19 @@ export function Checklist() {
 
 /* Тайминг дня */
 export function Timeline() {
+  const [events, setEvents] = useState(timeline)
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState('')
+  const [time, setTime] = useState('')
+  const addEvent = () => {
+    if (!name.trim() || !time.trim()) return
+    setEvents(ev => [...ev, { id: `e${Date.now()}`, time, name: name.trim(), loc: 'Усадьба «Липовый сад»', icon: '📌', tile: 'bg-[#F3E3D3]', who: 'Согласовать с координатором' }])
+    setName(''); setTime(''); setEditing(false)
+  }
   return (
     <div className="pb-28">
       <TopBar back title="День свадьбы" sub="Расписание 14 июня · полный сценарий" right={
-        <button className="press h-10 px-4 rounded-full bg-white text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>Править</button>
+        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-white text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? 'Готово' : 'Править'}</button>
       } />
       <div className="px-5 mt-2.5">
         <div className="card-s px-4 py-3 flex items-center gap-3">
@@ -302,7 +319,14 @@ export function Timeline() {
         </div>
       </div>
       <div className="px-5 mt-2 space-y-2.5 stagger">
-        {timeline.map(e => (
+        {editing && (
+          <div className="card p-4 fade-up">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Событие (например, «Первый танец»)" className="w-full bg-[#FBF6F1] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[#CFC5BA]" />
+            <input value={time} onChange={e => setTime(e.target.value)} placeholder="Время (например, 19:00 — 19:10)" className="w-full bg-[#FBF6F1] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[#CFC5BA] mt-2.5" />
+            <button onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-white text-[12px] font-semibold mt-3">Добавить в тайминг</button>
+          </div>
+        )}
+        {events.map(e => (
           <div key={e.id} className="card-s p-4 flex gap-3 fade-up">
             <Tile icon={e.icon} tile={e.tile} size={42} />
             <div className="min-w-0">
@@ -314,7 +338,7 @@ export function Timeline() {
           </div>
         ))}
         <div className="mt-2"><AiTip text="Автоплан готов: конфликтов нет. План Б на дождь для церемонии — шатёр уже включён в аренду усадьбы." /></div>
-        <button className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} /> Скачать PDF для координатора</button>
+        <button onClick={() => window.print()} className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} /> Скачать PDF для координатора</button>
       </div>
     </div>
   )
@@ -366,7 +390,13 @@ export function Guests() {
         </div>
         <div className="grid grid-cols-2 gap-2.5 mt-3.5">
           <button onClick={() => nav('/wedding/seating')} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Armchair size={15} /> Рассадка</button>
-          <button className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} /> Список PDF</button>
+          <button onClick={() => {
+            const csv = 'Имя;Статус;+1;Стол\n' + guests.map(g => `${g.name};${g.status === 'yes' ? 'Придёт' : g.status === 'no' ? 'Не придёт' : 'Ждём'};${g.plus ? 'да' : 'нет'};${g.table ?? ''}`).join('\n')
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv' }))
+            a.download = 'gosti-alina-timur.csv'
+            a.click()
+          }} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} /> Список CSV</button>
         </div>
         <div className="mt-3.5"><AiTip text="8 гостей не ответили — дедлайн RSVP 1 мая. Отправить напоминание одной кнопкой?" /></div>
       </div>
