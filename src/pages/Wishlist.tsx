@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Gift as GiftIcon, Plus, ShieldCheck, ShoppingBag, Trash2, Users, X } from 'lucide-react'
-import { fmt, initialAntiGifts, initialFunds, type Fund, type Gift } from '@/lib/data'
+import { Gift as GiftIcon, MessageSquareHeart, Plus, ShieldCheck, ShoppingBag, Star, Trash2, Users, X } from 'lucide-react'
+import { fmt, initialAntiGifts, initialFunds, initialGuestReviews, type Fund, type Gift, type GuestReview } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
@@ -366,9 +366,72 @@ export function GiftPick() {
         </>
       )}
 
+      {/* Отзывы гостей о подрядчиках (после свадьбы) */}
+      <SectionHead title={t('Как прошла свадьба?')} sub={t('ваш отзыв будет помечен «от гостя»')} />
+      <GuestReviewForm />
+
       <div className="px-5 mt-6">
         <button onClick={() => nav(-1)} className="press w-full card-s py-4 text-[13px] font-semibold">{t('Назад')}</button>
       </div>
+    </div>
+  )
+}
+
+/* Форма отзыва гостя: подрядчик → звёзды → текст; сохраняется с пометкой «гость» */
+export function GuestReviewForm() {
+  const [reviews, setReviews] = usePersist<GuestReview[]>('tt_guest_reviews', initialGuestReviews)
+  const [vendor, setVendor] = useState('')
+  const [stars, setStars] = useState(0)
+  const [text, setText] = useState('')
+  const [sentOk, setSentOk] = useState(false)
+  const vendorOptions = [t('Елена Смирнова · фотограф'), t('Артём Краснов · ведущий'), t('Студия «Пион» · флористика'), t('Усадьба «Липовый сад»'), t('«Марципан» · торт')]
+  const submit = () => {
+    if (!vendor || !stars) return
+    setReviews(r => [{ id: `gr${Date.now()}`, vendor, stars, text: text.trim() || t('Без комментария'), at: t('сегодня') }, ...r])
+    setVendor(''); setStars(0); setText(''); setSentOk(true)
+    setTimeout(() => setSentOk(false), 2200)
+  }
+  return (
+    <div className="px-5 space-y-3">
+      <div className="card p-4">
+        <div className="flex gap-3 items-start">
+          <MessageSquareHeart size={20} className="text-[#C98A8A] shrink-0 mt-0.5" />
+          <p className="text-[12px] text-[var(--soft)] leading-relaxed">
+            {t('Вы оставляете отзыв')} <b className="text-[var(--ink)]">{t('как гость свадьбы')}</b>{t(' — он будет помечен значком «Гость» и не смешается с отзывом пары. Молодожёны увидят его анонимно.')}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {vendorOptions.map(v => (
+            <button key={v} onClick={() => setVendor(v)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full transition-all', vendor === v ? 'grad text-white' : 'bg-[var(--bg)] text-[var(--soft)]')}>{v}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 mt-3">
+          {[1, 2, 3, 4, 5].map(n => (
+            <button key={n} onClick={() => setStars(n)} className="press p-1" aria-label={`${n}`}>
+              <Star size={22} className={n <= stars ? 'fill-[#E3C892] text-[#E3C892]' : 'text-[var(--track)]'} />
+            </button>
+          ))}
+          {stars > 0 && <span className="text-[11px] text-[var(--soft)] ml-1.5">{stars}/5</span>}
+        </div>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={t('Пара слов о впечатлениях (необязательно)')} className="w-full mt-2.5 px-4 py-3 rounded-xl bg-[var(--bg)] text-[12.5px] outline-none resize-none placeholder:text-[var(--soft2)]" />
+        <button onClick={submit} disabled={!vendor || !stars} className="press w-full h-[46px] rounded-full grad text-white text-[12.5px] font-semibold mt-2.5 disabled:opacity-40">
+          {sentOk ? t('✓ Спасибо! Отзыв отправлен') : t('Отправить отзыв гостя')}
+        </button>
+      </div>
+      {reviews.length > 0 && (
+        <div className="space-y-2">
+          {reviews.slice(0, 3).map(r => (
+            <div key={r.id} className="card-s p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <b className="text-[12px] truncate">{r.vendor}</b>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#5B7898] shrink-0">{t('Гость свадьбы')}</span>
+              </div>
+              <p className="text-[10px] text-[#B98A2F] mt-1">{'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)} <span className="text-[var(--soft2)]">· {r.at}</span></p>
+              <p className="text-[11.5px] text-[var(--ink2)] mt-1 font-light">{r.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

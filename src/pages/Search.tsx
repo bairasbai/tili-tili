@@ -240,6 +240,14 @@ export function VendorDetail() {
               <p className="text-[9px] font-bold text-[#7E9A74] mt-2">✓ {t('сделка через «Тили-тили» — отзыв подтверждён')}</p>
             </div>
           ))}
+          <div className="card-s p-4">
+            <div className="flex justify-between items-center gap-2">
+              <b className="text-[12.5px]">{t('Гость свадьбы Алины и Тимура')}</b>
+              <span className="text-[10px] text-[#B98A2F] tracking-wide">★★★★★</span>
+            </div>
+            <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{t('Фотографировала нас незаметно, но на фото мы все — и бабушки, и дети. Очень живые кадры!')}</p>
+            <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#5B7898] mt-2">{t('Гость свадьбы')}</span>
+          </div>
         </div>
       </div>
 

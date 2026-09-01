@@ -279,3 +279,10 @@ export const dressPalettes = [
   { id: 'd3', name: t('Лавандовый вечер'), colors: ['#D9CCE3', '#B9A7CC', '#8E7AA6', '#EFE9DF', '#3A322B'] },
   { id: 'd4', name: t('Медовый закат'), colors: ['#E3C892', '#D4A96A', '#B98A2F', '#F0DCB8', '#3A322B'] },
 ]
+
+/* Отзывы гостей о подрядчиках (помечаются отдельно от отзывов пары) */
+export interface GuestReview { id: string; vendor: string; stars: number; text: string; at: string }
+export const initialGuestReviews: GuestReview[] = [
+  { id: 'gr1', vendor: t('Артём Краснов · ведущий'), stars: 5, text: t('Вёл вечер очень деликатно, тосты не затянуты, танцы были!'), at: t('15 июн') },
+  { id: 'gr2', vendor: t('Усадьба «Липовый сад»'), stars: 4, text: t('Красивое место и вкусная кухня. Минус — далеко парковаться.'), at: t('16 июн') },
+]

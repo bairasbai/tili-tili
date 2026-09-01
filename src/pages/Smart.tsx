@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
-import { vendors, timeline, categories } from '@/lib/data'
+import { vendors, timeline, categories, initialGuestReviews, type GuestReview } from '@/lib/data'
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
@@ -243,10 +243,20 @@ export function DayX() {
 }
 
 /* После свадьбы */
+function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="mt-1 mb-2.5">
+      <h3 className="font-serif-d text-[17px]">{title}</h3>
+      {sub && <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
 export function After() {
   const [dl, setDl] = useState(0)
   const [rating, setRating] = useState(false)
   const [stars, setStars] = useState<Record<string, number>>({})
+  const [guestReviews] = usePersist<GuestReview[]>('tt_guest_reviews', initialGuestReviews)
   const reviewList = [t('Елена Смирнова · фотограф'), t('Артём Краснов · ведущий'), t('Студия «Пион» · флористика'), t('Усадьба «Липовый сад»'), t('«Марципан» · торт')]
   const stats = [
     ['14', t('подрядчиков'), '🤝'],
@@ -301,6 +311,22 @@ export function After() {
             ))}
           </div>
         )}
+        <div className="mt-4">
+          <SectionHeadSm title={t('Отзывы от гостей')} sub={t('гости отмечены значком и не смешиваются с вашими отзывами')} />
+          <div className="flex flex-col gap-2">
+            {guestReviews.slice(0, 5).map(r => (
+              <div key={r.id} className="card-s p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <b className="text-[12.5px] flex-1">{r.vendor}</b>
+                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#5B7898]">{t('Гость свадьбы')}</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.stars)}<span className="text-[var(--track)]">{'★'.repeat(5 - r.stars)}</span><span className="text-[10px] text-[var(--soft2)] ml-1.5">{r.at}</span></div>
+                <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>
+        </div>
         <p className="text-center text-[10.5px] text-[var(--soft2)] mt-5">{t('Проект и документы хранятся бессрочно. Встретимся в годовщину 💌')}</p>
       </div>
     </div>

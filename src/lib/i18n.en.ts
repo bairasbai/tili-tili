@@ -1092,3 +1092,26 @@ Object.assign(EN, {
   'сделка через «Тили-тили» — отзыв подтверждён': 'deal via Tili-tili — verified review',
   '· ✓ проверен': '· ✓ verified',
 })
+
+Object.assign(EN, {
+  'Как прошла свадьба?': 'How was the wedding?',
+  'ваш отзыв будет помечен «от гостя»': 'your review will be marked “from a guest”',
+  'Вы оставляете отзыв': 'You are leaving a review',
+  'как гость свадьбы': 'as a wedding guest',
+  ' — он будет помечен значком «Гость» и не смешается с отзывом пары. Молодожёны увидят его анонимно.': ' — it will be marked with a “Guest” badge and won’t be mixed with the couple’s review. The couple will see it anonymously.',
+  'Пара слов о впечатлениях (необязательно)': 'A few words about your impressions (optional)',
+  'Отправить отзыв гостя': 'Send guest review',
+  '✓ Спасибо! Отзыв отправлен': '✓ Thank you! Review sent',
+  'Гость свадьбы': 'Wedding guest',
+  'Без комментария': 'No comment',
+  'сегодня': 'today',
+  'Отзывы от гостей': 'Reviews from guests',
+  'гости отмечены значком и не смешиваются с вашими отзывами': 'guests are marked with a badge and never mixed with your own reviews',
+  'Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.': 'Guest reviews are visible to you and count toward the vendor’s rating separately from couples’ reviews.',
+  'Гость свадьбы Алины и Тимура': 'Guest of Alina & Timur’s wedding',
+  'Фотографировала нас незаметно, но на фото мы все — и бабушки, и дети. Очень живые кадры!': 'She photographed us unobtrusively, yet the photos have everyone — grandmas and kids. Such lively shots!',
+  'Вёл вечер очень деликатно, без пошлых конкурсов. Все танцевали до конца!': 'He hosted the evening very tastefully, no tacky games. Everyone danced till the end!',
+  'Красивое место и вкусная кухня. Минус — далеко парковаться.': 'Beautiful venue and tasty food. Minus — parking is far away.',
+  'Артём Краснов · ведущий': 'Artyom Krasnov · host',
+  'Усадьба «Липовый сад»': 'Lipovy Sad estate',
+})
