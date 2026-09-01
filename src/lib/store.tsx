@@ -26,7 +26,12 @@ const Ctx = createContext<Store | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('tt_onboarded') === '1')
   const [slots, setSlots] = useState<Slot[]>(initialSlots)
-  const [favorites, setFavorites] = useState<string[]>(() => JSON.parse(localStorage.getItem('tt_fav') ?? '["v1"]'))
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('tt_fav') ?? '["v1"]')
+      return Array.isArray(parsed) ? parsed : ['v1']
+    } catch { return ['v1'] }
+  })
   const [lang, setLang] = useState<'ru' | 'en'>('ru')
   const [inviteTpl, setInviteTplState] = useState(() => Number(localStorage.getItem('tt_invite_tpl') ?? 0))
   const [inviteText, setInviteTextState] = useState(() => localStorage.getItem('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')

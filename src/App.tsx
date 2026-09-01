@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TabBar } from '@/components/chrome'
 import Onboarding from '@/pages/Onboarding'
 import Quiz from '@/pages/Quiz'
@@ -80,8 +81,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <StoreProvider>
-      <Shell />
-    </StoreProvider>
+    <ErrorBoundary>
+      <StoreProvider>
+        <Shell />
+      </StoreProvider>
+    </ErrorBoundary>
   )
 }
