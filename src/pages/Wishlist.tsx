@@ -5,7 +5,7 @@ import { fmt, initialAntiGifts, initialFunds, initialGuestReviews, type Fund, ty
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
-import { cn } from '@/lib/utils'
+import { cn, goBack } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* ── Сторона пары: управление списком желаний ── */
@@ -371,7 +371,7 @@ export function GiftPick() {
       <GuestReviewForm />
 
       <div className="px-5 mt-6">
-        <button onClick={() => nav(-1)} className="press w-full card-s py-4 text-[13px] font-semibold">{t('Назад')}</button>
+        <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o), '/invite')} className="press w-full card-s py-4 text-[13px] font-semibold">{t('Назад')}</button>
       </div>
     </div>
   )

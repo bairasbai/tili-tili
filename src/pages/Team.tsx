@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Check, ChevronRight, Copy, Crown, Heart, Link2, QrCode, Shield, Users, X } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* «Наша команда» — единое пространство свадьбы: роли и приглашения.
@@ -23,6 +23,10 @@ export function Team() {
   const [invite, setInvite] = useState<typeof ROLES[number] | null>(null)
   const [copied, setCopied] = useState(false)
   const [revoked, setRevoked] = useState<number[]>([])
+  // код генерируется один раз на открытую шторку — иначе менялся при каждом рендере
+  const inviteCode = useMemo(() => invite
+    ? `ТИЛИ-${invite.id === 'partner' ? 'ПАРА' : invite.id === 'helper' ? 'ДРУГ' : invite.id === 'coordinator' ? 'КООРД' : 'ПОДР'}-${Math.floor(1000 + Math.random() * 9000)}`
+    : '', [invite])
   const members = [
     { n: t('Алина (вы)'), role: t('Пара · создатель'), icon: '👰', tile: 'bg-[var(--rose-soft)]', online: true },
     { n: t('Тимур'), role: t('Пара · приглашён'), icon: '🤵', tile: 'bg-[var(--blue)]', online: false },
@@ -33,7 +37,7 @@ export function Team() {
     { code: t('ТИЛИ-КООРД-5520'), role: t('Координатор'), left: t('5 дней') },
     { code: t('ТИЛИ-ФОТО-0917'), role: t('Подрядчик · Елена Смирнова'), left: t('2 дня') },
   ]
-  const copy = (text: string) => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) }
+  const copy = (text: string) => { copyText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) }
   const url = (code: string) => `tili-tili.ru/join/${code}`
 
   return (
@@ -120,13 +124,13 @@ export function Team() {
             <div className="card-s p-4 mt-4 flex items-center gap-3">
               <QrCode size={40} className="text-[var(--ink)] shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold tabular truncate">{url(`ТИЛИ-${invite.id === 'partner' ? 'ПАРА' : invite.id === 'helper' ? 'ДРУГ' : 'ПОДР'}-${Math.floor(1000 + Math.random() * 9000)}`)}</p>
+                <p className="text-[11px] font-bold tabular truncate">{url(inviteCode)}</p>
                 <p className="text-[9.5px] text-[var(--soft)]">{t('отправьте ссылку или покажите QR')}</p>
               </div>
-              <button onClick={() => copy(url(t('ТИЛИ-ПАРА-7421')))} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+              <button onClick={() => copy(url(inviteCode))} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
             </div>
-            <button onClick={() => { copy(url(t('ТИЛИ-ПАРА-7421'))); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-              {copied ? '✓ Скопировано!' : t('Скопировать ссылку')}
+            <button onClick={() => { copy(url(inviteCode)); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+              {copied ? t('✓ Скопировано!') : t('Скопировать ссылку')}
             </button>
             <button onClick={() => nav('/us/chats')} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>{t('Отправить в чат')}</button>
           </div>

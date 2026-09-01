@@ -51,8 +51,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [city, setCityState] = useState(() => localStorage.getItem('tt_city') ?? 'Уфа')
   const [cityRegion, setCityRegion] = useState(() => localStorage.getItem('tt_city_region') ?? 'Башкортостан')
   const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
-    localStorage.getItem('tt_theme') === 'dark' ||
-    (!localStorage.getItem('tt_theme') && window.matchMedia?.('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light')
+    localStorage.getItem('tt_theme') === 'dark' ? 'dark' : 'light')
   const [gifts, setGifts] = useState<Gift[]>(() => {
     try {
       const raw = localStorage.getItem('tt_gifts')

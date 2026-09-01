@@ -3,6 +3,7 @@ import { Bus, Hotel, Plus, Send, UtensilsCrossed, Copy, Check, Trash2, Users, Ma
 import { AiTip, Bar, SectionHead, SyncNote, TopBar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
+import { copyText } from '@/lib/utils'
 import { fmt } from '@/lib/data'
 
 /* ---------- ЛОГИСТИКА: автобусы + отельный блок ---------- */
@@ -40,7 +41,7 @@ export function Logistics() {
     setHn(''); setHr(''); setHp(''); setHotelForm(false)
   }
   const copy = (code: string) => {
-    try { navigator.clipboard?.writeText(code) } catch { /* noop */ }
+    copyText(code)
     setCopied(code); setTimeout(() => setCopied(null), 1600)
   }
 

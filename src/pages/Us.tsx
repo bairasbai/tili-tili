@@ -5,7 +5,7 @@ import { chats, chatMessages, couple } from '@/lib/data'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
-import { cn } from '@/lib/utils'
+import { cn, copyText, goBack } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
 
 /* «Мы» — профиль пары */
@@ -14,7 +14,7 @@ export function Us() {
   const nav = useNavigate()
   const [copied, setCopied] = useState(false)
   const copy = (text: string, cb: () => void) => {
-    navigator.clipboard?.writeText(text).catch(() => {})
+    copyText(text)
     cb()
     setTimeout(() => setCopied(false), 1500)
   }
@@ -43,7 +43,7 @@ export function Us() {
               <b className="text-[13px] tracking-[.12em]">{t('ТИЛИ-АЛИНА')}</b>
               <span className="text-[9.5px] text-[var(--soft)]">{t('приглашено: 2')}</span>
             </div>
-            <button onClick={() => copy(t('ТИЛИ-АЛИНА'), () => setCopied(true))} className="press h-[44px] px-5 rounded-full grad text-white text-[12px] font-semibold">{copied ? '✓ Скопировано' : t('Копировать')}</button>
+            <button onClick={() => copy(t('ТИЛИ-АЛИНА'), () => setCopied(true))} className="press h-[44px] px-5 rounded-full grad text-white text-[12px] font-semibold">{copied ? t('✓ Скопировано') : t('Копировать')}</button>
           </div>
         </div>
 
@@ -151,7 +151,7 @@ export function Chat() {
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
-        <button onClick={() => nav(-1)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
+        <button onClick={() => goBack(n => nav(n), (to, o) => nav(to, o), '/us/chats')} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
           <ChevronLeft size={17} />
         </button>
         <Tile icon={chat.icon} tile={chat.tile} size={38} />

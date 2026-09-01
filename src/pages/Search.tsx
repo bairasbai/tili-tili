@@ -4,7 +4,7 @@ import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check 
 import { categories, vendors, fmt } from '@/lib/data'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { useStore } from '@/lib/store'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* Каталог категорий */
@@ -127,7 +127,7 @@ export function VendorDetail() {
         <button onClick={() => {
           const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${v.category} · ${t(city)}${t(' · от ')}${fmt(v.priceFrom)}`, url: location.href }
           if (navigator.share) navigator.share(data).catch(() => {})
-          else { navigator.clipboard?.writeText(`${data.title}\n${data.text}\n${data.url}`) }
+          else { copyText(`${data.title}\n${data.text}\n${data.url}`) }
         }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{t('Поделиться')}</button>
       } />
       {/* Галерея */}
@@ -269,7 +269,7 @@ export function VendorDetail() {
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
         <button onClick={() => nav('/us/chats/ch1')} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>{t('Написать')}</button>
         <button onClick={add} className="press flex-[1.4] h-[52px] rounded-full grad text-white font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {added ? '✓ В моей свадьбе!' : slot ? 'Добавить в свадьбу' : t('Забронировать')}
+          {added ? t('✓ В моей свадьбе!') : slot ? t('Добавить в свадьбу') : t('Забронировать')}
         </button>
       </div>
     </div>

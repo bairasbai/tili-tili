@@ -7,7 +7,7 @@ import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* Навигация раздела «Свадьба» */
@@ -190,7 +190,7 @@ export function SlotDetail() {
             {s.invited ? (
               <div className="flex items-center gap-2 mt-3">
                 <code className="flex-1 text-[10.5px] bg-[var(--track)] rounded-[12px] px-3 py-2.5 truncate">{inviteLink}</code>
-                <button onClick={() => { navigator.clipboard?.writeText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-white">{linkCopied ? '✓' : t('Копия')}</button>
+                <button onClick={() => { copyText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-white">{linkCopied ? '✓' : t('Копия')}</button>
               </div>
             ) : (
               <button onClick={() => inviteExternal(s.id)} className="press mt-3 w-full py-3 rounded-[16px] grad text-white text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
@@ -220,7 +220,7 @@ export function SlotDetail() {
                 <span className="text-[12px] text-[var(--ink2)]">{l}</span>
                 <span className="flex items-center gap-2">
                   <b className="text-[12.5px] tabular">{fmt(Number(v))}</b>
-                  <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', paid ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : 'bg-[var(--honey)] text-[#B98A2F]')}>{paid ? '✓ Оплачен' : t('Ожидает')}</span>
+                  <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', paid ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : 'bg-[var(--honey)] text-[#B98A2F]')}>{paid ? t('✓ Оплачен') : t('Ожидает')}</span>
                 </span>
               </div>
             ))}
@@ -449,7 +449,7 @@ export function Timeline() {
   return (
     <div className="pb-28">
       <TopBar back title={t('День свадьбы')} sub={t('Расписание 14 июня · полный сценарий')} right={
-        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? 'Готово' : t('Править')}</button>
+        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
       <div className="px-5 mt-2.5">
         <div className="card-s px-4 py-3 flex items-center gap-3">

@@ -126,12 +126,17 @@ export function Deal() {
 
 /* Генерация и скачивание договора: DOCX (Word-совместимый HTML) / PDF (окно печати) */
 function contractHTML(name: string) {
-  return `<h1>${name}</h1><p>{t('г. Уфа · $')}{new Date().toLocaleDateString('ru-RU')}</p>
-  <p><b>{t('Заказчик:')}</b>{t('Алина Козлова и Тимур Волков')}<br><b>{t('Исполнитель:')}</b> ______________________</p>
-  <p>{t('1. Предмет договора: услуги на свадебное торжество 14.06.2027.')}</p>
-  <p>{t('2. Стоимость и порядок оплаты: аванс 30% при подписании, остаток — за 14 дней до даты.')}</p>
-  <p>{t('3. Ответственность сторон и форс-мажор — по ГК РФ.')}</p>
-  <p>{t('4. Сформировано в приложении «Тили-тили» (tili-tili.ru).')}</p>`
+  // строки переводим заранее: внутри шаблонной строки работает только ${…}
+  const [city, cust, custName, exec, p1, p2, p3, p4] = [
+    t('г. Уфа · '), t('Заказчик:'), t('Алина Козлова и Тимур Волков'), t('Исполнитель:'),
+    t('1. Предмет договора: услуги на свадебное торжество 14.06.2027.'),
+    t('2. Стоимость и порядок оплаты: аванс 30% при подписании, остаток — за 14 дней до даты.'),
+    t('3. Ответственность сторон и форс-мажор — по ГК РФ.'),
+    t('4. Сформировано в приложении «Тили-тили» (tili-tili.ru).'),
+  ]
+  return `<h1>${name}</h1><p>${city}${new Date().toLocaleDateString('ru-RU')}</p>
+  <p><b>${cust}</b> ${custName}<br><b>${exec}</b> ______________________</p>
+  <p>${p1}</p><p>${p2}</p><p>${p3}</p><p>${p4}</p>`
 }
 function downloadDocx(name: string) {
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif">${contractHTML(name)}</body></html>`

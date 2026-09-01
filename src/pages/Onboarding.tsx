@@ -44,7 +44,8 @@ export default function Onboarding() {
       <div className="px-6 pb-[max(32px,env(safe-area-inset-bottom))]">
         <div className="flex justify-center gap-2 mb-6">
           {scenes.map((_, k) => (
-            <span key={k} className={cn('h-1.5 rounded-full transition-all duration-500', k === i ? 'w-6 bg-[#C98A8A]' : 'w-1.5 bg-[#EAD9CF]')} />
+            <button key={k} onClick={() => setI(k)} aria-label={`${t('Слайд')} ${k + 1}`}
+              className={cn('h-1.5 rounded-full transition-all duration-500 press', k === i ? 'w-6 bg-[#C98A8A]' : 'w-1.5 bg-[#EAD9CF]')} />
           ))}
         </div>
         <div className="flex gap-3">
@@ -58,7 +59,7 @@ export default function Onboarding() {
             className="press flex-1 h-[54px] rounded-full grad text-white font-semibold text-[14px] tracking-wide flex items-center justify-center gap-2"
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
-            {last ? 'Начать' : t('Далее')} <ChevronRight size={18} />
+            {last ? t('Начать') : t('Далее')} <ChevronRight size={18} />
           </button>
         </div>
       </div>

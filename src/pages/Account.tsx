@@ -23,11 +23,9 @@ export function Auth() {
   return (
     <div className="min-h-dvh flex flex-col">
       <div className="flex items-center px-5 pt-7">
-        {step > 0 ? (
-          <button onClick={() => setStep((step - 1) as 0 | 1)} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
-            <ChevronLeft size={18} />
-          </button>
-        ) : <div className="w-10" />}
+        <button onClick={() => (step > 0 ? setStep((step - 1) as 0 | 1) : nav('/'))} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
+          <ChevronLeft size={18} />
+        </button>
       </div>
 
       {step === 0 && (

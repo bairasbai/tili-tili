@@ -5,7 +5,7 @@ import { vendors, timeline, categories, initialGuestReviews, type GuestReview } 
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
-import { cn } from '@/lib/utils'
+import { cn, goBack } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* ИИ-координатор «Тиль» */
@@ -34,7 +34,7 @@ export function Assistant() {
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
-        <button onClick={() => nav(-1)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}><ChevronLeft size={17} /></button>
+        <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}><ChevronLeft size={17} /></button>
         <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-white text-[15px]">✦</div>
         <div className="flex-1"><b className="text-[14px]">{t('Тиль')}</b><p className="text-[10px] text-[#7E9A74]">{t('ИИ-координатор · на связи · 42/50 сообщений сегодня')}</p></div>
       </div>
@@ -78,8 +78,8 @@ export function Compare() {
   const rows: [string, (v: typeof list[0]) => string][] = [
     [t('Цена «от»'), v => `${v.priceFrom.toLocaleString('ru-RU')} ₽`],
     [t('Рейтинг'), v => (v.reviews ? `★ ${v.rating} · ${v.reviews}${t(' отзывов')}` : t('Новый'))],
-    [t('Свободен 14.06'), v => (v.freeOnDate ? '✓ Да' : t('✕ Занят'))],
-    [t('Видео-визитка'), v => (v.hasVideo ? '▶ Есть' : '—')],
+    [t('Свободен 14.06'), v => (v.freeOnDate ? t('✓ Да') : t('✕ Занят'))],
+    [t('Видео-визитка'), v => (v.hasVideo ? t('▶ Есть') : '—')],
     [t('Пакетов'), v => String(v.packages.length)],
   ]
   return (
@@ -139,7 +139,7 @@ export function DayX() {
   return (
     <div className="min-h-dvh pb-10" style={{ background: 'linear-gradient(180deg,#1E1A16,#0E0C0A)', color: '#EFE9DF' }}>
       <div className="px-5 pt-7 flex items-center justify-between">
-        <button onClick={() => nav(-1)} className="press w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#2A2520' }} aria-label={t('Назад')}><ChevronLeft size={18} /></button>
+        <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#2A2520' }} aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
           <b className="font-serif-d text-[19px]">{t('14 июня · День X')}</b>
           <p className="text-[9.5px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>LIVE · {delay > 0 ? `+${delay}${t(' МИН К ПЛАНУ')}` : t('ИДЁМ ПО ГРАФИКУ')}</p>
@@ -174,7 +174,7 @@ export function DayX() {
               </div>
               <div className="flex gap-2 mt-3">
                 <button onClick={() => nav('/us/chats/ch2')} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c]">{t('Написать')}</button>
-                <button onClick={() => setSos(false)} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold" style={{ background: '#C9A96A', color: '#141210' }}>{t('Позвонить')}</button>
+                <a href="tel:+70000000000" className="press flex-1 h-[38px] rounded-full text-[11px] font-bold flex items-center justify-center" style={{ background: '#C9A96A', color: '#141210' }}>{t('Позвонить')}</a>
               </div>
             </div>
           )}
@@ -229,7 +229,7 @@ export function DayX() {
               <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония → шатёр. Пересоберёт тайминг и уведомит всех.')}</p>
             </div>
             <button onClick={() => setPlanB(!planB)} className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold', planB ? 'grad text-white' : 'border border-[#4a443c]')}>
-              {planB ? 'Активирован ✓' : t('Активировать')}
+              {planB ? t('Активирован ✓') : t('Активировать')}
             </button>
           </div>
         </div>
@@ -296,7 +296,7 @@ export function After() {
           {dl === 0 ? t('Скачать общий альбом (ZIP)') : dl < 100 ? t('Собираем архив…') + ` ${dl}%` : t('✓ Архив готов · ссылка отправлена')}
         </button>
         {dl > 0 && dl < 100 && <div className="h-1.5 rounded-full bg-[var(--track)] mt-2.5 overflow-hidden"><div className="h-full grad rounded-full transition-all" style={{ width: `${dl}%` }} /></div>}
-        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">{rating ? 'Скрыть' : t('Оставить отзывы команде')}</button>
+        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
         {rating && (
           <div className="card px-4 py-1.5 mt-3 fade-up">
             {reviewList.map((r, i) => (

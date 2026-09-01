@@ -112,7 +112,7 @@ export default function Quiz() {
           className={cn('press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] tracking-wide transition-opacity', !canNext && 'opacity-40')}
           style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
         >
-          {last ? 'Создать мою свадьбу ✨' : t('Далее')}
+          {last ? t('Создать мою свадьбу ✨') : t('Далее')}
         </button>
         {!last && <button onClick={next} className="w-full text-center text-[12px] text-[var(--soft)] mt-3 press">{t('Пропустить вопрос')}</button>}
       </div>

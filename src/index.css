@@ -5,6 +5,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   --bg: #FBF6F1;
   --card: #FFFFFF;
   --ink: #2E2A26;

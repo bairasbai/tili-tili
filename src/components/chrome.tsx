@@ -4,17 +4,18 @@ import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
 import { useT } from '@/lib/useT'
-import { cn } from '@/lib/utils'
+import { cn, goBack } from '@/lib/utils'
 import { catIcon } from '@/lib/icons'
 
 /* Верхняя шапка страницы */
 export function TopBar({ title, sub, back, right }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode }) {
   const nav = useNavigate()
+  const back2 = () => goBack(n => nav(n), (to, o) => nav(to, o))
   return (
     <div className="px-5 pt-6 pb-2 flex items-start justify-between gap-3 fade-in">
       <div className="flex items-center gap-3 min-w-0">
         {back && (
-          <button onClick={() => nav(-1)} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center shrink-0" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
+          <button onClick={back2} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center shrink-0" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
             <ArrowLeft size={18} />
           </button>
         )}
@@ -127,12 +128,17 @@ export function Tile({ icon, tile, size = 46, cat }: { icon: string; tile: strin
 
 /* Совет ИИ-координатора */
 export function AiTip({ text, onPress }: { text: string; onPress?: () => void }) {
-  return (
-    <button onClick={onPress} className="press sheen w-full text-left card p-3.5 flex gap-3 items-start" style={{ background: 'linear-gradient(135deg,var(--card),var(--rose-soft))', border: '1px solid rgba(201,138,138,.25)' }}>
+  const inner = (
+    <>
       <div className="w-[30px] h-[30px] rounded-full grad flex items-center justify-center text-white text-[13px] shrink-0">✦</div>
       <p className="text-[11.5px] leading-relaxed text-[var(--soft)]"><b className="text-[var(--ink)]">{t('Тиль:')}</b> {text}</p>
-    </button>
+    </>
   )
+  const cls = 'sheen w-full text-left card p-3.5 flex gap-3 items-start'
+  const style = { background: 'linear-gradient(135deg,var(--card),var(--rose-soft))', border: '1px solid rgba(201,138,138,.25)' }
+  // без обработчика — просто карточка, не выглядит кликабельной и не «глотает» тапы
+  if (!onPress) return <div className={cls} style={style}>{inner}</div>
+  return <button onClick={onPress} className={cn(cls, 'press')} style={style}>{inner}</button>
 }
 
 /* Прогресс-полоска */

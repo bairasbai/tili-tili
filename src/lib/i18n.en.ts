@@ -1115,3 +1115,36 @@ Object.assign(EN, {
   'Артём Краснов · ведущий': 'Artyom Krasnov · host',
   'Усадьба «Липовый сад»': 'Lipovy Sad estate',
 })
+
+Object.assign(EN, {
+  'Слайд': 'Slide',
+  'Начать': 'Start',
+  'Создать мою свадьбу ✨': 'Create my wedding ✨',
+  '✓ В моей свадьбе!': '✓ In my wedding!',
+  'Добавить в свадьбу': 'Add to wedding',
+  'Скрыть': 'Hide',
+  '✓ Скопировано': '✓ Copied',
+  '✓ Скопировано!': '✓ Copied!',
+  '✓ Оплачен': '✓ Paid',
+  'Готово': 'Done',
+  'Копировать': 'Copy',
+  'Ожидает': 'Pending',
+  'Править': 'Edit',
+  'Забронировать': 'Book now',
+})
+
+Object.assign(EN, {
+  'Активирован ✓': 'Activated ✓',
+  'Активировать': 'Activate',
+  '✓ Да': '✓ Yes',
+  '✕ Занят': '✕ Busy',
+  '▶ Есть': '▶ Available',
+  'г. Уфа · ': 'Ufa · ',
+  'Заказчик:': 'Customer:',
+  'Алина Козлова и Тимур Волков': 'Alina Kozlova and Timur Volkov',
+  'Исполнитель:': 'Contractor:',
+  '1. Предмет договора: услуги на свадебное торжество 14.06.2027.': '1. Subject: services for the wedding celebration on 14.06.2027.',
+  '2. Стоимость и порядок оплаты: аванс 30% при подписании, остаток — за 14 дней до даты.': '2. Price and payment: 30% deposit on signing, balance 14 days before the date.',
+  '3. Ответственность сторон и форс-мажор — по ГК РФ.': '3. Liability and force majeure — per the Civil Code of RF.',
+  '4. Сформировано в приложении «Тили-тили» (tili-tili.ru).': '4. Generated in the Tili-Tili app (tili-tili.ru).',
+})

@@ -26,9 +26,11 @@ function Shell() {
   const loc = useLocation()
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   useEffect(() => { document.documentElement.lang = lang }, [lang])
+  // новый экран — всегда с верха страницы (иначе на телефоне кажется, что «ничего не нажалось»)
+  useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   const p = loc.pathname
   const noTab =
-    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant'].includes(p) ||
+    ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
     p.startsWith('/join') ||
     p.startsWith('/us/chats/') ||
     p.startsWith('/vendor-app')
