@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { TabBar } from '@/components/chrome'
+import { TabBar, OfflineBanner } from '@/components/chrome'
 import Onboarding from '@/pages/Onboarding'
 import Quiz from '@/pages/Quiz'
 import Home from '@/pages/Home'
@@ -12,7 +12,7 @@ import { Us, Chats, Chat } from '@/pages/Us'
 import Invite from '@/pages/Invite'
 import { Auth, Notifications, Settings, Support } from '@/pages/Account'
 import { Deal, ContractWizard, Seating, InviteEditor } from '@/pages/Tools'
-import { Assistant, Compare, DayX, After } from '@/pages/Smart'
+import { Assistant, Compare, DayX, After, PlanB } from '@/pages/Smart'
 import { VendorDashboard, VendorProfileWizard, VendorDeals } from '@/pages/VendorApp'
 import { VendorLead, VendorReviews, VendorAnalytics } from '@/pages/VendorExtras'
 import { Team, Join } from '@/pages/Team'
@@ -34,6 +34,7 @@ function Shell() {
     p.startsWith('/vendor-app')
   return (
     <div className="app-shell" key={lang}>
+      <OfflineBanner />
       <Routes>
         <Route path="/" element={<Onboarding />} />
         <Route path="/quiz" element={<Quiz />} />
@@ -61,6 +62,7 @@ function Shell() {
         <Route path="/wedding/wishlist" element={<WishlistManage />} />
         <Route path="/wedding/logistics" element={<Logistics />} />
         <Route path="/wedding/catering" element={<Catering />} />
+        <Route path="/wedding/planb" element={<PlanB />} />
         <Route path="/wedding/album" element={<Album />} />
         <Route path="/gifts" element={<GiftPick />} />
         <Route path="/wedding/invites" element={<InviteEditor />} />

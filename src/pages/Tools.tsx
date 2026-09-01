@@ -4,8 +4,9 @@ import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-r
 import { contractTemplates, dressPalettes, couple, guests, fmt } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
+import { useBusy } from '@/lib/useBusy'
 import { usePersist } from '@/lib/usePersist'
-import { AiTip, Tile, TopBar } from '@/components/chrome'
+import { AiTip, SyncNote, Tile, TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -16,6 +17,8 @@ export function Deal() {
   const [paid, setPaid] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelled, setCancelled] = useState(false)
+  const [dispute, setDispute] = useState(false)
+  const [payBusy, runPay] = useBusy()
   const steps = [
     { label: t('Кандидат'), done: true },
     { label: t('Переговоры'), done: true },
@@ -73,7 +76,7 @@ export function Deal() {
           {paid ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[#7E9A74] text-center">{t('✓ Оплачено полностью')}</div>
           ) : (
-            <button onClick={() => { setPaid(true); paySlot('s4') }} className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74]">{t('✓ Отметить доплату')}</button>
+            <button disabled={payBusy} onClick={() => runPay(() => { setPaid(true); paySlot('s4') })} className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74] disabled:opacity-50">{payBusy ? t('Проводим…') : t('✓ Отметить доплату')}</button>
           )}
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Сделка отменена')}</div>
@@ -99,6 +102,20 @@ export function Deal() {
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="card p-5">
+          <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Защита сделки')}</span>
+          <div className="mt-3 space-y-2.5 text-[12px] text-[var(--soft)] leading-relaxed">
+            <p>🛡 <b className="text-[var(--ink)]">{t('Эскроу:')}</b> {t('деньги заморожены на платформе и уйдут подрядчику только после того, как вы подтвердите выполнение в день X.')}</p>
+            <p>📅 <b className="text-[var(--ink)]">{t('Отмена:')}</b> {t('до 30 дней — возврат 100%, до 14 — 50%, позже — по договору. Подрядчику за его отмену — штраф рейтинга и полный возврат вам.')}</p>
+            <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('Тиль собирает переписку, договор и чек-лист выполнения, решение модерации — до 48 часов.')}</p>
+          </div>
+          {dispute ? (
+            <div className="mt-3 rounded-xl bg-[var(--sage-soft)] px-3.5 py-2.5 text-[11.5px] text-[#4C5B45]">{t('Спор открыт: Тиль уже собрал материалы и передал модерации. Ответим в течение 48 часов ✓')}</div>
+          ) : (
+            <button onClick={() => setDispute(true)} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Открыть спор по сделке')}</button>
+          )}
         </div>
 
         <p className="text-[10px] text-[var(--soft2)] text-center leading-relaxed">{t('Отмена менее чем за 30 дней до даты блокирует отзывы обеим сторонам до решения модерации.')}</p>
@@ -267,6 +284,7 @@ export function Seating() {
         </div>
         <button onClick={() => setTables(ts => [...ts, { n: ts.length + 1, guests: [] as string[] }])} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить стол')}</button>
         <AiTip text={t('Тётя Люда и дядя Рафик отмечены «не сажать вместе» — они за соседними столами, всё в порядке.')} />
+        <SyncNote to={t('Кейтеринг «Восточный банкет», ведущий Артём')} />
         <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full bg-[var(--ink)] text-[var(--bg)] font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} />{t('PDF для печати А3')}</button>
       </div>
     </div>

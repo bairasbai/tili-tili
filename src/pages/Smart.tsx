@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router'
 import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
 import { vendors, timeline, categories } from '@/lib/data'
 import { useStore } from '@/lib/store'
-import { TopBar } from '@/components/chrome'
+import { TopBar, AiTip, Bar } from '@/components/chrome'
+import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -301,6 +302,122 @@ export function After() {
           </div>
         )}
         <p className="text-center text-[10.5px] text-[var(--soft2)] mt-5">{t('Проект и документы хранятся бессрочно. Встретимся в годовщину 💌')}</p>
+      </div>
+    </div>
+  )
+}
+
+/* План Б: плохие сценарии дня X и готовые решения */
+const planBRisks = [
+  {
+    icon: '🎤', title: t('Подрядчик не приехал или отменил в последний день'),
+    how: t('«Горячая замена»: каталог показывает только свободных на вашу дату, средний отклик — 15 минут. Аванс защищён эскроу и вернётся автоматически, а отменивший подрядчик получает штраф рейтинга.'),
+    action: 'search',
+  },
+  {
+    icon: '🌧', title: t('Дождь или непогода на выездной церемонии'),
+    how: t('План Б площадки согласован при бронировании: церемония переносится в зал, тенты и прозрачные зонты — красивые фото даже в дождь. Гости получают уведомление об изменении точки сбора.'),
+    action: 'rain',
+  },
+  {
+    icon: '🔌', title: t('Отключили электричество на площадке'),
+    how: t('При бронировании площадка подтверждает наличие генератора — это пункт чек-листа договора. Запасной сценарий: свечи и накамерный свет фотографа превращают паузу в «зажжение семейного очага».'),
+  },
+  {
+    icon: '⏰', title: t('Всё отстаёт от тайминга'),
+    how: t('В режиме дня X Тиль сдвигает тайминг одним тапом и рассылает обновления всей команде. Запас 15 минут в каждом блоке заложен заранее — гости не заметят.'),
+  },
+  {
+    icon: '🍰', title: t('Торт повредили при доставке'),
+    how: t('Не выносить целиком: кондитер разрезает за кулисами и подаёт порционно — гости не догадаются. Фото торта делаются до выноса, при заказе.'),
+  },
+  {
+    icon: '🥂', title: t('Гость перебрал или неловкий тост'),
+    how: t('Ведущий тактично забирает микрофон и уводит программу дальше — это прописано в брифе ведущего. Координатор тихо вызывает такси до отеля, бармен наливает меньше.'),
+  },
+  {
+    icon: '👶', title: t('Дети устроили истерику посреди церемонии'),
+    how: t('В каталоге есть слот «Няня/аниматор» — дети заняты отдельно, за своим столом. Или формат «только взрослые»: пометка в приглашении.'),
+  },
+  {
+    icon: '👥', title: t('Приехали незваные +1, мест не хватает'),
+    how: t('Кейтеринг и площадка всегда держат запас +2 места и порции — заложено в сводку автоматически. Координатор добавляет стулья без вашего участия.'),
+  },
+  {
+    icon: '🚗', title: t('Автобус с гостями сломался или водитель приехал не туда'),
+    how: t('Маршрут и точки сбора у водителя в приложении — он не «думает сам». Запасной вариант: второй автобус из раздела Логистики или такси-контракт, эскалация на координатора.'),
+  },
+  {
+    icon: '💍', title: t('Забыли кольца или паспорта'),
+    how: t('Чек-лист ниже отдаёт кольца и паспорта свидетелям ещё накануне — проверено поколениями свадеб.'),
+  },
+]
+
+const planBChecklist = [
+  t('Обзвонить всех подрядчиков за 1–2 дня: время и адрес прибытия'),
+  t('Кольца и паспорта — у свидетелей'),
+  t('Алкоголь и реквизит отвезти на площадку накануне вечером'),
+  t('Проверить прогноз погоды и план Б площадки'),
+  t('Запас 15 минут в каждом блоке тайминга'),
+  t('Powerbank, аптечка, швейный набор, присыпка от пятен'),
+]
+
+export function PlanB() {
+  const nav = useNavigate()
+  const [open, setOpen] = useState<number | null>(null)
+  const [done, setDone] = usePersist<number[]>('tt_planb', [0, 4])
+  const [rain, setRain] = useState(false)
+  const pct = Math.round(done.length / planBChecklist.length * 100)
+  return (
+    <div className="pb-28">
+      <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
+      <div className="px-5 mt-3 space-y-3">
+        <div className="card p-4">
+          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{pct}%</b></div>
+          <Bar pct={pct} />
+          <div className="mt-3 space-y-2">
+            {planBChecklist.map((c, i) => (
+              <button key={c} onClick={() => setDone(d => d.includes(i) ? d.filter(x => x !== i) : [...d, i])} className="press w-full flex items-center gap-3 text-left">
+                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', done.includes(i) ? 'grad text-white' : 'bg-[var(--track)] text-[var(--soft2)]')}>{done.includes(i) ? '✓' : ''}</span>
+                <span className={cn('text-[12px] leading-snug', done.includes(i) && 'line-through text-[var(--soft2)]')}>{c}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {rain && (
+          <div className="card p-4 fade-up" style={{ border: '1.5px solid #7E9A74' }}>
+            <b className="text-[13px]">🌧 {t('План «дождь» активирован')}</b>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Церемония переносится в зал. Уведомления ушли: площадка, декоратор, фотограф, координатор. Гостям отправлена новая точка сбора.')}</p>
+          </div>
+        )}
+
+        <div className="space-y-2.5 stagger">
+          {planBRisks.map((r, i) => (
+            <div key={r.title} className="card fade-up overflow-hidden">
+              <button onClick={() => setOpen(o => o === i ? null : i)} className="press w-full p-4 flex items-center gap-3 text-left">
+                <span className="text-[20px] w-8 text-center shrink-0">{r.icon}</span>
+                <span className="flex-1 text-[12.5px] font-semibold leading-snug">{r.title}</span>
+                <span className={cn('text-[var(--soft2)] transition-transform', open === i && 'rotate-90')}>›</span>
+              </button>
+              {open === i && (
+                <div className="px-4 pb-4 -mt-1 fade-in">
+                  <p className="text-[11.5px] text-[var(--soft)] leading-relaxed">{r.how}</p>
+                  {r.action === 'search' && (
+                    <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-white text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
+                  )}
+                  {r.action === 'rain' && (
+                    <button onClick={() => setRain(v => !v)} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold', rain ? 'bg-[var(--track)] text-[var(--ink)]' : 'grad text-white')}>
+                      {rain ? t('Отменить план «дождь»') : t('Активировать план «дождь» (демо)')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <AiTip text={t('Самый частый совет профессионалов: не решайте проблемы сами в день X. У вас есть координатор и SOS-кнопка — ваша задача только наслаждаться днём.')} />
       </div>
     </div>
   )

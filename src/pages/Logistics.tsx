@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Bus, Hotel, Plus, Send, UtensilsCrossed, Copy, Check, Trash2, Users, MapPin, Clock3, Percent } from 'lucide-react'
-import { AiTip, Bar, SectionHead, TopBar } from '@/components/chrome'
+import { AiTip, Bar, SectionHead, SyncNote, TopBar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/data'
@@ -221,6 +221,7 @@ export function Catering() {
           </div>
         </div>
         <AiTip text={t('Опрос уже встроен в ваши приглашения: гость отвечает на RSVP и сразу выбирает горячее — один тап, без регистрации. Отдельных анкет и звонков не нужно.')} />
+        <SyncNote to={t('Кейтеринг «Восточный банкет»')} />
       </div>
     </div>
   )

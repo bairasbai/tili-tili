@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
@@ -135,6 +136,40 @@ export function Bar({ pct, color }: { pct: number; color?: string }) {
   return (
     <div className="h-2 rounded-full bg-[var(--track)] overflow-hidden">
       <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, pct)}%`, background: color ?? 'var(--grad)' }} />
+    </div>
+  )
+}
+
+/* Баннер офлайна: приложение работает без сети, данные сохранятся */
+export function OfflineBanner() {
+  const [online, setOnline] = useState(true)
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    setOnline(navigator.onLine)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  if (online) return null
+  return (
+    <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-50 px-5 pt-2">
+      <div className="rounded-2xl bg-[var(--ink)] text-[var(--bg)] text-[11.5px] font-semibold px-4 py-2.5 text-center" style={{ boxShadow: 'var(--shadow-lift)' }}>
+        {t('Нет сети — работаем офлайн, всё сохранится на устройстве')}
+      </div>
+    </div>
+  )
+}
+
+/* Плашка живой синхронизации с подрядчиком */
+export function SyncNote({ to }: { to: string }) {
+  return (
+    <div className="card-s px-4 py-3 flex items-center gap-2.5">
+      <span className="relative flex w-2.5 h-2.5 shrink-0">
+        <span className="absolute inline-flex w-full h-full rounded-full bg-[#7E9A74] opacity-60 animate-ping" />
+        <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-[#7E9A74]" />
+      </span>
+      <p className="text-[11px] text-[var(--soft)] leading-snug">{t('Изменения мгновенно видны:')} <b className="text-[var(--ink)]">{to}</b> {t('— подрядчик получает обновление и подтверждает ✓')}</p>
     </div>
   )
 }

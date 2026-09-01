@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed } from 'lucide-react'
+import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
 import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt, initialAlbum } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
+import { useBusy } from '@/lib/useBusy'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -24,6 +25,7 @@ function WeddingNav() {
     { to: '/wedding/logistics', icon: Bus, label: t('Логистика'), tile: 'bg-[var(--blue)]' },
     { to: '/wedding/catering', icon: UtensilsCrossed, label: t('Меню'), tile: 'bg-[var(--honey)]' },
     { to: '/wedding/seating', icon: Armchair, label: t('Рассадка'), tile: 'bg-[var(--lav)]' },
+    { to: '/wedding/planb', icon: ShieldCheck, label: t('План Б'), tile: 'bg-[var(--sage-soft)]' },
     { to: '/tools/alcohol', icon: Wine, label: t('Алко-кальк.'), tile: 'bg-[var(--sage-soft)]' },
   ]
   return (
@@ -106,11 +108,12 @@ export function SlotDetail() {
   const [ownPrice, setOwnPrice] = useState('')
   const [ownPhone, setOwnPhone] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
-  const addOwn = () => {
+  const [ownBusy, runOwn] = useBusy()
+  const addOwn = () => runOwn(() => {
     if (!ownName.trim() || !Number(ownPrice)) return
     bookExternal(s.id, ownName.trim(), Number(ownPrice), ownPhone.trim() || undefined)
     setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
-  }
+  })
   const inviteLink = `tili-tili.ru/join/ТИЛИ-СВОЙ-${s.id.toUpperCase()}`
 
   /* Свой подрядчик: форма добавления/приглашения (пустой слот или внешний) */
@@ -131,7 +134,7 @@ export function SlotDetail() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => setOwnOpen(false)} className="press flex-1 card-s py-3 text-[12px] font-semibold">{t('Отмена')}</button>
-            <button onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-white text-[12px] font-bold">{t('Добавить в команду')}</button>
+            <button disabled={ownBusy} onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-white text-[12px] font-bold disabled:opacity-50">{t('Добавить в команду')}</button>
           </div>
         </div>
       )}

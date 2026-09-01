@@ -37,6 +37,34 @@ export function VendorDashboard() {
           ))}
         </div>
 
+        {/* Живые обновления от пар по забронированным свадьбам */}
+        <div className="card p-4 mt-3.5">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex w-2.5 h-2.5 shrink-0">
+              <span className="absolute inline-flex w-full h-full rounded-full bg-[#7E9A74] opacity-60 animate-ping" />
+              <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-[#7E9A74]" />
+            </span>
+            <b className="text-[13px]">{t('Обновления от пар')}</b>
+            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[#4C5B45]">{t('живая связь')}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {[
+              [t('Алина & Тимур · 14.06'), t('Рассадка обновлена: стол 4, +2 гостя'), t('10 мин назад')],
+              [t('Алина & Тимур · 14.06'), t('Меню: мясо 24 · рыба 11 · вег 4'), t('1 ч назад')],
+              [t('Дина & Руслан · 21.06'), t('Тайминг сдвинут: банкет на 15 мин позже'), t('вчера')],
+            ].map(([w, txt, when]) => (
+              <div key={String(txt)} className="flex items-start gap-3 bg-[var(--bg)] rounded-xl px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9.5px] font-bold text-[var(--soft2)] uppercase tracking-wide">{w}</p>
+                  <p className="text-[11.5px] mt-0.5">{txt}</p>
+                </div>
+                <span className="text-[9px] text-[var(--soft2)] shrink-0 pt-0.5">{when}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-[var(--soft2)] mt-2.5">{t('Вы видите изменения мгновенно — переспрашивать пару не нужно. Подтвердите получение одним тапом.')}</p>
+        </div>
+
         {/* Рейтинг и отзывы */}
         <button onClick={() => nav('/vendor-app/reviews')} className="press w-full card p-4 mt-3.5 flex items-center gap-4 text-left">
           <div className="text-center">
