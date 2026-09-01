@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { initialSlots, type Slot } from './data'
+import { setI18nLang, type Lang } from './i18n'
 
 interface Store {
   onboarded: boolean
@@ -34,7 +35,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return Array.isArray(parsed) ? parsed : ['v1']
     } catch { return ['v1'] }
   })
-  const [lang, setLang] = useState<'ru' | 'en'>('ru')
+  const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem('tt_lang') === 'en' ? 'en' : 'ru'))
+  setI18nLang(lang)
   const [inviteTpl, setInviteTplState] = useState(() => Number(localStorage.getItem('tt_invite_tpl') ?? 0))
   const [inviteText, setInviteTextState] = useState(() => localStorage.getItem('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
   const [city, setCityState] = useState(() => localStorage.getItem('tt_city') ?? 'Уфа')
@@ -59,7 +61,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('tt_fav', JSON.stringify(next))
       return next
     }),
-    lang, setLang,
+    lang,
+    setLang: (l: Lang) => { localStorage.setItem('tt_lang', l); setI18nLang(l); setLangState(l) },
     inviteTpl,
     setInviteTpl: (t: number) => { localStorage.setItem('tt_invite_tpl', String(t)); setInviteTplState(t) },
     inviteText,

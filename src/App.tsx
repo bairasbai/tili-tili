@@ -20,9 +20,10 @@ import { Inspiration, VenuesMap } from '@/pages/Discover'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 
 function Shell() {
-  const { onboarded, theme } = useStore()
+  const { onboarded, theme, lang } = useStore()
   const loc = useLocation()
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
   const p = loc.pathname
   const noTab =
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant'].includes(p) ||
@@ -30,7 +31,7 @@ function Shell() {
     p.startsWith('/us/chats/') ||
     p.startsWith('/vendor-app')
   return (
-    <div className="app-shell">
+    <div className="app-shell" key={lang}>
       <Routes>
         <Route path="/" element={<Onboarding />} />
         <Route path="/quiz" element={<Quiz />} />
