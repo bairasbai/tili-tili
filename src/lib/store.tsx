@@ -74,7 +74,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('tt_city', name); localStorage.setItem('tt_city_region', region)
       setCityState(name); setCityRegion(region)
     },
-  }), [onboarded, slots, favorites, lang, inviteTpl, inviteText, city, cityRegion])
+  }), [onboarded, slots, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
