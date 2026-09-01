@@ -1,7 +1,8 @@
 import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
-import { useT, t } from '@/lib/i18n'
+import { t } from '@/lib/i18n'
+import { useT } from '@/lib/useT'
 import { cn } from '@/lib/utils'
 
 /* Верхняя шапка страницы */
