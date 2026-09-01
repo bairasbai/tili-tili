@@ -93,14 +93,16 @@ export function Us() {
 /* Список чатов */
 export function Chats() {
   const nav = useNavigate()
+  const [q, setQ] = useState('')
+  const shown = chats.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.last.toLowerCase().includes(q.toLowerCase()))
   return (
     <div className="pb-28">
       <TopBar back title="Чаты" sub="Подрядчики · команда · день X" />
       <div className="px-5 mt-3">
-        <input placeholder="Поиск по чатам…" className="w-full card-s px-4 py-3 text-[13px] outline-none placeholder:text-[#BFB5AA]" />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Поиск по чатам…" className="w-full card-s px-4 py-3 text-[13px] outline-none placeholder:text-[#BFB5AA]" />
       </div>
       <div className="px-5 mt-3 space-y-2.5 stagger">
-        {chats.map(c => (
+        {shown.map(c => (
           <button key={c.id} onClick={() => nav(`/us/chats/${c.id}`)} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
             <Tile icon={c.icon} tile={c.tile} size={48} />
             <div className="flex-1 min-w-0">
@@ -141,11 +143,11 @@ export function Chat() {
           <b className="text-[14px] block truncate">{chat.name}</b>
           <span className="text-[10px] text-[#7E9A74]">● онлайн · сделка: фотограф, 14.06</span>
         </div>
-        <button className="press w-9 h-9 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Вложение"><ImagePlus size={16} /></button>
+        <button onClick={() => setMsgs(m => [...m, { id: `m${m.length + 1}`, me: false, text: '📷 Референс_букета.jpg · 2,4 МБ', time: 'сейчас' }])} className="press w-9 h-9 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Вложение"><ImagePlus size={16} /></button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
-        <div className="text-center"><span className="text-[9.5px] text-[#93897F] bg-white px-3 py-1.5 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>Сделка: Фотограф · 85 000 ₽ · забронировано</span></div>
+        <div className="text-center"><button onClick={() => nav('/deal')} className="press text-[9.5px] text-[#93897F] bg-white px-3 py-1.5 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>Сделка: Фотограф · 85 000 ₽ · забронировано →</button></div>
         {msgs.map(m => (
           <div key={m.id} className={cn('flex fade-up', m.me ? 'justify-start' : 'justify-end')}>
             <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',

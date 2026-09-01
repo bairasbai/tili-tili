@@ -144,7 +144,17 @@ export function SlotDetail() {
 
 /* Бюджет */
 export function Budget() {
-  const total = budgetItems.reduce((a, b) => a + b.amount, 0)
+  const [items, setItems] = useState(budgetItems)
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [amount, setAmount] = useState('')
+  const add = () => {
+    const a = parseInt(amount.replace(/\D/g, ''), 10)
+    if (!name.trim() || !a) return
+    setItems(it => [...it, { name: name.trim(), amount: a, limit: Math.ceil(a * 1.2), color: '#D9CCE3' }])
+    setName(''); setAmount(''); setAdding(false)
+  }
+  const total = items.reduce((a, b) => a + b.amount, 0)
   const pct = Math.round((total / couple.budgetTotal) * 100)
   return (
     <div className="pb-28">
@@ -158,7 +168,7 @@ export function Budget() {
           <p className="text-[11.5px] text-[#93897F] mt-1">из {couple.budgetTotal.toLocaleString('ru-RU')} ₽ запланировано · осталось {(couple.budgetTotal - total).toLocaleString('ru-RU')} ₽</p>
           <div className="mt-3"><Bar pct={pct} /></div>
           <div className="mt-4 space-y-4">
-            {budgetItems.map(b => {
+            {items.map(b => {
               const p = Math.round((b.amount / b.limit) * 100)
               return (
                 <div key={b.name}>
@@ -190,7 +200,18 @@ export function Budget() {
           ))}
         </div>
 
-        <button className="press w-full card-s mt-3.5 py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Plus size={16} /> Добавить расход</button>
+        {adding ? (
+          <div className="card p-4 mt-3.5 fade-up">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Статья расхода (например, «Фейерверк»)" className="w-full bg-[#FBF6F1] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[#CFC5BA]" />
+            <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder="Сумма, ₽" className="w-full bg-[#FBF6F1] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[#CFC5BA] mt-2.5 tabular" />
+            <div className="flex gap-2.5 mt-3">
+              <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[#FBF6F1] text-[12px] font-semibold text-[#93897F]">Отмена</button>
+              <button onClick={add} className="press flex-1 h-[44px] rounded-full grad text-white text-[12px] font-semibold">Добавить</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} className="press w-full card-s mt-3.5 py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Plus size={16} /> Добавить расход</button>
+        )}
       </div>
     </div>
   )
@@ -199,22 +220,31 @@ export function Budget() {
 /* Чек-лист */
 export function Checklist() {
   const [period, setPeriod] = useState('9')
+  const [extra, setExtra] = useState<{ id: string; title: string; period: string; due: string; urgent?: boolean }[]>([])
+  const [adding, setAdding] = useState(false)
+  const [title, setTitle] = useState('')
+  const allTasks = [...tasks, ...extra.map(t => ({ ...t, done: false }))]
   const [done, setDone] = useState<string[]>(tasks.filter(t => t.done).map(t => t.id))
-  const list = tasks.filter(t => t.period === period)
+  const list = allTasks.filter(t => t.period === period)
   const toggle = (id: string) => setDone(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])
+  const addTask = () => {
+    if (!title.trim()) return
+    setExtra(x => [...x, { id: `x${x.length + 1}`, title: title.trim(), period, due: 'без срока' }])
+    setTitle(''); setAdding(false)
+  }
 
   return (
     <div className="pb-28">
       <TopBar back title="Чек-лист" sub="Что уже сделано, что впереди" right={
-        <button className="press h-10 px-4 rounded-full bg-white text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>+ Задача</button>
+        <button onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-white text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>+ Задача</button>
       } />
       <div className="px-5 mt-3">
         <div className="card-s px-4 py-3 flex items-center gap-3">
-          <b className="text-[12px] whitespace-nowrap">{done.length} из {tasks.length}</b>
+          <b className="text-[12px] whitespace-nowrap">{done.length} из {allTasks.length}</b>
           <div className="flex-1 h-1.5 rounded-full bg-[#F1E9E2] overflow-hidden">
-            <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${(done.length / tasks.length) * 100}%` }} />
+            <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${(done.length / allTasks.length) * 100}%` }} />
           </div>
-          <span className="text-[10px] font-bold text-[#7E9A74] tabular">{Math.round((done.length / tasks.length) * 100)}%</span>
+          <span className="text-[10px] font-bold text-[#7E9A74] tabular">{Math.round((done.length / allTasks.length) * 100)}%</span>
         </div>
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
@@ -223,6 +253,16 @@ export function Checklist() {
         ))}
       </div>
       <div className="px-5 mt-4">
+        {adding && (
+          <div className="card p-4 mb-3.5 fade-up">
+            <input value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTask()}
+              placeholder="Новая задача…" autoFocus className="w-full bg-[#FBF6F1] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[#CFC5BA]" />
+            <div className="flex gap-2.5 mt-3">
+              <button onClick={() => setAdding(false)} className="press flex-1 h-[42px] rounded-full bg-[#FBF6F1] text-[12px] font-semibold text-[#93897F]">Отмена</button>
+              <button onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-white text-[12px] font-semibold">Добавить</button>
+            </div>
+          </div>
+        )}
         <div className="card px-4 py-1.5">
           {list.map((t, i) => {
             const isDone = done.includes(t.id)
@@ -230,7 +270,7 @@ export function Checklist() {
               <button key={t.id} onClick={() => toggle(t.id)} className={cn('w-full flex items-center gap-3 py-3.5 text-left', i !== list.length - 1 && 'border-b border-[#F1E9E2]')}>
                 <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
                   isDone ? 'bg-[#E6EEE2] text-[#7E9A74]' : 'bg-white border-[1.5px] border-[#E8DED4] text-[#B57171] font-bold text-[11px]')}>
-                  {isDone ? '✓' : i + 1 + tasks.filter(x => x.period === period && done.includes(x.id)).length}
+                  {isDone ? '✓' : i + 1 + allTasks.filter(x => x.period === period && done.includes(x.id)).length}
                 </span>
                 <span className={cn('flex-1 text-[13px]', isDone && 'text-[#93897F] line-through')}>{t.title}</span>
                 <i className={cn('w-2 h-2 rounded-full', t.urgent ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]')} />

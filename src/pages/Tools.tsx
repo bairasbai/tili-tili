@@ -212,6 +212,7 @@ export function InviteEditor() {
   ]
   const [theme, setTheme] = useState(0)
   const [count, setCount] = useState(42)
+  const [inviteText, setInviteText] = useState('Приглашаем вас разделить с нами самый важный день. Выездная церемония — усадьба «Липовый сад», сбор гостей в 15:30.')
   return (
     <div className="pb-28">
       <TopBar back title="Приглашения" sub="Именная ссылка или QR каждому гостю" />
@@ -222,6 +223,13 @@ export function InviteEditor() {
           <p className="font-serif-d italic text-[14px] text-[#93897F] mt-4">Дорогие гости!</p>
           <h2 className="font-serif-d text-[26px] mt-2">{couple.bride} & {couple.groom}</h2>
           <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>{couple.date} · {couple.city}</p>
+          <p className="text-[11.5px] text-[#5C554B] font-light leading-relaxed mt-3">{inviteText}</p>
+        </div>
+        <div className="card p-4 mt-4">
+          <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold">Текст приглашения</span>
+          <textarea value={inviteText} onChange={e => setInviteText(e.target.value)} rows={3}
+            className="w-full mt-2 bg-[#FBF6F1] rounded-xl px-4 py-3 text-[12.5px] outline-none leading-relaxed resize-none" />
+          <p className="text-[9.5px] text-[#BFB5AA] mt-1.5">Имя гостя подставляется автоматически в начало</p>
         </div>
         <div className="grid grid-cols-4 gap-2.5 mt-4">
           {themes.map((t, k) => (

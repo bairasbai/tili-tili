@@ -12,6 +12,7 @@ export function Assistant() {
     { me: false, text: 'Здравствуйте, Алина и Тимур! Я Тиль — ваш ИИ-координатор. Слежу за бюджетом, дедлайнами и датами подрядчиков. Что обсудим?' },
   ])
   const [text, setText] = useState('')
+  const [typing, setTyping] = useState(false)
   const canned: Record<string, string> = {}
   const answer = (q: string) =>
     canned[q] ?? (q.includes('алкогол')
@@ -24,7 +25,8 @@ export function Assistant() {
     if (!t.trim()) return
     setMsgs(m => [...m, { me: true, text: t }])
     setText('')
-    setTimeout(() => setMsgs(m => [...m, { me: false, text: answer(t) }]), 600)
+    setTyping(true)
+    setTimeout(() => { setMsgs(m => [...m, { me: false, text: answer(t) }]); setTyping(false) }, 900)
   }
   return (
     <div className="h-dvh flex flex-col">
@@ -39,6 +41,13 @@ export function Assistant() {
             <div className={cn('max-w-[80%] px-4 py-3 text-[13px] leading-relaxed', m.me ? 'grad text-white rounded-[18px] rounded-br-[6px]' : 'card rounded-[18px] rounded-bl-[6px]')}>{m.text}</div>
           </div>
         ))}
+        {typing && (
+          <div className="flex justify-start fade-up">
+            <div className="card rounded-[18px] rounded-bl-[6px] px-4 py-3.5 flex gap-1.5">
+              {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#C98A8A] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
+            </div>
+          </div>
+        )}
       </div>
       <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
         {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-white text-[11px] font-semibold whitespace-nowrap text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
@@ -163,6 +172,20 @@ export function DayX() {
               <b className="text-[10px] block mt-1">{n}</b>
               <span className="text-[8px] font-bold" style={{ color: st === 'едет · 20 мин' ? '#C9A96A' : '#7E9A74' }}>{st}</span>
             </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar">
+          {[
+            ['Координатор', 'Мария'],
+            ['Фотограф', 'Елена'],
+            ['Ведущий', 'Артём'],
+            ['Усадьба', 'Рустам'],
+          ].map(([r, n]) => (
+            <a key={n} href="tel:+70000000000" className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ background: '#2A2520' }}>
+              <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-white text-[10px]">{n[0]}</span>
+              {n} · {r}
+            </a>
           ))}
         </div>
 

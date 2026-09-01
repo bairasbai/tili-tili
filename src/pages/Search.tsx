@@ -53,8 +53,14 @@ export function VendorList() {
   const nav = useNavigate()
   const cat = categories.find(c => c.id === catId) ?? categories[0]
   const list = vendors.filter(v => v.category === cat.name || (catId === 'photo' && v.category === 'Фотограф'))
-  const shown = list.length ? list : vendors
+  const base = list.length ? list : vendors
   const [filter, setFilter] = useState('free')
+  const shown = base.filter(v =>
+    filter === 'free' ? v.freeOnDate :
+    filter === 'video' ? v.hasVideo :
+    filter === 'top' ? v.rating >= 4.8 :
+    v.priceFrom <= 100000
+  )
 
   return (
     <div className="pb-28">
@@ -73,6 +79,12 @@ export function VendorList() {
       </div>
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {shown.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}
+        {shown.length === 0 && (
+          <div className="text-center py-10 fade-up">
+            <b className="text-[14px]">Под фильтр никто не подходит</b>
+            <p className="text-[11.5px] text-[#93897F] mt-1.5">Смягчите условия — или спросите Тиля, он расширит поиск</p>
+          </div>
+        )}
       </div>
     </div>
   )
