@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -19,8 +20,9 @@ import { Inspiration, VenuesMap } from '@/pages/Discover'
 import { Favorites, Notes, AlcoholCalc } from '@/pages/Extras'
 
 function Shell() {
-  const { onboarded } = useStore()
+  const { onboarded, theme } = useStore()
   const loc = useLocation()
+  useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   const p = loc.pathname
   const noTab =
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant'].includes(p) ||

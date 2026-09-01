@@ -8,7 +8,11 @@
   --bg: #FBF6F1;
   --card: #FFFFFF;
   --ink: #2E2A26;
+  --ink2: #5C554B;
   --soft: #93897F;
+  --soft2: #BFB5AA;
+  --track: #F1E9E2;
+  --line: #D8CFC5;
   --rose: #C98A8A;
   --rose-deep: #B57171;
   --rose-soft: #F2DFDC;
@@ -26,6 +30,43 @@
   --ease: cubic-bezier(.22,1,.36,1);
   --spring: cubic-bezier(.34,1.56,.64,1);
 }
+
+/* ─── Тёмная тема ─── */
+[data-theme="dark"] {
+  --bg: #1E1A16;
+  --card: #2A241F;
+  --ink: #F0E9E1;
+  --ink2: #CFC4B8;
+  --soft: #A79B8E;
+  --soft2: #7E7367;
+  --track: #38312A;
+  --line: #453D34;
+  --rose: #D69999;
+  --rose-deep: #D69999;
+  --rose-soft: #4A3733;
+  --sage: #A9BCA0;
+  --sage-deep: #B5C7AC;
+  --sage-soft: #323D2D;
+  --lav: #453D4E;
+  --blue: #36404C;
+  --honey: #4A3F2B;
+  --peach: #3D332B;
+  --gold-soft: #C9A96A;
+  --shadow: 0 1px 2px rgba(0,0,0,.25), 0 8px 24px -12px rgba(0,0,0,.45), 0 24px 56px -24px rgba(0,0,0,.55);
+  --shadow-lift: 0 2px 4px rgba(0,0,0,.3), 0 16px 40px -14px rgba(0,0,0,.5), 0 36px 80px -28px rgba(201,138,138,.25);
+}
+[data-theme="dark"] body { background: var(--bg); color-scheme: dark; }
+[data-theme="dark"] body::before { background: radial-gradient(circle, rgba(201,138,138,.18), transparent 65%); opacity: .6; }
+[data-theme="dark"] body::after { background: radial-gradient(circle, rgba(126,154,116,.14), transparent 65%); opacity: .6; }
+[data-theme="dark"] .card, [data-theme="dark"] .card-s { border-color: rgba(255,255,255,.06); }
+[data-theme="dark"] .app-shell { box-shadow: 0 0 0 1px rgba(255,255,255,.05), 0 0 80px rgba(0,0,0,.5); }
+[data-theme="dark"] .glass-tab {
+  background: rgba(30,26,22,.8);
+  border-top-color: rgba(201,138,138,.2);
+  box-shadow: 0 -12px 40px -18px rgba(0,0,0,.6);
+}
+[data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select { color: var(--ink); }
+[data-theme="dark"] .skeleton { background: linear-gradient(100deg, #38312A 40%, #2A241F 50%, #38312A 60%); background-size: 200% 100%; }
 
 html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
 ::selection { background: rgba(201,138,138,.28); }

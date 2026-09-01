@@ -183,7 +183,7 @@ export default function Invite() {
         <div className="px-6 mt-14 text-center relative z-10 rv">
           <h2 className={cn('text-[24px]', disp)}>Дресс-код</h2>
           <div className="flex justify-center gap-3 mt-5">
-            {['#C98A8A', '#A9BCA0', '#D9CCE3', '#F0DCB8', '#C3D5E8'].map((c, k) => (
+            {['#C98A8A', '#A9BCA0', 'var(--lav)', 'var(--honey)', 'var(--blue)'].map((c, k) => (
               <span key={c} className={cn('w-10 h-10 rounded-full border-[3px]', k % 2 ? 'floaty' : 'floaty-slow')} style={{ background: c, borderColor: T.card, boxShadow: '0 8px 20px -8px rgba(0,0,0,.3)' }} />
             ))}
           </div>

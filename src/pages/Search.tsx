@@ -22,8 +22,8 @@ export function SearchCategories() {
       <TopBar title="Все специалисты" sub={`${categories.length} категорий · ${city} · 14.06.2027`} />
       <div className="px-5 mt-2">
         <div className="card-s flex items-center gap-2.5 px-4 py-3.5">
-          <SearchIcon size={17} className="text-[#93897F]" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Фотограф, торт, шатёр…" className="bg-transparent outline-none text-[14px] w-full placeholder:text-[#BFB5AA]" />
+          <SearchIcon size={17} className="text-[var(--soft)]" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Фотограф, торт, шатёр…" className="bg-transparent outline-none text-[14px] w-full placeholder:text-[var(--soft2)]" />
         </div>
       </div>
       <div className="px-5 grid grid-cols-3 gap-2.5 mt-4 stagger">
@@ -33,16 +33,16 @@ export function SearchCategories() {
             <button key={c.id} onClick={() => nav(`/search/${c.id}`)} className="press card-s p-3 text-center fade-up">
               <div className={cn('w-11 h-11 rounded-[14px] mx-auto flex items-center justify-center text-[19px]', c.tile)}>{c.icon}</div>
               <b className="text-[11px] block mt-2 leading-tight">{c.name}</b>
-              <span className="text-[9px] text-[#93897F] block mt-1">{c.count} рядом</span>
-              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[#E6EEE2] text-[#7E9A74] mt-1.5">✓ Есть</span>}
-              {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[#F7ECD9] text-[#B98A2F] mt-1.5">⏳ Ищем</span>}
+              <span className="text-[9px] text-[var(--soft)] block mt-1">{c.count} рядом</span>
+              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74] mt-1.5">✓ Есть</span>}
+              {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[#B98A2F] mt-1.5">⏳ Ищем</span>}
             </button>
           )
         })}
       </div>
       {foundVendors.length > 0 && (
         <div className="px-5 mt-5">
-          <span className="text-[10px] tracking-[.16em] uppercase text-[#93897F] font-semibold px-1">Подрядчики</span>
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">Подрядчики</span>
           <div className="space-y-2.5 mt-2 stagger">
             {foundVendors.map(v => (
               <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />
@@ -52,9 +52,9 @@ export function SearchCategories() {
       )}
       {list.length === 0 && !foundVendors.length && (
         <div className="px-5 mt-10 text-center fade-up">
-          <div className="w-16 h-16 rounded-[22px] bg-[#F2DFDC] mx-auto flex items-center justify-center text-[26px]">🔍</div>
+          <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center text-[26px]">🔍</div>
           <b className="text-[15px] block mt-4">Ничего не нашлось</b>
-          <p className="text-[12px] text-[#93897F] mt-1.5">Попробуйте другое слово — или спросите Тиля — он подскажет категорию</p>
+          <p className="text-[12px] text-[var(--soft)] mt-1.5">Попробуйте другое слово — или спросите Тиля — он подскажет категорию</p>
           <button onClick={() => nav('/assistant')} className="press mt-5 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">Спросить Тиля</button>
         </div>
       )}
@@ -79,24 +79,24 @@ export function VendorList() {
   return (
     <div className="pb-28">
       <TopBar back title={cat.name} sub={`${shown.length} рядом · сортировка: рекомендованные`} right={
-        <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-white' : 'bg-white')} style={{ boxShadow: 'var(--shadow)' }} aria-label="Фильтры">
+        <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-white' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label="Фильтры">
           <SlidersHorizontal size={16} />
         </button>
       } />
       {showFilters && <div className="px-5 flex gap-2 mt-2 overflow-x-auto no-scrollbar">
         {[['free', 'Свободны 14.06'], ['video', 'С видео'], ['top', 'Рейтинг 4.8+'], ['budget', 'до 100 тыс ₽']].map(([id, label]) => (
-          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-white' : 'bg-white text-[#93897F]')} style={{ boxShadow: 'var(--shadow)' }}>
+          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-white' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>
             {label}
           </button>
         ))}
-        <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-white text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>⇄ Сравнить</button>
+        <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>⇄ Сравнить</button>
       </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {shown.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}
         {shown.length === 0 && (
           <div className="text-center py-10 fade-up">
             <b className="text-[14px]">Под фильтр никто не подходит</b>
-            <p className="text-[11.5px] text-[#93897F] mt-1.5">Смягчите условия — или спросите Тиля, он расширит поиск</p>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5">Смягчите условия — или спросите Тиля, он расширит поиск</p>
           </div>
         )}
       </div>
@@ -127,7 +127,7 @@ export function VendorDetail() {
           const data = { title: `${v.name} — Тили-тили`, text: `${v.category} · ${city} · от ${fmt(v.priceFrom)}`, url: location.href }
           if (navigator.share) navigator.share(data).catch(() => {})
           else { navigator.clipboard?.writeText(`${data.title}\n${data.text}\n${data.url}`) }
-        }} className="press h-10 px-4 rounded-full bg-white text-[11.5px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>Поделиться</button>
+        }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>Поделиться</button>
       } />
       {/* Галерея */}
       <div className="px-5 mt-2">
@@ -142,21 +142,21 @@ export function VendorDetail() {
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-[#93897F] mt-2 text-center">5 фото · видео до 3 минут</p>
+        <p className="text-[10px] text-[var(--soft)] mt-2 text-center">5 фото · видео до 3 минут</p>
       </div>
 
       <div className="px-5 mt-3">
         <div className="flex items-start justify-between gap-2">
           <div>
             <h1 className="font-serif-d text-[26px]">{v.name}</h1>
-            <p className="text-[12px] text-[#93897F] mt-1 flex items-center gap-1.5">
+            <p className="text-[12px] text-[var(--soft)] mt-1 flex items-center gap-1.5">
               <MapPin size={12} /> {city} + 100 км
               {v.reviews > 0 ? <span>· ★ {v.rating} · {v.reviews} отзывов</span> : <span>· Новый на платформе</span>}
             </p>
           </div>
-          {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#E6EEE2] text-[#7E9A74] whitespace-nowrap">● Свободен 14.06</span>}
+          {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74] whitespace-nowrap">● Свободен 14.06</span>}
         </div>
-        <p className="text-[13px] text-[#5C554B] leading-relaxed mt-3 font-light">{v.desc}</p>
+        <p className="text-[13px] text-[var(--ink2)] leading-relaxed mt-3 font-light">{v.desc}</p>
       </div>
 
       {/* Пакеты */}
@@ -171,7 +171,7 @@ export function VendorDetail() {
               </div>
               <ul className="mt-2 space-y-1">
                 {p.items.map(it => (
-                  <li key={it} className="text-[11.5px] text-[#93897F] flex items-center gap-1.5"><Check size={11} className="text-[#A9BCA0]" />{it}</li>
+                  <li key={it} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[#A9BCA0]" />{it}</li>
                 ))}
               </ul>
             </button>
@@ -183,7 +183,7 @@ export function VendorDetail() {
       <div className="px-5 mt-5">
         <h2 className="font-serif-d text-[19px] px-1 mb-2">Июнь 2027</h2>
         <div className="card p-4">
-          <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-[#93897F] font-semibold mb-1">
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-[var(--soft)] font-semibold mb-1">
             {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => <span key={d}>{d}</span>)}
           </div>
           <div className="grid grid-cols-7 gap-1">
@@ -193,13 +193,13 @@ export function VendorDetail() {
               const busy = [5, 6, 19, 20, 26].includes(day)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding ? 'grad text-white font-bold' : busy ? 'bg-[#F2DFDC] text-[#B57171] line-through' : 'text-[#2E2A26]')}>
+                  isWedding ? 'grad text-white font-bold' : busy ? 'bg-[var(--rose-soft)] text-[#B57171] line-through' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
             })}
           </div>
-          <p className="text-[10px] text-[#93897F] mt-3 flex items-center gap-1.5"><Calendar size={11} /> 14 июня свободна · зачёркнуты занятые даты</p>
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} /> 14 июня свободна · зачёркнуты занятые даты</p>
         </div>
       </div>
 
@@ -216,7 +216,7 @@ export function VendorDetail() {
                 <b className="text-[12.5px]">{n}</b>
                 <span className="text-[10px] text-[#B98A2F] tracking-wide">{st}</span>
               </div>
-              <p className="text-[11.5px] text-[#5C554B] leading-relaxed mt-1.5 font-light">{tx}</p>
+              <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{tx}</p>
             </div>
           ))}
         </div>
@@ -238,7 +238,7 @@ export function VendorDetail() {
 
       {/* CTA */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
-        <button onClick={() => nav('/us/chats/ch1')} className="press flex-1 h-[52px] rounded-full bg-white font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>Написать</button>
+        <button onClick={() => nav('/us/chats/ch1')} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>Написать</button>
         <button onClick={add} className="press flex-[1.4] h-[52px] rounded-full grad text-white font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? '✓ В моей свадьбе!' : slot ? 'Добавить в свадьбу' : 'Забронировать'}
         </button>

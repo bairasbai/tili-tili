@@ -32,7 +32,7 @@ export function Assistant() {
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
-        <button onClick={() => nav(-1)} className="press w-9 h-9 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Назад"><ChevronLeft size={17} /></button>
+        <button onClick={() => nav(-1)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Назад"><ChevronLeft size={17} /></button>
         <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-white text-[15px]">✦</div>
         <div className="flex-1"><b className="text-[14px]">Тиль</b><p className="text-[10px] text-[#7E9A74]">ИИ-координатор · на связи · 42/50 сообщений сегодня</p></div>
       </div>
@@ -51,10 +51,10 @@ export function Assistant() {
         )}
       </div>
       <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
-        {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-white text-[11px] font-semibold whitespace-nowrap text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
+        {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-[var(--card)] text-[11px] font-semibold whitespace-nowrap text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
       </div>
       <div className="glass-tab border-t-0 px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder="Спросите Тиля…" className="flex-1 bg-white rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[#CFC5BA]" style={{ boxShadow: 'var(--shadow)' }} />
+        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder="Спросите Тиля…" className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
         <button onClick={() => send(text)} className="press w-[48px] h-[48px] rounded-full grad text-white flex items-center justify-center shrink-0" aria-label="Отправить"><Send size={17} /></button>
       </div>
     </div>
@@ -102,15 +102,15 @@ export function Compare() {
           <tbody>
             {rows.map(([label, fn]) => (
               <tr key={label}>
-                <td className="p-1.5 text-[11px] text-[#93897F] font-medium">{label}</td>
-                {list.map(v => <td key={v.id} className="p-1.5"><div className="bg-white rounded-xl px-2.5 py-2.5 text-[11.5px] text-center font-medium" style={{ boxShadow: 'var(--shadow)' }}>{fn(v)}</div></td>)}
+                <td className="p-1.5 text-[11px] text-[var(--soft)] font-medium">{label}</td>
+                {list.map(v => <td key={v.id} className="p-1.5"><div className="bg-[var(--card)] rounded-xl px-2.5 py-2.5 text-[11.5px] text-center font-medium" style={{ boxShadow: 'var(--shadow)' }}>{fn(v)}</div></td>)}
               </tr>
             ))}
             <tr>
               <td />
               {list.map(v => (
                 <td key={v.id} className="p-1.5">
-                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[#E6EEE2] text-[#7E9A74]' : 'grad text-white')}>
+                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : 'grad text-white')}>
                     {picked === v.id ? '✓ В команде' : 'Выбрать'}
                   </button>
                 </td>
@@ -120,7 +120,7 @@ export function Compare() {
         </table>
       </div>
       <div className="px-5 mt-4">
-        <div className="card-s p-4 text-[11.5px] text-[#5C554B] leading-relaxed">
+        <div className="card-s p-4 text-[11.5px] text-[var(--ink2)] leading-relaxed">
           ✦ <b>Совет Тиля:</b> {list[0].name} — лучшее соотношение цены и рейтинга, и свободен на вашу дату. «Выбрать» создаст hold на 72 часа — дата никому не уйдёт, пока вы решаете.
         </div>
       </div>
@@ -248,14 +248,14 @@ export function After() {
             <div key={l} className="card-s p-4 text-center fade-up">
               <span className="text-[20px]">{ic}</span>
               <b className="font-serif-d text-[24px] block mt-1 tabular">{v}</b>
-              <span className="text-[10px] text-[#93897F]">{l}</span>
+              <span className="text-[10px] text-[var(--soft)]">{l}</span>
             </div>
           ))}
         </div>
         <div className="card p-5 mt-4">
-          <div className="flex justify-between text-[12px] mb-2"><span className="text-[#93897F]">Отзывы команде</span><b>9 из 14</b></div>
-          <div className="h-1.5 rounded-full bg-[#F1E9E2] overflow-hidden"><div className="h-full grad rounded-full" style={{ width: '64%' }} /></div>
-          <p className="text-[10.5px] text-[#93897F] mt-2.5">Отзывы помогают другим парам и поднимают рейтинг тех, кто сделал ваш день.</p>
+          <div className="flex justify-between text-[12px] mb-2"><span className="text-[var(--soft)]">Отзывы команде</span><b>9 из 14</b></div>
+          <div className="h-1.5 rounded-full bg-[var(--track)] overflow-hidden"><div className="h-full grad rounded-full" style={{ width: '64%' }} /></div>
+          <p className="text-[10.5px] text-[var(--soft)] mt-2.5">Отзывы помогают другим парам и поднимают рейтинг тех, кто сделал ваш день.</p>
         </div>
         <button onClick={() => {
             if (dl !== 0) return
@@ -265,23 +265,23 @@ export function After() {
           className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {dl === 0 ? 'Скачать общий альбом (ZIP)' : dl < 100 ? `Собираем архив… ${dl}%` : '✓ Архив готов · ссылка отправлена'}
         </button>
-        {dl > 0 && dl < 100 && <div className="h-1.5 rounded-full bg-[#F1E9E2] mt-2.5 overflow-hidden"><div className="h-full grad rounded-full transition-all" style={{ width: `${dl}%` }} /></div>}
+        {dl > 0 && dl < 100 && <div className="h-1.5 rounded-full bg-[var(--track)] mt-2.5 overflow-hidden"><div className="h-full grad rounded-full transition-all" style={{ width: `${dl}%` }} /></div>}
         <button onClick={() => setRating(!rating)} className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">{rating ? 'Скрыть' : 'Оставить отзывы команде'}</button>
         {rating && (
           <div className="card px-4 py-1.5 mt-3 fade-up">
             {reviewList.map((r, i) => (
-              <div key={r} className={cn('flex items-center justify-between py-3', i !== reviewList.length - 1 && 'border-b border-[#F1E9E2]')}>
+              <div key={r} className={cn('flex items-center justify-between py-3', i !== reviewList.length - 1 && 'border-b border-[var(--track)]')}>
                 <span className="text-[12px] font-medium flex-1">{r}</span>
                 <div className="flex gap-1">
                   {[1, 2, 3, 4, 5].map(s => (
-                    <button key={s} onClick={() => setStars(x => ({ ...x, [r]: s }))} className="press text-[15px]" style={{ color: (stars[r] ?? 0) >= s ? '#E3C892' : '#EADFD6' }}>★</button>
+                    <button key={s} onClick={() => setStars(x => ({ ...x, [r]: s }))} className="press text-[15px]" style={{ color: (stars[r] ?? 0) >= s ? 'var(--gold-soft)' : 'var(--track)' }}>★</button>
                   ))}
                 </div>
               </div>
             ))}
           </div>
         )}
-        <p className="text-center text-[10.5px] text-[#BFB5AA] mt-5">Проект и документы хранятся бессрочно. Встретимся в годовщину 💌</p>
+        <p className="text-center text-[10.5px] text-[var(--soft2)] mt-5">Проект и документы хранятся бессрочно. Встретимся в годовщину 💌</p>
       </div>
     </div>
   )

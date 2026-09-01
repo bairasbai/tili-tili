@@ -19,6 +19,8 @@ interface Store {
   city: string
   cityRegion: string
   setCity: (name: string, region: string) => void
+  theme: 'light' | 'dark'
+  setTheme: (t: 'light' | 'dark') => void
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -37,6 +39,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [inviteText, setInviteTextState] = useState(() => localStorage.getItem('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
   const [city, setCityState] = useState(() => localStorage.getItem('tt_city') ?? 'Уфа')
   const [cityRegion, setCityRegion] = useState(() => localStorage.getItem('tt_city_region') ?? 'Башкортостан')
+  const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
+    localStorage.getItem('tt_theme') === 'dark' ||
+    (!localStorage.getItem('tt_theme') && window.matchMedia?.('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light')
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -60,6 +65,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     inviteText,
     setInviteText: (t: string) => { localStorage.setItem('tt_invite_text', t); setInviteTextState(t) },
     city, cityRegion,
+    theme,
+    setTheme: (t) => { localStorage.setItem('tt_theme', t); setThemeState(t) },
     setCity: (name: string, region: string) => {
       localStorage.setItem('tt_city', name); localStorage.setItem('tt_city_region', region)
       setCityState(name); setCityRegion(region)
