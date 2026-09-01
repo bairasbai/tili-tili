@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router'
 import { Bell } from 'lucide-react'
-import { couple, aiTips } from '@/lib/data'
+import { couple, aiTips, tasks, guests } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 
@@ -81,6 +81,47 @@ export default function Home() {
       {/* Совет ИИ */}
       <div className="px-5 fade-up" style={{ animationDelay: '.2s' }}>
         <div className="mt-4"><AiTip text={aiTips[0]} onPress={() => nav('/assistant')} /></div>
+      </div>
+
+      {/* Быстрые действия */}
+      <div className="px-5 mt-4 grid grid-cols-4 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
+        {[
+          ['✦', 'bg-[#F2DFDC]', 'Спросить', '/assistant'],
+          ['📅', 'bg-[#F0DCB8]', 'Тайминг', '/wedding/timeline'],
+          ['💌', 'bg-[#D9CCE3]', 'Пригласить', '/wedding/invites'],
+          ['📊', 'bg-[#E6EEE2]', 'Сравнить', '/compare'],
+        ].map(([ic, tile, l, to]) => (
+          <button key={l} onClick={() => nav(to)} className="press card-s py-3 flex flex-col items-center gap-1.5">
+            <span className={`w-9 h-9 rounded-[12px] ${tile} flex items-center justify-center text-[15px]`}>{ic}</span>
+            <span className="text-[9.5px] font-semibold text-[#5C554B]">{l}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Ближайшие дедлайны */}
+      <div className="px-5 fade-up" style={{ animationDelay: '.22s' }}>
+        <SectionHead title="Ближайшие дедлайны" link="Чек-лист →" onLink={() => nav('/wedding/checklist')} />
+        <div className="card px-4 py-1.5 mt-2">
+          {tasks.filter(t => !t.done).slice(0, 3).map((t, i, arr) => (
+            <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[#F1E9E2]' : ''}`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${t.urgent ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]'}`} />
+              <span className="flex-1 text-[12.5px] font-medium truncate">{t.title}</span>
+              <span className={`text-[10px] font-bold shrink-0 ${t.urgent ? 'text-[#B57171]' : 'text-[#93897F]'}`}>{t.due}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* RSVP сводка */}
+      <div className="px-5 fade-up" style={{ animationDelay: '.26s' }}>
+        <button onClick={() => nav('/wedding/guests')} className="press w-full card p-4 mt-3.5 flex items-center gap-3 text-left">
+          <Tile icon="💌" tile="bg-[#D9CCE3]" size={44} />
+          <div className="flex-1">
+            <b className="text-[13px]">Приглашения</b>
+            <p className="text-[11px] text-[#93897F] mt-0.5">{guests.filter(g => g.status === 'yes').length * 3} подтвердили · {guests.filter(g => g.status === 'pending').length * 4} ждут ответа</p>
+          </div>
+          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#F2DFDC] text-[#B57171] shrink-0">RSVP →</span>
+        </button>
       </div>
 
       {/* Команда */}

@@ -106,6 +106,37 @@ export function SlotDetail() {
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">Заменить</button>
           <button className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить бронь</button>
         </div>
+
+        {s.price && (
+          <div className="card p-4 mt-3.5">
+            <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold">График платежей</span>
+            {[
+              ['Аванс · при бронировании', Math.round(s.price * 0.5), true],
+              ['Доплата · за 7 дней до даты', s.price - Math.round(s.price * 0.5), false],
+            ].map(([l, v, paid]) => (
+              <div key={String(l)} className="flex items-center justify-between mt-3">
+                <span className="text-[12px] text-[#5C554B]">{l}</span>
+                <span className="flex items-center gap-2">
+                  <b className="text-[12.5px] tabular">{fmt(Number(v))}</b>
+                  <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', paid ? 'bg-[#E6EEE2] text-[#7E9A74]' : 'bg-[#F7ECD9] text-[#B98A2F]')}>{paid ? '✓ Оплачен' : 'Ожидает'}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="card px-4 py-1.5 mt-3.5">
+          {[
+            ['📄', 'bg-[#C3D5E8]', 'Договор подписан обеими сторонами', '/wedding/documents'],
+            ['🗓', 'bg-[#F0DCB8]', 'Дата 14.06 закрыта у подрядчика', '/wedding/timeline'],
+            ['💬', 'bg-[#E6EEE2]', 'Чат по сделке — 3 новых сообщения', '/us/chats/ch1'],
+          ].map(([ic, tile, l, to], i) => (
+            <button key={String(l)} onClick={() => nav(String(to))} className={cn('press w-full flex items-center gap-3 py-3 text-left', i !== 2 && 'border-b border-[#F1E9E2]')}>
+              <Tile icon={String(ic)} tile={String(tile)} size={34} />
+              <span className="flex-1 text-[12px] font-medium">{l}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -144,6 +175,21 @@ export function Budget() {
           </div>
         </div>
         <div className="mt-3.5"><AiTip text="«Площадка и кейтеринг» на 86% лимита. Зафиксируйте меню до 1 марта — дальше цены вырастут ~10%." /></div>
+
+        {/* Ожидают оплаты */}
+        <div className="card p-4 mt-3.5">
+          <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold">Ожидают оплаты</span>
+          {[
+            ['Флорист · доплата', '45 000 ₽', 'до 7 июн'],
+            ['Ведущий · аванс', '35 000 ₽', 'до 15 мар'],
+          ].map(([l, v, d]) => (
+            <div key={l} className="flex items-center justify-between mt-3">
+              <span className="text-[12px] font-medium">{l}</span>
+              <span className="text-right"><b className="text-[12.5px] tabular block">{v}</b><span className="text-[9.5px] text-[#B98A2F] font-semibold">{d}</span></span>
+            </div>
+          ))}
+        </div>
+
         <button className="press w-full card-s mt-3.5 py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Plus size={16} /> Добавить расход</button>
       </div>
     </div>
@@ -162,6 +208,15 @@ export function Checklist() {
       <TopBar back title="Чек-лист" sub="Что уже сделано, что впереди" right={
         <button className="press h-10 px-4 rounded-full bg-white text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>+ Задача</button>
       } />
+      <div className="px-5 mt-3">
+        <div className="card-s px-4 py-3 flex items-center gap-3">
+          <b className="text-[12px] whitespace-nowrap">{done.length} из {tasks.length}</b>
+          <div className="flex-1 h-1.5 rounded-full bg-[#F1E9E2] overflow-hidden">
+            <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${(done.length / tasks.length) * 100}%` }} />
+          </div>
+          <span className="text-[10px] font-bold text-[#7E9A74] tabular">{Math.round((done.length / tasks.length) * 100)}%</span>
+        </div>
+      </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
         {[['9', 'За 9 мес'], ['6', 'За 6 мес'], ['3', 'За 3 мес'], ['1', 'За 1 мес']].map(([id, l]) => (
           <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-white' : 'bg-white text-[#93897F]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
@@ -197,6 +252,15 @@ export function Timeline() {
       <TopBar back title="День свадьбы" sub="Расписание 14 июня · полный сценарий" right={
         <button className="press h-10 px-4 rounded-full bg-white text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>Править</button>
       } />
+      <div className="px-5 mt-2.5">
+        <div className="card-s px-4 py-3 flex items-center gap-3">
+          <span className="text-[20px]">⛅</span>
+          <div className="flex-1">
+            <b className="text-[12px]">Прогноз на 14 июня: +22°, к вечеру кратковременный дождь</b>
+            <p className="text-[10px] text-[#93897F] mt-0.5">План Б (шатёр) уже включён в аренду — ничего делать не нужно</p>
+          </div>
+        </div>
+      </div>
       <div className="px-5 mt-2 space-y-2.5 stagger">
         {timeline.map(e => (
           <div key={e.id} className="card-s p-4 flex gap-3 fade-up">
@@ -219,8 +283,10 @@ export function Timeline() {
 /* Гости */
 export function Guests() {
   const nav = useNavigate()
+  const [filter, setFilter] = useState('all')
   const yes = guests.filter(g => g.status === 'yes').length
   const pending = guests.filter(g => g.status === 'pending').length
+  const shown = filter === 'all' ? guests : guests.filter(g => g.status === filter)
   return (
     <div className="pb-28">
       <TopBar back title="Гости" sub={`${couple.guestsTotal} приглашено · ${yes * 3}+ ответили`} right={
@@ -234,10 +300,15 @@ export function Guests() {
           </div>
         ))}
       </div>
+      <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
+        {[['all', 'Все'], ['yes', 'Придут'], ['pending', 'Ждём'], ['no', 'Не придут']].map(([id, l]) => (
+          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-white' : 'bg-white text-[#93897F]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+        ))}
+      </div>
       <div className="px-5 mt-4">
         <div className="card px-4 py-1.5">
-          {guests.map((g, i) => (
-            <div key={g.id} className={cn('flex items-center gap-3 py-3', i !== guests.length - 1 && 'border-b border-[#F1E9E2]')}>
+          {shown.map((g, i) => (
+            <div key={g.id} className={cn('flex items-center gap-3 py-3', i !== shown.length - 1 && 'border-b border-[#F1E9E2]')}>
               <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-serif-d text-white shrink-0',
                 g.status === 'yes' ? 'bg-[#A9BCA0]' : g.status === 'no' ? 'bg-[#C98A8A]' : 'bg-[#E3C892]')}>
                 {g.name[0]}
@@ -281,6 +352,25 @@ export function Documents() {
           </button>
         ))}
       </div>
+
+      <div className="px-5 mt-5">
+        <h2 className="font-serif-d text-[19px] px-1 mb-2">Подписанные</h2>
+        <div className="space-y-2.5">
+          {[
+            ['Договор с фотографом', 'подписан обеими сторонами · PDF', '✓'],
+            ['Аренда усадьбы «Липовый сад»', 'подписан · скан загружен', '✓'],
+          ].map(([n, d]) => (
+            <div key={n} className="card-s p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-[14px] bg-[#E6EEE2] flex items-center justify-center">📄</div>
+              <div className="flex-1 min-w-0">
+                <b className="text-[12.5px] block truncate">{n}</b>
+                <span className="text-[10px] text-[#7E9A74]">{d}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <p className="px-6 mt-4 text-[10.5px] text-[#93897F] leading-relaxed text-center">
         Шаблоны носят информационный характер и не заменяют консультацию юриста. Данные подставляются автоматически из сделки.
       </p>

@@ -26,6 +26,19 @@ export function Us() {
           </button>
         </div>
 
+        <div className="card p-5 mt-4 relative overflow-hidden">
+          <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-[#F2DFDC] opacity-70" />
+          <span className="text-[10px] tracking-[.18em] uppercase text-[#B57171] font-semibold relative">Реферальная программа</span>
+          <p className="text-[12px] text-[#5C554B] mt-2 leading-relaxed relative">Пригласите пару — оба получите <b>3 000 ₽</b> на премиум-функции после её первой сделки.</p>
+          <div className="flex items-center gap-2.5 mt-3.5 relative">
+            <div className="flex-1 card-s px-4 py-3 flex items-center justify-between">
+              <b className="text-[13px] tracking-[.12em]">ТИЛИ-АЛИНА</b>
+              <span className="text-[9.5px] text-[#93897F]">приглашено: 2</span>
+            </div>
+            <button className="press h-[44px] px-5 rounded-full grad text-white text-[12px] font-semibold">Копировать</button>
+          </div>
+        </div>
+
         <div className="card px-4 py-1.5 mt-4">
           {[
             { icon: Settings, label: 'Настройки', tile: 'bg-[#F3E3D3]', to: '/settings' },
@@ -83,6 +96,9 @@ export function Chats() {
   return (
     <div className="pb-28">
       <TopBar back title="Чаты" sub="Подрядчики · команда · день X" />
+      <div className="px-5 mt-3">
+        <input placeholder="Поиск по чатам…" className="w-full card-s px-4 py-3 text-[13px] outline-none placeholder:text-[#BFB5AA]" />
+      </div>
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {chats.map(c => (
           <button key={c.id} onClick={() => nav(`/us/chats/${c.id}`)} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">

@@ -65,6 +65,24 @@ export function Deal() {
           <button className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74]">✓ Отметить доплату</button>
           <button className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить сделку</button>
         </div>
+        <div className="card p-5">
+          <span className="text-[10px] tracking-[.2em] uppercase text-[#93897F] font-semibold">История</span>
+          {[
+            ['10 фев', 'Аванс подтверждён подрядчиком', true],
+            ['8 фев', 'Договор подписан обеими сторонами', true],
+            ['3 фев', 'Hold 72 ч → подрядчик подтвердил дату', true],
+            ['1 фев', 'Вы добавили Артёма в команду', true],
+          ].map(([d, t]) => (
+            <div key={String(t)} className="flex gap-3 mt-3">
+              <span className="text-[10px] text-[#BFB5AA] font-semibold w-[38px] shrink-0 pt-0.5 tabular">{d}</span>
+              <div className="relative pl-4">
+                <span className="absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full bg-[#A9BCA0]" />
+                <p className="text-[12px] text-[#5C554B]">{t}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
         <p className="text-[10px] text-[#BFB5AA] text-center leading-relaxed">Отмена менее чем за 30 дней до даты блокирует отзывы обеим сторонам до решения модерации.</p>
       </div>
     </div>
@@ -151,7 +169,15 @@ export function Seating() {
   }
   return (
     <div className="pb-28">
-      <TopBar back title="Рассадка" sub="Перетаскивайте гостей между столами" />
+      <TopBar back title="Рассадка" sub="Нажмите на стол — последний гость перейдёт дальше" />
+      <div className="px-5 mt-3">
+        <div className="card-s px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <span className="text-[10px] tracking-[.14em] uppercase text-[#93897F] font-semibold shrink-0">Без стола:</span>
+          {['Руслан Гареев', 'Коллеги Тимура (4)', 'Айгуль и Марсель'].map(g => (
+            <span key={g} className="text-[10.5px] font-medium px-3 py-1.5 rounded-full bg-[#FBF6F1] whitespace-nowrap shrink-0">{g}</span>
+          ))}
+        </div>
+      </div>
       <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
         {tables.map((t, i) => (
           <button key={t.n} onClick={() => move(i)} className="press card p-4 text-left fade-up">
@@ -215,6 +241,20 @@ export function InviteEditor() {
             </div>
           </div>
           <p className="text-[10.5px] text-[#93897F] mt-3">Каждому — именная ссылка и QR. RSVP приходят в раздел «Гости» в реальном времени.</p>
+        </div>
+        <div className="card p-5 mt-4">
+          <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold">Ссылка и QR</span>
+          <div className="flex items-center gap-3 mt-3">
+            <div className="w-[72px] h-[72px] rounded-2xl bg-[#2E2A26] p-2 grid grid-cols-5 gap-[3px]">
+              {Array.from({ length: 25 }).map((_, k) => (
+                <span key={k} className="rounded-[2px]" style={{ background: [0,1,2,4,5,10,12,14,20,21,23,24,7,17].includes(k) ? '#FBF6F1' : 'transparent' }} />
+              ))}
+            </div>
+            <div className="flex-1 min-w-0">
+              <b className="text-[12px] block truncate">tili-tili.ru/i/alina-timur</b>
+              <p className="text-[10px] text-[#93897F] mt-1">Общая ссылка + именные для каждого гостя. QR — для печати на приглашениях.</p>
+            </div>
+          </div>
         </div>
         <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           <Send size={15} /> Разослать приглашения

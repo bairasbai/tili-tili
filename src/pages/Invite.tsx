@@ -56,6 +56,24 @@ export default function Invite() {
             <div className="card-s p-3.5 text-center"><Heart size={17} className="mx-auto text-[#C98A8A]" /><b className="text-[10.5px] block mt-1.5">Дресс-код</b></div>
           </div>
 
+          <div className="card p-5 mt-4 text-center">
+            <span className="text-[10px] tracking-[.2em] uppercase text-[#93897F] font-semibold">Дресс-код · пастель</span>
+            <div className="flex justify-center gap-2.5 mt-3">
+              {['#C98A8A', '#A9BCA0', '#D9CCE3', '#F0DCB8', '#C3D5E8'].map(c => (
+                <span key={c} className="w-9 h-9 rounded-full border-2 border-white" style={{ background: c, boxShadow: 'var(--shadow)' }} />
+              ))}
+            </div>
+            <p className="text-[11px] text-[#93897F] mt-3 font-light leading-relaxed">Будем рады оттенкам пастели. Белый — только для невесты 🤍</p>
+          </div>
+
+          <button className="press w-full card-s mt-4 py-4 text-[13px] font-semibold flex items-center justify-center gap-2">
+            <Clock3 size={15} /> Добавить в календарь (.ics)
+          </button>
+
+          <div className="card-s p-4 mt-3 text-center">
+            <p className="text-[11px] text-[#5C554B] leading-relaxed font-light">🎁 Лучший подарок — ваше присутствие. Если хотите порадовать нас иначе — конверт в копилку медового месяца 💛</p>
+          </div>
+
           <h2 className="font-serif-d text-[20px] mt-7 mb-3 flex items-center gap-2"><Clock3 size={17} className="text-[#B57171]" /> Программа дня</h2>
           <div className="card px-4 py-2">
             {timeline.slice(3).map((e, i, arr) => (

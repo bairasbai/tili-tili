@@ -102,8 +102,13 @@ export function Notifications() {
   ]
   return (
     <div className="pb-28">
-      <TopBar back title="Уведомления" sub="Тихие часы 22:00–09:00" />
-      <div className="px-5 mt-3 space-y-2.5 stagger">
+      <TopBar back title="Уведомления" sub="Тихие часы 22:00–09:00" right={
+        <button className="press text-[11px] font-bold text-[#B57171]">Прочитать все</button>
+      } />
+      <div className="px-5 mt-3">
+        <span className="text-[10px] tracking-[.18em] uppercase text-[#93897F] font-semibold px-1">Сегодня</span>
+      </div>
+      <div className="px-5 mt-2 space-y-2.5 stagger">
         {items.map((n, k) => (
           <div key={k} className="card-s p-4 flex gap-3 fade-up relative">
             {n.unread && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
@@ -137,6 +142,11 @@ export function Settings() {
       <TopBar back title="Настройки" />
       <div className="px-5 mt-3 space-y-3.5">
         <div className="card px-4 py-1.5">
+          <div className="flex items-center gap-3 py-3.5 border-b border-[#F1E9E2]">
+            <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-white font-serif-d text-[16px] flex items-center justify-center">А</div>
+            <div className="flex-1"><b className="text-[13px]">Алина Валеева</b><p className="text-[10px] text-[#93897F]">+7 917 ···-45-67</p></div>
+            <button className="text-[10.5px] font-bold text-[#B57171] press">Изменить</button>
+          </div>
           <Row label="Push: дедлайны задач" value={push.tasks} onChange={v => setPush(p => ({ ...p, tasks: v }))} />
           <Row label="Push: сообщения" value={push.chats} onChange={v => setPush(p => ({ ...p, chats: v }))} />
           <Row label="Push: сделки и оплаты" value={push.deals} onChange={v => setPush(p => ({ ...p, deals: v }))} />
@@ -164,6 +174,7 @@ export function Settings() {
           </div>
         </div>
         <button className="press w-full card-s py-4 text-[13px] font-semibold text-[#B57171] flex items-center justify-center gap-2"><LogOut size={15} /> Выйти со всех устройств</button>
+        <button className="press w-full py-3 text-[11.5px] font-semibold text-[#BFB5AA]">Удалить аккаунт и все данные</button>
         <p className="flex items-center justify-center gap-1.5 text-[10px] text-[#BFB5AA]"><Shield size={11} /> Данные защищены по 152-ФЗ · удаление аккаунта — по запросу</p>
       </div>
     </div>
@@ -193,9 +204,17 @@ export function Support() {
             {open === k && <p className="text-[12px] text-[#93897F] leading-relaxed mt-2.5 fade-in">{a}</p>}
           </button>
         ))}
+        <div className="card-s p-4 flex items-center gap-3 fade-up">
+          <Tile icon="💬" tile="bg-[#E6EEE2]" size={42} />
+          <div className="flex-1">
+            <b className="text-[12.5px]">Тикет #1042 · оплата вне платформы</b>
+            <p className="text-[10px] text-[#7E9A74] mt-0.5">● Отвечен · ждём вашу оценку</p>
+          </div>
+        </div>
         <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           Написать в поддержку
         </button>
+        <p className="text-center text-[10px] text-[#BFB5AA]">hello@tili-tili.ru · Telegram @tilitili_help</p>
       </div>
     </div>
   )

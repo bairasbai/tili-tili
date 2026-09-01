@@ -32,6 +32,38 @@ export function VendorDashboard() {
           ))}
         </div>
 
+        {/* Рейтинг и отзывы */}
+        <div className="card p-4 mt-3.5 flex items-center gap-4">
+          <div className="text-center">
+            <b className="font-serif-d text-[30px] tabular">4.9</b>
+            <p className="text-[9.5px] text-[#B98A2F]">★★★★★</p>
+          </div>
+          <div className="flex-1 space-y-1.5">
+            {[['5', 90], ['4', 8], ['3', 2]].map(([s, p]) => (
+              <div key={String(s)} className="flex items-center gap-2">
+                <span className="text-[9.5px] text-[#93897F] w-2">{s}</span>
+                <div className="flex-1 h-1.5 rounded-full bg-[#F1E9E2] overflow-hidden"><div className="h-full rounded-full bg-[#E3C892]" style={{ width: `${p}%` }} /></div>
+                <span className="text-[9px] text-[#BFB5AA] w-7 text-right tabular">{p}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Календарь июня */}
+        <div className="card p-4 mt-3.5">
+          <div className="flex justify-between items-baseline mb-2.5">
+            <b className="text-[13px]">Июнь 2027</b>
+            <span className="text-[10px] text-[#93897F]">занято 4 даты</span>
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: 30 }).map((_, k) => {
+              const day = k + 1
+              const busy = [5, 6, 14, 26].includes(day)
+              return <div key={day} className={cn('aspect-square rounded-lg flex items-center justify-center text-[10px]', busy ? 'grad text-white font-bold' : 'bg-[#FBF6F1] text-[#5C554B]')}>{day}</div>
+            })}
+          </div>
+        </div>
+
         <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
           <h2 className="font-serif-d text-[19px]">Входящие заявки</h2>
           <span className="text-[10px] font-bold text-[#7E9A74] flex items-center gap-1"><TrendingUp size={11} /> +3 за неделю</span>
@@ -69,6 +101,16 @@ export function VendorProfileWizard() {
         {steps.map((_, k) => <span key={k} className={cn('flex-1 h-1.5 rounded-full', k <= step ? 'grad' : 'bg-[#F1E9E2]')} />)}
       </div>
       <div key={step} className="flex-1 px-5 mt-5 fade-up">
+        <div className="card-s px-4 py-3 mb-4 flex gap-2.5">
+          <span>✦</span>
+          <p className="text-[11px] text-[#5C554B] leading-relaxed">{[
+            'Смежные категории (например, «Фотограф» + «Свадебная съёмка») удваивают охват.',
+            'Пары читают первые две строки — начните с главного: стиль и опыт.',
+            'Пакеты с понятными названиями бронируют на 40% чаще, чем «индивидуально».',
+            'Анкеты с видео получают в 3 раза больше откликов.',
+            'Открытые даты = попадание в фильтр «Свободны на дату».',
+          ][step]}</p>
+        </div>
         {step === 0 && (
           <div className="grid grid-cols-2 gap-2.5">
             {['📸 Фотограф', '🎥 Видеограф', '🎤 Ведущий', '🌸 Флорист', '🎂 Кондитер', '✨ Декоратор'].map(c => (
@@ -136,6 +178,10 @@ export function VendorDeals() {
   return (
     <div className="pb-28">
       <TopBar back title="Сделки" sub="Активные и архив" />
+      <div className="px-5 mt-3 grid grid-cols-2 gap-2.5">
+        <div className="card-s p-4"><b className="font-serif-d text-[20px] tabular block">215 000 ₽</b><span className="text-[9.5px] text-[#93897F]">ожидается по сделкам</span></div>
+        <div className="card-s p-4"><b className="font-serif-d text-[20px] tabular block">3</b><span className="text-[9.5px] text-[#93897F]">активные · 1 в hold</span></div>
+      </div>
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {[
           { n: 'Алина и Тимур', d: '14 июня 2027', sum: '85 000 ₽', st: 'Аванс получен', cls: 'bg-[#F7ECD9] text-[#B98A2F]', icon: '💍', tile: 'bg-[#F2DFDC]' },

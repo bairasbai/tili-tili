@@ -31,7 +31,7 @@ export function Assistant() {
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
         <button onClick={() => nav(-1)} className="press w-9 h-9 rounded-full bg-white flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label="Назад"><ChevronLeft size={17} /></button>
         <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-white text-[15px]">✦</div>
-        <div className="flex-1"><b className="text-[14px]">Светлана</b><p className="text-[10px] text-[#7E9A74]">ИИ-координатор · на связи</p></div>
+        <div className="flex-1"><b className="text-[14px]">Светлана</b><p className="text-[10px] text-[#7E9A74]">ИИ-координатор · на связи · 42/50 сообщений сегодня</p></div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
         {msgs.map((m, k) => (
@@ -69,9 +69,10 @@ export function Compare() {
           <thead>
             <tr>
               <td className="w-[110px]" />
-              {list.map(v => (
+              {list.map((v, k) => (
                 <td key={v.id} className="p-1.5 align-top">
-                  <div className={cn('card-s p-3 text-center', v.tile)}>
+                  <div className={cn('card-s p-3 text-center relative', v.tile)}>
+                    {k === 0 && <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold px-2.5 py-1 rounded-full grad text-white whitespace-nowrap">Рекомендуем</span>}
                     <span className="text-[24px]">{v.categoryIcon}</span>
                     <b className="font-serif-d text-[13px] block mt-1.5 leading-tight">{v.name}</b>
                   </div>
@@ -96,6 +97,11 @@ export function Compare() {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div className="px-5 mt-4">
+        <div className="card-s p-4 text-[11.5px] text-[#5C554B] leading-relaxed">
+          ✦ <b>Совет Светланы:</b> {list[0].name} — лучшее соотношение цены и рейтинга, и свободен на вашу дату. «Выбрать» создаст hold на 72 часа — дата никому не уйдёт, пока вы решаете.
+        </div>
       </div>
     </div>
   )
@@ -145,7 +151,22 @@ export function DayX() {
           ))}
         </div>
 
-        <div className="rounded-[26px] p-5 mt-2" style={{ background: planB ? '#3A2E22' : '#2A2520', border: planB ? '1px solid #C9A96A' : '1px solid transparent' }}>
+        <div className="mt-4 grid grid-cols-4 gap-2">
+          {[
+            ['📸', 'Елена', 'на месте'],
+            ['🎤', 'Артём', 'едет · 20 мин'],
+            ['🌸', 'Пион', 'на месте'],
+            ['🎂', 'Марципан', 'доставлен'],
+          ].map(([ic, n, st]) => (
+            <div key={n} className="rounded-2xl p-3 text-center" style={{ background: '#2A2520' }}>
+              <span className="text-[18px]">{ic}</span>
+              <b className="text-[10px] block mt-1">{n}</b>
+              <span className="text-[8px] font-bold" style={{ color: st === 'едет · 20 мин' ? '#C9A96A' : '#7E9A74' }}>{st}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-[26px] p-5 mt-4" style={{ background: planB ? '#3A2E22' : '#2A2520', border: planB ? '1px solid #C9A96A' : '1px solid transparent' }}>
           <div className="flex items-center gap-3">
             <CloudRain size={20} style={{ color: '#C9A96A' }} />
             <div className="flex-1">
@@ -191,6 +212,11 @@ export function After() {
               <span className="text-[10px] text-[#93897F]">{l}</span>
             </div>
           ))}
+        </div>
+        <div className="card p-5 mt-4">
+          <div className="flex justify-between text-[12px] mb-2"><span className="text-[#93897F]">Отзывы команде</span><b>9 из 14</b></div>
+          <div className="h-1.5 rounded-full bg-[#F1E9E2] overflow-hidden"><div className="h-full grad rounded-full" style={{ width: '64%' }} /></div>
+          <p className="text-[10.5px] text-[#93897F] mt-2.5">Отзывы помогают другим парам и поднимают рейтинг тех, кто сделал ваш день.</p>
         </div>
         <button className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>Скачать общий альбом (ZIP)</button>
         <button className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">Оставить отзывы команде</button>
