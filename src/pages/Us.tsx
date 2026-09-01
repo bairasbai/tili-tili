@@ -6,7 +6,7 @@ import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { t, reloadToRoot } from '@/lib/i18n'
 
 /* «Мы» — профиль пары */
 export function Us() {
@@ -68,7 +68,7 @@ export function Us() {
             <span className="flex-1 text-[13px] font-medium ml-1">{t('Язык интерфейса')}</span>
             <div className="flex bg-[var(--bg)] rounded-full p-1">
               {(['ru', 'en'] as const).map(l => (
-                <button key={l} onClick={() => setLang(l)} className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold uppercase', lang === l ? 'grad text-white' : 'text-[var(--soft)]')}>{l}</button>
+                <button key={l} onClick={() => { if (l !== lang) { setLang(l); reloadToRoot() } }} className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold uppercase', lang === l ? 'grad text-white' : 'text-[var(--soft)]')}>{l}</button>
               ))}
             </div>
           </div>

@@ -13,12 +13,15 @@
     <meta name="apple-mobile-web-app-title" content="Тили-тили" />
     <title>Тили-тили — свадьба в одном приложении</title>
     <script>
-      // Deep-link шим для статического хостинга: /join/XXX → / → restore
+      // Deep-link шим для статического хостинга: /join/XXX → корень приложения → restore.
+      // Корень вычисляется по первому известному сегменту роута — устойчиво к подпапкам превью.
       (function () {
         var p = window.location.pathname
-        if (p !== '/' && p !== '/index.html' && !/\.[a-z0-9]+$/i.test(p)) {
+        if (p !== '/' && !/\/$/.test(p) && p !== '/index.html' && !/\.[a-z0-9]+$/i.test(p)) {
           sessionStorage.setItem('tt_redirect', p + window.location.search + window.location.hash)
-          window.location.replace('/')
+          var m = p.match(/^(.*?)\/?(home|settings|search|wedding|us|join|auth|invite|onboarding|vendor)(\/|$)/)
+          var root = m ? (m[1] || '/') : '/'
+          window.location.replace(root)
         }
       })()
     </script>

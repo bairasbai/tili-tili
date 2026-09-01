@@ -5,7 +5,7 @@ import { TopBar, Tile } from '@/components/chrome'
 import { CityPicker } from '@/components/CityPicker'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { t, reloadToRoot } from '@/lib/i18n'
 
 /* Вход: телефон → OTP → роль */
 export function Auth() {
@@ -174,7 +174,7 @@ export function Settings() {
             <span className="text-[13px] font-medium">{t('Язык интерфейса')}</span>
             <div className="flex bg-[var(--track)] rounded-full p-[3px]">
               {(['ru', 'en'] as const).map(l => (
-                <button key={l} onClick={() => { if (l !== lang) { setLang(l); setTimeout(() => location.reload(), 60) } }}
+                <button key={l} onClick={() => { if (l !== lang) { setLang(l); reloadToRoot() } }}
                   className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold transition-all', lang === l ? 'grad text-white shadow' : 'text-[var(--soft)]')}>
                   {l === 'ru' ? 'Русский' : 'English'}
                 </button>

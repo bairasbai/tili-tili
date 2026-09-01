@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { t, reloadToRoot } from '@/lib/i18n'
 import { useStore } from '@/lib/store'
 
 /* Сцены онбординга: кольца → торт → букет → зал */
@@ -27,7 +27,7 @@ export default function Onboarding() {
       <div className="flex justify-between items-center px-6 pt-8">
         <span className="font-serif-d text-[20px]">{t('Тили-')}<em className="grad-text not-italic font-semibold">{t('тили')}</em></span>
         <div className="flex items-center gap-3">
-          <button onClick={() => { setLang(lang === 'ru' ? 'en' : 'ru'); setTimeout(() => location.reload(), 60) }}
+          <button onClick={() => { setLang(lang === 'ru' ? 'en' : 'ru'); reloadToRoot() }}
             className="text-[11px] font-bold text-[#B57171] press px-2.5 py-1 rounded-full bg-[var(--rose-soft)]">{lang === 'ru' ? 'EN' : 'RU'}</button>
           <button onClick={() => nav('/auth')} className="text-[12px] text-[var(--soft)] font-medium press">{t('Пропустить')}</button>
         </div>
