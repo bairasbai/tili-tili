@@ -81,7 +81,7 @@ export function WeddingTeam() {
           <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[#93897F]">Команда собрана</span><b>{booked} из {slots.length}</b></div>
           <Bar pct={(booked / slots.length) * 100} />
           <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[#93897F]">Забронировано на сумму</span><b className="tabular">{fmt(slots.filter(s => s.price).reduce((a, s) => a + (s.price ?? 0), 0))}</b></div>
-          <Bar pct={46} />
+          <Bar pct={Math.round((slots.filter(s => s.price).reduce((a, s) => a + (s.price ?? 0), 0) / couple.budgetTotal) * 100)} />
         </div>
       </div>
     </div>

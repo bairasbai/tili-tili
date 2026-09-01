@@ -12,6 +12,16 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Тили-тили" />
     <title>Тили-тили — свадьба в одном приложении</title>
+    <script>
+      // Deep-link шим для статического хостинга: /join/XXX → / → restore
+      (function () {
+        var p = window.location.pathname
+        if (p !== '/' && p !== '/index.html' && !/\.[a-z0-9]+$/i.test(p)) {
+          sessionStorage.setItem('tt_redirect', p + window.location.search + window.location.hash)
+          window.location.replace('/')
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
