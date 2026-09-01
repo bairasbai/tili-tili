@@ -5,6 +5,19 @@ import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
+/* Скачивание .ics файла (календарь гостя) */
+function downloadICS(title: string, start: string, end: string, location: string) {
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TiliTili//RU', 'BEGIN:VEVENT',
+    `UID:${Date.now()}@tili-tili.ru`, `DTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d{3}/g, '').slice(0, 15)}Z`,
+    `DTSTART:${start}`, `DTEND:${end}`, `SUMMARY:${title}`, `LOCATION:${location}`,
+    'DESCRIPTION:Приглашение от Алины и Тимура · tili-tili.ru', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
+  a.download = 'svadba-alina-timur.ics'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 /* Гостевое приглашение: кинематографичная скролл-история (2026) */
 export default function Invite() {
   const { inviteTpl } = useStore()
@@ -249,7 +262,7 @@ export default function Invite() {
 
         {/* Календарь + подарки */}
         <div className="px-6 mt-6 space-y-3 relative z-10 rv">
-          <button className="press w-full rounded-[24px] py-4 text-[13px] font-semibold flex items-center justify-center gap-2" style={{ background: T.card, boxShadow: shadow }}>
+          <button onClick={() => downloadICS('Свадьба Алины и Тимура', '20270614T130000', '20270614T230000', 'Усадьба «Липовый сад», Уфа')} className="press w-full rounded-[24px] py-4 text-[13px] font-semibold flex items-center justify-center gap-2" style={{ background: T.card, boxShadow: shadow }}>
             <CalendarPlus size={16} style={{ color: T.accent }} /> Добавить в календарь (.ics)
           </button>
           <div className="rounded-[24px] p-5 text-center" style={{ background: T.card, boxShadow: shadow }}>

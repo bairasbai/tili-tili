@@ -1,14 +1,29 @@
 import { useState } from 'react'
 import { MapPin, Search, X, Navigation, ChevronRight } from 'lucide-react'
-import { POPULAR_CITIES, searchCities, type City } from '@/lib/cities'
+import { POPULAR_CITIES, searchCities, nearestCity, type City } from '@/lib/cities'
 import { cn } from '@/lib/utils'
 
 /** Пикер города: полноэкранный оверлей с автопоиском. Используется в квизе, настройках, кабинете подрядчика. */
 export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
+  const [geo, setGeo] = useState<'idle' | 'loading' | 'error'>('idle')
   const results = searchCities(q)
   const bashkir = POPULAR_CITIES.filter(c => c.r === 'Башкортостан')
   const russia = POPULAR_CITIES.filter(c => c.r !== 'Башкортостан').slice(0, 10)
+
+  const locate = () => {
+    if (!('geolocation' in navigator)) { setGeo('error'); return }
+    setGeo('loading')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const c = nearestCity(pos.coords.latitude, pos.coords.longitude)
+        if (c) onPick(c)
+        else setGeo('error')
+      },
+      () => setGeo('error'),
+      { timeout: 8000 },
+    )
+  }
 
   const Row = ({ c }: { c: City }) => (
     <button onClick={() => onPick(c)} className="press w-full flex items-center gap-3 px-5 py-3 text-left border-b border-[#F3ECE5] last:border-0">
@@ -32,9 +47,9 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
         <button onClick={onClose} className="press text-[12px] font-bold text-[#93897F]">Отмена</button>
       </div>
 
-      <button className="press mx-5 mb-3 flex items-center gap-2.5 text-[12px] font-bold text-[#7E9A74] px-1">
-        <Navigation size={13} /> Определить автоматически
-        <span className="text-[9px] font-normal text-[#BFB5AA]">(геолокация, в бою)</span>
+      <button onClick={locate} disabled={geo === 'loading'} className="press mx-5 mb-3 flex items-center gap-2.5 text-[12px] font-bold text-[#7E9A74] px-1">
+        <Navigation size={13} className={geo === 'loading' ? 'animate-pulse' : ''} />
+        {geo === 'loading' ? 'Определяем…' : geo === 'error' ? 'Не получилось — введите вручную' : 'Определить автоматически'}
       </button>
 
       <div className="flex-1 overflow-y-auto no-scrollbar pb-8">

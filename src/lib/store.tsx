@@ -7,6 +7,7 @@ interface Store {
   slots: Slot[]
   bookVendor: (slotId: string, vendorName: string, price: number) => void
   cancelBooking: (slotId: string) => void
+  paySlot: (slotId: string) => void
   favorites: string[]
   toggleFav: (id: string) => void
   lang: 'ru' | 'en'
@@ -37,6 +38,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'booked', vendor: vendorName, price, status: 'Забронировано' } : sl)),
     cancelBooking: (slotId) =>
       setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'empty', vendor: undefined, price: undefined, status: undefined } : sl)),
+    paySlot: (slotId) =>
+      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, status: 'Оплачено полностью' } : sl)),
     favorites,
     toggleFav: id => setFavorites(f => f.includes(id) ? f.filter(x => x !== id) : [...f, id]),
     lang, setLang,

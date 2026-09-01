@@ -109,6 +109,17 @@ export function VendorProfileWizard() {
   const [photos, setPhotos] = useState(3)
   const [published, setPublished] = useState(false)
   const [busyDays, setBusyDays] = useState<number[]>([5, 6, 20, 26])
+  const [cat, setCat] = useState('📸 Фотограф')
+  const [packages, setPackages] = useState<string[][]>([['Утро и церемония', '45 000 ₽'], ['Полный день', '85 000 ₽'], ['Люкс', '130 000 ₽']])
+  const [pkgForm, setPkgForm] = useState(false)
+  const [pkgName, setPkgName] = useState('')
+  const [pkgPrice, setPkgPrice] = useState('')
+  const addPkg = () => {
+    const p = parseInt(pkgPrice.replace(/\D/g, ''), 10)
+    if (!pkgName.trim() || !p) return
+    setPackages(pk => [...pk, [pkgName.trim(), `${p.toLocaleString('ru-RU')} ₽`]])
+    setPkgName(''); setPkgPrice(''); setPkgForm(false)
+  }
   const toggleDay = (day: number) => setBusyDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort((a, b) => a - b))
   const steps = ['Категория', 'О себе', 'Услуги и цены', 'Портфолио', 'Календарь']
   if (published) return (
@@ -140,7 +151,7 @@ export function VendorProfileWizard() {
         {step === 0 && (
           <div className="grid grid-cols-2 gap-2.5">
             {['📸 Фотограф', '🎥 Видеограф', '🎤 Ведущий', '🌸 Флорист', '🎂 Кондитер', '✨ Декоратор'].map(c => (
-              <button key={c} className={cn('press card-s p-4 text-[13px] font-semibold text-left', c.includes('Фотограф') && 'ring-2 ring-[#C98A8A]')}>{c}</button>
+              <button key={c} onClick={() => setCat(c)} className={cn('press card-s p-4 text-[13px] font-semibold text-left', cat === c && 'ring-2 ring-[#C98A8A]')}>{c}</button>
             ))}
           </div>
         )}
@@ -153,12 +164,23 @@ export function VendorProfileWizard() {
         )}
         {step === 2 && (
           <div className="space-y-3">
-            {[['Утро и церемония', '45 000 ₽'], ['Полный день', '85 000 ₽'], ['Люкс', '130 000 ₽']].map(([n, p]) => (
+            {packages.map(([n, p]) => (
               <div key={n} className="card p-4 flex justify-between items-center">
                 <b className="text-[13px]">{n}</b><span className="font-serif-d text-[15px] text-[#B57171] font-semibold tabular">{p}</span>
               </div>
             ))}
-            <button className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Добавить пакет</button>
+            {pkgForm ? (
+              <div className="card-s p-4 space-y-2.5 fade-up">
+                <input value={pkgName} onChange={e => setPkgName(e.target.value)} placeholder="Название пакета" className="w-full h-11 px-4 rounded-full bg-white text-[13px] outline-none" />
+                <input value={pkgPrice} onChange={e => setPkgPrice(e.target.value)} inputMode="numeric" placeholder="Цена, ₽" className="w-full h-11 px-4 rounded-full bg-white text-[13px] outline-none" />
+                <div className="flex gap-2">
+                  <button onClick={() => setPkgForm(false)} className="press flex-1 h-11 rounded-full bg-white text-[12px] font-semibold text-[#93897F]">Отмена</button>
+                  <button onClick={addPkg} className="press flex-1 h-11 rounded-full grad text-white text-[12px] font-bold">Добавить</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setPkgForm(true)} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} /> Добавить пакет</button>
+            )}
           </div>
         )}
         {step === 3 && (

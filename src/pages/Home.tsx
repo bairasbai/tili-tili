@@ -8,8 +8,9 @@ export default function Home() {
   const nav = useNavigate()
   const { slots, city } = useStore()
   const booked = slots.filter(s => s.state === 'booked')
-  const teamPct = Math.round((couple.teamBooked / couple.teamTotal) * 100)
-  const budgetPct = Math.round((couple.budgetSpent / couple.budgetTotal) * 100)
+  const spent = booked.reduce((a, s) => a + (s.price ?? 0), 0)
+  const teamPct = Math.round((booked.length / couple.teamTotal) * 100)
+  const budgetPct = Math.round((spent / couple.budgetTotal) * 100)
 
   return (
     <div className="pb-28">
@@ -71,7 +72,7 @@ export default function Home() {
             <span className="text-[12px] font-bold text-[#B57171]">{budgetPct}%</span>
           </div>
           <div className="flex justify-between items-baseline mt-1.5">
-            <b className="font-serif-d text-[22px] tabular">{couple.budgetSpent.toLocaleString('ru-RU')} ₽</b>
+            <b className="font-serif-d text-[22px] tabular">{spent.toLocaleString('ru-RU')} ₽</b>
             <span className="text-[11px] text-[#93897F]">из {couple.budgetTotal.toLocaleString('ru-RU')} ₽</span>
           </div>
           <div className="mt-3"><Bar pct={budgetPct} /></div>

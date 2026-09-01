@@ -152,16 +152,26 @@ export function SlotDetail() {
 
 /* Бюджет */
 export function Budget() {
-  const [items, setItems] = useState(budgetItems)
+  const { slots } = useStore()
+  // Бизнес-логика: категории бюджета наполняются ценами забронированных слотов команды.
+  // Отмена брони в конструкторе автоматически уменьшает бюджет.
+  const catOf: Record<string, string> = { venue: 'Площадка и кейтеринг', photo: 'Фото и видео', video: 'Фото и видео', dress: 'Одежда и красота', stylist: 'Одежда и красота', rings: 'Одежда и красота', host: 'Развлечения и декор', dj: 'Развлечения и декор', florist: 'Развлечения и декор', decor: 'Развлечения и декор', cake: 'Развлечения и декор', transport: 'Прочее' }
+  const booked = slots.filter(s => (s.state === 'booked' || s.state === 'hold') && s.price)
+  const [custom, setCustom] = useState<(typeof budgetItems[number] & { live?: string })[]>([])
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const add = () => {
     const a = parseInt(amount.replace(/\D/g, ''), 10)
     if (!name.trim() || !a) return
-    setItems(it => [...it, { name: name.trim(), amount: a, limit: Math.ceil(a * 1.2), color: '#D9CCE3' }])
+    setCustom(it => [...it, { name: name.trim(), amount: a, limit: Math.ceil(a * 1.2), color: '#D9CCE3' }])
     setName(''); setAmount(''); setAdding(false)
   }
+  const items: (typeof budgetItems[number] & { live?: string })[] = budgetItems.map(b => {
+    const inCat = booked.filter(s => catOf[s.categoryId] === b.name)
+    if (!inCat.length) return { ...b }
+    return { ...b, amount: inCat.reduce((a, s) => a + (s.price ?? 0), 0), live: inCat.map(s => s.vendor).join(' · ') }
+  }).concat(custom)
   const total = items.reduce((a, b) => a + b.amount, 0)
   const pct = Math.round((total / couple.budgetTotal) * 100)
   return (
@@ -181,7 +191,7 @@ export function Budget() {
               return (
                 <div key={b.name}>
                   <div className="flex justify-between text-[12.5px] items-center">
-                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}</span>
+                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[#E6EEE2] text-[#7E9A74]">из команды</span>}</span>
                     <b className="tabular">{(b.amount / 1000).toFixed(0)}К <span className="text-[#93897F] font-normal text-[10.5px]">/ {(b.limit / 1000).toFixed(0)}К</span></b>
                   </div>
                   <div className="h-1.5 rounded-full bg-[#F1E9E2] mt-1.5 overflow-hidden">

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 /* Карточка сделки */
 export function Deal() {
   const nav = useNavigate()
+  const { paySlot, cancelBooking } = useStore()
   const [paid, setPaid] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelled, setCancelled] = useState(false)
@@ -70,12 +71,12 @@ export function Deal() {
           {paid ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[#7E9A74] text-center">✓ Оплачено полностью</div>
           ) : (
-            <button onClick={() => setPaid(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74]">✓ Отметить доплату</button>
+            <button onClick={() => { setPaid(true); paySlot('s4') }} className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74]">✓ Отметить доплату</button>
           )}
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[#93897F] text-center">Сделка отменена</div>
           ) : confirmCancel ? (
-            <button onClick={() => { setCancelled(true); setConfirmCancel(false) }} className="press py-3.5 rounded-[18px] bg-[#B57171] text-white text-[13px] font-semibold">Точно отменить?</button>
+            <button onClick={() => { setCancelled(true); setConfirmCancel(false); cancelBooking('s4') }} className="press py-3.5 rounded-[18px] bg-[#B57171] text-white text-[13px] font-semibold">Точно отменить?</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">Отменить сделку</button>
           )}
@@ -104,6 +105,29 @@ export function Deal() {
   )
 }
 
+/* Генерация и скачивание договора: DOCX (Word-совместимый HTML) / PDF (окно печати) */
+function contractHTML(name: string) {
+  return `<h1>${name}</h1><p>г. Уфа · ${new Date().toLocaleDateString('ru-RU')}</p>
+  <p><b>Заказчик:</b> Алина Козлова и Тимур Волков<br><b>Исполнитель:</b> ______________________</p>
+  <p>1. Предмет договора: услуги на свадебное торжество 14.06.2027.</p>
+  <p>2. Стоимость и порядок оплаты: аванс 30% при подписании, остаток — за 14 дней до даты.</p>
+  <p>3. Ответственность сторон и форс-мажор — по ГК РФ.</p>
+  <p>4. Сформировано в приложении «Тили-тили» (tili-tili.ru).</p>`
+}
+function downloadDocx(name: string) {
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif">${contractHTML(name)}</body></html>`
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob(['﻿', html], { type: 'application/msword' }))
+  a.download = 'dogovor-tili-tili.doc'
+  a.click(); URL.revokeObjectURL(a.href)
+}
+function downloadPdf(name: string) {
+  const w = window.open('', '_blank')
+  if (!w) return
+  w.document.write(`<html><head><meta charset="utf-8"><title>${name}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name)}<script>window.onload=()=>window.print()<\/script></body></html>`)
+  w.document.close()
+}
+
 /* Мастер договора: шаблон → данные → готово */
 export function ContractWizard() {
   const nav = useNavigate()
@@ -118,8 +142,8 @@ export function ContractWizard() {
       <h1 className="font-serif-d text-[28px] mt-7">Договор готов</h1>
       <p className="text-[13px] text-[#93897F] mt-3 font-light leading-relaxed">«{t.name}» сгенерирован с вашими данными. Скачайте, подпишите с подрядчиком и загрузите скан в сделку.</p>
       <div className="flex gap-2.5 mt-8 w-full">
-        <button className="press flex-1 h-[52px] rounded-full bg-white font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
-        <button className="press flex-1 h-[52px] rounded-full bg-white font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
+        <button onClick={() => downloadPdf(t.name)} className="press flex-1 h-[52px] rounded-full bg-white font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
+        <button onClick={() => downloadDocx(t.name)} className="press flex-1 h-[52px] rounded-full bg-white font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
       <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>Готово</button>
     </div>
