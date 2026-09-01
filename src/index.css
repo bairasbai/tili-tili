@@ -113,9 +113,7 @@ body {
 
 /* Живой градиент для hero-карточек */
 .grad-anim {
-  background: linear-gradient(130deg, #D9A8A0, #C98A8A 30%, #C9A2B4 52%, #B3C2A9 72%, #D9A8A0 95%);
-  background-size: 320% 320%;
-  animation: gradShift 14s var(--ease) infinite;
+  background: linear-gradient(135deg, #EFC6BB 0%, #E4B1AC 35%, #CDB6D1 70%, #B8CAAF 100%);
 }
 @keyframes gradShift { 0%,100% { background-position: 0% 40%; } 50% { background-position: 100% 60%; } }
 
@@ -249,3 +247,10 @@ input[type="range"] { accent-color: var(--rose-deep); }
   .glass-tab .tab-dot { display: none; }
 }
 @media (min-width: 900px) and (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+
+/* Подпись центральной кнопки: скрыта на мобильной нижней панели, видна в десктоп-сайдбаре */
+.halo-label { display: none; }
+@media (min-width: 900px) {
+  .halo-label { display: block; position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 600; color: var(--soft); white-space: nowrap; }
+  .glass-tab > div > button.halo { margin-bottom: 26px !important; }
+}

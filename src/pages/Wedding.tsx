@@ -6,6 +6,7 @@ import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
 import { useBusy } from '@/lib/useBusy'
+import { catIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -29,7 +30,7 @@ function WeddingNav() {
     { to: '/tools/alcohol', icon: Wine, label: t('Алко-кальк.'), tile: 'bg-[var(--sage-soft)]' },
   ]
   return (
-    <div className="grid grid-cols-4 gap-2 px-5 mt-3">
+    <div className="grid grid-cols-4 md:grid-cols-7 gap-2 px-5 mt-3">
       {items.map(it => (
         <button key={it.to} onClick={() => nav(it.to)} className="press flex flex-col items-center gap-1.5">
           <div className={cn('w-[52px] h-[52px] rounded-[18px] flex items-center justify-center', it.tile)} style={{ boxShadow: 'var(--shadow)' }}>
@@ -64,21 +65,26 @@ export function WeddingTeam() {
         </button>
       </div>
       <div className="px-5 mt-5">
-        <div className="grid grid-cols-3 gap-2.5 stagger">
-          {slots.map(s => (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 stagger">
+          {slots.map(s => {
+            const SlotIco = catIcon(s.categoryId)
+            return (
             <button
               key={s.id}
               onClick={() => nav(`/wedding/slot/${s.id}`)}
-              className={cn('press rounded-[18px] p-3 flex flex-col items-center justify-center gap-1.5 aspect-[0.85] fade-up',
+              className={cn('press rounded-[18px] p-3 flex flex-col items-center justify-center gap-1.5 aspect-[0.85] md:aspect-auto md:py-5 fade-up',
                 s.state === 'empty' ? 'border-[1.5px] border-dashed border-[#D8B4AE] bg-[var(--rose-soft)]/30' : 'card-s')}
             >
-              <span className="text-[22px]">{s.state === 'empty' ? <Plus size={20} className="text-[#C98A8A]" /> : s.icon}</span>
+              <span className={cn('w-9 h-9 rounded-[12px] flex items-center justify-center', s.state === 'empty' ? '' : s.tile)}>
+                {s.state === 'empty' ? <Plus size={20} className="text-[#C98A8A]" /> : <SlotIco size={18} className="text-[var(--ink2)]" />}
+              </span>
               <b className="text-[10.5px] text-center leading-tight">{s.label}</b>
               {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#7E9A74]">booked</span>}
               {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#B98A2F]">{s.status}</span>}
               {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#C98A8A]">{t('кандидаты')}</span>}
             </button>
-          ))}
+            )
+          })}
         </div>
         <div className="mt-4"><AiTip text={t('Пустой слот «DJ» и «Декоратор» — подобрать свободных на 14.06 под ваш бюджет?')} onPress={() => nav('/search/dj')} /></div>
       </div>
@@ -115,6 +121,7 @@ export function SlotDetail() {
     setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
   })
   const inviteLink = `tili-tili.ru/join/ТИЛИ-СВОЙ-${s.id.toUpperCase()}`
+  const SlotIco = catIcon(s.categoryId)
 
   /* Свой подрядчик: форма добавления/приглашения (пустой слот или внешний) */
   const ownBlock = (
@@ -147,7 +154,7 @@ export function SlotDetail() {
         <TopBar back title={s.label} sub={t('Слот команды')} />
         <div className="px-5 mt-3">
           <div className="card p-5 text-center">
-            <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center text-[28px]', s.tile)}>{s.icon}</div>
+            <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}><SlotIco size={28} className="text-[var(--ink2)]" /></div>
             <b className="font-serif-d text-[19px] block mt-3">{t('Исполнитель не выбран')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Подберите в каталоге или добавьте своего')}</p>
           </div>
@@ -163,7 +170,7 @@ export function SlotDetail() {
       <TopBar back title={s.label} sub={t('Слот команды')} />
       <div className="px-5 mt-3">
         <div className="card p-5 text-center">
-          <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center text-[28px]', s.tile)}>{s.icon}</div>
+          <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}><SlotIco size={28} className="text-[var(--ink2)]" /></div>
           <b className="font-serif-d text-[19px] block mt-3">{s.vendor ?? t('Исполнитель не выбран')}</b>
           {s.price && <span className="font-serif-d text-[17px] text-[#B57171] block mt-1 tabular">{fmt(s.price)}</span>}
           <div className="flex justify-center gap-1.5 mt-2">

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router'
-import { Bell } from 'lucide-react'
+import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { couple, aiTips, tasks, guests } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -92,17 +92,17 @@ export default function Home() {
       </div>
 
       {/* Быстрые действия */}
-      <div className="px-5 mt-4 grid grid-cols-3 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
-        {[
-          ['✦', 'bg-[var(--rose-soft)]', t('Спросить'), '/assistant'],
-          ['📅', 'bg-[var(--honey)]', t('Тайминг'), '/wedding/timeline'],
-          ['💌', 'bg-[var(--lav)]', t('Пригласить'), '/wedding/invites'],
-          ['📊', 'bg-[var(--sage-soft)]', t('Сравнить'), '/compare'],
-          ['🗺', 'bg-[var(--blue)]', t('Площадки'), '/venues'],
-          ['✨', 'bg-[var(--rose-soft)]', t('Идеи'), '/inspiration'],
-        ].map(([ic, tile, l, to]) => (
+      <div className="px-5 mt-4 grid grid-cols-3 md:grid-cols-6 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
+        {([
+          { Ico: Sparkles, tile: 'bg-[var(--rose-soft)]', l: t('Спросить'), to: '/assistant' },
+          { Ico: CalendarDays, tile: 'bg-[var(--honey)]', l: t('Тайминг'), to: '/wedding/timeline' },
+          { Ico: Mail, tile: 'bg-[var(--lav)]', l: t('Пригласить'), to: '/wedding/invites' },
+          { Ico: BarChart3, tile: 'bg-[var(--sage-soft)]', l: t('Сравнить'), to: '/compare' },
+          { Ico: Map, tile: 'bg-[var(--blue)]', l: t('Площадки'), to: '/venues' },
+          { Ico: Lightbulb, tile: 'bg-[var(--rose-soft)]', l: t('Идеи'), to: '/inspiration' },
+        ]).map(({ Ico, tile, l, to }) => (
           <button key={l} onClick={() => nav(to)} className="press card-s py-3 flex flex-col items-center gap-1.5">
-            <span className={`w-9 h-9 rounded-[12px] ${tile} flex items-center justify-center text-[15px]`}>{ic}</span>
+            <span className={`w-9 h-9 rounded-[12px] ${tile} flex items-center justify-center`}><Ico size={16} className="text-[var(--ink2)]" /></span>
             <span className="text-[9.5px] font-semibold text-[var(--ink2)]">{l}</span>
           </button>
         ))}
@@ -140,7 +140,7 @@ export default function Home() {
         <div className="space-y-2.5 mt-2 stagger">
           {booked.map(s => (
             <button key={s.id} onClick={() => nav('/wedding')} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
-              <Tile icon={s.icon} tile={s.tile} />
+              <Tile icon={s.icon} tile={s.tile} cat={s.categoryId} />
               <div className="flex-1 min-w-0">
                 <b className="text-[13.5px] block truncate">{s.vendor}</b>
                 <span className="text-[10.5px] text-[var(--soft)]">{s.label}</span>

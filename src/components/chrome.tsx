@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
 import { useT } from '@/lib/useT'
 import { cn } from '@/lib/utils'
+import { catIcon } from '@/lib/icons'
 
 /* Верхняя шапка страницы */
 export function TopBar({ title, sub, back, right }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode }) {
@@ -49,6 +50,7 @@ export function TabBar() {
             return (
               <button key="w" onClick={() => nav('/wedding')} className="press halo relative -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-white text-[22px] border-4 border-[var(--bg)]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label={t('Свадьба')}>
                 💍
+                <span className="halo-label">{t('Свадьба')}</span>
               </button>
             )
           const Icon = tb.icon
@@ -114,10 +116,11 @@ export function SectionHead({ title, sub, link, onLink }: { title: string; sub?:
 }
 
 /* Иконка-плитка */
-export function Tile({ icon, tile, size = 46 }: { icon: string; tile: string; size?: number }) {
+export function Tile({ icon, tile, size = 46, cat }: { icon: string; tile: string; size?: number; cat?: string }) {
+  const Ico = cat ? catIcon(cat) : null
   return (
     <div className={cn('rounded-[14px] flex items-center justify-center shrink-0', tile)} style={{ width: size, height: size, fontSize: size * 0.42 }}>
-      {icon}
+      {Ico ? <Ico size={Math.round(size * 0.44)} className="text-[var(--ink2)]" /> : icon}
     </div>
   )
 }
