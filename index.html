@@ -3,172 +3,172 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Тили-тили — UI-концепт · Luxury Wedding</title>
+<title>Тили-тили — UI-концепт · Soft Pastel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ivory:#FAF7F2; --cream:#F3EDE3; --champagne:#E8D9B8;
-  --gold:#B08D57; --gold-deep:#8C6D3F; --ink:#1E1B16; --ink-soft:#5C554B;
-  --sage:#A8B5A0; --terracotta:#C4705A; --blush:#E9D5CF;
-  --dark-bg:#141210; --dark-surface:#1E1A16; --dark-gold:#C9A96A;
-  --r-s:12px; --r-m:20px; --r-l:32px;
-  --shadow:0 1px 2px rgba(30,27,22,.05),0 12px 40px -12px rgba(176,141,87,.25);
+  --bg:#FBF6F1; --card:#FFFFFF; --ink:#2E2A26; --soft:#93897F;
+  --rose:#C98A8A; --rose-deep:#B57171; --rose-soft:#F2DFDC;
+  --sage:#A9BCA0; --sage-deep:#7E9A74; --sage-soft:#E6EEE2;
+  --lav:#D9CCE3; --blue:#C3D5E8; --yellow:#F0DCB8; --peach:#F3E3D3;
+  --grad:linear-gradient(120deg,#D9A8A0 0%,#C98A8A 45%,#A9BCA0 100%);
+  --r:26px; --r-s:18px;
+  --shadow:0 2px 6px rgba(46,42,38,.04),0 18px 44px -18px rgba(201,138,138,.28);
   --ease:cubic-bezier(.22,1,.36,1);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{font-family:'Inter',system-ui,sans-serif;background:var(--ivory);color:var(--ink);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;overflow-x:hidden}
 .serif{font-family:'Playfair Display',serif}
 .wrap{max-width:1280px;margin:0 auto;padding:0 32px}
-section{padding:110px 0;position:relative}
-.kicker{font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);font-weight:600}
-h1,h2{font-family:'Playfair Display',serif;font-weight:500;line-height:1.08}
-.reveal{opacity:0;transform:translateY(42px);transition:opacity 1s var(--ease),transform 1s var(--ease)}
+section{padding:100px 0}
+.kicker{font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--rose-deep);font-weight:600}
+h1,h2,h3{font-family:'Playfair Display',serif;font-weight:600;line-height:1.12}
+.reveal{opacity:0;transform:translateY(40px);transition:opacity 1s var(--ease),transform 1s var(--ease)}
 .reveal.in{opacity:1;transform:none}
 
 /* HERO */
-.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;background:radial-gradient(1200px 700px at 50% -10%,#fff 0%,var(--ivory) 55%);padding-top:80px}
+.hero{min-height:96vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;position:relative;background:radial-gradient(1000px 620px at 50% -8%,#fff 0%,var(--bg) 60%)}
 #dust{position:absolute;inset:0;pointer-events:none}
-.hero .mono{width:92px;height:92px;border:1.5px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:34px;color:var(--gold-deep);margin-bottom:36px;position:relative;box-shadow:var(--shadow);background:linear-gradient(145deg,#fff,var(--cream))}
-.hero .mono::after{content:"";position:absolute;inset:-9px;border:1px solid rgba(176,141,87,.35);border-radius:50%}
-.hero h1{font-size:clamp(52px,8vw,110px);letter-spacing:.01em}
-.hero h1 em{font-style:italic;color:var(--gold)}
-.hero p{margin-top:26px;max-width:560px;color:var(--ink-soft);font-size:18px;line-height:1.65;font-weight:300}
-.cta{margin-top:44px;display:inline-flex;gap:14px}
-.btn{padding:17px 38px;border-radius:100px;font-size:14px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;cursor:pointer;transition:all .5s var(--ease);border:1px solid transparent;text-decoration:none}
-.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#fff;box-shadow:0 14px 34px -10px rgba(176,141,87,.6)}
-.btn-gold:hover{transform:translateY(-3px);box-shadow:0 22px 44px -10px rgba(176,141,87,.7)}
-.btn-ghost{border-color:rgba(176,141,87,.5);color:var(--gold-deep)}
-.btn-ghost:hover{background:var(--champagne)}
-.scroll-hint{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--ink-soft);font-size:11px;letter-spacing:.3em;text-transform:uppercase}
-.scroll-hint .line{width:1px;height:52px;background:linear-gradient(var(--gold),transparent);animation:drop 2.2s var(--ease) infinite}
+.hero .mono{width:96px;height:96px;border-radius:32px;background:var(--grad);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:38px;color:#fff;margin-bottom:34px;box-shadow:0 20px 44px -14px rgba(201,138,138,.55)}
+.hero h1{font-size:clamp(52px,8vw,104px)}
+.hero h1 em{font-style:italic;color:var(--rose-deep)}
+.hero p{margin-top:24px;max-width:580px;color:var(--soft);font-size:18px;line-height:1.7;font-weight:300}
+.cta{margin-top:42px;display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.btn{padding:17px 38px;border-radius:100px;font-size:14px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;cursor:pointer;transition:all .5s var(--ease);border:none;text-decoration:none;display:inline-block}
+.btn-rose{background:var(--grad);color:#fff;box-shadow:0 16px 36px -12px rgba(201,138,138,.65)}
+.btn-rose:hover{transform:translateY(-3px)}
+.btn-ghost{background:#fff;color:var(--rose-deep);box-shadow:var(--shadow)}
+.btn-ghost:hover{transform:translateY(-3px)}
+.scroll-hint{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--soft);font-size:11px;letter-spacing:.3em;text-transform:uppercase}
+.scroll-hint .line{width:1.5px;height:48px;background:linear-gradient(var(--rose),transparent);animation:drop 2.2s var(--ease) infinite}
 @keyframes drop{0%{transform:scaleY(0);transform-origin:top}55%{transform:scaleY(1);transform-origin:top}56%{transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
 
 /* TOKENS */
-.tok-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:56px;flex-wrap:wrap;gap:20px}
-.tok-head h2{font-size:clamp(36px,4.6vw,60px)}
+.tok-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:52px;flex-wrap:wrap;gap:20px}
+.tok-head h2{font-size:clamp(34px,4.4vw,56px)}
 .palette{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px}
-.swatch{border-radius:var(--r-m);height:150px;padding:18px;display:flex;flex-direction:column;justify-content:flex-end;font-size:12px;box-shadow:var(--shadow);transition:transform .6s var(--ease)}
+.swatch{border-radius:var(--r);height:150px;padding:18px;display:flex;flex-direction:column;justify-content:flex-end;font-size:12px;box-shadow:var(--shadow);transition:transform .6s var(--ease)}
 .swatch:hover{transform:translateY(-8px)}
 .swatch b{font-size:13px}
-.type-demo{margin-top:70px;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+.type-demo{margin-top:64px;display:grid;grid-template-columns:1fr 1fr;gap:44px;align-items:center}
 @media(max-width:820px){.type-demo{grid-template-columns:1fr}}
-.type-demo .big{font-family:'Playfair Display',serif;font-size:clamp(40px,5vw,72px);line-height:1.1}
-.type-demo .big i{color:var(--gold)}
-.type-demo ul{list-style:none;color:var(--ink-soft);font-size:15px;line-height:2.1;font-weight:300}
-.type-demo ul b{color:var(--ink);font-weight:500}
+.type-demo .big{font-family:'Playfair Display',serif;font-size:clamp(38px,4.6vw,64px);line-height:1.12}
+.type-demo .big i{color:var(--rose-deep)}
+.type-demo ul{list-style:none;color:var(--soft);font-size:15px;line-height:2.15;font-weight:300}
+.type-demo ul b{color:var(--ink);font-weight:600}
 
 /* PHONES */
-.stage{background:linear-gradient(180deg,var(--ivory),var(--cream) 40%,var(--ivory));}
-.phones{display:flex;gap:44px;overflow-x:auto;padding:60px 10px 70px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+.stage{background:linear-gradient(180deg,var(--bg),#F6EDE7 45%,var(--bg))}
+.phones{display:flex;gap:42px;overflow-x:auto;padding:56px 10px 70px;scroll-snap-type:x mandatory}
 .phones::-webkit-scrollbar{height:6px}
-.phones::-webkit-scrollbar-thumb{background:var(--champagne);border-radius:10px}
-.phone{flex:0 0 300px;scroll-snap-align:center;border-radius:46px;background:#0f0d0b;padding:11px;box-shadow:0 40px 90px -30px rgba(30,27,22,.45),0 0 0 1px rgba(176,141,87,.15);transition:transform .7s var(--ease)}
-.phone:hover{transform:translateY(-14px) rotate(-.6deg)}
-.screen{border-radius:36px;height:610px;overflow:hidden;position:relative;background:var(--ivory);display:flex;flex-direction:column}
-.scr-title{text-align:center;margin-top:26px}
-.scr-title .n{font-size:11px;letter-spacing:.28em;color:var(--gold);text-transform:uppercase;font-weight:600}
-.scr-title h3{font-family:'Playfair Display',serif;font-size:22px;margin-top:8px;font-weight:500}
-.notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:96px;height:24px;background:#0f0d0b;border-radius:14px;z-index:5}
+.phones::-webkit-scrollbar-thumb{background:var(--rose-soft);border-radius:10px}
+.phone{flex:0 0 310px;scroll-snap-align:center;border-radius:48px;background:#1d1a17;padding:11px;box-shadow:0 44px 90px -30px rgba(46,42,38,.4);transition:transform .7s var(--ease)}
+.phone:hover{transform:translateY(-14px)}
+.screen{border-radius:38px;height:630px;overflow:hidden;overflow-y:auto;position:relative;background:var(--bg);scrollbar-width:none}
+.screen::-webkit-scrollbar{display:none}
+.scr-title{text-align:center;margin-top:24px}
+.scr-title .n{font-size:11px;letter-spacing:.28em;color:var(--rose-deep);text-transform:uppercase;font-weight:600}
+.scr-title h3{font-size:21px;margin-top:8px}
+.notch{position:sticky;top:10px;left:50%;transform:translateX(-50%);width:96px;height:24px;background:#1d1a17;border-radius:14px;z-index:9;margin-bottom:-30px}
+.pad{padding:20px 18px 26px}
 
-/* status bar + tabbar */
-.sb{display:flex;justify-content:space-between;padding:14px 22px 4px;font-size:11px;color:var(--ink-soft);font-weight:500}
-.tabbar{margin-top:auto;display:flex;justify-content:space-around;align-items:center;padding:12px 14px 20px;background:rgba(250,247,242,.75);backdrop-filter:blur(18px);border-top:1px solid rgba(176,141,87,.14)}
-.tabbar .t{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:8.5px;color:var(--ink-soft);letter-spacing:.06em}
-.tabbar .t .ic{font-size:16px}
-.tabbar .t.on{color:var(--gold-deep)}
-.tabbar .mid{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-deep));display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;margin-top:-30px;box-shadow:0 10px 26px -8px rgba(176,141,87,.7);border:3px solid var(--ivory)}
-.screen.dark .tabbar{background:rgba(20,18,16,.8);border-top-color:rgba(201,169,106,.18)}
-.screen.dark .tabbar .t{color:#8a8278}
-.screen.dark .tabbar .t.on{color:var(--dark-gold)}
-.screen.dark .tabbar .mid{border-color:var(--dark-bg)}
-
-/* screen-specific */
-.pad{padding:10px 20px 0}
-.countdown{display:flex;flex-direction:column;align-items:center;margin-top:14px}
-.ring{width:172px;height:172px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center;background:conic-gradient(var(--gold) 0 72%,var(--champagne) 72% 100%)}
-.ring::before{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--ivory)}
-.ring .in{position:relative;text-align:center}
-.ring .in .d{font-family:'Playfair Display',serif;font-size:52px;color:var(--ink)}
-.ring .in .l{font-size:9.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-soft)}
-.card{background:#fff;border-radius:var(--r-m);padding:16px;box-shadow:var(--shadow);margin-top:14px}
-.card .lbl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
-.bar{height:7px;border-radius:10px;background:var(--cream);margin-top:10px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:10px;background:linear-gradient(90deg,var(--gold),var(--gold-deep))}
-.ai-row{display:flex;gap:10px;align-items:flex-start;margin-top:14px;background:linear-gradient(135deg,#fff,var(--cream));border:1px solid rgba(176,141,87,.25);border-radius:var(--r-m);padding:13px}
-.ai-row .dot{width:26px;height:26px;flex:0 0 26px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px}
-.ai-row p{font-size:11px;line-height:1.5;color:var(--ink-soft)}
-.chip{display:inline-block;padding:7px 13px;border-radius:100px;font-size:10px;border:1px solid rgba(176,141,87,.4);color:var(--gold-deep);margin:3px 3px 0 0}
-.chip.on{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#fff;border-color:transparent}
-.vcard{background:#fff;border-radius:var(--r-m);overflow:hidden;box-shadow:var(--shadow);margin-top:12px}
-.vcard .ph{height:96px;background:linear-gradient(135deg,var(--blush),var(--champagne));position:relative}
-.vcard .ph::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 30%,rgba(255,255,255,.55),transparent 55%)}
-.vcard .ph .free{position:absolute;top:8px;left:8px;z-index:2;background:rgba(168,181,160,.95);color:#fff;font-size:8.5px;padding:4px 9px;border-radius:100px;font-weight:600}
-.vcard .ph .fav{position:absolute;top:8px;right:8px;z-index:2;color:#fff;font-size:14px}
-.vcard .inf{padding:11px 13px}
-.vcard .inf b{font-family:'Playfair Display',serif;font-size:14px;font-weight:600}
-.vcard .inf .sub{font-size:9.5px;color:var(--ink-soft);margin-top:2px}
-.vcard .inf .pr{font-family:'Playfair Display',serif;font-size:13px;color:var(--gold-deep);margin-top:6px}
-.slotgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px}
-.slot{aspect-ratio:.82;border-radius:var(--r-s);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:9px;text-align:center;padding:6px}
-.slot.empty{border:1.5px dashed rgba(176,141,87,.55);color:var(--gold-deep);background:rgba(232,217,184,.25)}
-.slot.full{background:linear-gradient(160deg,#fff,var(--cream));box-shadow:var(--shadow);color:var(--ink)}
-.slot .em{font-size:19px}
-.slot .st{font-size:7.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--sage);font-weight:700}
-.slot.cand .st{color:var(--gold)}
-.screen.dark{background:linear-gradient(180deg,var(--dark-bg),#0e0c0a);color:#efe9df}
-.screen.dark .sb{color:#8a8278}
-.tl{position:relative;margin-top:16px;padding-left:22px}
-.tl::before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:1.5px;background:linear-gradient(rgba(201,169,106,.7),rgba(201,169,106,.12))}
-.tl .ev{position:relative;margin-bottom:15px}
-.tl .ev::before{content:"";position:absolute;left:-19px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--dark-gold);box-shadow:0 0 12px rgba(201,169,106,.9)}
-.tl .ev .tm{font-size:9px;letter-spacing:.18em;color:var(--dark-gold);font-weight:600}
-.tl .ev .nm{font-family:'Playfair Display',serif;font-size:14.5px;margin-top:2px}
-.tl .ev .ds{font-size:9.5px;color:#9a9184;margin-top:2px}
-.tl .ev.now .nm{color:var(--dark-gold)}
-.tl .ev.now .live{font-size:8px;background:var(--terracotta);color:#fff;padding:3px 8px;border-radius:100px;margin-left:7px;vertical-align:middle;letter-spacing:.1em}
-.envelope{margin:26px 22px 0;background:linear-gradient(160deg,#fff,var(--cream));border-radius:var(--r-m);box-shadow:var(--shadow);padding:30px 20px;text-align:center;position:relative;border:1px solid rgba(176,141,87,.25)}
-.wax{width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#c99a5e,var(--gold-deep) 75%);margin:-58px auto 14px;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;color:#fff;font-size:19px;box-shadow:0 8px 20px -6px rgba(140,109,63,.7);border:2px solid rgba(255,255,255,.35)}
-.envelope .to{font-style:italic;font-family:'Playfair Display',serif;font-size:17px;color:var(--ink)}
-.envelope .names{font-family:'Playfair Display',serif;font-size:29px;margin:14px 0 4px}
-.envelope .dt{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold-deep);font-weight:600}
-.rsvp{display:flex;gap:9px;justify-content:center;margin-top:18px}
-.rsvp span{padding:9px 18px;border-radius:100px;font-size:10.5px;font-weight:600;letter-spacing:.06em}
-.rsvp .y{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#fff}
-.rsvp .n{border:1px solid rgba(176,141,87,.45);color:var(--gold-deep)}
-.ob-dots{display:flex;gap:7px;justify-content:center;margin-top:16px}
-.ob-dots i{width:6px;height:6px;border-radius:50%;background:var(--champagne)}
-.ob-dots i.on{background:var(--gold);width:20px;border-radius:10px}
-.quiz-q{font-family:'Playfair Display',serif;font-size:23px;text-align:center;margin-top:22px;line-height:1.25}
-.quiz-opt{background:#fff;border-radius:var(--r-s);padding:13px 15px;margin-top:9px;box-shadow:var(--shadow);font-size:12.5px;display:flex;justify-content:space-between;align-items:center}
-.quiz-opt.sel{border:1px solid var(--gold);background:linear-gradient(135deg,#fff,var(--champagne))}
-.quiz-opt .r{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--champagne)}
-.quiz-opt.sel .r{background:var(--gold);border-color:var(--gold);box-shadow:inset 0 0 0 3px #fff}
+/* компоненты экранов */
+.hero-card{background:var(--grad);border-radius:32px;padding:26px 22px;color:#fff;position:relative;overflow:hidden}
+.hero-card::after{content:"";position:absolute;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.14);top:-80px;right:-60px}
+.hero-card h4{font-family:'Playfair Display',serif;font-size:26px;font-weight:600}
+.hero-card .sub{font-size:11.5px;opacity:.92;margin-top:6px}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px;position:relative;z-index:2}
+.stat{background:rgba(255,255,255,.22);backdrop-filter:blur(8px);border-radius:16px;padding:12px 6px;text-align:center}
+.stat b{font-size:19px;font-weight:700;display:block}
+.stat span{font-size:8.5px;opacity:.9}
+.card{background:var(--card);border-radius:var(--r);padding:18px;box-shadow:var(--shadow);margin-top:14px}
+.avatars{display:flex;justify-content:center;margin-top:6px}
+.av{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:22px;color:#fff;border:3.5px solid #fff}
+.av.r{background:var(--rose)} .av.s{background:var(--sage);margin-left:-14px}
+.cd-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.cd{background:var(--bg);border-radius:16px;padding:12px 4px;text-align:center}
+.cd b{font-size:19px;display:block}
+.cd span{font-size:8px;letter-spacing:.14em;color:var(--soft)}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;margin:22px 2px 4px}
+.sec-h h5{font-family:'Playfair Display',serif;font-size:19px}
+.sec-h .link{font-size:11px;color:var(--rose-deep);font-weight:600}
+.sec-sub{font-size:11px;color:var(--soft);margin:0 2px}
+.vrow{background:#fff;border-radius:var(--r-s);padding:13px;display:flex;gap:12px;align-items:center;box-shadow:var(--shadow);margin-top:10px}
+.vico{width:46px;height:46px;border-radius:14px;flex:0 0 46px;display:flex;align-items:center;justify-content:center;font-size:19px}
+.vrow .inf{flex:1;min-width:0}
+.vrow .inf b{font-size:13px}
+.vrow .inf .s{font-size:10px;color:var(--soft);margin-top:1px}
+.vrow .inf .st{font-size:10px;color:#D8A94E;margin-top:2px}
+.vrow .inf .pr{font-size:12.5px;color:var(--rose-deep);font-weight:700;margin-top:2px}
+.badge{font-size:8.5px;font-weight:700;padding:6px 9px;border-radius:100px;white-space:nowrap}
+.badge.ok{background:var(--sage-soft);color:var(--sage-deep)}
+.badge.warn{background:#F7ECD9;color:#B98A2F}
+.cat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px}
+.cat{background:#fff;border-radius:var(--r-s);padding:14px 8px;text-align:center;box-shadow:var(--shadow)}
+.cat .ci{width:42px;height:42px;border-radius:13px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:18px}
+.cat b{font-size:10.5px;display:block;line-height:1.25}
+.cat .n{font-size:9px;color:var(--soft);margin-top:3px;display:block}
+.cat .chip{display:inline-block;font-size:8px;font-weight:700;padding:3px 8px;border-radius:100px;margin-top:6px}
+.chip.g{background:var(--sage-soft);color:var(--sage-deep)} .chip.y{background:#F7ECD9;color:#B98A2F}
+.bigsum{font-size:31px;font-weight:800;letter-spacing:-.5px}
+.pct{color:var(--rose-deep);font-weight:700;font-size:14px}
+.sub-l{font-size:11px;color:var(--soft);margin-top:4px}
+.bbar{height:8px;border-radius:100px;background:#F1E9E2;margin-top:12px;overflow:hidden}
+.bbar i{display:block;height:100%;border-radius:100px;background:var(--grad)}
+.bitem{margin-top:13px}
+.bitem .row{display:flex;justify-content:space-between;font-size:12px;align-items:center}
+.bitem .row .dotn{display:flex;align-items:center;gap:8px}
+.bitem .dt{width:9px;height:9px;border-radius:50%}
+.bitem .row b{font-size:12.5px}
+.bitem .tr{height:5px;border-radius:100px;background:#F1E9E2;margin-top:6px;overflow:hidden}
+.bitem .tr i{display:block;height:100%;border-radius:100px}
+.pills{display:flex;gap:8px;margin-top:12px;overflow:hidden}
+.pill{padding:9px 16px;border-radius:100px;font-size:11px;font-weight:600;background:#fff;color:var(--soft);box-shadow:var(--shadow);white-space:nowrap}
+.pill.on{background:var(--grad);color:#fff}
+.task{display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid #F1E9E2}
+.task:last-child{border:none}
+.tchk{width:26px;height:26px;border-radius:9px;flex:0 0 26px;display:flex;align-items:center;justify-content:center;font-size:12px}
+.tchk.done{background:var(--sage-soft);color:var(--sage-deep)}
+.tchk.num{background:#fff;border:1.5px solid #E8DED4;color:var(--rose-deep);font-size:11px;font-weight:700}
+.task .tx{flex:1;font-size:12.5px}
+.task .tx.done{color:var(--soft);text-decoration:line-through}
+.task .dt2{width:8px;height:8px;border-radius:50%}
+.task .d{font-size:10.5px;color:var(--soft)}
+.tl-ev{display:flex;gap:12px;margin-top:12px;background:#fff;border-radius:var(--r-s);padding:14px;box-shadow:var(--shadow)}
+.tl-ev .ei{width:40px;height:40px;border-radius:13px;flex:0 0 40px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.tl-ev b{font-size:13px}
+.tl-ev .loc{font-size:10.5px;color:var(--soft);margin-top:2px}
+.tl-ev .tm{font-size:11px;color:var(--rose-deep);font-weight:600;margin-top:3px}
+.tl-ev .who{font-size:10px;color:var(--sage-deep);margin-top:2px}
+.pi{background:var(--rose-soft)} .pg{background:var(--sage-soft)} .pl{background:var(--lav)} .pb{background:var(--blue)} .py{background:var(--yellow)} .pp{background:var(--peach)}
 .section-head{text-align:center;max-width:640px;margin:0 auto 20px}
-.section-head h2{font-size:clamp(36px,4.6vw,58px);margin-top:16px}
-.section-head p{color:var(--ink-soft);margin-top:18px;line-height:1.7;font-weight:300}
-footer{padding:70px 0 50px;text-align:center;color:var(--ink-soft);font-size:13px;border-top:1px solid rgba(176,141,87,.18)}
+.section-head h2{font-size:clamp(34px,4.4vw,54px);margin-top:16px}
+.section-head p{color:var(--soft);margin-top:16px;line-height:1.7;font-weight:300}
+.prin{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:44px}
+.prin .swatch{height:auto;min-height:150px;background:#fff}
+.prin .swatch b{font-family:'Playfair Display',serif;font-size:18px}
+.prin .swatch span{color:var(--soft);margin-top:8px;line-height:1.6}
+footer{padding:70px 0 50px;text-align:center;color:var(--soft);font-size:13px;border-top:1px solid #F0E6DD}
 footer .serif{font-size:24px;color:var(--ink);margin-bottom:12px}
 </style>
 </head>
 <body>
 
-<!-- HERO -->
 <section class="hero">
   <canvas id="dust"></canvas>
   <div class="mono">Тт</div>
-  <div class="kicker">UI-концепт · Дизайн-система «Тили-тили Luxury»</div>
+  <div class="kicker">UI-концепт · Soft Pastel Edition</div>
   <h1>Тили-<em>тили</em></h1>
-  <p>Вся свадьба в одном приложении: подрядчики, бюджет, гости, договоры и день X. Классическая свадебная эстетика — золото, крем, серифы.</p>
+  <p>Вся свадьба в одном приложении: специалисты, бюджет, чек-лист, гости и день X. Мягкая пастель, крупные карточки, серифная типографика.</p>
   <div class="cta">
-    <a href="#screens" class="btn btn-gold">Смотреть экраны</a>
-    <a href="#tokens" class="btn btn-ghost">Дизайн-токены</a>
+    <a href="#screens" class="btn btn-rose">Смотреть экраны</a>
+    <a href="#tokens" class="btn btn-ghost">Палитра</a>
   </div>
   <div class="scroll-hint">листайте<div class="line"></div></div>
 </section>
 
-<!-- TOKENS -->
 <section id="tokens">
   <div class="wrap">
     <div class="tok-head reveal">
@@ -176,239 +176,220 @@ footer .serif{font-size:24px;color:var(--ink);margin-bottom:12px}
         <div class="kicker">01 · Фундамент</div>
         <h2>Палитра и типографика</h2>
       </div>
-      <p style="max-width:380px;color:var(--ink-soft);font-weight:300;line-height:1.7">Золото — приправа, не блюдо: акцент занимает не больше 10% экрана. Типографика делает люкс.</p>
+      <p style="max-width:380px;color:var(--soft);font-weight:300;line-height:1.7">Пыльная роза + шалфей + крем. Крупные скругления 18–32 px, мягкие розовые тени, пастельные плитки иконок.</p>
     </div>
     <div class="palette reveal">
-      <div class="swatch" style="background:#FAF7F2;color:var(--ink)"><b>Ivory</b>#FAF7F2 · фон</div>
-      <div class="swatch" style="background:#F3EDE3;color:var(--ink)"><b>Cream</b>#F3EDE3 · карточки</div>
-      <div class="swatch" style="background:#E8D9B8;color:var(--ink)"><b>Champagne</b>#E8D9B8 · подложки</div>
-      <div class="swatch" style="background:linear-gradient(135deg,#B08D57,#8C6D3F);color:#fff"><b>Gold</b>#B08D57 · акцент</div>
-      <div class="swatch" style="background:#1E1B16;color:#FAF7F2"><b>Ink</b>#1E1B16 · текст</div>
-      <div class="swatch" style="background:#A8B5A0;color:#fff"><b>Sage</b>#A8B5A0 · «свободен»</div>
-      <div class="swatch" style="background:#C4705A;color:#fff"><b>Terracotta</b>#C4705A · дедлайны</div>
-      <div class="swatch" style="background:#E9D5CF;color:var(--ink)"><b>Blush</b>#E9D5CF · акценты</div>
+      <div class="swatch" style="background:#FBF6F1"><b>Ivory</b>#FBF6F1 · фон</div>
+      <div class="swatch" style="background:var(--grad);color:#fff"><b>Gradient</b>роза → шалфей</div>
+      <div class="swatch" style="background:#F2DFDC"><b>Rose soft</b>#F2DFDC · плитки</div>
+      <div class="swatch" style="background:#C98A8A;color:#fff"><b>Dusty rose</b>#C98A8A · акцент</div>
+      <div class="swatch" style="background:#E6EEE2"><b>Sage soft</b>#E6EEE2 · плитки</div>
+      <div class="swatch" style="background:#A9BCA0;color:#fff"><b>Sage</b>#A9BCA0 · успех</div>
+      <div class="swatch" style="background:#D9CCE3"><b>Lavender</b>#D9CCE3</div>
+      <div class="swatch" style="background:#F0DCB8"><b>Honey</b>#F0DCB8</div>
     </div>
     <div class="type-demo reveal">
       <div class="big">День, который <i>собирается</i> сам</div>
       <ul>
-        <li><b>Playfair Display</b> — заголовки, цифры обратного отсчёта, цитаты</li>
-        <li><b>Inter</b> — интерфейс, таблицы, кнопки</li>
-        <li>Шкала: 12 / 14 / 16 / 20 / 28 / 40 / 64 / 96 px</li>
-        <li>Фирменная кривая анимации: <b>cubic-bezier(.22,1,.36,1)</b></li>
-        <li>Радиусы 12–32 px · тень «luxe» с золотым подтоном</li>
+        <li><b>Playfair Display</b> — заголовки и имена пары</li>
+        <li><b>Inter</b> — интерфейс, цифры, кнопки</li>
+        <li>Радиусы 18 / 26 / 32 px · тени с розовым подтоном</li>
+        <li>Эмодзи-иконки в пастельных плитках — фирменный приём</li>
+        <li>Кривая анимации: <b>cubic-bezier(.22,1,.36,1)</b></li>
       </ul>
     </div>
   </div>
 </section>
 
-<!-- SCREENS -->
 <section class="stage" id="screens">
   <div class="wrap">
     <div class="section-head reveal">
       <div class="kicker">02 · Экраны приложения</div>
-      <h2>Семь ключевых экранов MVP</h2>
-      <p>Листайте вправо — от обратного отсчёта до приглашения с восковой печатью. Каждый экран — по инвентарю 20.1 из плана.</p>
+      <h2>Шесть ключевых экранов</h2>
+      <p>Листайте вправо — главная, все специалисты, бюджет, чек-лист, день свадьбы и моя команда.</p>
     </div>
   </div>
   <div class="wrap">
     <div class="phones">
 
-      <!-- 1 Онбординг / квиз -->
+      <!-- 1 ГЛАВНАЯ -->
       <div>
         <div class="phone"><div class="screen">
           <div class="notch"></div>
-          <div class="sb"><span>9:41</span><span>●●●</span></div>
           <div class="pad">
-            <div class="quiz-q">Когда ваша<br><em class="serif" style="color:var(--gold)">свадьба?</em></div>
-            <div style="text-align:center;margin-top:18px">
-              <div class="serif" style="font-size:44px">14 <span style="font-size:22px;color:var(--gold-deep)">июня</span></div>
-              <div style="font-size:11px;color:var(--ink-soft);letter-spacing:.2em;margin-top:2px">2027 · ВОСКРЕСЕНЬЕ</div>
-            </div>
-            <div class="quiz-opt sel">Знаем точную дату <span class="r"></span></div>
-            <div class="quiz-opt">Примерно — сезон и месяц <span class="r"></span></div>
-            <div class="quiz-opt">Ещё не решили <span class="r"></span></div>
-            <div class="ob-dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            <div style="text-align:center;margin-top:14px"><span class="btn btn-gold" style="padding:13px 34px;font-size:12px">Далее</span></div>
-          </div>
-        </div></div>
-        <div class="scr-title"><div class="n">Экран 06</div><h3>Опрос пары · шаг 1</h3></div>
-      </div>
-
-      <!-- 2 Главная -->
-      <div>
-        <div class="phone"><div class="screen">
-          <div class="notch"></div>
-          <div class="sb"><span>9:41</span><span>Алина ♥ Тимур</span></div>
-          <div class="pad">
-            <div class="countdown">
-              <div class="ring"><div class="in"><div class="d">286</div><div class="l">дней до свадьбы</div></div></div>
-            </div>
-            <div class="card">
-              <div class="lbl">Команда собрана</div>
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px">
-                <b class="serif" style="font-size:19px">4 <span style="font-size:12px;color:var(--ink-soft)">из 14</span></b>
-                <span style="font-size:10px;color:var(--gold-deep);font-weight:600">+2 на этой неделе</span>
+            <div class="hero-card">
+              <h4>Алина & Тимур</h4>
+              <div class="sub">💍 14 июня 2027 · Усадьба «Липовый сад» · 16:00</div>
+              <div class="stat-row">
+                <div class="stat"><b>287</b><span>дней до</span></div>
+                <div class="stat"><b>67%</b><span>готово</span></div>
+                <div class="stat"><b>42</b><span>гостей</span></div>
+                <div class="stat"><b>18</b><span>из 25 спец.</span></div>
               </div>
-              <div class="bar"><i style="width:29%"></i></div>
             </div>
-            <div class="card">
-              <div class="lbl">Бюджет</div>
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px">
-                <b class="serif" style="font-size:19px">412 000 ₽</b>
-                <span style="font-size:10px;color:var(--ink-soft)">из 1 200 000 ₽</span>
+            <div class="card" style="text-align:center">
+              <div class="avatars"><div class="av r">А</div><div class="av s">Т</div></div>
+              <b class="serif" style="font-size:16px;display:block;margin-top:10px">Алина Козлова & Тимур Волков</b>
+              <div style="font-size:11px;color:var(--soft);margin-top:4px">📍 Уфа · 🎨 Люкс · 🥂 80 гостей</div>
+              <div class="cd-row">
+                <div class="cd"><b>9</b><span>МЕС</span></div>
+                <div class="cd"><b>14</b><span>ДН</span></div>
+                <div class="cd"><b>08</b><span>ЧАС</span></div>
+                <div class="cd"><b>42</b><span>МИН</span></div>
               </div>
-              <div class="bar"><i style="width:34%"></i></div>
             </div>
-            <div class="ai-row">
-              <div class="dot">✦</div>
-              <p><b style="color:var(--ink)">Светлана:</b> топ-фотографы Уфы на июнь разбираются за 8 месяцев. Свободных на 14.06 осталось 6 — посмотреть?</p>
+            <div class="sec-h"><h5>Моя команда</h5><span class="link">Все 18 →</span></div>
+            <div class="sec-sub">Уже забронировано</div>
+            <div class="vrow">
+              <div class="vico pi">📸</div>
+              <div class="inf"><b>Елена Смирнова</b><div class="s">Фотограф · 5 лет опыта</div><div class="st">★★★★★ 4.9 · 47 отзывов</div></div>
+              <span class="badge ok">✓ Забронирован</span>
             </div>
-          </div>
-          <div class="tabbar">
-            <div class="t on"><span class="ic">⌂</span>Главная</div>
-            <div class="t"><span class="ic">✦</span>Поиск</div>
-            <div class="mid">💍</div>
-            <div class="t"><span class="ic">♡</span>Свадьба</div>
-            <div class="t"><span class="ic">◡</span>Мы</div>
+            <div class="vrow">
+              <div class="vico pg">🎥</div>
+              <div class="inf"><b>CinemaWedding</b><div class="s">Видеооператоры · 2 камеры</div><div class="st">★★★★★ 5.0 · 32 отзыва</div></div>
+              <span class="badge ok">✓ Забронирован</span>
+            </div>
+            <div class="vrow">
+              <div class="vico pl">🎤</div>
+              <div class="inf"><b>Артём Краснов</b><div class="s">Ведущий · 8 лет опыта</div><div class="st">★★★★★ 4.8 · 56 отзывов</div></div>
+              <span class="badge warn">⏳ Аванс 50%</span>
+            </div>
           </div>
         </div></div>
         <div class="scr-title"><div class="n">Экран 08</div><h3>Главная · дашборд</h3></div>
       </div>
 
-      <!-- 3 Поиск -->
+      <!-- 2 ВСЕ СПЕЦИАЛИСТЫ -->
       <div>
         <div class="phone"><div class="screen">
           <div class="notch"></div>
-          <div class="sb"><span>9:41</span><span>Уфа · 14.06.27</span></div>
           <div class="pad">
-            <div class="serif" style="font-size:23px;margin-top:6px">Фотографы</div>
-            <div style="margin-top:8px">
-              <span class="chip on">Свободны 14.06</span><span class="chip">до 80 000 ₽</span><span class="chip">С видео</span>
+            <h4 class="serif" style="font-size:24px">Все специалисты</h4>
+            <div class="sub-l">35 категорий для идеального дня</div>
+            <div class="cat-grid">
+              <div class="cat"><div class="ci pi">📸</div><b>Фотограф</b><span class="n">128 рядом</span><span class="chip g">✓ Есть</span></div>
+              <div class="cat"><div class="ci pg">🎥</div><b>Видеооператор</b><span class="n">64 рядом</span><span class="chip g">✓ Есть</span></div>
+              <div class="cat"><div class="ci py">🏛</div><b>Площадка</b><span class="n">32 рядом</span><span class="chip g">✓ Есть</span></div>
+              <div class="cat"><div class="ci pl">🎤</div><b>Ведущий</b><span class="n">45 рядом</span><span class="chip y">⏳ Ищем</span></div>
+              <div class="cat"><div class="ci pb">🎧</div><b>DJ / Музыканты</b><span class="n">38 рядом</span></div>
+              <div class="cat"><div class="ci pi">🌸</div><b>Флорист</b><span class="n">52 рядом</span></div>
+              <div class="cat"><div class="ci pg">✨</div><b>Декоратор</b><span class="n">29 рядом</span></div>
+              <div class="cat"><div class="ci pi">💄</div><b>Стилист / Визажист</b><span class="n">41 рядом</span></div>
+              <div class="cat"><div class="ci py">🍽</div><b>Кейтеринг</b><span class="n">35 рядом</span></div>
+              <div class="cat"><div class="ci pp">💡</div><b>Световик</b><span class="n">18 рядом</span></div>
+              <div class="cat"><div class="ci py">🎂</div><b>Кондитер</b><span class="n">27 рядом</span></div>
+              <div class="cat"><div class="ci pp">🚗</div><b>Транспорт</b><span class="n">22 рядом</span></div>
+              <div class="cat"><div class="ci pl">👗</div><b>Свадебное платье</b><span class="n">15 салонов</span></div>
+              <div class="cat"><div class="ci pb">🤵</div><b>Костюм жениха</b><span class="n">12 салонов</span></div>
+              <div class="cat"><div class="ci pg">💍</div><b>Ювелир / Кольца</b><span class="n">8 рядом</span></div>
             </div>
-            <div class="vcard">
-              <div class="ph"><span class="free">● Свободна на вашу дату</span><span class="fav">♥</span></div>
-              <div class="inf"><b>Ирина Сафина</b><div class="sub">Фотограф · 8 лет · ★ 4.9 (37)</div><div class="pr">от 65 000 ₽</div></div>
-            </div>
-            <div class="vcard">
-              <div class="ph" style="background:linear-gradient(135deg,var(--champagne),var(--sage))"><span class="free">● Свободна на вашу дату</span><span class="fav" style="color:rgba(255,255,255,.8)">♡</span></div>
-              <div class="inf"><b>Studio Lumière</b><div class="sub">Команда фото+видео · ★ 4.8 (52)</div><div class="pr">от 120 000 ₽</div></div>
-            </div>
-            <div class="vcard">
-              <div class="ph" style="background:linear-gradient(135deg,var(--cream),var(--blush))"><span class="fav" style="color:rgba(255,255,255,.8)">♡</span></div>
-              <div class="inf"><b>Тимур Галин</b><div class="sub">Фотограф · Новый на платформе</div><div class="pr">от 45 000 ₽</div></div>
-            </div>
-          </div>
-          <div class="tabbar">
-            <div class="t"><span class="ic">⌂</span>Главная</div>
-            <div class="t on"><span class="ic">✦</span>Поиск</div>
-            <div class="mid">💍</div>
-            <div class="t"><span class="ic">♡</span>Свадьба</div>
-            <div class="t"><span class="ic">◡</span>Мы</div>
           </div>
         </div></div>
-        <div class="scr-title"><div class="n">Экран 14</div><h3>Поиск · маркетплейс</h3></div>
+        <div class="scr-title"><div class="n">Экран 13</div><h3>Поиск · все категории</h3></div>
       </div>
 
-      <!-- 4 Команда -->
+      <!-- 3 БЮДЖЕТ -->
       <div>
         <div class="phone"><div class="screen">
           <div class="notch"></div>
-          <div class="sb"><span>9:41</span><span>Свадьба · Команда</span></div>
           <div class="pad">
-            <div class="serif" style="font-size:23px;margin-top:6px">Наш день</div>
-            <div style="font-size:11px;color:var(--ink-soft);margin-top:3px">4 забронировано · 3 кандидата · 7 пустых</div>
-            <div class="slotgrid">
-              <div class="slot full"><span class="em">🏛</span>Площадка<span class="st">booked</span></div>
-              <div class="slot full"><span class="em">📷</span>Фотограф<span class="st">booked</span></div>
-              <div class="slot full cand"><span class="em">🎤</span>Ведущий<span class="st">кандидаты · 2</span></div>
-              <div class="slot full"><span class="em">🎂</span>Кондитер<span class="st">booked</span></div>
-              <div class="slot empty"><span class="em">✚</span>Флорист</div>
-              <div class="slot empty"><span class="em">✚</span>Декоратор</div>
-              <div class="slot full cand"><span class="em">💄</span>Визажист<span class="st">кандидат · 1</span></div>
-              <div class="slot empty"><span class="em">✚</span>Музыканты</div>
-              <div class="slot empty"><span class="em">✚</span>Транспорт</div>
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-end">
+                <div class="bigsum">850 000 ₽</div><span class="pct">71%</span>
+              </div>
+              <div class="sub-l">из 1 200 000 ₽ запланировано · осталось 350К</div>
+              <div class="bbar"><i style="width:71%"></i></div>
+              <div class="bitem"><div class="row"><span class="dotn"><i class="dt" style="background:#D9A8A0"></i>Площадка & Кейтеринг</span><b>480К</b></div><div class="tr"><i style="width:86%;background:#D9A8A0"></i></div></div>
+              <div class="bitem"><div class="row"><span class="dotn"><i class="dt" style="background:#A9BCA0"></i>Фото & Видео</span><b>240К</b></div><div class="tr"><i style="width:64%;background:#A9BCA0"></i></div></div>
+              <div class="bitem"><div class="row"><span class="dotn"><i class="dt" style="background:#E3C892"></i>Одежда & Красота</span><b>180К</b></div><div class="tr"><i style="width:42%;background:#E3C892"></i></div></div>
+              <div class="bitem"><div class="row"><span class="dotn"><i class="dt" style="background:#D9CCE3"></i>Развлечения & Декор</span><b>144К</b></div><div class="tr"><i style="width:33%;background:#D9CCE3"></i></div></div>
+              <div class="bitem"><div class="row"><span class="dotn"><i class="dt" style="background:#C3D5E8"></i>Прочее</span><b>96К</b></div><div class="tr"><i style="width:20%;background:#C3D5E8"></i></div></div>
             </div>
-            <div class="ai-row">
-              <div class="dot">✦</div>
-              <p>Пустой слот «Флорист» блокирует автоплан дня — букет нужен к 10:00 сборам.</p>
+            <div class="card" style="background:linear-gradient(135deg,#fff,var(--rose-soft));border:1px solid rgba(201,138,138,.25)">
+              <div style="display:flex;gap:10px;align-items:flex-start">
+                <div style="width:30px;height:30px;flex:0 0 30px;border-radius:50%;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px">✦</div>
+                <p style="font-size:11.5px;line-height:1.55;color:var(--soft)"><b style="color:var(--ink)">Светлана:</b> «Площадка & Кейтеринг» на 86% лимита. Рекомендую зафиксировать меню до 1 марта — после этого цены вырастут на ~10%.</p>
+              </div>
             </div>
-          </div>
-          <div class="tabbar">
-            <div class="t"><span class="ic">⌂</span>Главная</div>
-            <div class="t"><span class="ic">✦</span>Поиск</div>
-            <div class="mid">💍</div>
-            <div class="t on"><span class="ic">♡</span>Свадьба</div>
-            <div class="t"><span class="ic">◡</span>Мы</div>
           </div>
         </div></div>
-        <div class="scr-title"><div class="n">Экран 19</div><h3>Свадьба · мозаика команды</h3></div>
+        <div class="scr-title"><div class="n">Экран 21</div><h3>Свадьба · бюджет</h3></div>
       </div>
 
-      <!-- 5 Тайминг дня X (dark) -->
-      <div>
-        <div class="phone"><div class="screen dark">
-          <div class="notch"></div>
-          <div class="sb"><span>15:12</span><span>14 июня · День X</span></div>
-          <div class="pad">
-            <div class="serif" style="font-size:23px;margin-top:6px;color:#efe9df">Тайминг дня</div>
-            <div style="font-size:10px;color:var(--dark-gold);letter-spacing:.2em;margin-top:3px">LIVE · ИДЁМ ПО ГРАФИКУ</div>
-            <div class="tl">
-              <div class="ev"><div class="tm">10:00</div><div class="nm">Сборы невесты</div><div class="ds">Фотограф · визажист · букет к 10:00</div></div>
-              <div class="ev"><div class="tm">13:00</div><div class="nm">Выездная церемония</div><div class="ds">Усадьба «Липовый сад» · гости с 12:30</div></div>
-              <div class="ev now"><div class="tm">15:00</div><div class="nm">Фотосессия<span class="live">СЕЙЧАС</span></div><div class="ds">До 16:30 · локация: парк</div></div>
-              <div class="ev"><div class="tm">17:00</div><div class="nm">Банкет</div><div class="ds">Ведущий · музыканты · торт в 21:30</div></div>
-              <div class="ev"><div class="tm">22:30</div><div class="nm">Салют</div><div class="ds">Фаер-шоу · финал вечера</div></div>
-            </div>
-          </div>
-          <div class="tabbar">
-            <div class="t"><span class="ic">⌂</span></div>
-            <div class="t"><span class="ic">✦</span></div>
-            <div class="mid">💍</div>
-            <div class="t on"><span class="ic">♡</span></div>
-            <div class="t"><span class="ic">◡</span></div>
-          </div>
-        </div></div>
-        <div class="scr-title"><div class="n">Экран 10</div><h3>День X · тёмный live-режим</h3></div>
-      </div>
-
-      <!-- 6 Приглашение гостя -->
+      <!-- 4 ЧЕК-ЛИСТ -->
       <div>
         <div class="phone"><div class="screen">
           <div class="notch"></div>
-          <div class="sb"><span>9:41</span><span>tili-tili.ru/i/m7k2</span></div>
-          <div class="envelope">
-            <div class="wax">А♥Т</div>
-            <div class="to">Дорогая Марина Ивановна!</div>
-            <div class="names">Алина <em style="color:var(--gold)">&</em> Тимур</div>
-            <div class="dt">14 июня 2027 · Уфа</div>
-            <p style="font-size:10.5px;color:var(--ink-soft);margin-top:14px;line-height:1.6">Приглашаем вас разделить с нами самый важный день. Выездная церемония — усадьба «Липовый сад», сбор гостей в 12:30.</p>
-            <div class="rsvp"><span class="y">Приду с радостью</span><span class="n">Не смогу</span></div>
-          </div>
           <div class="pad">
-            <div class="card" style="display:flex;justify-content:space-between;align-items:center">
-              <div><div class="lbl">Ваш стол</div><b class="serif" style="font-size:20px">№ 3</b></div>
-              <div style="text-align:right"><div class="lbl">Маршрут</div><b style="font-size:12px;color:var(--gold-deep)">Построить →</b></div>
+            <div class="sec-h" style="margin-top:0"><h5 style="font-size:24px">Чек-лист</h5><span class="link">+ Новая задача</span></div>
+            <div class="sec-sub">Что уже сделано, что впереди</div>
+            <div class="pills">
+              <span class="pill on">За 9 мес</span><span class="pill">За 6 мес</span><span class="pill">За 3 мес</span><span class="pill">За 1 мес</span>
+            </div>
+            <div class="card" style="padding:6px 16px">
+              <div class="task"><div class="tchk done">✓</div><span class="tx done">Выбрать дату свадьбы</span><i class="dt2" style="background:var(--sage)"></i><span class="d">15 янв</span></div>
+              <div class="task"><div class="tchk done">✓</div><span class="tx done">Определить бюджет</span><i class="dt2" style="background:var(--sage)"></i><span class="d">20 янв</span></div>
+              <div class="task"><div class="tchk done">✓</div><span class="tx done">Составить список гостей</span><i class="dt2" style="background:var(--sage)"></i><span class="d">1 фев</span></div>
+              <div class="task"><div class="tchk done">✓</div><span class="tx done">Забронировать площадку</span><i class="dt2" style="background:var(--rose)"></i><span class="d">5 фев</span></div>
+              <div class="task"><div class="tchk done">✓</div><span class="tx done">Найти фотографа</span><i class="dt2" style="background:var(--rose)"></i><span class="d">15 фев</span></div>
+              <div class="task"><div class="tchk num">6</div><span class="tx">Заказать приглашения</span><i class="dt2" style="background:#E3C892"></i><span class="d">до 1 мар</span></div>
+              <div class="task"><div class="tchk num">7</div><span class="tx">Примерка платья (1 из 3)</span><i class="dt2" style="background:var(--rose)"></i><span class="d">до 15 мар</span></div>
+              <div class="task"><div class="tchk num">8</div><span class="tx">Дегустация меню</span><i class="dt2" style="background:var(--rose)"></i><span class="d">до 1 апр</span></div>
             </div>
           </div>
         </div></div>
-        <div class="scr-title"><div class="n">Экран 57–59</div><h3>Гость · приглашение и RSVP</h3></div>
+        <div class="scr-title"><div class="n">Экран 24</div><h3>Свадьба · чек-лист</h3></div>
+      </div>
+
+      <!-- 5 ДЕНЬ СВАДЬБЫ -->
+      <div>
+        <div class="phone"><div class="screen">
+          <div class="notch"></div>
+          <div class="pad">
+            <div class="sec-h" style="margin-top:0"><h5 style="font-size:24px">День свадьбы</h5><span class="link">Редактировать</span></div>
+            <div class="sec-sub">Расписание 14 июня · полный сценарий</div>
+            <div class="tl-ev"><div class="ei pi">🌅</div><div><b>Сборы невесты</b><div class="loc">Отель «Ривьера», номер 304</div><div class="tm">08:00 — 13:00</div><div class="who">Стилист Елена · Фотограф Е.Смирнова</div></div></div>
+            <div class="tl-ev"><div class="ei pg">🤵</div><div><b>Сборы жениха</b><div class="loc">Квартира, ул. Лесная 12</div><div class="tm">09:00 — 12:00</div><div class="who">Барбер Иван · Видеооператор</div></div></div>
+            <div class="tl-ev"><div class="ei py">💍</div><div><b>Доставка букета и деталей</b><div class="loc">Кольца, клятвы, подарки родителям</div><div class="tm">12:00 — 13:00</div><div class="who">Флорист · координатор</div></div></div>
+            <div class="tl-ev"><div class="ei pl">⛪</div><div><b>Выездная церемония</b><div class="loc">Усадьба «Липовый сад»</div><div class="tm">16:00 — 17:00</div><div class="who">Гости с 15:30 · регистратор</div></div></div>
+            <div class="tl-ev"><div class="ei pp">🥂</div><div><b>Банкет</b><div class="loc">Шатёр у озера</div><div class="tm">18:00 — 23:00</div><div class="who">Ведущий · DJ · торт в 21:30</div></div></div>
+          </div>
+        </div></div>
+        <div class="scr-title"><div class="n">Экран 25</div><h3>Свадьба · тайминг дня</h3></div>
+      </div>
+
+      <!-- 6 МОЯ КОМАНДА -->
+      <div>
+        <div class="phone"><div class="screen">
+          <div class="notch"></div>
+          <div class="pad">
+            <div class="sec-h" style="margin-top:0"><h5 style="font-size:24px">Моя команда</h5><span class="link">Все 18 →</span></div>
+            <div class="sec-sub">Уже забронировано</div>
+            <div class="vrow"><div class="vico pi">📸</div><div class="inf"><b>Елена Смирнова</b><div class="s">Фотограф · 5 лет опыта</div><div class="st">★★★★★ 4.9 · 47 отзывов</div><div class="pr">85 000 ₽</div></div><span class="badge ok">✓ Забронирован</span></div>
+            <div class="vrow"><div class="vico pg">🎥</div><div class="inf"><b>CinemaWedding Team</b><div class="s">Видеооператоры · 2 камеры</div><div class="st">★★★★★ 5.0 · 32 отзыва</div><div class="pr">120 000 ₽</div></div><span class="badge ok">✓ Забронирован</span></div>
+            <div class="vrow"><div class="vico py">🏛</div><div class="inf"><b>Усадьба «Липовый сад»</b><div class="s">Площадка · до 120 чел.</div><div class="st">★★★★☆ 4.7 · 89 отзывов</div><div class="pr">250 000 ₽</div></div><span class="badge ok">✓ Забронирован</span></div>
+            <div class="vrow"><div class="vico pl">🎤</div><div class="inf"><b>Артём Краснов</b><div class="s">Ведущий · 8 лет опыта</div><div class="st">★★★★★ 4.8 · 56 отзывов</div><div class="pr">60 000 ₽</div></div><span class="badge warn">⏳ Аванс 50%</span></div>
+            <div class="vrow"><div class="vico pi">🌸</div><div class="inf"><b>Студия «Пион»</b><div class="s">Флористика · букет + декор</div><div class="st">★★★★★ 4.9 · 41 отзыв</div><div class="pr">45 000 ₽</div></div><span class="badge warn">⏳ Hold 72 ч</span></div>
+          </div>
+        </div></div>
+        <div class="scr-title"><div class="n">Экран 19–20</div><h3>Свадьба · моя команда</h3></div>
       </div>
 
     </div>
   </div>
 </section>
 
-<!-- PRINCIPLES -->
 <section>
   <div class="wrap">
     <div class="section-head reveal">
       <div class="kicker">03 · Принципы</div>
       <h2>Что делает его «люкс»</h2>
     </div>
-    <div class="palette reveal" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
-      <div class="swatch" style="background:#fff;height:auto;min-height:150px"><b class="serif" style="font-size:18px">Одна сцена — одна мысль</b><span style="color:var(--ink-soft);margin-top:8px;line-height:1.6">Экран никогда не конкурирует сам с собой</span></div>
-      <div class="swatch" style="background:#fff;height:auto;min-height:150px"><b class="serif" style="font-size:18px">Движение = смысл</b><span style="color:var(--ink-soft);margin-top:8px;line-height:1.6">Анимация объясняет, откуда и куда переходит объект</span></div>
-      <div class="swatch" style="background:#fff;height:auto;min-height:150px"><b class="serif" style="font-size:18px">Мама-гость справляется</b><span style="color:var(--ink-soft);margin-top:8px;line-height:1.6">Любой гостевой сценарий — не больше трёх тапов</span></div>
+    <div class="prin reveal">
+      <div class="swatch"><b>Одна сцена — одна мысль</b><span>Экран никогда не конкурирует сам с собой</span></div>
+      <div class="swatch"><b>Мягкость вместо блеска</b><span>Пастель и воздух вместо кричащего золота</span></div>
+      <div class="swatch"><b>Мама-гость справляется</b><span>Любой гостевой сценарий — не больше трёх тапов</span></div>
     </div>
   </div>
 </section>
@@ -416,27 +397,25 @@ footer .serif{font-size:24px;color:var(--ink);margin-bottom:12px}
 <footer>
   <div class="wrap">
     <div class="serif">Тили-тили</div>
-    UI-концепт v1 · по документу «Тили-тили_План_приложения.md» · RU/EN · PWA
+    UI-концепт v2 · Soft Pastel · по документу «Тили-тили_План_приложения.md»
   </div>
 </footer>
 
 <script>
-// золотые частицы в hero
 const c=document.getElementById('dust'),x=c.getContext('2d');let W,H,P=[];
 function rs(){W=c.width=c.offsetWidth;H=c.height=c.offsetHeight}
 rs();addEventListener('resize',rs);
-for(let i=0;i<70;i++)P.push({x:Math.random()*2000,y:Math.random()*1200,r:Math.random()*2.2+.6,s:Math.random()*.35+.08,o:Math.random()*.5+.15,ph:Math.random()*6.28});
+for(let i=0;i<70;i++)P.push({x:Math.random()*2000,y:Math.random()*1200,r:Math.random()*2.4+.6,s:Math.random()*.35+.08,o:Math.random()*.45+.12,ph:Math.random()*6.28});
 (function anim(t){
   x.clearRect(0,0,W,H);
   for(const p of P){
     const y=(p.y - t*p.s*.02)%H, xx=(p.x%W)+Math.sin(t*.0006+p.ph)*24;
     const yy=y<0?y+H:y;
     x.beginPath();x.arc(xx,yy,p.r,0,6.28);
-    x.fillStyle=`rgba(176,141,87,${p.o*(0.6+0.4*Math.sin(t*.001+p.ph))})`;x.fill();
+    x.fillStyle=`rgba(201,138,138,${p.o*(0.6+0.4*Math.sin(t*.001+p.ph))})`;x.fill();
   }
   requestAnimationFrame(anim);
 })(0);
-// reveal on scroll
 const io=new IntersectionObserver(es=>es.forEach(e=>e.isIntersecting&&e.target.classList.add('in')),{threshold:.12});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 </script>
