@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -448,10 +448,24 @@ paths:
           schema: { type: integer, default: 100 }
         - name: priceMin
           in: query
-          schema: { type: integer }
+          description: Нижняя граница «цены от», в копейках.
+          schema: { type: integer, minimum: 0 }
         - name: priceMax
           in: query
-          schema: { type: integer }
+          schema: { type: integer, minimum: 0 }
+        - name: date
+          in: query
+          description: |
+            Дата свадьбы. Подрядчики, у которых она занята, из выдачи исчезают —
+            иначе пара пишет тому, кто заведомо не сможет.
+          schema: { type: string, format: date, example: '2027-06-14' }
+        - name: ratingMin
+          in: query
+          schema: { type: number, minimum: 0, maximum: 5 }
+        - name: hasVideo
+          in: query
+          description: Только анкеты с видео в портфолио.
+          schema: { type: boolean }
         - name: sort
           in: query
           schema: { type: string, enum: [rating, price_asc, price_desc, popular], default: rating }
@@ -2568,10 +2582,18 @@ components:
         name: { type: string }
         categoryId: { type: string }
         city: { type: string }
-        priceFrom: { $ref: '#/components/schemas/Money' }
-        rating: { type: number, example: 4.9 }
+        priceFrom:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          nullable: true
+        rating: { type: number, nullable: true, example: 4.9 }
         reviewsCount: { type: integer }
-        photoUrl: { type: string }
+        photoUrl: { type: string, nullable: true }
+        verified:
+          type: boolean
+          description: |
+            Документы сверены. Сами документы не публикуются НИКОГДА —
+            наружу выходит только этот признак (план §6).
+        hasVideo: { type: boolean }
     VendorPage:
       type: object
       properties:
@@ -2585,7 +2607,18 @@ components:
         - type: object
           properties:
             about: { type: string }
-            gallery: { type: array, items: { type: string } }
+            gallery:
+              type: array
+              description: Ссылки на фотографии — совместимость с прежней формой ответа.
+              items: { type: string }
+            media:
+              type: array
+              items:
+                type: object
+                properties:
+                  kind: { type: string, enum: [photo, video] }
+                  url: { type: string }
+                  durationS: { type: integer, nullable: true }
             packages:
               type: array
               items:
@@ -2615,7 +2648,22 @@ components:
               name: { type: string }
               price: { $ref: '#/components/schemas/Money' }
               includes: { type: array, items: { type: string } }
-        portfolioUrls: { type: array, items: { type: string } }
+        portfolioUrls:
+          type: array
+          description: 'Фотографии портфолио. Для видео нужен `media` — там есть длительность.'
+          items: { type: string }
+        media:
+          type: array
+          description: |
+            Портфолио с типом файла. У видео длительность обязательна: ограничение
+            180 с проверяется на сервере, а из голой ссылки его не узнать.
+          items:
+            type: object
+            required: [kind, url]
+            properties:
+              kind: { type: string, enum: [photo, video] }
+              url: { type: string }
+              durationS: { type: integer, minimum: 1, maximum: 180, nullable: true }
     Slot:
       type: object
       description: |

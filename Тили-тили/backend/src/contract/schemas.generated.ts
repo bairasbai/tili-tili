@@ -1072,16 +1072,41 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string"
               },
               "priceFrom": {
-                  "$ref": "contract#/definitions/Money"
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
               },
               "rating": {
-                  "type": "number"
+                  "type": [
+                      "number",
+                      "null"
+                  ]
               },
               "reviewsCount": {
                   "type": "integer"
               },
               "photoUrl": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "verified": {
+                  "type": "boolean",
+                  "description": "Документы сверены. Сами документы не публикуются НИКОГДА —\nнаружу выходит только этот признак (план §6).\n"
+              },
+              "hasVideo": {
+                  "type": "boolean"
               }
           }
       },
@@ -1098,8 +1123,33 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "gallery": {
                           "type": "array",
+                          "description": "Ссылки на фотографии — совместимость с прежней формой ответа.",
                           "items": {
                               "type": "string"
+                          }
+                      },
+                      "media": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "properties": {
+                                  "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                          "photo",
+                                          "video"
+                                      ]
+                                  },
+                                  "url": {
+                                      "type": "string"
+                                  },
+                                  "durationS": {
+                                      "type": [
+                                          "integer",
+                                          "null"
+                                      ]
+                                  }
+                              }
                           }
                       },
                       "packages": {
@@ -1197,8 +1247,40 @@ export const CONTRACT_SCHEMAS = {
               },
               "portfolioUrls": {
                   "type": "array",
+                  "description": "Фотографии портфолио. Для видео нужен `media` — там есть длительность.",
                   "items": {
                       "type": "string"
+                  }
+              },
+              "media": {
+                  "type": "array",
+                  "description": "Портфолио с типом файла. У видео длительность обязательна: ограничение\n180 с проверяется на сервере, а из голой ссылки его не узнать.\n",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "kind",
+                          "url"
+                      ],
+                      "properties": {
+                          "kind": {
+                              "type": "string",
+                              "enum": [
+                                  "photo",
+                                  "video"
+                              ]
+                          },
+                          "url": {
+                              "type": "string"
+                          },
+                          "durationS": {
+                              "type": [
+                                  "integer",
+                                  "null"
+                              ],
+                              "minimum": 1,
+                              "maximum": 180
+                          }
+                      }
                   }
               }
           }

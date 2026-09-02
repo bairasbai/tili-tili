@@ -789,8 +789,17 @@ export interface paths {
                     categoryId?: string;
                     city?: string;
                     radiusKm?: number;
+                    /** @description Нижняя граница «цены от», в копейках. */
                     priceMin?: number;
                     priceMax?: number;
+                    /**
+                     * @description Дата свадьбы. Подрядчики, у которых она занята, из выдачи исчезают —
+                     *     иначе пара пишет тому, кто заведомо не сможет.
+                     */
+                    date?: string;
+                    ratingMin?: number;
+                    /** @description Только анкеты с видео в портфолио. */
+                    hasVideo?: boolean;
                     sort?: "rating" | "price_asc" | "price_desc" | "popular";
                     limit?: components["parameters"]["Limit"];
                     cursor?: components["parameters"]["Cursor"];
@@ -5336,11 +5345,17 @@ export interface components {
             name?: string;
             categoryId?: string;
             city?: string;
-            priceFrom?: components["schemas"]["Money"];
+            priceFrom?: components["schemas"]["Money"] | null;
             /** @example 4.9 */
-            rating?: number;
+            rating?: number | null;
             reviewsCount?: number;
-            photoUrl?: string;
+            photoUrl?: string | null;
+            /**
+             * @description Документы сверены. Сами документы не публикуются НИКОГДА —
+             *     наружу выходит только этот признак (план §6).
+             */
+            verified?: boolean;
+            hasVideo?: boolean;
         };
         VendorPage: {
             items?: components["schemas"]["Vendor"][];
@@ -5348,7 +5363,14 @@ export interface components {
         };
         VendorDetail: components["schemas"]["Vendor"] & {
             about?: string;
+            /** @description Ссылки на фотографии — совместимость с прежней формой ответа. */
             gallery?: string[];
+            media?: {
+                /** @enum {string} */
+                kind?: "photo" | "video";
+                url?: string;
+                durationS?: number | null;
+            }[];
             packages?: {
                 id?: string;
                 name?: string;
@@ -5368,7 +5390,18 @@ export interface components {
                 price?: components["schemas"]["Money"];
                 includes?: string[];
             }[];
+            /** @description Фотографии портфолио. Для видео нужен `media` — там есть длительность. */
             portfolioUrls?: string[];
+            /**
+             * @description Портфолио с типом файла. У видео длительность обязательна: ограничение
+             *     180 с проверяется на сервере, а из голой ссылки его не узнать.
+             */
+            media?: {
+                /** @enum {string} */
+                kind: "photo" | "video";
+                url: string;
+                durationS?: number | null;
+            }[];
         };
         /**
          * @description Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного

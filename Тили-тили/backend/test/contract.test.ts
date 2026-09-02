@@ -73,6 +73,19 @@ describe('контракт', () => {
       'DELETE /users/me/sessions',
       'DELETE /users/me/sessions/:sessionId',
       'GET /users/me/export',
+      'GET /catalog/categories',
+      'GET /catalog/vendors',
+      'GET /catalog/vendors/:vendorId',
+      'GET /catalog/vendors/:vendorId/availability',
+      'POST /catalog/concierge',
+      'GET /me/favorites',
+      'PUT /me/favorites/:vendorId',
+      'DELETE /me/favorites/:vendorId',
+      'GET /vendor/profile',
+      'PUT /vendor/profile',
+      'POST /vendor/profile/publish',
+      'GET /vendor/calendar',
+      'POST /vendor/calendar/busy',
       'GET /geo/cities',
       'GET /geo/nearest',
       'GET /weddings',
@@ -106,6 +119,16 @@ describe('контракт', () => {
     expect(res.json().error.code).toBe('oauth_not_configured')
   })
 
+  it('загрузка файлов отложена явно: ждёт объектного хранилища', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/media/upload-url',
+      payload: { kind: 'vendor_photo', contentType: 'image/jpeg', sizeBytes: 1 },
+    })
+    // Без токена — 401; сам код причины закреплён в наборе этапа 3.
+    expect([401, 501]).toContain(res.statusCode)
+  })
+
   it('заглушек остаётся ровно столько, сколько работы впереди', async () => {
     let stub = 0
     for (const op of CONTRACT_OPERATIONS) {
@@ -113,7 +136,7 @@ describe('контракт', () => {
       if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
     }
     // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
-    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 28)
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 42)
   })
 
   it('в контракте нет дублей метод+путь', () => {

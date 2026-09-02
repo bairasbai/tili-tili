@@ -347,6 +347,7 @@ describe.skipIf(!live)('перепроверка этапов 1 и 2', () => {
       // мешать — база копит коды за час всех прогонов подряд.
       otpMaxPerHourTotal: 1_000_000,
       otpMaxPerIpHour: 2,
+      otpMaxPerHourTotal: 1_000_000,
       trustProxy: false,
     })
     await strict.ready()
@@ -507,6 +508,8 @@ describe.skipIf(!live)('перепроверка этапов 1 и 2', () => {
       // мешать — база копит коды за час всех прогонов подряд.
       otpMaxPerHourTotal: 1_000_000,
       otpMaxPerIpHour: 3,
+      // Общий потолок проверяется отдельно; здесь он мешал бы измерять адрес.
+      otpMaxPerHourTotal: 1_000_000,
     })
     await strict.ready()
 

@@ -8,9 +8,11 @@ import { registerRedis } from './plugins/redis.js'
 import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
 import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './routes/auth.js'
+import { catalogRoutes } from './routes/catalog.js'
 import { geoRoutes } from './routes/geo.js'
 import { healthRoutes } from './routes/health.js'
 import { inviteRoutes } from './routes/invites.js'
+import { vendorRoutes } from './routes/vendor.js'
 import { weddingRoutes } from './routes/weddings.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
@@ -119,6 +121,8 @@ export async function buildApp(
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
   await app.register(inviteRoutes)
+  await app.register(catalogRoutes)
+  await app.register(vendorRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
 
