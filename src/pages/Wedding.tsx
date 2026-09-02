@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { createElement, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
 import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt, initialAlbum } from '@/lib/data'
@@ -67,7 +67,6 @@ export function WeddingTeam() {
       <div className="px-5 mt-5">
         <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 stagger">
           {slots.map(s => {
-            const SlotIco = catIcon(s.categoryId)
             return (
             <button
               key={s.id}
@@ -76,11 +75,11 @@ export function WeddingTeam() {
                 s.state === 'empty' ? 'border-[1.5px] border-dashed border-[#D8B4AE] bg-[var(--rose-soft)]/30' : 'card-s')}
             >
               <span className={cn('w-9 h-9 rounded-[12px] flex items-center justify-center', s.state === 'empty' ? '' : s.tile)}>
-                {s.state === 'empty' ? <Plus size={20} className="text-[#C98A8A]" /> : <SlotIco size={18} className="text-[var(--ink2)]" />}
+                {s.state === 'empty' ? <Plus size={20} className="text-[#C98A8A]" /> : createElement(catIcon(s.categoryId), { size: 18, className: 'text-[var(--ink2)]' })}
               </span>
               <b className="text-[10.5px] text-center leading-tight">{s.label}</b>
               {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#7E9A74]">booked</span>}
-              {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#B98A2F]">{s.status}</span>}
+              {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#B98A2F]">{s.status && t(s.status)}</span>}
               {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#C98A8A]">{t('кандидаты')}</span>}
             </button>
             )
@@ -121,7 +120,6 @@ export function SlotDetail() {
     setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
   })
   const inviteLink = `tili-tili.ru/join/ТИЛИ-СВОЙ-${s.id.toUpperCase()}`
-  const SlotIco = catIcon(s.categoryId)
 
   /* Свой подрядчик: форма добавления/приглашения (пустой слот или внешний) */
   const ownBlock = (
@@ -154,7 +152,7 @@ export function SlotDetail() {
         <TopBar back title={s.label} sub={t('Слот команды')} />
         <div className="px-5 mt-3">
           <div className="card p-5 text-center">
-            <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}><SlotIco size={28} className="text-[var(--ink2)]" /></div>
+            <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}>{createElement(catIcon(s.categoryId), { size: 28, className: 'text-[var(--ink2)]' })}</div>
             <b className="font-serif-d text-[19px] block mt-3">{t('Исполнитель не выбран')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Подберите в каталоге или добавьте своего')}</p>
           </div>
@@ -170,11 +168,11 @@ export function SlotDetail() {
       <TopBar back title={s.label} sub={t('Слот команды')} />
       <div className="px-5 mt-3">
         <div className="card p-5 text-center">
-          <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}><SlotIco size={28} className="text-[var(--ink2)]" /></div>
+          <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}>{createElement(catIcon(s.categoryId), { size: 28, className: 'text-[var(--ink2)]' })}</div>
           <b className="font-serif-d text-[19px] block mt-3">{s.vendor ?? t('Исполнитель не выбран')}</b>
           {s.price && <span className="font-serif-d text-[17px] text-[#B57171] block mt-1 tabular">{fmt(s.price)}</span>}
           <div className="flex justify-center gap-1.5 mt-2">
-            {s.status && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74]">{s.status}</span>}
+            {s.status && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74]">{t(s.status)}</span>}
             {s.external && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--honey)] text-[#B98A2F]">{t('не из каталога')}</span>}
           </div>
           {s.external && s.phone && <p className="text-[11px] text-[var(--soft)] mt-2">📞 {s.phone}</p>}
@@ -363,7 +361,10 @@ export function Checklist() {
     setTitle(''); setAdding(false)
   }
   // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
-  const daysLeft = Math.max(0, Math.ceil((new Date(2027, 5, 14).getTime() - Date.now()) / 86400000))
+  // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
+  // его результат менялся бы от перерисовки к перерисовке.
+  const [now] = useState(() => Date.now())
+  const daysLeft = Math.max(0, Math.ceil((new Date(2027, 5, 14).getTime() - now) / 86400000))
   const curPeriod = daysLeft > 270 ? '9' : daysLeft > 180 ? '6' : daysLeft > 90 ? '3' : '1'
   const nextTask = allTasks.find(tk => !done.includes(tk.id) && tk.period === curPeriod) ?? allTasks.find(tk => !done.includes(tk.id))
 

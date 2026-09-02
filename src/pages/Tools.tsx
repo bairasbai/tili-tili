@@ -148,7 +148,7 @@ function downloadDocx(name: string) {
 function downloadPdf(name: string) {
   const w = window.open('', '_blank')
   if (!w) return
-  w.document.write(`<html><head><meta charset="utf-8"><title>${name}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name)}<script>window.onload=()=>window.print()<\/script></body></html>`)
+  w.document.write(`<html><head><meta charset="utf-8"><title>${name}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name)}<script>window.onload=()=>window.print()${'<'}/script></body></html>`)
   w.document.close()
 }
 

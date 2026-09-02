@@ -129,11 +129,11 @@ export const vendors: Vendor[] = [
 export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string; external?: boolean; invited?: boolean; phone?: string }
 
 export const initialSlots: Slot[] = [
-  { id: 's1', categoryId: 'venue', label: t('Площадка'), icon: '🏛️', tile: 'bg-[#F0DCB8]', state: 'booked', vendor: t('Усадьба «Липовый сад»'), price: 250000, status: t('Забронировано') },
-  { id: 's2', categoryId: 'photo', label: t('Фотограф'), icon: '📸', tile: 'bg-[#F2DFDC]', state: 'booked', vendor: t('Елена Смирнова'), price: 85000, status: t('Забронировано') },
-  { id: 's3', categoryId: 'video', label: t('Видеограф'), icon: '🎥', tile: 'bg-[#E6EEE2]', state: 'booked', vendor: 'CinemaWedding Team', price: 120000, status: t('Забронировано') },
-  { id: 's4', categoryId: 'host', label: t('Ведущий'), icon: '🎤', tile: 'bg-[#D9CCE3]', state: 'hold', vendor: t('Артём Краснов'), price: 60000, status: t('Аванс 50%') },
-  { id: 's5', categoryId: 'florist', label: t('Флорист'), icon: '🌸', tile: 'bg-[#F2DFDC]', state: 'hold', vendor: t('Студия «Пион»'), price: 45000, status: t('Hold 72 ч') },
+  { id: 's1', categoryId: 'venue', label: t('Площадка'), icon: '🏛️', tile: 'bg-[#F0DCB8]', state: 'booked', vendor: t('Усадьба «Липовый сад»'), price: 250000, status: 'Забронировано' },
+  { id: 's2', categoryId: 'photo', label: t('Фотограф'), icon: '📸', tile: 'bg-[#F2DFDC]', state: 'booked', vendor: t('Елена Смирнова'), price: 85000, status: 'Забронировано' },
+  { id: 's3', categoryId: 'video', label: t('Видеограф'), icon: '🎥', tile: 'bg-[#E6EEE2]', state: 'booked', vendor: 'CinemaWedding Team', price: 120000, status: 'Забронировано' },
+  { id: 's4', categoryId: 'host', label: t('Ведущий'), icon: '🎤', tile: 'bg-[#D9CCE3]', state: 'hold', vendor: t('Артём Краснов'), price: 60000, status: 'Аванс 50%' },
+  { id: 's5', categoryId: 'florist', label: t('Флорист'), icon: '🌸', tile: 'bg-[#F2DFDC]', state: 'hold', vendor: t('Студия «Пион»'), price: 45000, status: 'Hold 72 ч' },
   { id: 's6', categoryId: 'cake', label: t('Кондитер'), icon: '🎂', tile: 'bg-[#F0DCB8]', state: 'candidate', vendor: t('Кандидаты: 2') },
   { id: 's7', categoryId: 'stylist', label: t('Стилист'), icon: '💄', tile: 'bg-[#F2DFDC]', state: 'candidate', vendor: t('Кандидат: 1') },
   { id: 's8', categoryId: 'dj', label: 'DJ', icon: '🎧', tile: 'bg-[#C3D5E8]', state: 'empty' },

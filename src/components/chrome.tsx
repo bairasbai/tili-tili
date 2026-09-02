@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { createElement, useEffect, useState } from 'react'
 import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
@@ -118,10 +118,9 @@ export function SectionHead({ title, sub, link, onLink }: { title: string; sub?:
 
 /* Иконка-плитка */
 export function Tile({ icon, tile, size = 46, cat }: { icon: string; tile: string; size?: number; cat?: string }) {
-  const Ico = cat ? catIcon(cat) : null
   return (
     <div className={cn('rounded-[14px] flex items-center justify-center shrink-0', tile)} style={{ width: size, height: size, fontSize: size * 0.42 }}>
-      {Ico ? <Ico size={Math.round(size * 0.44)} className="text-[var(--ink2)]" /> : icon}
+      {cat ? createElement(catIcon(cat), { size: Math.round(size * 0.44), className: 'text-[var(--ink2)]' }) : icon}
     </div>
   )
 }
@@ -152,11 +151,10 @@ export function Bar({ pct, color }: { pct: number; color?: string }) {
 
 /* Баннер офлайна: приложение работает без сети, данные сохранятся */
 export function OfflineBanner() {
-  const [online, setOnline] = useState(true)
+  const [online, setOnline] = useState(() => navigator.onLine)
   useEffect(() => {
     const on = () => setOnline(true)
     const off = () => setOnline(false)
-    setOnline(navigator.onLine)
     window.addEventListener('online', on)
     window.addEventListener('offline', off)
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }

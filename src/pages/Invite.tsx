@@ -3,6 +3,7 @@ import { MapPin, Clock3, Heart, CalendarPlus, UtensilsCrossed, Bus, Baby, Chevro
 import { couple, timeline } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
+import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -28,11 +29,21 @@ export default function Invite() {
   const [progress, setProgress] = useState(0)
   const root = useRef<HTMLDivElement>(null)
 
-  const [rsvp, setRsvp] = useState<'yes' | 'no' | null>(null)
-  const [plus, setPlus] = useState<boolean | null>(null)
-  const [meal, setMeal] = useState<string | null>(null)
-  const [transfer, setTransfer] = useState<boolean | null>(null)
-  const [sent, setSent] = useState(false)
+  /* Ответ гостя сохраняется: иначе гость, вернувшийся по ссылке, видит пустую
+     форму и отвечает второй раз. */
+  const [answer, setAnswer] = usePersist('tt_guest_rsvp', {
+    rsvp: null as 'yes' | 'no' | null,
+    plus: null as boolean | null,
+    meal: null as string | null,
+    transfer: null as boolean | null,
+    sent: false,
+  })
+  const { rsvp, plus, meal, transfer, sent } = answer
+  const setRsvp = (v: 'yes' | 'no') => setAnswer(a => ({ ...a, rsvp: v }))
+  const setPlus = (v: boolean) => setAnswer(a => ({ ...a, plus: v }))
+  const setMeal = (v: string) => setAnswer(a => ({ ...a, meal: v }))
+  const setTransfer = (v: boolean) => setAnswer(a => ({ ...a, transfer: v }))
+  const setSent = (v: boolean) => setAnswer(a => ({ ...a, sent: v }))
 
   /* параллакс + прогресс */
   useEffect(() => {

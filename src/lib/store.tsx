@@ -1,6 +1,51 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import { initialGifts, initialSlots, type Gift, type Slot } from './data'
-import { setI18nLang, t, type Lang } from './i18n'
+/* eslint-disable react-refresh/only-export-components -- провайдер контекста и хук
+   доступа к нему живут в одном файле: это стандартный паттерн React, а правило
+   касается только скорости hot-reload, а не поведения приложения. */
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { initialGifts, initialSlots, type Gift, type Slot, type SlotState } from './data'
+import { setI18nLang, type Lang } from './i18n'
+import { usePersist } from './usePersist'
+
+/*
+ * Слоты команды переживают перезагрузку. Сохраняется только изменяемая часть слота:
+ * подписи, иконки и плитки берутся из initialSlots на каждом запуске, поэтому смена
+ * языка не «замораживает» старые переводы. Статус хранится русским ключом i18n
+ * (перевод — при рендере через t()), иначе EN-строка застряла бы в localStorage.
+ * Все поля патча всегда присутствуют: undefined исчезает при JSON-сериализации,
+ * и слот «воскресал» бы из базовых данных после отмены брони.
+ */
+export interface SlotPatch {
+  state: SlotState
+  vendor: string | null
+  price: number | null
+  status: string | null
+  external: boolean
+  invited: boolean
+  phone: string | null
+}
+
+const patchOf = (s: Slot): SlotPatch => ({
+  state: s.state,
+  vendor: s.vendor ?? null,
+  price: s.price ?? null,
+  status: s.status ?? null,
+  external: !!s.external,
+  invited: !!s.invited,
+  phone: s.phone ?? null,
+})
+
+const applyPatch = (s: Slot, p: SlotPatch): Slot => ({
+  ...s,
+  state: p.state,
+  vendor: p.vendor ?? undefined,
+  price: p.price ?? undefined,
+  status: p.status ?? undefined,
+  external: p.external || undefined,
+  invited: p.invited || undefined,
+  phone: p.phone ?? undefined,
+})
+
+const EMPTY_PATCH: SlotPatch = { state: 'empty', vendor: null, price: null, status: null, external: false, invited: false, phone: null }
 
 interface Store {
   onboarded: boolean
@@ -37,7 +82,17 @@ const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('tt_onboarded') === '1')
-  const [slots, setSlots] = useState<Slot[]>(initialSlots)
+  const [slotPatch, setSlotPatch] = usePersist<Record<string, SlotPatch>>('tt_slots', {})
+  const slots = useMemo(
+    () => initialSlots.map(s => (slotPatch[s.id] ? applyPatch(s, slotPatch[s.id]) : s)),
+    [slotPatch],
+  )
+  const updateSlot = useCallback((id: string, fn: (p: SlotPatch) => SlotPatch) =>
+    setSlotPatch(prev => {
+      const src = initialSlots.find(s => s.id === id)
+      const base = prev[id] ?? (src ? patchOf(src) : EMPTY_PATCH)
+      return { ...prev, [id]: fn(base) }
+    }), [setSlotPatch])
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem('tt_fav') ?? '["v1"]')
@@ -70,15 +125,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     finishOnboarding: () => { localStorage.setItem('tt_onboarded', '1'); setOnboarded(true) },
     slots,
     bookVendor: (slotId, vendorName, price) =>
-      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'booked', vendor: vendorName, price, status: 'Забронировано' } : sl)),
-    cancelBooking: (slotId) =>
-      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'empty', vendor: undefined, price: undefined, status: undefined, external: undefined, invited: undefined, phone: undefined } : sl)),
+      updateSlot(slotId, () => ({ state: 'booked', vendor: vendorName, price, status: 'Забронировано', external: false, invited: false, phone: null })),
+    cancelBooking: (slotId) => updateSlot(slotId, () => ({ ...EMPTY_PATCH })),
     bookExternal: (slotId, vendorName, price, phone) =>
-      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, state: 'booked', vendor: vendorName, price, status: t('Свой подрядчик'), external: true, phone } : sl)),
-    inviteExternal: (slotId) =>
-      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, invited: true } : sl)),
-    paySlot: (slotId) =>
-      setSlots(s => s.map(sl => sl.id === slotId ? { ...sl, status: 'Оплачено полностью' } : sl)),
+      updateSlot(slotId, () => ({ state: 'booked', vendor: vendorName, price, status: 'Свой подрядчик', external: true, invited: false, phone: phone ?? null })),
+    inviteExternal: (slotId) => updateSlot(slotId, p => ({ ...p, invited: true })),
+    paySlot: (slotId) => updateSlot(slotId, p => ({ ...p, status: 'Оплачено полностью' })),
     favorites,
     toggleFav: id => setFavorites(f => {
       const next = f.includes(id) ? f.filter(x => x !== id) : [...f, id]
@@ -118,7 +170,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGifts(gs => persistGifts(gs.filter(g => g.id !== id)))
       setMyGifts(m => persistMine(m.filter(x => x !== id)))
     },
-  }), [onboarded, slots, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
+  }), [onboarded, slots, updateSlot, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

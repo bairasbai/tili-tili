@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Check, ChevronRight, Copy, Crown, Heart, Link2, QrCode, Shield, Users, X } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
@@ -17,16 +17,26 @@ const ROLES = [
   { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: t('Подрядчик'), desc: t('Видит только свои сделки, чаты с вами и вашу дату в календаре.'), rights: [t('Свои сделки'), t('Чат с парой'), t('Календарь даты')] },
 ] as const
 
+/* Одноразовый код приглашения. Вынесен из компонента: Math.random() в теле
+   компонента линтер справедливо считает нечистым вызовом рендера. */
+function makeInviteCode(roleId: string): string {
+  const prefix = roleId === 'partner' ? 'ПАРА' : roleId === 'helper' ? 'ДРУГ' : roleId === 'coordinator' ? 'КООРД' : 'ПОДР'
+  return `ТИЛИ-${prefix}-${Math.floor(1000 + Math.random() * 9000)}`
+}
+
 export function Team() {
   const nav = useNavigate()
   const { city } = useStore()
   const [invite, setInvite] = useState<typeof ROLES[number] | null>(null)
+  const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [revoked, setRevoked] = useState<number[]>([])
-  // код генерируется один раз на открытую шторку — иначе менялся при каждом рендере
-  const inviteCode = useMemo(() => invite
-    ? `ТИЛИ-${invite.id === 'partner' ? 'ПАРА' : invite.id === 'helper' ? 'ДРУГ' : invite.id === 'coordinator' ? 'КООРД' : 'ПОДР'}-${Math.floor(1000 + Math.random() * 9000)}`
-    : '', [invite])
+  /* Код выпускается в обработчике открытия шторки, а не в рендере — иначе он
+     менялся бы при каждой перерисовке, и кнопки копировали разные ссылки. */
+  const openInvite = (r: typeof ROLES[number]) => {
+    setInviteCode(makeInviteCode(r.id))
+    setInvite(r)
+  }
   const members = [
     { n: t('Алина (вы)'), role: t('Пара · создатель'), icon: '👰', tile: 'bg-[var(--rose-soft)]', online: true },
     { n: t('Тимур'), role: t('Пара · приглашён'), icon: '🤵', tile: 'bg-[var(--blue)]', online: false },
@@ -68,7 +78,7 @@ export function Team() {
         </div>
         <div className="space-y-2.5">
           {ROLES.map(r => (
-            <button key={r.id} onClick={() => setInvite(r)} className="press w-full card p-4 flex items-center gap-3.5 text-left">
+            <button key={r.id} onClick={() => openInvite(r)} className="press w-full card p-4 flex items-center gap-3.5 text-left">
               <Tile icon={r.icon} tile={r.tile} size={46} />
               <div className="flex-1">
                 <b className="text-[14px]">{r.name}</b>

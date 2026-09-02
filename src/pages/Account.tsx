@@ -4,6 +4,7 @@ import { ChevronLeft, Shield, Smartphone, ChevronRight, HelpCircle, LogOut, MapP
 import { TopBar, Tile } from '@/components/chrome'
 import { CityPicker } from '@/components/CityPicker'
 import { useStore } from '@/lib/store'
+import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
 
@@ -103,7 +104,7 @@ export function Auth() {
 /* Центр уведомлений */
 export function Notifications() {
   const nav = useNavigate()
-  const [readIds, setReadIds] = useState<number[]>([])
+  const [readIds, setReadIds] = usePersist<number[]>('tt_notif_read', [])
   const items = [
     { icon: '💰', tile: 'bg-[var(--honey)]', title: t('Аванс подтверждён'), text: t('Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.'), time: '14:20', unread: true, today: true, to: '/deal' },
     { icon: '✦', tile: 'bg-[var(--rose-soft)]', title: t('Тиль'), text: t('Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.'), time: '11:05', unread: true, today: true, to: '/assistant' },
@@ -143,18 +144,11 @@ export function Notifications() {
   )
 }
 
-/* Настройки */
-export function Settings() {
-  const nav = useNavigate()
-  const [quiet, setQuiet] = useState(true)
-  const [push, setPush] = useState({ tasks: true, chats: true, deals: true, tips: false })
-  const [name, setName] = useState(t('Алина Валеева'))
-  const [editName, setEditName] = useState(false)
-  const [androidGone, setAndroidGone] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [cityPick, setCityPick] = useState(false)
-  const { city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
-  const Row = ({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) => (
+/* Тумблер настроек. Объявлен на уровне модуля: компонент, созданный внутри
+   рендера, — новый тип на каждой перерисовке, из-за чего React размонтирует и
+   монтирует поддерево заново (теряется фокус в полях, срываются анимации). */
+function Row({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
     <div className="flex items-center justify-between py-3.5 border-b border-[var(--track)] last:border-none">
       <span className="text-[13px] font-medium">{label}</span>
       <button onClick={() => onChange(!value)} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative', value ? 'grad' : 'bg-[var(--track)]')} aria-label={label}>
@@ -162,6 +156,30 @@ export function Settings() {
       </button>
     </div>
   )
+}
+
+/* Настройки */
+export function Settings() {
+  const nav = useNavigate()
+  /* Настройки хранятся на устройстве: выключенный push не должен включаться сам.
+     Имя лежит отдельным полем и падает в дефолт, только пока его не меняли —
+     иначе русский дефолт застрял бы в EN-интерфейсе. */
+  const [prefs, setPrefs] = usePersist('tt_settings', {
+    quiet: true,
+    push: { tasks: true, chats: true, deals: true, tips: false },
+    name: null as string | null,
+  })
+  const quiet = prefs.quiet
+  const setQuiet = (v: boolean) => setPrefs(p => ({ ...p, quiet: v }))
+  const push = prefs.push
+  const setPush = (fn: (p: typeof prefs.push) => typeof prefs.push) => setPrefs(p => ({ ...p, push: fn(p.push) }))
+  const name = prefs.name ?? t('Алина Валеева')
+  const setName = (v: string) => setPrefs(p => ({ ...p, name: v }))
+  const [editName, setEditName] = useState(false)
+  const [androidGone, setAndroidGone] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [cityPick, setCityPick] = useState(false)
+  const { city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
   return (
     <div className="pb-28">
       <TopBar back title={t('Настройки')} />

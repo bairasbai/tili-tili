@@ -11,7 +11,7 @@ import { t } from '@/lib/i18n'
 /* ИИ-координатор «Тиль» */
 export function Assistant() {
   const nav = useNavigate()
-  const [msgs, setMsgs] = useState([
+  const [msgs, setMsgs] = usePersist<{ me: boolean; text: string }[]>('tt_assistant', [
     { me: false, text: t('Здравствуйте, Алина и Тимур! Я Тиль — ваш ИИ-координатор. Слежу за бюджетом, дедлайнами и датами подрядчиков. Что обсудим?') },
   ])
   const [text, setText] = useState('')
@@ -133,8 +133,13 @@ export function Compare() {
 /* День X — тёмный live-режим пары */
 export function DayX() {
   const nav = useNavigate()
-  const [delay, setDelay] = useState(0)
-  const [planB, setPlanB] = useState(false)
+  /* День X переживает перезагрузку телефона: накопленная задержка и включённый
+     план Б — это то, по чему в моменте живёт вся команда. */
+  const [live, setLive] = usePersist('tt_dayx', { delay: 0, planB: false })
+  const delay = live.delay
+  const setDelay = (fn: (d: number) => number) => setLive(l => ({ ...l, delay: fn(l.delay) }))
+  const planB = live.planB
+  const setPlanB = (v: boolean) => setLive(l => ({ ...l, planB: v }))
   const [sos, setSos] = useState(false)
   return (
     <div className="min-h-dvh pb-10" style={{ background: 'linear-gradient(180deg,#1E1A16,#0E0C0A)', color: '#EFE9DF' }}>
@@ -255,7 +260,7 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
 export function After() {
   const [dl, setDl] = useState(0)
   const [rating, setRating] = useState(false)
-  const [stars, setStars] = useState<Record<string, number>>({})
+  const [stars, setStars] = usePersist<Record<string, number>>('tt_after_stars', {})
   const [guestReviews] = usePersist<GuestReview[]>('tt_guest_reviews', initialGuestReviews)
   const reviewList = [t('Елена Смирнова · фотограф'), t('Артём Краснов · ведущий'), t('Студия «Пион» · флористика'), t('Усадьба «Липовый сад»'), t('«Марципан» · торт')]
   const stats = [

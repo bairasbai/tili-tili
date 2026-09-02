@@ -29,6 +29,9 @@ const APP_ROOT: string = (() => {
   return '/'
 })()
 
+/** Корень приложения: базовый путь без привязки к абсолютному '/'. */
+export function appRoot(): string { return APP_ROOT }
+
 export function reloadToRoot(): void {
   try {
     sessionStorage.setItem('tt_redirect', location.pathname + location.search + location.hash)

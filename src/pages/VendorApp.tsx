@@ -24,11 +24,11 @@ export function VendorDashboard() {
           <p className="text-[10.5px] text-[var(--soft)] mt-2.5">{t('Анкеты с видео получают в 3 раза больше откликов — добавьте видео-визитку.')}</p>
         </div>
         <div className="grid grid-cols-3 gap-2.5 mt-3.5 stagger">
-          {[
+          {([
             ['7', t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
             ['12', t('просмотров/день'), Eye, 'bg-[var(--sage-soft)]'],
             ['3', t('свадьбы в июне'), CalendarDays, 'bg-[var(--honey)]'],
-          ].map(([v, l, Icon, tile]: any) => (
+          ] as const).map(([v, l, Icon, tile]) => (
             <div key={l} className="card-s p-3.5 text-center fade-up">
               <div className={cn('w-9 h-9 rounded-[12px] mx-auto flex items-center justify-center', tile)}><Icon size={16} className="text-[var(--ink2)]" /></div>
               <b className="text-[19px] block mt-2 tabular">{v}</b>
