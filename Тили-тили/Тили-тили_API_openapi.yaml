@@ -1,0 +1,1466 @@
+openapi: 3.0.3
+info:
+  title: Тили-тили API
+  version: 0.1.0
+  description: |
+    Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
+    Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
+
+    ## Роли
+    - `couple` — молодожёны (владельцы свадьбы): полный доступ.
+    - `helper` — помощник (друг/родственник): орг-разделы, без бюджета и сделок.
+    - `coordinator` — координатор: командует днём X (тайминг, чаты подрядчиков), без бюджета и оплат.
+    - `vendor` — подрядчик: свои сделки, лиды, чаты, анкета.
+    - `guest` — гость: только RSVP по ссылке приглашения.
+
+    ## Принципы
+    - Все даты — ISO 8601 (`2027-06-14`), дата-время — UTC RFC 3339.
+    - Деньги — integer в копейках/рублях ×100? НЕТ: рубли, integer (договорённость фронта).
+    - Пагинация: `?limit=20&cursor=...` → `{ items, nextCursor }`.
+    - Ошибки: `{ "error": { "code": "string", "message": "string" } }`.
+    - Идемпотентность мутаций оплаты/брони — через `Idempotency-Key` header.
+servers:
+  - url: https://api.tili-tili.ru/v1
+  - url: http://localhost:8080/v1
+tags:
+  - name: auth
+  - name: weddings
+  - name: invites
+  - name: geo
+  - name: catalog
+  - name: bookings
+  - name: budget
+  - name: guests
+  - name: tasks
+  - name: chats
+  - name: vendor
+  - name: notifications
+
+paths:
+  # ───────────────────────── AUTH ─────────────────────────
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация (email/телефон)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name: { type: string, example: Алина }
+      responses:
+        '201':
+          description: Создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Вход
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Обновление access-token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties: { refreshToken: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+  /auth/oauth/{provider}:
+    get:
+      tags: [auth]
+      summary: OAuth-вход (VK, Yandex, Google, Telegram)
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [vk, yandex, google, telegram] }
+      responses:
+        '302': { description: Редирект на провайдера }
+
+  # ───────────────────────── WEDDINGS ─────────────────────────
+  /weddings:
+    post:
+      tags: [weddings]
+      summary: Создать свадьбу (после квиза)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partnerName, city]
+              properties:
+                partnerName: { type: string, example: Тимур }
+                date: { type: string, format: date, example: '2027-06-14' }
+                city: { $ref: '#/components/schemas/CityRef' }
+                budgetTotal: { type: integer, example: 1500000 }
+                guestsPlanned: { type: integer, example: 80 }
+                style: { type: string, example: нежная классика }
+                quizAnswers:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Свадьба создана; создатель — `couple`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wedding' }
+  /weddings/{weddingId}:
+    get:
+      tags: [weddings]
+      summary: Карточка свадьбы (данные для Home)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wedding' }
+    patch:
+      tags: [weddings]
+      summary: Обновить (дата, город, бюджет, стиль)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date: { type: string, format: date }
+                city: { $ref: '#/components/schemas/CityRef' }
+                budgetTotal: { type: integer }
+                guestsPlanned: { type: integer }
+                style: { type: string }
+                inviteText: { type: string }
+                inviteThemeId: { type: integer, minimum: 0, maximum: 9 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wedding' }
+  /weddings/{weddingId}/members:
+    get:
+      tags: [weddings]
+      summary: Команда свадьбы
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Member' }
+  /weddings/{weddingId}/members/{userId}:
+    patch:
+      tags: [weddings]
+      summary: Сменить роль участника (только couple)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [couple, helper, coordinator] }
+      responses:
+        '200': { description: OK }
+    delete:
+      tags: [weddings]
+      summary: Удалить участника
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Удалён }
+
+  # ───────────────────────── INVITES (команда) ─────────────────────────
+  /weddings/{weddingId}/invites:
+    post:
+      tags: [invites]
+      summary: Создать одноразовую ссылку-приглашение (7 дней)
+      description: Фронт рисует QR по `url`. Код — человекочитаемый (ПАРА-XXXX, ДРУГ-XXXX, ПОДР-XXXX).
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [couple, helper, coordinator, vendor] }
+                label: { type: string, example: 'Для Тимура' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InviteLink' }
+    get:
+      tags: [invites]
+      summary: Активные приглашения
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InviteLink' }
+  /invites/{code}:
+    get:
+      tags: [invites]
+      summary: Просмотр приглашения (экран /join/:code)
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, example: ДРУГ-7F3K }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string }
+                  role: { type: string, enum: [couple, helper, coordinator, vendor] }
+                  weddingTitle: { type: string, example: 'Алина ♥ Тимур' }
+                  inviterName: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '410': { description: Истёк или отозван }
+    delete:
+      tags: [invites]
+      summary: Отозвать приглашение
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Отозвано }
+  /invites/{code}/accept:
+    post:
+      tags: [invites]
+      summary: Принять приглашение (после регистрации/входа)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Присоединён к свадьбе
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '410': { description: Истёк/отозван/уже использован }
+
+  # ───────────────────────── GEO ─────────────────────────
+  /geo/cities:
+    get:
+      tags: [geo]
+      summary: Поиск городов (автокомплит CityPicker)
+      description: |
+        Источник — Яндекс Геокодер (`geocode-maps.yandex.ru/1.x/?kind=locality`) + собственная таблица райцентров.
+        Поиск prefix-first, ё→е, минимум 2 символа. Ответ отсортирован: точный префикс → население.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, example: сиб }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 12, maximum: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/City' }
+  /geo/nearest:
+    get:
+      tags: [geo]
+      summary: Ближайший город по координатам (кнопка геолокации)
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number, example: 54.7351 }
+        - name: lon
+          in: query
+          required: true
+          schema: { type: number, example: 55.9587 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/City' }
+
+  # ───────────────────────── CATALOG ─────────────────────────
+  /catalog/categories:
+    get:
+      tags: [catalog]
+      summary: Категории подрядчиков (площадки, фото, декор…)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+  /catalog/vendors:
+    get:
+      tags: [catalog]
+      summary: Каталог подрядчиков с фильтрами
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: categoryId
+          in: query
+          schema: { type: string }
+        - name: city
+          in: query
+          schema: { type: string, example: Уфа }
+        - name: radiusKm
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: priceMin
+          in: query
+          schema: { type: integer }
+        - name: priceMax
+          in: query
+          schema: { type: integer }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [rating, price_asc, price_desc, popular], default: rating }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VendorPage' }
+  /catalog/vendors/{vendorId}:
+    get:
+      tags: [catalog]
+      summary: Анкета подрядчика
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VendorDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /catalog/vendors/{vendorId}/availability:
+    get:
+      tags: [catalog]
+      summary: Занятость дат (для выбора даты брони)
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: month
+          in: query
+          schema: { type: string, example: '2027-06' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  busyDates:
+                    type: array
+                    items: { type: string, format: date }
+                  holdDates:
+                    type: array
+                    items: { type: string, format: date }
+
+  # ───────────────────────── FAVORITES ─────────────────────────
+  /me/favorites:
+    get:
+      tags: [catalog]
+      summary: Избранное пользователя
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Vendor' }
+  /me/favorites/{vendorId}:
+    put:
+      tags: [catalog]
+      summary: Добавить в избранное
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: OK }
+    delete:
+      tags: [catalog]
+      summary: Убрать из избранного
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: OK }
+
+  # ───────────────────────── BOOKINGS / SLOTS ─────────────────────────
+  /weddings/{weddingId}/slots:
+    get:
+      tags: [bookings]
+      summary: "Слоты команды (12 категорий: площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор)"
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Slot' }
+  /weddings/{weddingId}/slots/{slotId}/book:
+    post:
+      tags: [bookings]
+      summary: Забронировать подрядчика в слот («Добавить в свадьбу»)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: slotId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vendorId, price]
+              properties:
+                vendorId: { type: string }
+                packageId: { type: string }
+                price: { type: integer, example: 150000 }
+      responses:
+        '200':
+          description: Слот заполнен; бюджет пересчитывается на бэкенде
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '409': { description: Слот уже занят }
+  /weddings/{weddingId}/slots/{slotId}/cancel:
+    post:
+      tags: [bookings]
+      summary: Отменить бронь (слот → free, бюджет минус)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: slotId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+  /weddings/{weddingId}/slots/{slotId}/pay:
+    post:
+      tags: [bookings]
+      summary: Оплата слота (доплата/полная)
+      description: Идемпотентно по `Idempotency-Key`. Статус → «Оплачено полностью».
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: slotId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount: { type: integer, description: 'пусто = полная сумма' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+
+  # ───────────────────────── BUDGET ─────────────────────────
+  /weddings/{weddingId}/budget:
+    get:
+      tags: [budget]
+      summary: Бюджет (статьи + автосуммы из слотов)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Budget' }
+  /weddings/{weddingId}/budget/items:
+    post:
+      tags: [budget]
+      summary: Своя статья расхода
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, amount, categoryId]
+              properties:
+                title: { type: string }
+                amount: { type: integer }
+                categoryId: { type: string }
+      responses:
+        '201':
+          description: Создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BudgetItem' }
+  /weddings/{weddingId}/budget/items/{itemId}:
+    delete:
+      tags: [budget]
+      summary: Удалить свою статью (×-кнопка)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: itemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Удалена }
+
+  # ───────────────────────── GUESTS ─────────────────────────
+  /weddings/{weddingId}/guests:
+    get:
+      tags: [guests]
+      summary: Список гостей
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Guest' }
+    post:
+      tags: [guests]
+      summary: Добавить гостя
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                plusOne: { type: boolean, default: false }
+                group: { type: string, example: 'Родня невесты' }
+      responses:
+        '201':
+          description: Создан
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Guest' }
+  /weddings/{weddingId}/guests/{guestId}:
+    patch:
+      tags: [guests]
+      summary: Обновить гостя (статус RSVP циклом yes→no→pending)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: guestId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                plusOne: { type: boolean }
+                status: { type: string, enum: [yes, no, pending] }
+                tableId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Guest' }
+    delete:
+      tags: [guests]
+      summary: Удалить гостя
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: guestId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Удалён }
+  /weddings/{weddingId}/tables:
+    get:
+      tags: [guests]
+      summary: Рассадка (столы + гости)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Table' }
+    post:
+      tags: [guests]
+      summary: Добавить стол
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, example: 'Стол 7' }
+                capacity: { type: integer, default: 8 }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Table' }
+
+  # ───────────────────────── GUEST RSVP (публично) ─────────────────────────
+  /rsvp/{guestToken}:
+    get:
+      tags: [guests]
+      summary: Публичная страница гостя (из ссылки в приглашении)
+      parameters:
+        - name: guestToken
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guestName: { type: string }
+                  wedding: { $ref: '#/components/schemas/WeddingPublic' }
+                  status: { type: string, enum: [yes, no, pending] }
+    post:
+      tags: [guests]
+      summary: Ответ гостя (RSVP)
+      parameters:
+        - name: guestToken
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [yes, no] }
+                plusOne: { type: boolean }
+                comment: { type: string }
+      responses:
+        '200': { description: Принято }
+
+  # ───────────────────────── TASKS / CHECKLIST ─────────────────────────
+  /weddings/{weddingId}/tasks:
+    get:
+      tags: [tasks]
+      summary: Чек-лист (шаблонные + свои задачи)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Task' }
+    post:
+      tags: [tasks]
+      summary: Своя задача
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, period]
+              properties:
+                title: { type: string }
+                period: { type: string, example: '3–1 месяц' }
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+  /weddings/{weddingId}/tasks/{taskId}:
+    patch:
+      tags: [tasks]
+      summary: Отметить/изменить задачу
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                done: { type: boolean }
+                title: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+    delete:
+      tags: [tasks]
+      summary: Удалить свою задачу
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Удалена }
+
+  # ───────────────────────── CHATS ─────────────────────────
+  /chats:
+    get:
+      tags: [chats]
+      summary: Список чатов пользователя
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Chat' }
+  /chats/{chatId}/messages:
+    get:
+      tags: [chats]
+      summary: История сообщений
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema: { type: string }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  nextCursor: { type: string, nullable: true }
+    post:
+      tags: [chats]
+      summary: Отправить сообщение
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                attachmentUrl: { type: string }
+      responses:
+        '201':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+  /chats/{chatId}/typing:
+    post:
+      tags: [chats]
+      summary: Индикатор «печатает…» (WebSocket-fallback)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: OK }
+  /chats/vendor/{vendorId}:
+    post:
+      tags: [chats]
+      summary: Открыть/создать чат с подрядчиком («Написать»)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Chat' }
+
+  # ───────────────────────── VENDOR-СТОРОНА ─────────────────────────
+  /vendor/profile:
+    get:
+      tags: [vendor]
+      summary: Моя анкета подрядчика
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VendorDetail' }
+    put:
+      tags: [vendor]
+      summary: "Создать/обновить анкету (мастер: категория → пакеты → город → публикация)"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VendorUpsert' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VendorDetail' }
+  /vendor/profile/publish:
+    post:
+      tags: [vendor]
+      summary: Опубликовать анкету (модерация → live)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [moderation, live] }
+  /vendor/calendar:
+    get:
+      tags: [vendor]
+      summary: Занятость (календарь подрядчика)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: month
+          in: query
+          schema: { type: string, example: '2027-06' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    date: { type: string, format: date }
+                    status: { type: string, enum: [free, busy, hold] }
+  /vendor/calendar/busy:
+    post:
+      tags: [vendor]
+      summary: Отметить даты занятыми/свободными
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dates, status]
+              properties:
+                dates:
+                  type: array
+                  items: { type: string, format: date }
+                status: { type: string, enum: [free, busy] }
+      responses:
+        '204': { description: OK }
+  /vendor/leads:
+    get:
+      tags: [vendor]
+      summary: Входящие лиды
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Lead' }
+  /vendor/leads/{leadId}:
+    post:
+      tags: [vendor]
+      summary: "Действие с лидом: ответить / холд 72ч / отклонить / вернуть"
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: leadId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [reply, hold, decline, reopen] }
+                text: { type: string, description: 'для action=reply' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lead' }
+  /vendor/reviews:
+    get:
+      tags: [vendor]
+      summary: Отзывы на меня
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Review' }
+  /vendor/reviews/{reviewId}/reply:
+    post:
+      tags: [vendor]
+      summary: Ответить на отзыв
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties: { text: { type: string } }
+      responses:
+        '200': { description: OK }
+  /vendor/analytics:
+    get:
+      tags: [vendor]
+      summary: Аналитика анкеты (просмотры → лиды → сделки)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: period
+          in: query
+          schema: { type: string, enum: [month, season, year], default: season }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revenue: { type: integer, example: 385000 }
+                  revenueDeltaPct: { type: number, example: 38 }
+                  funnel:
+                    type: object
+                    properties:
+                      views: { type: integer, example: 1240 }
+                      contacts: { type: integer, example: 96 }
+                      leads: { type: integer, example: 34 }
+                      deals: { type: integer, example: 8 }
+
+  # ───────────────────────── REVIEWS (пара → подрядчик) ─────────────────────────
+  /catalog/vendors/{vendorId}/reviews:
+    post:
+      tags: [catalog]
+      summary: Оставить отзыв (только после завершённой сделки)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating, text]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                text: { type: string }
+      responses:
+        '201': { description: Создан }
+
+  # ───────────────────────── NOTIFICATIONS ─────────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: Уведомления пользователя
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+  /notifications/{id}/read:
+    post:
+      tags: [notifications]
+      summary: Отметить прочитанным
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: OK }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    WeddingId:
+      name: weddingId
+      in: path
+      required: true
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 20, maximum: 100 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Не найдено
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Конфликт (уже существует)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+    AuthTokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, example: 3600 }
+        user: { $ref: '#/components/schemas/User' }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        avatarUrl: { type: string, nullable: true }
+    City:
+      type: object
+      properties:
+        name: { type: string, example: Сибай }
+        region: { type: string, example: Башкортостан }
+        district: { type: string, nullable: true, example: Баймакский район }
+        lat: { type: number }
+        lon: { type: number }
+        population: { type: integer, nullable: true }
+    CityRef:
+      type: object
+      required: [name, region]
+      properties:
+        name: { type: string }
+        region: { type: string }
+    Wedding:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string, example: 'Алина ♥ Тимур' }
+        date: { type: string, format: date }
+        city: { $ref: '#/components/schemas/CityRef' }
+        budgetTotal: { type: integer }
+        guestsPlanned: { type: integer }
+        style: { type: string }
+        inviteText: { type: string }
+        inviteThemeId: { type: integer }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/Member' }
+    WeddingPublic:
+      type: object
+      description: Публичная часть свадьбы для гостей (без бюджета)
+      properties:
+        title: { type: string }
+        date: { type: string, format: date }
+        city: { $ref: '#/components/schemas/CityRef' }
+        inviteText: { type: string }
+        inviteThemeId: { type: integer }
+        venue: { type: string, nullable: true }
+    Member:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        role: { type: string, enum: [couple, helper, coordinator, vendor] }
+        joinedAt: { type: string, format: date-time }
+    InviteLink:
+      type: object
+      properties:
+        code: { type: string, example: ДРУГ-7F3K }
+        url: { type: string, example: 'https://tili-tili.ru/join/ДРУГ-7F3K' }
+        role: { type: string, enum: [couple, helper, coordinator, vendor] }
+        label: { type: string, nullable: true }
+        expiresAt: { type: string, format: date-time }
+        used: { type: boolean }
+    Category:
+      type: object
+      properties:
+        id: { type: string, example: photo }
+        title: { type: string, example: Фотограф }
+        icon: { type: string }
+    Vendor:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        categoryId: { type: string }
+        city: { type: string }
+        priceFrom: { type: integer }
+        rating: { type: number, example: 4.9 }
+        reviewsCount: { type: integer }
+        photoUrl: { type: string }
+    VendorPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Vendor' }
+        nextCursor: { type: string, nullable: true }
+    VendorDetail:
+      allOf:
+        - $ref: '#/components/schemas/Vendor'
+        - type: object
+          properties:
+            about: { type: string }
+            gallery: { type: array, items: { type: string } }
+            packages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  price: { type: integer }
+                  includes: { type: array, items: { type: string } }
+            reviews:
+              type: array
+              items: { $ref: '#/components/schemas/Review' }
+    VendorUpsert:
+      type: object
+      required: [name, categoryId, city]
+      properties:
+        name: { type: string }
+        categoryId: { type: string }
+        city: { $ref: '#/components/schemas/CityRef' }
+        about: { type: string }
+        priceFrom: { type: integer }
+        packages:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              price: { type: integer }
+              includes: { type: array, items: { type: string } }
+        portfolioUrls: { type: array, items: { type: string } }
+    Slot:
+      type: object
+      properties:
+        id: { type: string, example: s4 }
+        categoryId: { type: string }
+        status: { type: string, enum: [free, hold, booked, paid] }
+        vendor: { $ref: '#/components/schemas/Vendor', nullable: true }
+        price: { type: integer, nullable: true }
+        statusLabel: { type: string, example: 'Оплачено полностью' }
+    Budget:
+      type: object
+      properties:
+        total: { type: integer, example: 1500000 }
+        spent: { type: integer, example: 560000 }
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              planned: { type: integer }
+              fromSlots: { type: integer, description: 'автосумма из броней' }
+              items:
+                type: array
+                items: { $ref: '#/components/schemas/BudgetItem' }
+    BudgetItem:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        amount: { type: integer }
+        categoryId: { type: string }
+        custom: { type: boolean, description: 'true = своя статья (удаляемая)' }
+    Guest:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        plusOne: { type: boolean }
+        group: { type: string, nullable: true }
+        status: { type: string, enum: [yes, no, pending] }
+        tableId: { type: string, nullable: true }
+        rsvpToken: { type: string, description: 'для публичной ссылки /rsvp/{token}' }
+    Table:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        capacity: { type: integer, default: 8 }
+        guestIds: { type: array, items: { type: string } }
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        period: { type: string }
+        done: { type: boolean }
+        custom: { type: boolean }
+    Chat:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        lastMessage: { type: string }
+        unread: { type: integer }
+        kind: { type: string, enum: [vendor, team, tilly] }
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        chatId: { type: string }
+        senderId: { type: string }
+        text: { type: string }
+        attachmentUrl: { type: string, nullable: true }
+        sentAt: { type: string, format: date-time }
+    Lead:
+      type: object
+      properties:
+        id: { type: string }
+        coupleName: { type: string }
+        weddingDate: { type: string, format: date }
+        city: { type: string }
+        message: { type: string }
+        status: { type: string, enum: [new, replied, hold, declined, won] }
+        holdUntil: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Review:
+      type: object
+      properties:
+        id: { type: string }
+        authorName: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+        reply:
+          type: object
+          nullable: true
+          properties:
+            text: { type: string }
+            createdAt: { type: string, format: date-time }
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        body: { type: string }
+        kind: { type: string, enum: [deal, chat, task, guest, system] }
+        link: { type: string, nullable: true, example: /deal }
+        read: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+security:
+  - bearerAuth: []
