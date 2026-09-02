@@ -119,7 +119,7 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
     const vendor = await newVendor()
     const date = `2027-06-${String(randomInt(10, 28)).padStart(2, '0')}`
 
-    const before = await app.inject({ method: 'GET', url: `/catalog/vendors?categoryId=photo&date=${date}&limit=100`, headers: auth(reader) })
+    const before = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=photo&date=${date}&limit=100`, headers: auth(reader) })
     expect((before.json().items as { id: string }[]).map((v) => v.id)).toContain(vendor.vendorId)
 
     const busy = await app.inject({
@@ -130,11 +130,11 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
     })
     expect(busy.statusCode).toBe(204)
 
-    const after = await app.inject({ method: 'GET', url: `/catalog/vendors?categoryId=photo&date=${date}&limit=100`, headers: auth(reader) })
+    const after = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=photo&date=${date}&limit=100`, headers: auth(reader) })
     expect((after.json().items as { id: string }[]).map((v) => v.id)).not.toContain(vendor.vendorId)
 
     // Без фильтра по дате он на месте: исчез именно на эту дату.
-    const noFilter = await app.inject({ method: 'GET', url: '/catalog/vendors?categoryId=photo&limit=100', headers: auth(reader) })
+    const noFilter = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=photo&limit=100`, headers: auth(reader) })
     expect((noFilter.json().items as { id: string }[]).map((v) => v.id)).toContain(vendor.vendorId)
   })
 
@@ -272,7 +272,7 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
     await newVendor({ categoryId: category })
     await newVendor({ categoryId: category })
 
-    const res = await app.inject({ method: 'GET', url: `/catalog/vendors?categoryId=${category}&limit=20`, headers: auth(reader) })
+    const res = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=${category}&limit=20`, headers: auth(reader) })
     const items = res.json().items as { reviewsCount: number }[]
     expect(items).toHaveLength(20)
     expect(items.filter((v) => v.reviewsCount === 0).length).toBeGreaterThanOrEqual(2)
@@ -289,7 +289,7 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
     await app.db!.query('update vendors set verified_at = now() where id = $1', [vendor.vendorId])
 
     const detail = await app.inject({ method: 'GET', url: `/catalog/vendors/${vendor.vendorId}`, headers: auth(reader) })
-    const list = await app.inject({ method: 'GET', url: '/catalog/vendors?categoryId=photo&limit=100', headers: auth(reader) })
+    const list = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=photo&limit=100`, headers: auth(reader) })
     const mine = await app.inject({ method: 'GET', url: '/vendor/profile', headers: auth(vendor.token) })
 
     // Наружу выходит только галочка. Скан паспорта и ИНН — никогда.
@@ -304,7 +304,7 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
   /* ── анкета и публикация ──────────────────────────────────────────── */
   it('неопубликованная анкета не видна в каталоге, но видна владельцу', async () => {
     const vendor = await newVendor({}, false)
-    const list = await app.inject({ method: 'GET', url: '/catalog/vendors?categoryId=photo&limit=100', headers: auth(reader) })
+    const list = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=photo&limit=100`, headers: auth(reader) })
     expect((list.json().items as { id: string }[]).map((v) => v.id)).not.toContain(vendor.vendorId)
 
     const direct = await app.inject({ method: 'GET', url: `/catalog/vendors/${vendor.vendorId}`, headers: auth(reader) })
@@ -399,7 +399,7 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
 
     const byPrice = await app.inject({
       method: 'GET',
-      url: `/catalog/vendors?categoryId=${category}&priceMax=2000000&limit=100`,
+      url: `/catalog/vendors?q=${RUN}&categoryId=${category}&priceMax=2000000&limit=100`,
       headers: auth(reader),
     })
     const priceIds = (byPrice.json().items as { id: string }[]).map((v) => v.id)
@@ -408,7 +408,7 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
 
     const byVideo = await app.inject({
       method: 'GET',
-      url: `/catalog/vendors?categoryId=${category}&hasVideo=true&limit=100`,
+      url: `/catalog/vendors?q=${RUN}&categoryId=${category}&hasVideo=true&limit=100`,
       headers: auth(reader),
     })
     const videoIds = (byVideo.json().items as { id: string }[]).map((v) => v.id)
@@ -417,14 +417,14 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
 
     const byRating = await app.inject({
       method: 'GET',
-      url: `/catalog/vendors?categoryId=${category}&ratingMin=4.5&limit=100`,
+      url: `/catalog/vendors?q=${RUN}&categoryId=${category}&ratingMin=4.5&limit=100`,
       headers: auth(reader),
     })
     expect((byRating.json().items as { id: string }[]).map((v) => v.id)).not.toContain(cheap.vendorId)
   })
 
   it('неизвестный параметр фильтра отвергается', async () => {
-    const res = await app.inject({ method: 'GET', url: '/catalog/vendors?categoryId=photo&hasVideoo=true', headers: auth(reader) })
+    const res = await app.inject({ method: 'GET', url: `/catalog/vendors?q=${RUN}&categoryId=photo&hasVideoo=true`, headers: auth(reader) })
     expect(res.statusCode).toBe(422)
   })
 

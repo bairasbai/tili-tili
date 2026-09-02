@@ -188,9 +188,9 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
     expect(res.statusCode).toBe(403)
     expect(res.json().error.code).toBe('forbidden')
 
-    // Паре тот же путь отдаёт заглушку — значит дело в роли, а не в отсутствии пути.
+    // Паре тот же путь открыт — значит дело в роли, а не в отсутствии пути.
     const couple = await app.inject({ method: 'GET', url: `/weddings/${w.id}/budget`, headers: auth(token) })
-    expect(couple.statusCode).toBe(501)
+    expect(couple.statusCode).toBe(200)
   })
 
   it('матрица ролей на путях этапа', async () => {
@@ -213,9 +213,10 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
       ['GET', '/members', { couple: 200, helper: 200, coordinator: 200 }],
       ['GET', '/invites', { couple: 200, helper: 200, coordinator: 200 }],
       ['POST', '/invites', { couple: 201, helper: 403, coordinator: 403 }],
-      ['GET', '/budget', { couple: 501, helper: 403, coordinator: 403 }],
+      ['GET', '/budget', { couple: 200, helper: 403, coordinator: 403 }],
       ['GET', '/wishlist', { couple: 501, helper: 403, coordinator: 403 }],
-      ['GET', '/slots', { couple: 501, helper: 501, coordinator: 501 }],
+      ['GET', '/slots', { couple: 200, helper: 200, coordinator: 200 }],
+      ['GET', '/documents', { couple: 200, helper: 403, coordinator: 403 }],
       ['GET', '/guests', { couple: 501, helper: 501, coordinator: 501 }],
     ]
 

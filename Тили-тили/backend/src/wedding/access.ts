@@ -46,8 +46,10 @@ const MATRIX: Rule[] = [
   { url: /^\/weddings\/:weddingId\/invites/, by: { GET: ALL_TEAM, POST: ONLY_COUPLE } },
 
   // Организационная часть — общая работа команды.
+  // Договоры содержат суммы сделок и паспортные данные сторон — только паре.
+  { url: /^\/weddings\/:weddingId\/documents/, by: { GET: ONLY_COUPLE } },
   {
-    url: /^\/weddings\/:weddingId\/(guests|tables|tasks|logistics|menu-poll|timeline|album|documents)/,
+    url: /^\/weddings\/:weddingId\/(guests|tables|tasks|logistics|menu-poll|timeline|album)/,
     by: { GET: ALL_TEAM, POST: ALL_TEAM, PUT: ALL_TEAM, PATCH: ALL_TEAM, DELETE: ALL_TEAM },
   },
   { url: /^\/weddings\/:weddingId\/slots$/, by: { GET: ALL_TEAM } },

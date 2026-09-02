@@ -1054,7 +1054,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                     slotId: string;
@@ -1146,11 +1148,19 @@ export interface paths {
         /**
          * Оплата слота (доплата/полная)
          * @description Идемпотентно по `Idempotency-Key`. Статус → «Оплачено полностью».
+         *     Эквайринга в MVP нет (План §3.2): запись в `payments` фиксирует факт,
+         *     деньги ходят между парой и подрядчиком напрямую.
          */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    /**
+                     * @description Ключ повтора. Без него повторное нажатие «Оплатить» на плохой связи
+                     *     заводит вторую запись об оплате.
+                     */
+                    "Idempotency-Key": string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                     slotId: string;
@@ -5692,8 +5702,17 @@ export interface components {
             version?: number;
             /** @enum {string} */
             status?: "draft" | "sent" | "signed";
-            pdfUrl?: string;
-            docxUrl?: string;
+            /**
+             * @description Появляется после подключения объектного хранилища. До тех пор
+             *     договор существует как запись с полями и версией, но файла нет:
+             *     выдать ссылку в никуда хуже, чем честно вернуть null.
+             */
+            pdfUrl?: string | null;
+            docxUrl?: string | null;
+            /** @description Подставленные значения: стороны, дата, сумма, город. */
+            fields?: {
+                [key: string]: unknown;
+            };
             /** Format: date-time */
             createdAt?: string;
         };

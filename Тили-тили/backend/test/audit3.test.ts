@@ -95,7 +95,7 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
   const inCatalog = async (vendorId: string) => {
     const res = await app.inject({
       method: 'GET',
-      url: '/catalog/vendors?categoryId=photo&limit=100',
+      url: `/catalog/vendors?q=${RUN}&categoryId=photo&limit=100`,
       headers: auth((await newUser()).token),
     })
     return (res.json().items as { id: string }[]).map((v) => v.id).includes(vendorId)
@@ -106,7 +106,7 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     // В матрице раздела 6 у строки `/catalog/*` для гостя стоит «—»,
     // и в контракте у этих путей нет `security: []`. Открытый каталог
     // отдаёт базу подрядчиков любому скрипту.
-    for (const url of ['/catalog/categories', '/catalog/vendors?categoryId=photo']) {
+    for (const url of ['/catalog/categories', '/catalog/vendors?q=${RUN}&categoryId=photo']) {
       const res = await app.inject({ method: 'GET', url })
       expect(`${url} → ${res.statusCode}`).toBe(`${url} → 401`)
     }
@@ -275,7 +275,7 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     let cursor: string | null = null
     for (let guard = 0; guard < 10; guard++) {
       const url =
-        `/catalog/vendors?categoryId=${category}&limit=3&sort=rating` + (cursor ? `&cursor=${cursor}` : '')
+        `/catalog/vendors?q=${RUN}&categoryId=${category}&limit=3&sort=rating` + (cursor ? `&cursor=${cursor}` : '')
       const res = await app.inject({ method: 'GET', url, headers: auth(reader) })
       expect(res.statusCode).toBe(200)
       const body = res.json() as { items: { id: string }[]; nextCursor: string | null }
@@ -301,7 +301,7 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     const seen: string[] = []
     let cursor: string | null = null
     for (let guard = 0; guard < 10; guard++) {
-      const url = `/catalog/vendors?categoryId=${category}&limit=3` + (cursor ? `&cursor=${cursor}` : '')
+      const url = `/catalog/vendors?q=${RUN}&categoryId=${category}&limit=3` + (cursor ? `&cursor=${cursor}` : '')
       const res = await app.inject({ method: 'GET', url, headers: auth(reader) })
       const body = res.json() as { items: { id: string }[]; nextCursor: string | null }
       seen.push(...body.items.map((v) => v.id))
@@ -324,7 +324,7 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     // Бирск примерно в 80 км от Уфы, Стерлитамак — в 120 км.
     const res = await app.inject({
       method: 'GET',
-      url: `/catalog/vendors?categoryId=${category}&city=Уфа&radiusKm=100&limit=100`,
+      url: `/catalog/vendors?q=${RUN}&categoryId=${category}&city=Уфа&radiusKm=100&limit=100`,
       headers: auth(reader),
     })
     expect(res.statusCode).toBe(200)

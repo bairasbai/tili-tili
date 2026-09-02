@@ -76,10 +76,46 @@ export function readSeeds(file = SOURCE_FILE) {
     })
   }
 
-  return { categories, slots, tasks, timeline }
+  // Пять строк бюджета и доля каждой. В моке лимиты заданы под свадьбу за
+  // 1,5 млн; у новой пары бюджет свой, поэтому берётся не сумма, а ДОЛЯ
+  // от общей — так лимиты масштабируются под любой бюджет.
+  const budget = []
+  for (const m of section(src, 'budgetItems').matchAll(
+    /\{\s*name:\s*(t\('[^']*'\)|'[^']*')\s*,\s*amount:\s*rub\((\d+)\)\s*,\s*limit:\s*rub\((\d+)\)\s*,\s*color:\s*'([^']*)'/g,
+  )) {
+    budget.push({ title: unwrap(m[1]), limitRub: Number(m[3]), color: m[4] })
+  }
+  const limitSum = budget.reduce((a, b) => a + b.limitRub, 0)
+  const budgetCategories = budget.map((b, i) => ({
+    id: `b${i + 1}`,
+    title: b.title,
+    color: b.color,
+    share: limitSum > 0 ? Math.round((b.limitRub / limitSum) * 10000) / 10000 : 0,
+  }))
+
+  // Какая категория подрядчика к какой строке бюджета относится. Источник —
+  // categoryOf() в `lib/budget.ts`: там же, где это считает фронт.
+  const byTitle = new Map(budgetCategories.map((b) => [b.title, b.id]))
+  const mapping = {}
+  const budgetSrc = fs.readFileSync(path.resolve(path.dirname(file), 'budget.ts'), 'utf8')
+  const catOf = budgetSrc.slice(
+    budgetSrc.indexOf('export function categoryOf'),
+    budgetSrc.indexOf('export interface BudgetRow'),
+  )
+  for (const m of catOf.matchAll(/(\w+):\s*(t\('[^']*'\))/g)) {
+    const id = byTitle.get(unwrap(m[2]))
+    if (id) mapping[m[1]] = id
+  }
+  // Пустое сопоставление означало бы, что ВСЕ сделки попадают в «Прочее»
+  // и бюджет по категориям врёт. Молча этого допускать нельзя.
+  if (Object.keys(mapping).length === 0) {
+    throw new Error('categoryOf() не разобрался: сопоставление категорий пусто')
+  }
+
+  return { categories, slots, tasks, timeline, budgetCategories, mapping }
 }
 
-export function render({ slots, tasks, timeline }) {
+export function render({ slots, tasks, timeline, budgetCategories, mapping }) {
   return [
     '/* СГЕНЕРИРОВАНО. Не править руками — правится app/src/lib/data.ts,',
     ' * потом `pnpm run gen:templates`. */',
@@ -119,6 +155,23 @@ export function render({ slots, tasks, timeline }) {
     ...timeline.map((e) => `  ${JSON.stringify(e)},`),
     '] as const',
     '',
+    'export interface BudgetCategory {',
+    '  readonly id: string',
+    '  readonly title: string',
+    '  readonly color: string',
+    '  /** Доля от общего бюджета пары: лимиты мока пересчитаны в проценты. */',
+    '  readonly share: number',
+    '}',
+    '',
+    'export const BUDGET_CATEGORIES: readonly BudgetCategory[] = [',
+    ...budgetCategories.map((b) => `  ${JSON.stringify(b)},`),
+    '] as const',
+    '',
+    '/** Категория подрядчика — строка бюджета. Неизвестная попадает в «Прочее». */',
+    `export const BUDGET_BY_VENDOR_CATEGORY: Readonly<Record<string, string>> = ${JSON.stringify(mapping, null, 2)}`,
+    '',
+    `export const BUDGET_FALLBACK = ${JSON.stringify(budgetCategories.at(-1)?.id ?? 'b5')}`,
+    '',
   ].join('\n')
 }
 
@@ -129,6 +182,8 @@ if (process.argv[1] && url.pathToFileURL(process.argv[1]).href === import.meta.u
   fs.mkdirSync(path.dirname(TEMPLATES_FILE), { recursive: true })
   fs.writeFileSync(TEMPLATES_FILE, render(seeds), 'utf8')
   console.log(
-    `категорий ${seeds.categories.length}, слотов ${seeds.slots.length}, задач ${seeds.tasks.length}, событий ${seeds.timeline.length}`,
+    `категорий ${seeds.categories.length}, слотов ${seeds.slots.length}, задач ${seeds.tasks.length}, ` +
+      `событий ${seeds.timeline.length}, строк бюджета ${seeds.budgetCategories.length}, ` +
+      `сопоставлений ${Object.keys(seeds.mapping).length}`,
   )
 }

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -584,6 +584,10 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200 }
       requestBody:
         required: true
         content:
@@ -623,7 +627,10 @@ paths:
     post:
       tags: [bookings]
       summary: Оплата слота (доплата/полная)
-      description: Идемпотентно по `Idempotency-Key`. Статус → «Оплачено полностью».
+      description: |
+        Идемпотентно по `Idempotency-Key`. Статус → «Оплачено полностью».
+        Эквайринга в MVP нет (План §3.2): запись в `payments` фиксирует факт,
+        деньги ходят между парой и подрядчиком напрямую.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -631,6 +638,13 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: |
+            Ключ повтора. Без него повторное нажатие «Оплатить» на плохой связи
+            заводит вторую запись об оплате.
+          schema: { type: string, maxLength: 200 }
       requestBody:
         content:
           application/json:
@@ -2938,8 +2952,18 @@ components:
         templateCode: { type: string }
         version: { type: integer }
         status: { type: string, enum: [draft, sent, signed] }
-        pdfUrl: { type: string }
-        docxUrl: { type: string }
+        pdfUrl:
+          type: string
+          nullable: true
+          description: |
+            Появляется после подключения объектного хранилища. До тех пор
+            договор существует как запись с полями и версией, но файла нет:
+            выдать ссылку в никуда хуже, чем честно вернуть null.
+        docxUrl: { type: string, nullable: true }
+        fields:
+          type: object
+          additionalProperties: true
+          description: 'Подставленные значения: стороны, дата, сумма, город.'
         createdAt: { type: string, format: date-time }
     TimelineEvent:
       type: object

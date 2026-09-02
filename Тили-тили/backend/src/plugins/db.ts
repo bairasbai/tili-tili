@@ -8,13 +8,32 @@ import type { Config } from '../config.js'
  * Обработчики получают `app.db.query(...)` и ничего не знают ни про pg, ни про
  * Fastify глубже request/reply — условие дешёвого разворота из раздела 1 плана.
  */
-export interface Db {
+export interface Queryable {
   query<T extends pg.QueryResultRow = pg.QueryResultRow>(
     text: string,
     values?: readonly unknown[],
   ): Promise<pg.QueryResult<T>>
+}
+
+export interface Db extends Queryable {
+  /**
+   * Действие в одной транзакции на ОДНОМ соединении.
+   *
+   * Без этого «вставить сделку, занять слот, захватить дату» — три отдельных
+   * запроса из пула: между ними другая пара успевает занять ту же дату,
+   * и половина изменений остаётся в базе. Ограничения ловят конфликт, но
+   * откатить недоделанное может только транзакция.
+   */
+  tx<T>(action: (client: Queryable) => Promise<T>): Promise<T>
   ping(): Promise<boolean>
   close(): Promise<void>
+}
+
+/** Код нарушения уникальности в PostgreSQL. */
+export const UNIQUE_VIOLATION = '23505'
+
+export function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === UNIQUE_VIOLATION
 }
 
 declare module 'fastify' {
@@ -33,6 +52,22 @@ export function createDb(connectionString: string): Db {
 
   return {
     query: (text, values) => pool.query(text, values as unknown[]),
+    async tx(action) {
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        const result = await action({
+          query: (text, values) => client.query(text, values as unknown[]),
+        })
+        await client.query('commit')
+        return result
+      } catch (error) {
+        await client.query('rollback').catch(() => undefined)
+        throw error
+      } finally {
+        client.release()
+      }
+    },
     async ping() {
       try {
         await pool.query('select 1')

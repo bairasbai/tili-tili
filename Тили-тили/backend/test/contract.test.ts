@@ -102,6 +102,22 @@ describe('контракт', () => {
       'POST /invites/:code/accept',
       'GET /users/me/referral',
       'POST /referral/:code/apply',
+      'GET /weddings/:weddingId/slots',
+      'POST /weddings/:weddingId/slots/:slotId/book',
+      'POST /weddings/:weddingId/slots/:slotId/cancel',
+      'POST /weddings/:weddingId/slots/:slotId/pay',
+      'POST /weddings/:weddingId/slots/:slotId/external',
+      'DELETE /weddings/:weddingId/slots/:slotId/external',
+      'POST /weddings/:weddingId/slots/:slotId/external/invite',
+      'GET /guest-vendor/:token',
+      'PATCH /deals/:dealId',
+      'POST /deals/:dealId/contract',
+      'GET /weddings/:weddingId/documents',
+      'POST /weddings/:weddingId/reschedule',
+      'POST /weddings/:weddingId/cancel',
+      'GET /weddings/:weddingId/budget',
+      'POST /weddings/:weddingId/budget/items',
+      'DELETE /weddings/:weddingId/budget/items/:itemId',
     ]
     const stillStub: string[] = []
     for (const key of done) {
@@ -136,7 +152,7 @@ describe('контракт', () => {
       if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
     }
     // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
-    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 42)
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 59)
   })
 
   it('в контракте нет дублей метод+путь', () => {

@@ -62,3 +62,37 @@ export const TIMELINE_TEMPLATE: readonly TimelineTemplate[] = [
   {"icon":"🥂","name":"Банкет","location":null,"startsAt":"18:00","endsAt":"23:00","who":null,"sort":4},
   {"icon":"🎆","name":"Салют и финал","location":null,"startsAt":"22:30","endsAt":"23:00","who":null,"sort":5},
 ] as const
+
+export interface BudgetCategory {
+  readonly id: string
+  readonly title: string
+  readonly color: string
+  /** Доля от общего бюджета пары: лимиты мока пересчитаны в проценты. */
+  readonly share: number
+}
+
+export const BUDGET_CATEGORIES: readonly BudgetCategory[] = [
+  {"id":"b1","title":"Площадка и кейтеринг","color":"#D9A8A0","share":0.459},
+  {"id":"b2","title":"Фото и видео","color":"#A9BCA0","share":0.1967},
+  {"id":"b3","title":"Одежда и красота","color":"#E3C892","share":0.1475},
+  {"id":"b4","title":"Развлечения и декор","color":"#D9CCE3","share":0.118},
+  {"id":"b5","title":"Прочее","color":"#C3D5E8","share":0.0787},
+] as const
+
+/** Категория подрядчика — строка бюджета. Неизвестная попадает в «Прочее». */
+export const BUDGET_BY_VENDOR_CATEGORY: Readonly<Record<string, string>> = {
+  "venue": "b1",
+  "photo": "b2",
+  "video": "b2",
+  "dress": "b3",
+  "stylist": "b3",
+  "rings": "b3",
+  "host": "b4",
+  "dj": "b4",
+  "florist": "b4",
+  "decor": "b4",
+  "cake": "b4",
+  "transport": "b5"
+}
+
+export const BUDGET_FALLBACK = "b5"

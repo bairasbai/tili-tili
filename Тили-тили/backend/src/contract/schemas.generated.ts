@@ -387,10 +387,22 @@ export const CONTRACT_SCHEMAS = {
                   ]
               },
               "pdfUrl": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Появляется после подключения объектного хранилища. До тех пор\nдоговор существует как запись с полями и версией, но файла нет:\nвыдать ссылку в никуда хуже, чем честно вернуть null.\n"
               },
               "docxUrl": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "fields": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "description": "Подставленные значения: стороны, дата, сумма, город."
               },
               "createdAt": {
                   "type": "string",
