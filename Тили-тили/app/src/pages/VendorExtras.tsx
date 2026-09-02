@@ -36,8 +36,8 @@ export function VendorLead() {
               <b className="text-[14px]">{lead.n}</b>
               <p className="text-[10.5px] text-[var(--soft)]">{t('заявка из каталога · отвечаете в среднем за 2 ч')}</p>
             </div>
-            {state === 'hold' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[#B98A2F]">{t('⏳ Hold 72 ч')}</span>}
-            {state === 'declined' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[#B57171]">{t('Отклонена')}</span>}
+            {state === 'hold' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)]">{t('⏳ Hold 72 ч')}</span>}
+            {state === 'declined' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)]">{t('Отклонена')}</span>}
           </div>
           <div className="card-s p-3.5 mt-3 text-[12.5px] text-[var(--ink2)] leading-relaxed">{lead.msg}</div>
           {sent.map((m, k) => (
@@ -54,8 +54,8 @@ export function VendorLead() {
               ))}
             </div>
             <div className="grid grid-cols-3 gap-2.5 pt-1">
-              <button onClick={() => setState('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[#B98A2F] text-[11.5px] font-bold flex items-center justify-center gap-1"><Clock size={13} />{t('Hold 72 ч')}</button>
-              <button onClick={() => setState('declined')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[#B57171] text-[11.5px] font-bold flex items-center justify-center gap-1"><X size={13} />{t('Отклонить')}</button>
+              <button onClick={() => setState('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[var(--honey-deep)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Clock size={13} />{t('Hold 72 ч')}</button>
+              <button onClick={() => setState('declined')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] text-[11.5px] font-bold flex items-center justify-center gap-1"><X size={13} />{t('Отклонить')}</button>
               <button onClick={() => nav('/us/chats')} className="press h-11 rounded-full grad text-white text-[11.5px] font-bold flex items-center justify-center gap-1"><Check size={13} />{t('В чат')}</button>
             </div>
           </>
@@ -64,7 +64,7 @@ export function VendorLead() {
           <div className="card-s p-4 text-center">
             <b className="text-[13px]">{state === 'hold' ? t('Дата на hold 72 часа') : t('Заявка отклонена')}</b>
             <p className="text-[11px] text-[var(--soft)] mt-1">{state === 'hold' ? t('Пара увидит бронь даты и сможет подтвердить сделку.') : t('Пара получит вежливый отказ и рекомендации похожих.')}</p>
-            <button onClick={() => setState('new')} className="press mt-3 text-[11px] font-bold text-[#B57171]">{t('Вернуть в работу')}</button>
+            <button onClick={() => setState('new')} className="press mt-3 text-[11px] font-bold text-[var(--rose-deep)]">{t('Вернуть в работу')}</button>
           </div>
         )}
       </div>
@@ -97,7 +97,7 @@ export function VendorReviews() {
         <div className="card p-4 flex items-center gap-4">
           <div className="text-center">
             <b className="font-serif-d text-[30px] tabular">4.9</b>
-            <p className="text-[9.5px] text-[#B98A2F]">★★★★★</p>
+            <p className="text-[9.5px] text-[var(--honey-deep)]">★★★★★</p>
           </div>
           <div className="flex-1">
             <Bar pct={Math.round(answered / reviews.length * 100)} />
@@ -108,17 +108,17 @@ export function VendorReviews() {
           {reviews.map((r, k) => (
             <div key={r.n} className="card p-4 fade-up">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-[var(--rose-soft)] flex items-center justify-center text-[13px] font-serif-d text-[#B57171]">{r.n[0]}</div>
+                <div className="w-9 h-9 rounded-full bg-[var(--rose-soft)] flex items-center justify-center text-[13px] font-serif-d text-[var(--rose-deep)]">{r.n[0]}</div>
                 <div className="flex-1">
                   <b className="text-[12.5px]">{r.n}</b>
                   <p className="text-[9.5px] text-[var(--soft)]">{r.d}</p>
                 </div>
-                <span className="text-[10px] text-[#B98A2F]">{'★'.repeat(r.s)}{'☆'.repeat(5 - r.s)}</span>
+                <span className="text-[10px] text-[var(--honey-deep)]">{'★'.repeat(r.s)}{'☆'.repeat(5 - r.s)}</span>
               </div>
               <p className="text-[12px] text-[var(--ink2)] leading-relaxed mt-2.5">{r.t}</p>
               {r.reply ? (
                 <div className="mt-2.5 pl-3 border-l-2 border-[#A9BCA0]">
-                  <p className="text-[10px] font-bold text-[#7E9A74] mb-0.5">{t('Ваш ответ')}</p>
+                  <p className="text-[10px] font-bold text-[var(--sage-deep)] mb-0.5">{t('Ваш ответ')}</p>
                   <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed">{r.reply}</p>
                 </div>
               ) : answering === k ? (
@@ -127,7 +127,7 @@ export function VendorReviews() {
                   <button onClick={() => save(k)} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center"><Send size={13} /></button>
                 </div>
               ) : (
-                <button onClick={() => { setAnswering(k); setText('') }} className="press mt-2.5 text-[11px] font-bold text-[#7E9A74]">{t('Ответить →')}</button>
+                <button onClick={() => { setAnswering(k); setText('') }} className="press mt-2.5 text-[11px] font-bold text-[var(--sage-deep)]">{t('Ответить →')}</button>
               )}
             </div>
           ))}
@@ -186,7 +186,7 @@ export function VendorAnalytics() {
             <b className="text-[13px]">{t('Усилить анкету')}</b>
             <p className="text-[10.5px] text-[var(--soft)]">{t('добавьте видео и ещё 2 пакета — прогноз +60% просмотров')}</p>
           </div>
-          <ChevronRight size={16} className="text-[#C7BCB0]" />
+          <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>
       </div>
     </div>

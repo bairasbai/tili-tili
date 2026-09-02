@@ -5,6 +5,7 @@ import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { useEscape } from '@/lib/useEscape'
 
 /* «Наша команда» — единое пространство свадьбы: роли и приглашения.
  * Бэкенд-модель: Wedding 1—n Member(userId, role: couple|helper|vendor|guest, joinedAt).
@@ -31,6 +32,7 @@ export function Team() {
   const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [revoked, setRevoked] = useState<number[]>([])
+  useEscape(() => setInvite(null), invite !== null)
   /* Код выпускается в обработчике открытия шторки, а не в рендере — иначе он
      менялся бы при каждой перерисовке, и кнопки копировали разные ссылки. */
   const openInvite = (r: typeof ROLES[number]) => {
@@ -84,7 +86,7 @@ export function Team() {
                 <b className="text-[14px]">{r.name}</b>
                 <p className="text-[10.5px] text-[var(--soft)] mt-0.5 leading-snug">{r.desc}</p>
               </div>
-              <ChevronRight size={16} className="text-[#C7BCB0]" />
+              <ChevronRight size={16} className="text-[var(--soft)]" />
             </button>
           ))}
         </div>
@@ -97,26 +99,26 @@ export function Team() {
         <div className="card px-4 py-1.5">
           {invites.map((iv, k) => !revoked.includes(k) && (
             <div key={iv.code} className={cn('flex items-center gap-3 py-3.5 fade-up', k !== invites.length - 1 && 'border-b border-[var(--track)]')}>
-              <Link2 size={15} className="text-[#7E9A74] shrink-0" />
+              <Link2 size={15} className="text-[var(--sage-deep)] shrink-0" />
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] tabular">{iv.code}</b>
                 <p className="text-[10px] text-[var(--soft)]">{iv.role} · истекает через {iv.left}</p>
               </div>
-              <button onClick={() => copy(url(iv.code))} className="press text-[10.5px] font-bold text-[#7E9A74]">{copied ? '✓' : t('Копия')}</button>
-              <button onClick={() => setRevoked(r => [...r, k])} className="press text-[#C7BCB0]"><X size={14} /></button>
+              <button onClick={() => copy(url(iv.code))} className="press text-[10.5px] font-bold text-[var(--sage-deep)]">{copied ? '✓' : t('Копия')}</button>
+              <button onClick={() => setRevoked(r => [...r, k])} className="press text-[var(--soft)]"><X size={14} /></button>
             </div>
           ))}
         </div>
 
         <div className="card-s px-4 py-3 flex gap-2.5">
-          <Shield size={15} className="text-[#7E9A74] shrink-0 mt-0.5" />
+          <Shield size={15} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
           <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Безопасность:')}</b>{t('каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — человек сразу потеряет доступ.')}</p>
         </div>
       </div>
 
       {/* Шторка приглашения */}
       {invite && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center" onClick={() => setInvite(null)}>
+        <div role="dialog" aria-modal="true" aria-label={t('Пригласить в команду')} className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center" onClick={() => setInvite(null)}>
           <div className="w-full max-w-[430px] bg-[var(--bg)] rounded-t-[32px] p-6 pb-[max(28px,env(safe-area-inset-bottom))] fade-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3">
               <Tile icon={invite.icon} tile={invite.tile} size={46} />
@@ -128,7 +130,7 @@ export function Team() {
             </div>
             <div className="flex flex-wrap gap-1.5 mt-4">
               {invite.rights.map(r => (
-                <span key={r} className="text-[10px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] flex items-center gap-1"><Check size={10} className="text-[#7E9A74]" />{r}</span>
+                <span key={r} className="text-[10px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] flex items-center gap-1"><Check size={10} className="text-[var(--sage-deep)]" />{r}</span>
               ))}
             </div>
             <div className="card-s p-4 mt-4 flex items-center gap-3">
@@ -174,11 +176,11 @@ export function Join() {
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <Tile icon={role.icon} tile={role.tile} size={72} />
       <h1 className="font-serif-d text-[26px] mt-6">{t('Алина и Тимур')}<br />{t('приглашают вас')}</h1>
-      <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[#B57171]">{role.name.toLowerCase()}</b>{t('· свадьба 14 июня 2027')}</p>
+      <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[var(--rose-deep)]">{role.name.toLowerCase()}</b>{t('· свадьба 14 июня 2027')}</p>
       <div className="card p-4 mt-6 w-full text-left">
         <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold">{t('Вам будет доступно')}</span>
         <div className="mt-2.5 space-y-1.5">
-          {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[#7E9A74]" />{r}</p>)}
+          {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[var(--sage-deep)]" />{r}</p>)}
         </div>
       </div>
       <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Принять приглашение')}</button>

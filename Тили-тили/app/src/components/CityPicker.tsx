@@ -3,9 +3,11 @@ import { MapPin, Search, X, Navigation, ChevronRight } from 'lucide-react'
 import { POPULAR_CITIES, searchCities, nearestCity, type City } from '@/lib/cities'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { useEscape } from '@/lib/useEscape'
 
 /** Пикер города: полноэкранный оверлей с автопоиском. Используется в квизе, настройках, кабинете подрядчика. */
 export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onClose: () => void }) {
+  useEscape(onClose)
   const [q, setQ] = useState('')
   const [geo, setGeo] = useState<'idle' | 'loading' | 'error'>('idle')
   const results = searchCities(q)
@@ -28,7 +30,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
 
   const Row = ({ c }: { c: City }) => (
     <button onClick={() => onPick(c)} className="press w-full flex items-center gap-3 px-5 py-3 text-left border-b border-[#F3ECE5] last:border-0">
-      <MapPin size={15} className="text-[#C98A8A] shrink-0" />
+      <MapPin size={15} className="text-[var(--rose-deep)] shrink-0" />
       <div className="flex-1 min-w-0">
         <b className="text-[13.5px]">{c.n}</b>
         <p className="text-[10.5px] text-[var(--soft)] truncate">{c.d ? `${c.d} · ` : ''}{c.r}</p>
@@ -38,7 +40,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
   )
 
   return (
-    <div className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col app-shell !relative" style={{ margin: '0 auto' }}>
+    <div role="dialog" aria-modal="true" aria-label={t('Выбор города')} className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col app-shell !relative" style={{ margin: '0 auto' }}>
       <div className="px-5 pt-6 pb-3 flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2.5 bg-[var(--card)] rounded-full px-4 h-12" style={{ boxShadow: 'var(--shadow)' }}>
           <Search size={15} className="text-[var(--soft2)]" />
@@ -48,7 +50,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
         <button onClick={onClose} className="press text-[12px] font-bold text-[var(--soft)]">{t('Отмена')}</button>
       </div>
 
-      <button onClick={locate} disabled={geo === 'loading'} className="press mx-5 mb-3 flex items-center gap-2.5 text-[12px] font-bold text-[#7E9A74] px-1">
+      <button onClick={locate} disabled={geo === 'loading'} className="press mx-5 mb-3 flex items-center gap-2.5 text-[12px] font-bold text-[var(--sage-deep)] px-1">
         <Navigation size={13} className={geo === 'loading' ? 'animate-pulse' : ''} />
         {geo === 'loading' ? t('Определяем…') : geo === 'error' ? t('Не получилось — введите вручную') : t('Определить автоматически')}
       </button>

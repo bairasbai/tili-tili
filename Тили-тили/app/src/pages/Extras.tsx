@@ -19,7 +19,7 @@ export function Favorites() {
         {list.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}
         {list.length === 0 && (
           <div className="text-center py-14 fade-up">
-            <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center"><Heart size={26} className="text-[#C98A8A]" /></div>
+            <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center"><Heart size={26} className="text-[var(--rose-deep)]" /></div>
             <b className="text-[15px] block mt-4">{t('Пока пусто')}</b>
             <p className="text-[12px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Нажимайте ♥ на карточках подрядчиков —')}<br />{t('они соберутся здесь для сравнения')}</p>
             <button onClick={() => nav('/search')} className="press mt-5 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('К каталогу')}</button>
@@ -91,7 +91,7 @@ export function AlcoholCalc() {
       <div className="px-5 mt-3 space-y-3.5">
         <div className="card p-5">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] font-medium flex items-center gap-2"><Users size={15} className="text-[#B57171]" />{t('Гостей')}</span>
+            <span className="text-[13px] font-medium flex items-center gap-2"><Users size={15} className="text-[var(--rose-deep)]" />{t('Гостей')}</span>
             <div className="flex items-center gap-3">
               <button onClick={() => setGuestsN(g => Math.max(10, g - 10))} className="press w-9 h-9 rounded-full bg-[var(--bg)] font-bold">−</button>
               <b className="tabular text-[18px] w-10 text-center">{guestsN}</b>
@@ -99,7 +99,7 @@ export function AlcoholCalc() {
             </div>
           </div>
           <div className="flex items-center justify-between mt-4">
-            <span className="text-[13px] font-medium flex items-center gap-2"><Wine size={15} className="text-[#B57171]" />{t('Крепкие напитки')}</span>
+            <span className="text-[13px] font-medium flex items-center gap-2"><Wine size={15} className="text-[var(--rose-deep)]" />{t('Крепкие напитки')}</span>
             <button onClick={() => setStrong(!strong)} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative', strong ? 'grad' : 'bg-[var(--track)]')} aria-label={t('Крепкие напитки')}>
               <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', strong ? 'left-[22px]' : 'left-[3px]')} />
             </button>
@@ -117,7 +117,7 @@ export function AlcoholCalc() {
                   <b className="text-[13px]">{d.name}</b>
                   <p className="text-[10px] text-[var(--soft)]">{d.per} {d.unit}</p>
                 </div>
-                <b className="font-serif-d text-[16px] text-[#B57171] tabular">{bottles}{t('бут.')}</b>
+                <b className="font-serif-d text-[16px] text-[var(--rose-deep)] tabular">{bottles}{t('бут.')}</b>
               </div>
             )
           })}

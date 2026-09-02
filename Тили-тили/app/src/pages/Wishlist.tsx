@@ -30,7 +30,7 @@ export function WishlistManage() {
       <TopBar back title={t('Список желаний')} sub={t('Что подарить вам на свадьбу')} />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex gap-3 items-start">
-          <ShieldCheck size={20} className="text-[#A9BCA0] shrink-0 mt-0.5" />
+          <ShieldCheck size={20} className="text-[#697563] shrink-0 mt-0.5" />
           <p className="text-[12px] text-[var(--soft)] leading-relaxed">
             {t('Гости выбирают подарки анонимно — вы видите только статус «Зарезервирован», но не видите, кто именно. Выбранный подарок закрывается для остальных, дублей не будет.')}
           </p>
@@ -180,7 +180,7 @@ function CoupleGiftRow({ g, i, onRemove }: { g: Gift; i: number; onRemove: () =>
           <p className="text-[11px] text-[var(--soft)]">{fmt(g.price)}{g.group && ` · ${t('складчина')}`}</p>
         </div>
         {g.reserved
-          ? <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--sage-soft)] text-[#5F7A56]">{t('Зарезервирован')}</span>
+          ? <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--sage-soft)] text-[#5E7955]">{t('Зарезервирован')}</span>
           : <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--soft)]">{t('Свободен')}</span>}
         {!confirm
           ? <button onClick={() => setConfirm(true)} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--soft)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
@@ -232,7 +232,7 @@ export function GiftPick() {
       <TopBar back title={t('Подарки')} sub={t('Алина & Тимур · 14 июня 2027')} />
       <div className="px-5 mt-3">
         <div className="card p-4 flex gap-3 items-start">
-          <ShieldCheck size={20} className="text-[#A9BCA0] shrink-0 mt-0.5" />
+          <ShieldCheck size={20} className="text-[#697563] shrink-0 mt-0.5" />
           <p className="text-[12px] text-[var(--soft)] leading-relaxed">
             {t('Полностью анонимно: молодожёны увидят только, что подарок зарезервирован, но не кем. Выбранный подарок сразу закрывается для других гостей.')}
           </p>
@@ -291,7 +291,7 @@ export function GiftPick() {
                 <Tile icon={g.icon} tile={g.tile} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
-                  <p className="text-[11px] text-[#5F7A56] font-medium">{t('Вы зарезервировали этот подарок')}</p>
+                  <p className="text-[11px] text-[#5E7955] font-medium">{t('Вы зарезервировали этот подарок')}</p>
                 </div>
                 <button onClick={() => releaseGift(g.id)} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--soft)]">{t('Снять резерв')}</button>
               </div>
@@ -319,7 +319,7 @@ export function GiftPick() {
                     <div className="flex flex-col gap-1.5 items-end">
                       <button onClick={() => setConfirmId(g.id)} className="press text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Подарю')}</button>
                       {bought.includes(g.id)
-                        ? <span className="text-[9.5px] font-bold text-[#5F7A56]">✓ {t('Заказ оформлен')}</span>
+                        ? <span className="text-[9.5px] font-bold text-[#5E7955]">✓ {t('Заказ оформлен')}</span>
                         : <button onClick={() => { setBought(b => [...b, g.id]); reserveGift(g.id) }} className="press text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--soft)] flex items-center gap-1"><ShoppingBag size={11} />{t('Купить в приложении')}</button>}
                     </div>
                   )}
@@ -395,7 +395,7 @@ export function GuestReviewForm() {
     <div className="px-5 space-y-3">
       <div className="card p-4">
         <div className="flex gap-3 items-start">
-          <MessageSquareHeart size={20} className="text-[#C98A8A] shrink-0 mt-0.5" />
+          <MessageSquareHeart size={20} className="text-[var(--rose-deep)] shrink-0 mt-0.5" />
           <p className="text-[12px] text-[var(--soft)] leading-relaxed">
             {t('Вы оставляете отзыв')} <b className="text-[var(--ink)]">{t('как гость свадьбы')}</b>{t(' — он будет помечен значком «Гость» и не смешается с отзывом пары. Молодожёны увидят его анонимно.')}
           </p>
@@ -424,9 +424,9 @@ export function GuestReviewForm() {
             <div key={r.id} className="card-s p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <b className="text-[12px] truncate">{r.vendor}</b>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#5B7898] shrink-0">{t('Гость свадьбы')}</span>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#587493] shrink-0">{t('Гость свадьбы')}</span>
               </div>
-              <p className="text-[10px] text-[#B98A2F] mt-1">{'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)} <span className="text-[var(--soft2)]">· {r.at}</span></p>
+              <p className="text-[10px] text-[var(--honey-deep)] mt-1">{'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)} <span className="text-[var(--soft2)]">· {r.at}</span></p>
               <p className="text-[11.5px] text-[var(--ink2)] mt-1 font-light">{r.text}</p>
             </div>
           ))}

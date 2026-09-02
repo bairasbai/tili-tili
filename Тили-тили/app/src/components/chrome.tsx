@@ -57,7 +57,7 @@ export function TabBar() {
           const Icon = tb.icon
           const on = active(tb.to)
           return (
-            <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[#B57171]' : 'text-[var(--soft)]')}>
+            <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[var(--rose-deep)]' : 'text-[var(--soft)]')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
               <span className="text-[9.5px] font-medium tracking-wide">{tt(tb.label)}</span>
               {on && <span className="tab-dot" />}
@@ -91,12 +91,12 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
           <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
             {v.category}{v.years ? ` · ${v.years}${t(' лет опыта')}` : ''}
             {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : t(' · Новый на платформе')}
-            <i className="not-italic text-[#7E9A74] font-bold"> {t('· ✓ проверен')}</i>
+            <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>
           </span>
-          <span className="font-serif-d text-[14px] text-[#B57171] font-semibold block mt-1">{t('от')}{v.priceFrom.toLocaleString('ru-RU')} ₽</span>
+          <span className="font-serif-d text-[14px] text-[var(--rose-deep)] font-semibold block mt-1">{t('от')}{v.priceFrom.toLocaleString('ru-RU')} ₽</span>
         </button>
         <button onClick={() => toggleFav(v.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
-          <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[#C98A8A]' : 'text-[var(--soft)]'} />
+          <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[var(--rose-deep)]' : 'text-[var(--soft)]'} />
         </button>
       </div>
     </div>
@@ -109,7 +109,7 @@ export function SectionHead({ title, sub, link, onLink }: { title: string; sub?:
     <div className="mt-6 mb-1">
       <div className="flex justify-between items-baseline px-1">
         <h2 className="font-serif-d text-[19px]">{title}</h2>
-        {link && <button onClick={onLink} className="text-[11.5px] text-[#B57171] font-semibold press">{link}</button>}
+        {link && <button onClick={onLink} className="text-[11.5px] text-[var(--rose-deep)] font-semibold press">{link}</button>}
       </div>
       {sub && <p className="text-[11.5px] text-[var(--soft)] px-1 mt-0.5">{sub}</p>}
     </div>

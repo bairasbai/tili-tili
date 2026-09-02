@@ -38,14 +38,14 @@ export function Deal() {
               <b className="font-serif-d text-[17px]">{t('Артём Краснов')}</b>
               <p className="text-[11px] text-[var(--soft)]">{t('Банкет + церемония · 14.06.2027')}</p>
             </div>
-            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[#B98A2F]">{t('⏳ Аванс 50%')}</span>
+            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)]">{t('⏳ Аванс 50%')}</span>
           </div>
           <div className="flex items-center mt-5">
             {steps.map((s, k) => (
               <div key={s.label} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center">
                   <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', s.done ? 'grad text-white' : 'bg-[var(--track)] text-[var(--soft2)]')}>{s.done ? '✓' : k + 1}</span>
-                  <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', s.done ? 'text-[#7E9A74] font-bold' : 'text-[var(--soft2)]')}>{s.label}</span>
+                  <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', s.done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{s.label}</span>
                 </div>
                 {k < steps.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', s.done ? 'bg-[#A9BCA0]' : 'bg-[var(--track)]')} />}
               </div>
@@ -57,16 +57,16 @@ export function Deal() {
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
           <div className="flex justify-between items-center mt-3">
             <span className="text-[12.5px]">{t('Аванс · 10 фев')}</span>
-            <b className="tabular text-[13px] text-[#7E9A74]">✓ {fmt(30000)}</b>
+            <b className="tabular text-[13px] text-[var(--sage-deep)]">✓ {fmt(30000)}</b>
           </div>
           <div className="flex justify-between items-center mt-2.5">
             <span className="text-[12.5px]">{t('Доплата · 14 июн')}</span>
-            <b className={cn('tabular text-[13px]', paid ? 'text-[#7E9A74]' : 'text-[var(--soft)]')}>{paid ? `✓ ${fmt(30000)}` : fmt(30000)}</b>
+            <b className={cn('tabular text-[13px]', paid ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>{paid ? `✓ ${fmt(30000)}` : fmt(30000)}</b>
           </div>
           <div className="h-[1.5px] bg-[var(--track)] my-3" />
           <div className="flex justify-between items-center">
             <b className="text-[13px]">{t('Итого по договору')}</b>
-            <b className="font-serif-d text-[17px] text-[#B57171] tabular">{fmt(60000)}</b>
+            <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{fmt(60000)}</b>
           </div>
         </div>
 
@@ -74,16 +74,16 @@ export function Deal() {
           <button onClick={() => nav('/us/chats/ch3')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button onClick={() => nav('/wedding/documents/new')} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
           {paid ? (
-            <div className="card-s py-3.5 text-[13px] font-semibold text-[#7E9A74] text-center">{t('✓ Оплачено полностью')}</div>
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] text-center">{t('✓ Оплачено полностью')}</div>
           ) : (
-            <button disabled={payBusy} onClick={() => runPay(() => { setPaid(true); paySlot('s4') })} className="press card-s py-3.5 text-[13px] font-semibold text-[#7E9A74] disabled:opacity-50">{payBusy ? t('Проводим…') : t('✓ Отметить доплату')}</button>
+            <button disabled={payBusy} onClick={() => runPay(() => { setPaid(true); paySlot('s4') })} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] disabled:opacity-50">{payBusy ? t('Проводим…') : t('✓ Отметить доплату')}</button>
           )}
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Сделка отменена')}</div>
           ) : confirmCancel ? (
             <button onClick={() => { setCancelled(true); setConfirmCancel(false); cancelBooking('s4') }} className="press py-3.5 rounded-[18px] bg-[#B57171] text-white text-[13px] font-semibold">{t('Точно отменить?')}</button>
           ) : (
-            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">{t('Отменить сделку')}</button>
+            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{t('Отменить сделку')}</button>
           )}
         </div>
         <div className="card p-5">
@@ -196,7 +196,7 @@ export function ContractWizard() {
               </div>
             ))}
             <div>
-              <span className="text-[10px] tracking-[.14em] uppercase text-[#B57171] font-semibold">{t('Паспортные данные *')}</span>
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--rose-deep)] font-semibold">{t('Паспортные данные *')}</span>
               <input placeholder={t('Заполните перед подписанием')} className="w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
             </div>
           </div>
@@ -262,7 +262,7 @@ export function Seating() {
           {unseated.map(g => (
             <button key={g} onClick={() => setSelected(s => s === g ? null : g)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g ? 'grad text-white' : 'bg-[var(--bg)]')}>{g}</button>
           ))}
-          {!unseated.length && <span className="text-[10.5px] text-[#7E9A74] font-semibold">{t('все рассажены ✓')}</span>}
+          {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{t('все рассажены ✓')}</span>}
         </div>
       </div>
       <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
@@ -354,7 +354,7 @@ export function InviteEditor() {
                   {p.colors.map(c => <span key={c} className="w-6 h-6 rounded-full border-2 border-[var(--card)]" style={{ background: c }} />)}
                 </span>
                 <span className="text-[12px] font-medium flex-1">{p.name}</span>
-                {dress === p.id && <span className="text-[#7E9A74] text-[13px]">✓</span>}
+                {dress === p.id && <span className="text-[var(--sage-deep)] text-[13px]">✓</span>}
               </button>
             ))}
           </div>

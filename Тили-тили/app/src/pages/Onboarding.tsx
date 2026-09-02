@@ -28,7 +28,7 @@ export default function Onboarding() {
         <span className="font-serif-d text-[20px]">{t('Тили-')}<em className="grad-text not-italic font-semibold">{t('тили')}</em></span>
         <div className="flex items-center gap-3">
           <button onClick={() => { setLang(lang === 'ru' ? 'en' : 'ru'); reloadToRoot() }}
-            className="text-[11px] font-bold text-[#B57171] press px-2.5 py-1 rounded-full bg-[var(--rose-soft)]">{lang === 'ru' ? 'EN' : 'RU'}</button>
+            className="text-[11px] font-bold text-[var(--rose-deep)] press px-2.5 py-1 rounded-full bg-[var(--rose-soft)]">{lang === 'ru' ? 'EN' : 'RU'}</button>
           <button onClick={() => nav('/auth')} className="text-[12px] text-[var(--soft)] font-medium press">{t('Пропустить')}</button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 import { fmt } from '@/lib/data'
 import { t } from '@/lib/i18n'
+import { useEscape } from '@/lib/useEscape'
 
 /* «Вдохновение» — реальные свадьбы пар региона (контент для виральности и SEO) */
 type Story = { id: string; pair: string; style: string; styleName: string; place: string; guests: number; budget: number; photo: string; tip: string; grad: string; split: [string, number][]; season: string }
@@ -26,6 +27,7 @@ export function Inspiration() {
   const [style, setStyle] = useState('all')
   const [budget, setBudget] = useState('all')
   const [open, setOpen] = useState<Story | null>(null)
+  useEscape(() => setOpen(null), open !== null)
   const [liked, setLiked] = usePersist<string[]>('tt_inspo_likes', [])
   const budgetOk = (b: number) => budget === 'all' || (budget === 'low' && b <= 700000) || (budget === 'mid' && b > 700000 && b <= 1200000) || (budget === 'high' && b > 1200000)
   const shown = STORIES.filter(s => (style === 'all' || s.style === style) && budgetOk(s.budget))
@@ -39,7 +41,7 @@ export function Inspiration() {
       </div>
       <div className="px-5 flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
         {[['all', t('Любой бюджет')], ['low', t('до 700 тыс')], ['mid', t('700 тыс – 1,2 млн')], ['high', t('1,2 млн+')]].map(([id, l]) => (
-          <button key={id} onClick={() => setBudget(id)} className={cn('press px-4 py-2 rounded-full text-[10.5px] font-semibold whitespace-nowrap border', budget === id ? 'border-[#C98A8A] text-[#B57171] bg-[var(--rose-soft)]/50' : 'border-transparent bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+          <button key={id} onClick={() => setBudget(id)} className={cn('press px-4 py-2 rounded-full text-[10.5px] font-semibold whitespace-nowrap border', budget === id ? 'border-[#C98A8A] text-[var(--rose-deep)] bg-[var(--rose-soft)]/50' : 'border-transparent bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
       </div>
       <p className="px-6 mt-3 text-[10.5px] text-[var(--soft2)]">{t('Найдено историй:')}{shown.length}</p>
@@ -59,7 +61,7 @@ export function Inspiration() {
                   <p className="text-[10.5px] text-[var(--soft)] mt-0.5 flex items-center gap-1"><MapPin size={10} /> {s.place}</p>
                 </button>
                 <button onClick={() => setLiked(l => l.includes(s.id) ? l.filter(x => x !== s.id) : [...l, s.id])} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center" aria-label={t('Нравится')}>
-                  <Heart size={15} className={liked.includes(s.id) ? 'text-[#C98A8A] fill-[#C98A8A]' : 'text-[var(--soft2)]'} />
+                  <Heart size={15} className={liked.includes(s.id) ? 'text-[var(--rose-deep)] fill-[#C98A8A]' : 'text-[var(--soft2)]'} />
                 </button>
               </div>
               <div className="flex gap-2 mt-3 flex-wrap">
@@ -70,7 +72,7 @@ export function Inspiration() {
               <p className="text-[11.5px] text-[var(--ink2)] mt-3 leading-relaxed font-light">💡 {s.tip}</p>
               <div className="flex items-center justify-between mt-3">
                 <button onClick={() => setOpen(s)} className="press text-[11px] font-bold text-[var(--ink)] flex items-center gap-1">{t('Разбор бюджета')}<ChevronRight size={12} /></button>
-                <button onClick={() => nav('/search/venue')} className="press text-[11px] font-bold text-[#B57171] flex items-center gap-1">{t('Похожая площадка')}<ChevronRight size={12} /></button>
+                <button onClick={() => nav('/search/venue')} className="press text-[11px] font-bold text-[var(--rose-deep)] flex items-center gap-1">{t('Похожая площадка')}<ChevronRight size={12} /></button>
               </div>
             </div>
           </div>
@@ -80,7 +82,7 @@ export function Inspiration() {
 
       {/* Детальный разбор истории — bottom sheet */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setOpen(null)}>
+        <div role="dialog" aria-modal="true" aria-label={t('Разбор свадьбы')} className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setOpen(null)}>
           <div className="absolute inset-0 bg-[var(--ink)]/45 backdrop-blur-sm fade-in" />
           <div className="relative w-full max-w-[430px] bg-[var(--bg)] rounded-t-[28px] p-6 pb-10 pop max-h-[85dvh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 rounded-full bg-[var(--line)] mx-auto mb-4" />

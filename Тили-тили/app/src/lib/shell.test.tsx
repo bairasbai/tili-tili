@@ -9,13 +9,14 @@ import { MemoryRouter } from 'react-router'
 import { StoreProvider } from './store'
 import { Logistics } from '@/pages/Logistics'
 import { WeddingTeam } from '@/pages/Wedding'
-// файлы читаются как текст через ?raw — так тест не зависит от node-типов в проекте
-import html from '../../index.html?raw'
-import css from '../index.css?raw'
-import sw from '../../public/sw.js?raw'
-import manifestRaw from '../../public/manifest.webmanifest?raw'
-import app from '../App.tsx?raw'
-import main from '../main.tsx?raw'
+import { projectFile } from '@/test/projectFiles'
+
+const html = projectFile('index.html')
+const css = projectFile('src/index.css')
+const sw = projectFile('public/sw.js')
+const manifestRaw = projectFile('public/manifest.webmanifest')
+const app = projectFile('src/App.tsx')
+const main = projectFile('src/main.tsx')
 
 const manifest = JSON.parse(manifestRaw) as { start_url: string; scope: string; icons: { src: string }[] }
 

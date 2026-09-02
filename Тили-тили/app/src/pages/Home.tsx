@@ -76,7 +76,7 @@ export default function Home() {
         <button className="press w-full text-left card p-5 mt-4" onClick={() => nav('/wedding/budget')}>
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Бюджет')}</span>
-            <span className="text-[12px] font-bold text-[#B57171]">{budgetPct}%</span>
+            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{budgetPct}%</span>
           </div>
           <div className="flex justify-between items-baseline mt-1.5">
             <b className="font-serif-d text-[22px] tabular">{spent.toLocaleString('ru-RU')} ₽</b>
@@ -116,7 +116,7 @@ export default function Home() {
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
               <span className={`w-2 h-2 rounded-full shrink-0 ${t.urgent ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]'}`} />
               <span className="flex-1 text-[12.5px] font-medium truncate">{t.title}</span>
-              <span className={`text-[10px] font-bold shrink-0 ${t.urgent ? 'text-[#B57171]' : 'text-[var(--soft)]'}`}>{t.due}</span>
+              <span className={`text-[10px] font-bold shrink-0 ${t.urgent ? 'text-[var(--rose-deep)]' : 'text-[var(--soft)]'}`}>{t.due}</span>
             </button>
           ))}
         </div>
@@ -130,7 +130,7 @@ export default function Home() {
             <b className="text-[13px]">{t('Приглашения')}</b>
             <p className="text-[11px] text-[var(--soft)] mt-0.5">{guests.filter(g => g.status === 'yes').length * 3}{t(' подтвердили')} · {guests.filter(g => g.status === 'pending').length * 4}{t('ждут ответа')}</p>
           </div>
-          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[#B57171] shrink-0">RSVP →</span>
+          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] shrink-0">RSVP →</span>
         </button>
       </div>
 
@@ -144,9 +144,9 @@ export default function Home() {
               <div className="flex-1 min-w-0">
                 <b className="text-[13.5px] block truncate">{s.vendor}</b>
                 <span className="text-[10.5px] text-[var(--soft)]">{s.label}</span>
-                {s.price && <span className="text-[12px] text-[#B57171] font-bold block mt-0.5 tabular">{s.price.toLocaleString('ru-RU')} ₽</span>}
+                {s.price && <span className="text-[12px] text-[var(--rose-deep)] font-bold block mt-0.5 tabular">{s.price.toLocaleString('ru-RU')} ₽</span>}
               </div>
-              <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74] shrink-0">{t('✓ Забронирован')}</span>
+              <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] shrink-0">{t('✓ Забронирован')}</span>
             </button>
           ))}
         </div>

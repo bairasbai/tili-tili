@@ -76,7 +76,7 @@ export function Logistics() {
               <span className="text-[11px] font-bold text-[var(--ink2)]">{b.taken}/{b.seats}</span>
             </div>
             <div className="mt-3"><Bar pct={Math.round(b.taken / b.seats * 100)} /></div>
-            {b.seats - b.taken <= 5 && <p className="text-[10px] text-[#B57171] font-semibold mt-2">{t('Осталось мало мест — добавьте ещё один автобус')}</p>}
+            {b.seats - b.taken <= 5 && <p className="text-[10px] text-[var(--rose-deep)] font-semibold mt-2">{t('Осталось мало мест — добавьте ещё один автобус')}</p>}
           </div>
         ))}
         {busForm ? (
@@ -125,7 +125,7 @@ export function Logistics() {
               <span className="text-[11px] font-bold text-[var(--ink2)]">{h.booked}/{h.rooms} {t('номеров')}</span>
             </div>
             <button onClick={() => copy(h.promo)} className="press mt-3 w-full h-10 rounded-xl bg-[var(--bg)] text-[12px] font-bold tracking-widest flex items-center justify-center gap-2">
-              {copied === h.promo ? <><Check size={13} className="text-[#7E9A74]" />{t('Скопировано')}</> : <><Copy size={13} />{t('Промокод: ')}{h.promo}</>}
+              {copied === h.promo ? <><Check size={13} className="text-[var(--sage-deep)]" />{t('Скопировано')}</> : <><Copy size={13} />{t('Промокод: ')}{h.promo}</>}
             </button>
           </div>
         ))}
@@ -221,7 +221,7 @@ export function Catering() {
           <div className="card-s px-4 py-3 flex items-center gap-3">
             <span className="w-9 h-9 rounded-full bg-[var(--peach)] flex items-center justify-center shrink-0"><Users size={15} className="text-[var(--ink2)]" /></span>
             <p className="text-[11.5px] flex-1"><b>{pending}</b> {t('гостей ещё не выбрали блюдо')}</p>
-            <button onClick={() => setReminded(true)} className="press text-[11px] font-bold text-[#B57171] shrink-0">{reminded ? t('Напомнили ✓') : t('Напомнить')}</button>
+            <button onClick={() => setReminded(true)} className="press text-[11px] font-bold text-[var(--rose-deep)] shrink-0">{reminded ? t('Напомнили ✓') : t('Напомнить')}</button>
           </div>
         )}
         <div className="card p-4">

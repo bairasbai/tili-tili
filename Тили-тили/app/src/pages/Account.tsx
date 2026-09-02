@@ -35,9 +35,9 @@ export function Auth() {
           <h1 className="font-serif-d text-[32px] mt-7">{t('С возвращением')}</h1>
           <p className="text-[13.5px] text-[var(--soft)] mt-2 font-light">{t('Введите номер телефона — пришлём код из SMS')}</p>
           <div className="card-s flex items-center gap-3 px-5 py-4 mt-8">
-            <Smartphone size={18} className="text-[#B57171]" />
+            <Smartphone size={18} className="text-[var(--rose-deep)]" />
             <span className="text-[15px] font-semibold">+7</span>
-            <input value={phone} onChange={e => setPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 10))}
+            <input type="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 10))}
               inputMode="tel" placeholder="917 123-45-67" className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]" />
           </div>
           <p className="text-[10.5px] text-[var(--soft2)] mt-4 leading-relaxed">{t('Продолжая, вы принимаете оферту и политику конфиденциальности')}</p>
@@ -60,7 +60,7 @@ export function Auth() {
                 className="card-s w-full aspect-square text-center text-[22px] font-bold outline-none focus:ring-2 focus:ring-[#C98A8A]" />
             ))}
           </div>
-          <button onClick={() => sec === 0 && setSec(42)} className={cn('text-[12px] font-semibold mt-6 press', sec > 0 ? 'text-[var(--soft2)]' : 'text-[#B57171]')}>
+          <button onClick={() => sec === 0 && setSec(42)} className={cn('text-[12px] font-semibold mt-6 press', sec > 0 ? 'text-[var(--soft2)]' : 'text-[var(--rose-deep)]')}>
             {sec > 0 ? `${t('Отправить код повторно · 0:')}${String(sec).padStart(2, '0')}` : t('Отправить код повторно')}
           </button>
         </div>
@@ -116,7 +116,7 @@ export function Notifications() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Уведомления')} sub={t('Тихие часы 22:00–09:00')} right={
-        <button onClick={() => setReadIds(items.map((_, k) => k))} className="press text-[11px] font-bold text-[#B57171]">{t('Прочитать все')}</button>
+        <button onClick={() => setReadIds(items.map((_, k) => k))} className="press text-[11px] font-bold text-[var(--rose-deep)]">{t('Прочитать все')}</button>
       } />
       {groups.map(([label, list]) => (
         <div key={label}>
@@ -208,7 +208,7 @@ export function Settings() {
               ) : <b className="text-[13px]">{name}</b>}
               <p className="text-[10px] text-[var(--soft)]">+7 917 ···-45-67</p>
             </div>
-            <button onClick={() => setEditName(!editName)} className="text-[10.5px] font-bold text-[#B57171] press">{editName ? t('Готово') : t('Изменить')}</button>
+            <button onClick={() => setEditName(!editName)} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{editName ? t('Готово') : t('Изменить')}</button>
           </div>
           <Row label={t('Push: дедлайны задач')} value={push.tasks} onChange={v => setPush(p => ({ ...p, tasks: v }))} />
           <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush(p => ({ ...p, chats: v }))} />
@@ -216,7 +216,7 @@ export function Settings() {
           <Row label={t('Советы ИИ-координатора')} value={push.tips} onChange={v => setPush(p => ({ ...p, tips: v }))} />
           <button onClick={() => setCityPick(true)} className="press w-full flex items-center justify-between py-3.5 border-b border-[var(--track)] last:border-none text-left">
             <span className="text-[13px] font-medium">{t('Город свадьбы')}</span>
-            <span className="flex items-center gap-1.5 text-[12px] text-[var(--soft)]"><MapPin size={13} className="text-[#C98A8A]" />{t(city)} · {t(cityRegion)}</span>
+            <span className="flex items-center gap-1.5 text-[12px] text-[var(--soft)]"><MapPin size={13} className="text-[var(--rose-deep)]" />{t(city)} · {t(cityRegion)}</span>
           </button>
         </div>
         <div className="card px-4 py-1.5">
@@ -232,19 +232,19 @@ export function Settings() {
         <div className="card px-4 py-1.5">
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
             <MonitorSmartphone size={16} className="text-[var(--ink2)]" />
-            <div className="flex-1"><b className="text-[13px]">iPhone · Safari</b><p className="text-[10px] text-[#7E9A74]">{t('● текущая сессия')}</p></div>
+            <div className="flex-1"><b className="text-[13px]">iPhone · Safari</b><p className="text-[10px] text-[var(--sage-deep)]">{t('● текущая сессия')}</p></div>
           </div>
           {!androidGone && (
             <div className="flex items-center gap-3 py-3.5">
               <MonitorSmartphone size={16} className="text-[var(--ink2)]" />
               <div className="flex-1"><b className="text-[13px]">Android · Chrome</b><p className="text-[10px] text-[var(--soft)]">{t('2 дня назад')}</p></div>
-              <button onClick={() => setAndroidGone(true)} className="text-[10.5px] font-bold text-[#B57171] press">{t('Завершить')}</button>
+              <button onClick={() => setAndroidGone(true)} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{t('Завершить')}</button>
             </div>
           )}
         </div>
-        <button onClick={() => nav('/auth')} className="press w-full card-s py-4 text-[13px] font-semibold text-[#B57171] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
+        <button onClick={() => nav('/auth')} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
         {confirmDelete ? (
-          <button onClick={() => { localStorage.clear(); nav('/') }} className="press w-full py-3 text-[12px] font-bold text-[#B57171]">{t('Подтвердить удаление — данные сотрутся')}</button>
+          <button onClick={() => { localStorage.clear(); nav('/') }} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
         ) : (
           <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт и все данные')}</button>
         )}
@@ -283,7 +283,7 @@ export function Support() {
           <button key={k} onClick={() => setOpen(open === k ? null : k)} className="press w-full card-s p-4 text-left fade-up">
             <div className="flex items-center justify-between gap-3">
               <b className="text-[13px]">{q}</b>
-              <HelpCircle size={15} className={cn('shrink-0 transition-colors', open === k ? 'text-[#C98A8A]' : 'text-[var(--soft2)]')} />
+              <HelpCircle size={15} className={cn('shrink-0 transition-colors', open === k ? 'text-[var(--rose-deep)]' : 'text-[var(--soft2)]')} />
             </div>
             {open === k && <p className="text-[12px] text-[var(--soft)] leading-relaxed mt-2.5 fade-in">{a}</p>}
           </button>
@@ -293,7 +293,7 @@ export function Support() {
             <Tile icon="💬" tile={tk.ok ? 'bg-[var(--sage-soft)]' : 'bg-[var(--honey)]'} size={42} />
             <div className="flex-1">
               <b className="text-[12.5px] block truncate">{t('Тикет')}{tk.id} · {tk.topic}</b>
-              <p className={cn('text-[10px] mt-0.5', tk.ok ? 'text-[#7E9A74]' : 'text-[#B98A2F]')}>● {tk.status}</p>
+              <p className={cn('text-[10px] mt-0.5', tk.ok ? 'text-[var(--sage-deep)]' : 'text-[var(--honey-deep)]')}>● {tk.status}</p>
             </div>
           </div>
         ))}

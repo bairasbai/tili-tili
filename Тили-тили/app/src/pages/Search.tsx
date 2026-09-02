@@ -24,7 +24,7 @@ export function SearchCategories() {
       <div className="px-5 mt-2">
         <div className="card-s flex items-center gap-2.5 px-4 py-3.5">
           <SearchIcon size={17} className="text-[var(--soft)]" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder={t('Фотограф, торт, шатёр…')} className="bg-transparent outline-none text-[14px] w-full placeholder:text-[var(--soft2)]" />
+          <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={t('Фотограф, торт, шатёр…')} className="bg-transparent outline-none text-[14px] w-full placeholder:text-[var(--soft2)]" />
         </div>
       </div>
       <div className="px-5 grid grid-cols-3 gap-2.5 mt-4 stagger">
@@ -35,8 +35,8 @@ export function SearchCategories() {
               <div className={cn('w-11 h-11 rounded-[14px] mx-auto flex items-center justify-center text-[19px]', c.tile)}>{c.icon}</div>
               <b className="text-[11px] block mt-2 leading-tight">{c.name}</b>
               <span className="text-[9px] text-[var(--soft)] block mt-1">{c.count}{t('рядом')}</span>
-              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74] mt-1.5">{t('✓ Есть')}</span>}
-              {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[#B98A2F] mt-1.5">{t('⏳ Ищем')}</span>}
+              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] mt-1.5">{t('✓ Есть')}</span>}
+              {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)] mt-1.5">{t('⏳ Ищем')}</span>}
             </button>
           )
         })}
@@ -90,7 +90,7 @@ export function VendorList() {
             {label}
           </button>
         ))}
-        <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
+        <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
       </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {shown.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}
@@ -128,7 +128,7 @@ export function VendorDetail() {
           const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${v.category} · ${t(city)}${t(' · от ')}${fmt(v.priceFrom)}`, url: location.href }
           if (navigator.share) navigator.share(data).catch(() => {})
           else { copyText(`${data.title}\n${data.text}\n${data.url}`) }
-        }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{t('Поделиться')}</button>
+        }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('Поделиться')}</button>
       } />
       {/* Галерея */}
       <div className="px-5 mt-2">
@@ -155,7 +155,7 @@ export function VendorDetail() {
               {v.reviews > 0 ? <span>· ★ {v.rating} · {v.reviews}{t('отзывов')}</span> : <span>{t('· Новый на платформе')}</span>}
             </p>
           </div>
-          {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74] whitespace-nowrap">{t('● Свободен 14.06')}</span>}
+          {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] whitespace-nowrap">{t('● Свободен 14.06')}</span>}
         </div>
         <p className="text-[13px] text-[var(--ink2)] leading-relaxed mt-3 font-light">{v.desc}</p>
       </div>
@@ -185,11 +185,11 @@ export function VendorDetail() {
             <button key={p.name} onClick={() => setPkg(k)} className={cn('press w-full card p-4 text-left', pkg === k && 'ring-2 ring-[#C98A8A]')}>
               <div className="flex justify-between items-center">
                 <b className="text-[14px]">{p.name}</b>
-                <span className="font-serif-d text-[17px] text-[#B57171] font-semibold tabular">{fmt(p.price)}</span>
+                <span className="font-serif-d text-[17px] text-[var(--rose-deep)] font-semibold tabular">{fmt(p.price)}</span>
               </div>
               <ul className="mt-2 space-y-1">
                 {p.items.map(it => (
-                  <li key={it} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[#A9BCA0]" />{it}</li>
+                  <li key={it} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[#697563]" />{it}</li>
                 ))}
               </ul>
             </button>
@@ -213,7 +213,7 @@ export function VendorDetail() {
               const busy = [3 + (h % 4), 6 + (h % 3), 12 + (h % 5), 19 + (h % 3), 25 + (h % 4)].includes(day) || (!v.freeOnDate && isWedding)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding && v.freeOnDate ? 'grad text-white font-bold' : busy ? 'bg-[var(--rose-soft)] text-[#B57171] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[#B57171] font-bold' : 'text-[var(--ink)]')}>
+                  isWedding && v.freeOnDate ? 'grad text-white font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-deep)] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-deep)] font-bold' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
@@ -234,19 +234,19 @@ export function VendorDetail() {
             <div key={n} className="card-s p-4">
               <div className="flex justify-between items-center">
                 <b className="text-[12.5px]">{n}</b>
-                <span className="text-[10px] text-[#B98A2F] tracking-wide">{st}</span>
+                <span className="text-[10px] text-[var(--honey-deep)] tracking-wide">{st}</span>
               </div>
               <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{tx}</p>
-              <p className="text-[9px] font-bold text-[#7E9A74] mt-2">✓ {t('сделка через «Тили-тили» — отзыв подтверждён')}</p>
+              <p className="text-[9px] font-bold text-[var(--sage-deep)] mt-2">✓ {t('сделка через «Тили-тили» — отзыв подтверждён')}</p>
             </div>
           ))}
           <div className="card-s p-4">
             <div className="flex justify-between items-center gap-2">
               <b className="text-[12.5px]">{t('Гость свадьбы Алины и Тимура')}</b>
-              <span className="text-[10px] text-[#B98A2F] tracking-wide">★★★★★</span>
+              <span className="text-[10px] text-[var(--honey-deep)] tracking-wide">★★★★★</span>
             </div>
             <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{t('Фотографировала нас незаметно, но на фото мы все — и бабушки, и дети. Очень живые кадры!')}</p>
-            <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#5B7898] mt-2">{t('Гость свадьбы')}</span>
+            <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#587493] mt-2">{t('Гость свадьбы')}</span>
           </div>
         </div>
       </div>
@@ -259,7 +259,7 @@ export function VendorDetail() {
             <button key={x.id} onClick={() => nav(`/vendor/${x.id}`)} className={cn('press w-[120px] shrink-0 card-s p-3 text-center', x.tile)}>
               <span className="text-[24px]">{x.categoryIcon}</span>
               <b className="text-[10.5px] block mt-1.5 leading-tight truncate">{x.name}</b>
-              <span className="text-[9.5px] text-[#B57171] font-bold tabular">{t('от')}{x.priceFrom.toLocaleString('ru-RU')} ₽</span>
+              <span className="text-[9.5px] text-[var(--rose-deep)] font-bold tabular">{t('от')}{x.priceFrom.toLocaleString('ru-RU')} ₽</span>
             </button>
           ))}
         </div>

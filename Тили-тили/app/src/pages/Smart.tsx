@@ -36,7 +36,7 @@ export function Assistant() {
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}><ChevronLeft size={17} /></button>
         <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-white text-[15px]">✦</div>
-        <div className="flex-1"><b className="text-[14px]">{t('Тиль')}</b><p className="text-[10px] text-[#7E9A74]">{t('ИИ-координатор · на связи · 42/50 сообщений сегодня')}</p></div>
+        <div className="flex-1"><b className="text-[14px]">{t('Тиль')}</b><p className="text-[10px] text-[var(--sage-deep)]">{t('ИИ-координатор · на связи · 42/50 сообщений сегодня')}</p></div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
         {msgs.map((m, k) => (
@@ -53,7 +53,7 @@ export function Assistant() {
         )}
       </div>
       <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
-        {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-[var(--card)] text-[11px] font-semibold whitespace-nowrap text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
+        {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-[var(--card)] text-[11px] font-semibold whitespace-nowrap text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
       </div>
       <div className="glass-tab border-t-0 px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder={t('Спросите Тиля…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
@@ -112,7 +112,7 @@ export function Compare() {
               <td />
               {list.map(v => (
                 <td key={v.id} className="p-1.5">
-                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : 'grad text-white')}>
+                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : 'grad text-white')}>
                     {picked === v.id ? t('✓ В команде') : t('Выбрать')}
                   </button>
                 </td>
@@ -323,7 +323,7 @@ export function After() {
               <div key={r.id} className="card-s p-4">
                 <div className="flex items-center justify-between gap-2">
                   <b className="text-[12.5px] flex-1">{r.vendor}</b>
-                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#5B7898]">{t('Гость свадьбы')}</span>
+                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#587493]">{t('Гость свадьбы')}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.stars)}<span className="text-[var(--track)]">{'★'.repeat(5 - r.stars)}</span><span className="text-[10px] text-[var(--soft2)] ml-1.5">{r.at}</span></div>
                 <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>

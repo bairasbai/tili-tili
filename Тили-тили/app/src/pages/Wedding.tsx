@@ -75,12 +75,12 @@ export function WeddingTeam() {
                 s.state === 'empty' ? 'border-[1.5px] border-dashed border-[#D8B4AE] bg-[var(--rose-soft)]/30' : 'card-s')}
             >
               <span className={cn('w-9 h-9 rounded-[12px] flex items-center justify-center', s.state === 'empty' ? '' : s.tile)}>
-                {s.state === 'empty' ? <Plus size={20} className="text-[#C98A8A]" /> : createElement(catIcon(s.categoryId), { size: 18, className: 'text-[var(--ink2)]' })}
+                {s.state === 'empty' ? <Plus size={20} className="text-[var(--rose-deep)]" /> : createElement(catIcon(s.categoryId), { size: 18, className: 'text-[var(--ink2)]' })}
               </span>
               <b className="text-[10.5px] text-center leading-tight">{s.label}</b>
-              {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#7E9A74]">{t('забронирован')}</span>}
-              {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#B98A2F]">{s.status && t(s.status)}</span>}
-              {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#C98A8A]">{t('кандидаты')}</span>}
+              {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--sage-deep)]">{t('забронирован')}</span>}
+              {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--honey-deep)]">{s.status && t(s.status)}</span>}
+              {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--rose-deep)]">{t('кандидаты')}</span>}
             </button>
             )
           })}
@@ -170,10 +170,10 @@ export function SlotDetail() {
         <div className="card p-5 text-center">
           <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}>{createElement(catIcon(s.categoryId), { size: 28, className: 'text-[var(--ink2)]' })}</div>
           <b className="font-serif-d text-[19px] block mt-3">{s.vendor ?? t('Исполнитель не выбран')}</b>
-          {s.price && <span className="font-serif-d text-[17px] text-[#B57171] block mt-1 tabular">{fmt(s.price)}</span>}
+          {s.price && <span className="font-serif-d text-[17px] text-[var(--rose-deep)] block mt-1 tabular">{fmt(s.price)}</span>}
           <div className="flex justify-center gap-1.5 mt-2">
-            {s.status && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74]">{t(s.status)}</span>}
-            {s.external && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--honey)] text-[#B98A2F]">{t('не из каталога')}</span>}
+            {s.status && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)]">{t(s.status)}</span>}
+            {s.external && <span className="inline-block text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)]">{t('не из каталога')}</span>}
           </div>
           {s.external && s.phone && <p className="text-[11px] text-[var(--soft)] mt-2">📞 {s.phone}</p>}
         </div>
@@ -203,7 +203,7 @@ export function SlotDetail() {
           {confirmCancel ? (
             <button onClick={() => { cancelBooking(s.id); nav('/wedding') }} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#C98A8A' }}>{t('Точно отменить?')}</button>
           ) : (
-            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[#B57171]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
+            <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
         </div>
 
@@ -218,7 +218,7 @@ export function SlotDetail() {
                 <span className="text-[12px] text-[var(--ink2)]">{l}</span>
                 <span className="flex items-center gap-2">
                   <b className="text-[12.5px] tabular">{fmt(Number(v))}</b>
-                  <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', paid ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : 'bg-[var(--honey)] text-[#B98A2F]')}>{paid ? t('✓ Оплачен') : t('Ожидает')}</span>
+                  <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', paid ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : 'bg-[var(--honey)] text-[var(--honey-deep)]')}>{paid ? t('✓ Оплачен') : t('Ожидает')}</span>
                 </span>
               </div>
             ))}
@@ -279,7 +279,7 @@ export function Budget() {
         <div className="card p-5">
           <div className="flex justify-between items-end">
             <span className="text-[30px] font-extrabold tracking-tight tabular">{total.toLocaleString('ru-RU')} ₽</span>
-            <span className="text-[#B57171] font-bold">{pct}%</span>
+            <span className="text-[var(--rose-deep)] font-bold">{pct}%</span>
           </div>
           <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {couple.budgetTotal.toLocaleString('ru-RU')} ₽ {t('запланировано · осталось')} {(couple.budgetTotal - total).toLocaleString('ru-RU')} ₽</p>
           <div className="mt-3"><Bar pct={pct} /></div>
@@ -289,8 +289,8 @@ export function Budget() {
               return (
                 <div key={b.name}>
                   <div className="flex justify-between text-[12.5px] items-center">
-                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[#7E9A74]">{t('из команды')}</span>}</span>
-                    <b className="tabular">{(b.amount / 1000).toFixed(0)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {(b.limit / 1000).toFixed(0)}{t('К')}</span>{bi >= budgetItems.length && <button onClick={() => setCustom(c => c.filter((_, ci) => ci !== bi - budgetItems.length))} className="press text-[#C98A8A] text-[12px] ml-1.5" aria-label={t('Удалить статью')}>×</button>}</b>
+                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)]">{t('из команды')}</span>}</span>
+                    <b className="tabular">{(b.amount / 1000).toFixed(0)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {(b.limit / 1000).toFixed(0)}{t('К')}</span>{bi >= budgetItems.length && <button onClick={() => setCustom(c => c.filter((_, ci) => ci !== bi - budgetItems.length))} className="press text-[var(--rose-deep)] text-[12px] ml-1.5" aria-label={t('Удалить статью')}>×</button>}</b>
                   </div>
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${p}%`, background: b.color }} />
@@ -306,13 +306,13 @@ export function Budget() {
         <div className="card p-4 mt-3.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Деньги: факт и план')}</span>
-            <span className={cn('text-[9.5px] font-bold px-2 py-1 rounded-full', freeAfterReserve >= 0 ? 'bg-[var(--sage-soft)] text-[#4C5B45]' : 'bg-[var(--rose-soft)] text-[#B57171]')}>
+            <span className={cn('text-[9.5px] font-bold px-2 py-1 rounded-full', freeAfterReserve >= 0 ? 'bg-[var(--sage-soft)] text-[#4C5B45]' : 'bg-[var(--rose-soft)] text-[var(--rose-deep)]')}>
               {freeAfterReserve >= 0 ? `${t('свободно')} ${fmt(Math.max(0, freeAfterReserve))}` : t('бюджет превышен')}
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[#7E9A74]">{fmt(paidFact)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('оплачено (авансы)')}</p></div>
-            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[#B98A2F]">{fmt(upcomingTotal)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('предстоит доплат')}</p></div>
+            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[var(--sage-deep)]">{fmt(paidFact)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('оплачено (авансы)')}</p></div>
+            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[var(--honey-deep)]">{fmt(upcomingTotal)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('предстоит доплат')}</p></div>
             <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular">{fmt(reserve)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('резерв 10%')}</p></div>
           </div>
           {upcoming.length > 0 && (
@@ -320,7 +320,7 @@ export function Budget() {
               {upcoming.slice(0, 3).map(u => (
                 <div key={u.vendor} className="flex items-center justify-between">
                   <span className="text-[12px] font-medium truncate">{u.vendor} · {t('доплата')}</span>
-                  <span className="text-right shrink-0"><b className="text-[12.5px] tabular">{fmt(u.amount)}</b><span className="text-[9.5px] text-[#B98A2F] font-semibold block">{t('за 7 дней до даты')}</span></span>
+                  <span className="text-right shrink-0"><b className="text-[12.5px] tabular">{fmt(u.amount)}</b><span className="text-[9.5px] text-[var(--honey-deep)] font-semibold block">{t('за 7 дней до даты')}</span></span>
                 </div>
               ))}
             </div>
@@ -371,7 +371,7 @@ export function Checklist() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Чек-лист')} sub={t('Что уже сделано, что впереди')} right={
-        <button onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{t('+ Задача')}</button>
+        <button onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('+ Задача')}</button>
       } />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex items-center gap-4">
@@ -383,11 +383,11 @@ export function Checklist() {
             <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{curPeriod === '9' ? t('За 9 мес') : curPeriod === '6' ? t('За 6 мес') : curPeriod === '3' ? t('За 3 мес') : t('За 1 мес')}</b></p>
             {nextTask && (
               <button onClick={() => setPeriod(nextTask.period)} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
-                <p className="text-[9px] font-bold uppercase tracking-wide text-[#B57171]">{t('Следующий шаг →')}</p>
+                <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--rose-deep)]">{t('Следующий шаг →')}</p>
                 <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.title}</p>
               </button>
             )}
-            {!nextTask && <p className="text-[12px] font-semibold text-[#7E9A74] mt-2">{t('Всё сделано — вы полностью готовы ✓')}</p>}
+            {!nextTask && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{t('Всё сделано — вы полностью готовы ✓')}</p>}
           </div>
         </div>
         <div className="card-s px-4 py-3 flex items-center gap-3">
@@ -395,7 +395,7 @@ export function Checklist() {
           <div className="flex-1 h-1.5 rounded-full bg-[var(--track)] overflow-hidden">
             <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${(done.length / allTasks.length) * 100}%` }} />
           </div>
-          <span className="text-[10px] font-bold text-[#7E9A74] tabular">{Math.round((done.length / allTasks.length) * 100)}%</span>
+          <span className="text-[10px] font-bold text-[var(--sage-deep)] tabular">{Math.round((done.length / allTasks.length) * 100)}%</span>
         </div>
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
@@ -420,7 +420,7 @@ export function Checklist() {
             return (
               <button key={t.id} onClick={() => toggle(t.id)} className={cn('w-full flex items-center gap-3 py-3.5 text-left', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
                 <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
-                  isDone ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : 'bg-[var(--card)] border-[1.5px] border-[#E8DED4] text-[#B57171] font-bold text-[11px]')}>
+                  isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : 'bg-[var(--card)] border-[1.5px] border-[#E8DED4] text-[var(--rose-deep)] font-bold text-[11px]')}>
                   {isDone ? '✓' : i + 1 + allTasks.filter(x => x.period === period && done.includes(x.id)).length}
                 </span>
                 <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{t.title}</span>
@@ -450,7 +450,7 @@ export function Timeline() {
   return (
     <div className="pb-28">
       <TopBar back title={t('День свадьбы')} sub={t('Расписание 14 июня · полный сценарий')} right={
-        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[#B57171]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
+        <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
       <div className="px-5 mt-2.5">
         <div className="card-s px-4 py-3 flex items-center gap-3">
@@ -475,8 +475,8 @@ export function Timeline() {
             <div className="min-w-0">
               <b className="text-[13.5px]">{e.name}</b>
               <p className="text-[11px] text-[var(--soft)] mt-0.5">{e.loc}</p>
-              <p className="text-[11px] text-[#B57171] font-semibold mt-1 tabular">{e.time}</p>
-              <p className="text-[10px] text-[#7E9A74] mt-0.5">{e.who}</p>
+              <p className="text-[11px] text-[var(--rose-deep)] font-semibold mt-1 tabular">{e.time}</p>
+              <p className="text-[10px] text-[var(--sage-deep)] mt-0.5">{e.who}</p>
             </div>
           </div>
         ))}
@@ -527,7 +527,7 @@ export function Guests() {
         </div>
       )}
       <div className="px-5 mt-3 grid grid-cols-3 gap-2.5">
-        {[['42', t('придут'), 'text-[#7E9A74]'], [String(pending * 4), t('ждём ответ'), 'text-[#B98A2F]'], ['2', t('не смогут'), 'text-[#B57171]']].map(([v, l, c]) => (
+        {[['42', t('придут'), 'text-[var(--sage-deep)]'], [String(pending * 4), t('ждём ответ'), 'text-[var(--honey-deep)]'], ['2', t('не смогут'), 'text-[var(--rose-deep)]']].map(([v, l, c]) => (
           <div key={l} className="card-s p-3.5 text-center">
             <b className={cn('text-[20px] tabular', c)}>{v}</b>
             <span className="text-[9.5px] text-[var(--soft)] block mt-0.5">{l}</span>
@@ -553,18 +553,18 @@ export function Guests() {
                 {g.status === 'yes' && (
                   <div className="flex gap-1.5 mt-1.5">
                     <button onClick={() => setExtras(x => { const d = x[g.id]?.diet; const next = !d ? t('веган') : d === t('веган') ? t('аллергия') : undefined; const n = { ...x }; if (next) n[g.id] = { ...n[g.id], diet: next }; else delete n[g.id]; return n })}
-                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.diet ? 'bg-[var(--lav)] text-[#8E7AA6]' : 'bg-[var(--track)] text-[var(--soft)]')}>
+                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.diet ? 'bg-[var(--lav)] text-[#7C6A90]' : 'bg-[var(--track)] text-[var(--soft)]')}>
                       🍽 {extras[g.id]?.diet ?? t('всё ест')}
                     </button>
                     <button onClick={() => setExtras(x => ({ ...x, [g.id]: { ...x[g.id], transfer: !x[g.id]?.transfer } }))}
-                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.transfer ? 'bg-[var(--blue)] text-[#5B7BA3]' : 'bg-[var(--track)] text-[var(--soft)]')}>
+                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.transfer ? 'bg-[var(--blue)] text-[#557298]' : 'bg-[var(--track)] text-[var(--soft)]')}>
                       🚌 {t('трансфер')}
                     </button>
                   </div>
                 )}
               </div>
               <button onClick={() => setList(l => l.map(x => x.id === g.id ? { ...x, status: x.status === 'yes' ? 'no' : x.status === 'no' ? 'pending' : 'yes' } : x))} title={t('Нажмите, чтобы сменить статус')} className={cn('press text-[9px] font-bold px-2.5 py-1 rounded-full transition-all',
-                g.status === 'yes' ? 'bg-[var(--sage-soft)] text-[#7E9A74]' : g.status === 'no' ? 'bg-[var(--rose-soft)] text-[#B57171]' : 'bg-[var(--honey)] text-[#B98A2F]')}>
+                g.status === 'yes' ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : g.status === 'no' ? 'bg-[var(--rose-soft)] text-[var(--rose-deep)]' : 'bg-[var(--honey)] text-[var(--honey-deep)]')}>
                 {g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')}
               </button>
             </div>
@@ -593,14 +593,14 @@ export function Guests() {
                 <p className="text-[11px] text-[var(--soft)] leading-relaxed">
                   {seats} {t('персон')} · {vegan} {t('веган')} · {allergy} {t('аллергия')} · {transfer} {t('нужен трансфер')}
                 </p>
-                <p className="text-[10px] text-[#7E9A74] font-medium mt-1.5">✓ {t('Автоматически уйдёт кейтерингу и площадке 1 июня — обновляется по RSVP')}</p>
+                <p className="text-[10px] text-[var(--sage-deep)] font-medium mt-1.5">✓ {t('Автоматически уйдёт кейтерингу и площадке 1 июня — обновляется по RSVP')}</p>
               </div>
             )
           })()}
         </div>
         <div className="mt-3.5">
           {reminded
-            ? <div className="card p-3.5 text-[12px] font-medium text-[#5F7A56]">✓ {t('Напоминания отправлены 8 гостям · повторим за 3 дня до дедлайна')}</div>
+            ? <div className="card p-3.5 text-[12px] font-medium text-[#5E7955]">✓ {t('Напоминания отправлены 8 гостям · повторим за 3 дня до дедлайна')}</div>
             : <AiTip text={t('8 гостей не ответили — дедлайн RSVP 1 мая. Отправить напоминание одной кнопкой?')} onPress={() => setReminded(true)} />}
         </div>
       </div>
@@ -635,7 +635,7 @@ export function Album() {
             <button onClick={() => { setPhotos(ps => ps.map(p => ({ ...p, approved: true }))); setModerated(m => m + 1) }} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-white">{t('Одобрить все')}</button>
           </div>
         )}
-        {moderated > 0 && pending === 0 && <p className="text-[11px] text-[#7E9A74] font-medium px-1">✓ {t('Все кадры одобрены и видны гостям')}</p>}
+        {moderated > 0 && pending === 0 && <p className="text-[11px] text-[var(--sage-deep)] font-medium px-1">✓ {t('Все кадры одобрены и видны гостям')}</p>}
       </div>
       <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
         {photos.map((p, i) => (
@@ -690,7 +690,7 @@ export function Documents() {
               <div className="w-10 h-10 rounded-[14px] bg-[var(--sage-soft)] flex items-center justify-center">📄</div>
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{n}</b>
-                <span className="text-[10px] text-[#7E9A74]">{d}</span>
+                <span className="text-[10px] text-[var(--sage-deep)]">{d}</span>
               </div>
               <Download size={14} className="text-[var(--soft2)] shrink-0" />
             </button>

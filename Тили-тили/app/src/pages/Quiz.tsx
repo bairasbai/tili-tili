@@ -73,7 +73,7 @@ export default function Quiz() {
             ) : (
               <span className="flex-1 text-[13.5px] text-[var(--soft2)]">{t('Начните вводить название…')}</span>
             )}
-            <MapPin size={15} className="text-[#C98A8A]" />
+            <MapPin size={15} className="text-[var(--rose-deep)]" />
           </button>
           <div className="flex flex-wrap gap-2 mt-4">
             {[t('Уфа'), t('Сибай'), t('Баймак'), t('Стерлитамак'), t('Москва'), t('Казань')].map(n => (
