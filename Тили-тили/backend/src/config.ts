@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.js'
 
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
@@ -14,6 +15,16 @@ export interface Config {
   jwtRefreshSecret: string | null
   /** Версия текстов оферты и политики, под которой сейчас даётся согласие. */
   policyVersion: string
+  /** Порог запросов кода с одного адреса в час. Настраивается: за CGNAT нужен выше. */
+  otpMaxPerIpHour: number
+  /** Потолок на ВСЕ отправки кода в час — защита счёта за SMS. */
+  otpMaxPerHourTotal: number
+  /**
+   * Доверять ли заголовку X-Forwarded-For. `false` — адрес берётся из сокета;
+   * число — сколько прокси стоит впереди. Значение по умолчанию false, потому
+   * что безусловное доверие превращает ограничитель по адресу в украшение.
+   */
+  trustProxy: boolean | number
   smsProvider: string | null
   smsAeroEmail: string | null
   smsAeroKey: string | null
@@ -41,6 +52,21 @@ function parsePort(raw: string | undefined): number {
     throw new ConfigError(`PORT должен быть целым числом 1..65535, получено: ${JSON.stringify(raw)}`)
   }
   return n
+}
+
+/**
+ * `TRUST_PROXY` — сколько обратных прокси стоит перед приложением.
+ *
+ * Безусловное `true` означает «верю заголовку X-Forwarded-For от кого угодно»:
+ * любой клиент присылает `X-Forwarded-For: 1.2.3.4`, и ограничитель по адресу
+ * обходится одной строкой. Поэтому по умолчанию заголовку не верим, а за
+ * балансировщиком Timeweb ставится число прыжков (обычно 1).
+ */
+function parseTrustProxy(raw: string | undefined): boolean | number {
+  if (raw === undefined || raw === '' || raw === 'false') return false
+  const hops = Number(raw)
+  if (Number.isInteger(hops) && hops >= 0) return hops
+  throw new ConfigError(`TRUST_PROXY — число прокси впереди (обычно 1) или пусто. Получено: ${JSON.stringify(raw)}`)
 }
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
@@ -84,6 +110,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     // с серверной, согласие не принимается — иначе в базе окажется подпись
     // под текстом, которого пользователь не видел.
     policyVersion: source.POLICY_VERSION ?? '2026-09-02',
+    otpMaxPerIpHour: Number(source.OTP_MAX_PER_IP_HOUR ?? MAX_SENDS_PER_HOUR_PER_IP),
+    otpMaxPerHourTotal: Number(source.OTP_MAX_PER_HOUR_TOTAL ?? MAX_SENDS_PER_HOUR_TOTAL),
+    trustProxy: parseTrustProxy(source.TRUST_PROXY),
     smsProvider: source.SMS_PROVIDER ?? null,
     smsAeroEmail: source.SMSAERO_EMAIL ?? null,
     smsAeroKey: source.SMSAERO_KEY ?? null,

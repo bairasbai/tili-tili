@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.2.0
+  version: 0.4.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -151,6 +151,28 @@ paths:
 
   # ───────────────────────── WEDDINGS ─────────────────────────
   /weddings:
+    get:
+      tags: [weddings]
+      summary: Мои свадьбы
+      description: |
+        Единственный способ найти свою свадьбу после переустановки приложения:
+        идентификатор хранится только на устройстве, и с чистым localStorage
+        восстановить его больше неоткуда. Отдаёт и те свадьбы, куда человека
+        позвали помощником или координатором, — с его ролью в каждой.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/Wedding'
+                    - type: object
+                      properties:
+                        role: { type: string, enum: [couple, helper, coordinator, vendor] }
     post:
       tags: [weddings]
       summary: Создать свадьбу (после квиза)
@@ -2736,7 +2758,12 @@ components:
       properties:
         amount:
           type: integer
-          description: 'Сумма в копейках. 85 000 ₽ = 8500000. Дробных значений не бывает.'
+          minimum: 0
+          maximum: 9007199254740991
+          description: |
+            Сумма в копейках. 85 000 ₽ = 8500000. Дробных значений не бывает.
+            Потолок — предел точного целого в JSON: за ним число молча
+            округляется, и «потрачено» перестаёт сходиться с суммой сделок.
           example: 8500000
         currency:
           type: string

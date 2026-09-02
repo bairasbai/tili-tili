@@ -254,12 +254,24 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       'select device, created_at, revoked_at from sessions where user_id = $1 order by created_at',
       [userId],
     )
+    // 152-ФЗ даёт право получить ВСЕ свои данные, а не выборку. Свадьбы —
+    // главные из них; гости, сделки и переписка добавляются по мере появления.
+    const { rows: weddings } = await db().query(
+      `select w.id, w.title, w.date::text as date, m.role, m.joined_at,
+              c.name as city, c.region
+         from wedding_members m
+         join weddings w on w.id = m.wedding_id
+         left join cities c on c.id = w.city_id
+        where m.user_id = $1 and w.archived_at is null
+        order by m.joined_at`,
+      [userId],
+    )
     return {
       exportedAt: new Date().toISOString(),
       profile,
       consents,
       sessions,
-      // Свадьбы, гости, сделки добавятся по мере появления — этап 2 и дальше.
+      weddings,
     }
   })
 }

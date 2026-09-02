@@ -210,7 +210,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Мои свадьбы
+         * @description Единственный способ найти свою свадьбу после переустановки приложения:
+         *     идентификатор хранится только на устройстве, и с чистым localStorage
+         *     восстановить его больше неоткуда. Отдаёт и те свадьбы, куда человека
+         *     позвали помощником или координатором, — с его ролью в каждой.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": (components["schemas"]["Wedding"] & {
+                            /** @enum {string} */
+                            role?: "couple" | "helper" | "coordinator" | "vendor";
+                        })[];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Создать свадьбу (после квиза) */
         post: {
@@ -5494,6 +5523,8 @@ export interface components {
         Money: {
             /**
              * @description Сумма в копейках. 85 000 ₽ = 8500000. Дробных значений не бывает.
+             *     Потолок — предел точного целого в JSON: за ним число молча
+             *     округляется, и «потрачено» перестаёт сходиться с суммой сделок.
              * @example 8500000
              */
             amount: number;

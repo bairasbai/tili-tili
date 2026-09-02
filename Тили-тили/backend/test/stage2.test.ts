@@ -26,6 +26,9 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
       corsOrigins: [],
       jwtAccessSecret: SECRET_A,
       jwtRefreshSecret: SECRET_R,
+      // Общий потолок отправок проверяется отдельным тестом; здесь он не должен
+      // мешать — база копит коды за час всех прогонов подряд.
+      otpMaxPerHourTotal: 1_000_000,
       policyVersion: '2026-09-02',
     })
     await app.ready()
@@ -34,6 +37,10 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
   afterAll(async () => {
     await app?.close()
   })
+
+  // Свой адрес на каждый набор: ограничитель по адресу общий для процесса,
+  // и без этого наборы отбирали бы друг у друга лимит.
+  const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
 
   const nextPhone = () => `+79${RUN}${String(++counter).padStart(3, '0')}`
   const auth = (token: string) => ({ authorization: `Bearer ${token}` })
@@ -53,7 +60,7 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
   /** Готовый пользователь: вошёл, согласие дано. */
   async function newUser(name?: string): Promise<{ token: string; id: string }> {
     const phone = nextPhone()
-    const asked = await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone } })
+    const asked = await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone }, remoteAddress: IP })
     expect(asked.statusCode).toBe(200)
     const verified = await app.inject({
       method: 'POST',

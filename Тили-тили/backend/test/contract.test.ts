@@ -75,6 +75,7 @@ describe('контракт', () => {
       'GET /users/me/export',
       'GET /geo/cities',
       'GET /geo/nearest',
+      'GET /weddings',
       'POST /weddings',
       'GET /weddings/:weddingId',
       'PATCH /weddings/:weddingId',
@@ -112,7 +113,7 @@ describe('контракт', () => {
       if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
     }
     // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
-    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 27)
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 28)
   })
 
   it('в контракте нет дублей метод+путь', () => {

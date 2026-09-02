@@ -34,7 +34,15 @@ export async function buildApp(
     // Идентификатор запроса попадает и в лог, и в тело ошибки 500 — по нему
     // жалоба пользователя находится в логах за один grep.
     genReqId: () => crypto.randomUUID(),
-    trustProxy: true,
+    // Не `true`: безусловное доверие X-Forwarded-For позволяет любому клиенту
+    // назначить себе адрес и обойти ограничитель. За балансировщиком Timeweb
+    // в TRUST_PROXY ставится число прыжков; функция ниже — ровно эта семантика
+    // («доверяю первым N звеньям цепочки»), потому что типы Fastify числа
+    // не принимают, хотя proxy-addr его понимает.
+    trustProxy:
+      typeof config.trustProxy === 'number'
+        ? (_address: string, hop: number) => hop < (config.trustProxy as number)
+        : config.trustProxy,
     bodyLimit: 1_048_576,
     ajv: {
       customOptions: {

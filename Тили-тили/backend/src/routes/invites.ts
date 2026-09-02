@@ -76,9 +76,13 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
         order by created_at desc`,
       [request.member!.weddingId],
     )
+    // Код — это не «сведения о приглашении», а сам ключ: кто его видит, тот
+    // может им воспользоваться. Приглашение с ролью couple в руках помощника
+    // означает, что он в один клик становится парой и видит все деньги.
+    // Матрица разрешает ему СМОТРЕТЬ список — значит, из списка убран ключ.
+    const seesCodes = request.member!.role === 'couple'
     return rows.map((r) => ({
-      code: r.code,
-      url: publicUrl(r.code),
+      ...(seesCodes ? { code: r.code, url: publicUrl(r.code) } : {}),
       role: r.role,
       label: r.label,
       expiresAt: r.expires_at.toISOString(),

@@ -28,10 +28,45 @@ interface MemberRow {
   joined_at: Date
 }
 
-const money = (amount: string | null, currency: string) =>
-  amount === null ? null : { amount: Number(amount), currency }
+/**
+ * Потолок суммы — предел точного целого в JSON.
+ *
+ * `bigint` из PostgreSQL приходит строкой, и `Number()` за этой границей
+ * молча округляет: 9007199254740993 превращается в …992. Тогда «потрачено»
+ * перестаёт сходиться с суммой сделок, и никто не понимает почему.
+ * Поэтому граница стоит на входе, а не проверяется на выходе.
+ */
+const MAX_MINOR_UNITS = Number.MAX_SAFE_INTEGER
 
-function toWedding(w: WeddingRow, members: MemberRow[]) {
+const MONEY_SCHEMA = {
+  type: 'object',
+  required: ['amount', 'currency'],
+  additionalProperties: false,
+  properties: {
+    amount: { type: 'integer', minimum: 0, maximum: MAX_MINOR_UNITS },
+    currency: { type: 'string', enum: ['RUB'] },
+  },
+} as const
+
+const money = (amount: string | null, currency: string) => {
+  if (amount === null) return null
+  const value = Number(amount)
+  if (!Number.isSafeInteger(value)) {
+    // В базу такое попасть не может — проверка на входе стоит. Если попало,
+    // значит данные правили мимо API, и отдавать округлённое число нельзя.
+    throw new AppError(500, 'money_overflow', 'Сумма в базе выходит за пределы точного числа')
+  }
+  return { amount: value, currency }
+}
+
+/**
+ * Помощник и координатор не видят денег НИГДЕ — это правило раздела 6 плана,
+ * а не только про раздел «Бюджет». Матрица доступа закрывает пути целиком
+ * и на поля повлиять не может: карточку свадьбы им смотреть можно, а сумму
+ * бюджета в ней — нет. Поэтому поле вырезается здесь, на сборке ответа.
+ */
+function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
+  const seesMoney = role === 'couple'
   return {
     id: w.id,
     title: w.title,
@@ -40,7 +75,7 @@ function toWedding(w: WeddingRow, members: MemberRow[]) {
     venue: w.venue,
     style: w.style,
     guestsPlanned: w.guests_planned,
-    budgetTotal: money(w.budget_total, w.currency),
+    ...(seesMoney ? { budgetTotal: money(w.budget_total, w.currency) } : {}),
     tz: w.tz,
     inviteThemeId: w.invite_theme_id,
     inviteText: w.invite_text,
@@ -71,7 +106,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
 
-  const loadWedding = async (weddingId: string) => {
+  const loadWedding = async (weddingId: string, role: Role) => {
     const { rows } = await db().query<WeddingRow>(
       `select w.id, w.title, w.date::text as date, c.name as city_name, c.region as city_region,
               w.venue, w.style, w.guests_planned, w.budget_total::text as budget_total, w.currency,
@@ -87,8 +122,25 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         where m.wedding_id = $1 order by m.joined_at`,
       [weddingId],
     )
-    return toWedding(rows[0], members)
+    return toWedding(rows[0], members, role)
   }
+
+  /* ── мои свадьбы ──────────────────────────────────────────────────── */
+  app.get('/weddings', { preHandler: app.requireConsent }, async (request) => {
+    // Единственный способ найти свою свадьбу после переустановки приложения:
+    // идентификатор жил только в localStorage, и с чистым устройством
+    // восстановить его больше неоткуда.
+    const { rows } = await db().query<{ id: string; role: Role }>(
+      `select w.id, m.role from wedding_members m
+         join weddings w on w.id = m.wedding_id
+        where m.user_id = $1 and w.archived_at is null
+        order by w.created_at desc`,
+      [request.caller!.userId],
+    )
+    const out = []
+    for (const row of rows) out.push({ ...(await loadWedding(row.id, row.role)), role: row.role })
+    return out
+  })
 
   /* ── создание из квиза ────────────────────────────────────────────── */
   app.post(
@@ -109,12 +161,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
               additionalProperties: false,
               properties: { name: { type: 'string' }, region: { type: 'string' } },
             },
-            budgetTotal: {
-              type: 'object',
-              required: ['amount', 'currency'],
-              additionalProperties: false,
-              properties: { amount: { type: 'integer', minimum: 0 }, currency: { type: 'string', enum: ['RUB'] } },
-            },
+            budgetTotal: MONEY_SCHEMA,
             guestsPlanned: { type: 'integer', minimum: 0, maximum: 5000 },
             style: { type: 'string', maxLength: 120 },
             quizAnswers: { type: 'object', additionalProperties: true },
@@ -198,12 +245,14 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         [userId, weddingId],
       )
 
-      return reply.code(201).send(await loadWedding(weddingId))
+      return reply.code(201).send(await loadWedding(weddingId, 'couple'))
     },
   )
 
   /* ── карточка ─────────────────────────────────────────────────────── */
-  app.get('/weddings/:weddingId', async (request) => loadWedding(request.member!.weddingId))
+  app.get('/weddings/:weddingId', async (request) =>
+    loadWedding(request.member!.weddingId, request.member!.role),
+  )
 
   app.patch(
     '/weddings/:weddingId',
@@ -220,12 +269,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
               additionalProperties: false,
               properties: { name: { type: 'string' }, region: { type: 'string' } },
             },
-            budgetTotal: {
-              type: 'object',
-              required: ['amount', 'currency'],
-              additionalProperties: false,
-              properties: { amount: { type: 'integer', minimum: 0 }, currency: { type: 'string', enum: ['RUB'] } },
-            },
+            budgetTotal: MONEY_SCHEMA,
             guestsPlanned: { type: 'integer', minimum: 0, maximum: 5000 },
             style: { type: 'string', maxLength: 120 },
             venue: { type: 'string', maxLength: 200 },
@@ -273,7 +317,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           (body.inviteThemeId as number) ?? null,
         ],
       )
-      return loadWedding(weddingId)
+      return loadWedding(weddingId, request.member!.role)
     },
   )
 
@@ -327,12 +371,26 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     const { userId } = request.params as { userId: string }
 
-    await assertNotLastCouple(weddingId, userId)
-    const res = await db().query('delete from wedding_members where wedding_id = $1 and user_id = $2', [
-      weddingId,
-      userId,
-    ])
-    if (res.rowCount === 0) throw notFound('Участник не найден')
+    // Проверка «остался ли ещё кто-то с ролью couple» и само удаление — одно
+    // действие. Раздельно двое участников с этой ролью, удаляющие друг друга
+    // одновременно, оба увидели бы «остался» и оба удалили: свадьба стала бы
+    // ничьей. Условие NOT EXISTS считается в момент удаления строки.
+    const res = await db().query(
+      `delete from wedding_members m
+        where m.wedding_id = $1 and m.user_id = $2
+          and (m.role <> 'couple'
+               or exists (select 1 from wedding_members o
+                           where o.wedding_id = $1 and o.user_id <> $2 and o.role = 'couple'))`,
+      [weddingId, userId],
+    )
+    if (res.rowCount === 0) {
+      const { rows } = await db().query<{ present: boolean }>(
+        'select true as present from wedding_members where wedding_id = $1 and user_id = $2',
+        [weddingId, userId],
+      )
+      if (rows.length === 0) throw notFound('Участник не найден')
+      throw conflict('last_couple', 'Нельзя убрать последнего участника с ролью «пара» — свадьба останется ничьей')
+    }
     return reply.code(204).send()
   })
 

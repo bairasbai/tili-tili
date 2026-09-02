@@ -28,6 +28,9 @@ describe.skipIf(!live)('этап 1: вход, согласие, профиль, 
       corsOrigins: [],
       jwtAccessSecret: SECRET_A,
       jwtRefreshSecret: SECRET_R,
+      // Общий потолок отправок проверяется отдельным тестом; здесь он не должен
+      // мешать — база копит коды за час всех прогонов подряд.
+      otpMaxPerHourTotal: 1_000_000,
       policyVersion: '2026-09-02',
     })
     await app.ready()
@@ -46,6 +49,10 @@ describe.skipIf(!live)('этап 1: вход, согласие, профиль, 
   // поэтому у каждого прогона свой диапазон.
   const RUN = String(randomInt(100_000, 1_000_000))
   /** Свой номер на каждый тест. */
+  // Свой адрес на каждый набор: ограничитель по адресу общий для процесса,
+  // и без этого наборы отбирали бы друг у друга лимит.
+  const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
+
   const nextPhone = () => `+79${RUN}${String(phoneCounter).padStart(3, '0')}`
 
   /** Код не приходит по SMS в тестах — берём его хеш-сравнением по базе. */
@@ -63,7 +70,7 @@ describe.skipIf(!live)('этап 1: вход, согласие, профиль, 
   }
 
   async function requestCode(phone: string) {
-    return app.inject({ method: 'POST', url: '/auth/otp', payload: { phone } })
+    return app.inject({ method: 'POST', url: '/auth/otp', payload: { phone }, remoteAddress: IP })
   }
 
   async function signIn(phone: string, device = 'iPhone · Safari') {

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.2.0).
- * Операций: 129. Путей: 103. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.4.0).
+ * Операций: 130. Путей: 103. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -87,6 +87,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/reviews","url":"/vendor/reviews","operationId":null,"summary":"Отзывы на меня","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/reviews/{reviewId}/reply","url":"/vendor/reviews/:reviewId/reply","operationId":null,"summary":"Ответить на отзыв","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Подать документы на верификацию","tag":"vendor"},
+  {"method":"GET","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Мои свадьбы","tag":"weddings"},
   {"method":"POST","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Создать свадьбу (после квиза)","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Карточка свадьбы (данные для Home)","tag":"weddings"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Обновить (дата, город, бюджет, стиль)","tag":"weddings"},

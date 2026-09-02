@@ -43,7 +43,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return s
   }
 
-  /** Новая сессия: refresh в базу хешем, наружу — сам токен. */
+  /** Новая сессия — новое устройство. Обновление токена сессию не заводит. */
   async function issueTokens(userId: string, device: string | null): Promise<Tokens> {
     const refreshToken = createRefreshToken()
     const sessionId = uuidv7()
@@ -52,6 +52,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
        values ($1, $2, $3, $4, now(), now())`,
       [sessionId, userId, hashRefreshToken(refreshToken), device],
     )
+    return withUser(userId, sessionId, refreshToken)
+  }
+
+  /**
+   * Обновление токенов внутри существующей сессии: строка та же, меняется
+   * только хеш. Прежний сохраняется — по нему ловится повторное предъявление
+   * украденного токена.
+   */
+  async function rotateTokens(userId: string, sessionId: string, oldHash: string): Promise<Tokens> {
+    const refreshToken = createRefreshToken()
+    await db().query(
+      `update sessions
+          set refresh_hash = $2, prev_refresh_hash = $3, rotated_at = now(), last_used_at = now()
+        where id = $1`,
+      [sessionId, hashRefreshToken(refreshToken), oldHash],
+    )
+    return withUser(userId, sessionId, refreshToken)
+  }
+
+  async function withUser(userId: string, sessionId: string, refreshToken: string): Promise<Tokens> {
     const accessToken = await signAccessToken(app.appConfig.jwtAccessSecret!, { sub: userId, sid: sessionId })
     const { rows } = await db().query<{ id: string; name: string | null; phone: string }>(
       'select id, name, phone from users where id = $1',
@@ -75,6 +95,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const phone = normalizePhone((request.body as { phone: string }).phone)
 
+      // Коды старше часа не нужны ни для проверки, ни для ограничения частоты,
+      // а номер телефона — персональные данные: хранить их дольше нельзя.
+      // Уборка здесь, а не в кроне: таблица растёт только от этого запроса.
+      await db().query("delete from otp_codes where created_at < now() - interval '1 hour'")
+
       const { rows: recent } = await db().query<{ sends: string; last_at: Date | null }>(
         `select count(*)::text as sends, max(created_at) as last_at
            from otp_codes
@@ -94,6 +119,34 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         // Ограничение не столько от перебора, сколько от счёта за SMS:
         // без него чужой номер можно заваливать сообщениями за наши деньги.
         throw new TooManyRequests(3600, 'Слишком много запросов кода на этот номер. Попробуйте через час.')
+      }
+
+      // Потолок на все отправки: лимиты на номер и на адрес обходятся списком
+      // номеров и ботнетом, а счёт за SMS приходит нам. Срабатывание — авария,
+      // а не обычный отказ: в норме до него не доходит.
+      const { rows: total } = await db().query<{ sends: string }>(
+        `select count(*)::text as sends from otp_codes where created_at > now() - interval '1 hour'`,
+      )
+      if (Number(total[0]?.sends ?? 0) >= app.appConfig.otpMaxPerHourTotal) {
+        request.log.error(
+          { sends: Number(total[0]!.sends), limit: app.appConfig.otpMaxPerHourTotal },
+          'достигнут часовой потолок отправки кодов — похоже на перебор номеров',
+        )
+        throw new TooManyRequests(3600, 'Сервис временно не отправляет коды. Попробуйте позже.')
+      }
+
+      const ip = clientIp(request)
+      if (ip) {
+        // Лимит на номер не мешает перебирать номера: по одному коду на тысячу
+        // чужих телефонов. Платим мы, а сообщения получают незнакомые люди.
+        const { rows: byIp } = await db().query<{ sends: string }>(
+          `select count(*)::text as sends from otp_codes
+            where ip = $1 and created_at > now() - interval '1 hour'`,
+          [ip],
+        )
+        if (Number(byIp[0]?.sends ?? 0) >= app.appConfig.otpMaxPerIpHour) {
+          throw new TooManyRequests(3600, 'Слишком много запросов кода. Попробуйте через час.')
+        }
       }
 
       const code = generateCode()
@@ -201,10 +254,30 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         user_id: string
         device: string | null
         revoked_at: Date | null
-        created_at: Date
-      }>('select id, user_id, device, revoked_at, created_at from sessions where refresh_hash = $1', [hash])
+        last_used_at: Date
+        current: boolean
+      }>(
+        `select id, user_id, device, revoked_at, last_used_at, (refresh_hash = $1) as current
+           from sessions where refresh_hash = $1 or prev_refresh_hash = $1`,
+        [hash],
+      )
       const session = rows[0]
       if (!session) throw unauthorized('Токен обновления недействителен')
+
+      if (!session.current) {
+        // Предъявлен предыдущий refresh этой сессии. Настоящий владелец так
+        // не делает: его клиент уже получил новый. Значит, токен украли —
+        // и неизвестно, у кого сейчас свежий. Выводим отовсюду.
+        await db().query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [
+          session.user_id,
+        ])
+        await db().query(
+          `insert into audit_log (actor_id, action, entity, entity_id)
+           values ($1, 'auth.refresh_reuse', 'session', $2)`,
+          [session.user_id, session.id],
+        )
+        throw unauthorized('Токен обновления уже использован. Все сессии завершены — войдите заново.')
+      }
 
       if (session.revoked_at) {
         // Погашенный refresh предъявлен второй раз. Либо его украли, либо
@@ -221,13 +294,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         throw unauthorized('Токен обновления уже использован. Все сессии завершены — войдите заново.')
       }
 
-      if (Date.now() - session.created_at.getTime() > REFRESH_TTL_SECONDS * 1000) {
+      // 30 дней бездействия, а не 30 дней с первого входа: created_at теперь
+      // хранит настоящее время входа и показывается на экране устройств.
+      if (Date.now() - session.last_used_at.getTime() > REFRESH_TTL_SECONDS * 1000) {
         await db().query('update sessions set revoked_at = now() where id = $1', [session.id])
         throw unauthorized('Сессия истекла — войдите заново')
       }
 
-      await db().query('update sessions set revoked_at = now() where id = $1', [session.id])
-      return issueTokens(session.user_id, session.device)
+      return rotateTokens(session.user_id, session.id, hash)
     },
   )
 
