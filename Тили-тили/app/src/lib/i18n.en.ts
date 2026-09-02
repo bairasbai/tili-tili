@@ -1198,3 +1198,10 @@ Object.assign(EN, {
   '5. Гости': '5. Guests',
   'Внося контакты гостей, вы подтверждаете, что имеете право это делать. Гость видит только своё приглашение и может отказаться от рассылки.': 'By entering guest contacts you confirm you are entitled to do so. A guest sees only their own invitation and can opt out of messages.',
 })
+
+Object.assign(EN, {
+  'Написали': 'Contacted',
+  'Забронировано': 'Booked',
+  'Аванс внесён': 'Deposit paid',
+  'Выполнено': 'Completed',
+})

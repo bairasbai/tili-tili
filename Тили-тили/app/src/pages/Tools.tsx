@@ -20,13 +20,17 @@ export function Deal() {
   const [cancelled, setCancelled] = useState(false)
   const [dispute, setDispute] = useState(false)
   const [payBusy, runPay] = useBusy()
+  /* Шесть состояний сделки — решение владельца 2026-09-02, План §8.1.
+     Экран и документы обязаны называть шаги одинаково, иначе бэкенд получит
+     один список, а пара увидит другой. Мягкая бронь (hold 72 ч) — не отдельный
+     шаг, а срок жизни этапа «Переговоры», см. §18.3. */
   const steps = [
     { label: t('Кандидат'), done: true },
+    { label: t('Написали'), done: true },
     { label: t('Переговоры'), done: true },
-    { label: t('Договор'), done: true },
-    { label: t('Аванс 50%'), done: true },
-    { label: t('День X'), done: paid },
-    { label: t('Доплата'), done: paid },
+    { label: t('Забронировано'), done: true },
+    { label: t('Аванс внесён'), done: true },
+    { label: t('Выполнено'), done: paid },
   ]
   return (
     <div className="pb-28">
