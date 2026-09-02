@@ -18,13 +18,15 @@
     "gen": "pnpm run gen:contract && pnpm run gen:schemas && pnpm run gen:types",
     "migrate": "node-pg-migrate -m migrations",
     "verify": "pnpm run typecheck && pnpm run test && pnpm run lint",
-    "gen:schemas": "node scripts/gen-schemas.mjs"
+    "gen:schemas": "node scripts/gen-schemas.mjs",
+    "gen:cities": "node scripts/gen-cities.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
     "dotenv": "^17.2.1",
     "fastify": "^5.4.0",
     "ioredis": "^5.6.1",
+    "jose": "^6.1.0",
     "pg": "^8.16.3"
   },
   "devDependencies": {

@@ -12,6 +12,12 @@ export interface Config {
   redisUrl: string | null
   jwtAccessSecret: string | null
   jwtRefreshSecret: string | null
+  /** Версия текстов оферты и политики, под которой сейчас даётся согласие. */
+  policyVersion: string
+  smsProvider: string | null
+  smsAeroEmail: string | null
+  smsAeroKey: string | null
+  smsAeroSign: string | null
 }
 
 export class ConfigError extends Error {
@@ -73,6 +79,15 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     jwtRefreshSecret: production
       ? required('JWT_REFRESH_SECRET', source.JWT_REFRESH_SECRET)
       : (source.JWT_REFRESH_SECRET ?? null),
+    // Версия документа записывается в согласие и служит доказательством по
+    // 152-ФЗ. Клиент присылает ту, которую показал человеку; если она разошлась
+    // с серверной, согласие не принимается — иначе в базе окажется подпись
+    // под текстом, которого пользователь не видел.
+    policyVersion: source.POLICY_VERSION ?? '2026-09-02',
+    smsProvider: source.SMS_PROVIDER ?? null,
+    smsAeroEmail: source.SMSAERO_EMAIL ?? null,
+    smsAeroKey: source.SMSAERO_KEY ?? null,
+    smsAeroSign: source.SMSAERO_SIGN ?? null,
   }
 
   if (production) {

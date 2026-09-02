@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.2.0).
- * Операций: 128. Путей: 103. */
+ * Операций: 129. Путей: 103. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -22,10 +22,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/moderation/vendors","url":"/admin/moderation/vendors","operationId":null,"summary":"Очередь пост-модерации анкет","tag":"admin"},
   {"method":"POST","openapi":"/admin/moderation/vendors/{vendorId}","url":"/admin/moderation/vendors/:vendorId","operationId":null,"summary":"Решение по анкете","tag":"admin"},
   {"method":"GET","openapi":"/admin/weddings/{weddingId}","url":"/admin/weddings/:weddingId","operationId":null,"summary":"Просмотр проекта поддержкой","tag":"admin"},
-  {"method":"POST","openapi":"/auth/login","url":"/auth/login","operationId":null,"summary":"Вход","tag":"auth"},
   {"method":"GET","openapi":"/auth/oauth/{provider}","url":"/auth/oauth/:provider","operationId":null,"summary":"OAuth-вход (VK, Yandex, Google, Telegram)","tag":"auth"},
+  {"method":"POST","openapi":"/auth/otp","url":"/auth/otp","operationId":null,"summary":"Запросить код из SMS","tag":"auth"},
+  {"method":"POST","openapi":"/auth/otp/verify","url":"/auth/otp/verify","operationId":null,"summary":"Обменять код на токены","tag":"auth"},
   {"method":"POST","openapi":"/auth/refresh","url":"/auth/refresh","operationId":null,"summary":"Обновление access-token","tag":"auth"},
-  {"method":"POST","openapi":"/auth/register","url":"/auth/register","operationId":null,"summary":"Регистрация (email/телефон)","tag":"auth"},
   {"method":"GET","openapi":"/catalog/categories","url":"/catalog/categories","operationId":null,"summary":"Категории подрядчиков (площадки, фото, декор…)","tag":"catalog"},
   {"method":"POST","openapi":"/catalog/concierge","url":"/catalog/concierge","operationId":null,"summary":"Заявка консьержу при пустой выдаче","tag":"catalog"},
   {"method":"GET","openapi":"/catalog/vendors","url":"/catalog/vendors","operationId":null,"summary":"Каталог подрядчиков с фильтрами","tag":"catalog"},
@@ -73,6 +73,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Отписаться от push","tag":"notifications"},
   {"method":"POST","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Зарегистрировать подписку Web Push","tag":"notifications"},
   {"method":"GET","openapi":"/users/me/referral","url":"/users/me/referral","operationId":null,"summary":"Мой реферальный код и начисления","tag":"auth"},
+  {"method":"DELETE","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Выйти со всех устройств, кроме текущего","tag":"auth"},
   {"method":"GET","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Мои сессии и устройства","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/sessions/{sessionId}","url":"/users/me/sessions/:sessionId","operationId":null,"summary":"Завершить сессию","tag":"auth"},
   {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика анкеты (просмотры → лиды → сделки)","tag":"vendor"},

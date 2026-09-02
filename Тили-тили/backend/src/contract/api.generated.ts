@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/auth/register": {
+    "/auth/otp": {
         parameters: {
             query?: never;
             header?: never;
@@ -13,7 +13,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Регистрация (email/телефон) */
+        /**
+         * Запросить код из SMS
+         * @description Регистрация и вход — один и тот же шаг: аккаунт заводится при первой
+         *     успешной проверке кода. Пароля в продукте нет (экран /auth во фронте).
+         *     Ответ одинаков и для нового, и для известного номера — иначе по нему
+         *     можно перебором узнать, зарегистрирован ли человек.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -24,25 +30,36 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** Format: email */
-                        email: string;
-                        password: string;
-                        /** @example Алина */
-                        name: string;
+                        /**
+                         * @description E.164; на фронте вводятся 10 цифр после +7
+                         * @example +79171234567
+                         */
+                        phone: string;
                     };
                 };
             };
             responses: {
-                /** @description Создан */
-                201: {
+                /** @description Код отправлен */
+                200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["AuthTokens"];
+                        "application/json": {
+                            /**
+                             * @description сколько секунд код действителен
+                             * @example 300
+                             */
+                            expiresIn: number;
+                            /**
+                             * @description через сколько секунд можно запросить повторно
+                             * @example 60
+                             */
+                            resendAfter: number;
+                        };
                     };
                 };
-                409: components["responses"]["Conflict"];
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -51,7 +68,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/login": {
+    "/auth/otp/verify": {
         parameters: {
             query?: never;
             header?: never;
@@ -60,7 +77,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Вход */
+        /** Обменять код на токены */
         post: {
             parameters: {
                 query?: never;
@@ -71,9 +88,15 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** Format: email */
-                        email: string;
-                        password: string;
+                        /** @example +79171234567 */
+                        phone: string;
+                        /** @example 4821 */
+                        code: string;
+                        /**
+                         * @description подпись для экрана «Сессии и устройства»
+                         * @example iPhone · Safari
+                         */
+                        device?: string;
                     };
                 };
             };
@@ -88,6 +111,7 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["Unauthorized"];
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -105,7 +129,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Обновление access-token */
+        /**
+         * Обновление access-token
+         * @description Refresh одноразовый: при обмене старый гасится, выдаётся новый.
+         *     Повторное предъявление уже погашенного — признак кражи, и тогда
+         *     гасятся ВСЕ сессии пользователя.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3724,7 +3753,25 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /** Выйти со всех устройств, кроме текущего */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -3742,7 +3789,7 @@ export interface paths {
         post?: never;
         /**
          * Завершить сессию
-         * @description Пустой sessionId в теле не поддерживается; выход со всех устройств — повтор по каждой сессии.
+         * @description Выход со всех устройств сразу — DELETE /users/me/sessions.
          */
         delete: {
             parameters: {
@@ -5165,7 +5212,10 @@ export interface components {
         AuthTokens: {
             accessToken?: string;
             refreshToken?: string;
-            /** @example 3600 */
+            /**
+             * @description срок жизни accessToken, секунды. 15 минут по плану §1
+             * @example 900
+             */
             expiresIn?: number;
             user?: components["schemas"]["User"];
         };
@@ -5177,6 +5227,8 @@ export interface components {
             avatarUrl?: string | null;
         };
         City: {
+            /** @example 42 */
+            id?: number;
             /** @example Сибай */
             name?: string;
             /** @example Башкортостан */
@@ -5186,6 +5238,8 @@ export interface components {
             lat?: number;
             lon?: number;
             population?: number | null;
+            /** @description крупный город — блок «Популярные» в CityPicker */
+            big?: boolean;
         };
         CityRef: {
             name: string;
@@ -5635,6 +5689,15 @@ export interface components {
         };
         /** @description Конфликт (уже существует) */
         Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Слишком часто — см. Retry-After */
+        TooManyRequests: {
             headers: {
                 [name: string]: unknown;
             };

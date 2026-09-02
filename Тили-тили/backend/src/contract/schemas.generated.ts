@@ -37,7 +37,8 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string"
               },
               "expiresIn": {
-                  "type": "integer"
+                  "type": "integer",
+                  "description": "срок жизни accessToken, секунды. 15 минут по плану §1"
               },
               "user": {
                   "$ref": "contract#/definitions/User"
@@ -185,6 +186,9 @@ export const CONTRACT_SCHEMAS = {
       "City": {
           "type": "object",
           "properties": {
+              "id": {
+                  "type": "integer"
+              },
               "name": {
                   "type": "string"
               },
@@ -208,6 +212,10 @@ export const CONTRACT_SCHEMAS = {
                       "integer",
                       "null"
                   ]
+              },
+              "big": {
+                  "type": "boolean",
+                  "description": "крупный город — блок «Популярные» в CityPicker"
               }
           }
       },

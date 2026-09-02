@@ -59,42 +59,53 @@ tags:
 
 paths:
   # ───────────────────────── AUTH ─────────────────────────
-  /auth/register:
+  /auth/otp:
     post:
       tags: [auth]
-      summary: Регистрация (email/телефон)
+      security: []
+      summary: Запросить код из SMS
+      description: |
+        Регистрация и вход — один и тот же шаг: аккаунт заводится при первой
+        успешной проверке кода. Пароля в продукте нет (экран /auth во фронте).
+        Ответ одинаков и для нового, и для известного номера — иначе по нему
+        можно перебором узнать, зарегистрирован ли человек.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password, name]
+              required: [phone]
               properties:
-                email: { type: string, format: email }
-                password: { type: string, minLength: 8 }
-                name: { type: string, example: Алина }
+                phone: { type: string, example: '+79171234567', description: 'E.164; на фронте вводятся 10 цифр после +7' }
       responses:
-        '201':
-          description: Создан
+        '200':
+          description: Код отправлен
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AuthTokens' }
-        '409': { $ref: '#/components/responses/Conflict' }
-  /auth/login:
+              schema:
+                type: object
+                required: [expiresIn, resendAfter]
+                properties:
+                  expiresIn: { type: integer, example: 300, description: сколько секунд код действителен }
+                  resendAfter: { type: integer, example: 60, description: через сколько секунд можно запросить повторно }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /auth/otp/verify:
     post:
       tags: [auth]
-      summary: Вход
+      security: []
+      summary: Обменять код на токены
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [phone, code]
               properties:
-                email: { type: string, format: email }
-                password: { type: string }
+                phone: { type: string, example: '+79171234567' }
+                code: { type: string, example: '4821' }
+                device: { type: string, example: 'iPhone · Safari', description: подпись для экрана «Сессии и устройства» }
       responses:
         '200':
           description: OK
@@ -102,10 +113,16 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AuthTokens' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /auth/refresh:
     post:
       tags: [auth]
+      security: []
       summary: Обновление access-token
+      description: |
+        Refresh одноразовый: при обмене старый гасится, выдаётся новый.
+        Повторное предъявление уже погашенного — признак кражи, и тогда
+        гасятся ВСЕ сессии пользователя.
       requestBody:
         required: true
         content:
@@ -1756,11 +1773,17 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Session' }
+    delete:
+      tags: [auth]
+      summary: Выйти со всех устройств, кроме текущего
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: OK }
   /users/me/sessions/{sessionId}:
     delete:
       tags: [auth]
       summary: Завершить сессию
-      description: 'Пустой sessionId в теле не поддерживается; выход со всех устройств — повтор по каждой сессии.'
+      description: 'Выход со всех устройств сразу — DELETE /users/me/sessions.'
       security: [{ bearerAuth: [] }]
       parameters: [{ name: sessionId, in: path, required: true, schema: { type: string } }]
       responses:
@@ -2412,6 +2435,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Слишком часто — см. Retry-After
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
     Error:
@@ -2427,7 +2455,7 @@ components:
       properties:
         accessToken: { type: string }
         refreshToken: { type: string }
-        expiresIn: { type: integer, example: 3600 }
+        expiresIn: { type: integer, example: 900, description: 'срок жизни accessToken, секунды. 15 минут по плану §1' }
         user: { $ref: '#/components/schemas/User' }
     User:
       type: object
@@ -2439,12 +2467,14 @@ components:
     City:
       type: object
       properties:
+        id: { type: integer, example: 42 }
         name: { type: string, example: Сибай }
         region: { type: string, example: Башкортостан }
         district: { type: string, nullable: true, example: Баймакский район }
         lat: { type: number }
         lon: { type: number }
         population: { type: integer, nullable: true }
+        big: { type: boolean, description: 'крупный город — блок «Популярные» в CityPicker' }
     CityRef:
       type: object
       required: [name, region]

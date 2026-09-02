@@ -1,6 +1,6 @@
 # План разработки бэкенда «Тили-тили» — end-to-end
 
-> Составлен 2026-09-02 по контракту `Тили-тили/Тили-тили_API_openapi.yaml` **v0.2** (103 пути, 39 схем), документам «Бизнес-логика и бэкенд», «План приложения» (ч. 12–20), `CLAUDE.md`, `ERRORS.md` и фактической форме данных фронтенда (`app/src/lib/`).
+> Составлен 2026-09-02 по контракту `Тили-тили/Тили-тили_API_openapi.yaml` **v0.3** (103 пути, 39 схем), документам «Бизнес-логика и бэкенд», «План приложения» (ч. 12–20), `CLAUDE.md`, `ERRORS.md` и фактической форме данных фронтенда (`app/src/lib/`).
 >
 > Источник правды по API — openapi.yaml. Расхождения, которые план нашёл при составлении, закрыты в контракте v0.2 — история решений в разделе 8.
 >
@@ -56,6 +56,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | `otp_codes` | phone text, code_hash text, expires_at, attempts int, created_at | PK (phone, created_at) · IDX expires_at — чистка по крону |
 | `sessions` | id uuid, user_id, refresh_hash text, device text, created_at, revoked_at | PK id · FK user_id · IDX (user_id, revoked_at) — экран «Сессии и устройства» |
 | `consents` | id uuid, user_id, policy_version text, given_at, ip inet, withdrawn_at | PK id · FK user_id · IDX (user_id, withdrawn_at) — подтверждение по 152-ФЗ, запись не удаляется |
+| `otp_codes` | id uuid, phone text, code_hash text, expires_at, attempts int, created_at, consumed_at, ip inet | PK id · IDX (phone, created_at) · CHECK attempts ≤ 5 — код хранится хешем с серверным секретом; лимиты (5 мин жизни, 5 попыток, 5 отправок в час) живут в этой же таблице, а не в памяти процесса |
 | `notification_prefs` | user_id, tasks bool, chats bool, deals bool, tips bool, quiet_from time, quiet_to time | PK user_id · FK user_id |
 | `referrals` | code text, owner_id, invited_id, applied_at, earned bigint, currency | PK code · FK owner_id · **UQ invited_id** — код применяется один раз на аккаунт и только до первой сделки |
 | `push_subscriptions` | id uuid, user_id, endpoint text, keys jsonb, created_at | PK id · UQ endpoint · FK user_id |
@@ -173,12 +174,18 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 
 ### Этап 1 — Вход, согласие, профиль, гео · 5 дней
 
-**Пути (11):** `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/oauth/{provider}`, `/users/me/consent`, `/users/me`, `/users/me/sessions`, `/users/me/sessions/{sessionId}`, `/users/me/export`, `/geo/cities`, `/geo/nearest`.
+**Пути (11):** `/auth/otp`, `/auth/otp/verify`, `/auth/refresh`, `/auth/oauth/{provider}`, `/users/me/consent`, `/users/me`, `/users/me/sessions`, `/users/me/sessions/{sessionId}`, `/users/me/export`, `/geo/cities`, `/geo/nearest`.
+
+**Контракт v0.3.** Первая редакция описывала вход по `email` + `password`. Экран `/auth` во фронте (`app/src/pages/Account.tsx`) реализует телефон и четырёхзначный код, поля пароля в продукте нет вообще, и этот же раздел плана требует OTP по SMS. Два источника из трёх сходятся — поправлен контракт: `/auth/register` и `/auth/login` заменены на `POST /auth/otp` и `POST /auth/otp/verify`. Регистрация и вход — одно действие: аккаунт заводится при первой успешной проверке кода. Добавлен `DELETE /users/me/sessions` — выход со всех устройств одной операцией вместо цикла по списку.
 
 OTP по SMS: основной провайдер SMSAero, резервный — с автопереключением (План ч. 17 п. 4). JWT access 15 мин + refresh 30 дней с ротацией; таблица `sessions`. Согласие пишется с версией документа, датой и IP. Гео — таблица `cities` из `app/src/lib/cities.ts` + `pg_trgm`; Яндекс Геокодер — позже (Карта экранов §0.2.1).
 
 **Экраны с моков:** `/auth`, `/legal/*`, `/settings` (сессии, язык), `CityPicker`.
 **Готово, когда:** сценарий «телефон → код → токены → refresh → выход со всех устройств» проходит интеграционным тестом; регистрация без `POST /users/me/consent` возвращает 403 на любой защищённый путь; `GET /geo/cities?q=сиб` отдаёт «Сибай» первым.
+
+**OAuth отложен.** `/auth/oauth/{provider}` отвечает 501 с кодом `oauth_not_configured` — не «забыт», а ждёт приложений во ВКонтакте, Яндексе, Google и Telegram: их регистрирует владелец. На экране входа кнопок OAuth сейчас нет, продукт этим путём не ходит. Остальные десять путей этапа сданы.
+
+**SMS.** Отправитель сменный: `console` в разработке (код уходит в лог), `smsaero` в production. Без учётной записи SMSAero прод-отправка невозможна, но весь сценарий входа рабочий — не хватает только последней мили. `NODE_ENV=production` без настоящего провайдера не стартует: с кодом в логе никто не войдёт.
 
 ### Этап 2 — Свадьба и команда · 5 дней
 
@@ -445,6 +452,9 @@ WebSocket описан отдельно во вводном разделе ко�
 
 | Вопрос | Когда решать |
 |---|---|
+| **SMSAero**: учётная запись и ключ. До этого код из SMS уходит в лог, а не человеку | до беты; этап 1 сдан без него |
+| **OAuth**: приложения во ВКонтакте, Яндексе, Google и Telegram регистрирует владелец | когда на экране входа появятся кнопки соцсетей |
+| **Координаты городов**: в данных фронта их 27 из 119, `/geo/nearest` выбирает только среди них | вместе с подключением Яндекс Геокодера |
 | Платёжный провайдер (ЮKassa / Тинькофф / CloudPayments) — от него зависит форма `POST …/pay` | до этапа 4; нужен договор и расчётный счёт |
 | Тексты оферты и политики ПДн — сейчас помечены в приложении как черновик | до публичного запуска; нужен юрист |
 | Сид категорий — 35 записей есть, но нет описаний и иконок для каталога | до этапа 3 |

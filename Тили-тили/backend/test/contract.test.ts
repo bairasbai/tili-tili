@@ -57,6 +57,51 @@ describe('контракт', () => {
     expect(res.json().error.code).toBe('not_found')
   })
 
+  it('пути этапа 1 больше не заглушки', async () => {
+    // Список ведётся руками намеренно: он показывает, что этап действительно
+    // сдан, и падает, если регистрация маршрутов сломается при следующей правке.
+    const done = [
+      'POST /auth/otp',
+      'POST /auth/otp/verify',
+      'POST /auth/refresh',
+      'GET /users/me',
+      'PATCH /users/me',
+      'DELETE /users/me',
+      'POST /users/me/consent',
+      'DELETE /users/me/consent',
+      'GET /users/me/sessions',
+      'DELETE /users/me/sessions',
+      'DELETE /users/me/sessions/:sessionId',
+      'GET /users/me/export',
+      'GET /geo/cities',
+      'GET /geo/nearest',
+    ]
+    const stillStub: string[] = []
+    for (const key of done) {
+      const [method, url] = key.split(' ') as [string, string]
+      const res = await app.inject({ method: method as 'GET', url: fill(url) })
+      if (res.statusCode === 501) stillStub.push(key)
+    }
+    expect(stillStub).toEqual([])
+  })
+
+  it('OAuth отложен явно: 501, но со своей причиной, а не общей заглушкой', async () => {
+    const res = await app.inject({ method: 'GET', url: '/auth/oauth/vk' })
+    expect(res.statusCode).toBe(501)
+    // Не not_implemented: путь не «забыт», а ждёт приложений провайдеров.
+    expect(res.json().error.code).toBe('oauth_not_configured')
+  })
+
+  it('заглушек остаётся ровно столько, сколько работы впереди', async () => {
+    let stub = 0
+    for (const op of CONTRACT_OPERATIONS) {
+      const res = await app.inject({ method: op.method as 'GET', url: fill(op.url) })
+      if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
+    }
+    // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 14)
+  })
+
   it('в контракте нет дублей метод+путь', () => {
     const keys = CONTRACT_OPERATIONS.map((o) => `${o.method} ${o.url}`)
     expect(new Set(keys).size).toBe(keys.length)

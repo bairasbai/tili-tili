@@ -2,10 +2,15 @@ import Fastify, { type FastifyError, type FastifyInstance, type FastifyPluginAsy
 import cors from '@fastify/cors'
 import { loadConfig, type Config } from './config.js'
 import { AppError, toErrorBody } from './errors.js'
+import { TooManyRequests } from './auth/otp.js'
 import { registerDb } from './plugins/db.js'
 import { registerRedis } from './plugins/redis.js'
 import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
+import { registerAuth } from './plugins/auth.js'
+import { authRoutes } from './routes/auth.js'
+import { geoRoutes } from './routes/geo.js'
 import { healthRoutes } from './routes/health.js'
+import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 
 /**
@@ -28,6 +33,18 @@ export async function buildApp(
     genReqId: () => crypto.randomUUID(),
     trustProxy: true,
     bodyLimit: 1_048_576,
+    ajv: {
+      customOptions: {
+        // Fastify по умолчанию МОЛЧА выбрасывает неописанные поля. Для нас это
+        // хуже отказа: опечатка `quiteHours` вместо `quietHours` просто ничего
+        // не сделает, и искать её придётся по факту «настройка не сохраняется».
+        // Пусть лучше приходит 422 с именем поля.
+        removeAdditional: false,
+        // Параметры строки запроса приходят строками — без приведения
+        // `?lat=54.7` не пройдёт проверку `type: number`.
+        coerceTypes: true,
+      },
+    },
   })
 
   await app.register(cors, {
@@ -42,11 +59,15 @@ export async function buildApp(
 
   await registerDb(app, config)
   await registerRedis(app, config)
+  await registerAuth(app, config)
 
   // Всё, что нельзя разобрать, обязано выглядеть одинаково — иначе фронт
   // разбирает три разных формы ошибки вместо одной.
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof AppError) {
+      // Контракт обещает Retry-After при 429 — без него клиент не знает,
+      // когда повторить, и либо долбится, либо ждёт наугад.
+      if (error instanceof TooManyRequests) reply.header('retry-after', String(error.retryAfter))
       return reply.code(error.statusCode).send(toErrorBody(error.code, error.message, error.fields))
     }
     if (error.validation) {
@@ -77,6 +98,9 @@ export async function buildApp(
   })
 
   await app.register(healthRoutes)
+  await app.register(authRoutes)
+  await app.register(userRoutes)
+  await app.register(geoRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
 

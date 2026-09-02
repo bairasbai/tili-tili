@@ -1,0 +1,1073 @@
+[
+  {
+    "id": 1,
+    "name": "Москва",
+    "region": "Москва",
+    "district": null,
+    "big": true,
+    "lat": 55.7558,
+    "lon": 37.6173
+  },
+  {
+    "id": 2,
+    "name": "Санкт-Петербург",
+    "region": "Санкт-Петербург",
+    "district": null,
+    "big": true,
+    "lat": 59.9343,
+    "lon": 30.3351
+  },
+  {
+    "id": 3,
+    "name": "Казань",
+    "region": "Татарстан",
+    "district": null,
+    "big": true,
+    "lat": 55.7963,
+    "lon": 49.1088
+  },
+  {
+    "id": 4,
+    "name": "Екатеринбург",
+    "region": "Свердловская область",
+    "district": null,
+    "big": true,
+    "lat": 56.8389,
+    "lon": 60.6057
+  },
+  {
+    "id": 5,
+    "name": "Новосибирск",
+    "region": "Новосибирская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 6,
+    "name": "Нижний Новгород",
+    "region": "Нижегородская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 7,
+    "name": "Самара",
+    "region": "Самарская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 8,
+    "name": "Краснодар",
+    "region": "Краснодарский край",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 9,
+    "name": "Сочи",
+    "region": "Краснодарский край",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 10,
+    "name": "Ростов-на-Дону",
+    "region": "Ростовская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 11,
+    "name": "Красноярск",
+    "region": "Красноярский край",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 12,
+    "name": "Воронеж",
+    "region": "Воронежская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 13,
+    "name": "Пермь",
+    "region": "Пермский край",
+    "district": null,
+    "big": true,
+    "lat": 58.0105,
+    "lon": 56.2502
+  },
+  {
+    "id": 14,
+    "name": "Волгоград",
+    "region": "Волгоградская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 15,
+    "name": "Челябинск",
+    "region": "Челябинская область",
+    "district": null,
+    "big": true,
+    "lat": 55.1644,
+    "lon": 61.4368
+  },
+  {
+    "id": 16,
+    "name": "Омск",
+    "region": "Омская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 17,
+    "name": "Тюмень",
+    "region": "Тюменская область",
+    "district": null,
+    "big": true,
+    "lat": 57.1522,
+    "lon": 65.5272
+  },
+  {
+    "id": 18,
+    "name": "Ижевск",
+    "region": "Удмуртия",
+    "district": null,
+    "big": true,
+    "lat": 56.8527,
+    "lon": 53.2115
+  },
+  {
+    "id": 19,
+    "name": "Барнаул",
+    "region": "Алтайский край",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 20,
+    "name": "Тула",
+    "region": "Тульская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 21,
+    "name": "Ярославль",
+    "region": "Ярославская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 22,
+    "name": "Иркутск",
+    "region": "Иркутская область",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 23,
+    "name": "Хабаровск",
+    "region": "Хабаровский край",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 24,
+    "name": "Владивосток",
+    "region": "Приморский край",
+    "district": null,
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 25,
+    "name": "Уфа",
+    "region": "Башкортостан",
+    "district": null,
+    "big": true,
+    "lat": 54.7388,
+    "lon": 55.9721
+  },
+  {
+    "id": 26,
+    "name": "Стерлитамак",
+    "region": "Башкортостан",
+    "district": null,
+    "big": true,
+    "lat": 53.6331,
+    "lon": 55.9465
+  },
+  {
+    "id": 27,
+    "name": "Салават",
+    "region": "Башкортостан",
+    "district": null,
+    "big": true,
+    "lat": 53.3617,
+    "lon": 55.9239
+  },
+  {
+    "id": 28,
+    "name": "Нефтекамск",
+    "region": "Башкортостан",
+    "district": null,
+    "big": true,
+    "lat": 56.0884,
+    "lon": 54.2482
+  },
+  {
+    "id": 29,
+    "name": "Октябрьский",
+    "region": "Башкортостан",
+    "district": null,
+    "big": true,
+    "lat": 54.4815,
+    "lon": 53.4655
+  },
+  {
+    "id": 30,
+    "name": "Белорецк",
+    "region": "Башкортостан",
+    "district": "Белорецкий район",
+    "big": true,
+    "lat": 53.9675,
+    "lon": 58.4099
+  },
+  {
+    "id": 31,
+    "name": "Туймазы",
+    "region": "Башкортостан",
+    "district": "Туймазинский район",
+    "big": true,
+    "lat": 54.5997,
+    "lon": 53.7133
+  },
+  {
+    "id": 32,
+    "name": "Ишимбай",
+    "region": "Башкортостан",
+    "district": "Ишимбайский район",
+    "big": true,
+    "lat": 53.4545,
+    "lon": 56.0439
+  },
+  {
+    "id": 33,
+    "name": "Кумертау",
+    "region": "Башкортостан",
+    "district": null,
+    "big": true,
+    "lat": 52.7665,
+    "lon": 55.7834
+  },
+  {
+    "id": 34,
+    "name": "Сибай",
+    "region": "Башкортостан",
+    "district": "городской округ Сибай",
+    "big": true,
+    "lat": 52.7181,
+    "lon": 58.6658
+  },
+  {
+    "id": 35,
+    "name": "Мелеуз",
+    "region": "Башкортостан",
+    "district": "Мелеузовский район",
+    "big": true,
+    "lat": 52.9636,
+    "lon": 55.9328
+  },
+  {
+    "id": 36,
+    "name": "Белебей",
+    "region": "Башкортостан",
+    "district": "Белебеевский район",
+    "big": true,
+    "lat": 54.1031,
+    "lon": 54.1112
+  },
+  {
+    "id": 37,
+    "name": "Бирск",
+    "region": "Башкортостан",
+    "district": "Бирский район",
+    "big": true,
+    "lat": 55.4157,
+    "lon": 55.5428
+  },
+  {
+    "id": 38,
+    "name": "Учалы",
+    "region": "Башкортостан",
+    "district": "Учалинский район",
+    "big": true,
+    "lat": 54.2999,
+    "lon": 59.3778
+  },
+  {
+    "id": 39,
+    "name": "Благовещенск",
+    "region": "Башкортостан",
+    "district": "Благовещенский район",
+    "big": true,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 40,
+    "name": "Дюртюли",
+    "region": "Башкортостан",
+    "district": "Дюртюлинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 41,
+    "name": "Янаул",
+    "region": "Башкортостан",
+    "district": "Янаульский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 42,
+    "name": "Давлеканово",
+    "region": "Башкортостан",
+    "district": "Давлекановский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 43,
+    "name": "Баймак",
+    "region": "Башкортостан",
+    "district": "Баймакский район",
+    "big": false,
+    "lat": 52.593,
+    "lon": 58.3224
+  },
+  {
+    "id": 44,
+    "name": "Межгорье",
+    "region": "Башкортостан",
+    "district": "Межгорье (ЗАТО)",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 45,
+    "name": "Агидель",
+    "region": "Башкортостан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 46,
+    "name": "Чишмы",
+    "region": "Башкортостан",
+    "district": "Чишминский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 47,
+    "name": "Караидель",
+    "region": "Башкортостан",
+    "district": "Караидельский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 48,
+    "name": "Николо-Берёзовка",
+    "region": "Башкортостан",
+    "district": "Краснокамский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 49,
+    "name": "Приютово",
+    "region": "Башкортостан",
+    "district": "Белебеевский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 50,
+    "name": "Раевский",
+    "region": "Башкортостан",
+    "district": "Альшеевский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 51,
+    "name": "Иглино",
+    "region": "Башкортостан",
+    "district": "Иглинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 52,
+    "name": "Кандры",
+    "region": "Башкортостан",
+    "district": "Туймазинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 53,
+    "name": "Красноусольский",
+    "region": "Башкортостан",
+    "district": "Гафурийский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 54,
+    "name": "Толбазы",
+    "region": "Башкортостан",
+    "district": "Аургазинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 55,
+    "name": "Месягутово",
+    "region": "Башкортостан",
+    "district": "Дуванский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 56,
+    "name": "Фёдоровка",
+    "region": "Башкортостан",
+    "district": "Фёдоровский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 57,
+    "name": "Чекмагуш",
+    "region": "Башкортостан",
+    "district": "Чекмагушевский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 58,
+    "name": "Стерлибашево",
+    "region": "Башкортостан",
+    "district": "Стерлибашевский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 59,
+    "name": "Буздяк",
+    "region": "Башкортостан",
+    "district": "Буздякский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 60,
+    "name": "Кушнаренково",
+    "region": "Башкортостан",
+    "district": "Кушнаренковский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 61,
+    "name": "Нурли",
+    "region": "Башкортостан",
+    "district": "Кигинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 62,
+    "name": "Мраково",
+    "region": "Башкортостан",
+    "district": "Кугарчинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 63,
+    "name": "Аскарово",
+    "region": "Башкортостан",
+    "district": "Абзелиловский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 64,
+    "name": "Архангельское",
+    "region": "Башкортостан",
+    "district": "Архангельский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 65,
+    "name": "Инзер",
+    "region": "Башкортостан",
+    "district": "Белорецкий район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 66,
+    "name": "Старосубхангулово",
+    "region": "Башкортостан",
+    "district": "Бурзянский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 67,
+    "name": "Верхнеяркеево",
+    "region": "Башкортостан",
+    "district": "Илишевский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 68,
+    "name": "Киргиз-Мияки",
+    "region": "Башкортостан",
+    "district": "Миякинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 69,
+    "name": "Кумертау (Чертково)",
+    "region": "Башкортостан",
+    "district": "Куюргазинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 70,
+    "name": "Ермолаево",
+    "region": "Башкортостан",
+    "district": "Куюргазинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 71,
+    "name": "Шаран",
+    "region": "Башкортостан",
+    "district": "Шаранский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 72,
+    "name": "Бакалы",
+    "region": "Башкортостан",
+    "district": "Бакалинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 73,
+    "name": "Мишкино",
+    "region": "Башкортостан",
+    "district": "Мишкинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 74,
+    "name": "Калтасы",
+    "region": "Башкортостан",
+    "district": "Калтасинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 75,
+    "name": "Красная Горка",
+    "region": "Башкортостан",
+    "district": "Нуримановский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 76,
+    "name": "Аскино",
+    "region": "Башкортостан",
+    "district": "Аскинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 77,
+    "name": "Бураево",
+    "region": "Башкортостан",
+    "district": "Бураевский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 78,
+    "name": "Верхние Татышлы",
+    "region": "Башкортостан",
+    "district": "Татышлинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 79,
+    "name": "Большеустьикинское",
+    "region": "Башкортостан",
+    "district": "Мечетлинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 80,
+    "name": "Малояз",
+    "region": "Башкортостан",
+    "district": "Салаватский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 81,
+    "name": "Акъяр",
+    "region": "Башкортостан",
+    "district": "Хайбуллинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 82,
+    "name": "Исянгулово",
+    "region": "Башкортостан",
+    "district": "Зианчуринский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 83,
+    "name": "Юмагузино",
+    "region": "Башкортостан",
+    "district": "Кугарчинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 84,
+    "name": "Старобалтачево",
+    "region": "Башкортостан",
+    "district": "Дюртюлинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 85,
+    "name": "Сермёново",
+    "region": "Башкортостан",
+    "district": "Туймазинский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 86,
+    "name": "Ургаза",
+    "region": "Башкортостан",
+    "district": "Караидельский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 87,
+    "name": "Киршаново",
+    "region": "Башкортостан",
+    "district": "Уфимский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 88,
+    "name": "Жуково",
+    "region": "Башкортостан",
+    "district": "Уфимский район",
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 89,
+    "name": "Магнитогорск",
+    "region": "Челябинская область",
+    "district": null,
+    "big": true,
+    "lat": 53.4186,
+    "lon": 59.0472
+  },
+  {
+    "id": 90,
+    "name": "Миасс",
+    "region": "Челябинская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 91,
+    "name": "Златоуст",
+    "region": "Челябинская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 92,
+    "name": "Кыштым",
+    "region": "Челябинская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 93,
+    "name": "Троицк",
+    "region": "Челябинская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 94,
+    "name": "Аша",
+    "region": "Челябинская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 95,
+    "name": "Орск",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": true,
+    "lat": 51.2293,
+    "lon": 58.4752
+  },
+  {
+    "id": 96,
+    "name": "Новотроицк",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 97,
+    "name": "Гай",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 98,
+    "name": "Медногорск",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 99,
+    "name": "Кувандык",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 100,
+    "name": "Оренбург",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": true,
+    "lat": 51.7682,
+    "lon": 55.0968
+  },
+  {
+    "id": 101,
+    "name": "Бузулук",
+    "region": "Оренбургская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 102,
+    "name": "Набережные Челны",
+    "region": "Татарстан",
+    "district": null,
+    "big": true,
+    "lat": 55.7436,
+    "lon": 52.3958
+  },
+  {
+    "id": 103,
+    "name": "Нижнекамск",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 104,
+    "name": "Альметьевск",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 105,
+    "name": "Бугульма",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 106,
+    "name": "Елабуга",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 107,
+    "name": "Лениногорск",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 108,
+    "name": "Заинск",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 109,
+    "name": "Бавлы",
+    "region": "Татарстан",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 110,
+    "name": "Березовский",
+    "region": "Свердловская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 111,
+    "name": "Сарапул",
+    "region": "Удмуртия",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 112,
+    "name": "Глазов",
+    "region": "Удмуртия",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 113,
+    "name": "Воткинск",
+    "region": "Удмуртия",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 114,
+    "name": "Березники",
+    "region": "Пермский край",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 115,
+    "name": "Чайковский",
+    "region": "Пермский край",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 116,
+    "name": "Кудымкар",
+    "region": "Пермский край",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 117,
+    "name": "Тобольск",
+    "region": "Тюменская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 118,
+    "name": "Ишим",
+    "region": "Тюменская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  },
+  {
+    "id": 119,
+    "name": "Ялуторовск",
+    "region": "Тюменская область",
+    "district": null,
+    "big": false,
+    "lat": null,
+    "lon": null
+  }
+]
