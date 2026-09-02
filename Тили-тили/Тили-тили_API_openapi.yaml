@@ -1,10 +1,25 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
+
+    ## Решения владельца 2026-09-02 (контракт v0.2)
+    - Деньги — объект `{ amount: копейки, currency: ISO 4217 }` у КАЖДОЙ суммы.
+      Не одна валюта на свадьбу: план §19.7 описывает свадьбу за границей, где
+      сделка в евро, а бюджет в рублях. В MVP принимается только RUB.
+    - У слота нет собственного статуса. Слот либо пуст, либо несёт сделку;
+      состояние живёт в `Deal.state` — шесть значений. `Slot.tileState` —
+      производная подпись для мозаики, только для чтения.
+    - Гость опознаётся ОДНИМ персональным токеном во всех гостевых путях
+      (`/rsvp/{guestToken}`, `/gifts/{guestToken}`, `/join/{guestToken}/…`).
+      Общий код свадьбы не годится: по нему нельзя подставить имя в приглашение
+      и нельзя дать гостю снять СВОЙ резерв подарка. Анонимность сохраняется —
+      система знает гостя, а API пары этот токен не отдаёт никогда (§9).
+    - Переноса данных с localStorage-моков не будет: реальных пользователей не
+      было, эндпоинт импорта не заводится.
 
     ## Роли
     - `couple` — молодожёны (владельцы свадьбы): полный доступ.
@@ -19,6 +34,10 @@ info:
       Решение владельца 2026-09-02. Пример: 85 000 ₽ = `{ "amount": 8500000, "currency": "RUB" }`.
       Дробных сумм в JSON не бывает; показ рублей — задача клиента.
     - Пагинация: `?limit=20&cursor=...` → `{ items, nextCursor }`.
+    - Живые обновления — WebSocket `wss://…/ws?token=<access>`. События: `message.created`,
+      `deal.state_changed`, `timeline.shifted`, `seating.updated`, `menu.poll.updated`,
+      `notification.created`. Клиент без WebSocket опрашивает REST раз в 30 с (§13.4).
+      OpenAPI 3.0 не описывает WS-каналы — контракт событий ведётся здесь.
     - Ошибки: `{ "error": { "code": "string", "message": "string" } }`.
     - Идемпотентность мутаций оплаты/брони — через `Idempotency-Key` header.
 servers:
@@ -776,6 +795,55 @@ paths:
       responses:
         '200': { description: Принято }
 
+  /weddings/{weddingId}/guests/{guestId}/invite-link:
+    post:
+      tags: [guests]
+      summary: Выдать (или перевыпустить) одноразовую ссылку-приглашение гостю
+      description: >
+        Возвращает ссылку вида https://tili-tili.ru/i/{shareCode}. Код одноразовый:
+        при первом открытии он гаснет и гость получает персональный guestToken в свой
+        браузер. Пара сырой токен не видит. Повторный вызов гасит прежний код и выдаёт
+        новый — на случай «гость потерял ссылку».
+      parameters:
+        - { name: weddingId, in: path, required: true, schema: { type: string } }
+        - { name: guestId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, example: 'https://tili-tili.ru/i/7F3K-QX9M' }
+                  expiresAt: { type: string, format: date-time, description: '30 дней или дата свадьбы + 30 дней — что позже' }
+
+  /invite/{shareCode}:
+    get:
+      tags: [guests]
+      security: []
+      summary: Обменять одноразовый код на персональный токен гостя
+      description: >
+        Вызывается браузером гостя при переходе по ссылке. Код гасится в этот момент.
+        Токен возвращается один раз и дальше живёт в localStorage гостя; повторный вызов
+        с тем же кодом отдаёт 410.
+      parameters:
+        - { name: shareCode, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [guestToken, guestName, wedding]
+                properties:
+                  guestToken: { type: string }
+                  guestName: { type: string }
+                  wedding: { $ref: '#/components/schemas/WeddingPublic' }
+        '410': { description: Код уже использован или истёк — попросите пару выслать ссылку заново }
+
   # ───────────────────────── TASKS / CHECKLIST ─────────────────────────
   /weddings/{weddingId}/tasks:
     get:
@@ -1250,12 +1318,12 @@ paths:
         '204': { description: OK }
 
   # ───────────────────────── WISHLIST (гость по ссылке) ─────────────────────────
-  /gifts/{code}:
+  /gifts/{guestToken}:
     get:
       tags: [wishlist-guest]
       summary: Список подарков глазами гостя
       description: Без авторизации, по коду приглашения. Занятые подарки помечены, но кем — не видно.
-      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       responses:
         '200':
           description: OK
@@ -1268,7 +1336,7 @@ paths:
                   funds: { type: array, items: { $ref: '#/components/schemas/Fund' } }
                   antiGifts: { type: array, items: { type: string } }
                   fairPrice: { $ref: '#/components/schemas/Money' }
-  /gifts/{code}/{giftId}/reserve:
+  /gifts/{guestToken}/{giftId}/reserve:
     post:
       tags: [wishlist-guest]
       summary: Зарезервировать подарок
@@ -1277,7 +1345,7 @@ paths:
         либо unique constraint). Второй гость получает 409 — подарить дважды нельзя.
         Токен гостя сохраняется, но паре не отдаётся никогда.
       parameters:
-        - { name: code, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       responses:
@@ -1288,16 +1356,16 @@ paths:
       summary: Снять свой резерв
       description: Только по тому же гостевому токену, которым резерв был поставлен.
       parameters:
-        - { name: code, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: OK }
-  /gifts/{code}/{giftId}/fund:
+  /gifts/{guestToken}/{giftId}/fund:
     post:
       tags: [wishlist-guest]
       summary: Внести часть суммы (складчина)
       parameters:
-        - { name: code, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody:
@@ -1315,12 +1383,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Gift' }
-  /gifts/{code}/funds/{fundId}:
+  /gifts/{guestToken}/funds/{fundId}:
     post:
       tags: [wishlist-guest]
       summary: Перевод в денежный фонд
       parameters:
-        - { name: code, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/GuestToken' }
         - { name: fundId, in: path, required: true, schema: { type: string } }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody:
@@ -1480,13 +1548,13 @@ paths:
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       responses:
         '202': { description: Принято в очередь }
-  /join/{code}/shuttle:
+  /join/{guestToken}/shuttle:
     post:
       tags: [logistics-guest]
       summary: Гость записывается в автобус
       description: Место занимается атомарно; при переполнении — 409.
       parameters:
-        - { name: code, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/GuestToken' }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody:
         required: true
@@ -1500,11 +1568,11 @@ paths:
       responses:
         '200': { description: Записан }
         '409': { $ref: '#/components/responses/Conflict' }
-  /join/{code}/hotels:
+  /join/{guestToken}/hotels:
     get:
       tags: [logistics-guest]
       summary: Отельные блоки для гостя
-      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       responses:
         '200':
           description: OK
@@ -1553,12 +1621,12 @@ paths:
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       responses:
         '202': { description: Принято в очередь }
-  /join/{code}/menu-vote:
+  /join/{guestToken}/menu-vote:
     post:
       tags: [catering]
       summary: Гость выбирает блюдо
       description: Один голос на гостя; повторный вызов меняет выбор, а не добавляет второй.
-      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       requestBody:
         required: true
         content:
@@ -1637,6 +1705,663 @@ paths:
       responses:
         '204': { description: OK }
 
+
+  # ───────────────────────── ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ ─────────────────────────
+  /users/me:
+    get:
+      tags: [auth]
+      summary: Мой профиль
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+    patch:
+      tags: [auth]
+      summary: Изменить профиль и настройки уведомлений
+      description: Имя, язык, таймзона, четыре канала push и тихие часы — экран «Настройки».
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserProfile' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+    delete:
+      tags: [auth]
+      summary: Удалить аккаунт
+      description: |
+        Soft-delete на 30 дней, затем полное удаление кроном (План §19.1).
+        Активные сделки требуют подтверждения второй стороны — 409 со списком.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: OK }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /users/me/sessions:
+    get:
+      tags: [auth]
+      summary: Мои сессии и устройства
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Session' }
+  /users/me/sessions/{sessionId}:
+    delete:
+      tags: [auth]
+      summary: Завершить сессию
+      description: 'Пустой sessionId в теле не поддерживается; выход со всех устройств — повтор по каждой сессии.'
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: sessionId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: OK }
+  /users/me/export:
+    get:
+      tags: [auth]
+      summary: Экспорт моих данных
+      description: 152-ФЗ, право на получение данных. JSON со всем, что принадлежит пользователю.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+  /users/me/push-subscriptions:
+    post:
+      tags: [notifications]
+      summary: Зарегистрировать подписку Web Push
+      description: 'VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» — при отказе клиент откатывается на email.'
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys]
+              properties:
+                endpoint: { type: string }
+                keys: { type: object }
+      responses:
+        '201': { description: Создано }
+    delete:
+      tags: [notifications]
+      summary: Отписаться от push
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: OK }
+  /users/me/referral:
+    get:
+      tags: [auth]
+      summary: Мой реферальный код и начисления
+      description: 'Код вида ТИЛИ-ИМЯ; обеим парам по 3 000 ₽ бонусами после первой сделки приглашённой (§3.15).'
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string, example: ТИЛИ-АЛИНА }
+                  invited: { type: integer }
+                  earned: { $ref: '#/components/schemas/Money' }
+  /referral/{code}/apply:
+    post:
+      tags: [auth]
+      summary: Применить чужой реферальный код
+      description: Один раз на аккаунт и только до первой сделки. Повтор — 409.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: OK }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────── СДЕЛКИ: ПЕРЕХОДЫ И ДОГОВОРЫ ─────────────────────────
+  /deals/{dealId}:
+    patch:
+      tags: [bookings]
+      summary: Перевести сделку в следующее состояние
+      description: |
+        Контракт знал только book/cancel/pay — четыре из шести состояний были
+        недостижимы через API. Разрешены только переходы вперёд по цепочке
+        candidate → contacted → negotiating → booked → paid_deposit → done
+        и cancelled из любого. Недопустимый переход — 409.
+        Переход в negotiating ставит negotiatingUntil = now + 72 ч.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: dealId, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { $ref: '#/components/schemas/DealState' }
+                note: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deal' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /deals/{dealId}/contract:
+    post:
+      tags: [documents]
+      summary: Сгенерировать договор из шаблона
+      description: 'Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10).'
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: dealId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [templateCode]
+              properties:
+                templateCode: { type: string, example: photographer }
+                fields: { type: object, description: 'паспортные данные и реквизиты, вводятся парой' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+  /weddings/{weddingId}/documents:
+    get:
+      tags: [documents]
+      summary: Договоры свадьбы
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Document' }
+
+  # ───────────────────────── ТАЙМИНГ И ПЛАН Б ─────────────────────────
+  /weddings/{weddingId}/timeline:
+    get:
+      tags: [timeline]
+      summary: Тайминг дня
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TimelineEvent' }
+    put:
+      tags: [timeline]
+      summary: Заменить тайминг целиком
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/TimelineEvent' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TimelineEvent' }
+  /weddings/{weddingId}/timeline/autogen:
+    post:
+      tags: [timeline]
+      summary: Автоплан дня по забронированной команде
+      description: 'Собирает черновик из стандартных длительностей и проверяет конфликты (План §8.9). Возвращает предпросмотр — не применяет.'
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: '#/components/schemas/TimelineEvent' } }
+                  conflicts: { type: array, items: { type: string } }
+  /weddings/{weddingId}/timeline/shift:
+    post:
+      tags: [timeline]
+      summary: Сдвинуть день X на N минут
+      description: 'Кнопка «+15 мин» в режиме дня X. Сдвигает все последующие блоки и рассылает push команде и гостям — killer-фича §19.6.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minutes]
+              properties:
+                minutes: { type: integer, example: 15 }
+      responses:
+        '200': { description: OK }
+  /weddings/{weddingId}/planb/activate:
+    post:
+      tags: [timeline]
+      summary: Активировать план Б
+      description: 'Пересобирает тайминг под запасной сценарий и рассылает команде и гостям новую точку сбора (§13.1).'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scenario]
+              properties:
+                scenario: { type: string, example: rain }
+      responses:
+        '200': { description: OK }
+
+  # ───────────────────────── МЕДИА И АЛЬБОМ ─────────────────────────
+  /media/upload-url:
+    post:
+      tags: [media]
+      summary: Ссылка для прямой загрузки файла
+      description: |
+        Presigned URL в S3. Сервер проверяет тип и размер до выдачи ссылки,
+        длительность видео (≤180 с) — после загрузки; превышение отклоняет файл.
+        EXIF снимается на сервере (План §12.4).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, contentType, sizeBytes]
+              properties:
+                kind: { type: string, enum: [vendor_photo, vendor_video, album_photo, document_scan] }
+                contentType: { type: string }
+                sizeBytes: { type: integer }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl: { type: string }
+                  fileUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+  /weddings/{weddingId}/album:
+    get:
+      tags: [album]
+      summary: Общий фотоальбом гостей
+      description: 'Паре видны все кадры, гостю — только одобренные.'
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AlbumPhoto' }
+    post:
+      tags: [album]
+      summary: Гость добавляет фото
+      description: 'Без регистрации, по персональному токену. Кадр попадает в очередь модерации парой.'
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { $ref: '#/components/parameters/GuestToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileUrl, consent]
+              properties:
+                fileUrl: { type: string }
+                consent: { type: boolean, description: согласие на публикацию в альбоме пары }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlbumPhoto' }
+  /weddings/{weddingId}/album/{photoId}:
+    patch:
+      tags: [album]
+      summary: Одобрить или скрыть кадр
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: photoId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approved: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlbumPhoto' }
+
+  # ───────────────────────── ПОДАРКИ: ЧЕГО НЕ ХВАТАЛО ПАРЕ ─────────────────────────
+  /weddings/{weddingId}/anti-gifts:
+    put:
+      tags: [wishlist]
+      summary: Список «просим не дарить»
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+  /weddings/{weddingId}/funds:
+    post:
+      tags: [wishlist]
+      summary: Завести денежный фонд
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, target]
+              properties:
+                name: { type: string }
+                target: { $ref: '#/components/schemas/Money' }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fund' }
+  /weddings/{weddingId}/funds/{fundId}:
+    delete:
+      tags: [wishlist]
+      summary: Удалить фонд
+      description: 'Запрещено, если в фонд уже внесены деньги — 409.'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: fundId, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: OK }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────── ЖИЗНЬ ПРОЕКТА ─────────────────────────
+  /weddings/{weddingId}/reschedule:
+    post:
+      tags: [weddings]
+      summary: Перенести дату свадьбы
+      description: |
+        Проверяет занятость всей забронированной команды на новую дату и
+        возвращает отчёт «кто свободен, кто нет» (План §9.4). Освобождает старые
+        даты в календарях подрядчиков и захватывает новые в одной транзакции.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date]
+              properties:
+                date: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  free: { type: array, items: { type: string } }
+                  busy: { type: array, items: { type: string } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /weddings/{weddingId}/cancel:
+    post:
+      tags: [weddings]
+      summary: Отменить свадьбу
+      description: |
+        Требует подтверждения ОБОИХ партнёров: первый вызов создаёт запрос,
+        второй — исполняет. Всем сделкам в booked и paid_deposit ставится
+        cancelled_by_couple, подрядчики уведомляются, проект уходит в архив на
+        12 месяцев (План §19.1).
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200': { description: 'Запрос создан либо отмена исполнена — см. поле state' }
+  /catalog/concierge:
+    post:
+      tags: [catalog]
+      summary: Заявка консьержу при пустой выдаче
+      description: 'Пока в городе меньше 50 анкет, поиск честно предлагает подбор вручную за 24 часа (План §18.12).'
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categoryId]
+              properties:
+                categoryId: { type: string }
+                budget: { $ref: '#/components/schemas/Money' }
+                comment: { type: string }
+      responses:
+        '201': { description: Создано }
+  /complaints:
+    post:
+      tags: [moderation]
+      summary: Пожаловаться
+      description: 'Из чата, на отзыв, на анкету. SLA ответа модерации — 24 часа (План §18.2).'
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetKind, targetId, category]
+              properties:
+                targetKind: { type: string, enum: [vendor, review, message, deal] }
+                targetId: { type: string }
+                category: { type: string, enum: [fraud, content, no_show, spam] }
+                text: { type: string }
+      responses:
+        '201': { description: Создано }
+  /vendor/verification:
+    post:
+      tags: [vendor]
+      summary: Подать документы на верификацию
+      description: |
+        Паспорт или реквизиты ИП для сверки с ФНС. Документы не публикуются
+        никогда — публична только галочка «Проверен» (План §18.2, §8.2).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, fileUrl]
+              properties:
+                kind: { type: string, enum: [passport, ip, company] }
+                fileUrl: { type: string }
+                inn: { type: string }
+      responses:
+        '201': { description: Отправлено на проверку }
+
+  # ───────────────────────── АДМИНКА (План §19.10) ─────────────────────────
+  /admin/moderation/vendors:
+    get:
+      tags: [admin]
+      summary: Очередь пост-модерации анкет
+      description: 'Анкеты публикуются сразу; модератор проверяет новые за ≤24 ч, жалобы — вне очереди.'
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VendorPage' }
+  /admin/moderation/vendors/{vendorId}:
+    post:
+      tags: [admin]
+      summary: Решение по анкете
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: vendorId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [approve, reject, verify] }
+                reason: { type: string }
+      responses:
+        '200': { description: OK }
+  /admin/complaints:
+    get:
+      tags: [admin]
+      summary: Очередь жалоб
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Complaint' } }
+                  nextCursor: { type: string, nullable: true }
+  /admin/complaints/{complaintId}:
+    post:
+      tags: [admin]
+      summary: Решение по жалобе
+      description: 'Санкции по возрастанию: предупреждение → понижение в выдаче → блокировка (План §18.2).'
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: complaintId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [dismiss, warn, downrank, block] }
+                note: { type: string }
+      responses:
+        '200': { description: OK }
+  /admin/categories:
+    put:
+      tags: [admin]
+      summary: Категории и словарь синонимов
+      description: '«тамада» = «ведущий», «сладкий стол» = «кондитер» (План §19.2).'
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categories: { type: array, items: { $ref: '#/components/schemas/Category' } }
+                synonyms: { type: object }
+      responses:
+        '200': { description: OK }
+  /admin/metrics:
+    get:
+      tags: [admin]
+      summary: Дашборд платформы
+      description: 'Регистрации, заполненность анкет, сделки, стоимость LLM, готовность города к запуску (≥50 анкет).'
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: object }
+  /admin/weddings/{weddingId}:
+    get:
+      tags: [admin]
+      summary: Просмотр проекта поддержкой
+      description: |
+        Только чтение и только по обращению пары. Каждый просмотр пишется в
+        AuditLog: кто и зачем смотрел (План §19.10 п. 5).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: reason, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Wedding' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1645,6 +2370,18 @@ components:
       bearerFormat: JWT
 
   parameters:
+    GuestToken:
+      name: guestToken
+      in: path
+      required: true
+      description: |
+        Персональный токен гостя из его ссылки-приглашения. Решение владельца
+        2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+        Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+        приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+        Анонимность подарков при этом сохраняется: система знает гостя, а API
+        пары этот токен не отдаёт никогда (§9).
+      schema: { type: string }
     WeddingId:
       name: weddingId
       in: path
@@ -1724,6 +2461,7 @@ components:
         budgetTotal: { $ref: '#/components/schemas/Money' }
         guestsPlanned: { type: integer }
         style: { type: string }
+        tz: { type: string, example: Asia/Yekaterinburg, description: 'таймзона места свадьбы. По ней открывается чат дня X и считаются напоминания — не по таймзоне пользователя' }
         inviteText: { type: string }
         inviteThemeId: { type: integer }
         members:
@@ -1741,6 +2479,11 @@ components:
         venue: { type: string, nullable: true }
     Member:
       type: object
+      description: >
+        Член свадьбы — тот, у кого есть аккаунт и доступ в приложение.
+        Гость (guest) и свой подрядчик (guest-vendor) членами НЕ являются:
+        они опознаются токеном по ссылке, аккаунта не имеют и в members не попадают.
+        Матрица доступа (§4 плана) описывает все шесть ролей, эта схема — только четыре с аккаунтом.
       properties:
         user: { $ref: '#/components/schemas/User' }
         role: { type: string, enum: [couple, helper, coordinator, vendor] }
@@ -1756,6 +2499,12 @@ components:
         used: { type: boolean }
     Category:
       type: object
+      description: >
+        Справочник категорий подрядчиков. Список фиксированный — 35 записей,
+        сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES
+        во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится
+        намеренно: добавление категории не должно требовать выката новой версии
+        контракта. Изменять список может только админ через POST /admin/categories.
       properties:
         id: { type: string, example: photo }
         title: { type: string, example: Фотограф }
@@ -1817,13 +2566,23 @@ components:
         portfolioUrls: { type: array, items: { type: string } }
     Slot:
       type: object
+      description: |
+        Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного
+        статуса у него нет. tileState — производная подпись для мозаики команды,
+        только для чтения: клиент не должен вычислять её сам, чтобы экраны не
+        разошлись между собой.
       properties:
         id: { type: string, example: s4 }
         categoryId: { type: string }
-        status: { type: string, enum: [free, hold, booked, paid] }
-        vendor: { $ref: '#/components/schemas/Vendor', nullable: true }
-        price: { $ref: '#/components/schemas/Money' }  # nullable: true
-        statusLabel: { type: string, example: 'Оплачено полностью' }
+        deal:
+          allOf: [{ $ref: '#/components/schemas/Deal' }]
+          nullable: true
+          description: null = слот пуст
+        tileState:
+          type: string
+          readOnly: true
+          description: производное от deal.state для плитки в мозаике
+          enum: [empty, candidate, hold, booked, paid]
     Budget:
       type: object
       properties:
@@ -1858,7 +2617,14 @@ components:
         group: { type: string, nullable: true }
         status: { type: string, enum: [yes, no, pending] }
         tableId: { type: string, nullable: true }
-        rsvpToken: { type: string, description: 'для публичной ссылки /rsvp/{token}' }
+        diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other], description: 'RSVP+ — ограничения по еде' }
+        dietNote: { type: string, nullable: true, description: 'аллергии словами, когда enum не хватает' }
+        menuOptionId: { type: string, nullable: true, description: 'выбор в опросе меню' }
+        transfer: { type: string, nullable: true, enum: [null, need, own], description: 'нужен ли трансфер' }
+        busId: { type: string, nullable: true, description: 'посажен в этот автобус' }
+        hotelId: { type: string, nullable: true }
+        inviteUrl: { type: string, nullable: true, description: 'ОДНОРАЗОВАЯ ссылка-приглашение для этого гостя. Пара её пересылает; при первом открытии код обменивается на персональный guestToken и гаснет. Сырой guestToken паре не отдаётся НИКОГДА — иначе пара может открыть гостевую страницу и увидеть его резерв подарка, что ломает анонимность (§9 бизнес-логики)' }
+        inviteUrlUsed: { type: boolean, readOnly: true, description: 'true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link' }
     Table:
       type: object
       properties:
@@ -1882,7 +2648,8 @@ components:
         avatarUrl: { type: string, nullable: true }
         lastMessage: { type: string }
         unread: { type: integer }
-        kind: { type: string, enum: [vendor, team, tilly] }
+        kind: { type: string, enum: [vendor, team, day, tilly] }
+        openFrom: { type: string, format: date-time, nullable: true, description: 'у kind=day — 09:00 по Wedding.tz в день свадьбы; до этого чат не создан' }
     Message:
       type: object
       properties:
@@ -1929,11 +2696,48 @@ components:
         createdAt: { type: string, format: date-time }
 
     Money:
-      type: integer
+      type: object
       description: |
-        Сумма в копейках — минорных единицах валюты. Решение владельца 2026-09-02.
-        85 000 ₽ = 8500000. Дробных значений не бывает.
-      example: 8500000
+        Денежная сумма. Решение владельца 2026-09-02: минорные единицы плюс код
+        валюты у КАЖДОЙ суммы, а не одна валюта на свадьбу — план §19.7 описывает
+        свадьбу за границей, где сделка в евро, а бюджет в рублях.
+        В MVP принимается только RUB; enum расширяется вместе с поддержкой курсов.
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          description: 'Сумма в копейках. 85 000 ₽ = 8500000. Дробных значений не бывает.'
+          example: 8500000
+        currency:
+          type: string
+          description: Код валюты по ISO 4217.
+          enum: [RUB]
+          example: RUB
+    Deal:
+      type: object
+      description: |
+        Договорённость пары с конкретным исполнителем на конкретный слот.
+        Носитель состояния: у слота собственного статуса нет (решение владельца
+        2026-09-02) — раньше слот, сделка и фронтенд описывали одно понятие тремя
+        разными наборами значений.
+      properties:
+        id: { type: string }
+        state: { $ref: '#/components/schemas/DealState' }
+        vendor:
+          allOf: [{ $ref: '#/components/schemas/Vendor' }]
+          nullable: true
+          description: null у своего подрядчика не из каталога (§11)
+        externalName: { type: string, nullable: true, description: имя своего подрядчика }
+        externalPhone: { type: string, nullable: true }
+        price: { $ref: '#/components/schemas/Money' }
+        negotiatingUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: 'срок мягкой брони: 72 ч на этапе negotiating (§18.3)'
+        bookedAt: { type: string, format: date-time, nullable: true }
+        doneAt: { type: string, format: date-time, nullable: true }
+        cancelledAt: { type: string, format: date-time, nullable: true }
     DealState:
       type: string
       description: |
@@ -1990,6 +2794,75 @@ components:
               name: { type: string }
               icon: { type: string }
               votes: { type: integer }
+
+    UserProfile:
+      type: object
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string }
+        phone: { type: string, readOnly: true }
+        email: { type: string, nullable: true }
+        lang: { type: string, enum: [ru, en] }
+        tz: { type: string, example: Asia/Yekaterinburg, description: 'нужна для открытия чата дня X в 09:00 по местному' }
+        push:
+          type: object
+          description: четыре независимых канала — тумблеры в настройках
+          properties:
+            tasks: { type: boolean }
+            chats: { type: boolean }
+            deals: { type: boolean }
+            tips: { type: boolean }
+        quietHours:
+          type: object
+          description: 'по умолчанию 22:00–09:00; в день X отключаются автоматически'
+          properties:
+            from: { type: string, example: '22:00' }
+            to: { type: string, example: '09:00' }
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        device: { type: string, example: 'iPhone · Safari' }
+        current: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    Document:
+      type: object
+      properties:
+        id: { type: string }
+        dealId: { type: string }
+        templateCode: { type: string }
+        version: { type: integer }
+        status: { type: string, enum: [draft, sent, signed] }
+        pdfUrl: { type: string }
+        docxUrl: { type: string }
+        createdAt: { type: string, format: date-time }
+    TimelineEvent:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: Выездная церемония }
+        location: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        who: { type: string, description: кто отвечает }
+        outdoor: { type: boolean, description: 'блок под открытым небом — к нему привязывается план Б' }
+    AlbumPhoto:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string }
+        approved: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    Complaint:
+      type: object
+      properties:
+        id: { type: string }
+        targetKind: { type: string, enum: [vendor, review, message, deal] }
+        targetId: { type: string }
+        category: { type: string, enum: [fraud, content, no_show, spam] }
+        text: { type: string }
+        status: { type: string, enum: [new, resolved] }
+        createdAt: { type: string, format: date-time }
 
 security:
   - bearerAuth: []

@@ -1,10 +1,10 @@
 # План разработки бэкенда «Тили-тили» — end-to-end
 
-> Составлен 2026-09-02 по контракту `Тили-тили/Тили-тили_API_openapi.yaml` (69 путей, 89 операций, 32 схемы), документам «Бизнес-логика и бэкенд», «План приложения» (ч. 12–20), `CLAUDE.md`, `ERRORS.md` и фактической форме данных фронтенда (`app/src/lib/`).
+> Составлен 2026-09-02 по контракту `Тили-тили/Тили-тили_API_openapi.yaml` **v0.2** (103 пути, 39 схем), документам «Бизнес-логика и бэкенд», «План приложения» (ч. 12–20), `CLAUDE.md`, `ERRORS.md` и фактической форме данных фронтенда (`app/src/lib/`).
 >
-> Источник правды по API — openapi.yaml. Где текстовые документы с ним расходятся — вынесено в раздел 8, а не решено молча.
+> Источник правды по API — openapi.yaml. Расхождения, которые план нашёл при составлении, закрыты в контракте v0.2 — история решений в разделе 8.
 >
-> Решения владельца от 2026-09-02 приняты как данность: деньги в копейках + ISO 4217; сделка в шести состояниях; 35 категорий; согласие на ПДн явным действием; данные в РФ.
+> Решения владельца от 2026-09-02 приняты как данность: деньги в копейках + ISO 4217 у каждой суммы; сделка в шести состояниях, у слота своего статуса нет; гость опознаётся одним персональным токеном; переноса данных с моков не будет; 35 категорий; согласие на ПДн явным действием; данные в РФ, хостинг Timeweb Cloud.
 
 ---
 
@@ -42,7 +42,9 @@
 
 ## 2. Схема базы данных
 
-PostgreSQL 16, одна схема `public`, миграции — `node-pg-migrate`, только вперёд-совместимые (expand → migrate → contract, План §19.9). Деньги — `bigint` в копейках, поле `currency char(3)` рядом. Время — `timestamptz`. Идентификаторы — `uuid` (v7, сортируемые).
+PostgreSQL 16, одна схема `public`, миграции — `node-pg-migrate`, только вперёд-совместимые (expand → migrate → contract, План §19.9). Время — `timestamptz`. Идентификаторы — `uuid` (v7, сортируемые).
+
+**Деньги.** В базе — две колонки: `bigint` копеек и `currency char(3)` рядом. В API — объект `{ amount, currency }` (схема `Money` контракта v0.2). Колонка валюты заводится сразу у каждой суммы, хотя в MVP везде `RUB`: добавить колонку в пустую таблицу — минута, добавить её в работающую базу с данными — миграция и простой. Ограничение `CHECK currency = 'RUB'` снимается вместе с поддержкой курсов ЦБ (План §19.7).
 
 Обозначения: **PK** — первичный ключ, **FK** — внешний ключ, **UQ** — уникальность, **IDX** — индекс.
 
@@ -55,6 +57,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | `sessions` | id uuid, user_id, refresh_hash text, device text, created_at, revoked_at | PK id · FK user_id · IDX (user_id, revoked_at) — экран «Сессии и устройства» |
 | `consents` | id uuid, user_id, policy_version text, given_at, ip inet, withdrawn_at | PK id · FK user_id · IDX (user_id, withdrawn_at) — подтверждение по 152-ФЗ, запись не удаляется |
 | `notification_prefs` | user_id, tasks bool, chats bool, deals bool, tips bool, quiet_from time, quiet_to time | PK user_id · FK user_id |
+| `referrals` | code text, owner_id, invited_id, applied_at, earned bigint, currency | PK code · FK owner_id · **UQ invited_id** — код применяется один раз на аккаунт и только до первой сделки |
 | `push_subscriptions` | id uuid, user_id, endpoint text, keys jsonb, created_at | PK id · UQ endpoint · FK user_id |
 
 ### 2.2. Свадьба и участники
@@ -77,6 +80,8 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | `vendor_media` | id uuid, vendor_id, kind text, url text, duration_s int, sort int | PK id · FK vendor_id · CHECK kind IN (photo, video) · CHECK duration_s ≤ 180 |
 | `vendor_busy_dates` | vendor_id, date date, source text, deal_id uuid | **PK (vendor_id, date)** — единственная строка на дату; source IN (manual, deal) |
 | `favorites` | user_id, vendor_id, created_at | PK (user_id, vendor_id) |
+| `vendor_verifications` | id uuid, vendor_id, kind text, file_url text, inn text, status text, checked_at | PK id · FK vendor_id · CHECK kind IN (passport, ip, company) · документы не публикуются никогда, публична только галочка |
+| `concierge_requests` | id uuid, user_id, category_id, budget bigint, currency, comment text, status text, created_at | PK id · FK user_id · IDX (status, created_at) — подбор вручную, пока в городе меньше 50 анкет |
 
 ### 2.4. Команда, сделки, деньги
 
@@ -95,6 +100,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | Таблица | Поля | Ключи и ограничения |
 |---|---|---|
 | `guests` | id uuid, wedding_id, name text, phone text, rsvp text, plus_one bool, group_name text, diet text, transfer bool, table_id, menu_option_id, rsvp_token text, created_at | PK id · FK wedding_id · FK table_id · UQ rsvp_token · CHECK rsvp IN (yes, no, pending) · IDX (wedding_id, rsvp) |
+| `guest_invite_codes` | code text, guest_id, issued_at, expires_at, used_at | PK code · FK guest_id · IDX (guest_id) WHERE used_at IS NULL — одноразовый код гасится при первом обмене на `guest_token`; сырой токен паре не отдаётся |
 | `tables` | id uuid, wedding_id, number int, capacity int | PK id · FK wedding_id · UQ (wedding_id, number) |
 | `tasks` | id uuid, wedding_id, title text, period text, due date, source text, done_at | PK id · FK wedding_id · CHECK source IN (system, user, ai) · IDX (wedding_id, done_at) |
 | `timeline_events` | id uuid, wedding_id, name text, location text, starts_at, ends_at, who text, icon text, sort int | PK id · FK wedding_id · IDX (wedding_id, sort) |
@@ -165,72 +171,72 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 **Экраны с моков:** нет.
 **Готово, когда:** `curl /health` → 200; `pnpm test` зелёный; контрактный тест перечисляет 69 путей и 69 раз получает 501 или 200 — ни одного 404.
 
-### Этап 1 — Вход, согласие, профиль, гео · 4 дня
+### Этап 1 — Вход, согласие, профиль, гео · 5 дней
 
-**Пути (7):** `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/oauth/{provider}`, `/users/me/consent`, `/geo/cities`, `/geo/nearest`.
+**Пути (11):** `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/oauth/{provider}`, `/users/me/consent`, `/users/me`, `/users/me/sessions`, `/users/me/sessions/{sessionId}`, `/users/me/export`, `/geo/cities`, `/geo/nearest`.
 
 OTP по SMS: основной провайдер SMSAero, резервный — с автопереключением (План ч. 17 п. 4). JWT access 15 мин + refresh 30 дней с ротацией; таблица `sessions`. Согласие пишется с версией документа, датой и IP. Гео — таблица `cities` из `app/src/lib/cities.ts` + `pg_trgm`; Яндекс Геокодер — позже (Карта экранов §0.2.1).
 
 **Экраны с моков:** `/auth`, `/legal/*`, `/settings` (сессии, язык), `CityPicker`.
 **Готово, когда:** сценарий «телефон → код → токены → refresh → выход со всех устройств» проходит интеграционным тестом; регистрация без `POST /users/me/consent` возвращает 403 на любой защищённый путь; `GET /geo/cities?q=сиб` отдаёт «Сибай» первым.
 
-### Этап 2 — Свадьба и команда · 4 дня
+### Этап 2 — Свадьба и команда · 5 дней
 
-**Пути (7):** `/weddings`, `/weddings/{weddingId}`, `/weddings/{weddingId}/members`, `/weddings/{weddingId}/members/{userId}`, `/weddings/{weddingId}/invites`, `/invites/{code}`, `/invites/{code}/accept`.
+**Пути (9):** `/weddings`, `/weddings/{weddingId}`, `/weddings/{weddingId}/members`, `/weddings/{weddingId}/members/{userId}`, `/weddings/{weddingId}/invites`, `/invites/{code}`, `/invites/{code}/accept`, `/users/me/referral`, `/referral/{code}/apply`.
 
 Создание свадьбы из квиза: 12 слотов, 12 системных задач, 5 категорий бюджета, шаблон тайминга. Роли и одноразовые ссылки на 7 дней. Матрица доступа из раздела 6 включается здесь и покрывает все последующие этапы.
 
 **Экраны с моков:** `/quiz` (создание), `/home` (карточка свадьбы), `/us`, `/us/team`, `/join/:code`.
 **Готово, когда:** helper с валидным токеном получает 403 на `GET /weddings/{id}/budget`; ссылка-приглашение принимается ровно один раз (второй `accept` → 409); тест на 6 ролей × 7 путей этапа зелёный.
 
-### Этап 3 — Каталог и анкета подрядчика · 6 дней
+### Этап 3 — Каталог и анкета подрядчика · 7 дней
 
-**Пути (10):** `/catalog/categories`, `/catalog/vendors`, `/catalog/vendors/{vendorId}`, `/catalog/vendors/{vendorId}/availability`, `/me/favorites`, `/me/favorites/{vendorId}`, `/vendor/profile`, `/vendor/profile/publish`, `/vendor/calendar`, `/vendor/calendar/busy`.
+**Пути (12):** `/catalog/categories`, `/catalog/vendors`, `/catalog/vendors/{vendorId}`, `/catalog/vendors/{vendorId}/availability`, `/catalog/concierge`, `/me/favorites`, `/me/favorites/{vendorId}`, `/vendor/profile`, `/vendor/profile/publish`, `/vendor/calendar`, `/vendor/calendar/busy`, `/media/upload-url`.
 
 Фильтры выдачи: категория, город, «свободен на дату» (через `vendor_busy_dates`), цена, рейтинг, видео. Ротация новичков: 10 % выдачи — анкеты без отзывов (План §19.2). Автопубликация + пост-модерация: `published_at` ставится сразу, `moderated_at` — модератором. Медиа: presigned upload в S3, серверная проверка длительности видео ≤ 180 с — без эндпоинта в контракте (раздел 8).
 
 **Экраны с моков:** `/search`, `/search/:catId`, `/vendor/:id`, `/favorites`, `/compare`, `/vendor-app/profile`, календарь в `/vendor-app`.
 **Готово, когда:** `GET /catalog/vendors?category=photo&date=2027-06-14` не возвращает подрядчика с этой датой в `vendor_busy_dates`; выдача из 20 анкет содержит ≥ 2 без отзывов; `PUT /vendor/profile` с видео 200 с отклоняется.
 
-### Этап 4 — Слоты, сделки, деньги · 8 дней
+### Этап 4 — Слоты, сделки, деньги, документы · 10 дней
 
-**Пути (10):** `/weddings/{weddingId}/slots`, `/weddings/{weddingId}/slots/{slotId}/book`, `/weddings/{weddingId}/slots/{slotId}/cancel`, `/weddings/{weddingId}/slots/{slotId}/pay`, `/weddings/{weddingId}/slots/{slotId}/external`, `/weddings/{weddingId}/slots/{slotId}/external/invite`, `/guest-vendor/{token}`, `/weddings/{weddingId}/budget`, `/weddings/{weddingId}/budget/items`, `/weddings/{weddingId}/budget/items/{itemId}`.
+**Пути (15):** `/weddings/{weddingId}/slots`, `/weddings/{weddingId}/slots/{slotId}/book`, `/weddings/{weddingId}/slots/{slotId}/cancel`, `/weddings/{weddingId}/slots/{slotId}/pay`, `/weddings/{weddingId}/slots/{slotId}/external`, `/weddings/{weddingId}/slots/{slotId}/external/invite`, `/guest-vendor/{token}`, `/deals/{dealId}`, `/deals/{dealId}/contract`, `/weddings/{weddingId}/documents`, `/weddings/{weddingId}/reschedule`, `/weddings/{weddingId}/cancel`, `/weddings/{weddingId}/budget`, `/weddings/{weddingId}/budget/items`, `/weddings/{weddingId}/budget/items/{itemId}`.
 
 Самый нагруженный этап. Машина состояний сделки в шести состояниях с журналом `deal_events`; переход в `booked` захватывает дату в `vendor_busy_dates` в той же транзакции; hold 72 ч — `negotiating_until`, истечение — фоновая задача (раздел 5). Оплаты — только статусы, без эквайринга (План §3.2: платежи вне MVP): `pay` создаёт запись `payments` со статусом `recorded`, деньги ходят между парой и подрядчиком напрямую. Идемпотентность на `book`, `pay`, `cancel`. Бюджет — единый расчёт по образцу `app/src/lib/budget.ts`: обязательства из сделок + ручные статьи, ничего не хранится производного.
 
 **Экраны с моков:** `/wedding`, `/wedding/slot/:id`, `/deal`, `/wedding/budget`, счётчики на `/home`.
 **Готово, когда:** две параллельные транзакции `book` на одну дату одного подрядчика — ровно одна успешна, вторая 409 (тест с двумя соединениями); повтор `pay` с тем же `Idempotency-Key` не создаёт вторую запись в `payments`; `GET /budget` после `cancel` уменьшает `spent` на цену сделки без ручного пересчёта.
 
-### Этап 5 — Гости, RSVP, рассадка, логистика, меню, чек-лист · 7 дней
+### Этап 5 — Гости, RSVP, рассадка, тайминг, логистика, меню, альбом · 9 дней
 
-**Пути (16):** `/weddings/{weddingId}/guests`, `/weddings/{weddingId}/guests/{guestId}`, `/weddings/{weddingId}/tables`, `/rsvp/{guestToken}`, `/weddings/{weddingId}/tasks`, `/weddings/{weddingId}/tasks/{taskId}`, `/weddings/{weddingId}/logistics/buses`, `/weddings/{weddingId}/logistics/buses/{busId}`, `/weddings/{weddingId}/logistics/hotels`, `/weddings/{weddingId}/logistics/hotels/{hotelId}`, `/weddings/{weddingId}/logistics/notify-pickup`, `/join/{code}/shuttle`, `/join/{code}/hotels`, `/weddings/{weddingId}/menu-poll`, `/weddings/{weddingId}/menu-poll/remind`, `/join/{code}/menu-vote`.
+**Пути (22):** `/weddings/{weddingId}/guests`, `/weddings/{weddingId}/guests/{guestId}`, `/weddings/{weddingId}/guests/{guestId}/invite-link`, `/invite/{shareCode}`, `/weddings/{weddingId}/tables`, `/rsvp/{guestToken}`, `/weddings/{weddingId}/tasks`, `/weddings/{weddingId}/tasks/{taskId}`, `/weddings/{weddingId}/timeline`, `/weddings/{weddingId}/timeline/autogen`, `/weddings/{weddingId}/album`, `/weddings/{weddingId}/album/{photoId}`, `/weddings/{weddingId}/logistics/buses`, `/weddings/{weddingId}/logistics/buses/{busId}`, `/weddings/{weddingId}/logistics/hotels`, `/weddings/{weddingId}/logistics/hotels/{hotelId}`, `/weddings/{weddingId}/logistics/notify-pickup`, `/join/{guestToken}/shuttle`, `/join/{guestToken}/hotels`, `/weddings/{weddingId}/menu-poll`, `/weddings/{weddingId}/menu-poll/remind`, `/join/{guestToken}/menu-vote`.
 
 Гость работает по токену без аккаунта. Атомарные места в автобусе и номере. Счётчики персон — как во фронте: запись с «+1» — двое. Рассылки — через очередь с дебаунсом 30 с (План §13.4). Автосводка кейтерингу — фоновая задача (раздел 5).
 
 **Экраны с моков:** `/wedding/guests`, `/wedding/seating`, `/wedding/checklist`, `/wedding/logistics`, `/wedding/catering`, `/invite` (RSVP), `/wedding/invites`.
 **Готово, когда:** 21 параллельная запись в автобус на 20 мест — ровно 20 успешных; повтор `menu-vote` тем же гостем меняет голос, а сумма голосов не растёт; `notify-pickup` дважды за 30 с — одна рассылка.
 
-### Этап 6 — Подарки и фонды · 3 дня
+### Этап 6 — Подарки и фонды · 4 дня
 
-**Пути (6):** `/weddings/{weddingId}/wishlist`, `/weddings/{weddingId}/wishlist/{giftId}`, `/gifts/{code}`, `/gifts/{code}/{giftId}/reserve`, `/gifts/{code}/{giftId}/fund`, `/gifts/{code}/funds/{fundId}`.
+**Пути (9):** `/weddings/{weddingId}/wishlist`, `/weddings/{weddingId}/wishlist/{giftId}`, `/weddings/{weddingId}/anti-gifts`, `/weddings/{weddingId}/funds`, `/weddings/{weddingId}/funds/{fundId}`, `/gifts/{guestToken}`, `/gifts/{guestToken}/{giftId}/reserve`, `/gifts/{guestToken}/{giftId}/fund`, `/gifts/{guestToken}/funds/{fundId}`.
 
 Анонимность — правило номер один (§9): ответ паре собирается запросом, который физически не читает `guest_token`. Складчина закрывает подарок при `funded ≥ price`. Маркетплейс «купить в приложении» и выплата фондов паре — вне MVP (платежи).
 
 **Экраны с моков:** `/wedding/wishlist`, `/gifts`.
 **Готово, когда:** два параллельных `reserve` — один 200, второй 409; тело любого ответа для роли `couple` не содержит подстроки `guest_token` (проверяется тестом на всех путях этапа); `DELETE reserve` чужим токеном → 403.
 
-### Этап 7 — Чаты, уведомления, фоновые задачи · 7 дней
+### Этап 7 — Чаты, уведомления, день X, фоновые задачи · 8 дней
 
-**Пути (6):** `/chats`, `/chats/{chatId}/messages`, `/chats/{chatId}/typing`, `/chats/vendor/{vendorId}`, `/notifications`, `/notifications/{id}/read`.
+**Пути (9):** `/chats`, `/chats/{chatId}/messages`, `/chats/{chatId}/typing`, `/chats/vendor/{vendorId}`, `/notifications`, `/notifications/{id}/read`, `/users/me/push-subscriptions`, `/weddings/{weddingId}/timeline/shift`, `/weddings/{weddingId}/planb/activate`.
 
 Realtime — WebSocket на том же Fastify (`@fastify/websocket`), fallback — поллинг раз в 30 с (§13.4). Чат команды создаётся при второй сделке в `booked` (План §8.5). Чат дня X создаётся сразу, `opens_at = date − 1 день, 09:00` по `weddings.tz`, до открытия — 423 Locked. Push: Web Push (VAPID) с тихими часами и лимитом 3 в день вне дня X (План §18.6). Здесь же — вся очередь BullMQ из раздела 5.
 
 **Экраны с моков:** `/us/chats`, `/us/chats/:id`, `/notifications`, `/dayx` (чат и статусы), `/assistant` (заглушка `tilly` без LLM — ответ «временно без ИИ», План §19.8).
 **Готово, когда:** сообщение доставляется второму соединению WebSocket < 1 с в тесте; `POST /chats/{day}/messages` до `opens_at` → 423, после — 200; при `quiet_from=22:00` push в 23:00 не отправляется, а откладывается на 09:00.
 
-### Этап 8 — Кабинет подрядчика и отзывы · 5 дней
+### Этап 8 — Кабинет подрядчика, отзывы, модерация · 9 дней
 
-**Пути (7):** `/vendor/leads`, `/vendor/leads/{leadId}`, `/vendor/reviews`, `/vendor/reviews/{reviewId}/reply`, `/vendor/analytics`, `/catalog/vendors/{vendorId}/reviews`, `/weddings/{weddingId}/guest-reviews`.
+**Пути (16):** `/vendor/leads`, `/vendor/leads/{leadId}`, `/vendor/reviews`, `/vendor/reviews/{reviewId}/reply`, `/vendor/analytics`, `/vendor/verification`, `/catalog/vendors/{vendorId}/reviews`, `/weddings/{weddingId}/guest-reviews`, `/complaints`, `/admin/moderation/vendors`, `/admin/moderation/vendors/{vendorId}`, `/admin/complaints`, `/admin/complaints/{complaintId}`, `/admin/categories`, `/admin/metrics`, `/admin/weddings/{weddingId}`.
 
 Лид создаётся из «Написать» (этап 7) и из `book`. Отзыв пары — только по сделке в `done`, один на сделку, окно 14 дней; отзыв гостя — только после даты свадьбы, по токену, один на подрядчика; рейтинг — взвешенное среднее с затуханием, минимум 3 отзыва до показа числа (План §18.2, §15). Антиспам: новый подрядчик ≤ 5 первых сообщений в день (План §19.4).
 
@@ -252,16 +258,18 @@ Runbook фиксирует фактическую локацию каждого 
 | Этап | Дней | Путей | Накопительно |
 |---|---|---|---|
 | 0 Каркас | 3 | 0 | 0 |
-| 1 Вход и гео | 4 | 7 | 7 |
-| 2 Свадьба и команда | 4 | 7 | 14 |
-| 3 Каталог и анкета | 6 | 10 | 24 |
-| 4 Слоты, сделки, деньги | 8 | 10 | 34 |
-| 5 Гости и день | 7 | 16 | 50 |
-| 6 Подарки | 3 | 6 | 56 |
-| 7 Чаты и задачи | 7 | 6 | 62 |
-| 8 Кабинет и отзывы | 5 | 7 | 69 |
-| 9 Эксплуатация | 4 | 0 | 69 |
-| **Итого** | **51** | **69** | |
+| 1 Вход, профиль, гео | 5 | 11 | 11 |
+| 2 Свадьба и команда | 5 | 9 | 20 |
+| 3 Каталог и анкета | 7 | 12 | 32 |
+| 4 Слоты, сделки, деньги, документы | 10 | 15 | 47 |
+| 5 Гости, тайминг, логистика, альбом | 9 | 22 | 69 |
+| 6 Подарки | 4 | 9 | 78 |
+| 7 Чаты, день X, фоновые задачи | 8 | 9 | 87 |
+| 8 Кабинет, отзывы, модерация | 9 | 16 | 103 |
+| 9 Эксплуатация | 4 | 0 | 103 |
+| **Итого** | **64** | **103** | |
+
+Рост с 51 до 64 дней — цена закрытия пропусков контракта: 34 эндпоинта, которые в первой редакции были перечислены как «нужны, но отсутствуют». Они не новые требования, а то, без чего экраны из плана продукта не заработали бы; обнаружить их посреди этапа было бы дороже.
 
 ---
 
@@ -272,32 +280,32 @@ Runbook фиксирует фактическую локацию каждого 
 | Ключ localStorage | Эндпоинт | Этап |
 |---|---|---|
 | `tt_onboarded` | `GET /weddings/{id}` (404 = не пройден) | 2 |
-| `tt_lang`, `tt_theme` | профиль пользователя — **нет в контракте** (раздел 8); тема остаётся локальной | 1 |
+| `tt_lang`, `tt_theme` | `PATCH /users/me`; тема остаётся локальной — это не данные, а настройка устройства | 1 |
 | `tt_city`, `tt_city_region` | `PATCH /weddings/{id}` | 2 |
 | `tt_consent` | `POST /users/me/consent` | 1 |
 | `tt_slots` | `GET /weddings/{id}/slots`, `book`, `cancel`, `pay`, `external` | 4 |
 | `tt_fav` | `GET/PUT/DELETE /me/favorites` | 3 |
-| `tt_settings` | push-тумблеры и тихие часы — **нет в контракте** (раздел 8) | 7 |
+| `tt_settings` | `PATCH /users/me` (имя, push-тумблеры, тихие часы) | 1 |
 | `tt_notif_read` | `POST /notifications/{id}/read` | 7 |
 | `tt_guests`, `tt_rsvp` | `GET/POST/PATCH/DELETE /weddings/{id}/guests`, `POST /rsvp/{token}` | 5 |
 | `tt_seating`, `tt_tables_count` | `GET/POST /weddings/{id}/tables`, `PATCH /guests/{id}` (tableId) | 5 |
 | `tt_guest_rsvp` | `POST /rsvp/{guestToken}` — на устройстве гостя остаётся кэш ответа | 5 |
 | `tt_tasks_done`, `tt_tasks_extra` | `GET/POST/PATCH/DELETE /weddings/{id}/tasks` | 5 |
 | `tt_budget_custom` | `POST/DELETE /weddings/{id}/budget/items` | 4 |
-| `tt_dayx` | сдвиг тайминга — **нет в контракте** (раздел 8) | 7 |
+| `tt_dayx` | `POST /weddings/{id}/timeline/shift`, `POST …/planb/activate` | 7 |
 | `tt_after_stars` | `POST /catalog/vendors/{id}/reviews` | 8 |
 | `tt_assistant` | чат `kind=tilly` — `GET/POST /chats/{id}/messages` | 7 |
 | `tt_chat_<id>` | `GET/POST /chats/{id}/messages` | 7 |
 | `tt_gifts`, `tt_my_gifts`, `tt_funds`, `tt_anti`, `tt_bought` | `/weddings/{id}/wishlist`, `/gifts/{code}/*`; `tt_bought` (маркетплейс) — вне MVP | 6 |
 | `tt_buses`, `tt_hotels`, `tt_menu_poll` | `/logistics/*`, `/menu-poll*` | 5 |
-| `tt_album` | альбом — **нет в контракте** (раздел 8) | — |
-| `tt_dress`, `tt_dress_note`, `tt_invite_tpl`, `tt_invite_text` | `PATCH /weddings/{id}` (inviteThemeId, inviteText); палитра дресс-кода — **нет в контракте** | 2 |
+| `tt_album` | `GET/POST /weddings/{id}/album`, `PATCH …/album/{photoId}` | 5 |
+| `tt_dress`, `tt_dress_note`, `tt_invite_tpl`, `tt_invite_text` | `PATCH /weddings/{id}` — тема, текст приглашения, палитра дресс-кода и комментарий | 2 |
 | `tt_planb` | чек-лист накануне — по факту это задачи `period='eve'`: `/tasks` | 5 |
-| `tt_notes`, `tt_inspo_likes` | заметки и лайки вдохновения — **нет в контракте** (раздел 8) | — |
+| `tt_notes`, `tt_inspo_likes` | остаются локальными: это личные пометки одного устройства, а не данные свадьбы. Синхронизация — по запросу владельца, отдельным решением | — |
 | `tt_vendor_busy` | `GET /vendor/calendar`, `POST /vendor/calendar/busy` | 3 |
 | `tt_guest_reviews` | `GET/POST /weddings/{id}/guest-reviews` | 8 |
 
-**Данные пары, которая пользовалась моками.** Реальных пользователей у приложения пока не было — моки существуют для демонстрации. Поэтому миграция данных из localStorage на сервер **не делается**: при первом входе с API пара начинает с квиза, локальные ключи `tt_*` стираются после успешного `POST /weddings`. Если владелец решит сохранять локальные данные тестировщиков беты — это отдельный одноразовый `POST /weddings/import` с телом из localStorage, которого в контракте нет (раздел 8).
+**Данные пары, которая пользовалась моками.** Решение владельца 2026-09-02: **не переносим**. Реальных пользователей не было, моки существуют для демонстрации. При первом входе с API пара начинает с квиза, локальные ключи `tt_*` стираются после успешного `POST /weddings`. Эндпоинт импорта не заводится: день работы, который выбрасывается сразу после беты.
 
 ---
 
@@ -378,51 +386,69 @@ Runbook фиксирует фактическую локацию каждого 
 
 ---
 
-## 8. Чего в контракте не хватает
+## 8. Что решено и что закрыто в контракте v0.2
 
-Ничего из этого не дописано — только перечислено. Каждый пункт — либо решение владельца, либо правка контракта после его решения.
+Раздел был списком пропусков. Все они закрыты 2026-09-02: четыре вопроса решил владелец, остальное — механическая правка контракта, которая из этих решений следует. Контракт вырос с 69 до 103 путей и с 32 до 39 схем. История ниже нужна, чтобы через полгода не переоткрывать те же вопросы заново.
 
-### 8.1. Расхождения контракта с документами и кодом
+### 8.1. Решения владельца
 
-| # | Где | Что |
-|---|---|---|
-| 1 | `Slot.status` enum `{free, hold, booked, paid}` | Не совпадает ни с шестью состояниями `DealState` (решение владельца), ни с фронтом (`empty/candidate/hold/booked`). Нужно одно: слот отдаёт `dealId` + `deal.state`, а `status` — производная для мозаики. **Требует решения владельца: считать `DealState` единственным источником и перевести `Slot`?** |
-| 2 | `Chat.kind` enum `{vendor, team, tilly}` | Нет `day` — чата дня X, который есть во фронте и в §3.11. Есть `tilly` — ИИ-ассистент, которого нет в остальных документах как чата. |
-| 3 | `Member.role` enum `{couple, helper, coordinator, vendor}` | Нет `guest-vendor` и `guest` (Бизнес-логика §2). Они не члены свадьбы — верно, но роли для матрицы доступа нужны хотя бы в описании. |
-| 4 | `Wedding` без `tz` | Открытие чата дня X «в 09:00 по местному» невозможно без таймзоны свадьбы. |
-| 5 | `Guest` без `diet`, `transfer`, `menuOptionId`, `busId` | RSVP+ (§10 п. 3), опрос меню (§12.2) и трансфер (§12.1) описаны, поля в схеме гостя отсутствуют. |
-| 6 | `Money` без валюты на объектах | Решение владельца — «копейки + код валюты», но `currency` нет ни в одной схеме. Либо поле на каждом денежном объекте, либо `currency` на уровне свадьбы. **Требует решения владельца.** |
-| 7 | Два разных гостевых токена | `/rsvp/{guestToken}` — токен гостя, `/join/{code}`, `/gifts/{code}` — код свадьбы. §9 говорит об анонимной сессии гостя по ссылке приглашения. Нужно определить: один код на свадьбу с выдачей анонимного токена при первом открытии, или персональный токен на гостя с самого начала. **Требует решения владельца.** |
-| 8 | Категории | В контракте `Category` без ограничения, в коде 35 — сид-данные нужно зафиксировать в контракте как enum или в отдельном справочном файле. |
-
-### 8.2. Эндпоинты, которых нет, но которые нужны по документам
-
-| # | Эндпоинт | Зачем | Источник |
+| # | Вопрос | Решение | Почему так |
 |---|---|---|---|
-| 9 | `GET/PATCH /users/me` | имя, язык, тема, таймзона, push-тумблеры, тихие часы — экран `/settings` | §3.1, `tt_settings` |
-| 10 | `DELETE /users/me` | удаление аккаунта отдельно от отзыва согласия; сейчас это склеено в `DELETE /users/me/consent` | §7, План §19.1 |
-| 11 | `GET /users/me/sessions`, `DELETE /users/me/sessions/{id}` | экран «Сессии и устройства» | Карта экранов §5.2 |
-| 12 | `GET/PUT /weddings/{id}/timeline`, `POST …/timeline/shift`, `POST …/timeline/autogen` | тайминг дня, «+15 мин» в DayX, автоплан | §3.9, План ч. 13 |
-| 13 | `POST /weddings/{id}/planb/activate` | план Б одной кнопкой с рассылкой | §13.1, План §18.7 |
-| 14 | `PATCH /deals/{id}` (переходы `contacted`, `negotiating`, `done`) | контракт знает только `book/cancel/pay`; четыре из шести состояний недостижимы через API | решение владельца №6 |
-| 15 | `POST /deals/{id}/contract`, `GET /weddings/{id}/documents` | генерация договора, список подписанных | §3.10, План §8.7 |
-| 16 | `POST /media/upload-url` | presigned upload фото и видео анкет, альбома | План ч. 13 |
-| 17 | `GET/POST /weddings/{id}/album`, `PATCH …/album/{id}` | фотоальбом гостей, модерация | §10 п. 4 |
-| 18 | `POST /users/me/push-subscriptions` | регистрация Web Push | План §12.1 |
-| 19 | WebSocket `/ws` — описание канала и событий | контракт описывает только REST и `/typing` как fallback | §3.11, §13.4 |
-| 20 | `POST /complaints` | жалобы из чата, на отзыв, на анкету | План §18.2, §19.4 |
-| 21 | `POST /vendor/verification` | подача паспорта / ИП на сверку | План §18.2 |
-| 22 | `GET /users/me/referral`, `POST /referral/{code}/apply` | реферальная программа | §3.15 |
-| 23 | `GET/PUT /weddings/{id}/anti-gifts`, `POST/DELETE …/funds` | анти-вишлист и управление фондами парой — в контракте только чтение через `/wishlist` | §10 п. 1–2 |
-| 24 | `POST /weddings/{id}/cancel`, `POST /weddings/{id}/reschedule` | отмена свадьбы с подтверждением обоих, перенос даты с проверкой команды | План §9.4, §19.1 |
-| 25 | `POST /catalog/concierge` | консьерж-заявка при пустой выдаче | План §18.12, §19.2 |
-| 26 | `/admin/*` — очередь модерации, жалобы, категории, метрики, read-only просмотр | админка целиком | План §19.10 |
-| 27 | `GET /users/me/export` | экспорт данных | §7 |
-| 28 | `POST /weddings/import` | перенос данных из localStorage — только если владелец решит сохранять данные бета-тестировщиков | раздел 4 |
+| 1 | Статус слота | Своего статуса у слота нет. Слот либо пуст, либо несёт `deal`; состояние живёт в `Deal.state` — шесть значений. `Slot.tileState` — производная подпись для мозаики, `readOnly` | Два независимых поля статуса всегда расходятся: сделка ушла в `cancelled`, а плитка осталась «забронировано». Одно поле разойтись не может |
+| 2 | Валюта | Объект `Money { amount: копейки, currency }` у КАЖДОЙ суммы. В MVP принимается только `RUB` | Не одна валюта на свадьбу: план §19.7 описывает свадьбу за границей, где сделка в евро, а бюджет в рублях. Колонку валюты дешевле завести в пустую таблицу сейчас, чем мигрировать работающую базу потом |
+| 3 | Гостевой токен | Один персональный токен на гостя во всех гостевых путях: `/rsvp/{guestToken}`, `/gifts/{guestToken}`, `/join/{guestToken}/…` | Общий код свадьбы не даёт подставить имя в приглашение и не даёт гостю снять СВОЙ резерв подарка |
+| 4 | Перенос данных с моков | Не переносим. Эндпоинт импорта не заводится | Реальных пользователей не было. День работы, который выбрасывается сразу после беты |
 
-**Требуют решения владельца (собрано):** пункты 1, 6, 7 из 8.1 и вопрос о `POST /weddings/import` из раздела 4. Остальное — механическая правка контракта после этих решений, оценка 2 дня, входит в этап 0 как «контракт v0.2».
+### 8.2. Анонимность резерва: почему появилась одноразовая ссылка
 
----
+Решение 3 вскрыло дыру, которой не было видно, пока токен был «кодом свадьбы». Бизнес-логика §9 обещает: **пара НИКОГДА не видит, кто зарезервировал подарок.** Но если персональный токен гостя лежит в списке гостей у пары, пара открывает `/gifts/{guestToken}` и видит блок «Мой выбор» этого гостя. Обещание держится в интерфейсе и ломается по ссылке.
+
+Поэтому `Guest.rsvpToken` убран из контракта. Вместо него:
+
+- `Guest.inviteUrl` — **одноразовая** ссылка `https://tili-tili.ru/i/{shareCode}`. Пара её пересылает, но сама токен не получает.
+- `GET /invite/{shareCode}` — браузер гостя обменивает код на персональный `guestToken`, код в этот момент гаснет. Повторный вызов — `410`.
+- `POST /weddings/{id}/guests/{guestId}/invite-link` — перевыпуск, когда гость потерял ссылку: прежний код гасится, выдаётся новый.
+- Таблица `guest_invite_codes` (раздел 2), `used_at` — единственный признак «уже открыта».
+
+Остаточный риск честно назван: пара может открыть ссылку раньше гостя. Тогда гость скажет «не работает», пара перевыпустит. Обменять код на токен молча и незаметно нельзя — `inviteUrlUsed` в списке гостей показывает, что ссылка уже сработала.
+
+### 8.3. Механические правки, следующие из решений
+
+| # | Что было | Что стало |
+|---|---|---|
+| 5 | `Chat.kind` без `day` | `enum [vendor, team, day, tilly]` + `openFrom` — чат дня X открывается в 09:00 по `Wedding.tz` |
+| 6 | `Member.role` без гостевых ролей | Роли остались четырьмя — гость и свой подрядчик членами не являются. Это записано в описании схемы, чтобы следующий читатель не считал пропуском |
+| 7 | `Wedding` без таймзоны | `Wedding.tz` — по ней открывается чат дня X и считаются напоминания. Не по таймзоне пользователя: пара может быть в командировке |
+| 8 | `Guest` без полей RSVP+ | `diet`, `dietNote`, `menuOptionId`, `transfer`, `busId`, `hotelId` |
+| 9 | `Category` без ограничения | Список зафиксирован как сид (35 записей, миграция `seed_categories`, совпадает с `CATEGORIES` во фронте). Enum намеренно не ставится: добавление категории не должно требовать выката контракта |
+
+### 8.4. Дописанные эндпоинты (34)
+
+Все были перечислены в первой редакции как «нужны по документам, но отсутствуют». Разложены по этапам раздела 3.
+
+| Область | Пути | Этап |
+|---|---|---|
+| Профиль и сессии | `GET/PATCH/DELETE /users/me`, `GET/DELETE /users/me/sessions`, `GET /users/me/export` | 1 |
+| Реферальная программа | `GET /users/me/referral`, `POST /referral/{code}/apply` | 2 |
+| Консьерж и загрузка файлов | `POST /catalog/concierge`, `POST /media/upload-url` | 3 |
+| Сделки и документы | `PATCH /deals/{dealId}`, `POST /deals/{dealId}/contract`, `GET /weddings/{id}/documents`, `POST …/reschedule`, `POST …/cancel` | 4 |
+| Тайминг, альбом, приглашения | `GET/PUT …/timeline`, `POST …/timeline/autogen`, `GET/POST …/album`, `PATCH …/album/{photoId}`, `POST …/guests/{guestId}/invite-link`, `GET /invite/{shareCode}` | 5 |
+| Подарки: управление парой | `GET/PUT …/anti-gifts`, `POST/DELETE …/funds` | 6 |
+| День X и push | `POST …/timeline/shift`, `POST …/planb/activate`, `POST /users/me/push-subscriptions` | 7 |
+| Жалобы, верификация, админка | `POST /complaints`, `POST /vendor/verification`, `/admin/*` (6 путей) | 8 |
+
+WebSocket описан отдельно во вводном разделе контракта — OpenAPI 3.0 каналы не описывает. События: `message.created`, `deal.state_changed`, `timeline.shifted`, `seating.updated`, `menu.poll.updated`, `notification.created`.
+
+### 8.5. Что осталось открытым
+
+Ничего из того, что мешает начать этап 0. Открыты только вещи, у которых нет ответа до первых живых пользователей:
+
+| Вопрос | Когда решать |
+|---|---|
+| Платёжный провайдер (ЮKassa / Тинькофф / CloudPayments) — от него зависит форма `POST …/pay` | до этапа 4; нужен договор и расчётный счёт |
+| Тексты оферты и политики ПДн — сейчас помечены в приложении как черновик | до публичного запуска; нужен юрист |
+| Сид категорий — 35 записей есть, но нет описаний и иконок для каталога | до этапа 3 |
+| Синхронизация `tt_notes` и `tt_inspo_likes` — пока остаются локальными | по запросу владельца |
 
 ## 9. Риски
 
