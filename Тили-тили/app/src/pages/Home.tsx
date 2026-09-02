@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
-import { couple, aiTips, tasks, guests } from '@/lib/data'
+import { couple, aiTips, tasks, guests as initialGuests, type Guest, type Task } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { spentTotal, spentPct, type BudgetRow } from '@/lib/budget'
@@ -14,8 +14,17 @@ export default function Home() {
   // Деньги и размер команды берутся из общего расчёта: иначе главная и бюджет
   // показывают разные суммы, и пара перестаёт верить обеим.
   const [customExpenses] = usePersist<BudgetRow[]>('tt_budget_custom', [])
+  // Тот же список, что на экране «Гости»: иначе главная живёт своей жизнью
+  // и показывает числа, которых нет ни в одном списке.
+  const [guests] = usePersist<Guest[]>('tt_guests', initialGuests)
+  const persons = (status: Guest['status']) =>
+    guests.filter(g => g.status === status).reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
+  // Прогресс чек-листа — из того же хранилища, что и сам чек-лист.
+  const [extraTasks] = usePersist<Task[]>('tt_tasks_extra', [])
+  const [doneTasks] = usePersist<string[]>('tt_tasks_done', tasks.filter(t => t.done).map(t => t.id))
+  const totalTasks = tasks.length + extraTasks.length
+  const donePct = totalTasks ? Math.round((doneTasks.length / totalTasks) * 100) : 0
   const spent = spentTotal(slots, customExpenses)
-  const teamPct = Math.round((booked.length / slots.length) * 100)
   const budgetPct = spentPct(slots, customExpenses)
 
   return (
@@ -39,8 +48,8 @@ export default function Home() {
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
             {[
               [Math.max(0, Math.ceil((Date.UTC(2027, 5, 14) - Date.now()) / 86400000)), t('дней до')],
-              [`${teamPct}%`, t('готово')],
-              [couple.guestsConfirmed, t('гостей')],
+              [`${donePct}%`, t('готово')],
+              [persons('yes'), t('гостей')],
               [`${booked.length}/${slots.length}`, t('команда')],
             ].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--card)]/25 rounded-2xl py-3 text-center backdrop-blur-sm">
@@ -133,7 +142,7 @@ export default function Home() {
           <Tile icon="💌" tile="bg-[var(--lav)]" size={44} />
           <div className="flex-1">
             <b className="text-[13px]">{t('Приглашения')}</b>
-            <p className="text-[11px] text-[var(--soft)] mt-0.5">{guests.filter(g => g.status === 'yes').length * 3}{t(' подтвердили')} · {guests.filter(g => g.status === 'pending').length * 4} {t('ждут ответа')}</p>
+            <p className="text-[11px] text-[var(--soft)] mt-0.5">{persons('yes')}{t(' подтвердили')} · {persons('pending')} {t('ждут ответа')}</p>
           </div>
           <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] shrink-0">RSVP →</span>
         </button>

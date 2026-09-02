@@ -4,7 +4,7 @@ import { AiTip, Bar, SectionHead, SyncNote, TopBar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
 import { copyText } from '@/lib/utils'
-import { fmt } from '@/lib/data'
+import { fmt, guests, type Guest } from '@/lib/data'
 
 /* ---------- ЛОГИСТИКА: автобусы + отельный блок ---------- */
 
@@ -12,11 +12,11 @@ interface BusRoute { id: string; name: string; from: string; time: string; seats
 interface HotelBlock { id: string; name: string; rooms: number; booked: number; price: number; deadline: string; promo: string }
 
 const initBuses: BusRoute[] = [
-  { id: 'b1', name: t('Автобус №1'), from: t('Уфа, ост. «Гостиный двор»'), time: '14:30', seats: 48, taken: 31 },
-  { id: 'b2', name: t('Автобус №2'), from: t('Уфа, ТЦ «Мега»'), time: '14:45', seats: 48, taken: 12 },
+  { id: 'b1', name: t('Автобус №1'), from: t('Уфа, ост. «Гостиный двор»'), time: '14:30', seats: 20, taken: 5 },
+  { id: 'b2', name: t('Автобус №2'), from: t('Уфа, ТЦ «Мега»'), time: '14:45', seats: 20, taken: 2 },
 ]
 const initHotels: HotelBlock[] = [
-  { id: 'h1', name: t('Отель «Башкирия»'), rooms: 15, booked: 9, price: 4200, deadline: t('20 мая'), promo: 'TILI1406' },
+  { id: 'h1', name: t('Отель «Башкирия»'), rooms: 6, booked: 3, price: 4200, deadline: t('20 мая'), promo: 'TILI1406' },
 ]
 
 export function Logistics() {
@@ -31,7 +31,7 @@ export function Logistics() {
 
   const addBus = () => {
     if (!bn.trim()) return
-    setBuses(bs => [...bs, { id: `b${Date.now()}`, name: bn.trim(), from: bf.trim() || t('Точка сбора уточняется'), time: bt.trim() || '14:30', seats: 48, taken: 0 }])
+    setBuses(bs => [...bs, { id: `b${Date.now()}`, name: bn.trim(), from: bf.trim() || t('Точка сбора уточняется'), time: bt.trim() || '14:30', seats: 20, taken: 0 }])
     setBn(''); setBf(''); setBt(''); setBusForm(false)
   }
   const addHotel = () => {
@@ -144,7 +144,7 @@ export function Logistics() {
         ) : (
           <button onClick={() => setHotelForm(true)} className="press w-full card-s py-3.5 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить отельный блок')}</button>
         )}
-        <AiTip text={t('9 из 15 номеров уже заняты. По опыту, к дедлайну добронируют ещё 4–5 — можно сразу просить у отеля блок 20 номеров по той же цене.')} />
+        <AiTip text={t('3 из 6 номеров уже заняты. По опыту, к дедлайну добронируют ещё 1–2 — можно сразу просить у отеля блок 8 номеров по той же цене.')} />
       </div>
     </div>
   )
@@ -159,20 +159,24 @@ const initPoll: MenuPoll = {
   question: t('Что приготовить на горячее?'),
   sent: true,
   options: [
-    { id: 'o1', name: t('Говядина по-башкирски'), icon: '🥩', votes: 24 },
-    { id: 'o2', name: t('Стейк из форели'), icon: '🐟', votes: 11 },
-    { id: 'o3', name: t('Овощи гриль с тофу'), icon: '🥦', votes: 4 },
+    { id: 'o1', name: t('Говядина по-башкирски'), icon: '🥩', votes: 4 },
+    { id: 'o2', name: t('Стейк из форели'), icon: '🐟', votes: 2 },
+    { id: 'o3', name: t('Овощи гриль с тофу'), icon: '🥦', votes: 1 },
   ],
 }
 
 export function Catering() {
   const [poll, setPoll] = usePersist<MenuPoll>('tt_menu_poll', initPoll)
+  // Кому вообще нужен ужин: реальный список гостей минус отказавшиеся,
+  // с учётом «+1». Раньше здесь стояло фиксированное 44 — при восьми гостях
+  // экран сам себе противоречил.
+  const [guestList] = usePersist<Guest[]>('tt_guests', guests)
   const [adding, setAdding] = useState(false)
   const [optName, setOptName] = useState('')
   const [reminded, setReminded] = useState(false)
   const answered = poll.options.reduce((a, o) => a + o.votes, 0)
-  const totalGuests = 44
-  const pending = totalGuests - answered
+  const totalGuests = guestList.filter(g => g.status !== 'no').reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
+  const pending = Math.max(0, totalGuests - answered)
 
   const addOption = () => {
     if (!optName.trim()) return

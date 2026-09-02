@@ -501,7 +501,10 @@ export function Guests() {
     setName(''); setPlus(false); setAdding(false)
   }
   const yes = list.filter(g => g.status === 'yes').length
-  const pending = list.filter(g => g.status === 'pending').length
+  // Считаем людей, а не записи: «Ольга и Денис» с +1 — это двое за столом
+  // и две порции у кейтеринга. Иначе счётчики расходятся со сводкой ниже.
+  const persons = (status: string) =>
+    list.filter(g => g.status === status).reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
   const shown = filter === 'all' ? list : list.filter(g => g.status === filter)
   return (
     <div className="pb-28">
@@ -525,7 +528,7 @@ export function Guests() {
         </div>
       )}
       <div className="px-5 mt-3 grid grid-cols-3 gap-2.5">
-        {[['42', t('придут'), 'text-[var(--sage-deep)]'], [String(pending * 4), t('ждём ответ'), 'text-[var(--honey-deep)]'], ['2', t('не смогут'), 'text-[var(--rose-deep)]']].map(([v, l, c]) => (
+        {[[String(persons('yes')), t('придут'), 'text-[var(--sage-deep)]'], [String(persons('pending')), t('ждём ответ'), 'text-[var(--honey-deep)]'], [String(persons('no')), t('не смогут'), 'text-[var(--rose-deep)]']].map(([v, l, c]) => (
           <div key={l} className="card-s p-3.5 text-center">
             <b className={cn('text-[20px] tabular', c)}>{v}</b>
             <span className="text-[9.5px] text-[var(--soft)] block mt-0.5">{l}</span>

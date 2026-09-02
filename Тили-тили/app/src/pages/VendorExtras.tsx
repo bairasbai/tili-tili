@@ -177,7 +177,7 @@ export function VendorAnalytics() {
 
         <div className="card-s px-4 py-3 mt-3.5 flex gap-2.5">
           <span>✦</span>
-          <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Тиль:')}</b>{t('главное фото решает половину просмотров. Пары из вашего сегмента чаще сохраняют анкеты с ценой «от …» в первой строке.')}</p>
+          <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Тиль:')}</b> {t('главное фото решает половину просмотров. Пары из вашего сегмента чаще сохраняют анкеты с ценой «от …» в первой строке.')}</p>
         </div>
 
         <button onClick={() => nav('/vendor-app/profile')} className="press w-full card-s p-4 mt-3.5 flex items-center gap-3 text-left">

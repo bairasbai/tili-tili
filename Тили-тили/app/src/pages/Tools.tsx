@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-react'
-import { contractTemplates, dressPalettes, couple, guests, fmt } from '@/lib/data'
+import { contractTemplates, dressPalettes, couple, guests, fmt, type Guest } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { useBusy } from '@/lib/useBusy'
@@ -219,24 +219,43 @@ const mealIcon = (name: string) => {
   return ['🥩', '🐟', '🥦'][h % 3]
 }
 export function Seating() {
-  const [tables, setTables] = usePersist('tt_tables', [
-    { n: 1, guests: [t('Марина Ивановна'), t('Игорь Петрович'), t('Бабушка Зоя'), t('Дядя Рафик')] },
-    { n: 2, guests: [t('Тётя Люда'), t('Айгуль и Марсель'), t('Кузина Дина')] },
-    { n: 3, guests: [t('Ольга и Денис'), t('Коллеги Тимура (4)')] },
-    { n: 4, guests: [] as string[] },
-  ])
-  const [unseated, setUnseated] = usePersist<string[]>('tt_unseated', [t('Руслан Гареев'), t('Айгуль и Марсель'), t('Семья Хакимовых')])
+  /*
+   * Рассадка построена на реальном списке гостей, а не на собственном наборе имён.
+   * Раньше за столами сидели «Бабушка Зоя» и «Кузина Дина», которых нет среди
+   * гостей, а «Айгуль и Марсель» числились одновременно за столом №2 и в «без
+   * стола». Теперь хранится только назначение «гость → стол»; «без стола»
+   * вычисляется, поэтому оказаться в двух местах сразу невозможно.
+   */
+  const [guestList] = usePersist<Guest[]>('tt_guests', guests)
+  const [seatOf, setSeatOf] = usePersist<Record<string, number>>(
+    'tt_seating',
+    Object.fromEntries(guests.filter(g => g.table).map(g => [g.name, g.table as number])),
+  )
+  const [tableCount, setTableCount] = usePersist('tt_tables_count', 4)
   const [selected, setSelected] = useState<string | null>(null)
+
+  // Рассаживать начинают до того, как ответят все, поэтому за столы попадают и
+  // ждущие ответа. Исключаются только отказавшиеся — раньше «Айгуль и Марсель»
+  // сидели за столом №2, хотя отметили, что не придут.
+  const attending = guestList.filter(g => g.status !== 'no').map(g => g.name)
+  const tables = Array.from({ length: tableCount }, (_, i) => ({
+    n: i + 1,
+    guests: attending.filter(name => seatOf[name] === i + 1),
+  }))
+  const unseated = attending.filter(name => !seatOf[name])
+
   const autoSeat = () => {
-    // Тиль: раскидывает гостей без стола по свободным местам, не ссорит «не сажать вместе»
-    setTables(ts => {
-      const rest = [...unseated]
-      const next = ts.map(tb => {
-        const free = 8 - tb.guests.length
-        const add = rest.splice(0, Math.max(0, free))
-        return { ...tb, guests: [...tb.guests, ...add] }
-      })
-      setUnseated(rest)
+    // Тиль: раскидывает гостей без стола по свободным местам
+    setSeatOf(map => {
+      const next = { ...map }
+      const free = tables.map(tb => 8 - tb.guests.length)
+      let ti = 0
+      for (const name of unseated) {
+        while (ti < free.length && free[ti] <= 0) ti++
+        if (ti >= free.length) break
+        next[name] = ti + 1
+        free[ti]--
+      }
       return next
     })
     setSelected(null)
@@ -245,13 +264,15 @@ export function Seating() {
   const seat = (ti: number) => {
     if (!selected) return
     if (tables[ti].guests.length >= 8) return
-    setTables(ts => ts.map((t, i) => i === ti ? { ...t, guests: [...t.guests, selected] } : t))
-    setUnseated(u => u.filter(g => g !== selected))
+    setSeatOf(map => ({ ...map, [selected]: ti + 1 }))
     setSelected(null)
   }
-  const unseat = (ti: number, g: string) => {
-    setTables(ts => ts.map((t, i) => i === ti ? { ...t, guests: t.guests.filter(x => x !== g) } : t))
-    setUnseated(u => [...u, g])
+  const unseat = (name: string) => {
+    setSeatOf(map => {
+      const next = { ...map }
+      delete next[name]
+      return next
+    })
   }
   return (
     <div className="pb-28">
@@ -274,20 +295,20 @@ export function Seating() {
             </div>
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
-                <button key={g} onClick={e => { e.stopPropagation(); unseat(i, g) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5"><span className="text-[10px] shrink-0">{mealIcon(g)}</span><span className="truncate">{g}</span></button>
+                <button key={g} onClick={e => { e.stopPropagation(); unseat(g) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5"><span className="text-[10px] shrink-0">{mealIcon(g)}</span><span className="truncate">{g}</span></button>
               )) : <div className="text-[10.5px] text-[var(--soft2)] py-3 text-center border-[1.5px] border-dashed border-[#EAD9CF] rounded-xl">{t('Пусто')}</div>}
             </div>
           </div>
         ))}
       </div>
       <div className="px-5 mt-4 space-y-3">
-        <button onClick={autoSeat} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
+        <button onClick={autoSeat} disabled={!unseated.length} className={cn('press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2', !unseated.length && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
         <div className="card-s px-4 py-3 flex items-center gap-3 text-[10.5px] text-[var(--soft)]">
           <span className="font-semibold tracking-[.12em] uppercase shrink-0">{t('Легенда:')}</span>
           <span>🥩 {t('мясо')}</span><span>🐟 {t('рыба')}</span><span>🥦 {t('вег')}</span>
           <span className="ml-auto">{t('из опроса меню')}</span>
         </div>
-        <button onClick={() => setTables(ts => [...ts, { n: ts.length + 1, guests: [] as string[] }])} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить стол')}</button>
+        <button onClick={() => setTableCount(c => c + 1)} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить стол')}</button>
         <AiTip text={t('Тётя Люда и дядя Рафик отмечены «не сажать вместе» — они за соседними столами, всё в порядке.')} />
         <SyncNote to={t('Кейтеринг «Восточный банкет», ведущий Артём')} />
         <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full bg-[var(--ink)] text-[var(--bg)] font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} />{t('PDF для печати А3')}</button>

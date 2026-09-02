@@ -1143,3 +1143,11 @@ Object.assign(EN, {
   'Пригласить в команду': 'Invite to the team',
   'Разбор свадьбы': 'Wedding breakdown',
 })
+
+Object.assign(EN, {
+  'Меню: мясо 4 · рыба 2 · вег 1': 'Menu: beef 4 · fish 2 · veg 1',
+})
+
+Object.assign(EN, {
+  '3 из 6 номеров уже заняты. По опыту, к дедлайну добронируют ещё 1–2 — можно сразу просить у отеля блок 8 номеров по той же цене.': '3 of 6 rooms are already taken. Typically 1–2 more are booked by the deadline — ask the hotel for a block of 20 at the same rate.',
+})

@@ -112,7 +112,7 @@ export function Team() {
 
         <div className="card-s px-4 py-3 flex gap-2.5">
           <Shield size={15} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
-          <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Безопасность:')}</b>{t('каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — человек сразу потеряет доступ.')}</p>
+          <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Безопасность:')}</b> {t('каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — человек сразу потеряет доступ.')}</p>
         </div>
       </div>
 
