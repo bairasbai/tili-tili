@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify": "tsc -b && vitest run && eslint src/lib src/pages src/App.tsx src/main.tsx src/components/chrome.tsx src/components/ErrorBoundary.tsx src/components/CityPicker.tsx && vite build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
