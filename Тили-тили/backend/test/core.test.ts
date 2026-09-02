@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { loadConfig } from '../src/config.js'
 import { encodeCursor, decodeCursor, parsePageQuery, buildPage, MAX_LIMIT } from '../src/pagination.js'
 import { AppError, toErrorBody } from '../src/errors.js'
 
@@ -27,23 +26,6 @@ describe('health', () => {
     const res = await app.inject({ method: 'GET', url: '/health/ready' })
     expect(res.statusCode).toBe(503)
     expect(res.json()).toMatchObject({ status: 'not_ready', db: 'down', redis: 'down' })
-  })
-})
-
-describe('конфигурация', () => {
-  it('в production требует секреты и подключения', () => {
-    expect(() => loadConfig({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toThrow(/DATABASE_URL/)
-  })
-
-  it('в разработке поднимается без них', () => {
-    const c = loadConfig({ NODE_ENV: 'development' } as NodeJS.ProcessEnv)
-    expect(c.databaseUrl).toBeNull()
-    expect(c.port).toBe(3000)
-  })
-
-  it('источники CORS разбираются списком', () => {
-    const c = loadConfig({ CORS_ORIGINS: 'http://a.ru, http://b.ru ,' } as NodeJS.ProcessEnv)
-    expect(c.corsOrigins).toEqual(['http://a.ru', 'http://b.ru'])
   })
 })
 

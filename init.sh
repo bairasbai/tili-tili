@@ -39,7 +39,16 @@ node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
 
 # Контрактный тест внутри: каждый путь openapi.yaml узнан сервером,
 # ни одного 404. Падает, если контракт правили, а gen:contract не гоняли.
+#
+# Тесты с живой базой идут только при заданных подключениях. Чтобы включить их
+# локально: docker compose up -d db redis && pnpm run migrate up, затем
+#   TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili \
+#   TEST_REDIS_URL=redis://localhost:6379 bash init.sh
+# В CI службы подняты, там они не пропускаются.
 echo "== бэк: тесты"
+if [ -z "${TEST_DATABASE_URL:-}" ]; then
+  echo "   (набор с живой базой пропускается: TEST_DATABASE_URL не задан)"
+fi
 node node_modules/vitest/vitest.mjs run
 
 echo "== бэк: линт"

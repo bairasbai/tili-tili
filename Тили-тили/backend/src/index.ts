@@ -1,7 +1,26 @@
 import { buildApp } from './app.js'
-import { loadConfig } from './config.js'
+import { loadConfig, ConfigError } from './config.js'
 
-const config = loadConfig()
+/**
+ * Ошибка конфигурации — не поломка, а забытая переменная окружения.
+ * Стектрейс здесь только мешает: в логах Timeweb должно быть видно, чего
+ * не хватает, с первой строки.
+ */
+function fail(error: unknown): never {
+  if (error instanceof ConfigError) {
+    console.error(`Сервер не запущен: ${error.message}`)
+    process.exit(1)
+  }
+  throw error
+}
+
+let config
+try {
+  config = loadConfig()
+} catch (error) {
+  fail(error)
+}
+
 const app = await buildApp()
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

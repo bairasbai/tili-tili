@@ -19,6 +19,7 @@ pnpm run dev                  # http://localhost:3000/health
 |---|---|
 | `pnpm run dev` | сервер с перезапуском по изменениям |
 | `pnpm run verify` | типы + тесты + линт — определение «готово» |
+| `docker compose up -d db redis` | поднять PostgreSQL и Redis локально |
 | `pnpm run gen` | список путей и типы из контракта |
 | `pnpm run migrate up` | накатить миграции |
 | `pnpm run build && pnpm start` | прод-сборка |
@@ -48,6 +49,18 @@ pnpm run dev                  # http://localhost:3000/health
 и ту же запись на двух страницах. Курсор — `base64url(sortValue|id)`; второй
 ключ обязателен, иначе порядок между записями с равной датой не определён.
 
+**Тесты с живыми службами идут только при заданных подключениях.**
+`TEST_DATABASE_URL` и `TEST_REDIS_URL` включают набор `test/integration.test.ts`:
+миграции, `citext`, `gen_random_uuid`, `/health/ready` → 200. Без них набор
+пропускается — и пропуск видно в выводе, поэтому «зелёно без базы» нельзя
+спутать с «база проверена». В CI службы подняты, там он идёт всегда.
+
+```bash
+docker compose up -d db redis
+pnpm run migrate up
+TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili TEST_REDIS_URL=redis://localhost:6379 pnpm test
+```
+
 **Два разных health.** `/health` — процесс жив, всегда 200, по нему
 перезапускают контейнер. `/health/ready` — 503, если база или Redis недоступны,
 по нему балансировщик выводит машину из ротации. Ронять контейнер из-за упавшей
@@ -65,6 +78,18 @@ pnpm run dev                  # http://localhost:3000/health
 `package-lock.json`. Причина: `npm install` на этой машине падает
 (`Exit handler never called!`, Node 25 + npm 11.12.1, ERR-0006), а бэкенд —
 новый пакет без истории npm. В образе стоит Node 22 LTS, там этой проблемы нет.
+
+## Образ
+
+`docker build -t tili-backend .` — многостадийная сборка на `node:22-alpine`.
+Внутри образа лежит `.npmrc` с `minimum-release-age=0`. pnpm по умолчанию
+отвергает пакеты, опубликованные несколько часов назад, — защита от подменённой
+версии при интерактивной установке. В образе ставится закоммиченный лок-файл,
+версии в котором уже отобраны, а гейт превращается в «выкат невозможен сутки
+после релиза любой зависимости». Локально `pnpm add` защиту сохраняет.
+
+Версия pnpm в образе закреплена (`corepack prepare pnpm@10.34.5`): иначе corepack
+тянет свежайшую, и она может читать лок-файл строже той, которой он собран.
 
 ## Секреты
 

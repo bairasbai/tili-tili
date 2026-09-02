@@ -38,14 +38,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Секреты берутся из .env и в репозиторий не попадают. Файл необязателен,
+    # иначе `docker compose up -d db redis` падал бы до того, как поднимет базу.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: "3000"
       DATABASE_URL: postgres://tili:tili@db:5432/tili
       REDIS_URL: redis://redis:6379
-      JWT_ACCESS_SECRET: dev-only-not-a-real-secret
-      JWT_REFRESH_SECRET: dev-only-not-a-real-secret
-      CORS_ORIGINS: http://localhost:5173
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "3000:3000"
 

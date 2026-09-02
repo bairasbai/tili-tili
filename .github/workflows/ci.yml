@@ -29,6 +29,28 @@ jobs:
     defaults:
       run:
         working-directory: Тили-тили/backend
+    # Живые службы: без них интеграционные тесты пропускаются, и «зелёный CI»
+    # не значит, что миграции и подключения проверены.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d tili"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+      TEST_REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,8 +59,13 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Миграции на живой базе
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+        env:
+          DATABASE_URL: postgres://tili:tili@localhost:5432/tili
       # Контрактный тест: каждый путь openapi.yaml узнан сервером.
       # Падает, если контракт правили, а генерацию не перезапускали.
+      # Интеграционные тесты здесь не пропускаются — службы подняты выше.
       - run: node node_modules/vitest/vitest.mjs run
       - run: node node_modules/eslint/bin/eslint.js .
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json

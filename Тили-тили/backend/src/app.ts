@@ -1,4 +1,4 @@
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyPluginAsync } from 'fastify'
 import cors from '@fastify/cors'
 import { loadConfig, type Config } from './config.js'
 import { AppError, toErrorBody } from './errors.js'
@@ -8,7 +8,17 @@ import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
 import { healthRoutes } from './routes/health.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 
-export async function buildApp(overrides: Partial<Config> = {}): Promise<FastifyInstance> {
+/**
+ * @param overrides    точечная подмена конфигурации (тесты, отладка)
+ * @param extraRoutes  модули с РЕАЛИЗОВАННЫМИ маршрутами. Регистрируются до
+ *                     заглушек, поэтому путь контракта, у которого появился
+ *                     обработчик, заглушку не получает. Сюда этап 1 и дальше
+ *                     складывают свои маршруты.
+ */
+export async function buildApp(
+  overrides: Partial<Config> = {},
+  extraRoutes: FastifyPluginAsync[] = [],
+): Promise<FastifyInstance> {
   const config = { ...loadConfig(), ...overrides }
 
   const app = Fastify({
@@ -67,6 +77,7 @@ export async function buildApp(overrides: Partial<Config> = {}): Promise<Fastify
   })
 
   await app.register(healthRoutes)
+  for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
 
   return app

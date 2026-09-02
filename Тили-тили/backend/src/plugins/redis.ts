@@ -18,9 +18,14 @@ export async function registerRedis(app: FastifyInstance, config: Config): Promi
   const redis = new Redis(config.redisUrl, {
     // Требование BullMQ: очередь сама решает, когда повторять.
     maxRetriesPerRequest: null,
-    lazyConnect: true,
+    // lazyConnect здесь был бы ошибкой: клиент не подключается до первой
+    // команды, статус навсегда остаётся 'wait', и /health/ready никогда
+    // не отдаст 200 — балансировщик не пустит трафик на живую машину.
+    lazyConnect: false,
   })
   // Без обработчика ioredis роняет процесс на первом же обрыве соединения.
+  // Подключение не ждём: сервер обязан подняться и при мёртвом Redis,
+  // честно показав это в /health/ready.
   redis.on('error', (err: Error) => app.log.error({ err }, 'redis'))
 
   app.decorate('redis', redis)

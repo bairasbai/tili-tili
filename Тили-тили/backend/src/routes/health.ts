@@ -16,7 +16,9 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/health/ready', async (_request, reply) => {
     const db = app.db ? await app.db.ping() : false
-    const redis = app.redis ? app.redis.status === 'ready' || app.redis.status === 'connecting' : false
+    // Только 'ready'. 'connecting' — это ещё не работает: отдать по нему 200
+    // значит впустить трафик на машину, которая на первой же команде упадёт.
+    const redis = app.redis ? app.redis.status === 'ready' : false
     const ready = db && redis
     return reply.code(ready ? 200 : 503).send({
       status: ready ? 'ready' : 'not_ready',

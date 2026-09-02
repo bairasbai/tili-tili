@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
+import path from 'node:path'
 import { readOperations, render, CONTRACT_FILE, OUT_FILE } from '../scripts/gen-contract.mjs'
 import { CONTRACT_OPERATIONS } from '../src/contract/paths.generated.js'
 
@@ -17,6 +18,25 @@ describe('генерация списка путей', () => {
     const fromContract = readOperations()
     const committed = CONTRACT_OPERATIONS.map((o) => ({ ...o }))
     expect(committed).toEqual(fromContract)
+  })
+
+  it('типы из контракта не отстают: каждая схема есть в api.generated.ts', () => {
+    // openapi-typescript вызывать в тесте дорого, поэтому сверяем состав.
+    // Ловит главный случай: контракт вырос, `pnpm run gen:types` не гоняли,
+    // и обработчик этапа N ссылается на тип, которого в файле нет.
+    const doc = fs.readFileSync(CONTRACT_FILE, 'utf8')
+    const types = fs.readFileSync(path.resolve(OUT_FILE, '..', 'api.generated.ts'), 'utf8')
+
+    const schemaNames = [...doc.matchAll(/^ {4}([A-Z][A-Za-z0-9]*):$/gm)].map((m) => m[1]!)
+    expect(schemaNames.length).toBeGreaterThan(30)
+    const missingSchemas = schemaNames.filter((n) => !types.includes(`${n}:`))
+    expect(missingSchemas).toEqual([])
+
+    const missingPaths = readOperations()
+      .map((o) => o.openapi)
+      .filter((p, i, a) => a.indexOf(p) === i)
+      .filter((p) => !types.includes(`"${p}"`))
+    expect(missingPaths).toEqual([])
   })
 
   it('файл на диске совпадает с тем, что выдаёт генератор', () => {
