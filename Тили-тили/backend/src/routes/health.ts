@@ -1,0 +1,27 @@
+import type { FastifyInstance } from 'fastify'
+
+/**
+ * Два разных вопроса, поэтому два разных адреса.
+ *
+ * /health       — процесс жив. Всегда 200. По нему перезапускают контейнер:
+ *                 если ронять его из-за упавшей базы, приложение уйдёт в цикл
+ *                 перезапусков и не поднимется, даже когда база вернётся.
+ * /health/ready — можно ли слать трафик. 503, если база или Redis недоступны.
+ *                 По нему балансировщик выводит машину из ротации.
+ *
+ * В контракте этих путей нет — они не часть продукта, а эксплуатация.
+ */
+export async function healthRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/health', async () => ({ status: 'ok', uptime: Math.round(process.uptime()) }))
+
+  app.get('/health/ready', async (_request, reply) => {
+    const db = app.db ? await app.db.ping() : false
+    const redis = app.redis ? app.redis.status === 'ready' || app.redis.status === 'connecting' : false
+    const ready = db && redis
+    return reply.code(ready ? 200 : 503).send({
+      status: ready ? 'ready' : 'not_ready',
+      db: db ? 'up' : 'down',
+      redis: redis ? 'up' : 'down',
+    })
+  })
+}

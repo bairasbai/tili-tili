@@ -2769,7 +2769,7 @@ components:
         from: { type: string, example: 'Уфа, ост. «Гостиный двор»' }
         time: { type: string, example: '14:30' }
         seats: { type: integer }
-        taken: { type: integer, description: инкрементируется атомарно, переполнение запрещено }
+        taken: { type: integer, description: 'инкрементируется атомарно, переполнение запрещено' }
     HotelBlock:
       type: object
       properties:

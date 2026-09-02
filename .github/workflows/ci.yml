@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Тили-тили/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22 LTS, не 25: на нечётной ветке npm падает с
+          # "Exit handler never called!" (ERR-0006).
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - run: node node_modules/typescript/bin/tsc -b
+      - run: node node_modules/vitest/vitest.mjs run
+      - run: node node_modules/eslint/bin/eslint.js .
+      - run: node node_modules/vite/bin/vite.js build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Тили-тили/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      # Контрактный тест: каждый путь openapi.yaml узнан сервером.
+      # Падает, если контракт правили, а генерацию не перезапускали.
+      - run: node node_modules/vitest/vitest.mjs run
+      - run: node node_modules/eslint/bin/eslint.js .
+      - run: node node_modules/typescript/bin/tsc -p tsconfig.json
