@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /* Клик-шторм: на каждом экране кликаем ВСЕ кнопки по очереди.
  * Любое исключение в обработчике = найденная дыра. */
-import { render, cleanup, fireEvent } from '@testing-library/react'
+import { render, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import App from '@/App'
@@ -21,6 +21,12 @@ const ROUTES = [
   '/vendor-app/leads/l1', '/vendor-app/reviews', '/vendor-app/analytics',
 ]
 
+/* Экраны приезжают отдельными чанками. Без ожидания шторм кликал бы по пустой
+ * заглушке Suspense и молча ничего не проверял — в том числе после переходов,
+ * которые сами вызваны кликом. */
+const settled = (container: HTMLElement) =>
+  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull())
+
 describe('клик-шторм: все кнопки всех экранов нажимаются без падения', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -34,24 +40,30 @@ describe('клик-шторм: все кнопки всех экранов на�
   afterEach(cleanup)
 
   for (const r of ROUTES) {
-    it(`клики на ${r}`, () => {
+    it(`клики на ${r}`, async () => {
       const errors: string[] = []
       const errSpy = vi.spyOn(console, 'error').mockImplementation((...a) => { errors.push(String(a[0])) })
       const { container, unmount } = render(<MemoryRouter initialEntries={[r]}><App /></MemoryRouter>)
+      await settled(container)
       // кликаем кнопки волнами: каждый клик может менять DOM и открывать новые кнопки
+      let clicked = 0
       for (let wave = 0; wave < 4; wave++) {
         const btns = Array.from(container.querySelectorAll('button:not([disabled])'))
         for (const b of btns) {
           try {
+            clicked++
             fireEvent.click(b)
           } catch (e) {
             errors.push(`${r} кнопка «${(b.textContent ?? '').slice(0, 40)}»: ${String(e)}`)
           }
         }
+        await settled(container)
       }
       errSpy.mockRestore()
       // реальные исключения React логируются как "The above error occurred" — отфильтруем шум
       const fatal = errors.filter(e => /error occurred|is not a function|Cannot read|undefined is not/i.test(e))
+      // страховка от вырождения: если экран не догрузился, кликать было бы не по чему
+      expect(clicked).toBeGreaterThan(0)
       expect(container.innerHTML.length).toBeGreaterThan(50)
       unmount()
       expect(fatal).toEqual([])

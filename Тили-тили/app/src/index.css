@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600;700;800&display=swap');
-
+/* Шрифты подключены в index.html <link>: @import здесь откладывал их загрузку
+   до полного разбора бандла стилей. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -247,7 +247,9 @@ input[type="range"] { accent-color: var(--rose-deep); }
   }
   .glass-tab .tab-dot { display: none; }
 }
-@media (min-width: 900px) and (prefers-color-scheme: dark) { :root { color-scheme: dark; } }
+/* Тёмная тема включается ТОЛЬКО тумблером в настройках (см. §16.1 карты экранов).
+   Здесь стоял @media (prefers-color-scheme: dark) для экранов от 900px: приложение
+   оставалось светлым, а системные контролы — инпуты, скроллбары — темнели. */
 
 /* Подпись центральной кнопки: скрыта на мобильной нижней панели, видна в десктоп-сайдбаре */
 .halo-label { display: none; }

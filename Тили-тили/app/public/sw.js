@@ -1,6 +1,13 @@
-/* Тили-тили service worker: app-shell кэш, офлайн-режим */
-const CACHE = 'tilitili-v1'
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg']
+/*
+ * Тили-тили service worker: app-shell кэш, офлайн-режим.
+ *
+ * Все пути относительные и разрешаются от адреса самого воркера — приложение
+ * может лежать в подпапке статического хостинга, и абсолютный '/' указывал бы
+ * на чужой корень: кэш не наполнялся, офлайн не работал.
+ */
+const CACHE = 'tilitili-v2'
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
+const OFFLINE_PAGE = new URL('./index.html', self.registration.scope).toString()
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()))
@@ -13,9 +20,9 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const { request } = e
   if (request.method !== 'GET') return
-  // Навигация: network-first, офлайн — index.html (SPA)
+  // Навигация: network-first, офлайн — оболочка приложения (SPA)
   if (request.mode === 'navigate') {
-    e.respondWith(fetch(request).catch(() => caches.match('/index.html')))
+    e.respondWith(fetch(request).catch(() => caches.match(OFFLINE_PAGE)))
     return
   }
   // Статика: cache-first, затем сеть с докэшированием

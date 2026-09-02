@@ -58,6 +58,13 @@ export function Logistics() {
         <div className="card-s px-4 py-3 text-[11px] text-[var(--soft)] leading-relaxed">
           {t('Гости отмечают «нужен трансфер» в приглашении и выбирают автобус — места считаются сами, вам не нужно обзванивать всех.')}
         </div>
+        {buses.length === 0 && (
+          <div className="card p-6 text-center fade-up">
+            <span className="w-12 h-12 rounded-2xl bg-[var(--blue)] mx-auto flex items-center justify-center"><Bus size={20} className="text-[var(--ink2)]" /></span>
+            <b className="text-[13.5px] block mt-3">{t('Маршрутов пока нет')}</b>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Добавьте точку сбора и время — гости запишутся сами прямо в приглашении.')}</p>
+          </div>
+        )}
         {buses.map(b => (
           <div key={b.id} className="card p-4 fade-up">
             <div className="flex items-center gap-3">
@@ -96,6 +103,13 @@ export function Logistics() {
         <div className="card-s px-4 py-3 text-[11px] text-[var(--soft)] leading-relaxed">
           {t('Договоритесь с отелем о блоке номеров со скидкой, внесите его сюда — гости бронируют по промокоду из приглашения. Вы видите, сколько номеров занято, и не платите за пустые.')}
         </div>
+        {hotels.length === 0 && (
+          <div className="card p-6 text-center fade-up">
+            <span className="w-12 h-12 rounded-2xl bg-[var(--lav)] mx-auto flex items-center justify-center"><Hotel size={20} className="text-[var(--ink2)]" /></span>
+            <b className="text-[13.5px] block mt-3">{t('Отельных блоков пока нет')}</b>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Договоритесь с отелем о скидке для гостей и добавьте блок — за невыкупленные номера платить не придётся.')}</p>
+          </div>
+        )}
         {hotels.map(h => (
           <div key={h.id} className="card p-4 fade-up">
             <div className="flex items-center gap-3">

@@ -78,7 +78,7 @@ export function WeddingTeam() {
                 {s.state === 'empty' ? <Plus size={20} className="text-[#C98A8A]" /> : createElement(catIcon(s.categoryId), { size: 18, className: 'text-[var(--ink2)]' })}
               </span>
               <b className="text-[10.5px] text-center leading-tight">{s.label}</b>
-              {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#7E9A74]">booked</span>}
+              {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#7E9A74]">{t('забронирован')}</span>}
               {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#B98A2F]">{s.status && t(s.status)}</span>}
               {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[#C98A8A]">{t('кандидаты')}</span>}
             </button>

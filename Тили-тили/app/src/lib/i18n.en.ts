@@ -1148,3 +1148,11 @@ Object.assign(EN, {
   '3. Ответственность сторон и форс-мажор — по ГК РФ.': '3. Liability and force majeure — per the Civil Code of RF.',
   '4. Сформировано в приложении «Тили-тили» (tili-tili.ru).': '4. Generated in the Tili-Tili app (tili-tili.ru).',
 })
+
+Object.assign(EN, {
+  'забронирован': 'booked',
+  'Маршрутов пока нет': 'No routes yet',
+  'Добавьте точку сбора и время — гости запишутся сами прямо в приглашении.': 'Add a pickup point and time — guests sign up themselves right in the invitation.',
+  'Отельных блоков пока нет': 'No hotel blocks yet',
+  'Договоритесь с отелем о скидке для гостей и добавьте блок — за невыкупленные номера платить не придётся.': 'Arrange a guest discount with a hotel and add the block — you never pay for rooms nobody takes.',
+})

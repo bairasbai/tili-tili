@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import App from '@/App'
@@ -19,6 +19,11 @@ const ROUTES = [
   '/totally-unknown-route',
 ]
 
+/** Экраны грузятся отдельными чанками — ждём, пока заглушка Suspense уйдёт,
+ *  иначе тест проверял бы саму заглушку и всегда был бы зелёным. */
+export const settled = (container: HTMLElement) =>
+  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull())
+
 describe('smoke: каждый экран рендерится без падения', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -27,12 +32,13 @@ describe('smoke: каждый экран рендерится без паден�
   afterEach(cleanup)
 
   for (const r of ROUTES) {
-    it(`рендер ${r}`, () => {
+    it(`рендер ${r}`, async () => {
       const { container, unmount } = render(
         <MemoryRouter initialEntries={[r]}>
           <App />
         </MemoryRouter>
       )
+      await settled(container)
       expect(container.innerHTML.length).toBeGreaterThan(50)
       unmount()
     })
