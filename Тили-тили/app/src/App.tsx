@@ -30,6 +30,7 @@ const load = {
   team: () => import('@/pages/Team'),
   discover: () => import('@/pages/Discover'),
   extras: () => import('@/pages/Extras'),
+  legal: () => import('@/pages/Legal'),
   wishlist: () => import('@/pages/Wishlist'),
   logistics: () => import('@/pages/Logistics'),
 }
@@ -70,6 +71,9 @@ const VendorDeals = lazy(() => load.vendorApp().then(m => ({ default: m.VendorDe
 const VendorLead = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorLead })))
 const VendorReviews = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorReviews })))
 const VendorAnalytics = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorAnalytics })))
+
+const Offer = lazy(() => load.legal().then(m => ({ default: m.Offer })))
+const Privacy = lazy(() => load.legal().then(m => ({ default: m.Privacy })))
 
 const Team = lazy(() => load.team().then(m => ({ default: m.Team })))
 const Join = lazy(() => load.team().then(m => ({ default: m.Join })))
@@ -126,6 +130,8 @@ function Shell() {
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/support" element={<Support />} />
+          <Route path="/legal/offer" element={<Offer />} />
+          <Route path="/legal/privacy" element={<Privacy />} />
           <Route path="/search" element={<SearchCategories />} />
           <Route path="/search/:catId" element={<VendorList />} />
           <Route path="/vendor/:id" element={<VendorDetail />} />

@@ -4,6 +4,7 @@ import { Check, X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCh
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 import { fmt } from '@/lib/data'
+import { rub } from '@/lib/money'
 import { t } from '@/lib/i18n'
 
 /* Заявка подрядчика: детально */
@@ -31,7 +32,7 @@ export function VendorLead() {
       <div className="flex-1 px-5 mt-3 space-y-3">
         <div className="card p-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full grad flex items-center justify-center text-white font-serif-d text-[17px]">{lead.n[0]}</div>
+            <div className="w-12 h-12 rounded-full grad flex items-center justify-center text-[var(--on-grad)] font-serif-d text-[17px]">{lead.n[0]}</div>
             <div className="flex-1">
               <b className="text-[14px]">{lead.n}</b>
               <p className="text-[10.5px] text-[var(--soft)]">{t('заявка из каталога · отвечаете в среднем за 2 ч')}</p>
@@ -41,7 +42,7 @@ export function VendorLead() {
           </div>
           <div className="card-s p-3.5 mt-3 text-[12.5px] text-[var(--ink2)] leading-relaxed">{lead.msg}</div>
           {sent.map((m, k) => (
-            <div key={k} className="mt-2.5 max-w-[85%] ml-auto grad text-white rounded-[18px] rounded-br-md px-4 py-2.5 text-[12.5px] leading-relaxed">{m}</div>
+            <div key={k} className="mt-2.5 max-w-[85%] ml-auto grad text-[var(--on-grad)] rounded-[18px] rounded-br-md px-4 py-2.5 text-[12.5px] leading-relaxed">{m}</div>
           ))}
         </div>
 
@@ -56,7 +57,7 @@ export function VendorLead() {
             <div className="grid grid-cols-3 gap-2.5 pt-1">
               <button onClick={() => setState('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[var(--honey-deep)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Clock size={13} />{t('Hold 72 ч')}</button>
               <button onClick={() => setState('declined')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] text-[11.5px] font-bold flex items-center justify-center gap-1"><X size={13} />{t('Отклонить')}</button>
-              <button onClick={() => nav('/us/chats')} className="press h-11 rounded-full grad text-white text-[11.5px] font-bold flex items-center justify-center gap-1"><Check size={13} />{t('В чат')}</button>
+              <button onClick={() => nav('/us/chats')} className="press h-11 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Check size={13} />{t('В чат')}</button>
             </div>
           </>
         )}
@@ -70,7 +71,7 @@ export function VendorLead() {
       </div>
       <div className="px-5 pt-3 flex gap-2">
         <input value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(reply)} placeholder={t('Написать паре…')} className="flex-1 h-12 px-5 rounded-full bg-[var(--card)] text-[13px] outline-none" style={{ boxShadow: 'var(--shadow)' }} />
-        <button onClick={() => send(reply)} className="press w-12 h-12 rounded-full grad text-white flex items-center justify-center shrink-0"><Send size={16} /></button>
+        <button onClick={() => send(reply)} className="press w-12 h-12 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0"><Send size={16} /></button>
       </div>
     </div>
   )
@@ -124,7 +125,7 @@ export function VendorReviews() {
               ) : answering === k ? (
                 <div className="mt-2.5 flex gap-2">
                   <input autoFocus value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && save(k)} placeholder={t('Ответить…')} className="flex-1 h-10 px-4 rounded-full bg-[var(--bg)] text-[12px] outline-none" />
-                  <button onClick={() => save(k)} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center"><Send size={13} /></button>
+                  <button onClick={() => save(k)} className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center"><Send size={13} /></button>
                 </div>
               ) : (
                 <button onClick={() => { setAnswering(k); setText('') }} className="press mt-2.5 text-[11px] font-bold text-[var(--sage-deep)]">{t('Ответить →')}</button>
@@ -150,13 +151,13 @@ export function VendorAnalytics() {
     <div className="pb-28">
       <TopBar back title={t('Аналитика')} sub={t('Июнь — август 2026')} />
       <div className="px-5 mt-3">
-        <div className="card p-5 grad text-white">
+        <div className="card p-5 grad text-[var(--on-grad)]">
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t('Доход за сезон')}</span>
             <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--card)]/25 flex items-center gap-1"><TrendingUp size={10} /> +38%</span>
           </div>
-          <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(385000)}</b>
-          <p className="text-[11px] opacity-85 mt-1">{t('ещё')} {fmt(215000)} {t('ожидается по активным сделкам')}</p>
+          <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(rub(385000))}</b>
+          <p className="text-[11px] opacity-85 mt-1">{t('ещё')} {fmt(rub(215000))} {t('ожидается по активным сделкам')}</p>
         </div>
 
         <div className="flex justify-between items-baseline px-1 mt-6 mb-2">

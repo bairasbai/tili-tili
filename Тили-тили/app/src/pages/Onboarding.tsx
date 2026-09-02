@@ -56,7 +56,7 @@ export default function Onboarding() {
           )}
           <button
             onClick={() => (last ? nav('/auth') : setI(i + 1))}
-            className="press flex-1 h-[54px] rounded-full grad text-white font-semibold text-[14px] tracking-wide flex items-center justify-center gap-2"
+            className="press flex-1 h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide flex items-center justify-center gap-2"
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
             {last ? t('Начать') : t('Далее')} <ChevronRight size={18} />

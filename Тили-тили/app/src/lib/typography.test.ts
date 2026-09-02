@@ -30,6 +30,9 @@ const ALLOWED = new Set(['К', 'один/одна'])
 /** Строчные теги — это текст (b, i, em, strong, span). Компоненты с большой
  *  буквы — иконки: рядом с ними пробел не нужен. */
 const TEXT_TAG = /^(b|i|em|strong|span|u)$/
+/* {' '} — тоже пробел, просто записанный по-джиэсэксовому. */
+const JSX_SPACE_AFTER = /^\{\s*['"]\s+['"]\s*\}/
+const JSX_SPACE_BEFORE = /\{\s*['"]\s+['"]\s*\}$/
 
 describe('подписи не склеиваются', () => {
   const files = screens('src')
@@ -42,10 +45,16 @@ describe('подписи не склеиваются', () => {
     const bad: string[] = []
     for (const f of files) {
       const src = projectFile(f)
-      for (const m of src.matchAll(/\}\{t\('([^']+)'\)/g))
-        if (WORD_START.test(m[1]) && !ALLOWED.has(m[1])) bad.push(`${f}: {…}{t('${m[1].slice(0, 30)}…')`)
-      for (const m of src.matchAll(/t\('([^']+)'\)\}\{/g))
-        if (WORD_END.test(m[1]) && !/[:.,—·(]$/.test(m[1]) && !ALLOWED.has(m[1])) bad.push(`${f}: t('…${m[1].slice(-30)}')}{…}`)
+      for (const m of src.matchAll(/\}\{t\('([^']+)'\)/g)) {
+        if (!WORD_START.test(m[1]) || ALLOWED.has(m[1])) continue
+        if (JSX_SPACE_BEFORE.test(src.slice(0, m.index + 1))) continue
+        bad.push(`${f}: {…}{t('${m[1].slice(0, 30)}…')`)
+      }
+      for (const m of src.matchAll(/t\('([^']+)'\)\}\{/g)) {
+        if (!WORD_END.test(m[1]) || /[:.,—·(]$/.test(m[1]) || ALLOWED.has(m[1])) continue
+        if (JSX_SPACE_AFTER.test(src.slice(m.index + m[0].length - 1))) continue
+        bad.push(`${f}: t('…${m[1].slice(-30)}')}{…}`)
+      }
     }
     expect(bad).toEqual([])
   })

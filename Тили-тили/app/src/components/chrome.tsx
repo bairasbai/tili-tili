@@ -3,6 +3,7 @@ import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
+import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
 import { cn, goBack } from '@/lib/utils'
 import { catIcon } from '@/lib/icons'
@@ -49,7 +50,7 @@ export function TabBar() {
         {tabs.map(tb => {
           if (tb.icon === null)
             return (
-              <button key="w" onClick={() => nav('/wedding')} className="press halo relative -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-white text-[22px] border-4 border-[var(--bg)]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label={t('Свадьба')}>
+              <button key="w" onClick={() => nav('/wedding')} className="press halo relative -mt-8 w-[58px] h-[58px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[22px] border-4 border-[var(--bg)]" style={{ boxShadow: '0 12px 28px -8px rgba(201,138,138,.7)' }} aria-label={t('Свадьба')}>
                 💍
                 <span className="halo-label">{t('Свадьба')}</span>
               </button>
@@ -80,7 +81,7 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
           <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 70% 25%, rgba(255,255,255,.65), transparent 55%)' }} />
           <span className="absolute top-3 left-3 text-[26px]">{v.categoryIcon}</span>
           {v.freeOnDate
-            ? <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-white">{t('● Свободен на вашу дату')}</span>
+            ? <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-[var(--on-grad)]">{t('● Свободен на вашу дату')}</span>
             : <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--card)]/80 text-[var(--soft)]">{t('Дата занята')}</span>}
           {v.hasVideo && <span className="absolute bottom-3 right-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-black/45 text-white">{t('▶ Видео')}</span>}
         </div>
@@ -93,7 +94,7 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
             {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : t(' · Новый на платформе')}
             <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>
           </span>
-          <span className="font-serif-d text-[14px] text-[var(--rose-deep)] font-semibold block mt-1">{t('от')} {v.priceFrom.toLocaleString('ru-RU')} ₽</span>
+          <span className="font-serif-d text-[14px] text-[var(--rose-deep)] font-semibold block mt-1">{t('от')} {fmt(v.priceFrom)}</span>
         </button>
         <button onClick={() => toggleFav(v.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
           <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[var(--rose-deep)]' : 'text-[var(--soft)]'} />
@@ -129,7 +130,7 @@ export function Tile({ icon, tile, size = 46, cat }: { icon: string; tile: strin
 export function AiTip({ text, onPress }: { text: string; onPress?: () => void }) {
   const inner = (
     <>
-      <div className="w-[30px] h-[30px] rounded-full grad flex items-center justify-center text-white text-[13px] shrink-0">✦</div>
+      <div className="w-[30px] h-[30px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[13px] shrink-0">✦</div>
       <p className="text-[11.5px] leading-relaxed text-[var(--soft)]"><b className="text-[var(--ink)]">{t('Тиль:')}</b> {text}</p>
     </>
   )

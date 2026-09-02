@@ -139,9 +139,9 @@ export function Team() {
                 <p className="text-[11px] font-bold tabular truncate">{url(inviteCode)}</p>
                 <p className="text-[9.5px] text-[var(--soft)]">{t('отправьте ссылку или покажите QR')}</p>
               </div>
-              <button onClick={() => copy(url(inviteCode))} className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+              <button onClick={() => copy(url(inviteCode))} className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
             </div>
-            <button onClick={() => { copy(url(inviteCode)); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+            <button onClick={() => { copy(url(inviteCode)); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
               {copied ? t('✓ Скопировано!') : t('Скопировать ссылку')}
             </button>
             <button onClick={() => nav('/us/chats')} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>{t('Отправить в чат')}</button>
@@ -163,12 +163,12 @@ export function Join() {
 
   if (joined) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
-      <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-white pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Heart size={36} fill="#fff" /></div>
+      <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Heart size={36} fill="#fff" /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Вы в команде!')}</h1>
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
         {isPartner ? 'Теперь у вас с Алиной одна общая свадьба: бюджет, команда, гости — всё синхронизировано.' : t('Алина и Тимур добавили вас в пространство свадьбы. Организуем вместе!')}
       </p>
-      <button onClick={() => { finishOnboarding(); nav('/home') }} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-8" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Открыть нашу свадьбу ✨')}</button>
+      <button onClick={() => { finishOnboarding(); nav('/home') }} className="press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-8" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Открыть нашу свадьбу ✨')}</button>
     </div>
   )
 
@@ -183,7 +183,7 @@ export function Join() {
           {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[var(--sage-deep)]" />{r}</p>)}
         </div>
       </div>
-      <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Принять приглашение')}</button>
+      <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Принять приглашение')}</button>
       <p className="text-[10px] text-[var(--soft2)] mt-4 flex items-center gap-1.5"><Users size={11} />{t('код')} {code}{t('· одноразовый')}</p>
     </div>
   )

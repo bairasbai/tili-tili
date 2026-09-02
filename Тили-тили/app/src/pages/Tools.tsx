@@ -9,6 +9,7 @@ import { usePersist } from '@/lib/usePersist'
 import { AiTip, SyncNote, Tile, TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { rub } from '@/lib/money'
 
 /* Карточка сделки */
 export function Deal() {
@@ -44,7 +45,7 @@ export function Deal() {
             {steps.map((s, k) => (
               <div key={s.label} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center">
-                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', s.done ? 'grad text-white' : 'bg-[var(--track)] text-[var(--soft2)]')}>{s.done ? '✓' : k + 1}</span>
+                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', s.done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--soft2)]')}>{s.done ? '✓' : k + 1}</span>
                   <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', s.done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{s.label}</span>
                 </div>
                 {k < steps.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', s.done ? 'bg-[#A9BCA0]' : 'bg-[var(--track)]')} />}
@@ -57,16 +58,16 @@ export function Deal() {
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
           <div className="flex justify-between items-center mt-3">
             <span className="text-[12.5px]">{t('Аванс · 10 фев')}</span>
-            <b className="tabular text-[13px] text-[var(--sage-deep)]">✓ {fmt(30000)}</b>
+            <b className="tabular text-[13px] text-[var(--sage-deep)]">✓ {fmt(rub(30000))}</b>
           </div>
           <div className="flex justify-between items-center mt-2.5">
             <span className="text-[12.5px]">{t('Доплата · 14 июн')}</span>
-            <b className={cn('tabular text-[13px]', paid ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>{paid ? `✓ ${fmt(30000)}` : fmt(30000)}</b>
+            <b className={cn('tabular text-[13px]', paid ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>{paid ? `✓ ${fmt(rub(30000))}` : fmt(rub(30000))}</b>
           </div>
           <div className="h-[1.5px] bg-[var(--track)] my-3" />
           <div className="flex justify-between items-center">
             <b className="text-[13px]">{t('Итого по договору')}</b>
-            <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{fmt(60000)}</b>
+            <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{fmt(rub(60000))}</b>
           </div>
         </div>
 
@@ -81,7 +82,7 @@ export function Deal() {
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Сделка отменена')}</div>
           ) : confirmCancel ? (
-            <button onClick={() => { setCancelled(true); setConfirmCancel(false); cancelBooking('s4') }} className="press py-3.5 rounded-[18px] bg-[#B57171] text-white text-[13px] font-semibold">{t('Точно отменить?')}</button>
+            <button onClick={() => { setCancelled(true); setConfirmCancel(false); cancelBooking('s4') }} className="press py-3.5 rounded-[18px] bg-[#A36666] text-white text-[13px] font-semibold">{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{t('Отменить сделку')}</button>
           )}
@@ -162,14 +163,14 @@ export function ContractWizard() {
 
   if (done) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
-      <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-white pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Check size={38} strokeWidth={2.5} /></div>
+      <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Check size={38} strokeWidth={2.5} /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Договор готов')}</h1>
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">«{ctpl.name}{t('» сгенерирован с вашими данными. Скачайте, подпишите с подрядчиком и загрузите скан в сделку.')}</p>
       <div className="flex gap-2.5 mt-8 w-full">
         <button onClick={() => downloadPdf(ctpl.name)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
         <button onClick={() => downloadDocx(ctpl.name)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
-      <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Готово')}</button>
+      <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Готово')}</button>
     </div>
   )
 
@@ -189,7 +190,7 @@ export function ContractWizard() {
       ) : (
         <div className="px-5 mt-3 fade-up">
           <div className="card p-5 space-y-3.5">
-            {[[t('Заказчик'), couple.full], [t('Исполнитель'), t('Артём Краснов')], [t('Дата оказания услуги'), couple.date], [t('Сумма'), fmt(60000)], [t('Аванс'), fmt(30000) + t(' · возврат 50% при отмене за 30 дней')]].map(([l, v]) => (
+            {[[t('Заказчик'), couple.full], [t('Исполнитель'), t('Артём Краснов')], [t('Дата оказания услуги'), couple.date], [t('Сумма'), fmt(rub(60000))], [t('Аванс'), fmt(rub(30000)) + t(' · возврат 50% при отмене за 30 дней')]].map(([l, v]) => (
               <div key={l}>
                 <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{l}</span>
                 <p className="text-[13.5px] font-medium mt-0.5">{v}</p>
@@ -204,7 +205,7 @@ export function ContractWizard() {
         </div>
       )}
       <div className="px-5 mt-auto pt-6">
-        <button onClick={() => (step === 0 ? setStep(1) : setDone(true))} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+        <button onClick={() => (step === 0 ? setStep(1) : setDone(true))} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {step === 0 ? t('Далее') : t('Сгенерировать договор ✨')}
         </button>
       </div>
@@ -281,7 +282,7 @@ export function Seating() {
         <div className="card-s px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0">{t('Без стола:')}</span>
           {unseated.map(g => (
-            <button key={g} onClick={() => setSelected(s => s === g ? null : g)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g ? 'grad text-white' : 'bg-[var(--bg)]')}>{g}</button>
+            <button key={g} onClick={() => setSelected(s => s === g ? null : g)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)]')}>{g}</button>
           ))}
           {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{t('все рассажены ✓')}</span>}
         </div>
@@ -302,7 +303,7 @@ export function Seating() {
         ))}
       </div>
       <div className="px-5 mt-4 space-y-3">
-        <button onClick={autoSeat} disabled={!unseated.length} className={cn('press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2', !unseated.length && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
+        <button onClick={autoSeat} disabled={!unseated.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', !unseated.length && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
         <div className="card-s px-4 py-3 flex items-center gap-3 text-[10.5px] text-[var(--soft)]">
           <span className="font-semibold tracking-[.12em] uppercase shrink-0">{t('Легенда:')}</span>
           <span>🥩 {t('мясо')}</span><span>🐟 {t('рыба')}</span><span>🥦 {t('вег')}</span>
@@ -347,7 +348,7 @@ export function InviteEditor() {
           <h2 className="font-serif-d text-[26px] mt-2">{couple.bride} & {couple.groom}</h2>
           <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>{couple.date} · {couple.city}</p>
           <p className="text-[11.5px] text-[var(--ink2)] font-light leading-relaxed mt-3">{inviteText}</p>
-          <button onClick={() => nav('/invite')} className="press mt-4 px-5 h-[40px] rounded-full grad text-white text-[11.5px] font-semibold">{t('Смотреть как гость →')}</button>
+          <button onClick={() => nav('/invite')} className="press mt-4 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[11.5px] font-semibold">{t('Смотреть как гость →')}</button>
         </div>
 
         {/* 10 сценариев */}
@@ -432,10 +433,10 @@ export function InviteEditor() {
           <div className="card p-5 mt-4 text-center pop">
             <b className="text-[15px]">{t('✓ Отправлено')} {count} {t('гостям')}</b>
             <p className="text-[11px] text-[var(--soft)] mt-1.5">{t('Ответы RSVP появятся в разделе «Гости» в реальном времени')}</p>
-            <button onClick={() => nav('/wedding/guests')} className="press mt-4 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('К списку гостей →')}</button>
+            <button onClick={() => nav('/wedding/guests')} className="press mt-4 px-6 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('К списку гостей →')}</button>
           </div>
         ) : (
-          <button onClick={() => setSentInvites(true)} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          <button onClick={() => setSentInvites(true)} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
             <Send size={15} /> {t('Разослать приглашения')}
           </button>
         )}

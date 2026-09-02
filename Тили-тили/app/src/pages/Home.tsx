@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store'
 import { spentTotal, spentPct, type BudgetRow } from '@/lib/budget'
 import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
+import { fmt } from '@/lib/money'
 
 export default function Home() {
   const nav = useNavigate()
@@ -39,7 +40,7 @@ export default function Home() {
 
       {/* Hero-карточка пары */}
       <div className="px-5 mt-3 fade-up">
-        <div className="grad-anim sheen rounded-[32px] p-6 text-white relative overflow-hidden" style={{ boxShadow: '0 24px 60px -20px rgba(201,138,138,.55)' }}>
+        <div className="grad-anim sheen rounded-[32px] p-6 text-[var(--on-grad)] relative overflow-hidden" style={{ boxShadow: '0 24px 60px -20px rgba(201,138,138,.55)' }}>
           <div className="absolute w-56 h-56 rounded-full bg-[var(--card)]/15 -top-24 -right-16" />
           <div className="absolute w-40 h-40 rounded-full bg-[var(--card)]/10 -bottom-16 -left-10" />
           <div className="absolute inset-0 rounded-[32px]" style={{ border: '1px solid rgba(255,255,255,.35)' }} />
@@ -66,10 +67,10 @@ export default function Home() {
         <div className="card p-5 mt-4 text-center">
           <div className="flex justify-center -space-x-3.5">
             <div className="w-14 h-14 rounded-full grad p-[2.5px]">
-              <div className="w-full h-full rounded-full bg-[#C98A8A] text-white font-serif-d text-[22px] flex items-center justify-center border-2 border-white">{t('А')}</div>
+              <div className="w-full h-full rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[22px] flex items-center justify-center border-2 border-white">{t('А')}</div>
             </div>
             <div className="w-14 h-14 rounded-full grad p-[2.5px]">
-              <div className="w-full h-full rounded-full bg-[#A9BCA0] text-white font-serif-d text-[22px] flex items-center justify-center border-2 border-white">{t('Т')}</div>
+              <div className="w-full h-full rounded-full bg-[#A9BCA0] text-[var(--on-grad)] font-serif-d text-[22px] flex items-center justify-center border-2 border-white">{t('Т')}</div>
             </div>
           </div>
           <b className="font-serif-d text-[16px] block mt-2.5">{couple.full}</b>
@@ -93,8 +94,8 @@ export default function Home() {
             <span className="text-[12px] font-bold text-[var(--rose-deep)]">{budgetPct}%</span>
           </div>
           <div className="flex justify-between items-baseline mt-1.5">
-            <b className="font-serif-d text-[22px] tabular">{spent.toLocaleString('ru-RU')} ₽</b>
-            <span className="text-[11px] text-[var(--soft)]">{t('из')} {couple.budgetTotal.toLocaleString('ru-RU')} ₽</span>
+            <b className="font-serif-d text-[22px] tabular">{fmt(spent)}</b>
+            <span className="text-[11px] text-[var(--soft)]">{t('из')} {fmt(couple.budgetTotal)}</span>
           </div>
           <div className="mt-3"><Bar pct={budgetPct} /></div>
         </button>
@@ -158,7 +159,7 @@ export default function Home() {
               <div className="flex-1 min-w-0">
                 <b className="text-[13.5px] block truncate">{s.vendor}</b>
                 <span className="text-[10.5px] text-[var(--soft)]">{s.label}</span>
-                {s.price && <span className="text-[12px] text-[var(--rose-deep)] font-bold block mt-0.5 tabular">{s.price.toLocaleString('ru-RU')} ₽</span>}
+                {s.price && <span className="text-[12px] text-[var(--rose-deep)] font-bold block mt-0.5 tabular">{fmt(s.price)}</span>}
               </div>
               <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] shrink-0">{t('✓ Забронирован')}</span>
             </button>

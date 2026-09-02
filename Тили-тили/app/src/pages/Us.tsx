@@ -24,8 +24,8 @@ export function Us() {
       <div className="px-5 mt-3">
         <div className="card p-5 text-center fade-up">
           <div className="flex justify-center -space-x-3.5">
-            <div className="w-16 h-16 rounded-full bg-[#C98A8A] text-white font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('А')}</div>
-            <div className="w-16 h-16 rounded-full bg-[#A9BCA0] text-white font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('Т')}</div>
+            <div className="w-16 h-16 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('А')}</div>
+            <div className="w-16 h-16 rounded-full bg-[#A9BCA0] text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('Т')}</div>
           </div>
           <b className="font-serif-d text-[20px] block mt-3">{couple.full}</b>
           <p className="text-[11.5px] text-[var(--soft)] mt-1">{couple.date} · {couple.city} · {couple.venue}</p>
@@ -43,7 +43,7 @@ export function Us() {
               <b className="text-[13px] tracking-[.12em]">{t('ТИЛИ-АЛИНА')}</b>
               <span className="text-[9.5px] text-[var(--soft)]">{t('приглашено: 2')}</span>
             </div>
-            <button onClick={() => copy(t('ТИЛИ-АЛИНА'), () => setCopied(true))} className="press h-[44px] px-5 rounded-full grad text-white text-[12px] font-semibold">{copied ? t('✓ Скопировано') : t('Копировать')}</button>
+            <button onClick={() => copy(t('ТИЛИ-АЛИНА'), () => setCopied(true))} className="press h-[44px] px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{copied ? t('✓ Скопировано') : t('Копировать')}</button>
           </div>
         </div>
 
@@ -52,7 +52,7 @@ export function Us() {
             { icon: Settings, label: t('Настройки'), tile: 'bg-[var(--peach)]', to: '/settings' },
             { icon: Bell, label: t('Уведомления и тихие часы'), tile: 'bg-[var(--honey)]', badge: '22:00–09:00', to: '/settings' },
             { icon: LifeBuoy, label: t('Поддержка и FAQ'), tile: 'bg-[var(--rose-soft)]', to: '/support' },
-            { icon: FileText, label: t('Оферта и конфиденциальность'), tile: 'bg-[var(--blue)]', to: '/support' },
+            { icon: FileText, label: t('Оферта и конфиденциальность'), tile: 'bg-[var(--blue)]', to: '/legal/offer' },
             { icon: Shield, label: t('Сессии и устройства'), tile: 'bg-[var(--sage-soft)]', to: '/settings' },
           ].map(it => (
             <button key={it.label} onClick={() => nav(it.to)} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[var(--track)] last:border-none">
@@ -68,7 +68,7 @@ export function Us() {
             <span className="flex-1 text-[13px] font-medium ml-1">{t('Язык интерфейса')}</span>
             <div className="flex bg-[var(--bg)] rounded-full p-1">
               {(['ru', 'en'] as const).map(l => (
-                <button key={l} onClick={() => { if (l !== lang) { setLang(l); reloadToRoot() } }} className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold uppercase', lang === l ? 'grad text-white' : 'text-[var(--soft)]')}>{l}</button>
+                <button key={l} onClick={() => { if (l !== lang) { setLang(l); reloadToRoot() } }} className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold uppercase', lang === l ? 'grad text-[var(--on-grad)]' : 'text-[var(--soft)]')}>{l}</button>
               ))}
             </div>
           </div>
@@ -122,7 +122,7 @@ export function Chats() {
               </div>
               <p className="text-[11.5px] text-[var(--soft)] truncate mt-0.5">{c.last}</p>
             </div>
-            {c.unread > 0 && <span className="w-5 h-5 rounded-full grad text-white text-[10px] font-bold flex items-center justify-center shrink-0">{c.unread}</span>}
+            {c.unread > 0 && <span className="w-5 h-5 rounded-full grad text-[var(--on-grad)] text-[10px] font-bold flex items-center justify-center shrink-0">{c.unread}</span>}
           </button>
         ))}
       </div>
@@ -167,7 +167,7 @@ export function Chat() {
         {msgs.map(m => (
           <div key={m.id} className={cn('flex fade-up', m.me ? 'justify-start' : 'justify-end')}>
             <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',
-              m.me ? 'card rounded-br-[6px] text-[var(--ink)]' : 'grad text-white rounded-bl-[6px]')}
+              m.me ? 'card rounded-br-[6px] text-[var(--ink)]' : 'grad text-[var(--on-grad)] rounded-bl-[6px]')}
               style={{ borderRadius: 18 }}>
               {m.text}
               <span className={cn('block text-[9px] mt-1 text-right', m.me ? 'text-[var(--soft)]' : 'text-white/70')}>{m.time}</span>
@@ -186,7 +186,7 @@ export function Chat() {
       <div className="glass-tab border-t-0 border-b-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
           placeholder={t('Сообщение…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
-        <button onClick={send} className="press w-[48px] h-[48px] rounded-full grad text-white flex items-center justify-center shrink-0" aria-label={t('Отправить')}><Send size={17} /></button>
+        <button onClick={send} className="press w-[48px] h-[48px] rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Отправить')}><Send size={17} /></button>
       </div>
     </div>
   )

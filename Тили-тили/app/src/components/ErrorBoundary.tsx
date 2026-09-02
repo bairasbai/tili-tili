@@ -33,7 +33,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
           </p>
           <button
             onClick={this.home}
-            className="press mt-6 px-8 py-3.5 rounded-full grad text-white text-[13px] font-semibold"
+            className="press mt-6 px-8 py-3.5 rounded-full grad text-[var(--on-grad)] text-[13px] font-semibold"
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
             {t('Вернуться на главную')}

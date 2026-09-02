@@ -78,7 +78,7 @@ export default function Quiz() {
           <div className="flex flex-wrap gap-2 mt-4">
             {[t('Уфа'), t('Сибай'), t('Баймак'), t('Стерлитамак'), t('Москва'), t('Казань')].map(n => (
               <button key={n} onClick={() => { setCity(n, n === 'Москва' ? 'Москва' : n === 'Казань' ? 'Татарстан' : 'Башкортостан'); setAnswers(a => ({ ...a, [i]: [n] })) }}
-                className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', sel.includes(n) ? 'grad text-white' : 'bg-[var(--card)] text-[var(--ink2)]')}
+                className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', sel.includes(n) ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--ink2)]')}
                 style={{ boxShadow: 'var(--shadow)' }}>{n}</button>
             ))}
           </div>
@@ -109,7 +109,7 @@ export default function Quiz() {
         <button
           onClick={next}
           disabled={!canNext}
-          className={cn('press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] tracking-wide transition-opacity', !canNext && 'opacity-40')}
+          className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide transition-opacity', !canNext && 'opacity-40')}
           style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
         >
           {last ? t('Создать мою свадьбу ✨') : t('Далее')}

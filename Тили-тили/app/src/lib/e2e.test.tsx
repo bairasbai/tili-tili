@@ -6,6 +6,7 @@ import { StoreProvider } from './store'
 import { searchCities } from './cities'
 import { inviteThemes } from './inviteThemes'
 import { initialSlots, budgetItems } from './data'
+import { rub } from '@/lib/money'
 import { CityPicker } from '@/components/CityPicker'
 
 const wrap = (ui: React.ReactElement) => render(<MemoryRouter><StoreProvider>{ui}</StoreProvider></MemoryRouter>)
@@ -20,7 +21,8 @@ describe('E2E smoke: ключевые сценарии', () => {
   it('Бизнес-логика бюджета: сумма забронированных слотов считается верно', () => {
     const booked = initialSlots.filter(s => (s.state === 'booked' || s.state === 'hold') && s.price)
     const sum = booked.reduce((a, s) => a + (s.price ?? 0), 0)
-    expect(sum).toBe(250000 + 85000 + 120000 + 60000 + 45000)
+    // суммы хранятся в копейках — решение владельца 2026-09-02
+    expect(sum).toBe(rub(250000 + 85000 + 120000 + 60000 + 45000))
   })
 
   it('Бюджетные категории покрывают все категории слотов', () => {

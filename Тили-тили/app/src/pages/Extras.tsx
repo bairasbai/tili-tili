@@ -22,11 +22,11 @@ export function Favorites() {
             <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center"><Heart size={26} className="text-[var(--rose-deep)]" /></div>
             <b className="text-[15px] block mt-4">{t('Пока пусто')}</b>
             <p className="text-[12px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Нажимайте ♥ на карточках подрядчиков —')}<br />{t('они соберутся здесь для сравнения')}</p>
-            <button onClick={() => nav('/search')} className="press mt-5 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('К каталогу')}</button>
+            <button onClick={() => nav('/search')} className="press mt-5 px-6 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('К каталогу')}</button>
           </div>
         )}
         {list.length >= 2 && (
-          <button onClick={() => nav('/compare')} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          <button onClick={() => nav('/compare')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
             {t('Сравнить выбранных ⇄')}
           </button>
         )}
@@ -58,7 +58,7 @@ export function Notes() {
         <div className="card-s flex items-center gap-2.5 px-4 py-2">
           <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()}
             placeholder={t('Новая заметка…')} className="flex-1 bg-transparent outline-none text-[13.5px] py-2.5 placeholder:text-[var(--soft2)]" />
-          <button onClick={add} className="press w-9 h-9 rounded-full grad text-white flex items-center justify-center shrink-0" aria-label={t('Добавить')}><Plus size={16} /></button>
+          <button onClick={add} className="press w-9 h-9 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Добавить')}><Plus size={16} /></button>
         </div>
         <div className="space-y-2.5 mt-4 stagger">
           {notes.map(n => (

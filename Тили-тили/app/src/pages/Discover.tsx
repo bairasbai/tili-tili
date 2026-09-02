@@ -36,7 +36,7 @@ export function Inspiration() {
       <TopBar back title={t('Вдохновение')} sub={t('Реальные свадьбы пар Башкортостана')} />
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
         {[['all', t('Все стили')], ['classic', t('🤍 Классика')], ['boho', t('🌾 Бохо')], ['minimal', t('◻️ Минимализм')]].map(([id, l]) => (
-          <button key={id} onClick={() => setStyle(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', style === id ? 'grad text-white' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+          <button key={id} onClick={() => setStyle(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', style === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
       </div>
       <div className="px-5 flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
@@ -102,7 +102,7 @@ export function Inspiration() {
               </div>
             ))}
             <p className="text-[11.5px] text-[var(--ink2)] mt-4 leading-relaxed font-light">💡 {open.tip}</p>
-            <button onClick={() => nav('/search')} className="press sheen w-full mt-5 py-4 rounded-full grad text-white font-semibold text-[13px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Собрать такую же команду ✨')}</button>
+            <button onClick={() => nav('/search')} className="press sheen w-full mt-5 py-4 rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Собрать такую же команду ✨')}</button>
           </div>
         </div>
       )}
@@ -140,7 +140,7 @@ export function VenuesMap() {
                 <b className="text-[13px] block truncate">{v.n}</b>
                 <span className="text-[10px] text-[var(--soft)]">{v.d} · от {fmt(v.p)}</span>
               </div>
-              <a href={`https://yandex.ru/maps/?rtext=~${v.ll}`} target="_blank" rel="noreferrer" className="press w-10 h-10 rounded-full grad text-white flex items-center justify-center shrink-0" aria-label={t('Маршрут')}><Navigation size={15} /></a>
+              <a href={`https://yandex.ru/maps/?rtext=~${v.ll}`} target="_blank" rel="noreferrer" className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Маршрут')}><Navigation size={15} /></a>
             </div>
           ))}
         </div>

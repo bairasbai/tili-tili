@@ -5,6 +5,7 @@ import { TopBar, Tile } from '@/components/chrome'
 import { CityPicker } from '@/components/CityPicker'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
+import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
 
@@ -15,6 +16,9 @@ export function Auth() {
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState(['', '', '', ''])
   const [sec, setSec] = useState(42)
+  /* 152-ФЗ: согласие даётся явным действием, галочка не может стоять заранее.
+     Факт согласия сохраняем с датой — это и есть подтверждение. */
+  const [consent, setConsent] = usePersist<{ at: string } | null>('tt_consent', null)
   useEffect(() => {
     if (step !== 1 || sec <= 0) return
     const t = setTimeout(() => setSec(s => s - 1), 1000)
@@ -31,7 +35,7 @@ export function Auth() {
 
       {step === 0 && (
         <div className="flex-1 px-7 pt-10 fade-up">
-          <div className="w-[72px] h-[72px] rounded-[24px] grad flex items-center justify-center text-white text-[28px] font-serif-d" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Тт')}</div>
+          <div className="w-[72px] h-[72px] rounded-[24px] grad flex items-center justify-center text-[var(--on-grad)] text-[28px] font-serif-d" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Тт')}</div>
           <h1 className="font-serif-d text-[32px] mt-7">{t('С возвращением')}</h1>
           <p className="text-[13.5px] text-[var(--soft)] mt-2 font-light">{t('Введите номер телефона — пришлём код из SMS')}</p>
           <div className="card-s flex items-center gap-3 px-5 py-4 mt-8">
@@ -40,7 +44,23 @@ export function Auth() {
             <input type="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 10))}
               inputMode="tel" placeholder="917 123-45-67" className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]" />
           </div>
-          <p className="text-[10.5px] text-[var(--soft2)] mt-4 leading-relaxed">{t('Продолжая, вы принимаете оферту и политику конфиденциальности')}</p>
+          <button
+            onClick={() => setConsent(consent ? null : { at: new Date().toISOString() })}
+            className="press w-full flex items-start gap-3 mt-5 text-left"
+            role="checkbox"
+            aria-checked={!!consent}
+            aria-label={t('Я согласен на обработку персональных данных')}
+          >
+            <span className={cn('w-[22px] h-[22px] rounded-[7px] shrink-0 flex items-center justify-center mt-0.5 border-[1.5px]', consent ? 'grad border-transparent' : 'border-[var(--line)] bg-[var(--card)]')}>
+              {consent && <Check size={13} className="text-[var(--on-grad)]" />}
+            </span>
+            <span className="text-[11px] text-[var(--ink2)] leading-relaxed">
+              {t('Я согласен на обработку персональных данных и принимаю')}{' '}
+              <b onClick={e => { e.stopPropagation(); nav('/legal/offer') }} className="text-[var(--rose-deep)] underline underline-offset-2">{t('оферту')}</b>{' '}
+              {t('и')}{' '}
+              <b onClick={e => { e.stopPropagation(); nav('/legal/privacy') }} className="text-[var(--rose-deep)] underline underline-offset-2">{t('политику конфиденциальности')}</b>
+            </span>
+          </button>
         </div>
       )}
 
@@ -92,7 +112,12 @@ export function Auth() {
 
       <div className="px-7 pb-[max(28px,env(safe-area-inset-bottom))]">
         {step < 2 && (
-          <button onClick={() => setStep((step + 1) as 1 | 2)} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          <button
+            onClick={() => setStep((step + 1) as 1 | 2)}
+            disabled={step === 0 && !consent}
+            className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px]', step === 0 && !consent && 'opacity-40')}
+            style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
+          >
             {step === 0 ? t('Получить код') : t('Войти')}
           </button>
         )}
@@ -191,7 +216,7 @@ export function Settings() {
             <div className="flex bg-[var(--track)] rounded-full p-[3px]">
               {(['ru', 'en'] as const).map(l => (
                 <button key={l} onClick={() => { if (l !== lang) { setLang(l); reloadToRoot() } }}
-                  className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold transition-all', lang === l ? 'grad text-white shadow' : 'text-[var(--soft)]')}>
+                  className={cn('press px-3.5 py-1.5 rounded-full text-[11px] font-bold transition-all', lang === l ? 'grad text-[var(--on-grad)] shadow' : 'text-[var(--soft)]')}>
                   {l === 'ru' ? 'Русский' : 'English'}
                 </button>
               ))}
@@ -200,7 +225,7 @@ export function Settings() {
         </div>
         <div className="card px-4 py-1.5">
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
-            <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-white font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? t('А')}</div>
+            <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? t('А')}</div>
             <div className="flex-1">
               {editName ? (
                 <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && setEditName(false)} autoFocus
@@ -302,11 +327,11 @@ export function Support() {
             <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={3} autoFocus placeholder={t('Опишите вопрос…')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none resize-none placeholder:text-[var(--soft2)]" />
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setWriting(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={send} className="press flex-1 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('Отправить тикет')}</button>
+              <button onClick={send} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Отправить тикет')}</button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setWriting(true)} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          <button onClick={() => setWriting(true)} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
             {t('Написать в поддержку')}
           </button>
         )}

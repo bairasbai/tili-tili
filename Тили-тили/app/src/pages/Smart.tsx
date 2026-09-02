@@ -7,6 +7,7 @@ import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
 import { cn, goBack } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { fmt } from '@/lib/money'
 
 /* ИИ-координатор «Тиль» */
 export function Assistant() {
@@ -35,13 +36,13 @@ export function Assistant() {
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}><ChevronLeft size={17} /></button>
-        <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-white text-[15px]">✦</div>
+        <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[15px]">✦</div>
         <div className="flex-1"><b className="text-[14px]">{t('Тиль')}</b><p className="text-[10px] text-[var(--sage-deep)]">{t('ИИ-координатор · на связи · 42/50 сообщений сегодня')}</p></div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
         {msgs.map((m, k) => (
           <div key={k} className={cn('flex fade-up', m.me ? 'justify-end' : 'justify-start')}>
-            <div className={cn('max-w-[80%] px-4 py-3 text-[13px] leading-relaxed', m.me ? 'grad text-white rounded-[18px] rounded-br-[6px]' : 'card rounded-[18px] rounded-bl-[6px]')}>{m.text}</div>
+            <div className={cn('max-w-[80%] px-4 py-3 text-[13px] leading-relaxed', m.me ? 'grad text-[var(--on-grad)] rounded-[18px] rounded-br-[6px]' : 'card rounded-[18px] rounded-bl-[6px]')}>{m.text}</div>
           </div>
         ))}
         {typing && (
@@ -57,7 +58,7 @@ export function Assistant() {
       </div>
       <div className="glass-tab border-t-0 px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder={t('Спросите Тиля…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
-        <button onClick={() => send(text)} className="press w-[48px] h-[48px] rounded-full grad text-white flex items-center justify-center shrink-0" aria-label={t('Отправить')}><Send size={17} /></button>
+        <button onClick={() => send(text)} className="press w-[48px] h-[48px] rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Отправить')}><Send size={17} /></button>
       </div>
     </div>
   )
@@ -76,7 +77,7 @@ export function Compare() {
     setTimeout(() => nav('/wedding'), 900)
   }
   const rows: [string, (v: typeof list[0]) => string][] = [
-    [t('Цена «от»'), v => `${v.priceFrom.toLocaleString('ru-RU')} ₽`],
+    [t('Цена «от»'), v => fmt(v.priceFrom)],
     [t('Рейтинг'), v => (v.reviews ? `★ ${v.rating} · ${v.reviews}${t(' отзывов')}` : t('Новый'))],
     [t('Свободен 14.06'), v => (v.freeOnDate ? t('✓ Да') : t('✕ Занят'))],
     [t('Видео-визитка'), v => (v.hasVideo ? t('▶ Есть') : '—')],
@@ -93,7 +94,7 @@ export function Compare() {
               {list.map((v, k) => (
                 <td key={v.id} className="p-1.5 align-top">
                   <div className={cn('card-s p-3 text-center relative', v.tile)}>
-                    {k === 0 && <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold px-2.5 py-1 rounded-full grad text-white whitespace-nowrap">{t('Рекомендуем')}</span>}
+                    {k === 0 && <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold px-2.5 py-1 rounded-full grad text-[var(--on-grad)] whitespace-nowrap">{t('Рекомендуем')}</span>}
                     <span className="text-[24px]">{v.categoryIcon}</span>
                     <b className="font-serif-d text-[13px] block mt-1.5 leading-tight">{v.name}</b>
                   </div>
@@ -112,7 +113,7 @@ export function Compare() {
               <td />
               {list.map(v => (
                 <td key={v.id} className="p-1.5">
-                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : 'grad text-white')}>
+                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : 'grad text-[var(--on-grad)]')}>
                     {picked === v.id ? t('✓ В команде') : t('Выбрать')}
                   </button>
                 </td>
@@ -220,7 +221,7 @@ export function DayX() {
             [t('Усадьба'), t('Рустам')],
           ].map(([r, n]) => (
             <a key={n} href="tel:+70000000000" className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ background: '#2A2520' }}>
-              <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-white text-[10px]">{n[0]}</span>
+              <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{n[0]}</span>
               {n} · {r}
             </a>
           ))}
@@ -233,7 +234,7 @@ export function DayX() {
               <b className="text-[13.5px]">{t('План Б: дождь')}</b>
               <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония → шатёр. Пересоберёт тайминг и уведомит всех.')}</p>
             </div>
-            <button onClick={() => setPlanB(!planB)} className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold', planB ? 'grad text-white' : 'border border-[#4a443c]')}>
+            <button onClick={() => setPlanB(!planB)} className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold', planB ? 'grad text-[var(--on-grad)]' : 'border border-[#4a443c]')}>
               {planB ? t('Активирован ✓') : t('Активировать')}
             </button>
           </div>
@@ -273,7 +274,7 @@ export function After() {
     <div className="pb-28">
       <TopBar back title={t('После свадьбы')} sub={t('14 июня 2027 · это было прекрасно')} />
       <div className="px-5 mt-3">
-        <div className="grad rounded-[32px] p-7 text-white text-center relative overflow-hidden fade-up">
+        <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
           <Heart size={26} className="mx-auto opacity-90" />
           <h2 className="font-serif-d text-[26px] mt-3">{t('Алина & Тимур')}</h2>
           <p className="text-[12px] opacity-90 mt-1">{t('Поздравляем! Ваша свадьба состоялась')}</p>
@@ -297,7 +298,7 @@ export function After() {
             setDl(1)
             const t = setInterval(() => setDl(d => { if (d >= 100) { clearInterval(t); return 100 } return d + 5 }), 120)
           }}
-          className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {dl === 0 ? t('Скачать общий альбом (ZIP)') : dl < 100 ? t('Собираем архив…') + ` ${dl}%` : t('✓ Архив готов · ссылка отправлена')}
         </button>
         {dl > 0 && dl < 100 && <div className="h-1.5 rounded-full bg-[var(--track)] mt-2.5 overflow-hidden"><div className="h-full grad rounded-full transition-all" style={{ width: `${dl}%` }} /></div>}
@@ -409,7 +410,7 @@ export function PlanB() {
           <div className="mt-3 space-y-2">
             {planBChecklist.map((c, i) => (
               <button key={c} onClick={() => setDone(d => d.includes(i) ? d.filter(x => x !== i) : [...d, i])} className="press w-full flex items-center gap-3 text-left">
-                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', done.includes(i) ? 'grad text-white' : 'bg-[var(--track)] text-[var(--soft2)]')}>{done.includes(i) ? '✓' : ''}</span>
+                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', done.includes(i) ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--soft2)]')}>{done.includes(i) ? '✓' : ''}</span>
                 <span className={cn('text-[12px] leading-snug', done.includes(i) && 'line-through text-[var(--soft2)]')}>{c}</span>
               </button>
             ))}
@@ -435,10 +436,10 @@ export function PlanB() {
                 <div className="px-4 pb-4 -mt-1 fade-in">
                   <p className="text-[11.5px] text-[var(--soft)] leading-relaxed">{r.how}</p>
                   {r.action === 'search' && (
-                    <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-white text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
+                    <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
                   {r.action === 'rain' && (
-                    <button onClick={() => setRain(v => !v)} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold', rain ? 'bg-[var(--track)] text-[var(--ink)]' : 'grad text-white')}>
+                    <button onClick={() => setRain(v => !v)} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold', rain ? 'bg-[var(--track)] text-[var(--ink)]' : 'grad text-[var(--on-grad)]')}>
                       {rain ? t('Отменить план «дождь»') : t('Активировать план «дождь» (демо)')}
                     </button>
                   )}

@@ -2,6 +2,7 @@ import { createElement, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
 import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt, initialAlbum } from '@/lib/data'
+import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
@@ -117,7 +118,8 @@ export function SlotDetail() {
   const [ownBusy, runOwn] = useBusy()
   const addOwn = () => runOwn(() => {
     if (!ownName.trim() || !Number(ownPrice)) return
-    bookExternal(s.id, ownName.trim(), Number(ownPrice), ownPhone.trim() || undefined)
+    // поле «Цена, ₽» — рубли, в состоянии храним копейки
+    bookExternal(s.id, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim() || undefined)
     setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
   })
   const inviteLink = `tili-tili.ru/join/ТИЛИ-СВОЙ-${s.id.toUpperCase()}`
@@ -140,7 +142,7 @@ export function SlotDetail() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => setOwnOpen(false)} className="press flex-1 card-s py-3 text-[12px] font-semibold">{t('Отмена')}</button>
-            <button disabled={ownBusy} onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-white text-[12px] font-bold disabled:opacity-50">{t('Добавить в команду')}</button>
+            <button disabled={ownBusy} onClick={addOwn} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Добавить в команду')}</button>
           </div>
         </div>
       )}
@@ -157,7 +159,7 @@ export function SlotDetail() {
             <b className="font-serif-d text-[19px] block mt-3">{t('Исполнитель не выбран')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Подберите в каталоге или добавьте своего')}</p>
           </div>
-          <button onClick={() => nav(`/search/${s.categoryId}`)} className="press w-full mt-3 py-4 rounded-[20px] grad text-white text-[14px] font-semibold">{t('Выбрать из каталога')}</button>
+          <button onClick={() => nav(`/search/${s.categoryId}`)} className="press w-full mt-3 py-4 rounded-[20px] grad text-[var(--on-grad)] text-[14px] font-semibold">{t('Выбрать из каталога')}</button>
           {ownBlock}
         </div>
       </div>
@@ -189,10 +191,10 @@ export function SlotDetail() {
             {s.invited ? (
               <div className="flex items-center gap-2 mt-3">
                 <code className="flex-1 text-[10.5px] bg-[var(--track)] rounded-[12px] px-3 py-2.5 truncate">{inviteLink}</code>
-                <button onClick={() => { copyText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-white">{linkCopied ? '✓' : t('Копия')}</button>
+                <button onClick={() => { copyText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-[var(--on-grad)]">{linkCopied ? '✓' : t('Копия')}</button>
               </div>
             ) : (
-              <button onClick={() => inviteExternal(s.id)} className="press mt-3 w-full py-3 rounded-[16px] grad text-white text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
+              <button onClick={() => inviteExternal(s.id)} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
             )}
           </div>
         )}
@@ -202,7 +204,7 @@ export function SlotDetail() {
           <button onClick={() => nav('/deal')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {confirmCancel ? (
-            <button onClick={() => { cancelBooking(s.id); nav('/wedding') }} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#C98A8A' }}>{t('Точно отменить?')}</button>
+            <button onClick={() => { cancelBooking(s.id); nav('/wedding') }} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#9B6A6A' }}>{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
@@ -258,7 +260,7 @@ export function Budget() {
   const add = () => {
     const a = parseInt(amount.replace(/\D/g, ''), 10)
     if (!name.trim() || !a) return
-    setCustom(it => [...it, { name: name.trim(), amount: a, limit: Math.ceil(a * 1.2), color: 'var(--lav)' }])
+    setCustom(it => [...it, { name: name.trim(), amount: rub(a), limit: rub(Math.ceil(a * 1.2)), color: 'var(--lav)' }])
     setName(''); setAmount(''); setAdding(false)
   }
   const items = budgetRows(slots, custom)
@@ -276,10 +278,10 @@ export function Budget() {
       <div className="px-5 mt-3">
         <div className="card p-5">
           <div className="flex justify-between items-end">
-            <span className="text-[30px] font-extrabold tracking-tight tabular">{total.toLocaleString('ru-RU')} ₽</span>
+            <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
             <span className="text-[var(--rose-deep)] font-bold">{pct}%</span>
           </div>
-          <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {couple.budgetTotal.toLocaleString('ru-RU')} ₽ {t('запланировано · осталось')} {(couple.budgetTotal - total).toLocaleString('ru-RU')} ₽</p>
+          <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(couple.budgetTotal)} {t('запланировано · осталось')} {(couple.budgetTotal - total).toLocaleString('ru-RU')} ₽</p>
           <div className="mt-3"><Bar pct={pct} /></div>
           <div className="mt-4 space-y-4">
             {items.map((b, bi) => {
@@ -332,7 +334,7 @@ export function Budget() {
             <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder={t('Сумма, ₽')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5 tabular" />
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={add} className="press flex-1 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('Добавить')}</button>
+              <button onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить')}</button>
             </div>
           </div>
         ) : (
@@ -398,7 +400,7 @@ export function Checklist() {
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
         {[['9', t('За 9 мес')], ['6', t('За 6 мес')], ['3', t('За 3 мес')], ['1', t('За 1 мес')]].map(([id, l]) => (
-          <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-white' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+          <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
       </div>
       <div className="px-5 mt-4">
@@ -408,7 +410,7 @@ export function Checklist() {
               placeholder={t('Новая задача…')} autoFocus className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-white text-[12px] font-semibold">{t('Добавить')}</button>
+              <button onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить')}</button>
             </div>
           </div>
         )}
@@ -464,7 +466,7 @@ export function Timeline() {
           <div className="card p-4 fade-up">
             <input value={name} onChange={e => setName(e.target.value)} placeholder={t('Событие (например, «Первый танец»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
             <input value={time} onChange={e => setTime(e.target.value)} placeholder={t('Время (например, 19:00 — 19:10)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5" />
-            <button onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-white text-[12px] font-semibold mt-3">{t('Добавить в тайминг')}</button>
+            <button onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3">{t('Добавить в тайминг')}</button>
           </div>
         )}
         {events.map(e => (
@@ -511,7 +513,7 @@ export function Guests() {
       <TopBar back title={t('Гости')} sub={`${list.length}${t(' в списке · ')}${yes}${t(' подтвердили')}`} right={
         <div className="flex gap-2">
           <button onClick={() => setAdding(!adding)} className="press h-10 w-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить гостя')}><Plus size={16} /></button>
-          <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-white text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} />{t('Пригласить')}</button>
+          <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} />{t('Пригласить')}</button>
         </div>
       } />
       {adding && (
@@ -519,10 +521,10 @@ export function Guests() {
           <div className="card p-4 space-y-2.5">
             <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder={t('Имя гостя или семьи')} className="w-full h-11 px-4 rounded-full bg-[var(--bg)] text-[13px] outline-none" />
             <div className="flex items-center gap-2">
-              <button onClick={() => setPlus(!plus)} className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', plus ? 'grad text-white' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t('с +1')}</button>
+              <button onClick={() => setPlus(!plus)} className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', plus ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t('с +1')}</button>
               <div className="flex-1" />
               <button onClick={() => setAdding(false)} className="press px-4 py-2 text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={add} className="press px-5 py-2 rounded-full grad text-white text-[12px] font-bold">{t('Добавить')}</button>
+              <button onClick={add} className="press px-5 py-2 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold">{t('Добавить')}</button>
             </div>
           </div>
         </div>
@@ -537,7 +539,7 @@ export function Guests() {
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
         {[['all', t('Все')], ['yes', t('Придут')], ['pending', t('Ждём')], ['no', t('Не придут')]].map(([id, l]) => (
-          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-white' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
       </div>
       <div className="px-5 mt-4">
@@ -633,7 +635,7 @@ export function Album() {
         {pending > 0 && (
           <div className="card p-3.5 flex items-center justify-between">
             <p className="text-[12px] font-medium">{t('Новых на модерации:')} {pending}</p>
-            <button onClick={() => { setPhotos(ps => ps.map(p => ({ ...p, approved: true }))); setModerated(m => m + 1) }} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-white">{t('Одобрить все')}</button>
+            <button onClick={() => { setPhotos(ps => ps.map(p => ({ ...p, approved: true }))); setModerated(m => m + 1) }} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)]">{t('Одобрить все')}</button>
           </div>
         )}
         {moderated > 0 && pending === 0 && <p className="text-[11px] text-[var(--sage-deep)] font-medium px-1">✓ {t('Все кадры одобрены и видны гостям')}</p>}
@@ -643,7 +645,7 @@ export function Album() {
           <button key={p.id} onClick={() => setPhotos(ps => ps.map(x => x.id === p.id ? { ...x, approved: !x.approved } : x))}
             className={cn('press relative aspect-square rounded-[20px] flex items-center justify-center text-[38px]', p.tile, !p.approved && 'opacity-50')} style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
             {p.emoji}
-            <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[#A9BCA0] text-white' : 'bg-[var(--ink)] text-[#EFE9DF]')}>
+            <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[#A9BCA0] text-[var(--on-grad)]' : 'bg-[var(--ink)] text-[#EFE9DF]')}>
               {p.approved ? '✓' : '…'}
             </span>
             <span className="absolute bottom-1.5 left-2 text-[8.5px] text-[var(--soft)]">{p.at}</span>
@@ -669,7 +671,7 @@ export function Documents() {
               <b className="text-[13.5px] block">{c.name}</b>
               <span className="text-[10.5px] text-[var(--soft)]">{c.desc}</span>
             </div>
-            <span className="text-[10px] font-bold px-3 py-1.5 rounded-full grad text-white shrink-0">{t('Создать')}</span>
+            <span className="text-[10px] font-bold px-3 py-1.5 rounded-full grad text-[var(--on-grad)] shrink-0">{t('Создать')}</span>
           </button>
         ))}
       </div>

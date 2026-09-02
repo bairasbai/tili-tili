@@ -56,7 +56,7 @@ export function SearchCategories() {
           <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center text-[26px]">🔍</div>
           <b className="text-[15px] block mt-4">{t('Ничего не нашлось')}</b>
           <p className="text-[12px] text-[var(--soft)] mt-1.5">{t('Попробуйте другое слово — или спросите Тиля — он подскажет категорию')}</p>
-          <button onClick={() => nav('/assistant')} className="press mt-5 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('Спросить Тиля')}</button>
+          <button onClick={() => nav('/assistant')} className="press mt-5 px-6 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Спросить Тиля')}</button>
         </div>
       )}
     </div>
@@ -80,13 +80,13 @@ export function VendorList() {
   return (
     <div className="pb-28">
       <TopBar back title={cat.name} sub={`${shown.length}${t(' рядом · сортировка: рекомендованные')}`} right={
-        <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-white' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Фильтры')}>
+        <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Фильтры')}>
           <SlidersHorizontal size={16} />
         </button>
       } />
       {showFilters && <div className="px-5 flex gap-2 mt-2 overflow-x-auto no-scrollbar">
         {[['free', t('Свободны 14.06')], ['video', t('С видео')], ['top', t('Рейтинг 4.8+')], ['budget', t('до 100 тыс ₽')]].map(([id, label]) => (
-          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-white' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>
+          <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>
             {label}
           </button>
         ))}
@@ -213,7 +213,7 @@ export function VendorDetail() {
               const busy = [3 + (h % 4), 6 + (h % 3), 12 + (h % 5), 19 + (h % 3), 25 + (h % 4)].includes(day) || (!v.freeOnDate && isWedding)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding && v.freeOnDate ? 'grad text-white font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-deep)] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-deep)] font-bold' : 'text-[var(--ink)]')}>
+                  isWedding && v.freeOnDate ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-deep)] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-deep)] font-bold' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
@@ -259,7 +259,7 @@ export function VendorDetail() {
             <button key={x.id} onClick={() => nav(`/vendor/${x.id}`)} className={cn('press w-[120px] shrink-0 card-s p-3 text-center', x.tile)}>
               <span className="text-[24px]">{x.categoryIcon}</span>
               <b className="text-[10.5px] block mt-1.5 leading-tight truncate">{x.name}</b>
-              <span className="text-[9.5px] text-[var(--rose-deep)] font-bold tabular">{t('от')} {x.priceFrom.toLocaleString('ru-RU')} ₽</span>
+              <span className="text-[9.5px] text-[var(--rose-deep)] font-bold tabular">{t('от')} {fmt(x.priceFrom)}</span>
             </button>
           ))}
         </div>
@@ -268,7 +268,7 @@ export function VendorDetail() {
       {/* CTA */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
         <button onClick={() => nav('/us/chats/ch1')} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>{t('Написать')}</button>
-        <button onClick={add} className="press flex-[1.4] h-[52px] rounded-full grad text-white font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+        <button onClick={add} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? t('✓ В моей свадьбе!') : slot ? t('Добавить в свадьбу') : t('Забронировать')}
         </button>
       </div>

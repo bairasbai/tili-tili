@@ -5,6 +5,7 @@ import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
 import { copyText } from '@/lib/utils'
 import { fmt, guests, type Guest } from '@/lib/data'
+import { rub } from '@/lib/money'
 
 /* ---------- ЛОГИСТИКА: автобусы + отельный блок ---------- */
 
@@ -37,7 +38,7 @@ export function Logistics() {
   const addHotel = () => {
     if (!hn.trim()) return
     const rooms = Math.max(1, parseInt(hr) || 10)
-    setHotels(hs => [...hs, { id: `h${Date.now()}`, name: hn.trim(), rooms, booked: 0, price: Math.max(0, parseInt(hp) || 4000), deadline: t('20 мая'), promo: `TILI${1000 + hs.length * 7}` }])
+    setHotels(hs => [...hs, { id: `h${Date.now()}`, name: hn.trim(), rooms, booked: 0, price: rub(Math.max(0, parseInt(hp) || 4000)), deadline: t('20 мая'), promo: `TILI${1000 + hs.length * 7}` }])
     setHn(''); setHr(''); setHp(''); setHotelForm(false)
   }
   const copy = (code: string) => {
@@ -86,7 +87,7 @@ export function Logistics() {
             <input value={bt} onChange={e => setBt(e.target.value)} placeholder={t('Время отправления')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
             <div className="flex gap-2 pt-1">
               <button onClick={() => setBusForm(false)} className="press flex-1 h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Отмена')}</button>
-              <button onClick={addBus} className="press flex-1 h-11 rounded-full grad text-white text-[12px] font-semibold">{t('Добавить автобус')}</button>
+              <button onClick={addBus} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить автобус')}</button>
             </div>
           </div>
         ) : (
@@ -138,7 +139,7 @@ export function Logistics() {
             </div>
             <div className="flex gap-2 pt-1">
               <button onClick={() => setHotelForm(false)} className="press flex-1 h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Отмена')}</button>
-              <button onClick={addHotel} className="press flex-1 h-11 rounded-full grad text-white text-[12px] font-semibold">{t('Добавить отель')}</button>
+              <button onClick={addHotel} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить отель')}</button>
             </div>
           </div>
         ) : (
@@ -213,7 +214,7 @@ export function Catering() {
         {adding ? (
           <div className="mt-4 flex gap-2">
             <input value={optName} onChange={e => setOptName(e.target.value)} placeholder={t('Название блюда')} className="flex-1 h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
-            <button onClick={addOption} className="press h-11 px-5 rounded-full grad text-white text-[12px] font-semibold">{t('Добавить')}</button>
+            <button onClick={addOption} className="press h-11 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить')}</button>
           </div>
         ) : (
           <button onClick={() => setAdding(true)} className="press mt-4 w-full card-s py-3 text-[12px] font-semibold flex items-center justify-center gap-2"><Plus size={14} />{t('Добавить вариант блюда')}</button>

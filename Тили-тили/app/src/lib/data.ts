@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import { rub } from './money'
 // Мок-данные MVP «Тили-тили» — соответствуют openapi-черновику ч.13 плана
 
 export type VendorStatus = 'free' | 'hold' | 'booked' | 'busy'
@@ -36,8 +37,8 @@ export const couple = {
   guestsConfirmed: 42,
   daysLeft: 287,
   countdown: { m: 9, d: 14, h: 8, min: 42 },
-  budgetTotal: 1_200_000,
-  budgetSpent: 850_000,
+  budgetTotal: rub(1_200_000),
+  budgetSpent: rub(850_000),
   teamBooked: 4, teamTotal: 14,
   specialists: t('18 из 25'),
 }
@@ -68,72 +69,83 @@ export const categories: Category[] = [
   { id: 'dance', name: t('Хореограф'), icon: '💃', tile: 'bg-[#C3D5E8]', count: 13 },
   { id: 'agency', name: t('Организатор'), icon: '🎯', tile: 'bg-[#F2DFDC]', count: 21 },
   { id: 'rental', name: t('Рентал / Мебель'), icon: '🕯️', tile: 'bg-[#E6EEE2]', count: 10 },
+  /* Дополнение до 35 категорий плана ч. 8.1 — решение владельца 2026-09-02 */
+  { id: 'ceremony', name: t('Площадка выездной церемонии'), icon: '🌿', tile: 'bg-[#E6EEE2]', count: 24 },
+  { id: 'hair', name: t('Парикмахер'), icon: '💇', tile: 'bg-[#F2DFDC]', count: 33 },
+  { id: 'coordinator', name: t('Координатор дня'), icon: '🎖', tile: 'bg-[#F0DCB8]', count: 17 },
+  { id: 'show', name: t('Шоу-программа / Артисты'), icon: '🎭', tile: 'bg-[#D9CCE3]', count: 20 },
+  { id: 'staff', name: t('Бармены и официанты'), icon: '🧑‍🍳', tile: 'bg-[#C3D5E8]', count: 26 },
+  { id: 'accessories', name: t('Аксессуары и бижутерия'), icon: '👜', tile: 'bg-[#F3E3D3]', count: 14 },
+  { id: 'hotel', name: t('Отель для гостей'), icon: '🏨', tile: 'bg-[#C3D5E8]', count: 11 },
+  { id: 'honeymoon', name: t('Медовый месяц'), icon: '✈️', tile: 'bg-[#E6EEE2]', count: 9 },
+  { id: 'vykup', name: t('Выкуп невесты'), icon: '🎀', tile: 'bg-[#F2DFDC]', count: 12 },
+  { id: 'registrar', name: t('Церемониймейстер'), icon: '📜', tile: 'bg-[#F0DCB8]', count: 8 },
 ]
 
 export const vendors: Vendor[] = [
   {
     id: 'v1', name: t('Елена Смирнова'), category: t('Фотограф'), categoryIcon: '📸', tile: 'bg-[#F2DFDC]',
-    rating: 4.9, reviews: 47, priceFrom: 85000, years: 5, freeOnDate: true, hasVideo: true, photos: 5,
+    rating: 4.9, reviews: 47, priceFrom: rub(85000), years: 5, freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Светлый живой стиль, ловлю эмоции, а не постановку. Снимаю свадьбы в Уфе и по Башкирии 5 лет — 120+ пар.'),
     packages: [
-      { name: t('Утро и церемония'), price: 45000, items: [t('6 часов съёмки'), t('250+ фото в обработке'), t('Онлайн-галерея')] },
-      { name: t('Полный день'), price: 85000, items: [t('12 часов съёмки'), t('500+ фото'), t('Экспресс 30 фото за 48 ч'), t('Премиум-фотокнига')] },
-      { name: t('Люкс'), price: 130000, items: [t('2 фотографа'), t('Love story в подарок'), t('Слайд-шоу на банкете')] },
+      { name: t('Утро и церемония'), price: rub(45000), items: [t('6 часов съёмки'), t('250+ фото в обработке'), t('Онлайн-галерея')] },
+      { name: t('Полный день'), price: rub(85000), items: [t('12 часов съёмки'), t('500+ фото'), t('Экспресс 30 фото за 48 ч'), t('Премиум-фотокнига')] },
+      { name: t('Люкс'), price: rub(130000), items: [t('2 фотографа'), t('Love story в подарок'), t('Слайд-шоу на банкете')] },
     ],
   },
   {
     id: 'v2', name: 'CinemaWedding Team', category: t('Видеооператор'), categoryIcon: '🎥', tile: 'bg-[#E6EEE2]',
-    rating: 5.0, reviews: 32, priceFrom: 120000, years: 7, freeOnDate: true, hasVideo: true, photos: 5,
+    rating: 5.0, reviews: 32, priceFrom: rub(120000), years: 7, freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Кинематографичные фильмы о дне: 2 камеры, аэросъёмка, звук с петличек. Монтаж за 30 дней.'),
     packages: [
-      { name: t('Клип'), price: 120000, items: [t('2 оператора'), t('Клип 4–6 мин'), t('Аэросъёмка')] },
-      { name: t('Фильм'), price: 180000, items: [t('Клип + фильм 25–40 мин'), t('Запись аудио церемонии'), t('RAW-архив')] },
+      { name: t('Клип'), price: rub(120000), items: [t('2 оператора'), t('Клип 4–6 мин'), t('Аэросъёмка')] },
+      { name: t('Фильм'), price: rub(180000), items: [t('Клип + фильм 25–40 мин'), t('Запись аудио церемонии'), t('RAW-архив')] },
     ],
   },
   {
     id: 'v3', name: t('Усадьба «Липовый сад»'), category: t('Площадка'), categoryIcon: '🏛️', tile: 'bg-[#F0DCB8]',
-    rating: 4.7, reviews: 89, priceFrom: 250000, freeOnDate: true, hasVideo: true, photos: 5,
+    rating: 4.7, reviews: 89, priceFrom: rub(250000), freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Загородная усадьба в 20 минутах от Уфы: шатёр у озера до 120 гостей, липовая аллея для церемонии, номера для молодожёнов.'),
     packages: [
-      { name: t('Будни'), price: 180000, items: [t('Аренда шатра'), t('Мебель и текстиль'), t('Парковка 60 авто')] },
-      { name: t('Выходной'), price: 250000, items: [t('Шатёр + аллея'), t('Кейтеринг-зона'), t('Номер молодожёнам'), t('Координатор площадки')] },
+      { name: t('Будни'), price: rub(180000), items: [t('Аренда шатра'), t('Мебель и текстиль'), t('Парковка 60 авто')] },
+      { name: t('Выходной'), price: rub(250000), items: [t('Шатёр + аллея'), t('Кейтеринг-зона'), t('Номер молодожёнам'), t('Координатор площадки')] },
     ],
   },
   {
     id: 'v4', name: t('Артём Краснов'), category: t('Ведущий'), categoryIcon: '🎤', tile: 'bg-[#D9CCE3]',
-    rating: 4.8, reviews: 56, priceFrom: 60000, years: 8, freeOnDate: true, hasVideo: false, photos: 5,
+    rating: 4.8, reviews: 56, priceFrom: rub(60000), years: 8, freeOnDate: true, hasVideo: false, photos: 5,
     desc: t('Ведущий без пошлости и конкурсов из 2005-го. Интеллигентный юмор, живой контакт с гостями, английский — по запросу.'),
     packages: [
-      { name: t('Банкет'), price: 60000, items: [t('6 часов программы'), t('Музыкальное оформление'), t('Сценарий под пару')] },
-      { name: t('Церемония + банкет'), price: 85000, items: [t('Выездная регистрация'), t('Диджей в комплекте')] },
+      { name: t('Банкет'), price: rub(60000), items: [t('6 часов программы'), t('Музыкальное оформление'), t('Сценарий под пару')] },
+      { name: t('Церемония + банкет'), price: rub(85000), items: [t('Выездная регистрация'), t('Диджей в комплекте')] },
     ],
   },
   {
     id: 'v5', name: t('Студия «Пион»'), category: t('Флорист'), categoryIcon: '🌸', tile: 'bg-[#F2DFDC]',
-    rating: 4.9, reviews: 41, priceFrom: 45000, freeOnDate: true, hasVideo: true, photos: 5,
+    rating: 4.9, reviews: 41, priceFrom: rub(45000), freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Авторская флористика: букет, бутоньерки, оформление церемонии и столов. Работаем с сезонными цветами и пионами.'),
     packages: [
-      { name: t('Букет + детали'), price: 15000, items: [t('Букет невесты'), t('Дублёр'), t('Бутоньерка')] },
-      { name: t('Церемония'), price: 45000, items: [t('Арка / композиция'), t('Дорожка'), t('Букет и бутоньерка')] },
-      { name: t('Полное оформление'), price: 120000, items: [t('Церемония + банкет'), t('Сervise столов'), t('Монтаж/демонтаж')] },
+      { name: t('Букет + детали'), price: rub(15000), items: [t('Букет невесты'), t('Дублёр'), t('Бутоньерка')] },
+      { name: t('Церемония'), price: rub(45000), items: [t('Арка / композиция'), t('Дорожка'), t('Букет и бутоньерка')] },
+      { name: t('Полное оформление'), price: rub(120000), items: [t('Церемония + банкет'), t('Сervise столов'), t('Монтаж/демонтаж')] },
     ],
   },
   {
     id: 'v6', name: t('Тимур Галин'), category: t('Фотограф'), categoryIcon: '📸', tile: 'bg-[#F2DFDC]',
-    rating: 0, reviews: 0, priceFrom: 45000, years: 2, freeOnDate: true, hasVideo: false, isNew: true, photos: 3,
+    rating: 0, reviews: 0, priceFrom: rub(45000), years: 2, freeOnDate: true, hasVideo: false, isNew: true, photos: 3,
     desc: t('Начинающий фотограф с сильным портфолио городских съёмок. Первые свадьбы — по специальной цене.'),
-    packages: [{ name: t('Полный день'), price: 45000, items: [t('10 часов'), t('300+ фото'), t('Онлайн-галерея')] }],
+    packages: [{ name: t('Полный день'), price: rub(45000), items: [t('10 часов'), t('300+ фото'), t('Онлайн-галерея')] }],
   },
 ]
 
 export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string; external?: boolean; invited?: boolean; phone?: string }
 
 export const initialSlots: Slot[] = [
-  { id: 's1', categoryId: 'venue', label: t('Площадка'), icon: '🏛️', tile: 'bg-[#F0DCB8]', state: 'booked', vendor: t('Усадьба «Липовый сад»'), price: 250000, status: 'Забронировано' },
-  { id: 's2', categoryId: 'photo', label: t('Фотограф'), icon: '📸', tile: 'bg-[#F2DFDC]', state: 'booked', vendor: t('Елена Смирнова'), price: 85000, status: 'Забронировано' },
-  { id: 's3', categoryId: 'video', label: t('Видеограф'), icon: '🎥', tile: 'bg-[#E6EEE2]', state: 'booked', vendor: 'CinemaWedding Team', price: 120000, status: 'Забронировано' },
-  { id: 's4', categoryId: 'host', label: t('Ведущий'), icon: '🎤', tile: 'bg-[#D9CCE3]', state: 'hold', vendor: t('Артём Краснов'), price: 60000, status: 'Аванс 50%' },
-  { id: 's5', categoryId: 'florist', label: t('Флорист'), icon: '🌸', tile: 'bg-[#F2DFDC]', state: 'hold', vendor: t('Студия «Пион»'), price: 45000, status: 'Hold 72 ч' },
+  { id: 's1', categoryId: 'venue', label: t('Площадка'), icon: '🏛️', tile: 'bg-[#F0DCB8]', state: 'booked', vendor: t('Усадьба «Липовый сад»'), price: rub(250000), status: 'Забронировано' },
+  { id: 's2', categoryId: 'photo', label: t('Фотограф'), icon: '📸', tile: 'bg-[#F2DFDC]', state: 'booked', vendor: t('Елена Смирнова'), price: rub(85000), status: 'Забронировано' },
+  { id: 's3', categoryId: 'video', label: t('Видеограф'), icon: '🎥', tile: 'bg-[#E6EEE2]', state: 'booked', vendor: 'CinemaWedding Team', price: rub(120000), status: 'Забронировано' },
+  { id: 's4', categoryId: 'host', label: t('Ведущий'), icon: '🎤', tile: 'bg-[#D9CCE3]', state: 'hold', vendor: t('Артём Краснов'), price: rub(60000), status: 'Аванс 50%' },
+  { id: 's5', categoryId: 'florist', label: t('Флорист'), icon: '🌸', tile: 'bg-[#F2DFDC]', state: 'hold', vendor: t('Студия «Пион»'), price: rub(45000), status: 'Hold 72 ч' },
   { id: 's6', categoryId: 'cake', label: t('Кондитер'), icon: '🎂', tile: 'bg-[#F0DCB8]', state: 'candidate', vendor: t('Кандидаты: 2') },
   { id: 's7', categoryId: 'stylist', label: t('Стилист'), icon: '💄', tile: 'bg-[#F2DFDC]', state: 'candidate', vendor: t('Кандидат: 1') },
   { id: 's8', categoryId: 'dj', label: 'DJ', icon: '🎧', tile: 'bg-[#C3D5E8]', state: 'empty' },
@@ -144,11 +156,11 @@ export const initialSlots: Slot[] = [
 ]
 
 export const budgetItems = [
-  { name: t('Площадка и кейтеринг'), amount: 480000, limit: 560000, color: '#D9A8A0' },
-  { name: t('Фото и видео'), amount: 205000, limit: 240000, color: '#A9BCA0' },
-  { name: t('Одежда и красота'), amount: 76000, limit: 180000, color: '#E3C892' },
-  { name: t('Развлечения и декор'), amount: 48000, limit: 144000, color: '#D9CCE3' },
-  { name: t('Прочее'), amount: 41000, limit: 96000, color: '#C3D5E8' },
+  { name: t('Площадка и кейтеринг'), amount: rub(480000), limit: rub(560000), color: '#D9A8A0' },
+  { name: t('Фото и видео'), amount: rub(205000), limit: rub(240000), color: '#A9BCA0' },
+  { name: t('Одежда и красота'), amount: rub(76000), limit: rub(180000), color: '#E3C892' },
+  { name: t('Развлечения и декор'), amount: rub(48000), limit: rub(144000), color: '#D9CCE3' },
+  { name: t('Прочее'), amount: rub(41000), limit: rub(96000), color: '#C3D5E8' },
 ]
 
 export interface Task { id: string; title: string; done: boolean; due: string; period: string; urgent?: boolean }
@@ -223,7 +235,8 @@ export const aiTips = [
   t('«Площадка и кейтеринг» на 86% лимита. Зафиксируйте меню до 1 марта — дальше цены вырастут ~10%.'),
 ]
 
-export const fmt = (n: number) => new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
+/* Форматирование живёт в money.ts; здесь ре-экспорт, чтобы не трогать 30 импортов. */
+export { fmt } from './money'
 
 /* ── Вишлист подарков ─────────────────────────────────────────
    Пара составляет список желаний; гости резервируют подарки анонимно.
@@ -242,21 +255,21 @@ export interface Gift {
 }
 
 export const initialGifts: Gift[] = [
-  { id: 'gf1', name: t('Телевизор 65"'), icon: '📺', tile: 'bg-[var(--blue)]', price: 89990, desc: t('В гостиную, OLED'), group: true, funded: 30000, reserved: false },
-  { id: 'gf2', name: t('Робот-пылесос'), icon: '🤖', tile: 'bg-[var(--sage-soft)]', price: 45000, group: false, funded: 0, reserved: true },
-  { id: 'gf3', name: t('Кофемашина'), icon: '☕', tile: 'bg-[var(--honey)]', price: 62000, desc: t('Зерновая, с капучинатором'), group: true, funded: 0, reserved: false },
-  { id: 'gf4', name: t('Набор посуды'), icon: '🍽', tile: 'bg-[var(--rose-soft)]', price: 18000, group: false, funded: 0, reserved: false },
-  { id: 'gf5', name: t('Постельное бельё'), icon: '🛏', tile: 'bg-[var(--lav)]', price: 12000, group: false, funded: 0, reserved: false },
-  { id: 'gf6', name: t('Сертификат на путешествие'), icon: '✈️', tile: 'bg-[var(--peach)]', price: 150000, desc: t('Мечта — Каппадокия'), group: true, funded: 45000, reserved: false },
-  { id: 'gf7', name: t('Блендер стационарный'), icon: '🥤', tile: 'bg-[var(--sage-soft)]', price: 9500, group: false, funded: 0, reserved: false },
-  { id: 'gf8', name: t('Ужин в ресторане'), icon: '🕯', tile: 'bg-[var(--rose-soft)]', price: 15000, desc: t('Сертификат на двоих'), group: false, funded: 0, reserved: true },
+  { id: 'gf1', name: t('Телевизор 65"'), icon: '📺', tile: 'bg-[var(--blue)]', price: rub(89990), desc: t('В гостиную, OLED'), group: true, funded: rub(30000), reserved: false },
+  { id: 'gf2', name: t('Робот-пылесос'), icon: '🤖', tile: 'bg-[var(--sage-soft)]', price: rub(45000), group: false, funded: rub(0), reserved: true },
+  { id: 'gf3', name: t('Кофемашина'), icon: '☕', tile: 'bg-[var(--honey)]', price: rub(62000), desc: t('Зерновая, с капучинатором'), group: true, funded: rub(0), reserved: false },
+  { id: 'gf4', name: t('Набор посуды'), icon: '🍽', tile: 'bg-[var(--rose-soft)]', price: rub(18000), group: false, funded: rub(0), reserved: false },
+  { id: 'gf5', name: t('Постельное бельё'), icon: '🛏', tile: 'bg-[var(--lav)]', price: rub(12000), group: false, funded: rub(0), reserved: false },
+  { id: 'gf6', name: t('Сертификат на путешествие'), icon: '✈️', tile: 'bg-[var(--peach)]', price: rub(150000), desc: t('Мечта — Каппадокия'), group: true, funded: rub(45000), reserved: false },
+  { id: 'gf7', name: t('Блендер стационарный'), icon: '🥤', tile: 'bg-[var(--sage-soft)]', price: rub(9500), group: false, funded: rub(0), reserved: false },
+  { id: 'gf8', name: t('Ужин в ресторане'), icon: '🕯', tile: 'bg-[var(--rose-soft)]', price: rub(15000), desc: t('Сертификат на двоих'), group: false, funded: rub(0), reserved: true },
 ]
 
 /* ── Денежные фонды («конверт» онлайн) ── */
 export interface Fund { id: string; name: string; icon: string; tile: string; target: number; collected: number }
 export const initialFunds: Fund[] = [
-  { id: 'f1', name: t('Медовый месяц в Каппадокии'), icon: '🎈', tile: 'bg-[var(--peach)]', target: 200000, collected: 67500 },
-  { id: 'f2', name: t('Первый семейный автомобиль'), icon: '🚗', tile: 'bg-[var(--blue)]', target: 500000, collected: 40000 },
+  { id: 'f1', name: t('Медовый месяц в Каппадокии'), icon: '🎈', tile: 'bg-[var(--peach)]', target: rub(200000), collected: rub(67500) },
+  { id: 'f2', name: t('Первый семейный автомобиль'), icon: '🚗', tile: 'bg-[var(--blue)]', target: rub(500000), collected: rub(40000) },
 ]
 
 /* ── Анти-вишлист: что просим НЕ дарить ── */

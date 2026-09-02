@@ -6,6 +6,7 @@ import { CityPicker } from '@/components/CityPicker'
 import { usePersist } from '@/lib/usePersist'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { fmt, rub } from '@/lib/money'
 
 /* Кабинет подрядчика: дашборд */
 export function VendorDashboard() {
@@ -15,7 +16,7 @@ export function VendorDashboard() {
   return (
     <div className="pb-28">
       <TopBar title={t('Елена Смирнова')} sub={t('Фотограф · анкета заполнена на 90%')} right={
-        <button onClick={() => nav('/vendor-app/profile')} className="press h-10 px-4 rounded-full grad text-white text-[11.5px] font-bold">{t('Анкета')}</button>
+        <button onClick={() => nav('/vendor-app/profile')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-bold">{t('Анкета')}</button>
       } />
       <div className="px-5 mt-2">
         <div className="card p-4">
@@ -103,7 +104,7 @@ export function VendorDashboard() {
             {Array.from({ length: 30 }).map((_, k) => {
               const day = k + 1
               const busy = busyDays.includes(day)
-              return <button key={day} onClick={() => toggleDay(day)} className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px]', busy ? 'grad text-white font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]')}>{day}</button>
+              return <button key={day} onClick={() => toggleDay(day)} className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px]', busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]')}>{day}</button>
             })}
           </div>
         </div>
@@ -119,12 +120,12 @@ export function VendorDashboard() {
             { id: 'ch3', n: t('Анна и Марк'), d: t('18 июля 2027 · церемония'), st: t('Новая'), hot: true },
           ].map(r => (
             <button key={r.n} onClick={() => nav(`/vendor-app/leads/${r.id}`)} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
-              <div className="w-11 h-11 rounded-full grad flex items-center justify-center text-white font-serif-d text-[15px] shrink-0">{r.n[0]}</div>
+              <div className="w-11 h-11 rounded-full grad flex items-center justify-center text-[var(--on-grad)] font-serif-d text-[15px] shrink-0">{r.n[0]}</div>
               <div className="flex-1 min-w-0">
                 <b className="text-[13.5px]">{r.n}</b>
                 <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{r.d}</p>
               </div>
-              <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', r.hot ? 'grad text-white' : 'bg-[var(--honey)] text-[var(--honey-deep)]')}>{r.st}</span>
+              <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', r.hot ? 'grad text-[var(--on-grad)]' : 'bg-[var(--honey)] text-[var(--honey-deep)]')}>{r.st}</span>
             </button>
           ))}
         </div>
@@ -151,7 +152,7 @@ export function VendorProfileWizard() {
   const addPkg = () => {
     const p = parseInt(pkgPrice.replace(/\D/g, ''), 10)
     if (!pkgName.trim() || !p) return
-    setPackages(pk => [...pk, [pkgName.trim(), `${p.toLocaleString('ru-RU')} ₽`]])
+    setPackages(pk => [...pk, [pkgName.trim(), fmt(rub(p))]])
     setPkgName(''); setPkgPrice(''); setPkgForm(false)
   }
   const toggleDay = (day: number) => setBusyDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort((a, b) => a - b))
@@ -162,7 +163,7 @@ export function VendorProfileWizard() {
       <h2 className="font-serif-d text-[26px] mt-6">{t('Анкета опубликована!')}</h2>
       <p className="text-[12.5px] text-[var(--soft)] mt-2.5 leading-relaxed">{t('Вы уже в каталоге и в фильтре «Свободны на дату». Первые заявки придут в пуш и в раздел «Сделки».')}</p>
       <div className="card-s px-4 py-3 mt-5 text-[11.5px] text-[var(--ink2)] w-full">{t('✦ Тиль: добавьте видео-визитку — анкеты с видео получают в 3 раза больше откликов.')}</div>
-      <button onClick={() => nav('/vendor-app')} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] mt-6" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('В кабинет')}</button>
+      <button onClick={() => nav('/vendor-app')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-6" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('В кабинет')}</button>
     </div>
   )
   return (
@@ -218,7 +219,7 @@ export function VendorProfileWizard() {
                 <input value={pkgPrice} onChange={e => setPkgPrice(e.target.value)} inputMode="numeric" placeholder={t('Цена, ₽')} className="w-full h-11 px-4 rounded-full bg-[var(--card)] text-[13px] outline-none" />
                 <div className="flex gap-2">
                   <button onClick={() => setPkgForm(false)} className="press flex-1 h-11 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-                  <button onClick={addPkg} className="press flex-1 h-11 rounded-full grad text-white text-[12px] font-bold">{t('Добавить')}</button>
+                  <button onClick={addPkg} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold">{t('Добавить')}</button>
                 </div>
               </div>
             ) : (
@@ -256,7 +257,7 @@ export function VendorProfileWizard() {
         )}
       </div>
       <div className="px-5 pt-5">
-        <button onClick={() => step === 4 ? setPublished(true) : setStep(Math.min(4, step + 1))} className="press w-full h-[52px] rounded-full grad text-white font-semibold text-[13.5px] flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+        <button onClick={() => step === 4 ? setPublished(true) : setStep(Math.min(4, step + 1))} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {step === 4 ? t('Опубликовать анкету ✨') : t('Далее')} <ChevronRight size={16} />
         </button>
       </div>
