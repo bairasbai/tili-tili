@@ -5,6 +5,7 @@ import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt, i
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
+import { budgetRows, committedSlots, committedTotal, spentTotal, type BudgetRow } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText } from '@/lib/utils'
@@ -93,8 +94,8 @@ export function WeddingTeam() {
         <div className="card p-5 mt-2">
           <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[var(--soft)]">{t('Команда собрана')}</span><b>{booked} из {slots.length}</b></div>
           <Bar pct={(booked / slots.length) * 100} />
-          <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{fmt(slots.filter(s => s.price).reduce((a, s) => a + (s.price ?? 0), 0))}</b></div>
-          <Bar pct={Math.round((slots.filter(s => s.price).reduce((a, s) => a + (s.price ?? 0), 0) / couple.budgetTotal) * 100)} />
+          <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{fmt(committedTotal(slots))}</b></div>
+          <Bar pct={Math.round((committedTotal(slots) / couple.budgetTotal) * 100)} />
         </div>
       </div>
     </div>
@@ -247,9 +248,10 @@ export function Budget() {
   const { slots } = useStore()
   // Бизнес-логика: категории бюджета наполняются ценами забронированных слотов команды.
   // Отмена брони в конструкторе автоматически уменьшает бюджет.
-  const catOf: Record<string, string> = { venue: t('Площадка и кейтеринг'), photo: t('Фото и видео'), video: t('Фото и видео'), dress: t('Одежда и красота'), stylist: t('Одежда и красота'), rings: t('Одежда и красота'), host: t('Развлечения и декор'), dj: t('Развлечения и декор'), florist: t('Развлечения и декор'), decor: t('Развлечения и декор'), cake: t('Развлечения и декор'), transport: t('Прочее') }
-  const booked = slots.filter(s => (s.state === 'booked' || s.state === 'hold') && s.price)
-  const [custom, setCustom] = useState<(typeof budgetItems[number] & { live?: string })[]>([])
+  const booked = committedSlots(slots)
+  // Свои статьи расхода переживают перезагрузку и видны на главной — иначе
+  // добавленный расход исчезал вместе с вкладкой.
+  const [custom, setCustom] = usePersist<BudgetRow[]>('tt_budget_custom', [])
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
@@ -259,12 +261,8 @@ export function Budget() {
     setCustom(it => [...it, { name: name.trim(), amount: a, limit: Math.ceil(a * 1.2), color: 'var(--lav)' }])
     setName(''); setAmount(''); setAdding(false)
   }
-  const items: (typeof budgetItems[number] & { live?: string })[] = budgetItems.map(b => {
-    const inCat = booked.filter(s => catOf[s.categoryId] === b.name)
-    if (!inCat.length) return { ...b }
-    return { ...b, amount: inCat.reduce((a, s) => a + (s.price ?? 0), 0), live: inCat.map(s => s.vendor).join(' · ') }
-  }).concat(custom)
-  const total = items.reduce((a, b) => a + b.amount, 0)
+  const items = budgetRows(slots, custom)
+  const total = spentTotal(slots, custom)
   const pct = Math.round((total / couple.budgetTotal) * 100)
   // Умный бюджет: fact (оплаченные авансы) vs предстоящие платежи + резерв 10%
   const paidFact = Math.round(booked.reduce((a, s) => a + (s.price ?? 0), 0) * 0.5)

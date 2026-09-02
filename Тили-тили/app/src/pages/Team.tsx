@@ -94,7 +94,7 @@ export function Team() {
         {/* Активные приглашения */}
         <div className="flex justify-between items-baseline px-1 mt-2">
           <h2 className="font-serif-d text-[18px]">{t('Активные ссылки')}</h2>
-          <span className="text-[10px] text-[var(--soft)]">{invites.length - revoked.length}{t('действуют')}</span>
+          <span className="text-[10px] text-[var(--soft)]">{invites.length - revoked.length} {t('действуют')}</span>
         </div>
         <div className="card px-4 py-1.5">
           {invites.map((iv, k) => !revoked.includes(k) && (
@@ -184,7 +184,7 @@ export function Join() {
         </div>
       </div>
       <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-white font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Принять приглашение')}</button>
-      <p className="text-[10px] text-[var(--soft2)] mt-4 flex items-center gap-1.5"><Users size={11} />{t('код')}{code}{t('· одноразовый')}</p>
+      <p className="text-[10px] text-[var(--soft2)] mt-4 flex items-center gap-1.5"><Users size={11} />{t('код')} {code}{t('· одноразовый')}</p>
     </div>
   )
 }

@@ -409,7 +409,7 @@ export function InviteEditor() {
 
         {sentInvites ? (
           <div className="card p-5 mt-4 text-center pop">
-            <b className="text-[15px]">{t('✓ Отправлено')}{count}{t('гостям')}</b>
+            <b className="text-[15px]">{t('✓ Отправлено')} {count} {t('гостям')}</b>
             <p className="text-[11px] text-[var(--soft)] mt-1.5">{t('Ответы RSVP появятся в разделе «Гости» в реальном времени')}</p>
             <button onClick={() => nav('/wedding/guests')} className="press mt-4 px-6 h-[44px] rounded-full grad text-white text-[12px] font-semibold">{t('К списку гостей →')}</button>
           </div>

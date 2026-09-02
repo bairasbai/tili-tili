@@ -78,7 +78,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
                 <button key={c.n} onClick={() => onPick(c)} className={cn('press px-3.5 py-2 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--ink2)]')} style={{ boxShadow: 'var(--shadow)' }}>{c.n}</button>
               ))}
             </div>
-            <p className="text-[10px] text-[var(--soft2)] px-6 mt-5 leading-relaxed">{t('В базе')}{POPULAR_CITIES.length > 0 ? '' : ''}{t('все райцентры Башкортостана и соседних регионов. Не нашли свой — напишите в поддержку, добавим за день.')}</p>
+            <p className="text-[10px] text-[var(--soft2)] px-6 mt-5 leading-relaxed">{t('В базе')}  {t('все райцентры Башкортостана и соседних регионов. Не нашли свой — напишите в поддержку, добавим за день.')}</p>
           </>
         )}
       </div>

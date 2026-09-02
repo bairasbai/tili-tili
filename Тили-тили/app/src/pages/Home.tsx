@@ -3,15 +3,20 @@ import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'l
 import { couple, aiTips, tasks, guests } from '@/lib/data'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
+import { spentTotal, spentPct, type BudgetRow } from '@/lib/budget'
+import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
 
 export default function Home() {
   const nav = useNavigate()
   const { slots, city } = useStore()
   const booked = slots.filter(s => s.state === 'booked')
-  const spent = booked.reduce((a, s) => a + (s.price ?? 0), 0)
-  const teamPct = Math.round((booked.length / couple.teamTotal) * 100)
-  const budgetPct = Math.round((spent / couple.budgetTotal) * 100)
+  // Деньги и размер команды берутся из общего расчёта: иначе главная и бюджет
+  // показывают разные суммы, и пара перестаёт верить обеим.
+  const [customExpenses] = usePersist<BudgetRow[]>('tt_budget_custom', [])
+  const spent = spentTotal(slots, customExpenses)
+  const teamPct = Math.round((booked.length / slots.length) * 100)
+  const budgetPct = spentPct(slots, customExpenses)
 
   return (
     <div className="pb-28">
@@ -36,7 +41,7 @@ export default function Home() {
               [Math.max(0, Math.ceil((Date.UTC(2027, 5, 14) - Date.now()) / 86400000)), t('дней до')],
               [`${teamPct}%`, t('готово')],
               [couple.guestsConfirmed, t('гостей')],
-              [`${booked.length}/${couple.teamTotal}`, t('команда')],
+              [`${booked.length}/${slots.length}`, t('команда')],
             ].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--card)]/25 rounded-2xl py-3 text-center backdrop-blur-sm">
                 <b className="text-[19px] block tabular">{v}</b>
@@ -59,7 +64,7 @@ export default function Home() {
             </div>
           </div>
           <b className="font-serif-d text-[16px] block mt-2.5">{couple.full}</b>
-          <p className="text-[11px] text-[var(--soft)] mt-1">📍 {t(city)} · 🎨 {couple.style} · 🥂 {couple.guestsTotal}{t('гостей')}</p>
+          <p className="text-[11px] text-[var(--soft)] mt-1">📍 {t(city)} · 🎨 {couple.style} · 🥂 {couple.guestsTotal} {t('гостей')}</p>
           <div className="grid grid-cols-4 gap-2 mt-4">
             {[[couple.countdown.m, t('МЕС')], [couple.countdown.d, t('ДН')], [couple.countdown.h, t('ЧАС')], [couple.countdown.min, t('МИН')]].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--bg)] rounded-2xl py-3">
@@ -80,7 +85,7 @@ export default function Home() {
           </div>
           <div className="flex justify-between items-baseline mt-1.5">
             <b className="font-serif-d text-[22px] tabular">{spent.toLocaleString('ru-RU')} ₽</b>
-            <span className="text-[11px] text-[var(--soft)]">{t('из')}{couple.budgetTotal.toLocaleString('ru-RU')} ₽</span>
+            <span className="text-[11px] text-[var(--soft)]">{t('из')} {couple.budgetTotal.toLocaleString('ru-RU')} ₽</span>
           </div>
           <div className="mt-3"><Bar pct={budgetPct} /></div>
         </button>
@@ -128,7 +133,7 @@ export default function Home() {
           <Tile icon="💌" tile="bg-[var(--lav)]" size={44} />
           <div className="flex-1">
             <b className="text-[13px]">{t('Приглашения')}</b>
-            <p className="text-[11px] text-[var(--soft)] mt-0.5">{guests.filter(g => g.status === 'yes').length * 3}{t(' подтвердили')} · {guests.filter(g => g.status === 'pending').length * 4}{t('ждут ответа')}</p>
+            <p className="text-[11px] text-[var(--soft)] mt-0.5">{guests.filter(g => g.status === 'yes').length * 3}{t(' подтвердили')} · {guests.filter(g => g.status === 'pending').length * 4} {t('ждут ответа')}</p>
           </div>
           <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] shrink-0">RSVP →</span>
         </button>

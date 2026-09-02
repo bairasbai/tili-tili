@@ -117,7 +117,7 @@ export function AlcoholCalc() {
                   <b className="text-[13px]">{d.name}</b>
                   <p className="text-[10px] text-[var(--soft)]">{d.per} {d.unit}</p>
                 </div>
-                <b className="font-serif-d text-[16px] text-[var(--rose-deep)] tabular">{bottles}{t('бут.')}</b>
+                <b className="font-serif-d text-[16px] text-[var(--rose-deep)] tabular">{bottles} {t('бут.')}</b>
               </div>
             )
           })}

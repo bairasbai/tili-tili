@@ -34,7 +34,7 @@ export function SearchCategories() {
             <button key={c.id} onClick={() => nav(`/search/${c.id}`)} className="press card-s p-3 text-center fade-up">
               <div className={cn('w-11 h-11 rounded-[14px] mx-auto flex items-center justify-center text-[19px]', c.tile)}>{c.icon}</div>
               <b className="text-[11px] block mt-2 leading-tight">{c.name}</b>
-              <span className="text-[9px] text-[var(--soft)] block mt-1">{c.count}{t('рядом')}</span>
+              <span className="text-[9px] text-[var(--soft)] block mt-1">{c.count} {t('рядом')}</span>
               {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] mt-1.5">{t('✓ Есть')}</span>}
               {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)] mt-1.5">{t('⏳ Ищем')}</span>}
             </button>
@@ -152,7 +152,7 @@ export function VendorDetail() {
             <h1 className="font-serif-d text-[26px]">{v.name}</h1>
             <p className="text-[12px] text-[var(--soft)] mt-1 flex items-center gap-1.5">
               <MapPin size={12} /> {t(city)}{t(' + 100 км')}
-              {v.reviews > 0 ? <span>· ★ {v.rating} · {v.reviews}{t('отзывов')}</span> : <span>{t('· Новый на платформе')}</span>}
+              {v.reviews > 0 ? <span>· ★ {v.rating} · {v.reviews} {t('отзывов')}</span> : <span>{t('· Новый на платформе')}</span>}
             </p>
           </div>
           {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] whitespace-nowrap">{t('● Свободен 14.06')}</span>}
@@ -259,7 +259,7 @@ export function VendorDetail() {
             <button key={x.id} onClick={() => nav(`/vendor/${x.id}`)} className={cn('press w-[120px] shrink-0 card-s p-3 text-center', x.tile)}>
               <span className="text-[24px]">{x.categoryIcon}</span>
               <b className="text-[10.5px] block mt-1.5 leading-tight truncate">{x.name}</b>
-              <span className="text-[9.5px] text-[var(--rose-deep)] font-bold tabular">{t('от')}{x.priceFrom.toLocaleString('ru-RU')} ₽</span>
+              <span className="text-[9.5px] text-[var(--rose-deep)] font-bold tabular">{t('от')} {x.priceFrom.toLocaleString('ru-RU')} ₽</span>
             </button>
           ))}
         </div>

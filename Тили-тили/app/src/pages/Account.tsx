@@ -292,7 +292,7 @@ export function Support() {
           <div key={tk.id} className="card-s p-4 flex items-center gap-3 fade-up">
             <Tile icon="💬" tile={tk.ok ? 'bg-[var(--sage-soft)]' : 'bg-[var(--honey)]'} size={42} />
             <div className="flex-1">
-              <b className="text-[12.5px] block truncate">{t('Тикет')}{tk.id} · {tk.topic}</b>
+              <b className="text-[12.5px] block truncate">{t('Тикет')} {tk.id} · {tk.topic}</b>
               <p className={cn('text-[10px] mt-0.5', tk.ok ? 'text-[var(--sage-deep)]' : 'text-[var(--honey-deep)]')}>● {tk.status}</p>
             </div>
           </div>

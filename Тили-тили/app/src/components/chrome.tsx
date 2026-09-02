@@ -93,7 +93,7 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
             {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : t(' · Новый на платформе')}
             <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>
           </span>
-          <span className="font-serif-d text-[14px] text-[var(--rose-deep)] font-semibold block mt-1">{t('от')}{v.priceFrom.toLocaleString('ru-RU')} ₽</span>
+          <span className="font-serif-d text-[14px] text-[var(--rose-deep)] font-semibold block mt-1">{t('от')} {v.priceFrom.toLocaleString('ru-RU')} ₽</span>
         </button>
         <button onClick={() => toggleFav(v.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
           <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[var(--rose-deep)]' : 'text-[var(--soft)]'} />

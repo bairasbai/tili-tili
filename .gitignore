@@ -7,3 +7,13 @@
 # Сборка приложения (продублировано в Тили-тили/app/.gitignore)
 node_modules/
 dist/
+
+# Артефакты браузерных прогонов
+.playwright-mcp/
+*.png
+!Тили-тили/app/public/*.png
+
+# Артефакты браузерных прогонов
+.playwright-mcp/
+*.png
+!Тили-тили/app/public/*.png

@@ -97,7 +97,7 @@ export function VendorDashboard() {
         <div className="card p-4 mt-3.5">
           <div className="flex justify-between items-baseline mb-2.5">
             <b className="text-[13px]">{t('Июнь 2027')}</b>
-            <span className="text-[10px] text-[var(--soft)]">{t('занято')}{busyDays.length}{t('даты · нажмите на день')}</span>
+            <span className="text-[10px] text-[var(--soft)]">{t('занято')} {busyDays.length} {t('даты · нажмите на день')}</span>
           </div>
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: 30 }).map((_, k) => {
@@ -238,7 +238,7 @@ export function VendorProfileWizard() {
                 <span className="text-[20px]">▶</span><span className="text-[9px] text-[var(--sage-deep)] font-bold">{t('Видео 1:40')}</span>
               </div>
             </div>
-            <p className="text-[10.5px] text-[var(--soft)] text-center mt-3">{photos}{t('из 5 фото · видео до 3 минут · загрузка с триммером')}</p>
+            <p className="text-[10.5px] text-[var(--soft)] text-center mt-3">{photos} {t('из 5 фото · видео до 3 минут · загрузка с триммером')}</p>
           </div>
         )}
         {step === 4 && (

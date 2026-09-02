@@ -42,6 +42,14 @@ describe('приложение переживает размещение в по
     expect(sw).toMatch(/'\.\/index\.html'/)
   })
 
+  it('service worker не кэширует HTML под адресом статики', () => {
+    /* Хостинг с SPA-fallback отдаёт index.html на любой неизвестный путь, а
+       preload-сканер браузера успевает запросить манифест относительно глубокой
+       ссылки — без проверки в кэш ложилась HTML-страница под адресом манифеста. */
+    expect(sw).toContain('looksLikeHtmlSwap')
+    expect(sw).toContain('text/html')
+  })
+
   it('роутер получает basename от корня приложения', () => {
     expect(main).toMatch(/BrowserRouter basename=\{appRoot\(\)\}/)
     expect(main).toMatch(/register\(appRoot\(\) \+ 'sw\.js'\)/)

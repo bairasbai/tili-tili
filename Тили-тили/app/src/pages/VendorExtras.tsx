@@ -156,7 +156,7 @@ export function VendorAnalytics() {
             <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--card)]/25 flex items-center gap-1"><TrendingUp size={10} /> +38%</span>
           </div>
           <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(385000)}</b>
-          <p className="text-[11px] opacity-85 mt-1">{t('ещё')}{fmt(215000)}{t('ожидается по активным сделкам')}</p>
+          <p className="text-[11px] opacity-85 mt-1">{t('ещё')} {fmt(215000)} {t('ожидается по активным сделкам')}</p>
         </div>
 
         <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
