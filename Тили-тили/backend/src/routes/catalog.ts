@@ -13,6 +13,26 @@ import {
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 
+/**
+ * Сортировки выдачи и ключ для листания.
+ *
+ * Курсор обязан нести ЗНАЧЕНИЕ, по которому идёт сортировка, а не только
+ * идентификатор. Иначе «следующая страница» при сортировке по рейтингу
+ * означает «все, у кого id больше», а это другой набор строк: пара листает
+ * каталог и видит одних дважды, а других не видит вовсе.
+ *
+ * `coalesce` нужен, чтобы пустое значение участвовало в сравнении наравне
+ * с остальными: строка с `null` иначе выпадает из условия и теряется.
+ */
+const SORTS = {
+  rating: { expr: 'coalesce(v.rating, -1)', dir: 'desc', cast: '::numeric' },
+  price_asc: { expr: 'coalesce(v.price_from, 9223372036854775807)', dir: 'asc', cast: '::bigint' },
+  price_desc: { expr: 'coalesce(v.price_from, -1)', dir: 'desc', cast: '::bigint' },
+  popular: { expr: 'v.reviews_count', dir: 'desc', cast: '::int' },
+} as const
+
+type SortName = keyof typeof SORTS
+
 /** `2027-06` → границы месяца. Без разбора руками: неверный месяц ловится схемой. */
 function monthRange(month: string): [string, string] {
   const [y, m] = month.split('-').map(Number) as [number, number]
@@ -71,6 +91,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         q?: string
         categoryId?: string
         city?: string
+        radiusKm?: number
         priceMin?: number
         priceMax?: number
         date?: string
@@ -90,7 +111,32 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       }
 
       if (query.categoryId) add('v.category_id = ?', query.categoryId)
-      if (query.city) add('c.name = ?', query.city)
+      if (query.city) {
+        if (query.radiusKm && query.radiusKm > 0) {
+          // Радиус считается от координат города-якоря. Координаты есть
+          // не у всех населённых пунктов справочника (их привезёт Яндекс
+          // Геокодер), поэтому подрядчик из города без координат попадает
+          // в выдачу только по точному совпадению названия — молча выкинуть
+          // его было бы хуже, чем показать без учёта расстояния.
+          args.push(query.city)
+          const cityArg = `$${args.length}`
+          args.push(query.radiusKm)
+          const radiusArg = `$${args.length}`
+          where.push(`(
+            c.name = ${cityArg}
+            or exists (
+              select 1 from cities anchor
+               where anchor.name = ${cityArg} and anchor.lat is not null
+                 and c.lat is not null
+                 and 6371 * acos(least(1, greatest(-1,
+                       sin(radians(anchor.lat)) * sin(radians(c.lat))
+                     + cos(radians(anchor.lat)) * cos(radians(c.lat)) * cos(radians(c.lon - anchor.lon))))) <= ${radiusArg}
+            )
+          )`)
+        } else {
+          add('c.name = ?', query.city)
+        }
+      }
       if (query.priceMin !== undefined) add('v.price_from >= ?', query.priceMin)
       if (query.priceMax !== undefined) add('v.price_from <= ?', query.priceMax)
       if (query.ratingMin !== undefined) add('v.rating >= ?', query.ratingMin)
@@ -102,33 +148,38 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         add('not exists (select 1 from vendor_busy_dates b where b.vendor_id = v.id and b.date = ?::date)', query.date)
       }
 
-      const order =
-        query.sort === 'price_asc'
-          ? 'v.price_from asc nulls last, v.id'
-          : query.sort === 'price_desc'
-            ? 'v.price_from desc nulls last, v.id'
-            : query.sort === 'popular'
-              ? 'v.reviews_count desc, v.id'
-              : 'v.rating desc nulls last, v.id'
+      const sort = SORTS[(query.sort as SortName) ?? 'rating'] ?? SORTS.rating
 
-      // Курсор — по паре (значение сортировки, id): у двух анкет совпадает
-      // и рейтинг, и цена, и без второго ключа порядок между ними не определён.
+      // Условие «строго после курсора» при разнонаправленных ключах не
+      // выражается сравнением кортежей: значение идёт по убыванию,
+      // идентификатор — по возрастанию. Поэтому две ветки явно.
       if (page.cursor) {
+        args.push(page.cursor.sort)
+        const keyArg = `$${args.length}${sort.cast}`
         args.push(page.cursor.id)
-        where.push(`v.id > $${args.length}`)
+        const idArg = `$${args.length}`
+        const beyond = sort.dir === 'desc' ? '<' : '>'
+        where.push(`(${sort.expr} ${beyond} ${keyArg} or (${sort.expr} = ${keyArg} and v.id > ${idArg}))`)
       }
 
       args.push(page.limit + 1)
-      const { rows } = await db().query<VendorRow>(
-        `select ${VENDOR_COLUMNS}
+      const { rows } = await db().query<VendorRow & { sort_key: string }>(
+        `select ${VENDOR_COLUMNS}, ${sort.expr}::text as sort_key
            from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
           where ${where.join(' and ')}
-          order by ${order}
+          order by ${sort.expr} ${sort.dir}, v.id asc
           limit $${args.length}`,
         args,
       )
 
-      const result = buildPage(rows.map(toVendor), page.limit, (v) => encodeCursor('v', v.id))
+      const withKeys = rows.map((r) => ({ ...toVendor(r), _key: r.sort_key }))
+      const result = buildPage(withKeys, page.limit, (v) => encodeCursor(v._key, v.id))
+      const strip = <T extends { _key: string }>(list: T[]) =>
+        list.map(({ _key, ...rest }) => {
+          void _key
+          return rest
+        })
+      const items = strip(result.items)
 
       // Ротация новичков — только на первой странице (см. rotateNewcomers).
       if (!page.cursor) {
@@ -140,10 +191,23 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
             limit ${page.limit}`,
           args.slice(0, -1),
         )
-        result.items = rotateNewcomers(result.items, page.limit, fresh.map(toVendor))
+        const rotated = rotateNewcomers(items, page.limit, fresh.map(toVendor))
+        // Курсор берётся по последней ОСТАВШЕЙСЯ строке основной выдачи,
+        // а не по исходной последней: иначе вытесненные новичками анкеты
+        // не попадут и на вторую страницу — то есть исчезнут насовсем.
+        // Цена — новичок может встретиться ещё раз ниже по списку; это видно
+        // и безобидно, в отличие от пропажи.
+        const anchor = result.items[rotated.keptFromMain - 1]
+        const nextCursor =
+          result.nextCursor === null && rotated.keptFromMain === items.length
+            ? null
+            : anchor
+              ? encodeCursor(anchor._key, anchor.id)
+              : result.nextCursor
+        return { items: rotated.items, nextCursor }
       }
 
-      return { items: result.items, nextCursor: result.nextCursor }
+      return { items, nextCursor: result.nextCursor }
     },
   )
 

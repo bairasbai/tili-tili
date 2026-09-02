@@ -531,25 +531,28 @@ describe('ротация новичков', () => {
   it('добавляет новичков, когда их меньше десятой части страницы', () => {
     const items = Array.from({ length: 20 }, (_, i) => v(`old${i}`, 5))
     const out = rotateNewcomers(items, 20, [v('new1', 0), v('new2', 0), v('new3', 0)])
-    expect(out).toHaveLength(20)
-    expect(out.filter((x) => x.reviewsCount === 0)).toHaveLength(2)
+    expect(out.items).toHaveLength(20)
+    expect(out.items.filter((x) => x.reviewsCount === 0)).toHaveLength(2)
     // Верх выдачи не трогается: вытесняется хвост.
-    expect(out[0]!.id).toBe('old0')
+    expect(out.items[0]!.id).toBe('old0')
+    // Вытесненные должны попасть на следующую страницу — по счётчику
+    // считается курсор.
+    expect(out.keptFromMain).toBe(18)
   })
 
   it('ничего не меняет, когда новичков уже достаточно', () => {
     const items = [...Array.from({ length: 15 }, (_, i) => v(`old${i}`, 5)), ...Array.from({ length: 5 }, (_, i) => v(`new${i}`, 0))]
-    expect(rotateNewcomers(items, 20, [v('extra', 0)])).toEqual(items)
+    expect(rotateNewcomers(items, 20, [v('extra', 0)])).toEqual({ items, keptFromMain: 20 })
   })
 
   it('не дублирует того, кто уже в выдаче', () => {
     const items = Array.from({ length: 20 }, (_, i) => v(`x${i}`, 5))
     const out = rotateNewcomers(items, 20, [v('x0', 0), v('fresh', 0)])
-    expect(new Set(out.map((x) => x.id)).size).toBe(out.length)
+    expect(new Set(out.items.map((x) => x.id)).size).toBe(out.items.length)
   })
 
   it('пустой запас оставляет выдачу как есть', () => {
     const items = Array.from({ length: 20 }, (_, i) => v(`old${i}`, 5))
-    expect(rotateNewcomers(items, 20, [])).toEqual(items)
+    expect(rotateNewcomers(items, 20, [])).toEqual({ items, keptFromMain: 20 })
   })
 })

@@ -259,6 +259,82 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     expect(Array.isArray(res.json())).toBe(true)
   })
 
+  /* ── вторая страница выдачи ───────────────────────────────────────── */
+  it('листание выдачи не теряет и не повторяет анкеты', async () => {
+    const category = 'transport'
+    const ids: string[] = []
+    for (let i = 0; i < 7; i++) ids.push((await newVendor({ categoryId: category })).vendorId)
+    // Разные рейтинги: при сортировке по рейтингу курсор обязан учитывать
+    // именно его, а не только идентификатор.
+    for (let i = 0; i < ids.length; i++) {
+      await app.db!.query('update vendors set rating = $2 where id = $1', [ids[i], 3 + (i % 3) * 0.5])
+    }
+    const reader = (await newUser()).token
+
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let guard = 0; guard < 10; guard++) {
+      const url =
+        `/catalog/vendors?categoryId=${category}&limit=3&sort=rating` + (cursor ? `&cursor=${cursor}` : '')
+      const res = await app.inject({ method: 'GET', url, headers: auth(reader) })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as { items: { id: string }[]; nextCursor: string | null }
+      seen.push(...body.items.map((v) => v.id))
+      cursor = body.nextCursor
+      if (!cursor) break
+    }
+
+    // Ни одна анкета не должна пропасть между страницами и ни одна —
+    // прийти дважды: пара листает каталог и видит либо дубли, либо дыры.
+    for (const id of ids) expect(seen).toContain(id)
+    expect(new Set(seen).size).toBe(seen.length)
+  })
+
+  it('ротация новичков не теряет вытесненные анкеты при листании', async () => {
+    const category = 'rings'
+    const veterans: string[] = []
+    for (let i = 0; i < 6; i++) veterans.push((await newVendor({ categoryId: category })).vendorId)
+    await app.db!.query('update vendors set reviews_count = 5, rating = 4.5 where id = any($1::uuid[])', [veterans])
+    const rookie = await newVendor({ categoryId: category })
+    const reader = (await newUser()).token
+
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let guard = 0; guard < 10; guard++) {
+      const url = `/catalog/vendors?categoryId=${category}&limit=3` + (cursor ? `&cursor=${cursor}` : '')
+      const res = await app.inject({ method: 'GET', url, headers: auth(reader) })
+      const body = res.json() as { items: { id: string }[]; nextCursor: string | null }
+      seen.push(...body.items.map((v) => v.id))
+      cursor = body.nextCursor
+      if (!cursor) break
+    }
+
+    // Новичок вытесняет кого-то с первой страницы. Вытесненный обязан
+    // появиться дальше: иначе он не показывается вообще никогда.
+    for (const id of [...veterans, rookie.vendorId]) expect(seen).toContain(id)
+  })
+
+  /* ── радиус поиска ────────────────────────────────────────────────── */
+  it('radiusKm либо работает, либо не принимается — но не игнорируется молча', async () => {
+    const category = 'dj'
+    const near = await newVendor({ categoryId: category, city: { name: 'Бирск', region: 'Башкортостан' } })
+    const far = await newVendor({ categoryId: category, city: { name: 'Стерлитамак', region: 'Башкортостан' } })
+    const reader = (await newUser()).token
+
+    // Бирск примерно в 80 км от Уфы, Стерлитамак — в 120 км.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/catalog/vendors?categoryId=${category}&city=Уфа&radiusKm=100&limit=100`,
+      headers: auth(reader),
+    })
+    expect(res.statusCode).toBe(200)
+    const ids = (res.json().items as { id: string }[]).map((v) => v.id)
+    // Молчаливое игнорирование параметра — худший исход: фронт рисует
+    // «в радиусе 100 км», а показывает всю страну.
+    expect(ids).toContain(near.vendorId)
+    expect(ids).not.toContain(far.vendorId)
+  })
+
   /* ── старые проверки не сломались ─────────────────────────────────── */
   it('матрица доступа этапа 2 продолжает работать', async () => {
     const couple = await newUser()

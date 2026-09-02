@@ -109,18 +109,28 @@ function row_about(row: VendorRow & { about?: string | null }): string | null {
  * привела бы к повторам и пропускам: строка, вставленная в середину, сдвигает
  * всё, что идёт после неё.
  */
-export function rotateNewcomers<T extends { reviewsCount: number }>(items: T[], limit: number, pool: T[]): T[] {
+export interface Rotated<T> {
+  items: T[]
+  /** Сколько строк основной выдачи осталось. По ним считается курсор. */
+  keptFromMain: number
+}
+
+export function rotateNewcomers<T extends { reviewsCount: number }>(
+  items: T[],
+  limit: number,
+  pool: T[],
+): Rotated<T> {
   const need = Math.ceil(limit / 10)
   const have = items.filter((v) => v.reviewsCount === 0).length
-  if (have >= need || pool.length === 0) return items
+  if (have >= need || pool.length === 0) return { items, keptFromMain: items.length }
 
   const missing = Math.min(need - have, pool.length)
   const known = new Set(items.map((v) => (v as unknown as { id: string }).id))
   const additions = pool.filter((v) => !known.has((v as unknown as { id: string }).id)).slice(0, missing)
-  if (additions.length === 0) return items
+  if (additions.length === 0) return { items, keptFromMain: items.length }
 
   // Новички занимают места в хвосте: верх выдачи остаётся у тех, кого
   // выбрала сортировка, а вытесняются самые слабые из показанных.
   const kept = items.slice(0, Math.max(0, items.length - additions.length))
-  return [...kept, ...additions]
+  return { items: [...kept, ...additions], keptFromMain: kept.length }
 }
