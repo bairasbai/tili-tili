@@ -1,0 +1,212 @@
+[
+  {
+    "id": "photo",
+    "name": "Фотограф",
+    "icon": "📸",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "video",
+    "name": "Видеооператор",
+    "icon": "🎥",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "venue",
+    "name": "Площадка",
+    "icon": "🏛️",
+    "tile": "bg-[#F0DCB8]"
+  },
+  {
+    "id": "host",
+    "name": "Ведущий / Тамада",
+    "icon": "🎤",
+    "tile": "bg-[#D9CCE3]"
+  },
+  {
+    "id": "dj",
+    "name": "DJ / Музыканты",
+    "icon": "🎧",
+    "tile": "bg-[#C3D5E8]"
+  },
+  {
+    "id": "florist",
+    "name": "Флорист",
+    "icon": "🌸",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "decor",
+    "name": "Декоратор",
+    "icon": "✨",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "stylist",
+    "name": "Стилист / Визажист",
+    "icon": "💄",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "catering",
+    "name": "Кейтеринг",
+    "icon": "🍽️",
+    "tile": "bg-[#F0DCB8]"
+  },
+  {
+    "id": "light",
+    "name": "Свет и звук",
+    "icon": "💡",
+    "tile": "bg-[#F3E3D3]"
+  },
+  {
+    "id": "cake",
+    "name": "Кондитер",
+    "icon": "🎂",
+    "tile": "bg-[#F0DCB8]"
+  },
+  {
+    "id": "transport",
+    "name": "Транспорт / Кортеж",
+    "icon": "🚗",
+    "tile": "bg-[#F3E3D3]"
+  },
+  {
+    "id": "dress",
+    "name": "Свадебное платье",
+    "icon": "👗",
+    "tile": "bg-[#D9CCE3]"
+  },
+  {
+    "id": "suit",
+    "name": "Костюм жениха",
+    "icon": "🤵",
+    "tile": "bg-[#C3D5E8]"
+  },
+  {
+    "id": "rings",
+    "name": "Ювелир / Кольца",
+    "icon": "💍",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "print",
+    "name": "Полиграфия",
+    "icon": "📜",
+    "tile": "bg-[#F3E3D3]"
+  },
+  {
+    "id": "photobooth",
+    "name": "Фотобудка",
+    "icon": "📷",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "firework",
+    "name": "Пиротехника",
+    "icon": "🎆",
+    "tile": "bg-[#D9CCE3]"
+  },
+  {
+    "id": "reels",
+    "name": "Reels-мейкер",
+    "icon": "🎬",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "painter",
+    "name": "Live Painter",
+    "icon": "🎨",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "nanny",
+    "name": "Аниматор / Няня",
+    "icon": "🎪",
+    "tile": "bg-[#F3E3D3]"
+  },
+  {
+    "id": "bar",
+    "name": "Сомелье / Бар",
+    "icon": "🍷",
+    "tile": "bg-[#D9CCE3]"
+  },
+  {
+    "id": "dance",
+    "name": "Хореограф",
+    "icon": "💃",
+    "tile": "bg-[#C3D5E8]"
+  },
+  {
+    "id": "agency",
+    "name": "Организатор",
+    "icon": "🎯",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "rental",
+    "name": "Рентал / Мебель",
+    "icon": "🕯️",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "ceremony",
+    "name": "Площадка выездной церемонии",
+    "icon": "🌿",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "hair",
+    "name": "Парикмахер",
+    "icon": "💇",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "coordinator",
+    "name": "Координатор дня",
+    "icon": "🎖",
+    "tile": "bg-[#F0DCB8]"
+  },
+  {
+    "id": "show",
+    "name": "Шоу-программа / Артисты",
+    "icon": "🎭",
+    "tile": "bg-[#D9CCE3]"
+  },
+  {
+    "id": "staff",
+    "name": "Бармены и официанты",
+    "icon": "🧑‍🍳",
+    "tile": "bg-[#C3D5E8]"
+  },
+  {
+    "id": "accessories",
+    "name": "Аксессуары и бижутерия",
+    "icon": "👜",
+    "tile": "bg-[#F3E3D3]"
+  },
+  {
+    "id": "hotel",
+    "name": "Отель для гостей",
+    "icon": "🏨",
+    "tile": "bg-[#C3D5E8]"
+  },
+  {
+    "id": "honeymoon",
+    "name": "Медовый месяц",
+    "icon": "✈️",
+    "tile": "bg-[#E6EEE2]"
+  },
+  {
+    "id": "vykup",
+    "name": "Выкуп невесты",
+    "icon": "🎀",
+    "tile": "bg-[#F2DFDC]"
+  },
+  {
+    "id": "registrar",
+    "name": "Церемониймейстер",
+    "icon": "📜",
+    "tile": "bg-[#F0DCB8]"
+  }
+]

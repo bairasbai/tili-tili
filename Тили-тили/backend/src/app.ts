@@ -10,6 +10,9 @@ import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './routes/auth.js'
 import { geoRoutes } from './routes/geo.js'
 import { healthRoutes } from './routes/health.js'
+import { inviteRoutes } from './routes/invites.js'
+import { weddingRoutes } from './routes/weddings.js'
+import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 
@@ -97,10 +100,17 @@ export async function buildApp(
     for (const m of methods) taken.add(routeKey(m, route.url))
   })
 
+  // Матрица доступа — один хук на все пути со свадьбой в адресе, включая те,
+  // обработчиков у которых ещё нет. Иначе путь следующего этапа открывается
+  // помощнику просто потому, что про проверку забыли.
+  app.addHook('preHandler', weddingAccessHook(app))
+
   await app.register(healthRoutes)
   await app.register(authRoutes)
   await app.register(userRoutes)
   await app.register(geoRoutes)
+  await app.register(weddingRoutes)
+  await app.register(inviteRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
 

@@ -75,6 +75,19 @@ describe('контракт', () => {
       'GET /users/me/export',
       'GET /geo/cities',
       'GET /geo/nearest',
+      'POST /weddings',
+      'GET /weddings/:weddingId',
+      'PATCH /weddings/:weddingId',
+      'GET /weddings/:weddingId/members',
+      'PATCH /weddings/:weddingId/members/:userId',
+      'DELETE /weddings/:weddingId/members/:userId',
+      'GET /weddings/:weddingId/invites',
+      'POST /weddings/:weddingId/invites',
+      'GET /invites/:code',
+      'DELETE /invites/:code',
+      'POST /invites/:code/accept',
+      'GET /users/me/referral',
+      'POST /referral/:code/apply',
     ]
     const stillStub: string[] = []
     for (const key of done) {
@@ -99,7 +112,7 @@ describe('контракт', () => {
       if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
     }
     // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
-    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 14)
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 27)
   })
 
   it('в контракте нет дублей метод+путь', () => {
