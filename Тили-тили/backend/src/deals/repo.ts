@@ -1,6 +1,7 @@
 import type { Db, Queryable } from '../plugins/db.js'
+import { AppError } from '../errors.js'
 import { uuidv7 } from '../ids.js'
-import { HOLD_HOURS, tileState, type DealState } from './state.js'
+import { COMMITTED, HOLD_HOURS, tileState, type DealState } from './state.js'
 
 export interface DealRow {
   id: string
@@ -124,4 +125,76 @@ export async function loadSlot(db: Queryable, slotId: string, seesMoney: boolean
 
 export function holdUntil(): string {
   return `${HOLD_HOURS} hours`
+}
+
+/**
+ * Занять дату подрядчика под сделку.
+ *
+ * Дата принадлежит паре целиком, а не отдельной сделке: фотограф, который
+ * снимает ещё и видео, занимает у них ОДИН день и занимает его один раз.
+ * Поэтому конфликт с собственной свадьбой — не отказ, а «уже наша».
+ * Конфликт с чужой — 409.
+ */
+export async function holdVendorDate(
+  client: Queryable,
+  vendorId: string,
+  date: string,
+  dealId: string,
+  weddingId: string,
+): Promise<void> {
+  const inserted = await client.query(
+    `insert into vendor_busy_dates (vendor_id, date, source, deal_id)
+     values ($1, $2::date, 'deal', $3)
+     on conflict (vendor_id, date) do nothing`,
+    [vendorId, date, dealId],
+  )
+  if (inserted.rowCount === 1) return
+
+  const { rows } = await client.query<{ mine: boolean }>(
+    `select exists (
+       select 1 from deals d
+        where d.id = b.deal_id and d.wedding_id = $3
+     ) as mine
+       from vendor_busy_dates b
+      where b.vendor_id = $1 and b.date = $2::date`,
+    [vendorId, date, weddingId],
+  )
+  if (!rows[0]?.mine) {
+    throw new AppError(409, 'date_taken', 'Эта дата у подрядчика уже занята')
+  }
+}
+
+/**
+ * Освободить дату при отмене сделки.
+ *
+ * Только если её больше никто не держит: у той же пары мог остаться второй
+ * слот с этим же подрядчиком, и снятие занятости отдало бы его чужой свадьбе,
+ * хотя он занят.
+ */
+export async function releaseVendorDate(client: Queryable, dealId: string): Promise<void> {
+  await client.query(
+    `delete from vendor_busy_dates b
+      where b.deal_id = $1 and b.source = 'deal'
+        and not exists (
+          select 1 from deals d
+           where d.id <> $1
+             and d.vendor_id = b.vendor_id
+             and d.state = any($2)
+             and d.wedding_id = (select wedding_id from deals where id = $1)
+        )`,
+    [dealId, COMMITTED],
+  )
+  // Если строку удержал другой слот той же свадьбы — переписываем ссылку
+  // на него, иначе она указывает на отменённую сделку.
+  await client.query(
+    `update vendor_busy_dates b
+        set deal_id = (
+          select d.id from deals d
+           where d.vendor_id = b.vendor_id and d.state = any($2)
+             and d.wedding_id = (select wedding_id from deals where id = $1)
+           order by d.created_at limit 1
+        )
+      where b.deal_id = $1 and b.source = 'deal'`,
+    [dealId, COMMITTED],
+  )
 }

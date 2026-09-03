@@ -2,9 +2,18 @@ import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
-import { isUniqueViolation, type Queryable } from '../plugins/db.js'
+import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { DEAL_COLUMNS, DEAL_JOINS, loadSlot, loadSlots, toSlot, type SlotRow } from '../deals/repo.js'
+import {
+  DEAL_COLUMNS,
+  DEAL_JOINS,
+  holdVendorDate,
+  loadSlot,
+  loadSlots,
+  releaseVendorDate,
+  toSlot,
+  type SlotRow,
+} from '../deals/repo.js'
 import { COMMITTED, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
@@ -111,20 +120,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           // в первичный ключ (vendor_id, date) и получает 409, а не «обе
           // забронировали одного фотографа на 14 июня».
           const date = await weddingDate(client, weddingId)
-          if (date) {
-            try {
-              await client.query(
-                `insert into vendor_busy_dates (vendor_id, date, source, deal_id)
-                 values ($1, $2::date, 'deal', $3)`,
-                [body.vendorId, date, dealId],
-              )
-            } catch (error) {
-              if (isUniqueViolation(error)) {
-                throw conflict('date_taken', 'Эта дата у подрядчика уже занята')
-              }
-              throw error
-            }
-          }
+          if (date) await holdVendorDate(client, body.vendorId, date, dealId, weddingId)
           return (await loadSlot(client, slotId, true))!
         })
         return { status: 200, body: result }
@@ -160,7 +156,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         // Слот освобождается, дата возвращается подрядчику. Ручную отметку
         // «занято» не трогаем — её ставил он сам.
         await client.query('update slots set deal_id = null where id = $1', [slotId])
-        await client.query(`delete from vendor_busy_dates where deal_id = $1 and source = 'deal'`, [slot.deal_id])
+        await releaseVendorDate(client, slot.deal_id)
         return (await loadSlot(client, slotId, true))!
       })
       return { status: 200, body: result }
@@ -197,8 +193,13 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           if (!COMMITTED.includes(deal.state)) {
             throw conflict('not_booked', 'Оплатить можно только забронированную сделку')
           }
+          // Без цены платить нечего: сумма без договорённости — просто число,
+          // и проверить переплату не по чему.
+          if (deal.price === null) {
+            throw conflict('no_price', 'У сделки не указана цена — сначала договоритесь о сумме')
+          }
 
-          const amount = body.amount?.amount ?? Number(deal.price ?? 0)
+          const amount = body.amount?.amount ?? Number(deal.price)
           if (amount <= 0) throw new AppError(422, 'bad_amount', 'Сумма оплаты должна быть больше нуля')
 
           const { rows: paid } = await client.query<{ total: string }>(

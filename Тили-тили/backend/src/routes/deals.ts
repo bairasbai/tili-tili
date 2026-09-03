@@ -1,9 +1,17 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound } from '../errors.js'
+import { AppError, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
-import { isUniqueViolation, type Queryable } from '../plugins/db.js'
+import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, toDeal, type DealRow } from '../deals/repo.js'
+import {
+  DEAL_COLUMNS,
+  DEAL_JOINS,
+  expireHolds,
+  holdVendorDate,
+  releaseVendorDate,
+  toDeal,
+  type DealRow,
+} from '../deals/repo.js'
 import { DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 
 export async function dealRoutes(app: FastifyInstance): Promise<void> {
@@ -101,29 +109,12 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
               [deal.wedding_id],
             )
             if (w[0]?.date) {
-              try {
-                await client.query(
-                  `insert into vendor_busy_dates (vendor_id, date, source, deal_id)
-                   values ($1, $2::date, 'deal', $3)
-                   on conflict (vendor_id, date) do nothing`,
-                  [deal.vendor_id, w[0].date, dealId],
-                )
-                const { rows: taken } = await client.query<{ deal_id: string | null }>(
-                  'select deal_id from vendor_busy_dates where vendor_id = $1 and date = $2::date',
-                  [deal.vendor_id, w[0].date],
-                )
-                if (taken[0] && taken[0].deal_id !== dealId) {
-                  throw conflict('date_taken', 'Эта дата у подрядчика уже занята')
-                }
-              } catch (error) {
-                if (isUniqueViolation(error)) throw conflict('date_taken', 'Эта дата у подрядчика уже занята')
-                throw error
-              }
+              await holdVendorDate(client, deal.vendor_id, w[0].date, dealId, deal.wedding_id)
             }
           }
           if (body.state === 'cancelled') {
             await client.query('update slots set deal_id = null where deal_id = $1', [dealId])
-            await client.query(`delete from vendor_busy_dates where deal_id = $1 and source = 'deal'`, [dealId])
+            await releaseVendorDate(client, dealId)
           }
 
           await client.query(

@@ -69,7 +69,14 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.caller!.userId
       if (!/^[0-9a-f-]{36}$/i.test(dealId)) throw notFound('Сделка не найдена')
 
-      return withIdempotency(db(), request, reply, 'deals.contract', async () => {
+      // Контракт заголовка не требует — не требуем и мы. С ключом повтор
+      // вернёт тот же документ, без ключа переоформление даст новую версию.
+      return withIdempotency(
+        db(),
+        request,
+        reply,
+        'deals.contract',
+        async () => {
         const { rows } = await db().query<{
           state: string
           price: string | null
@@ -132,8 +139,10 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
           [id, dealId, body.templateCode, prev[0]!.version + 1, JSON.stringify(fields)],
         )
         const { rows: saved } = await db().query('select * from documents where id = $1', [id])
-        return { status: 201, body: toDocument(saved[0] as never) }
-      })
+          return { status: 201, body: toDocument(saved[0] as never) }
+        },
+        false,
+      )
     },
   )
 

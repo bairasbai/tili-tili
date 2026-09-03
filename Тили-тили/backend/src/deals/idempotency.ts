@@ -123,9 +123,19 @@ export async function withIdempotency<T>(
   reply: FastifyReply,
   route: string,
   action: () => Promise<{ status: number; body: T }>,
+  /**
+   * Требовать ли заголовок. Обязателен там, где его объявляет контракт;
+   * на остальных путях — необязателен: клиент, написанный строго
+   * по контракту, не должен получать 400 за то, чего мы не обещали.
+   */
+  required = true,
 ): Promise<unknown> {
   const userId = request.caller!.userId
-  const clientKey = readKeyHeader(request, true)!
+  const clientKey = readKeyHeader(request, required)
+  if (!clientKey) {
+    const result = await action()
+    return reply.code(result.status).send(result.body)
+  }
   const replayed = await replayOrClaim(db, userId, route, clientKey, request.body)
   if (replayed) {
     reply.header('idempotent-replay', 'true')
