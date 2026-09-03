@@ -35,9 +35,11 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       period: string | null
       done_at: Date | null
       source: string
-    }>('select id, title, period, done_at, source from tasks where wedding_id = $1 order by sort, title', [
-      request.member!.weddingId,
-    ])
+    }>(
+      `select id, title, period, done_at, source from tasks
+        where wedding_id = $1 and kind = 'checklist' order by sort, title`,
+      [request.member!.weddingId],
+    )
     return rows.map(toTask)
   })
 

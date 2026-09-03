@@ -333,6 +333,209 @@ describe.skipIf(!live)('прод: мягкая бронь, отзывы и св�
     expect((notes.json() as { title: string }[]).some((n) => n.title === 'Рассылка гостям')).toBe(true)
   })
 
+  /* ── цена сделки ──────────────────────────────────────────────────── */
+  it('цену сделки правят до аванса, а после — уже нет', async () => {
+    const vendor = await newVendor(`Фотограф ${RUN}C`)
+    const couple = await newWedding('2027-07-10')
+    const slotId = await slotOf(couple.weddingId)
+    await app.inject({
+      method: 'POST',
+      url: `/weddings/${couple.weddingId}/slots/${slotId}/book`,
+      headers: { ...auth(couple.token), 'idempotency-key': `bk-${RUN}-c` },
+      payload: { vendorId: vendor.vendorId, price: { amount: 5_000_000, currency: 'RUB' } },
+    })
+    const { rows } = await app.db!.query<{ id: string }>('select id from deals where slot_id = $1', [slotId])
+    const dealId = rows[0]!.id
+
+    /* Подрядчик прислал новую смету. До этой правки поменять сумму можно
+     * было только отменив сделку — а отмена освобождает дату, и её успевает
+     * занять другая пара. */
+    const fixed = await app.inject({
+      method: 'PATCH',
+      url: `/deals/${dealId}`,
+      headers: { ...auth(couple.token), 'idempotency-key': `pr-${RUN}-c1` },
+      payload: { price: { amount: 6_200_000, currency: 'RUB' } },
+    })
+    expect(fixed.statusCode).toBe(200)
+    expect(fixed.json().price.amount).toBe(6_200_000)
+    // Состояние правка цены не трогает: бронь осталась бронью.
+    expect(fixed.json().state).toBe('booked')
+
+    const { rows: journal } = await app.db!.query<{ kind: string; note: string }>(
+      "select kind, note from deal_events where deal_id = $1 and kind = 'price'",
+      [dealId],
+    )
+    expect(journal).toHaveLength(1)
+    // Intl ставит неразрывный пробел — сравниваем по цифрам, а не по виду.
+    expect(journal[0]!.note.replace(/\s/g, ' ')).toBe('Сумма изменена: 50 000 ₽ → 62 000 ₽')
+
+    // Дата подрядчика на месте — ради этого правка и заводилась.
+    const { rows: busy } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from vendor_busy_dates where deal_id = $1',
+      [dealId],
+    )
+    expect(busy[0]!.n).toBe('1')
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/deals/${dealId}`,
+      headers: { ...auth(couple.token), 'idempotency-key': `pr-${RUN}-c2` },
+      payload: { state: 'paid_deposit' },
+    })
+    const late = await app.inject({
+      method: 'PATCH',
+      url: `/deals/${dealId}`,
+      headers: { ...auth(couple.token), 'idempotency-key': `pr-${RUN}-c3` },
+      payload: { price: { amount: 100, currency: 'RUB' } },
+    })
+    /* Аванс уже внесён: молчаливая правка сметы задним числом развела бы
+     * платёж и договор. */
+    expect(late.statusCode).toBe(409)
+    expect(late.json().error.code).toBe('price_locked')
+  })
+
+  it('правка сделки без state и price — отказ, а не молчаливое ничего', async () => {
+    const vendor = await newVendor(`Фотограф ${RUN}D`)
+    const couple = await newWedding('2027-07-11')
+    const slotId = await slotOf(couple.weddingId)
+    await app.inject({
+      method: 'POST',
+      url: `/weddings/${couple.weddingId}/slots/${slotId}/book`,
+      headers: { ...auth(couple.token), 'idempotency-key': `bk-${RUN}-d` },
+      payload: { vendorId: vendor.vendorId, price: { amount: 5_000_000, currency: 'RUB' } },
+    })
+    const { rows } = await app.db!.query<{ id: string }>('select id from deals where slot_id = $1', [slotId])
+    const empty = await app.inject({
+      method: 'PATCH',
+      url: `/deals/${rows[0]!.id}`,
+      headers: { ...auth(couple.token), 'idempotency-key': `pr-${RUN}-d` },
+      payload: { note: 'просто заметка' },
+    })
+    // Приложение отвечает на непрошедшее проверку тело 422 (единый формат).
+    expect(empty.statusCode).toBe(422)
+  })
+
+  /* ── избранные истории ────────────────────────────────────────────── */
+  it('отметки «Вдохновения» переживают устройство', async () => {
+    const user = await newUser()
+    expect((await app.inject({ method: 'GET', url: '/inspiration/likes', headers: auth(user.token) })).json()).toEqual({
+      storyIds: [],
+    })
+
+    for (const story of ['w1', 'w4']) {
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/inspiration/likes/${story}`,
+        headers: auth(user.token),
+      })
+      expect(res.statusCode).toBe(204)
+    }
+    // Повторное нажатие — то же состояние, а не ошибка и не второй лайк.
+    await app.inject({ method: 'PUT', url: '/inspiration/likes/w1', headers: auth(user.token) })
+    const mine = await app.inject({ method: 'GET', url: '/inspiration/likes', headers: auth(user.token) })
+    expect((mine.json().storyIds as string[]).sort()).toEqual(['w1', 'w4'])
+
+    await app.inject({ method: 'DELETE', url: '/inspiration/likes/w1', headers: auth(user.token) })
+    // Снятие того, чего нет, — тоже «нет».
+    expect(
+      (await app.inject({ method: 'DELETE', url: '/inspiration/likes/w9', headers: auth(user.token) })).statusCode,
+    ).toBe(204)
+    expect(
+      (await app.inject({ method: 'GET', url: '/inspiration/likes', headers: auth(user.token) })).json().storyIds,
+    ).toEqual(['w4'])
+
+    // Чужие отметки — чужие: список личный (§8.4).
+    const other = await newUser()
+    expect(
+      (await app.inject({ method: 'GET', url: '/inspiration/likes', headers: auth(other.token) })).json().storyIds,
+    ).toEqual([])
+  })
+
+  /* ── чек-лист плана Б ─────────────────────────────────────────────── */
+  it('отметки плана Б переживают устройство и видны второму партнёру', async () => {
+    const couple = await newWedding('2027-07-08')
+    const coordinator = await newUser()
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/weddings/${couple.weddingId}/invites`,
+      headers: auth(couple.token),
+      payload: { role: 'coordinator' },
+    })
+    await app.inject({
+      method: 'POST',
+      url: `/invites/${invite.json().code}/accept`,
+      headers: auth(coordinator.token),
+    })
+
+    const first = await app.inject({
+      method: 'GET',
+      url: `/weddings/${couple.weddingId}/planb`,
+      headers: auth(couple.token),
+    })
+    expect(first.statusCode).toBe(200)
+    const list = first.json().checklist as { id: string; title: string; done: boolean }[]
+    // §13.1 называет чек-лист персистентным: он заводится на сервере,
+    // а не в браузере одного из двоих.
+    expect(list).toHaveLength(6)
+    expect(list.every((c) => !c.done)).toBe(true)
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/weddings/${couple.weddingId}/tasks/${list[0]!.id}`,
+      headers: auth(couple.token),
+      payload: { done: true },
+    })
+    const asCoordinator = await app.inject({
+      method: 'GET',
+      url: `/weddings/${couple.weddingId}/planb`,
+      headers: auth(coordinator.token),
+    })
+    expect((asCoordinator.json().checklist as { done: boolean }[])[0]!.done).toBe(true)
+    // Повторное открытие не заводит второй комплект пунктов.
+    expect((asCoordinator.json().checklist as unknown[]).length).toBe(6)
+
+    /* Пункты «накануне» не должны сыпаться в чек-лист по месяцам:
+     * это разные экраны, и «Powerbank и аптечка» среди дел за полгода
+     * читается как ошибка. */
+    const tasks = await app.inject({
+      method: 'GET',
+      url: `/weddings/${couple.weddingId}/tasks`,
+      headers: auth(couple.token),
+    })
+    expect((tasks.json() as { title: string }[]).some((t) => t.title.startsWith('Powerbank'))).toBe(false)
+  })
+
+  it('планом Б командует координатор, а помощник его не объявляет', async () => {
+    const couple = await newWedding('2027-07-09')
+    const helper = await newUser()
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/weddings/${couple.weddingId}/invites`,
+      headers: auth(couple.token),
+      payload: { role: 'helper' },
+    })
+    await app.inject({
+      method: 'POST',
+      url: `/invites/${invite.json().code}/accept`,
+      headers: auth(helper.token),
+    })
+
+    // Сверять чек-лист накануне — работа всей команды.
+    expect(
+      (await app.inject({ method: 'GET', url: `/weddings/${couple.weddingId}/planb`, headers: auth(helper.token) }))
+        .statusCode,
+    ).toBe(200)
+    /* А объявлять запасной сценарий — нет: активация рассылает уведомление
+     * всем и переписывает планы на день (Бизнес-логика §2). */
+    const declared = await app.inject({
+      method: 'POST',
+      url: `/weddings/${couple.weddingId}/planb/activate`,
+      headers: { ...auth(helper.token), 'idempotency-key': `pb-${RUN}-h` },
+      payload: { scenario: 'rain' },
+    })
+    expect(declared.statusCode).toBe(403)
+  })
+
   it('правка блюд не стирает дату рассылки опроса', async () => {
     const couple = await newWedding('2027-07-07')
     await app.inject({

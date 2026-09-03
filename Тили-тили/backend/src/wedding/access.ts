@@ -7,6 +7,8 @@ export type Role = (typeof ROLES)[number]
 
 const ALL_TEAM: Role[] = ['couple', 'helper', 'coordinator']
 const ONLY_COUPLE: Role[] = ['couple']
+/** Днём X командует координатор — вместе с парой и без помощника (§2). */
+const DAY_COMMAND: Role[] = ['couple', 'coordinator']
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -66,6 +68,12 @@ const MATRIX: Rule[] = [
     by: { GET: ALL_TEAM, POST: ALL_TEAM, PUT: ALL_TEAM, PATCH: ALL_TEAM, DELETE: ALL_TEAM },
   },
   { url: /^\/weddings\/:weddingId\/slots$/, by: { GET: ALL_TEAM } },
+
+  /* План Б. Чек-лист накануне сверяет вся команда — за то он и общий.
+   * Объявляет запасной сценарий тот, кто днём X командует: пара и
+   * координатор (Бизнес-логика §2). Помощнику этого не нужно: активация
+   * рассылает уведомление всем и переписывает планы на день. */
+  { url: /^\/weddings\/:weddingId\/planb/, by: { GET: ALL_TEAM, POST: DAY_COMMAND } },
 ]
 
 /**

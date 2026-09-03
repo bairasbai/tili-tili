@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -13,6 +13,16 @@ import {
   type DealRow,
 } from '../deals/repo.js'
 import { DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
+
+/**
+ * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
+ * сметы задним числом развела бы платёж и договор. Отменённая сделка
+ * не правится по той же причине, по какой не правится закрытая книга.
+ */
+const PRICE_LOCKED = new Set<DealState>(['paid_deposit', 'done', 'cancelled'])
+
+/** Копейки в человеческую строку для записи в журнал сделки. */
+const rubles = (amount: number) => `${new Intl.NumberFormat('ru-RU').format(Math.round(amount / 100))} ₽`
 
 export async function dealRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -60,10 +70,20 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['state'],
+          // Одно из двух обязательно: пустая правка — это не правка.
+          anyOf: [{ required: ['state'] }, { required: ['price'] }],
           additionalProperties: false,
           properties: {
             state: { type: 'string', enum: [...DEAL_STATES] },
+            price: {
+              type: 'object',
+              required: ['amount', 'currency'],
+              additionalProperties: false,
+              properties: {
+                amount: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+                currency: { type: 'string', enum: ['RUB'] },
+              },
+            },
             note: { type: 'string', maxLength: 500 },
           },
         },
@@ -71,7 +91,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { dealId } = request.params as { dealId: string }
-      const body = request.body as { state: DealState; note?: string }
+      const body = request.body as { state?: DealState; price?: { amount: number }; note?: string }
       const userId = request.caller!.userId
 
       return withIdempotency(db(), request, reply, 'deals.patch', async () => {
@@ -83,6 +103,44 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             dealId,
           ])
           const from = fresh[0]!.state
+
+          /* Смена цены без смены состояния — отдельный случай, и журнал
+           * это различает: рассылка берёт заголовок из `to_state` и на
+           * общей записи объявила бы «сделка забронирована» на правку сметы. */
+          if (body.price !== undefined) {
+            if (PRICE_LOCKED.has(from)) {
+              throw conflict(
+                'price_locked',
+                from === 'cancelled'
+                  ? 'Сделка отменена — менять сумму не в чем'
+                  : 'После внесения аванса сумма фиксируется',
+              )
+            }
+            const was = Number(deal.price)
+            if (was !== body.price.amount) {
+              await client.query('update deals set price = $2 where id = $1', [dealId, body.price.amount])
+              await client.query(
+                `insert into deal_events (id, deal_id, from_state, to_state, actor_id, note, kind)
+                 values ($1, $2, $3, $3, $4, $5, 'price')`,
+                [
+                  uuidv7(),
+                  dealId,
+                  from,
+                  userId,
+                  body.note ?? `Сумма изменена: ${rubles(was)} → ${rubles(body.price.amount)}`,
+                ],
+              )
+            }
+          }
+
+          if (body.state === undefined) {
+            const { rows: only } = await client.query<DealRow>(
+              `select ${DEAL_COLUMNS} from deals d ${DEAL_JOINS} where d.id = $1`,
+              [dealId],
+            )
+            return toDeal(only[0]!, true)
+          }
+
           assertTransition(from, body.state)
 
           const sets: string[] = ['state = $2']

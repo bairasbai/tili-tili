@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.17.0
+  version: 0.19.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -2143,13 +2143,21 @@ paths:
   /deals/{dealId}:
     patch:
       tags: [bookings]
-      summary: Перевести сделку в следующее состояние
+      summary: Перевести сделку в следующее состояние или исправить сумму
       description: |
         Контракт знал только book/cancel/pay — четыре из шести состояний были
         недостижимы через API. Разрешены только переходы вперёд по цепочке
         candidate → contacted → negotiating → booked → paid_deposit → done
         и cancelled из любого. Недопустимый переход — 409.
         Переход в negotiating ставит negotiatingUntil = now + 72 ч.
+
+        Сумму можно исправить до внесения аванса: подрядчик присылает новую
+        смету, и без этой правки пара была вынуждена отменять сделку, а
+        отмена освобождает дату в календаре подрядчика. В paid_deposit,
+        done и cancelled сумма зафиксирована — 409 `price_locked`.
+        Правка пишется в журнал сделки как событие вида `price`.
+
+        Требуется хотя бы одно из полей: `state` или `price`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: dealId, in: path, required: true, schema: { type: string } }
@@ -2160,9 +2168,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [state]
+              anyOf: [{ required: [state] }, { required: [price] }]
               properties:
                 state: { $ref: '#/components/schemas/DealState' }
+                price: { $ref: '#/components/schemas/Money' }
                 note: { type: string }
       responses:
         '200':
@@ -2281,6 +2290,39 @@ paths:
                 minutes: { type: integer, example: 15 }
       responses:
         '200': { description: OK }
+  /weddings/{weddingId}/planb:
+    get:
+      tags: [timeline]
+      summary: "План Б: сценарий и чек-лист накануне"
+      description: >
+        §13.1 называет чек-лист персистентным: отметки переживают смену
+        устройства и видны обоим партнёрам. Пункты — обычные задачи вида
+        `planb`, поэтому отмечаются через PATCH /weddings/{weddingId}/tasks/{taskId}
+        и в общий чек-лист по месяцам не попадают.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenario:
+                    type: string
+                    nullable: true
+                    description: 'Объявленный сценарий или null, если план Б не активировали.'
+                  activatedAt: { type: string, format: date-time, nullable: true }
+                  checklist:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        title: { type: string }
+                        done: { type: boolean }
+
   /weddings/{weddingId}/planb/activate:
     post:
       tags: [timeline]
@@ -2301,6 +2343,45 @@ paths:
                 scenario: { type: string, example: rain }
       responses:
         '200': { description: OK }
+
+  # ───────────────────────── ВДОХНОВЕНИЕ (§8.4) ─────────────────────────
+  /inspiration/likes:
+    get:
+      tags: [catalog]
+      summary: Избранные истории
+      description: >
+        Сами истории живут во фронте: сервер хранит только идентификаторы
+        отмеченных. Отметка личная, а не на свадьбу — «нравится» это вкус
+        одного человека.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  storyIds: { type: array, items: { type: string } }
+
+  /inspiration/likes/{storyId}:
+    put:
+      tags: [catalog]
+      summary: Отметить историю
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: storyId, in: path, required: true, schema: { type: string, maxLength: 40 } }
+      responses:
+        '204': { description: Отмечено; повтор ничего не меняет }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [catalog]
+      summary: Снять отметку
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: storyId, in: path, required: true, schema: { type: string, maxLength: 40 } }
+      responses:
+        '204': { description: 'Отметки нет — в том числе если её и не было' }
 
   # ───────────────────────── МЕДИА И АЛЬБОМ ─────────────────────────
   /media/upload-url:

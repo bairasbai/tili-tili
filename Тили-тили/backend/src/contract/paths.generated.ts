@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.17.0).
- * Операций: 136. Путей: 106. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.19.0).
+ * Операций: 140. Путей: 109. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -40,7 +40,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/chats/{chatId}/ws","url":"/chats/:chatId/ws","operationId":null,"summary":"Живой канал чата (WebSocket)","tag":"chats"},
   {"method":"POST","openapi":"/chats/vendor/{vendorId}","url":"/chats/vendor/:vendorId","operationId":null,"summary":"Открыть/создать чат с подрядчиком («Написать»)","tag":"chats"},
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
-  {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние","tag":"bookings"},
+  {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
   {"method":"GET","openapi":"/geo/cities","url":"/geo/cities","operationId":null,"summary":"Поиск городов (автокомплит CityPicker)","tag":"geo"},
   {"method":"GET","openapi":"/geo/nearest","url":"/geo/nearest","operationId":null,"summary":"Ближайший город по координатам (кнопка геолокации)","tag":"geo"},
@@ -52,6 +52,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/guest-vendor/{token}","url":"/guest-vendor/:token","operationId":null,"summary":"Кабинет гостя-подрядчика","tag":"bookings"},
   {"method":"GET","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Переписка своего подрядчика с парой","tag":"bookings"},
   {"method":"POST","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Написать паре","tag":"bookings"},
+  {"method":"GET","openapi":"/inspiration/likes","url":"/inspiration/likes","operationId":null,"summary":"Избранные истории","tag":"catalog"},
+  {"method":"DELETE","openapi":"/inspiration/likes/{storyId}","url":"/inspiration/likes/:storyId","operationId":null,"summary":"Снять отметку","tag":"catalog"},
+  {"method":"PUT","openapi":"/inspiration/likes/{storyId}","url":"/inspiration/likes/:storyId","operationId":null,"summary":"Отметить историю","tag":"catalog"},
   {"method":"GET","openapi":"/invite/{shareCode}","url":"/invite/:shareCode","operationId":null,"summary":"Обменять одноразовый код на персональный токен гостя","tag":"guests"},
   {"method":"DELETE","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Отозвать приглашение","tag":"invites"},
   {"method":"GET","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Просмотр приглашения (экран /join/:code)","tag":"invites"},
@@ -128,6 +131,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/menu-poll","url":"/weddings/:weddingId/menu-poll","operationId":null,"summary":"Опрос гостей по горячему","tag":"catering"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/menu-poll","url":"/weddings/:weddingId/menu-poll","operationId":null,"summary":"Изменить опрос","tag":"catering"},
   {"method":"POST","openapi":"/weddings/{weddingId}/menu-poll/remind","url":"/weddings/:weddingId/menu-poll/remind","operationId":null,"summary":"Напомнить не выбравшим блюдо","tag":"catering"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды (12 категорий: площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор)","tag":"bookings"},

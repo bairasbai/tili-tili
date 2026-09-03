@@ -31,6 +31,7 @@ import { geoRoutes } from './routes/geo.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { giftRoutes } from './routes/gifts.js'
 import { healthRoutes } from './routes/health.js'
+import { inspirationRoutes } from './routes/inspiration.js'
 import { inviteRoutes } from './routes/invites.js'
 import { vendorRoutes } from './routes/vendor.js'
 import { weddingRoutes } from './routes/weddings.js'
@@ -202,6 +203,7 @@ export async function buildApp(
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
   await app.register(inviteRoutes)
+  await app.register(inspirationRoutes)
   await app.register(catalogRoutes)
   await app.register(vendorRoutes)
   await app.register(slotRoutes)

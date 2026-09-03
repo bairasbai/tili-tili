@@ -208,6 +208,7 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
     wedding_id: string
     vendor_user_id: string | null
     to_state: string
+    kind: string
     actor_id: string | null
     note: string | null
   }>(
@@ -220,14 +221,17 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
       returning (select d.wedding_id from deals d where d.id = e.deal_id) as wedding_id,
                 (select v.user_id from deals d join vendors v on v.id = d.vendor_id
                   where d.id = e.deal_id) as vendor_user_id,
-                e.to_state, e.actor_id, e.note`,
+                e.to_state, e.kind, e.actor_id, e.note`,
     [limit],
   )
   for (const event of rows) {
     if (!event.wedding_id) continue
     const item = {
       kind: 'deal' as const,
-      title: STATE_TITLE[event.to_state] ?? 'Статус сделки изменился',
+      /* Смена цены не меняет состояние, и заголовок по состоянию объявил
+       * бы «сделка забронирована» на правку сметы. Вид записи в журнале
+       * различает эти два события. */
+      title: event.kind === 'price' ? 'Изменилась сумма сделки' : (STATE_TITLE[event.to_state] ?? 'Статус сделки изменился'),
       body: event.note ?? 'Загляните в карточку сделки',
       link: '/deal',
       // Деньги и дата: §18.6 относит сделки к неотключаемым.

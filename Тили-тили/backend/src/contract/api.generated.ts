@@ -4417,12 +4417,20 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Перевести сделку в следующее состояние
+         * Перевести сделку в следующее состояние или исправить сумму
          * @description Контракт знал только book/cancel/pay — четыре из шести состояний были
          *     недостижимы через API. Разрешены только переходы вперёд по цепочке
          *     candidate → contacted → negotiating → booked → paid_deposit → done
          *     и cancelled из любого. Недопустимый переход — 409.
          *     Переход в negotiating ставит negotiatingUntil = now + 72 ч.
+         *
+         *     Сумму можно исправить до внесения аванса: подрядчик присылает новую
+         *     смету, и без этой правки пара была вынуждена отменять сделку, а
+         *     отмена освобождает дату в календаре подрядчика. В paid_deposit,
+         *     done и cancelled сумма зафиксирована — 409 `price_locked`.
+         *     Правка пишется в журнал сделки как событие вида `price`.
+         *
+         *     Требуется хотя бы одно из полей: `state` или `price`.
          */
         patch: {
             parameters: {
@@ -4438,9 +4446,10 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        state: components["schemas"]["DealState"];
+                        state?: components["schemas"]["DealState"];
+                        price?: components["schemas"]["Money"];
                         note?: string;
-                    };
+                    } | unknown | unknown;
                 };
             };
             responses: {
@@ -4702,6 +4711,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/planb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * План Б: сценарий и чек-лист накануне
+         * @description §13.1 называет чек-лист персистентным: отметки переживают смену устройства и видны обоим партнёрам. Пункты — обычные задачи вида `planb`, поэтому отмечаются через PATCH /weddings/{weddingId}/tasks/{taskId} и в общий чек-лист по месяцам не попадают.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description Объявленный сценарий или null, если план Б не активировали. */
+                            scenario?: string | null;
+                            /** Format: date-time */
+                            activatedAt?: string | null;
+                            checklist?: {
+                                id?: string;
+                                title?: string;
+                                done?: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/planb/activate": {
         parameters: {
             query?: never;
@@ -4745,6 +4805,104 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inspiration/likes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Избранные истории
+         * @description Сами истории живут во фронте: сервер хранит только идентификаторы отмеченных. Отметка личная, а не на свадьбу — «нравится» это вкус одного человека.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            storyIds?: string[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inspiration/likes/{storyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Отметить историю */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    storyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Отмечено; повтор ничего не меняет */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                429: components["responses"]["TooManyRequests"];
+            };
+        };
+        post?: never;
+        /** Снять отметку */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    storyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Отметки нет — в том числе если её и не было */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;

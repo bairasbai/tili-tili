@@ -10,6 +10,20 @@ const MAX_SHIFT_MINUTES = 240
 /** Сценарии плана Б из §13.1: то, что в моках переключается кнопкой. */
 const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
 
+/**
+ * Чек-лист накануне — тот же список, что на экране «План Б» во фронте
+ * (app/src/pages/Smart.tsx). Придумывать свой значило бы дать паре два
+ * разных списка на одном экране после первой же синхронизации.
+ */
+const PLANB_CHECKLIST = [
+  'Обзвонить всех подрядчиков за 1–2 дня: время и адрес прибытия',
+  'Кольца и паспорта — у свидетелей',
+  'Алкоголь и реквизит отвезти на площадку накануне вечером',
+  'Проверить прогноз погоды и план Б площадки',
+  'Запас 15 минут в каждом блоке тайминга',
+  'Powerbank, аптечка, швейный набор, присыпка от пятен',
+]
+
 export async function dayxRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -94,6 +108,53 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── план Б ───────────────────────────────────────────────────────── */
+  /**
+   * Чек-лист накануне: сценарий, отметки и прогресс.
+   *
+   * Пункты заводятся при первом обращении, а не при создании свадьбы:
+   * иначе у всех, кто завёл свадьбу раньше, экран остался бы пустым,
+   * а миграция с приписыванием строк в чужие данные — не то, что стоит
+   * делать ради шести галочек.
+   *
+   * Отмечаются пункты обычным `PATCH /tasks/{id}`: это задачи, и второй
+   * путь для того же действия разошёлся бы с первым при первой же правке.
+   */
+  app.get('/weddings/:weddingId/planb', async (request) => {
+    const weddingId = request.member!.weddingId
+    const { rows: w } = await db().query<{ planb_scenario: string | null; planb_at: Date | null }>(
+      'select planb_scenario, planb_at from weddings where id = $1',
+      [weddingId],
+    )
+
+    const { rows: have } = await db().query<{ n: string }>(
+      "select count(*)::text as n from tasks where wedding_id = $1 and kind = 'planb'",
+      [weddingId],
+    )
+    if (Number(have[0]!.n) === 0) {
+      for (const [i, title] of PLANB_CHECKLIST.entries()) {
+        /* `on conflict do nothing` не спасёт — ограничения уникальности
+         * по названию нет и быть не должно. Два одновременных открытия
+         * экрана разойдутся редко и заметно: дубли видно сразу, а лишний
+         * уникальный индекс на текст мешал бы паре завести свой пункт. */
+        await db().query(
+          `insert into tasks (id, wedding_id, title, source, sort, kind) values ($1,$2,$3,'system',$4,'planb')`,
+          [uuidv7(), weddingId, title, i],
+        )
+      }
+    }
+
+    const { rows } = await db().query<{ id: string; title: string; done_at: Date | null }>(
+      `select id, title, done_at from tasks
+        where wedding_id = $1 and kind = 'planb' order by sort, title`,
+      [weddingId],
+    )
+    return {
+      scenario: w[0]?.planb_scenario ?? null,
+      activatedAt: w[0]?.planb_at?.toISOString() ?? null,
+      checklist: rows.map((r) => ({ id: r.id, title: r.title, done: r.done_at !== null })),
+    }
+  })
+
   app.post(
     '/weddings/:weddingId/planb/activate',
     {
