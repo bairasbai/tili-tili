@@ -11,7 +11,7 @@ import { openLead } from '../vendor/leads.js'
 const TILLY_STUB =
   'Тиль пока без ИИ — подсказки готовятся. Напишите вопрос: он сохранится, и вы получите ответ, когда помощник заработает.'
 
-const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor'>, string> = {
+const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = {
   team: 'Команда свадьбы',
   day: 'Чат дня X · гости',
   tilly: 'Тиль — помощник',
@@ -26,6 +26,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   interface ListRow {
     id: string
     kind: ChatKind
+    external_name: string | null
     vendor_name: string | null
     vendor_photo: string | null
     opens_at: Date | null
@@ -33,9 +34,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     unread: string
   }
 
+  const externalTitle = (name: string | null) => (name ? `${name} · свой подрядчик` : 'Свой подрядчик')
+
   const toChat = (r: ListRow) => ({
     id: r.id,
-    title: r.kind === 'vendor' ? (r.vendor_name ?? 'Подрядчик') : TITLE_BY_KIND[r.kind],
+    title:
+      r.kind === 'vendor'
+        ? (r.vendor_name ?? 'Подрядчик')
+        : r.kind === 'external'
+          ? externalTitle(r.external_name)
+          : TITLE_BY_KIND[r.kind],
     avatarUrl: r.vendor_photo,
     lastMessage: r.last_text ?? '',
     unread: Number(r.unread),
@@ -50,7 +58,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
      * и там, где он подрядчик. Правила видимости повторяют список из
      * `chats/access.ts` — тест сверяет их между собой, чтобы они не разошлись. */
     const { rows } = await db().query<ListRow>(
+      /* Имя своего подрядчика берётся из сделки по слоту, а не из `slots`:
+       * когда пара его убирает, слот освобождается — а переписка остаётся,
+       * и «Свой подрядчик» без имени в списке ничего не говорит. */
       `select c.id, c.kind, v.name as vendor_name, v.photo_url as vendor_photo, c.opens_at,
+              (select d.external_name from deals d
+                where d.slot_id = c.slot_id and d.external_name is not null
+                order by (d.state <> 'cancelled') desc, d.created_at desc limit 1) as external_name,
               (select m.text from messages m where m.chat_id = c.id order by m.created_at desc limit 1) as last_text,
               (select count(*)::text from messages m
                 where m.chat_id = c.id and m.sender_id is distinct from $1
@@ -151,6 +165,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       assertOpen(chat)
 
       await assertNotColdOutreach(chatId, chat.kind, userId)
+      /* Свой подрядчик работает мимо платформы по определению: пара нашла
+       * его сама, комиссии с него нет. Предупреждать тут не о чем — оно
+       * читалось бы как обвинение на ровном месте. Заодно пустой отправитель
+       * в этом чате остаётся однозначным признаком подрядчика. */
+      const guardHere = chat.kind !== 'external'
       await onFirstMessage(chatId, chat, userId, body.text)
 
       const id = uuidv7()
@@ -172,7 +191,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       // тот увидит сообщение, а не значок о нём.
       await app.realtime.publish({ chatId, type: 'message', actorId: userId, payload: { message } })
       await notifyOthers(chatId, chat.wedding_id, chat.kind, userId, body.text)
-      const warning = await warnAboutPayoutBypass(chatId, body.text)
+      const warning = guardHere ? await warnAboutPayoutBypass(chatId, body.text) : null
 
       // Тиль отвечает сразу и честно: вопрос сохранён, модели пока нет.
       // Молчание выглядело бы как поломка, а «думаю…» — как обман.

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.16.0
+  version: 0.17.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1673,7 +1673,7 @@ paths:
     get:
       tags: [bookings]
       summary: Кабинет гостя-подрядчика
-      description: Без регистрации. Отдаёт только дату, свой блок тайминга и чат с парой — ничего больше.
+      description: Без регистрации. Отдаёт только дату, тайминг дня и чат с парой — ничего больше.
       parameters: [{ name: token, in: path, required: true, schema: { type: string } }]
       responses:
         '200':
@@ -1686,6 +1686,69 @@ paths:
                   weddingDate: { type: string, format: date }
                   slot: { $ref: '#/components/schemas/Slot' }
                   chatId: { type: string }
+                  timeline:
+                    type: array
+                    description: >
+                      Тайминг дня целиком (§11): подрядчику нужно знать, когда начинается
+                      церемония и когда его выход. Ни гостей, ни бюджета, ни остальной
+                      команды здесь нет.
+                    items: { $ref: '#/components/schemas/TimelineEvent' }
+        '410':
+          description: Ссылка истекла или отозвана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /guest-vendor/{token}/messages:
+    get:
+      tags: [bookings]
+      summary: Переписка своего подрядчика с парой
+      description: >
+        Тот же чат, что пара видит у себя в списке. Аккаунта у подрядчика нет,
+        поэтому право читать даёт токен из ссылки, а не заголовок авторизации.
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Message' } }
+                  nextCursor: { type: string, nullable: true }
+        '410':
+          description: Ссылка истекла или отозвана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      tags: [bookings]
+      summary: Написать паре
+      parameters: [{ name: token, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '201':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '410':
+          description: Ссылка истекла или отозвана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── ЛОГИСТИКА ГОСТЕЙ (§12.1) ─────────────────────────
   /weddings/{weddingId}/logistics/buses:
@@ -3005,7 +3068,11 @@ components:
         senderId:
           type: string
           nullable: true
-          description: 'null — сообщение от самого приложения: ответ Тиль или системная запись.'
+          description: >
+            null — сообщение не от пользователя приложения: ответ Тиль, системная
+            запись или, в чате со своим подрядчиком (§11), сам подрядчик — аккаунта
+            у него нет. Системных записей в таком чате не бывает, поэтому там
+            пустой отправитель однозначно означает подрядчика.
         text: { type: string }
         attachmentUrl: { type: string, nullable: true }
         sentAt: { type: string, format: date-time }

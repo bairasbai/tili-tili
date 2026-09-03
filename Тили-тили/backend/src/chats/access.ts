@@ -10,13 +10,15 @@ import type { Role } from '../wedding/access.js'
  * матрица: проверка, размазанная по обработчикам, забывается ровно один
  * раз — и этого достаточно.
  */
-export type ChatKind = 'vendor' | 'team' | 'day' | 'tilly'
+export type ChatKind = 'vendor' | 'team' | 'day' | 'tilly' | 'external'
 
 /** Что роль видит из чатов свадьбы. Роли, которой нет в списке, — ничего. */
 const VISIBLE: Partial<Record<Role, ChatKind[]>> = {
   // Тиль — личный помощник пары; помощнику и координатору он не нужен.
-  couple: ['vendor', 'team', 'day', 'tilly'],
-  coordinator: ['vendor', 'team', 'day'],
+  couple: ['vendor', 'team', 'day', 'tilly', 'external'],
+  // Координатор ведёт переписку со ВСЕМИ подрядчиками — и с теми, кого пара
+  // нашла сама: в день X разница между ними исчезает (Бизнес-логика §2).
+  coordinator: ['vendor', 'team', 'day', 'external'],
   helper: ['team', 'day'],
 }
 
@@ -25,6 +27,8 @@ export interface ChatRow {
   wedding_id: string
   kind: ChatKind
   vendor_id: string | null
+  /** Заполнен только у чата со своим подрядчиком: он привязан к слоту. */
+  slot_id: string | null
   opens_at: Date | null
 }
 
@@ -34,7 +38,7 @@ export interface ChatCaller {
   as: Role
 }
 
-export const CHAT_COLUMNS = 'c.id, c.wedding_id, c.kind, c.vendor_id, c.opens_at'
+export const CHAT_COLUMNS = 'c.id, c.wedding_id, c.kind, c.vendor_id, c.slot_id, c.opens_at'
 
 /**
  * Достаёт чат и проверяет право читать его.
@@ -63,6 +67,7 @@ export async function chatForUser(db: Queryable, chatId: string, userId: string)
     wedding_id: row.wedding_id,
     kind: row.kind,
     vendor_id: row.vendor_id,
+    slot_id: row.slot_id,
     opens_at: row.opens_at,
   }
 

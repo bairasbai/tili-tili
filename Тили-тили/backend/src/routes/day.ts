@@ -5,6 +5,7 @@ import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
 import { personCount } from './guests.js'
+import { notifyWedding } from '../notify/notify.js'
 import { COMMITTED } from '../deals/state.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -406,13 +407,24 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /**
-   * Массовая рассылка. Отправка появится вместе с очередью на этапе 7;
-   * здесь фиксируется факт и работает дебаунс.
+   * Массовая рассылка: факт, дебаунс и собственно оповещение.
    *
    * Идемпотентности мало: второе нажатие приходит со СВОИМ ключом, и по ключу
    * оно новое. Защищает окно в 30 секунд.
+   *
+   * Кому доходит на самом деле. Команде свадьбы — уведомлением в приложении,
+   * прямо сейчас. Гостям — нечем: аккаунта у них нет, нужны SMS или почта,
+   * и это записано в «Хвостах». Поэтому в ответе два числа, а не одно:
+   * `recipients` — сколько человек касается рассылка, `notified` — скольким
+   * она ушла. Одно число здесь было бы обещанием, которого сервер не держит.
    */
-  async function broadcast(weddingId: string, action: string, recipients: number) {
+  async function broadcast(
+    weddingId: string,
+    action: string,
+    recipients: number,
+    message: string,
+    actorId: string | null = null,
+  ) {
     // Журнал рассылок нужен для дебаунса и разбора жалоб, а не навсегда:
     // таблица растёт от каждого нажатия и сама себя не чистит.
     await db().query("delete from broadcasts where created_at < now() - interval '90 days'")
@@ -423,7 +435,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         order by created_at desc limit 1`,
       [weddingId, action, String(DEBOUNCE_SECONDS)],
     )
-    if (rows[0]) return { broadcastId: rows[0].id, recipients, debounced: true }
+    if (rows[0]) return { broadcastId: rows[0].id, recipients, notified: 0, debounced: true }
 
     const id = uuidv7()
     await db().query('insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)', [
@@ -432,7 +444,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       action,
       recipients,
     ])
-    return { broadcastId: id, recipients, debounced: false }
+    /* Команда узнаёт сразу: это её работа — встретить гостей на точке
+     * сбора и добрать голоса за меню. Автор нажатия себе не пишет. */
+    const notified = await notifyWedding(db(), weddingId, actorId, {
+      kind: 'guest',
+      title: 'Рассылка гостям',
+      body: message,
+      link: '/guests',
+    })
+    return { broadcastId: id, recipients, notified, debounced: false }
   }
 
   app.post('/weddings/:weddingId/logistics/notify-pickup', async (request, reply) => {
@@ -444,7 +464,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           where g.wedding_id = $1`,
         [weddingId],
       )
-      return { status: 202, body: await broadcast(weddingId, 'notify-pickup', Number(rows[0]!.n)) }
+      return {
+        status: 202,
+        body: await broadcast(
+          weddingId,
+          'notify-pickup',
+          Number(rows[0]!.n),
+          `Точки сбора разосланы: ${rows[0]!.n} гостей в автобусах`,
+          request.caller!.userId,
+        ),
+      }
     })
   })
 
@@ -547,13 +576,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           'select id, name, icon from menu_options where wedding_id = $1 order by sort',
           [weddingId],
         )
-        const { rows: q } = await client.query<{ question: string }>(
-          'select question from menu_polls where wedding_id = $1',
+        const { rows: q } = await client.query<{ question: string; sent_at: Date | null }>(
+          'select question, sent_at from menu_polls where wedding_id = $1',
           [weddingId],
         )
         return {
           question: q[0]!.question,
-          sentAt: null,
+          /* Правка блюд не отменяет того, что опрос уже рассылали:
+           * пустое поле здесь означало бы «ещё не отправляли», и пара
+           * послала бы напоминание второй раз. */
+          sentAt: q[0]!.sent_at?.toISOString() ?? null,
           options: rows.map((o) => ({ id: o.id, name: o.name, icon: o.icon, votes: 0 })),
         }
       })
@@ -574,7 +606,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          on conflict (wedding_id) do update set sent_at = now()`,
         [weddingId],
       )
-      return { status: 202, body: await broadcast(weddingId, 'menu-remind', Number(rows[0]!.n)) }
+      return {
+        status: 202,
+        body: await broadcast(
+          weddingId,
+          'menu-remind',
+          Number(rows[0]!.n),
+          `Напоминание о меню: ${rows[0]!.n} гостей ещё не выбрали блюдо`,
+          request.caller!.userId,
+        ),
+      }
     })
   })
 

@@ -3243,7 +3243,7 @@ export interface paths {
         };
         /**
          * Кабинет гостя-подрядчика
-         * @description Без регистрации. Отдаёт только дату, свой блок тайминга и чат с парой — ничего больше.
+         * @description Без регистрации. Отдаёт только дату, тайминг дня и чат с парой — ничего больше.
          */
         get: {
             parameters: {
@@ -3267,13 +3267,117 @@ export interface paths {
                             weddingDate?: string;
                             slot?: components["schemas"]["Slot"];
                             chatId?: string;
+                            /** @description Тайминг дня целиком (§11): подрядчику нужно знать, когда начинается церемония и когда его выход. Ни гостей, ни бюджета, ни остальной команды здесь нет. */
+                            timeline?: components["schemas"]["TimelineEvent"][];
                         };
+                    };
+                };
+                /** @description Ссылка истекла или отозвана */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guest-vendor/{token}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Переписка своего подрядчика с парой
+         * @description Тот же чат, что пара видит у себя в списке. Аккаунта у подрядчика нет, поэтому право читать даёт токен из ссылки, а не заголовок авторизации.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    cursor?: components["parameters"]["Cursor"];
+                };
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items?: components["schemas"]["Message"][];
+                            nextCursor?: string | null;
+                        };
+                    };
+                };
+                /** @description Ссылка истекла или отозвана */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Написать паре */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Отправлено */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Message"];
+                    };
+                };
+                /** @description Ссылка истекла или отозвана */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -5779,7 +5883,7 @@ export interface components {
         Message: {
             id?: string;
             chatId?: string;
-            /** @description null — сообщение от самого приложения: ответ Тиль или системная запись. */
+            /** @description null — сообщение не от пользователя приложения: ответ Тиль, системная запись или, в чате со своим подрядчиком (§11), сам подрядчик — аккаунта у него нет. Системных записей в таком чате не бывает, поэтому там пустой отправитель однозначно означает подрядчика. */
             senderId?: string | null;
             text?: string;
             attachmentUrl?: string | null;

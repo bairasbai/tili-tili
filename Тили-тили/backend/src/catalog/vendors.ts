@@ -85,6 +85,35 @@ export async function loadDetail(db: Db, vendorId: string, row: VendorRow) {
     'select kind, url, duration_s from vendor_media where vendor_id = $1 order by sort, url',
     [vendorId],
   )
+  /* Первые отзывы — прямо в карточке. Пустой список означал «отзывов нет»
+   * рядом с надписью «4,8 · 47 отзывов»: карточка — главный экран выбора
+   * подрядчика, и рейтинг без единого отзыва верить не помогает.
+   * Остальные листаются отдельным путём с курсором. */
+  const { rows: reviewRows } = await db.query<{
+    id: string
+    source: string
+    stars: number
+    text: string | null
+    reply: string | null
+    replied_at: Date | null
+    created_at: Date
+  }>(
+    `select id, source, stars, text, reply, replied_at, created_at
+       from reviews where vendor_id = $1 and hidden_at is null
+      order by created_at desc limit 5`,
+    [vendorId],
+  )
+  const reviews = reviewRows.map((r) => ({
+    id: r.id,
+    source: r.source,
+    // Бейдж рисуется по источнику: у пары договор, у гостя впечатление (§15).
+    authorName: r.source === 'guest' ? 'Гость свадьбы' : 'Пара со сделкой',
+    rating: r.stars,
+    text: r.text ?? '',
+    createdAt: r.created_at.toISOString(),
+    reply: r.reply ? { text: r.reply, createdAt: (r.replied_at ?? r.created_at).toISOString() } : null,
+  }))
+
   return {
     ...toVendor(row),
     about: row_about(row),
@@ -96,9 +125,7 @@ export async function loadDetail(db: Db, vendorId: string, row: VendorRow) {
       price: p.price === null ? null : { amount: Number(p.price), currency: p.currency },
       includes: p.items,
     })),
-    // Отзывы приходят на этапе 8 вместе с их таблицей; сейчас список пуст,
-    // а не отсутствует — фронт рисует «отзывов пока нет», а не падает.
-    reviews: [],
+    reviews,
   }
 }
 

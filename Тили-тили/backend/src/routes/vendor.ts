@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { holdDatesOf } from '../catalog/holds.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
@@ -268,9 +269,19 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         `select date::text as date, source from vendor_busy_dates where ${conditions.join(' and ')} order by date`,
         args,
       )
-      // `hold` появится со сделками на этапе 4: сейчас занятость бывает только
-      // ручной, и притворяться, что бывает другая, незачем.
-      return rows.map((r) => ({ date: r.date, status: 'busy' }))
+      /* Своя занятость и чужая мягкая бронь — разные вещи. Подрядчику
+       * важнее второе: это пары, которые ждут его ответа, и дата уйдёт,
+       * если он промолчит 72 часа. */
+      const holdDates = await holdDatesOf(
+        db(),
+        vendorId,
+        month ? { from: String(args[1]), to: String(args[2]) } : undefined,
+      )
+      const busy = new Set(rows.map((r) => r.date))
+      return [
+        ...rows.map((r) => ({ date: r.date, status: 'busy' as const })),
+        ...holdDates.filter((d) => !busy.has(d)).map((date) => ({ date, status: 'hold' as const })),
+      ].sort((a, b) => a.date.localeCompare(b.date))
     },
   )
 

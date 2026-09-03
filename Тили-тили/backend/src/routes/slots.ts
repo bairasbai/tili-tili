@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { notify } from '../notify/notify.js'
 import { openLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -287,6 +289,16 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
            values ($1, $2, null, 'booked', $3)`,
           [uuidv7(), dealId, request.caller!.userId],
         )
+        /* Чат заводится вместе с подрядчиком, а не при первом сообщении:
+         * иначе пара открывает список чатов, не находит там своего фотографа
+         * и пишет ему в мессенджер — то есть мимо приложения (§11).
+         * Слот мог уже иметь чат от прошлого подрядчика: переписка привязана
+         * к слоту, и второй чат на тот же слот запрещён индексом. */
+        await client.query(
+          `insert into chats (id, wedding_id, kind, slot_id) values ($1,$2,'external',$3)
+           on conflict do nothing`,
+          [uuidv7(), weddingId, slotId],
+        )
         return (await loadSlot(client, slotId, true))!
       })
     },
@@ -367,14 +379,165 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         where s.id = $1`,
       [invite.slot_id],
     )
-    // Только дата, свой слот и чат — ничего больше. Ни гостей, ни бюджета,
-    // ни остальной команды (§11).
+    /* Тайминг целиком, а не только своя строка: подрядчику нужно знать,
+     * когда церемония и когда банкет — иначе он не поймёт, к чему привязан
+     * его выход. Гостей, бюджета и остальной команды здесь нет (§11). */
+    const { rows: timeline } = await db().query(
+      `select id, name, location, starts_at, ends_at, who, icon, outdoor
+         from timeline_events where wedding_id = $1 order by sort, starts_at`,
+      [invite.wedding_id],
+    )
+
     return {
       weddingDate: invite.date,
       slot: toSlot(slotRows[0]!, true),
-      // Чат появится вместе с чатами на этапе 7.
-      chatId: null,
+      chatId: await externalChatId(invite.wedding_id, invite.slot_id),
+      timeline: timeline.map((r) => toTimelineEvent(r as TimelineRow)),
       holdHours: HOLD_HOURS,
     }
   })
+
+  /* ── переписка своего подрядчика с парой ──────────────────────────── */
+  app.get('/guest-vendor/:token/messages', async (request) => {
+    const { token } = request.params as { token: string }
+    const invite = await inviteByToken(token)
+    const chatId = await externalChatId(invite.wedding_id, invite.slot_id)
+
+    const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+    const { rows } = await db().query<MessageRow>(
+      `select id, chat_id, sender_id, text, attachments, created_at
+         from messages
+        where chat_id = $1
+          and ($2::text is null or (created_at, id) < ($2::timestamptz, $3::uuid))
+        order by created_at desc, id desc
+        limit $4`,
+      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+    )
+    return buildPage(rows.map(toMessage), page.limit, (m) => encodeCursor(m.sentAt, m.id))
+  })
+
+  app.post(
+    '/guest-vendor/:token/messages',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['text'],
+          additionalProperties: false,
+          properties: { text: { type: 'string', minLength: 1, maxLength: 4000 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { token } = request.params as { token: string }
+      const { text } = request.body as { text: string }
+      const invite = await inviteByToken(token)
+      const chatId = await externalChatId(invite.wedding_id, invite.slot_id)
+
+      /* Отправитель пустой: аккаунта у своего подрядчика нет, а выдумывать
+       * ему пользователя значило бы завести половину учётной записи —
+       * с правами, входом и восстановлением, которых у него не будет.
+       * В этом виде чата системных записей не бывает, поэтому пустой
+       * отправитель читается однозначно (контракт, Message.senderId). */
+      const id = uuidv7()
+      const { rows } = await db().query<{ created_at: Date }>(
+        'insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3) returning created_at',
+        [id, chatId, text],
+      )
+      const message = {
+        id,
+        chatId,
+        senderId: null,
+        text,
+        attachmentUrl: null,
+        sentAt: rows[0]!.created_at.toISOString(),
+      }
+      await app.realtime.publish({ chatId, type: 'message', actorId: 'external', payload: { message } })
+
+      // Пара узнаёт о сообщении так же, как о любом другом: подрядчик без
+      // аккаунта — не повод молчать в её уведомлениях.
+      const { rows: members } = await db().query<{ user_id: string }>(
+        'select user_id from wedding_members where wedding_id = $1',
+        [invite.wedding_id],
+      )
+      for (const m of members) {
+        await notify(db(), {
+          userId: m.user_id,
+          kind: 'chat',
+          title: 'Сообщение от своего подрядчика',
+          body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
+          link: `/chats/${chatId}`,
+        })
+      }
+      return reply.code(201).send(message)
+    },
+  )
+
+  /** Живая ссылка или 410 — общая проверка для всех путей кабинета. */
+  async function inviteByToken(token: string): Promise<{ wedding_id: string; slot_id: string; date: string | null }> {
+    const { rows } = await db().query<{ slot_id: string; wedding_id: string; date: string | null }>(
+      `select i.slot_id, i.wedding_id, w.date::text as date
+         from external_invites i join weddings w on w.id = i.wedding_id
+        where i.token = $1 and i.revoked_at is null and i.expires_at > now()
+          and w.cancelled_at is null and w.archived_at is null`,
+      [token],
+    )
+    if (!rows[0]) throw new AppError(410, 'gone', 'Ссылка недействительна: истекла или отозвана')
+    return rows[0]
+  }
+
+  /**
+   * Чат слота: заводится вместе с подрядчиком, но у приглашений, выданных
+   * до появления чатов, его может не быть. Создаём по требованию, чтобы
+   * старая ссылка не открывалась в кабинет без переписки.
+   */
+  async function externalChatId(weddingId: string, slotId: string): Promise<string> {
+    const { rows } = await db().query<{ id: string }>(
+      `insert into chats (id, wedding_id, kind, slot_id) values ($1,$2,'external',$3)
+       on conflict (wedding_id, slot_id) where kind = 'external' do update set kind = 'external'
+       returning id`,
+      [uuidv7(), weddingId, slotId],
+    )
+    return rows[0]!.id
+  }
 }
+
+interface TimelineRow {
+  id: string
+  name: string
+  location: string | null
+  starts_at: string
+  ends_at: string | null
+  who: string | null
+  icon: string | null
+  outdoor: boolean
+}
+
+const toTimelineEvent = (r: TimelineRow) => ({
+  id: r.id,
+  name: r.name,
+  location: r.location,
+  startsAt: r.starts_at,
+  endsAt: r.ends_at,
+  who: r.who,
+  icon: r.icon,
+  outdoor: r.outdoor,
+})
+
+interface MessageRow {
+  id: string
+  chat_id: string
+  sender_id: string | null
+  text: string
+  attachments: { url?: string } | null
+  created_at: Date
+}
+
+const toMessage = (r: MessageRow) => ({
+  id: r.id,
+  chatId: r.chat_id,
+  senderId: r.sender_id,
+  text: r.text,
+  attachmentUrl: r.attachments?.url ?? null,
+  sentAt: r.created_at.toISOString(),
+})

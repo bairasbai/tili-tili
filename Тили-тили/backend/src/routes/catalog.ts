@@ -3,6 +3,7 @@ import { AppError, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
+import { holdDatesOf } from '../catalog/holds.js'
 import {
   VENDOR_COLUMNS,
   VENDOR_LIVE_JOIN,
@@ -281,11 +282,21 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
           where ${conditions.join(' and ')} order by b.date`,
         args,
       )
+      /* Дата под мягкой бронью не свободна и не занята: переговоры идут,
+       * а договорённости ещё нет. Пустой список означал бы «свободно»,
+       * и вторая пара тратила бы время на дату, которая вот-вот уйдёт
+       * (План §18.3). */
+      const holdDates = await holdDatesOf(
+        db(),
+        vendorId,
+        month ? { from: monthRange(month)[0], to: monthRange(month)[1] } : undefined,
+      )
+      const busy = new Set(rows.map((r) => r.date))
       return {
-        busyDates: rows.map((r) => r.date),
-        // Мягкая бронь появится вместе со сделками на этапе 4: до тех пор
-        // список пустой, а не отсутствует.
-        holdDates: [],
+        busyDates: [...busy],
+        // Занятая дата уже не «под вопросом»: подрядчик мог подтвердить
+        // одну бронь, и остальные при этом никуда не делись.
+        holdDates: holdDates.filter((d) => !busy.has(d)),
       }
     },
   )

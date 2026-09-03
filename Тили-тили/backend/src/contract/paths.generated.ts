@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.16.0).
- * Операций: 134. Путей: 105. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.17.0).
+ * Операций: 136. Путей: 106. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -50,6 +50,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/gifts/{guestToken}/{giftId}/reserve","url":"/gifts/:guestToken/:giftId/reserve","operationId":null,"summary":"Зарезервировать подарок","tag":"wishlist-guest"},
   {"method":"POST","openapi":"/gifts/{guestToken}/funds/{fundId}","url":"/gifts/:guestToken/funds/:fundId","operationId":null,"summary":"Перевод в денежный фонд","tag":"wishlist-guest"},
   {"method":"GET","openapi":"/guest-vendor/{token}","url":"/guest-vendor/:token","operationId":null,"summary":"Кабинет гостя-подрядчика","tag":"bookings"},
+  {"method":"GET","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Переписка своего подрядчика с парой","tag":"bookings"},
+  {"method":"POST","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Написать паре","tag":"bookings"},
   {"method":"GET","openapi":"/invite/{shareCode}","url":"/invite/:shareCode","operationId":null,"summary":"Обменять одноразовый код на персональный токен гостя","tag":"guests"},
   {"method":"DELETE","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Отозвать приглашение","tag":"invites"},
   {"method":"GET","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Просмотр приглашения (экран /join/:code)","tag":"invites"},
