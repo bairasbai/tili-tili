@@ -32,6 +32,8 @@ export interface Config {
   /** Ключи Web Push. Пока их нет, подписка отвечает 501 — см. routes/notifications. */
   vapidPublicKey: string | null
   vapidPrivateKey: string | null
+  /** Контакт отправителя: спецификация Web Push требует mailto: или адрес сайта. */
+  vapidSubject: string
   smsProvider: string | null
   smsAeroEmail: string | null
   smsAeroKey: string | null
@@ -124,6 +126,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     contributionsMaxPerGuest: Number(source.CONTRIBUTIONS_MAX_PER_GUEST ?? 20),
     vapidPublicKey: source.VAPID_PUBLIC_KEY ?? null,
     vapidPrivateKey: source.VAPID_PRIVATE_KEY ?? null,
+    vapidSubject: source.VAPID_SUBJECT ?? 'mailto:support@tili-tili.ru',
     smsProvider: source.SMS_PROVIDER ?? null,
     smsAeroEmail: source.SMSAERO_EMAIL ?? null,
     smsAeroKey: source.SMSAERO_KEY ?? null,

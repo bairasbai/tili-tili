@@ -1942,6 +1942,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chats/{chatId}/ws": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Живой канал чата (WebSocket)
+         * @description Апгрейд соединения до WebSocket. Сообщения и «печатает…» приходят
+         *     событиями `{ type, chatId, actorId, … }`; отправка по-прежнему
+         *     обычным POST — канал только доставляет.
+         *
+         *     Токен доступа идёт СТРОКОЙ ЗАПРОСА, а не заголовком: браузерный
+         *     WebSocket заголовки ставить не умеет. Поэтому он маскируется в логах
+         *     наравне с гостевыми токенами.
+         *
+         *     Отказ приходит внутри соединения (`{ type: 'error', status, code }`)
+         *     и закрывает его кодом 4000+status: молча оборвать рукопожатие значило
+         *     бы «сеть барахлит» вместо «ссылка устарела», и клиент переподключался
+         *     бы бесконечно.
+         *
+         *     Если канал недоступен, клиент опрашивает историю раз в 30 секунд —
+         *     штатный запасной путь §13.4.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Токен доступа. В заголовке его передать нельзя — так устроен браузерный WebSocket. */
+                    token: string;
+                };
+                header?: never;
+                path: {
+                    chatId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Соединение установлено */
+                101: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужен апгрейд до WebSocket */
+                426: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chats/{chatId}/typing": {
         parameters: {
             query?: never;
@@ -1953,9 +2016,9 @@ export interface paths {
         put?: never;
         /**
          * Индикатор «печатает…» (WebSocket-fallback)
-         * @description Пока живой канал не подключён, отвечает 501 `realtime_not_configured`:
-         *     показать «печатает…» некому, а 204 означал бы «доставлено» о том,
-         *     чего не произошло.
+         * @description Запасной путь для клиента без живого канала: он сообщает о наборе
+         *     обычным запросом, а событие уходит подписчикам тем же каналом, что
+         *     и сообщения. Ничего не сохраняется — «печатает» живёт секунды.
          */
         post: {
             parameters: {

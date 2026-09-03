@@ -251,11 +251,16 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
       expect(res.statusCode).toBe(200)
     }
 
+    /* Считаем только по участникам ЭТОЙ свадьбы: общий запрос по всей
+     * таблице цеплял бы уведомления соседних наборов тестов, и падение
+     * зависело бы от порядка запуска. */
     const { rows } = await app.db!.query<{ n: string; late: string }>(
       `select count(*)::text as n,
               count(*) filter (where deliver_after > now() + interval '1 minute')::text as late
-         from notifications where kind = 'system' and user_id <> $1`,
-      ['00000000-0000-0000-0000-000000000000'],
+         from notifications
+        where kind = 'system'
+          and user_id in (select user_id from wedding_members where wedding_id = $1)`,
+      [w.weddingId],
     )
     // День X не ждёт утра и не считает лимиты: гости уже в дороге.
     expect(Number(rows[0]!.n)).toBeGreaterThanOrEqual(5)
@@ -325,13 +330,26 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
   })
 
   /* ── «печатает…» ──────────────────────────────────────────────────── */
-  it('индикатор «печатает…» честно говорит, что канала нет', async () => {
+  it('«печатает…» ничего не сохраняет и не требует живого клиента', async () => {
     const w = await newWedding()
     const tilly = (await chats(w.token)).find((c) => c.kind === 'tilly')!.id
     const res = await app.inject({ method: 'POST', url: `/chats/${tilly}/typing`, headers: auth(w.token) })
-    // 204 означал бы «доставлено» о том, чего не произошло.
-    expect(res.statusCode).toBe(501)
-    expect(res.json().error.code).toBe('realtime_not_configured')
+    expect(res.statusCode).toBe(204)
+
+    // Событие живёт секунды: в истории чата ему делать нечего.
+    const { rows } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from messages where chat_id = $1',
+      [tilly],
+    )
+    expect(Number(rows[0]!.n)).toBe(0)
+  })
+
+  it('путь живого канала без апгрейда отвечает 426, а не 404', async () => {
+    const w = await newWedding()
+    const tilly = (await chats(w.token)).find((c) => c.kind === 'tilly')!.id
+    const res = await app.inject({ method: 'GET', url: `/chats/${tilly}/ws` })
+    // 404 отправил бы клиента искать опечатку вместо заголовка Upgrade.
+    expect(res.statusCode).toBe(426)
   })
 
   /* ── нулевой сдвиг ────────────────────────────────────────────────── */

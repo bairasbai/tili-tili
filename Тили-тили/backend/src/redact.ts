@@ -17,6 +17,8 @@ export function maskUrl(url: string): string {
   const parts = path.split('/')
   if (parts.length > 2 && parts[2] && SECRET_AT_SECOND_SEGMENT.has(parts[1] ?? '')) parts[2] = '***'
 
-  // Альбом принимает токен строкой запроса — там он тоже секрет.
-  return parts.join('/') + query.replace(/(guestToken=)[^&]*/gi, '$1***')
+  /* Альбом принимает гостевой токен строкой запроса, живой канал чата —
+   * токен доступа: браузерный WebSocket заголовки ставить не умеет.
+   * Оба секрета, оба попали бы в лог. */
+  return parts.join('/') + query.replace(/((?:guestToken|token)=)[^&]*/gi, '$1***')
 }

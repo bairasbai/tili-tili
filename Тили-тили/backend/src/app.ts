@@ -1,5 +1,6 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyPluginAsync } from 'fastify'
 import cors from '@fastify/cors'
+import websocket from '@fastify/websocket'
 import { loadConfig, type Config } from './config.js'
 import { AppError, TooManyRequests, toErrorBody } from './errors.js'
 import { maskUrl } from './redact.js'
@@ -17,6 +18,9 @@ import { guestRoutes } from './routes/guests.js'
 import { slotRoutes } from './routes/slots.js'
 import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { chatRoutes } from './routes/chats.js'
+import { realtimeRoutes } from './routes/realtime.js'
+import { RealtimeHub } from './realtime/hub.js'
+import { registerJobs } from './jobs/index.js'
 import { dayxRoutes } from './routes/dayx.js'
 import { geoRoutes } from './routes/geo.js'
 import { notificationRoutes } from './routes/notifications.js'
@@ -100,6 +104,23 @@ export async function buildApp(
 
   await registerDb(app, config)
   await registerRedis(app, config)
+  await app.register(websocket)
+
+  /* Один хаб на процесс. Если Redis есть, событие идёт через него: за
+   * балансировщиком процессов несколько, и без общего канала сообщение
+   * доходило бы только тем, кто попал на тот же сервер. */
+  const realtime = new RealtimeHub()
+  app.decorate('realtime', realtime)
+  if (app.redis) {
+    // Подписчику нужен ОТДЕЛЬНЫЙ клиент: соединение в режиме подписки
+    // обычных команд больше не принимает.
+    const subscriber = app.redis.duplicate()
+    subscriber.on('error', (err: Error) => app.log.error({ err }, 'redis подписка'))
+    await realtime.bridge(app.redis, subscriber)
+    app.addHook('onClose', async () => {
+      await subscriber.quit()
+    })
+  }
   await registerAuth(app, config)
 
   // Всё, что нельзя разобрать, обязано выглядеть одинаково — иначе фронт
@@ -182,8 +203,10 @@ export async function buildApp(
   await app.register(chatRoutes)
   await app.register(notificationRoutes)
   await app.register(dayxRoutes)
+  await app.register(realtimeRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
+  await registerJobs(app)
 
   return app
 }

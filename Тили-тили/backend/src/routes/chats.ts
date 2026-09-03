@@ -149,26 +149,45 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         [id, chatId, userId, body.text, body.attachmentUrl ? { url: body.attachmentUrl } : null],
       )
 
-      await notifyOthers(chatId, chat.wedding_id, chat.kind, userId, body.text)
-
-      // Тиль отвечает сразу и честно: вопрос сохранён, модели пока нет.
-      // Молчание выглядело бы как поломка, а «думаю…» — как обман.
-      if (chat.kind === 'tilly') {
-        await db().query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3)', [
-          uuidv7(),
-          chatId,
-          TILLY_STUB,
-        ])
-      }
-
-      return reply.code(201).send({
+      const message = {
         id,
         chatId,
         senderId: userId,
         text: body.text,
         attachmentUrl: body.attachmentUrl ?? null,
         sentAt: rows[0]!.created_at.toISOString(),
-      })
+      }
+      // Сначала живому каналу, потом уведомление: у кого чат открыт,
+      // тот увидит сообщение, а не значок о нём.
+      await app.realtime.publish({ chatId, type: 'message', actorId: userId, payload: { message } })
+      await notifyOthers(chatId, chat.wedding_id, chat.kind, userId, body.text)
+
+      // Тиль отвечает сразу и честно: вопрос сохранён, модели пока нет.
+      // Молчание выглядело бы как поломка, а «думаю…» — как обман.
+      if (chat.kind === 'tilly') {
+        const replyId = uuidv7()
+        const { rows: answered } = await db().query<{ created_at: Date }>(
+          'insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3) returning created_at',
+          [replyId, chatId, TILLY_STUB],
+        )
+        await app.realtime.publish({
+          chatId,
+          type: 'message',
+          actorId: userId,
+          payload: {
+            message: {
+              id: replyId,
+              chatId,
+              senderId: null,
+              text: TILLY_STUB,
+              attachmentUrl: null,
+              sentAt: answered[0]!.created_at.toISOString(),
+            },
+          },
+        })
+      }
+
+      return reply.code(201).send(message)
     },
   )
 
@@ -200,17 +219,16 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /* ── «печатает…» ──────────────────────────────────────────────────── */
-  app.post('/chats/:chatId/typing', { preHandler: app.requireConsent }, async (request) => {
+  app.post('/chats/:chatId/typing', { preHandler: app.requireConsent }, async (request, reply) => {
     const { chatId } = request.params as { chatId: string }
-    await chatForUser(db(), chatId, request.caller!.userId)
-    /* Индикатор существует только в реальном времени: показать «печатает…»
-     * некому, пока нет ни WebSocket, ни его замены. Ответить 204 значило бы
-     * сказать «доставлено» о том, чего не произошло. */
-    throw new AppError(
-      501,
-      'realtime_not_configured',
-      'Живой канал ещё не подключён: индикатор «печатает…» показать некому',
-    )
+    const userId = request.caller!.userId
+    const { chat } = await chatForUser(db(), chatId, userId)
+    assertOpen(chat)
+    /* Запасной путь для клиента без живого канала: он сообщает о наборе
+     * обычным запросом, а дальше событие идёт тем же каналом, что и
+     * сообщения. Ничего не хранится: «печатает» живёт секунды. */
+    await app.realtime.publish({ chatId, type: 'typing', actorId: userId })
+    return reply.code(204).send()
   })
 
   /* ── чат с подрядчиком ────────────────────────────────────────────── */

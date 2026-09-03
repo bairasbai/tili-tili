@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.12.0).
- * Операций: 131. Путей: 103. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.13.0).
+ * Операций: 132. Путей: 104. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -36,6 +36,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/chats/{chatId}/messages","url":"/chats/:chatId/messages","operationId":null,"summary":"История сообщений","tag":"chats"},
   {"method":"POST","openapi":"/chats/{chatId}/messages","url":"/chats/:chatId/messages","operationId":null,"summary":"Отправить сообщение","tag":"chats"},
   {"method":"POST","openapi":"/chats/{chatId}/typing","url":"/chats/:chatId/typing","operationId":null,"summary":"Индикатор «печатает…» (WebSocket-fallback)","tag":"chats"},
+  {"method":"GET","openapi":"/chats/{chatId}/ws","url":"/chats/:chatId/ws","operationId":null,"summary":"Живой канал чата (WebSocket)","tag":"chats"},
   {"method":"POST","openapi":"/chats/vendor/{vendorId}","url":"/chats/vendor/:vendorId","operationId":null,"summary":"Открыть/создать чат с подрядчиком («Написать»)","tag":"chats"},
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние","tag":"bookings"},
