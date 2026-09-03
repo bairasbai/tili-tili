@@ -368,7 +368,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const guest = await guestByToken(db(), guestToken)
 
       await db().query(
-        `update guests set rsvp = $2,
+        `update guests set rsvp = $2, rsvp_at = now(),
                 plus_one = coalesce($3, plus_one),
                 comment = coalesce($4, comment),
                 diet = coalesce($5, diet),

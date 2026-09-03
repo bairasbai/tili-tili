@@ -70,14 +70,23 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           return { shifted: moved.length, guests: Number(guests[0]!.n) }
         })
 
-        // День X критичен: тихие часы его не держат — гости уже в дороге.
-        await notifyWedding(db(), weddingId, request.caller!.userId, {
-          kind: 'system',
-          title: 'Тайминг сдвинут',
-          body: `День X сдвинут на ${minutes > 0 ? '+' : ''}${minutes} мин`,
-          link: '/dayx',
-          critical: true,
-        })
+        /* День X критичен: тихие часы его не держат — гости уже в дороге.
+         * Подрядчикам тоже: §13.2 требует, чтобы `timeline.shifted` доходил
+         * до забронированных, иначе ведущий приедет к прежнему времени. */
+        await notifyWedding(
+          db(),
+          weddingId,
+          request.caller!.userId,
+          {
+            kind: 'system',
+            title: 'Тайминг сдвинут',
+            body: `День X сдвинут на ${minutes > 0 ? '+' : ''}${minutes} мин`,
+            link: '/dayx',
+            critical: true,
+          },
+          new Date(),
+          true,
+        )
 
         return { status: 200, body: { minutes, shiftedBlocks: result.shifted, notifiedGuests: result.guests } }
       })
@@ -122,13 +131,20 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           return { guests: Number(guests[0]!.n) }
         })
 
-        await notifyWedding(db(), weddingId, request.caller!.userId, {
-          kind: 'system',
-          title: 'Активирован план Б',
-          body: 'Сценарий включён — проверьте точку сбора и тайминг',
-          link: '/dayx',
-          critical: true,
-        })
+        await notifyWedding(
+          db(),
+          weddingId,
+          request.caller!.userId,
+          {
+            kind: 'system',
+            title: 'Активирован план Б',
+            body: 'Сценарий включён — проверьте точку сбора и тайминг',
+            link: '/dayx',
+            critical: true,
+          },
+          new Date(),
+          true,
+        )
 
         return { status: 200, body: { scenario, notifiedGuests: result.guests } }
       })

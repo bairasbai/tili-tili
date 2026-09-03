@@ -113,17 +113,28 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
   return id
 }
 
-/** Всем участникам свадьбы, кроме автора события. */
+/**
+ * Всем участникам свадьбы, кроме автора события.
+ *
+ * `withVendors` добавляет подрядчиков с действующей сделкой. Матрица §18.6
+ * ставит им галочку наравне с парой в трёх строках из шести — тайминг,
+ * сделки, день X, — а участниками свадьбы они не числятся: у них своя
+ * сторона, а не роль в команде.
+ */
 export async function notifyWedding(
   db: Queryable,
   weddingId: string,
   exceptUserId: string | null,
   item: Omit<NewNotification, 'userId'>,
   now = new Date(),
+  withVendors = false,
 ): Promise<number> {
   const { rows } = await db.query<{ user_id: string }>(
-    'select user_id from wedding_members where wedding_id = $1',
-    [weddingId],
+    `select user_id from wedding_members where wedding_id = $1
+      union
+     select v.user_id from deals d join vendors v on v.id = d.vendor_id
+      where d.wedding_id = $1 and $2 and d.state in ('booked','paid_deposit','done')`,
+    [weddingId, withVendors],
   )
   let sent = 0
   for (const row of rows) {

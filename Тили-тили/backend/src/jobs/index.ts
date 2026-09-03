@@ -63,8 +63,11 @@ export async function expireStaleHolds(app: FastifyInstance): Promise<number> {
       where state = 'negotiating' and negotiating_until is not null and negotiating_until <= now()
       returning id`,
   )
-  // Запись в журнал сделки — та же, что и на ленивом пути: история
-  // не должна зависеть от того, кто первым заметил истечение.
+  /* Запись в журнал сделки — та же, что и на ленивом пути: история
+   * не должна зависеть от того, кто первым заметил истечение. Уведомление
+   * отсюда не шлём: его разошлёт `announceDealEvents` по этой же записи —
+   * иначе о снятой броне сообщали бы дважды, а о снятой в обработчике
+   * не сообщали бы вовсе. */
   for (const row of rows) {
     await app.db!.query(
       `insert into deal_events (id, deal_id, from_state, to_state, note)
@@ -174,6 +177,102 @@ export async function weeklyDigest(app: FastifyInstance): Promise<number> {
   return sent
 }
 
+/** Человеческое название состояния сделки — в тексте уведомления. */
+const STATE_TITLE: Record<string, string> = {
+  candidate: 'Сделка вернулась в кандидаты',
+  contacted: 'Подрядчику написали',
+  negotiating: 'Дата под мягкой бронью',
+  booked: 'Дата забронирована',
+  paid_deposit: 'Аванс получен',
+  done: 'Сделка закрыта',
+  cancelled: 'Сделка отменена',
+}
+
+/**
+ * Уведомления о сменах статуса сделки — по журналу, а не по коду перехода.
+ *
+ * Состояние меняется в четырёх местах: правка сделки, бронь слота, свой
+ * подрядчик, истечение брони фоновой задачей. Вызов рассылки в каждом —
+ * это четыре места, где о ней можно забыть, и одно из них уже забыли:
+ * истечение брони не сообщало никому, хотя раздел 5 требует «push паре
+ * и подрядчику».
+ *
+ * Каждый переход и так пишется в `deal_events`. Рассылаем по журналу:
+ * один путь на все четыре, отметка `notified_at` делает повтор пустым.
+ */
+export async function announceDealEvents(app: FastifyInstance, limit = 200): Promise<number> {
+  const db = app.db!
+  const { rows } = await db.query<{
+    wedding_id: string
+    vendor_user_id: string | null
+    to_state: string
+    actor_id: string | null
+    note: string | null
+  }>(
+    `update deal_events e set notified_at = now()
+      where e.id in (
+        select id from deal_events
+         where notified_at is null and at > now() - interval '2 days'
+         order by at limit $1
+      )
+      returning (select d.wedding_id from deals d where d.id = e.deal_id) as wedding_id,
+                (select v.user_id from deals d join vendors v on v.id = d.vendor_id
+                  where d.id = e.deal_id) as vendor_user_id,
+                e.to_state, e.actor_id, e.note`,
+    [limit],
+  )
+  for (const event of rows) {
+    if (!event.wedding_id) continue
+    const item = {
+      kind: 'deal' as const,
+      title: STATE_TITLE[event.to_state] ?? 'Статус сделки изменился',
+      body: event.note ?? 'Загляните в карточку сделки',
+      link: '/deal',
+      // Деньги и дата: §18.6 относит сделки к неотключаемым.
+      critical: true,
+    }
+    // Тому, кто сам нажал кнопку, сообщать нечего.
+    await notifyWedding(db, event.wedding_id, event.actor_id, item)
+    /* Подрядчик ЭТОЙ сделки, а не «все забронированные на свадьбе».
+     * Снятая мягкая бронь — новость того, чью дату держали, и состояние
+     * сделки к этому моменту уже не `booked`: фильтр по забронированным
+     * отсёк бы ровно тот случай, ради которого уведомление и нужно. */
+    if (event.vendor_user_id && event.vendor_user_id !== event.actor_id) {
+      await notify(db, { ...item, userId: event.vendor_user_id })
+    }
+  }
+  return rows.length
+}
+
+/**
+ * Сводка по ответам гостей — раз в день, а не письмо на каждое «приду».
+ *
+ * §18.6 так и записано: «RSVP гостя → паре сводка 1/день». На свадьбе
+ * полторы сотни гостей, и уведомление на каждый ответ — это способ
+ * заставить пару выключить уведомления совсем.
+ */
+export async function rsvpDigest(app: FastifyInstance): Promise<number> {
+  const db = app.db!
+  const { rows } = await db.query<{ wedding_id: string; yes: string; no: string }>(
+    `select w.id as wedding_id,
+            count(*) filter (where g.rsvp = 'yes')::text as yes,
+            count(*) filter (where g.rsvp = 'no')::text as no
+       from guests g join weddings w on w.id = g.wedding_id
+      where g.rsvp_at is not null and g.rsvp_at > now() - interval '1 day'
+        and w.archived_at is null and w.cancelled_at is null
+      group by w.id`,
+  )
+  for (const row of rows) {
+    await notifyWedding(db, row.wedding_id, null, {
+      kind: 'guest',
+      title: 'Ответы гостей за сутки',
+      body: `Придут: ${row.yes}. Не смогут: ${row.no}.`,
+      link: '/guests',
+    })
+  }
+  return rows.length
+}
+
 async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (!app.db) return { skipped: 'нет базы' }
   if (name === 'push') return sendDuePushes(app.db, app.appConfig)
@@ -181,6 +280,8 @@ async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (name === 'holds') return { expired: await expireStaleHolds(app), reminded: await remindExpiringHolds(app) }
   if (name === 'dayx-open') return announceOpenedDayChats(app)
   if (name === 'digest') return weeklyDigest(app)
+  if (name === 'deal-events') return announceDealEvents(app)
+  if (name === 'rsvp-digest') return rsvpDigest(app)
   return { skipped: name }
 }
 
@@ -199,6 +300,10 @@ const SCHEDULE: { name: string; every?: number; pattern?: string }[] = [
   // Истечение брони и напоминание за 12 часов — один проход.
   { name: 'holds', every: 60 * 60_000 },
   { name: 'dayx-open', every: 60 * 60_000 },
+  // Смена статуса сделки — новость срочная: дата уплывает.
+  { name: 'deal-events', every: 60_000 },
+  // Ответы гостей — сводкой раз в день, в 10 утра.
+  { name: 'rsvp-digest', pattern: '0 10 * * *' },
   // Понедельник, 10:00 — по времени сервера: у дайджеста нет получателя
   // в единственном числе, а значит и «его» таймзоны.
   { name: 'digest', pattern: '0 10 * * 1' },
