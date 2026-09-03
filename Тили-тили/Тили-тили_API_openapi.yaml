@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.9.0
+  version: 0.10.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1474,7 +1474,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Gift' }
         '409': { $ref: '#/components/responses/Conflict' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
   /gifts/{guestToken}/funds/{fundId}:
     post:
       tags: [wishlist-guest]
@@ -1498,7 +1498,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Fund' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
 
   # ───────────────────────── СВОИ ПОДРЯДЧИКИ (§11) ─────────────────────────
   /weddings/{weddingId}/slots/{slotId}/external:
@@ -2191,6 +2191,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AlbumPhoto' }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
   /weddings/{weddingId}/album/{photoId}:
     patch:
       tags: [album]
@@ -2554,6 +2555,15 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     TooManyRequests:
       description: Слишком часто — см. Retry-After
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    QuotaExceeded:
+      description: |
+        Предел исчерпан насовсем: столько от одного гостя мы не принимаем.
+        В отличие от TooManyRequests заголовка Retry-After НЕТ — повтор
+        не поможет ни через минуту, ни через сутки. Клиенту нужно показать
+        отказ, а не таймер.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

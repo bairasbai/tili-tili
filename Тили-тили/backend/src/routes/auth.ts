@@ -1,12 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { AppError, unauthorized } from '../errors.js'
+import { AppError, TooManyRequests, unauthorized } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import {
   CODE_TTL_SECONDS,
   MAX_ATTEMPTS,
   MAX_SENDS_PER_HOUR,
   RESEND_AFTER_SECONDS,
-  TooManyRequests,
   generateCode,
   hashCode,
   maskPhone,

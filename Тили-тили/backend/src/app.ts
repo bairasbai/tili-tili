@@ -1,8 +1,8 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyPluginAsync } from 'fastify'
 import cors from '@fastify/cors'
 import { loadConfig, type Config } from './config.js'
-import { AppError, toErrorBody } from './errors.js'
-import { TooManyRequests } from './auth/otp.js'
+import { AppError, TooManyRequests, toErrorBody } from './errors.js'
+import { maskUrl } from './redact.js'
 import { registerDb } from './plugins/db.js'
 import { registerRedis } from './plugins/redis.js'
 import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
@@ -40,7 +40,24 @@ export async function buildApp(
   const config = { ...loadConfig(), ...overrides }
 
   const app = Fastify({
-    logger: config.env === 'test' ? false : { level: config.env === 'production' ? 'info' : 'debug' },
+    logger:
+      config.env === 'test'
+        ? false
+        : {
+            level: config.env === 'production' ? 'info' : 'debug',
+            serializers: {
+              // Гостевой токен стоит в адресе, а адрес пишется в лог каждого
+              // запроса. Без маскировки лог — это список рабочих ключей от
+              // чужих страниц и готовый ответ на «кто что подарил» (§9).
+              req: (request) => ({
+                method: request.method,
+                url: maskUrl(request.url),
+                host: request.host,
+                remoteAddress: request.ip,
+                remotePort: request.socket?.remotePort ?? 0,
+              }),
+            },
+          },
     // Идентификатор запроса попадает и в лог, и в тело ошибки 500 — по нему
     // жалоба пользователя находится в логах за один grep.
     genReqId: () => crypto.randomUUID(),

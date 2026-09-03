@@ -32,6 +32,27 @@ export const forbidden = (message = 'Нет доступа') => new AppError(403
 export const conflict = (code: string, message: string) => new AppError(409, code, message)
 export const gone = (message = 'Ссылка больше не действует') => new AppError(410, 'gone', message)
 
+/**
+ * 429 бывает двух разных видов, и клиенту нужно их различать.
+ *
+ * `TooManyRequests` — временное: контракт обещает `Retry-After`, и он
+ * говорит, когда повторить. `quotaExceeded` — постоянное: предел на гостя
+ * исчерпан, повтор не поможет никогда, и заголовка нет.
+ *
+ * Класс живёт здесь, а не в модуле входа по SMS, где он появился. Оттуда
+ * его не находили: альбом и взносы отвечали 429 обычной ошибкой и роняли
+ * обещанный контрактом заголовок (ERR-0022 повторился дважды).
+ */
+export class TooManyRequests extends AppError {
+  readonly retryAfter: number
+  constructor(retryAfter: number, message: string, code = 'too_many_requests') {
+    super(429, code, message)
+    this.retryAfter = retryAfter
+  }
+}
+
+export const quotaExceeded = (code: string, message: string) => new AppError(429, code, message)
+
 export const notImplemented = (operation: string) =>
   new AppError(501, 'not_implemented', `Эндпоинт описан в контракте, но ещё не реализован: ${operation}`)
 

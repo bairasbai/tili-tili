@@ -1605,7 +1605,7 @@ export interface paths {
         put?: never;
         /**
          * Выдать (или перевыпустить) одноразовую ссылку-приглашение гостю
-         * @description Возвращает ссылку вида https://tili-tili.ru/i/{shareCode}. Код одноразовый: при первом открытии он гаснет и гость получает персональный guestToken в свой браузер. Пара сырой токен не видит. Повторный вызов гасит прежний код и выдаёт новый — на случай «гость потерял ссылку».
+         * @description Возвращает ссылку вида https://tili-tili.ru/i/{shareCode}. Код одноразовый: при первом открытии он гаснет и гость получает персональный guestToken в свой браузер. Пара сырой токен не видит. Повторный вызов гасит прежний код и выдаёт новый — на случай «гость потерял ссылку». Вместе с кодом гаснет и САМ ТОКЕН: иначе пара, которая ссылку и выдаёт, обменяла бы её сама и увидела на гостевой странице, какой подарок этот гость зарезервировал (§9). Резервы прежнего токена освобождаются — подарок не должен остаться занят мёртвой ссылкой.
          */
         post: {
             parameters: {
@@ -2881,7 +2881,7 @@ export interface paths {
                     };
                 };
                 409: components["responses"]["Conflict"];
-                429: components["responses"]["TooManyRequests"];
+                429: components["responses"]["QuotaExceeded"];
             };
         };
         delete?: never;
@@ -2937,7 +2937,7 @@ export interface paths {
                         "application/json": components["schemas"]["Fund"];
                     };
                 };
-                429: components["responses"]["TooManyRequests"];
+                429: components["responses"]["QuotaExceeded"];
             };
         };
         delete?: never;
@@ -4594,6 +4594,7 @@ export interface paths {
                         "application/json": components["schemas"]["AlbumPhoto"];
                     };
                 };
+                429: components["responses"]["QuotaExceeded"];
             };
         };
         delete?: never;
@@ -5870,6 +5871,20 @@ export interface components {
         };
         /** @description Слишком часто — см. Retry-After */
         TooManyRequests: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description Предел исчерпан насовсем: столько от одного гостя мы не принимаем.
+         *     В отличие от TooManyRequests заголовка Retry-After НЕТ — повтор
+         *     не поможет ни через минуту, ни через сутки. Клиенту нужно показать
+         *     отказ, а не таймер.
+         */
+        QuotaExceeded: {
             headers: {
                 [name: string]: unknown;
             };

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound } from '../errors.js'
+import { AppError, conflict, notFound, quotaExceeded } from '../errors.js'
 import { isCheckViolation } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -790,11 +790,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         [guest.weddingId, guest.guestId],
       )
       if (Number(mine[0]!.n) >= app.appConfig.albumMaxPerGuest) {
-        throw new AppError(
-          429,
-          'album_limit',
-          `Больше ${app.appConfig.albumMaxPerGuest} кадров от одного гостя не принимаем`,
-        )
+        throw quotaExceeded('album_limit', `Больше ${app.appConfig.albumMaxPerGuest} кадров от одного гостя не принимаем`)
       }
       // Согласие на публикацию — явное действие, а не предустановленная
       // галочка: кадр попадёт в чужой альбом.

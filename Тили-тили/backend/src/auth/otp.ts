@@ -71,11 +71,3 @@ export function maskPhone(phone: string): string {
   if (phone.length < 8) return '***'
   return phone.slice(0, 5) + '*'.repeat(phone.length - 8) + phone.slice(-3)
 }
-
-export class TooManyRequests extends AppError {
-  readonly retryAfter: number
-  constructor(retryAfter: number, message: string) {
-    super(429, 'too_many_requests', message)
-    this.retryAfter = retryAfter
-  }
-}

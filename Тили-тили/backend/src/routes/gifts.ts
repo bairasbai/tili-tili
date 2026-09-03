@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { AppError, conflict, forbidden, notFound } from '../errors.js'
+import { AppError, conflict, forbidden, notFound, quotaExceeded } from '../errors.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
 import { readKeyHeader } from '../deals/idempotency.js'
@@ -435,13 +435,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
         if (held.length > 0) throw conflict('gift_reserved', 'Подарок уже выбрал другой гость')
         if (Number(gift.funded) >= Number(gift.price)) throw conflict('gift_closed', 'На подарок уже собрали всю сумму')
 
-        await assertNotFlooding(client, 'gift', giftId, guestToken)
-        const added = await client.query(
-          `insert into gift_contributions (id, gift_id, guest_token, amount, idempotency_key)
-           values ($1,$2,$3,$4,$5) on conflict (guest_token, idempotency_key) do nothing`,
-          [uuidv7(), giftId, guestToken, amount, key],
-        )
-        if (added.rowCount === 0) await assertSameRequest(client, 'gift', giftId, guestToken, amount, key)
+        await claimContribution(client, 'gift', giftId, guestToken, amount, key)
 
         const { rows: after } = await client.query<GiftRow>(
           `select ${GIFT_COLUMNS},
@@ -475,13 +469,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
         )
         if (rows.length === 0) throw notFound('Фонд не найден')
 
-        await assertNotFlooding(client, 'fund', fundId, guestToken)
-        const added = await client.query(
-          `insert into fund_contributions (id, fund_id, guest_token, amount, idempotency_key)
-           values ($1,$2,$3,$4,$5) on conflict (guest_token, idempotency_key) do nothing`,
-          [uuidv7(), fundId, guestToken, amount, key],
-        )
-        if (added.rowCount === 0) await assertSameRequest(client, 'fund', fundId, guestToken, amount, key)
+        await claimContribution(client, 'fund', fundId, guestToken, amount, key)
 
         const { rows: after } = await client.query<FundRow>(
           `select id, name, icon, target::text as target, collected::text as collected, currency
@@ -494,39 +482,17 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /**
-   * Взносов от одного гостя не бывает много.
+   * Записывает взнос ровно один раз.
    *
-   * Ключ идемпотентности придумывает клиент, поэтому потоку он не мешает:
-   * взнос по рублю с новым ключом растит таблицу без предела. Это ровно
-   * ERR-0042, только не в альбоме, а в деньгах.
+   * Порядок шагов важен. Сначала повтор по ключу: гость, упёршийся в предел,
+   * на повторе своего же запроса должен получить свой ответ, а не отказ —
+   * иначе идемпотентность перестаёт работать ровно там, где она нужнее
+   * всего. Только потом счёт взносов, и лишь затем запись.
+   *
+   * Предел нужен, потому что ключ придумывает клиент: новый ключ на каждый
+   * рубль растит таблицу без предела (ERR-0042 — то же самое в альбоме).
    */
-  async function assertNotFlooding(
-    client: Queryable,
-    kind: 'gift' | 'fund',
-    targetId: string,
-    guestToken: string,
-  ): Promise<void> {
-    const table = kind === 'gift' ? 'gift_contributions' : 'fund_contributions'
-    const column = kind === 'gift' ? 'gift_id' : 'fund_id'
-    const { rows } = await client.query<{ n: string }>(
-      `select count(*)::text as n from ${table} where ${column} = $1 and guest_token = $2`,
-      [targetId, guestToken],
-    )
-    if (Number(rows[0]!.n) >= app.appConfig.contributionsMaxPerGuest) {
-      throw new AppError(
-        429,
-        'contribution_limit',
-        `Больше ${app.appConfig.contributionsMaxPerGuest} взносов от одного гостя не принимаем`,
-      )
-    }
-  }
-
-  /**
-   * Ключ уже отработал. Если тот же — повтор, и текущее состояние и есть
-   * ответ. Если другой взнос — клиент переиспользовал ключ, и молча вернуть
-   * старый ответ значило бы потерять второй взнос.
-   */
-  async function assertSameRequest(
+  async function claimContribution(
     client: Queryable,
     kind: 'gift' | 'fund',
     targetId: string,
@@ -536,14 +502,48 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
   ): Promise<void> {
     const table = kind === 'gift' ? 'gift_contributions' : 'fund_contributions'
     const column = kind === 'gift' ? 'gift_id' : 'fund_id'
-    const { rows } = await client.query<{ target: string; amount: string }>(
-      `select ${column} as target, amount::text as amount from ${table}
-        where guest_token = $1 and idempotency_key = $2`,
-      [guestToken, key],
+
+    const sameKey = async () => {
+      const { rows } = await client.query<{ target: string; amount: string }>(
+        `select ${column} as target, amount::text as amount from ${table}
+          where guest_token = $1 and idempotency_key = $2`,
+        [guestToken, key],
+      )
+      return rows[0] ?? null
+    }
+
+    // Тот же ключ на ДРУГОЙ взнос — ошибка клиента: молча вернуть старый
+    // ответ значило бы потерять второй взнос.
+    const seen = await sameKey()
+    if (seen) {
+      if (seen.target !== targetId || Number(seen.amount) !== amount) {
+        throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого взноса')
+      }
+      return
+    }
+
+    const { rows: count } = await client.query<{ n: string }>(
+      `select count(*)::text as n from ${table} where ${column} = $1 and guest_token = $2`,
+      [targetId, guestToken],
     )
-    const seen = rows[0]
-    if (!seen || seen.target !== targetId || Number(seen.amount) !== amount) {
-      throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого взноса')
+    if (Number(count[0]!.n) >= app.appConfig.contributionsMaxPerGuest) {
+      throw quotaExceeded(
+        'contribution_limit',
+        `Больше ${app.appConfig.contributionsMaxPerGuest} взносов от одного гостя не принимаем`,
+      )
+    }
+
+    const added = await client.query(
+      `insert into ${table} (id, ${column}, guest_token, amount, idempotency_key)
+       values ($1,$2,$3,$4,$5) on conflict (guest_token, idempotency_key) do nothing`,
+      [uuidv7(), targetId, guestToken, amount, key],
+    )
+    // Ноль строк здесь — гонка: тот же ключ успел записаться параллельно.
+    if (added.rowCount === 0) {
+      const race = await sameKey()
+      if (!race || race.target !== targetId || Number(race.amount) !== amount) {
+        throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого взноса')
+      }
     }
   }
 
