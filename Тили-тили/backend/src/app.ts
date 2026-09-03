@@ -84,6 +84,14 @@ export async function buildApp(
         ? (_address: string, hop: number) => hop < (config.trustProxy as number)
         : config.trustProxy,
     bodyLimit: 1_048_576,
+    /* Ждать тело запроса вечно нельзя: соединение, которое присылает по
+     * байту в минуту, занимает место в пуле и не платит за это ничем.
+     * По умолчанию у Fastify таймаута нет вовсе.
+     *
+     * Таймаут соединения (`connectionTimeout`) здесь НЕ ставится: он режет
+     * сокет целиком, а живой канал чата молчит между сообщениями минутами
+     * и был бы разорван как «зависший». */
+    requestTimeout: 30_000,
     ajv: {
       customOptions: {
         // Fastify по умолчанию МОЛЧА выбрасывает неописанные поля. Для нас это
@@ -101,6 +109,27 @@ export async function buildApp(
   await app.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
     credentials: true,
+  })
+
+  /* Заголовки безопасности — своим хуком, а не пакетом.
+   *
+   * Здесь отдаётся только JSON, и из всего набора helmet осмысленны пять
+   * заголовков. Отдельная зависимость ради пяти строк — это ещё один
+   * пакет в цепочке поставки и ещё одно обновление раз в квартал.
+   *
+   * `no-store` важнее прочего: гость ходит по личному токену В АДРЕСЕ,
+   * и ответ, осевший в кеше промежуточного узла, — это чужие данные,
+   * выданные следующему за тем же адресом. */
+  app.addHook('onSend', async (request, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff')
+    reply.header('X-Frame-Options', 'DENY')
+    // Токен гостя стоит в адресе: без этого он уедет в Referer чужому сайту.
+    reply.header('Referrer-Policy', 'no-referrer')
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
+    reply.header('Cache-Control', 'no-store')
+    if (config.env === 'production' && request.protocol === 'https') {
+      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    }
   })
 
   // Схемы контракта — тот же документ, что и openapi.yaml, а не вторая копия
@@ -129,7 +158,7 @@ export async function buildApp(
     // обычных команд больше не принимает.
     const subscriber = app.redis.duplicate()
     subscriber.on('error', (err: Error) => app.log.error({ err }, 'redis подписка'))
-    await realtime.bridge(app.redis, subscriber)
+    realtime.bridge(app.redis, subscriber)
     app.addHook('onClose', async () => {
       await subscriber.quit()
     })

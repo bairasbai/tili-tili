@@ -1,4 +1,5 @@
 import type { Redis } from 'ioredis'
+import { withRedisTimeout } from '../plugins/redis.js'
 
 /**
  * Кто сейчас смотрит в какой чат.
@@ -34,11 +35,18 @@ export class RealtimeHub {
   private publisher: Redis | null = null
   private subscriber: Redis | null = null
 
-  /** Подключает мост между процессами. Без Redis работает один процесс. */
-  async bridge(publisher: Redis, subscriber: Redis): Promise<void> {
+  /**
+   * Подключает мост между процессами. Без Redis работает один процесс.
+   *
+   * Подписка не ждётся: с мёртвым Redis `subscribe` висит до первого
+   * соединения, а вызывается она при сборке приложения — то есть сервер
+   * не поднимется вовсе. Вместо ожидания подписываемся на каждое
+   * подключение: `ready` приходит и при первом соединении, и после
+   * каждого обрыва, а подписка обрыва не переживает.
+   */
+  bridge(publisher: Redis, subscriber: Redis): void {
     this.publisher = publisher
     this.subscriber = subscriber
-    await subscriber.subscribe(CHANNEL)
     subscriber.on('message', (channel, raw) => {
       if (channel !== CHANNEL) return
       try {
@@ -47,6 +55,11 @@ export class RealtimeHub {
         // Чужое сообщение в канале — не повод падать.
       }
     })
+    const resubscribe = () => {
+      subscriber.subscribe(CHANNEL).catch(() => undefined)
+    }
+    subscriber.on('ready', resubscribe)
+    if (subscriber.status === 'ready') resubscribe()
   }
 
   join(chatId: string, socket: Socket): void {
@@ -69,8 +82,17 @@ export class RealtimeHub {
 
   async publish(event: ChatEvent): Promise<void> {
     if (this.publisher) {
-      await this.publisher.publish(CHANNEL, JSON.stringify(event))
-      return
+      try {
+        await withRedisTimeout(this.publisher.publish(CHANNEL, JSON.stringify(event)))
+        return
+      } catch {
+        /* Redis недоступен — доставляем своим соединениям напрямую.
+         *
+         * Сообщение уже в базе: потерять его нельзя, а вот живой канал
+         * между процессами переживёт. Тот, кто сидит на другом сервере,
+         * увидит реплику при следующем открытии чата — это хуже, чем
+         * сразу, и несравнимо лучше, чем отказ на отправку. */
+      }
     }
     // Один процесс — доставляем напрямую, иначе событие потерялось бы.
     this.deliver(event)

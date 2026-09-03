@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Config } from '../config.js'
 import { TooManyRequests } from '../errors.js'
 import { readGuestToken } from '../guests/access.js'
+import { withRedisTimeout } from './redis.js'
 
 /**
  * Ограничение частоты на токен — требование §13.4 и раздела 6 плана.
@@ -47,10 +48,10 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
 
     let count: number
     try {
-      count = await app.redis!.incr(key)
+      count = await withRedisTimeout(app.redis!.incr(key))
       // Срок ставим только на первом запросе окна: лишний EXPIRE на каждый
       // запрос — лишний поход в Redis без всякой пользы.
-      if (count === 1) await app.redis!.expire(key, WINDOW_SECONDS + 1)
+      if (count === 1) await withRedisTimeout(app.redis!.expire(key, WINDOW_SECONDS + 1))
     } catch (err) {
       // Redis прилёг — пропускаем. Ограничитель защищает от перегрузки,
       // а не наоборот: превращать его сбой в отказ всему сервису нельзя.
