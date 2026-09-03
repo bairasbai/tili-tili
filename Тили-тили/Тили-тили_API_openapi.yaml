@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.6.0
+  version: 0.7.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -2101,8 +2101,16 @@ paths:
     get:
       tags: [album]
       summary: Общий фотоальбом гостей
-      description: 'Паре видны все кадры, гостю — только одобренные.'
-      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      description: |
+        Паре видны все кадры, гостю — только одобренные. Пара опознаётся
+        токеном доступа, гость — параметром `guestToken`.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: guestToken
+          in: query
+          required: false
+          schema: { type: string }
       responses:
         '200':
           description: OK
@@ -2115,9 +2123,10 @@ paths:
       tags: [album]
       summary: Гость добавляет фото
       description: 'Без регистрации, по персональному токену. Кадр попадает в очередь модерации парой.'
+      security: []
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
-        - { $ref: '#/components/parameters/GuestToken' }
+        - { $ref: '#/components/parameters/GuestTokenQuery' }
       requestBody:
         required: true
         content:
@@ -2443,6 +2452,15 @@ components:
       bearerFormat: JWT
 
   parameters:
+    GuestTokenQuery:
+      name: guestToken
+      in: query
+      required: true
+      description: |
+        Персональный токен гостя. Нужен там, где гость обращается к пути
+        со свадьбой в адресе: подставить его в путь некуда, а без него
+        сервер не отличит гостя от постороннего.
+      schema: { type: string }
     GuestToken:
       name: guestToken
       in: path

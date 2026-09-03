@@ -29,11 +29,26 @@ export interface Db extends Queryable {
   close(): Promise<void>
 }
 
-/** Код нарушения уникальности в PostgreSQL. */
+/** Коды нарушений ограничений в PostgreSQL. */
 export const UNIQUE_VIOLATION = '23505'
+export const CHECK_VIOLATION = '23514'
+
+const errorCode = (error: unknown): string | undefined =>
+  typeof error === 'object' && error !== null ? (error as { code?: string }).code : undefined
 
 export function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === UNIQUE_VIOLATION
+  return errorCode(error) === UNIQUE_VIOLATION
+}
+
+/**
+ * Нарушение CHECK — это сработавшая защита, а не поломка сервера.
+ * Переполнение автобуса приходит именно так, когда триггер увеличил счётчик
+ * выше числа мест: транзакция откатывается, и человеку нужен внятный 409.
+ */
+export function isCheckViolation(error: unknown, constraint?: string): boolean {
+  if (errorCode(error) !== CHECK_VIOLATION) return false
+  if (!constraint) return true
+  return (error as { constraint?: string }).constraint === constraint
 }
 
 declare module 'fastify' {

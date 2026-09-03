@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AppError, forbidden, notFound } from '../errors.js'
+import { GUEST_ACCESSIBLE_WEDDING_PATHS, guestByToken, readGuestToken } from '../guests/access.js'
 
 export const ROLES = ['couple', 'helper', 'coordinator', 'vendor'] as const
 export type Role = (typeof ROLES)[number]
@@ -96,6 +97,17 @@ export function weddingAccessHook(app: FastifyInstance) {
   return async function checkWeddingAccess(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const url = request.routeOptions?.url
     if (!url || !isWeddingScoped(url)) return
+
+    // Гость приходит на свою свадьбу по токену и аккаунта не имеет.
+    // Пускаем его только на явно перечисленные пути и только на свою свадьбу.
+    const guestToken = GUEST_ACCESSIBLE_WEDDING_PATHS.has(url) ? readGuestToken(request) : null
+    if (guestToken) {
+      const guest = await guestByToken(app.db!, guestToken)
+      const asked = (request.params as { weddingId?: string }).weddingId
+      if (guest.weddingId !== asked) throw notFound('Свадьба не найдена')
+      request.guest = guest
+      return
+    }
 
     await app.requireConsent(request, reply)
 

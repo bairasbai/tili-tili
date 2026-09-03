@@ -25,6 +25,8 @@ export interface Config {
    * что безусловное доверие превращает ограничитель по адресу в украшение.
    */
   trustProxy: boolean | number
+  /** Сколько кадров может добавить один гость. */
+  albumMaxPerGuest: number
   smsProvider: string | null
   smsAeroEmail: string | null
   smsAeroKey: string | null
@@ -113,6 +115,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     otpMaxPerIpHour: Number(source.OTP_MAX_PER_IP_HOUR ?? MAX_SENDS_PER_HOUR_PER_IP),
     otpMaxPerHourTotal: Number(source.OTP_MAX_PER_HOUR_TOTAL ?? MAX_SENDS_PER_HOUR_TOTAL),
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
+    albumMaxPerGuest: Number(source.ALBUM_MAX_PER_GUEST ?? 50),
     smsProvider: source.SMS_PROVIDER ?? null,
     smsAeroEmail: source.SMSAERO_EMAIL ?? null,
     smsAeroKey: source.SMSAERO_KEY ?? null,

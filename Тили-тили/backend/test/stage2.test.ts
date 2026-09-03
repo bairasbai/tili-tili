@@ -217,7 +217,7 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
       ['GET', '/wishlist', { couple: 501, helper: 403, coordinator: 403 }],
       ['GET', '/slots', { couple: 200, helper: 200, coordinator: 200 }],
       ['GET', '/documents', { couple: 200, helper: 403, coordinator: 403 }],
-      ['GET', '/guests', { couple: 501, helper: 501, coordinator: 501 }],
+      ['GET', '/guests', { couple: 200, helper: 200, coordinator: 200 }],
     ]
 
     const wrong: string[] = []

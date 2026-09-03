@@ -118,6 +118,37 @@ describe('контракт', () => {
       'GET /weddings/:weddingId/budget',
       'POST /weddings/:weddingId/budget/items',
       'DELETE /weddings/:weddingId/budget/items/:itemId',
+      'GET /weddings/:weddingId/guests',
+      'POST /weddings/:weddingId/guests',
+      'PATCH /weddings/:weddingId/guests/:guestId',
+      'DELETE /weddings/:weddingId/guests/:guestId',
+      'POST /weddings/:weddingId/guests/:guestId/invite-link',
+      'GET /invite/:shareCode',
+      'GET /rsvp/:guestToken',
+      'POST /rsvp/:guestToken',
+      'GET /weddings/:weddingId/tables',
+      'POST /weddings/:weddingId/tables',
+      'GET /weddings/:weddingId/tasks',
+      'POST /weddings/:weddingId/tasks',
+      'PATCH /weddings/:weddingId/tasks/:taskId',
+      'DELETE /weddings/:weddingId/tasks/:taskId',
+      'GET /weddings/:weddingId/timeline',
+      'PUT /weddings/:weddingId/timeline',
+      'POST /weddings/:weddingId/timeline/autogen',
+      'GET /weddings/:weddingId/album',
+      'POST /weddings/:weddingId/album',
+      'PATCH /weddings/:weddingId/album/:photoId',
+      'POST /weddings/:weddingId/logistics/buses',
+      'DELETE /weddings/:weddingId/logistics/buses/:busId',
+      'POST /weddings/:weddingId/logistics/hotels',
+      'DELETE /weddings/:weddingId/logistics/hotels/:hotelId',
+      'POST /weddings/:weddingId/logistics/notify-pickup',
+      'POST /join/:guestToken/shuttle',
+      'GET /join/:guestToken/hotels',
+      'GET /weddings/:weddingId/menu-poll',
+      'PUT /weddings/:weddingId/menu-poll',
+      'POST /weddings/:weddingId/menu-poll/remind',
+      'POST /join/:guestToken/menu-vote',
     ]
     const stillStub: string[] = []
     for (const key of done) {
@@ -152,7 +183,7 @@ describe('контракт', () => {
       if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
     }
     // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
-    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 59)
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 91)
   })
 
   it('в контракте нет дублей метод+путь', () => {
