@@ -35,8 +35,8 @@ export function SearchCategories() {
               <div className={cn('w-11 h-11 rounded-[14px] mx-auto flex items-center justify-center text-[19px]', c.tile)}>{c.icon}</div>
               <b className="text-[11px] block mt-2 leading-tight">{c.name}</b>
               <span className="text-[9px] text-[var(--soft)] block mt-1">{c.count} {t('рядом')}</span>
-              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] mt-1.5">{t('✓ Есть')}</span>}
-              {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)] mt-1.5">{t('⏳ Ищем')}</span>}
+              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] mt-1.5">{t('✓ Есть')}</span>}
+              {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] mt-1.5">{t('⏳ Ищем')}</span>}
             </button>
           )
         })}
@@ -159,13 +159,13 @@ export function VendorDetail() {
               {v.reviews > 0 ? <span>· ★ {v.rating} · {v.reviews} {t('отзывов')}</span> : <span>{t('· Новый на платформе')}</span>}
             </p>
           </div>
-          {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] whitespace-nowrap">{t('● Свободен 14.06')}</span>}
+          {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] whitespace-nowrap">{t('● Свободен 14.06')}</span>}
         </div>
         <p className="text-[13px] text-[var(--ink2)] leading-relaxed mt-3 font-light">{v.desc}</p>
 
         {/* Контакт: только своим — тем, кто уже забронировал */}
         <div className="card-s p-4 mt-3.5 flex items-center gap-3">
-          <span className="w-9 h-9 rounded-full bg-[var(--sage-soft)] flex items-center justify-center shrink-0"><Phone size={15} className="text-[#4C5B45]" /></span>
+          <span className="w-9 h-9 rounded-full bg-[var(--sage-soft)] flex items-center justify-center shrink-0"><Phone size={15} className="text-[var(--sage-ink)]" /></span>
           {booked ? (
             <>
               <div className="flex-1 min-w-0">
@@ -188,7 +188,7 @@ export function VendorDetail() {
           <div className="flex items-center gap-2.5">
             <span className="w-8 h-8 rounded-full bg-[var(--sage-soft)] flex items-center justify-center text-[14px]">🛡</span>
             <b className="text-[13px]">{t('Проверен «Тили-тили»')}</b>
-            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[#4C5B45]">{t('✓ верифицирован')}</span>
+            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('✓ верифицирован')}</span>
           </div>
           <div className="mt-3 space-y-1.5 text-[11.5px] text-[var(--soft)]">
             <p>✓ {t('Паспорт / ИП сверены с базой ФНС')}</p>
@@ -211,7 +211,7 @@ export function VendorDetail() {
               </div>
               <ul className="mt-2 space-y-1">
                 {p.items.map(it => (
-                  <li key={it} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[#697563]" />{it}</li>
+                  <li key={it} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[var(--sage-deep)]" />{it}</li>
                 ))}
               </ul>
             </button>
@@ -235,7 +235,7 @@ export function VendorDetail() {
               const busy = [3 + (h % 4), 6 + (h % 3), 12 + (h % 5), 19 + (h % 3), 25 + (h % 4)].includes(day) || (!v.freeOnDate && isWedding)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding && v.freeOnDate ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-deep)] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-deep)] font-bold' : 'text-[var(--ink)]')}>
+                  isWedding && v.freeOnDate ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-deep)] font-bold' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
@@ -268,7 +268,7 @@ export function VendorDetail() {
               <span className="text-[10px] text-[var(--honey-deep)] tracking-wide">★★★★★</span>
             </div>
             <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{t('Фотографировала нас незаметно, но на фото мы все — и бабушки, и дети. Очень живые кадры!')}</p>
-            <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#587493] mt-2">{t('Гость свадьбы')}</span>
+            <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)] mt-2">{t('Гость свадьбы')}</span>
           </div>
         </div>
       </div>

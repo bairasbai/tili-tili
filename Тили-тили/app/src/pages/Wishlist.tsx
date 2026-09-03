@@ -31,7 +31,7 @@ export function WishlistManage() {
       <TopBar back title={t('Список желаний')} sub={t('Что подарить вам на свадьбу')} />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex gap-3 items-start">
-          <ShieldCheck size={20} className="text-[#697563] shrink-0 mt-0.5" />
+          <ShieldCheck size={20} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
           <p className="text-[12px] text-[var(--soft)] leading-relaxed">
             {t('Гости выбирают подарки анонимно — вы видите только статус «Зарезервирован», но не видите, кто именно. Выбранный подарок закрывается для остальных, дублей не будет.')}
           </p>
@@ -111,7 +111,7 @@ function FundsManage() {
                   <p className="text-[13.5px] font-semibold truncate">{f.name}</p>
                   <p className="text-[11px] text-[var(--soft)]">{t('цель')} {fmt(f.target)}</p>
                 </div>
-                <button onClick={() => setFunds(fs => fs.filter(x => x.id !== f.id))} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--soft)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
+                <button onClick={() => setFunds(fs => fs.filter(x => x.id !== f.id))} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--track-ink)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
               </div>
               <div className="mt-3">
                 <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
@@ -153,7 +153,7 @@ function AntiManage() {
         <div className="card p-4">
           <div className="flex flex-wrap gap-2">
             {anti.map(a => (
-              <span key={a} className="flex items-center gap-1.5 text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--soft)]">
+              <span key={a} className="flex items-center gap-1.5 text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">
                 {a}
                 <button onClick={() => setAnti(x => x.filter(y => y !== a))} className="press" aria-label={t('Удалить')}><X size={12} /></button>
               </span>
@@ -181,10 +181,10 @@ function CoupleGiftRow({ g, i, onRemove }: { g: Gift; i: number; onRemove: () =>
           <p className="text-[11px] text-[var(--soft)]">{fmt(g.price)}{g.group && ` · ${t('складчина')}`}</p>
         </div>
         {g.reserved
-          ? <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--sage-soft)] text-[#5E7955]">{t('Зарезервирован')}</span>
-          : <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--soft)]">{t('Свободен')}</span>}
+          ? <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('Зарезервирован')}</span>
+          : <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Свободен')}</span>}
         {!confirm
-          ? <button onClick={() => setConfirm(true)} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--soft)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
+          ? <button onClick={() => setConfirm(true)} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--track-ink)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
           : <button onClick={onRemove} className="press text-[10px] font-bold px-2.5 py-1.5 rounded-full text-white" style={{ background: '#9B6A6A' }}>{t('Точно?')}</button>}
       </div>
       {g.group && (
@@ -233,7 +233,7 @@ export function GiftPick() {
       <TopBar back title={t('Подарки')} sub={t('Алина & Тимур · 14 июня 2027')} />
       <div className="px-5 mt-3">
         <div className="card p-4 flex gap-3 items-start">
-          <ShieldCheck size={20} className="text-[#697563] shrink-0 mt-0.5" />
+          <ShieldCheck size={20} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
           <p className="text-[12px] text-[var(--soft)] leading-relaxed">
             {t('Полностью анонимно: молодожёны увидят только, что подарок зарезервирован, но не кем. Выбранный подарок сразу закрывается для других гостей.')}
           </p>
@@ -246,7 +246,7 @@ export function GiftPick() {
           <div className="card p-3.5">
             <p className="text-[11px] font-semibold mb-2">🙏 {t('Молодожёны просят не дарить')}:</p>
             <div className="flex flex-wrap gap-1.5">
-              {anti.map(a => <span key={a} className="text-[10.5px] px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--soft)]">{a}</span>)}
+              {anti.map(a => <span key={a} className="text-[10.5px] px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{a}</span>)}
             </div>
           </div>
         </div>
@@ -292,9 +292,9 @@ export function GiftPick() {
                 <Tile icon={g.icon} tile={g.tile} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
-                  <p className="text-[11px] text-[#5E7955] font-medium">{t('Вы зарезервировали этот подарок')}</p>
+                  <p className="text-[11px] text-[var(--sage-deep)] font-medium">{t('Вы зарезервировали этот подарок')}</p>
                 </div>
-                <button onClick={() => releaseGift(g.id)} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--soft)]">{t('Снять резерв')}</button>
+                <button onClick={() => releaseGift(g.id)} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Снять резерв')}</button>
               </div>
             ))}
           </div>
@@ -320,8 +320,8 @@ export function GiftPick() {
                     <div className="flex flex-col gap-1.5 items-end">
                       <button onClick={() => setConfirmId(g.id)} className="press text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Подарю')}</button>
                       {bought.includes(g.id)
-                        ? <span className="text-[9.5px] font-bold text-[#5E7955]">✓ {t('Заказ оформлен')}</span>
-                        : <button onClick={() => { setBought(b => [...b, g.id]); reserveGift(g.id) }} className="press text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--soft)] flex items-center gap-1"><ShoppingBag size={11} />{t('Купить в приложении')}</button>}
+                        ? <span className="text-[9.5px] font-bold text-[var(--sage-deep)]">✓ {t('Заказ оформлен')}</span>
+                        : <button onClick={() => { setBought(b => [...b, g.id]); reserveGift(g.id) }} className="press text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)] flex items-center gap-1"><ShoppingBag size={11} />{t('Купить в приложении')}</button>}
                     </div>
                   )}
               </div>
@@ -360,7 +360,7 @@ export function GiftPick() {
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
                   <p className="text-[11px] text-[var(--soft)]">{fmt(g.price)}</p>
                 </div>
-                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--soft)]">{t('Занято')}</span>
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Занято')}</span>
               </div>
             ))}
           </div>
@@ -409,7 +409,7 @@ export function GuestReviewForm() {
         <div className="flex items-center gap-1.5 mt-3">
           {[1, 2, 3, 4, 5].map(n => (
             <button key={n} onClick={() => setStars(n)} className="press p-1" aria-label={`${n}`}>
-              <Star size={22} className={n <= stars ? 'fill-[#E3C892] text-[#E3C892]' : 'text-[var(--track)]'} />
+              <Star size={22} className={n <= stars ? 'fill-[var(--gold-soft)] text-[var(--gold-soft)]' : 'text-[var(--track)]'} />
             </button>
           ))}
           {stars > 0 && <span className="text-[11px] text-[var(--soft)] ml-1.5">{stars}/5</span>}
@@ -425,7 +425,7 @@ export function GuestReviewForm() {
             <div key={r.id} className="card-s p-3.5">
               <div className="flex items-center justify-between gap-2">
                 <b className="text-[12px] truncate">{r.vendor}</b>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#587493] shrink-0">{t('Гость свадьбы')}</span>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)] shrink-0">{t('Гость свадьбы')}</span>
               </div>
               <p className="text-[10px] text-[var(--honey-deep)] mt-1">{'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)} <span className="text-[var(--soft2)]">· {r.at}</span></p>
               <p className="text-[11.5px] text-[var(--ink2)] mt-1 font-light">{r.text}</p>

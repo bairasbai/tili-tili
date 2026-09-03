@@ -235,7 +235,7 @@ export function Catering() {
             {poll.options.map(o => <p key={o.id}>{o.icon} {o.name} — <b className="text-[var(--ink)]">{o.votes}</b></p>)}
             <p>🌿 {t('Аллергии и особые пожелания')} — <b className="text-[var(--ink)]">2</b> ({t('орехи, лактоза')})</p>
           </div>
-          <div className="mt-3 rounded-xl bg-[var(--sage-soft)] px-3.5 py-2.5 text-[11px] text-[#4C5B45] flex items-center gap-2">
+          <div className="mt-3 rounded-xl bg-[var(--sage-soft)] px-3.5 py-2.5 text-[11px] text-[var(--sage-ink)] flex items-center gap-2">
             <Percent size={13} className="shrink-0" />
             {t('Автоматически уйдёт кейтерингу за 14 дней до даты — 31 мая, правки до 7 июня.')}
           </div>

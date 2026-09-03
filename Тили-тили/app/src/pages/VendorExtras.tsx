@@ -37,8 +37,8 @@ export function VendorLead() {
               <b className="text-[14px]">{lead.n}</b>
               <p className="text-[10.5px] text-[var(--soft)]">{t('заявка из каталога · отвечаете в среднем за 2 ч')}</p>
             </div>
-            {state === 'hold' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)]">{t('⏳ Hold 72 ч')}</span>}
-            {state === 'declined' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)]">{t('Отклонена')}</span>}
+            {state === 'hold' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)]">{t('⏳ Hold 72 ч')}</span>}
+            {state === 'declined' && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)]">{t('Отклонена')}</span>}
           </div>
           <div className="card-s p-3.5 mt-3 text-[12.5px] text-[var(--ink2)] leading-relaxed">{lead.msg}</div>
           {sent.map((m, k) => (
@@ -55,8 +55,8 @@ export function VendorLead() {
               ))}
             </div>
             <div className="grid grid-cols-3 gap-2.5 pt-1">
-              <button onClick={() => setState('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[var(--honey-deep)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Clock size={13} />{t('Hold 72 ч')}</button>
-              <button onClick={() => setState('declined')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] text-[11.5px] font-bold flex items-center justify-center gap-1"><X size={13} />{t('Отклонить')}</button>
+              <button onClick={() => setState('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Clock size={13} />{t('Hold 72 ч')}</button>
+              <button onClick={() => setState('declined')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] text-[11.5px] font-bold flex items-center justify-center gap-1"><X size={13} />{t('Отклонить')}</button>
               <button onClick={() => nav('/us/chats')} className="press h-11 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Check size={13} />{t('В чат')}</button>
             </div>
           </>
@@ -109,7 +109,7 @@ export function VendorReviews() {
           {reviews.map((r, k) => (
             <div key={r.n} className="card p-4 fade-up">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-[var(--rose-soft)] flex items-center justify-center text-[13px] font-serif-d text-[var(--rose-deep)]">{r.n[0]}</div>
+                <div className="w-9 h-9 rounded-full bg-[var(--rose-soft)] flex items-center justify-center text-[13px] font-serif-d text-[var(--rose-ink)]">{r.n[0]}</div>
                 <div className="flex-1">
                   <b className="text-[12.5px]">{r.n}</b>
                   <p className="text-[9.5px] text-[var(--soft)]">{r.d}</p>

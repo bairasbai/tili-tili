@@ -44,13 +44,13 @@ export function Deal() {
               <b className="font-serif-d text-[17px]">{t('Артём Краснов')}</b>
               <p className="text-[11px] text-[var(--soft)]">{t('Банкет + церемония · 14.06.2027')}</p>
             </div>
-            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-deep)]">{t('⏳ Аванс 50%')}</span>
+            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)]">{t('⏳ Аванс 50%')}</span>
           </div>
           <div className="flex items-center mt-5">
             {steps.map((s, k) => (
               <div key={s.label} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center">
-                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', s.done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--soft2)]')}>{s.done ? '✓' : k + 1}</span>
+                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', s.done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{s.done ? '✓' : k + 1}</span>
                   <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', s.done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{s.label}</span>
                 </div>
                 {k < steps.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', s.done ? 'bg-[#A9BCA0]' : 'bg-[var(--track)]')} />}
@@ -118,7 +118,7 @@ export function Deal() {
             <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('Тиль собирает переписку, договор и чек-лист выполнения, решение модерации — до 48 часов.')}</p>
           </div>
           {dispute ? (
-            <div className="mt-3 rounded-xl bg-[var(--sage-soft)] px-3.5 py-2.5 text-[11.5px] text-[#4C5B45]">{t('Спор открыт: Тиль уже собрал материалы и передал модерации. Ответим в течение 48 часов ✓')}</div>
+            <div className="mt-3 rounded-xl bg-[var(--sage-soft)] px-3.5 py-2.5 text-[11.5px] text-[var(--sage-ink)]">{t('Спор открыт: Тиль уже собрал материалы и передал модерации. Ответим в течение 48 часов ✓')}</div>
           ) : (
             <button onClick={() => setDispute(true)} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Открыть спор по сделке')}</button>
           )}

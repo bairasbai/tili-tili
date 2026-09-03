@@ -113,7 +113,7 @@ export function Compare() {
               <td />
               {list.map(v => (
                 <td key={v.id} className="p-1.5">
-                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[var(--sage-deep)]' : 'grad text-[var(--on-grad)]')}>
+                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'grad text-[var(--on-grad)]')}>
                     {picked === v.id ? t('✓ В команде') : t('Выбрать')}
                   </button>
                 </td>
@@ -324,7 +324,7 @@ export function After() {
               <div key={r.id} className="card-s p-4">
                 <div className="flex items-center justify-between gap-2">
                   <b className="text-[12.5px] flex-1">{r.vendor}</b>
-                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[#587493]">{t('Гость свадьбы')}</span>
+                  <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">{t('Гость свадьбы')}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.stars)}<span className="text-[var(--track)]">{'★'.repeat(5 - r.stars)}</span><span className="text-[10px] text-[var(--soft2)] ml-1.5">{r.at}</span></div>
                 <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>
@@ -410,7 +410,7 @@ export function PlanB() {
           <div className="mt-3 space-y-2">
             {planBChecklist.map((c, i) => (
               <button key={c} onClick={() => setDone(d => d.includes(i) ? d.filter(x => x !== i) : [...d, i])} className="press w-full flex items-center gap-3 text-left">
-                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', done.includes(i) ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--soft2)]')}>{done.includes(i) ? '✓' : ''}</span>
+                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', done.includes(i) ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{done.includes(i) ? '✓' : ''}</span>
                 <span className={cn('text-[12px] leading-snug', done.includes(i) && 'line-through text-[var(--soft2)]')}>{c}</span>
               </button>
             ))}

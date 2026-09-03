@@ -13,6 +13,7 @@
   --soft: #797068;   /* 4.51:1 на --bg — норма WCAG AA для мелкого текста */
   --soft2: #767069;  /* 4.54:1 — подписи и время читаются, а не угадываются */
   --track: #F1E9E2;
+  --track-ink: #6F6760;  /* 4.62:1 на --track */
   --line: #D8CFC5;
   --rose: #C98A8A;
   --rose-deep: #9C6161;  /* 4.55:1 — цены, ссылки, иконки-акценты */
@@ -22,9 +23,13 @@
   --sage: #A9BCA0;
   --sage-deep: #617759;  /* 4.58:1 — статусы «готово», «свободен» */
   --sage-soft: #E6EEE2;
+  --sage-ink: #5A6E52;   /* 4.67:1 на --sage-soft */
   --lav: #D9CCE3;
+  --lav-ink: #5F5178;    /* 4.67:1 на --lav */
   --blue: #C3D5E8;
+  --blue-ink: #455B73;   /* 4.67:1 на --blue */
   --honey: #F0DCB8;
+  --honey-ink: #7A5B1F;  /* 4.68:1 на --honey */
   --honey-deep: #8E6A24;  /* текстовый вариант: заливка --honey слишком светлая для букв */
   --peach: #F3E3D3;
   --gold-soft: #E3C892;
@@ -48,6 +53,7 @@
   --soft: #A79B8E;
   --soft2: #978A7C;  /* 4.55:1 на --card тёмной темы */
   --track: #38312A;
+  --track-ink: #A79B8E;  /* 4.71:1 */
   --line: #453D34;
   --rose: #D69999;
   --rose-deep: #D69999;
@@ -56,9 +62,13 @@
   --sage: #A9BCA0;
   --sage-deep: #B5C7AC;
   --sage-soft: #323D2D;
+  --sage-ink: #B5C7AC;   /* 6.37:1 */
   --lav: #453D4E;
+  --lav-ink: #B4A9C5;    /* 4.64:1 */
   --blue: #36404C;
+  --blue-ink: #9BAEC3;   /* 4.63:1 */
   --honey: #4A3F2B;
+  --honey-ink: #E3C892;  /* 6.35:1 */
   --honey-deep: #E3C892;
   --peach: #3D332B;
   --gold-soft: #C9A96A;

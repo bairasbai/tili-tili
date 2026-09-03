@@ -152,7 +152,7 @@ export default function Home() {
             <b className="text-[13px]">{t('Приглашения')}</b>
             <p className="text-[11px] text-[var(--soft)] mt-0.5">{persons('yes')}{t(' подтвердили')} · {persons('pending')} {t('ждут ответа')}</p>
           </div>
-          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-deep)] shrink-0">RSVP →</span>
+          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] shrink-0">RSVP →</span>
         </button>
       </div>
 
@@ -168,7 +168,7 @@ export default function Home() {
                 <span className="text-[10.5px] text-[var(--soft)]">{s.label}</span>
                 {s.price && <span className="text-[12px] text-[var(--rose-deep)] font-bold block mt-0.5 tabular">{fmt(s.price)}</span>}
               </div>
-              <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] shrink-0">{t('✓ Забронирован')}</span>
+              <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] shrink-0">{t('✓ Забронирован')}</span>
             </button>
           ))}
         </div>

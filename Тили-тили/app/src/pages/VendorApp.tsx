@@ -46,7 +46,7 @@ export function VendorDashboard() {
               <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-[#7E9A74]" />
             </span>
             <b className="text-[13px]">{t('Обновления от пар')}</b>
-            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[#4C5B45]">{t('живая связь')}</span>
+            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('живая связь')}</span>
           </div>
           <div className="mt-3 space-y-2">
             {[
@@ -125,7 +125,7 @@ export function VendorDashboard() {
                 <b className="text-[13.5px]">{r.n}</b>
                 <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{r.d}</p>
               </div>
-              <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', r.hot ? 'grad text-[var(--on-grad)]' : 'bg-[var(--honey)] text-[var(--honey-deep)]')}>{r.st}</span>
+              <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', r.hot ? 'grad text-[var(--on-grad)]' : 'bg-[var(--honey)] text-[var(--honey-ink)]')}>{r.st}</span>
             </button>
           ))}
         </div>
@@ -253,7 +253,7 @@ export function VendorProfileWizard() {
                 </button>
               ))}
               <div className="aspect-[0.8] rounded-[18px] bg-[var(--sage-soft)] flex flex-col items-center justify-center gap-1">
-                <span className="text-[20px]">▶</span><span className="text-[9px] text-[var(--sage-deep)] font-bold">{t('Видео 1:40')}</span>
+                <span className="text-[20px]">▶</span><span className="text-[9px] text-[var(--sage-ink)] font-bold">{t('Видео 1:40')}</span>
               </div>
             </div>
             <p className="text-[10.5px] text-[var(--soft)] text-center mt-3">{photos} {t('из 5 фото · видео до 3 минут · загрузка с триммером')}</p>
@@ -266,7 +266,7 @@ export function VendorProfileWizard() {
               {Array.from({ length: 30 }).map((_, k) => {
                 const day = k + 1
                 const busy = busyDays.includes(day)
-                return <button key={day} onClick={() => toggleDay(day)} className={cn('press aspect-square rounded-xl flex items-center justify-center text-[11.5px]', busy ? 'bg-[var(--rose-soft)] text-[var(--rose-deep)] line-through font-bold' : 'bg-[var(--bg)]')}>{day}</button>
+                return <button key={day} onClick={() => toggleDay(day)} className={cn('press aspect-square rounded-xl flex items-center justify-center text-[11.5px]', busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through font-bold' : 'bg-[var(--bg)]')}>{day}</button>
               })}
             </div>
             <p className="text-[10.5px] text-[var(--soft)] mt-3">{t('Нажмите на дату, чтобы закрыть/открыть. Занято:')}{busyDays.join(', ')}.</p>
@@ -295,9 +295,9 @@ export function VendorDeals() {
       </div>
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {[
-          { n: t('Алина и Тимур'), d: t('14 июня 2027'), sum: '85 000 ₽', st: t('Аванс получен'), cls: 'bg-[var(--honey)] text-[var(--honey-deep)]', icon: '💍', tile: 'bg-[var(--rose-soft)]' },
-          { n: t('Дина и Руслан'), d: t('5 сентября 2027'), sum: '45 000 ₽', st: t('Hold 72 ч'), cls: 'bg-[var(--lav)] text-[#7A6899]', icon: '⏳', tile: 'bg-[var(--honey)]' },
-          { n: t('Анна и Марк'), d: t('18 июля 2027'), sum: '85 000 ₽', st: t('Переговоры'), cls: 'bg-[var(--blue)] text-[#567491]', icon: '💬', tile: 'bg-[var(--sage-soft)]' },
+          { n: t('Алина и Тимур'), d: t('14 июня 2027'), sum: '85 000 ₽', st: t('Аванс получен'), cls: 'bg-[var(--honey)] text-[var(--honey-ink)]', icon: '💍', tile: 'bg-[var(--rose-soft)]' },
+          { n: t('Дина и Руслан'), d: t('5 сентября 2027'), sum: '45 000 ₽', st: t('Hold 72 ч'), cls: 'bg-[var(--lav)] text-[var(--lav-ink)]', icon: '⏳', tile: 'bg-[var(--honey)]' },
+          { n: t('Анна и Марк'), d: t('18 июля 2027'), sum: '85 000 ₽', st: t('Переговоры'), cls: 'bg-[var(--blue)] text-[var(--blue-ink)]', icon: '💬', tile: 'bg-[var(--sage-soft)]' },
         ].map(dl => (
           <button key={dl.n} onClick={() => nav('/us/chats')} className="press w-full card-s p-4 flex items-center gap-3 fade-up text-left">
             <Tile icon={dl.icon} tile={dl.tile} size={44} />
@@ -316,12 +316,12 @@ export function VendorDeals() {
               <b className="text-[13.5px]">{t('Гульнара и Тимур')}</b>
               <p className="text-[10.5px] text-[var(--soft)]">{t('23 мая 2026 ·')}<b className="text-[var(--rose-deep)]">85 000 ₽</b></p>
             </div>
-            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)]">{t('Завершена')}</span>
+            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('Завершена')}</span>
           </div>
           {reviewAsked ? (
             <p className="mt-3 text-[11.5px] font-semibold text-[var(--sage-deep)] flex items-center gap-1.5"><Star size={13} />{t('Запрос отзыва отправлен паре в чат ✓')}</p>
           ) : (
-            <button onClick={() => setReviewAsked(true)} className="press mt-3 w-full h-10 rounded-full bg-[var(--sage-soft)] text-[#5C7854] text-[12px] font-bold flex items-center justify-center gap-1.5"><Star size={13} />{t('Запросить отзыв у пары')}</button>
+            <button onClick={() => setReviewAsked(true)} className="press mt-3 w-full h-10 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] text-[12px] font-bold flex items-center justify-center gap-1.5"><Star size={13} />{t('Запросить отзыв у пары')}</button>
           )}
         </div>
       </div>

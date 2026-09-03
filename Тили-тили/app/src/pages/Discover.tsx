@@ -41,7 +41,7 @@ export function Inspiration() {
       </div>
       <div className="px-5 flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
         {[['all', t('Любой бюджет')], ['low', t('до 700 тыс')], ['mid', t('700 тыс – 1,2 млн')], ['high', t('1,2 млн+')]].map(([id, l]) => (
-          <button key={id} onClick={() => setBudget(id)} className={cn('press px-4 py-2 rounded-full text-[10.5px] font-semibold whitespace-nowrap border', budget === id ? 'border-[#C98A8A] text-[var(--rose-deep)] bg-[var(--rose-soft)]/50' : 'border-transparent bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
+          <button key={id} onClick={() => setBudget(id)} className={cn('press px-4 py-2 rounded-full text-[10.5px] font-semibold whitespace-nowrap border', budget === id ? 'border-[#C98A8A] text-[var(--rose-ink)] bg-[var(--rose-soft)]/50' : 'border-transparent bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
       </div>
       <p className="px-6 mt-3 text-[10.5px] text-[var(--soft2)]">{t('Найдено историй:')}{shown.length}</p>
