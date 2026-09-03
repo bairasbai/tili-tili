@@ -1901,6 +1901,7 @@ export interface paths {
                         };
                     };
                 };
+                423: components["responses"]["Locked"];
             };
         };
         put?: never;
@@ -1932,6 +1933,7 @@ export interface paths {
                         "application/json": components["schemas"]["Message"];
                     };
                 };
+                423: components["responses"]["Locked"];
             };
         };
         delete?: never;
@@ -1949,7 +1951,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Индикатор «печатает…» (WebSocket-fallback) */
+        /**
+         * Индикатор «печатает…» (WebSocket-fallback)
+         * @description Пока живой канал не подключён, отвечает 501 `realtime_not_configured`:
+         *     показать «печатает…» некому, а 204 означал бы «доставлено» о том,
+         *     чего не произошло.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3981,7 +3988,13 @@ export interface paths {
         put?: never;
         /**
          * Зарегистрировать подписку Web Push
-         * @description VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» — при отказе клиент откатывается на email.
+         * @description VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» —
+         *     при отказе клиент откатывается на email.
+         *
+         *     Пока ключи VAPID не заданы, отвечает 501 `push_not_configured`: принять
+         *     подписку и промолчать значило бы показать «уведомления включены» там,
+         *     где их не будет. Уведомления при этом приходят в приложении —
+         *     `GET /notifications` работает всегда.
          */
         post: {
             parameters: {
@@ -5575,14 +5588,19 @@ export interface components {
             kind?: "vendor" | "team" | "day" | "tilly";
             /**
              * Format: date-time
-             * @description у kind=day — 09:00 по Wedding.tz в день свадьбы; до этого чат не создан
+             * @description Только у kind=day: 09:00 НАКАНУНЕ свадьбы по Wedding.tz. Чат
+             *     существует с момента создания свадьбы и до этого срока виден,
+             *     но закрыт (423) — иначе в списке чатов до дня X была бы пустота
+             *     вместо строки «откроется 13 июня». Дату перенесли — срок едет
+             *     вместе с ней.
              */
             openFrom?: string | null;
         };
         Message: {
             id?: string;
             chatId?: string;
-            senderId?: string;
+            /** @description null — сообщение от самого приложения: ответ Тиль или системная запись. */
+            senderId?: string | null;
             text?: string;
             attachmentUrl?: string | null;
             /** Format: date-time */
@@ -5871,6 +5889,19 @@ export interface components {
         };
         /** @description Слишком часто — см. Retry-After */
         TooManyRequests: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description Доступ не запрещён — он ещё не наступил. Так отвечает чат дня X
+         *     до `openFrom`: 403 сказало бы «вам нельзя», а человеку нужно
+         *     «откроется накануне в 09:00».
+         */
+        Locked: {
             headers: {
                 [name: string]: unknown;
             };

@@ -179,7 +179,7 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "format": "date-time",
-                  "description": "у kind=day — 09:00 по Wedding.tz в день свадьбы; до этого чат не создан"
+                  "description": "Только у kind=day: 09:00 НАКАНУНЕ свадьбы по Wedding.tz. Чат\nсуществует с момента создания свадьбы и до этого срока виден,\nно закрыт (423) — иначе в списке чатов до дня X была бы пустота\nвместо строки «откроется 13 июня». Дату перенесли — срок едет\nвместе с ней.\n"
               }
           }
       },
@@ -765,7 +765,11 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string"
               },
               "senderId": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "null — сообщение от самого приложения: ответ Тиль или системная запись."
               },
               "text": {
                   "type": "string"

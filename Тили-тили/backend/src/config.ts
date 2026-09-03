@@ -29,6 +29,9 @@ export interface Config {
   albumMaxPerGuest: number
   /** Сколько взносов один гость делает в один подарок или фонд. */
   contributionsMaxPerGuest: number
+  /** Ключи Web Push. Пока их нет, подписка отвечает 501 — см. routes/notifications. */
+  vapidPublicKey: string | null
+  vapidPrivateKey: string | null
   smsProvider: string | null
   smsAeroEmail: string | null
   smsAeroKey: string | null
@@ -119,6 +122,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
     albumMaxPerGuest: Number(source.ALBUM_MAX_PER_GUEST ?? 50),
     contributionsMaxPerGuest: Number(source.CONTRIBUTIONS_MAX_PER_GUEST ?? 20),
+    vapidPublicKey: source.VAPID_PUBLIC_KEY ?? null,
+    vapidPrivateKey: source.VAPID_PRIVATE_KEY ?? null,
     smsProvider: source.SMS_PROVIDER ?? null,
     smsAeroEmail: source.SMSAERO_EMAIL ?? null,
     smsAeroKey: source.SMSAERO_KEY ?? null,

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.11.0
+  version: 0.12.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1030,6 +1030,7 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/Message' }
                   nextCursor: { type: string, nullable: true }
+        '423': { $ref: '#/components/responses/Locked' }
     post:
       tags: [chats]
       summary: Отправить сообщение
@@ -1055,10 +1056,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
+        '423': { $ref: '#/components/responses/Locked' }
   /chats/{chatId}/typing:
     post:
       tags: [chats]
       summary: Индикатор «печатает…» (WebSocket-fallback)
+      description: |
+        Пока живой канал не подключён, отвечает 501 `realtime_not_configured`:
+        показать «печатает…» некому, а 204 означал бы «доставлено» о том,
+        чего не произошло.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: chatId
@@ -1906,7 +1912,14 @@ paths:
     post:
       tags: [notifications]
       summary: Зарегистрировать подписку Web Push
-      description: 'VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» — при отказе клиент откатывается на email.'
+      description: |
+        VAPID. На iOS работает только с 16.4+ и после установки на экран «Домой» —
+        при отказе клиент откатывается на email.
+
+        Пока ключи VAPID не заданы, отвечает 501 `push_not_configured`: принять
+        подписку и промолчать значило бы показать «уведомления включены» там,
+        где их не будет. Уведомления при этом приходят в приложении —
+        `GET /notifications` работает всегда.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2562,6 +2575,14 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    Locked:
+      description: |
+        Доступ не запрещён — он ещё не наступил. Так отвечает чат дня X
+        до `openFrom`: 403 сказало бы «вам нельзя», а человеку нужно
+        «откроется накануне в 09:00».
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     QuotaExceeded:
       description: |
         Предел исчерпан насовсем: столько от одного гостя мы не принимаем.
@@ -2844,13 +2865,25 @@ components:
         lastMessage: { type: string }
         unread: { type: integer }
         kind: { type: string, enum: [vendor, team, day, tilly] }
-        openFrom: { type: string, format: date-time, nullable: true, description: 'у kind=day — 09:00 по Wedding.tz в день свадьбы; до этого чат не создан' }
+        openFrom:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Только у kind=day: 09:00 НАКАНУНЕ свадьбы по Wedding.tz. Чат
+            существует с момента создания свадьбы и до этого срока виден,
+            но закрыт (423) — иначе в списке чатов до дня X была бы пустота
+            вместо строки «откроется 13 июня». Дату перенесли — срок едет
+            вместе с ней.
     Message:
       type: object
       properties:
         id: { type: string }
         chatId: { type: string }
-        senderId: { type: string }
+        senderId:
+          type: string
+          nullable: true
+          description: 'null — сообщение от самого приложения: ответ Тиль или системная запись.'
         text: { type: string }
         attachmentUrl: { type: string, nullable: true }
         sentAt: { type: string, format: date-time }

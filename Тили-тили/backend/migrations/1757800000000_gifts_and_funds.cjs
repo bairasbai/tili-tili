@@ -161,12 +161,12 @@ exports.up = (pgm) => {
 
 exports.down = (pgm) => {
   pgm.sql(`
-    DROP TRIGGER guests_release_reservations ON guests;
-    DROP FUNCTION release_guest_reservations;
-    DROP TRIGGER fund_contributions_sum ON fund_contributions;
-    DROP FUNCTION fund_collected_counter;
-    DROP TRIGGER gift_contributions_sum ON gift_contributions;
-    DROP FUNCTION gift_funded_counter;
+    DROP TRIGGER IF EXISTS guests_release_reservations ON guests;
+    DROP FUNCTION IF EXISTS release_guest_reservations;
+    DROP TRIGGER IF EXISTS fund_contributions_sum ON fund_contributions;
+    DROP FUNCTION IF EXISTS fund_collected_counter;
+    DROP TRIGGER IF EXISTS gift_contributions_sum ON gift_contributions;
+    DROP FUNCTION IF EXISTS gift_funded_counter;
   `)
   pgm.dropTable('anti_gifts')
   pgm.dropTable('fund_contributions')

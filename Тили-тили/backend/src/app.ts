@@ -16,7 +16,10 @@ import { documentRoutes } from './routes/documents.js'
 import { guestRoutes } from './routes/guests.js'
 import { slotRoutes } from './routes/slots.js'
 import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
+import { chatRoutes } from './routes/chats.js'
+import { dayxRoutes } from './routes/dayx.js'
 import { geoRoutes } from './routes/geo.js'
+import { notificationRoutes } from './routes/notifications.js'
 import { giftRoutes } from './routes/gifts.js'
 import { healthRoutes } from './routes/health.js'
 import { inviteRoutes } from './routes/invites.js'
@@ -176,6 +179,9 @@ export async function buildApp(
   await app.register(guestRoutes)
   await app.register(dayRoutes)
   await app.register(giftRoutes)
+  await app.register(chatRoutes)
+  await app.register(notificationRoutes)
+  await app.register(dayxRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
 
