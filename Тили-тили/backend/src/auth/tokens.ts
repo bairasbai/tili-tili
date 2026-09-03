@@ -14,6 +14,9 @@ export const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60
 export interface AccessClaims {
   sub: string
   sid: string
+  /** Момент истечения, секунды эпохи. Живому соединению он нужен, чтобы
+   *  закрыться вовремя: иначе оно переживёт срок действия токена. */
+  exp: number
 }
 
 const enc = new TextEncoder()
@@ -24,7 +27,9 @@ export function accessKey(secret: string): Uint8Array {
 
 export async function signAccessToken(
   secret: string,
-  claims: AccessClaims,
+  // Срок ставит подписывающий, а не вызывающий: `exp` — свойство выданного
+  // токена, а не пожелание того, кто его просит.
+  claims: Omit<AccessClaims, 'exp'>,
   now: number = Date.now(),
 ): Promise<string> {
   const iat = Math.floor(now / 1000)
@@ -47,10 +52,11 @@ export async function verifyAccessToken(secret: string, token: string): Promise<
     })
     const sub = payload.sub
     const sid = payload['sid']
-    if (typeof sub !== 'string' || typeof sid !== 'string') {
+    const exp = payload.exp
+    if (typeof sub !== 'string' || typeof sid !== 'string' || typeof exp !== 'number') {
       throw unauthorized('Токен без обязательных полей')
     }
-    return { sub, sid }
+    return { sub, sid, exp }
   } catch (error) {
     if (error instanceof AppError) throw error
     if (error instanceof joseErrors.JWTExpired) {

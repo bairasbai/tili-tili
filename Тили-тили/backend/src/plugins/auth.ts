@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.js'
 import { AppError, forbidden, unauthorized } from '../errors.js'
-import { verifyAccessToken } from '../auth/tokens.js'
+import { verifyAccessToken, type AccessClaims } from '../auth/tokens.js'
 import { createSender, type SmsSender } from '../auth/sms.js'
 
 export interface Caller {
@@ -15,6 +15,8 @@ declare module 'fastify' {
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
     /** То же плюс непросроченное согласие. Ставится на всё, кроме входа и согласия. */
     requireConsent: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
+    /** Те же проверки для живого канала: у WebSocket нет ни заголовков, ни reply. */
+    authorizeToken: (token: string) => Promise<AccessClaims>
     sms: SmsSender
     appConfig: Config
   }
@@ -48,13 +50,15 @@ export async function registerAuth(app: FastifyInstance, config: Config): Promis
   const secret = config.jwtAccessSecret
   // В разработке секрета может не быть — тогда защищённые пути честно отвечают
   // 401 вместо того, чтобы пускать всех. В production конфигурация его требует.
-  const requireAuth = async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
-    if (!secret) throw unauthorized('Сервер не настроен для проверки токенов')
-    const claims = await verifyAccessToken(secret, bearer(request))
-
+  /**
+   * Живая сессия: не отозвана, аккаунт не удалён.
+   *
+   * Проверяется по базе, а не по токену: иначе «выход со всех устройств»
+   * ничего не даёт до истечения access-токена, а это 15 минут чужого
+   * доступа после кражи.
+   */
+  const assertLiveSession = async (claims: AccessClaims): Promise<void> => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
-    // Сессию проверяем по базе: иначе «выход со всех устройств» ничего не даёт
-    // до истечения access-токена, а это 15 минут чужого доступа после кражи.
     const { rows } = await app.db.query<{ user_id: string; deleted_at: Date | null }>(
       `select s.user_id, u.deleted_at
          from sessions s join users u on u.id = s.user_id
@@ -64,15 +68,12 @@ export async function registerAuth(app: FastifyInstance, config: Config): Promis
     const row = rows[0]
     if (!row || row.user_id !== claims.sub) throw unauthorized('Сессия завершена')
     if (row.deleted_at) throw unauthorized('Аккаунт удалён')
-
-    request.caller = { userId: claims.sub, sessionId: claims.sid }
   }
 
-  const requireConsent = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    await requireAuth(request, reply)
+  const assertConsent = async (userId: string): Promise<void> => {
     const { rows } = await app.db!.query<{ ok: boolean }>(
       'select true as ok from consents where user_id = $1 and withdrawn_at is null limit 1',
-      [request.caller!.userId],
+      [userId],
     )
     if (rows.length === 0) {
       // 403, а не 401: человек вошёл, но не дал согласия. 401 отправил бы его
@@ -81,6 +82,32 @@ export async function registerAuth(app: FastifyInstance, config: Config): Promis
     }
   }
 
+  const requireAuth = async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
+    if (!secret) throw unauthorized('Сервер не настроен для проверки токенов')
+    const claims = await verifyAccessToken(secret, bearer(request))
+    await assertLiveSession(claims)
+    request.caller = { userId: claims.sub, sessionId: claims.sid }
+  }
+
+  const requireConsent = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    await requireAuth(request, reply)
+    await assertConsent(request.caller!.userId)
+  }
+
+  /**
+   * То же самое для живого канала: у WebSocket нет ни заголовков, ни reply,
+   * но проверки обязаны быть теми же. Отдельная копия проверок разошлась бы
+   * с основной на первой же правке.
+   */
+  const authorizeToken = async (token: string): Promise<AccessClaims> => {
+    if (!secret) throw unauthorized('Сервер не настроен для проверки токенов')
+    const claims = await verifyAccessToken(secret, token)
+    await assertLiveSession(claims)
+    await assertConsent(claims.sub)
+    return claims
+  }
+
   app.decorate('requireAuth', requireAuth)
   app.decorate('requireConsent', requireConsent)
+  app.decorate('authorizeToken', authorizeToken)
 }

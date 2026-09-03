@@ -45,6 +45,8 @@ interface Prefs {
   quiet_from: string
   quiet_to: string
   tz: string | null
+  /** Сегодня у этого человека свадьба. */
+  wedding_today: boolean
 }
 
 export async function notify(db: Queryable, item: NewNotification, now = new Date()): Promise<string | null> {
@@ -53,7 +55,16 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
     `select coalesce(${column ? `p.${column}` : 'true'}, true) as enabled,
             coalesce(p.quiet_from::text, '22:00') as quiet_from,
             coalesce(p.quiet_to::text, '09:00') as quiet_to,
-            u.tz
+            u.tz,
+            /* День X: свадьба ровно сегодня по её собственной таймзоне.
+             * Считается здесь, а не отдельной ночной задачей с флагом:
+             * флаг пришлось бы ставить и снимать, а он ещё и переживал бы
+             * перенос даты. Вопрос «сегодня ли» дешевле задать, чем хранить. */
+            exists(
+              select 1 from wedding_members m join weddings w on w.id = m.wedding_id
+               where m.user_id = u.id and w.archived_at is null and w.cancelled_at is null
+                 and w.date = (now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date
+            ) as wedding_today
        from users u left join notification_prefs p on p.user_id = u.id
       where u.id = $1 and u.deleted_at is null`,
     [item.userId],
@@ -66,9 +77,12 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
   // Таймзона может быть не указана или испорчена: сервис работает в РФ,
   // считаем по Москве. Уронить уведомление из-за настройки профиля нельзя.
   const tz = knownTimeZone(prefs.tz)
-  let after = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, item.critical)
+  /* В день X тишины и лимита нет вовсе (План §18.6): свадьба идёт прямо
+   * сейчас, и «разбудим утром» тут значит «уже неважно». */
+  const unlimited = item.critical || prefs.wedding_today
+  let after = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, unlimited)
 
-  if (!item.critical) {
+  if (!unlimited) {
     /* Лимит считается по УЖЕ ЗАПЛАНИРОВАННЫМ на эти сутки, а не по
      * отправленным: иначе три уведомления, отложенные до утра, утром
      * разбудят человека все три сразу и лимит окажется бумажным.

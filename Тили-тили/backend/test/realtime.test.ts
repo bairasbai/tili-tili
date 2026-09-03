@@ -239,6 +239,60 @@ describe.skipIf(!live)('живой канал против поднятого с
     expect(closed).toEqual({ code: 4401, error: 'unauthorized' })
   })
 
+  it('соединение не переживает срок токена', async () => {
+    const { vendorToken, chatId } = await newChat()
+    const listener = listen(chatId, vendorToken)
+    await listener.ready
+    const ready = listener.events.find((e) => e.type === 'ready')!
+    // Сокет живёт часами, токен — 15 минут. Без явного закрытия помощник,
+    // которого только что убрали из команды, читал бы чат до конца дня.
+    const left = new Date(String(ready.expiresAt)).getTime() - Date.now()
+    expect(left).toBeGreaterThan(0)
+    expect(left).toBeLessThanOrEqual(15 * 60_000 + 5_000)
+    listener.socket.close()
+  })
+
+  it('без согласия на ПДн канал не открывается', async () => {
+    const { chatId } = await newChat()
+    // Пользователь вошёл, но согласия не давал: обычные пути отвечают 403,
+    // и канал обязан вести себя так же, а не пускать в обход.
+    const phone = nextPhone()
+    await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone }, remoteAddress: IP })
+    const v = await app.inject({
+      method: 'POST',
+      url: '/auth/otp/verify',
+      payload: { phone, code: await readCode(phone) },
+    })
+    const token = v.json().accessToken as string
+
+    const socket = new WebSocket(`ws://${base}/chats/${chatId}/ws?token=${encodeURIComponent(token)}`)
+    const closed = await new Promise<{ code: number; error?: string }>((resolve) => {
+      let error: string | undefined
+      socket.addEventListener('message', (e) => {
+        error = (JSON.parse(String(e.data)) as { code?: string }).code
+      })
+      socket.addEventListener('close', (e) => resolve({ code: e.code, error }))
+    })
+    expect(closed).toEqual({ code: 4403, error: 'forbidden' })
+  })
+
+  it('«печатает…» прореживается, а не заливает канал', async () => {
+    const { couple, vendorToken, chatId } = await newChat()
+    const listener = listen(chatId, vendorToken)
+    await listener.ready
+
+    // Клавиатура шлёт событие на каждое нажатие: десять подряд — это одно
+    // «печатает», а не десять публикаций в общий канал.
+    for (let i = 0; i < 10; i++) {
+      const res = await app.inject({ method: 'POST', url: `/chats/${chatId}/typing`, headers: auth(couple) })
+      expect(res.statusCode).toBe(204)
+    }
+    await listener.waitFor('typing')
+    await new Promise((r) => setTimeout(r, 150))
+    expect(listener.events.filter((e) => e.type === 'typing')).toHaveLength(1)
+    listener.socket.close()
+  })
+
   it('в чужой чат канал не пускает', async () => {
     const { chatId } = await newChat()
     const stranger = await newUser()

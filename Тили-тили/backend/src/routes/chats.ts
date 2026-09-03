@@ -219,11 +219,29 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /* ── «печатает…» ──────────────────────────────────────────────────── */
+  /* Кто когда последний раз сообщал о наборе. Хранится в памяти процесса
+   * намеренно: «печатает» живёт секунды, переживать перезапуск ему незачем. */
+  const typingAt = new Map<string, number>()
+  const TYPING_EVERY_MS = 2000
+
   app.post('/chats/:chatId/typing', { preHandler: app.requireConsent }, async (request, reply) => {
     const { chatId } = request.params as { chatId: string }
     const userId = request.caller!.userId
     const { chat } = await chatForUser(db(), chatId, userId)
     assertOpen(chat)
+
+    /* Клавиатура шлёт событие на каждое нажатие. Без прореживания один
+     * человек с длинным сообщением превращается в сотню публикаций
+     * в общий канал — и это ещё до злого умысла. */
+    const mark = `${userId}:${chatId}`
+    const last = typingAt.get(mark) ?? 0
+    const now = Date.now()
+    if (now - last < TYPING_EVERY_MS) return reply.code(204).send()
+    typingAt.set(mark, now)
+    // Карта не должна расти вечно: раз в сотню событий выбрасываем старые.
+    if (typingAt.size > 1000) {
+      for (const [key, at] of typingAt) if (now - at > TYPING_EVERY_MS * 10) typingAt.delete(key)
+    }
     /* Запасной путь для клиента без живого канала: он сообщает о наборе
      * обычным запросом, а дальше событие идёт тем же каналом, что и
      * сообщения. Ничего не хранится: «печатает» живёт секунды. */

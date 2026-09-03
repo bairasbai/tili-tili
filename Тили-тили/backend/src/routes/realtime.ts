@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, unauthorized } from '../errors.js'
-import { verifyAccessToken } from '../auth/tokens.js'
 import { chatForUser, assertOpen } from '../chats/access.js'
 
 /**
@@ -34,15 +33,31 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       if (!token) throw unauthorized('Нужен токен доступа в параметре token')
-      const secret = app.appConfig.jwtAccessSecret
-      if (!secret) throw new AppError(503, 'auth_unavailable', 'Ключ подписи не настроен')
-      const claims = await verifyAccessToken(secret, token)
+      // Те же проверки, что и у обычного запроса: живая сессия и согласие
+      // на ПДн. Своя копия проверок разошлась бы с основной на первой правке.
+      const claims = await app.authorizeToken(token)
       const { chat } = await chatForUser(db(), chatId, claims.sub)
       assertOpen(chat)
 
       app.realtime.join(chatId, socket)
-      socket.on('close', () => app.realtime.leave(chatId, socket))
-      socket.send(JSON.stringify({ type: 'ready', chatId }))
+
+      /* Соединение не должно переживать токен.
+       *
+       * Открытый сокет живёт часами, а токен — 15 минут. Без этого помощник,
+       * которого пара только что убрала из команды, продолжал бы читать чат,
+       * пока не закроет вкладку. Клиент переподключается со свежим токеном —
+       * это его обычный цикл, а не ошибка. */
+      const msLeft = claims.exp * 1000 - Date.now()
+      const expiry = setTimeout(() => {
+        socket.send(JSON.stringify({ type: 'error', status: 401, code: 'token_expired' }))
+        socket.close(4401)
+      }, Math.max(msLeft, 0))
+
+      socket.on('close', () => {
+        clearTimeout(expiry)
+        app.realtime.leave(chatId, socket)
+      })
+      socket.send(JSON.stringify({ type: 'ready', chatId, expiresAt: new Date(claims.exp * 1000).toISOString() }))
     } catch (error) {
       /* Отказ приходит в самом соединении и закрывает его с кодом.
        * Молча оборвать рукопожатие значило бы «сеть барахлит» вместо
