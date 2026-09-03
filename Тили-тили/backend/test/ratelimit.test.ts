@@ -43,26 +43,32 @@ describe.skipIf(!live)('ограничение частоты', () => {
 
   it('поток свыше предела упирается в 429 с Retry-After', async () => {
     const token = `Bearer ${'x'.repeat(40)}-${randomInt(1, 1_000_000)}`
-    const codes: number[] = []
-    for (let i = 0; i < 6; i++) codes.push((await hit({ authorization: token })).statusCode)
+    /* Запросы идут ПАЧКОЙ, а не по очереди: окно — одна секунда, и
+     * последовательный цикл может перешагнуть её границу, обнулив счётчик.
+     * Тест на времени должен укладываться в окно сам, а не надеяться. */
+    const burst = await Promise.all(Array.from({ length: 8 }, () => hit({ authorization: token })))
 
-    // Первые проходят, дальше отказ — и он ВРЕМЕННЫЙ, значит с заголовком:
-    // клиент должен знать, что повтор поможет (ERR-0051 про эту разницу).
-    expect(codes.filter((c) => c === 429).length).toBeGreaterThan(0)
-    const refused = await hit({ authorization: token })
-    expect(refused.statusCode).toBe(429)
-    expect(refused.json().error.code).toBe('rate_limited')
-    expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0)
+    const refused = burst.filter((r) => r.statusCode === 429)
+    expect(burst.filter((r) => r.statusCode !== 429).length).toBeLessThanOrEqual(3)
+    expect(refused.length).toBeGreaterThan(0)
+    // Отказ ВРЕМЕННЫЙ, значит с заголовком: клиент должен знать, что повтор
+    // поможет (ERR-0051 про эту разницу).
+    expect(refused[0]!.json().error.code).toBe('rate_limited')
+    expect(Number(refused[0]!.headers['retry-after'])).toBeGreaterThan(0)
   })
 
   it('счёт идёт по токену, а не по адресу', async () => {
     const one = `Bearer ${'a'.repeat(40)}-${randomInt(1, 1_000_000)}`
     const two = `Bearer ${'b'.repeat(40)}-${randomInt(1, 1_000_000)}`
-    for (let i = 0; i < 5; i++) await hit({ authorization: one })
+    // Сосед идёт в той же пачке: иначе он попадёт в следующее окно
+    // и проверка ничего не докажет.
+    const [, neighbour] = await Promise.all([
+      Promise.all(Array.from({ length: 6 }, () => hit({ authorization: one }))),
+      hit({ authorization: two }),
+    ])
 
     // За одним адресом сидит целый свадебный чат с общим Wi-Fi: сосед
     // не должен получать отказ из-за чужой активности.
-    const neighbour = await hit({ authorization: two })
     expect(neighbour.statusCode).not.toBe(429)
   })
 
