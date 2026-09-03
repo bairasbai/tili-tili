@@ -312,6 +312,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
            where v.published_at is not null and v.blocked_at is null)::text as vendors_published,
          (select count(*) from vendors where moderated_at is null and published_at is not null)::text as moderation_queue,
          (select count(*) from complaints where status = 'new')::text as complaints_open,
+         (select count(*) from complaints
+           where status = 'new' and created_at < now() - interval '24 hours')::text as complaints_overdue,
          (select count(*) from deals where state in ('booked','paid_deposit','done'))::text as deals,
          (select coalesce(sum(price), 0) from deals where state in ('booked','paid_deposit','done'))::text as gmv`,
     )
@@ -333,6 +335,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       vendorsPublished: Number(m.vendors_published),
       moderationQueue: Number(m.moderation_queue),
       complaintsOpen: Number(m.complaints_open),
+      // SLA модерации — 24 часа (§18.2). Без счётчика просроченных срок
+      // существует только на бумаге: нарушение ничем не видно.
+      complaintsOverdue: Number(m.complaints_overdue),
       deals: Number(m.deals),
       gmv: { amount: Number(m.gmv), currency: 'RUB' },
       cities: cities.map((c) => ({ city: c.city, vendors: Number(c.vendors), launchReady: Number(c.vendors) >= 50 })),

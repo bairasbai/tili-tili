@@ -3,6 +3,7 @@ import { AppError, notFound, quotaExceeded } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { assertOpen, chatForUser, type ChatKind } from '../chats/access.js'
+import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from '../chats/guard.js'
 import { notify } from '../notify/notify.js'
 import { openLead } from '../vendor/leads.js'
 
@@ -150,6 +151,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       assertOpen(chat)
 
       await assertNotColdOutreach(chatId, chat.kind, userId)
+      await onFirstMessage(chatId, chat, userId, body.text)
 
       const id = uuidv7()
       const { rows } = await db().query<{ created_at: Date }>(
@@ -170,6 +172,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       // тот увидит сообщение, а не значок о нём.
       await app.realtime.publish({ chatId, type: 'message', actorId: userId, payload: { message } })
       await notifyOthers(chatId, chat.wedding_id, chat.kind, userId, body.text)
+      const warning = await warnAboutPayoutBypass(chatId, body.text)
 
       // Тиль отвечает сразу и честно: вопрос сохранён, модели пока нет.
       // Молчание выглядело бы как поломка, а «думаю…» — как обман.
@@ -196,9 +199,82 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         })
       }
 
-      return reply.code(201).send(message)
+      // Предупреждение едет вместе с ответом: клиенту не нужно перечитывать
+      // историю, чтобы понять, что показать всплывающей плашкой.
+      return reply.code(201).send(warning ? { ...message, warning } : message)
     },
   )
+
+  /**
+   * Первое сообщение в переписке решает две вещи сразу.
+   *
+   * Во-первых, текст пары становится текстом заявки: в кабинете подрядчика
+   * карточка заявки показывает, с чем к нему пришли, а пустая карточка
+   * не говорит ничего.
+   *
+   * Во-вторых, ссылка в ПЕРВОМ сообщении подрядчика уходит на модерацию
+   * (§19.4): так выглядит фишинг. Сообщение при этом доставляется —
+   * блокировка выгнала бы разговор в мессенджер, где нет ни договора,
+   * ни следа для разбирательства.
+   */
+  async function onFirstMessage(
+    chatId: string,
+    chat: { kind: ChatKind; wedding_id: string; vendor_id: string | null },
+    userId: string,
+    text: string,
+  ): Promise<void> {
+    if (chat.kind !== 'vendor' || !chat.vendor_id) return
+    const { rows } = await db().query<{ n: string; owner: string | null }>(
+      `select (select count(*)::text from messages m where m.chat_id = $1) as n,
+              (select v.user_id from vendors v where v.id = $2) as owner`,
+      [chatId, chat.vendor_id],
+    )
+    // Считаем ДО вставки, поэтому первое сообщение — это ноль предыдущих.
+    if (Number(rows[0]!.n) > 0) return
+    const fromVendor = rows[0]!.owner === userId
+
+    if (!fromVendor) {
+      await db().query('update leads set message = $3 where vendor_id = $1 and wedding_id = $2 and message is null', [
+        chat.vendor_id,
+        chat.wedding_id,
+        text,
+      ])
+      return
+    }
+
+    if (hasLink(text)) {
+      await db().query(
+        `insert into complaints (id, reporter_id, target_kind, target_id, category, text)
+         values ($1, null, 'vendor', $2, 'spam', $3)`,
+        [uuidv7(), chat.vendor_id, `Ссылка в первом сообщении: ${text.slice(0, 500)}`],
+      )
+    }
+  }
+
+  /**
+   * Разговор уходит мимо платформы — обеим сторонам мягкое предупреждение.
+   *
+   * Системное сообщение в самом чате, а не всплывашка одному: видеть его
+   * должны оба, и оно должно остаться в истории. Не чаще раза в сутки
+   * на чат — иначе оно превращается в шум и его перестают читать.
+   */
+  async function warnAboutPayoutBypass(chatId: string, text: string): Promise<string | null> {
+    if (!looksLikePayoutBypass(text)) return null
+    const { rows } = await db().query<{ n: string }>(
+      `select count(*)::text as n from messages
+        where chat_id = $1 and sender_id is null and text = $2 and created_at > now() - interval '1 day'`,
+      [chatId, PAYOUT_WARNING],
+    )
+    if (Number(rows[0]!.n) > 0) return PAYOUT_WARNING
+
+    await db().query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3)', [
+      uuidv7(),
+      chatId,
+      PAYOUT_WARNING,
+    ])
+    await app.realtime.publish({ chatId, type: 'message', actorId: 'system' })
+    return PAYOUT_WARNING
+  }
 
   /**
    * Непроверенный подрядчик — не больше пяти новых переписок в день.

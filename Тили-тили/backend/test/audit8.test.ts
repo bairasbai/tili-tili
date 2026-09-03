@@ -343,6 +343,160 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     expect(withNumber.rating).toBeGreaterThan(4)
   })
 
+  /* ── защиты переписки (§18.2, §19.4) ──────────────────────────────── */
+  it('первое сообщение пары становится текстом заявки', async () => {
+    const vendor = await newVendor('Внимательный')
+    const w = await newWedding('2027-04-21')
+    const chatId = (
+      await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+    ).json().id as string
+    await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(w.token),
+      payload: { text: 'Здравствуйте! Свадьба в «Маркони», 120 гостей. Свободны 14 июня?' },
+    })
+
+    const leads = (await app.inject({ method: 'GET', url: '/vendor/leads', headers: auth(vendor.token) })).json() as {
+      message: string
+    }[]
+    /* Экран заявки в моках показывает, с чем к подрядчику пришли.
+     * Пустая карточка не говорит ничего — и решать по ней нечего. */
+    expect(leads[0]!.message).toContain('Маркони')
+  })
+
+  it('уход мимо платформы даёт предупреждение обеим сторонам, а не блокировку', async () => {
+    const vendor = await newVendor('Хитрый')
+    const w = await newWedding('2027-04-22')
+    const chatId = (
+      await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+    ).json().id as string
+
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(w.token),
+      payload: { text: 'Давайте без договора, переведи на карту — так дешевле' },
+    })
+    // Сообщение ДОСТАВЛЕНО: блокировка выгнала бы разговор в мессенджер,
+    // где нет ни договора, ни эскроу, ни следа для разбирательства.
+    expect(sent.statusCode).toBe(201)
+    expect(sent.json().warning).toContain('эскроу')
+
+    const history = await app.inject({
+      method: 'GET',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(vendor.token),
+    })
+    const items = history.json().items as { senderId: string | null; text: string }[]
+    // Предупреждение видно обеим сторонам и остаётся в истории.
+    expect(items.some((m) => m.senderId === null && m.text.includes('эскроу'))).toBe(true)
+
+    // Повтор в те же сутки второго предупреждения не добавляет: иначе оно
+    // превращается в шум и его перестают читать.
+    await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(w.token),
+      payload: { text: 'ну так что, номер карты скинете?' },
+    })
+    const after = await app.inject({
+      method: 'GET',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(vendor.token),
+    })
+    const warnings = (after.json().items as { senderId: string | null }[]).filter((m) => m.senderId === null)
+    expect(warnings).toHaveLength(1)
+  })
+
+  it('обычная переписка предупреждения не получает', async () => {
+    const vendor = await newVendor('Обычный')
+    const w = await newWedding('2027-04-23')
+    const chatId = (
+      await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+    ).json().id as string
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(w.token),
+      payload: { text: 'Здравствуйте! Расскажите про пакеты и предоплату по договору.' },
+    })
+    // Ложное срабатывание стоит доверия: «по договору» — это не «без договора».
+    expect(sent.json().warning).toBeUndefined()
+  })
+
+  it('ссылка в первом сообщении подрядчика уходит на модерацию', async () => {
+    const vendor = await newVendor('Ссылочный')
+    const w = await newWedding('2027-04-24')
+    const chatId = (
+      await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+    ).json().id as string
+
+    const sent = await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(vendor.token),
+      payload: { text: 'Здравствуйте! Портфолио тут: https://ne-tili.example/portfolio' },
+    })
+    // Сообщение доставлено — но модератор о нём узнает (§19.4, фишинг).
+    expect(sent.statusCode).toBe(201)
+
+    const { rows } = await app.db!.query<{ category: string; text: string }>(
+      'select category, text from complaints where target_id = $1 and reporter_id is null',
+      [vendor.vendorId],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ category: 'spam' })
+  })
+
+  it('ответ со ссылкой в начатой переписке модерацию не тревожит', async () => {
+    const vendor = await newVendor('Аккуратный2')
+    const w = await newWedding('2027-04-25')
+    const chatId = (
+      await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+    ).json().id as string
+    await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(w.token),
+      payload: { text: 'Здравствуйте!' },
+    })
+    await app.inject({
+      method: 'POST',
+      url: `/chats/${chatId}/messages`,
+      headers: auth(vendor.token),
+      payload: { text: 'Здравствуйте! Вот портфолио: https://example.com/portfolio' },
+    })
+
+    const { rows } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from complaints where target_id = $1 and reporter_id is null',
+      [vendor.vendorId],
+    )
+    // Правило про ПЕРВОЕ сообщение: ссылка в ответе — обычное дело.
+    expect(Number(rows[0]!.n)).toBe(0)
+  })
+
+  /* ── SLA модерации ────────────────────────────────────────────────── */
+  it('метрики показывают просроченные жалобы, а не только открытые', async () => {
+    const staff = await newUser()
+    await app.db!.query('update users set is_staff = true where id = $1', [staff.userId])
+    const w = await newWedding('2027-04-26')
+    const vendor = await newVendor('Пожалованный')
+    await app.inject({
+      method: 'POST',
+      url: '/complaints',
+      headers: auth(w.token),
+      payload: { targetKind: 'vendor', targetId: vendor.vendorId, category: 'no_show' },
+    })
+    await app.db!.query("update complaints set created_at = now() - interval '30 hours' where target_id = $1", [
+      vendor.vendorId,
+    ])
+
+    const metrics = await app.inject({ method: 'GET', url: '/admin/metrics', headers: auth(staff.token) })
+    // SLA 24 часа без счётчика просроченных существует только на бумаге.
+    expect(metrics.json().complaintsOverdue).toBeGreaterThanOrEqual(1)
+  })
+
   /* ── все пути этапа отвечают ──────────────────────────────────────── */
   it('шестнадцать путей этапа отвечают своими обработчиками', async () => {
     const staff = await newUser()

@@ -575,7 +575,16 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
     const staff = await newStaff()
     const queue = await app.inject({ method: 'GET', url: '/admin/complaints', headers: auth(staff.token) })
     expect(queue.statusCode).toBe(200)
-    expect((queue.json().items as { targetId: string }[]).some((c) => c.targetId === vendor.vendorId)).toBe(true)
+    /* Очередь идёт от старейших, и в общей тестовой базе наша жалоба —
+     * на последней странице. Проверяем состав страницы (только неразобранные)
+     * и наличие жалобы в очереди по базе. */
+    expect((queue.json().items as { status: string }[]).every((c) => c.status === 'new')).toBe(true)
+    const { rows } = await app.db!.query<{ status: string }>(
+      'select status from complaints where target_id = $1 and reporter_id is not null',
+      [vendor.vendorId],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.status).toBe('new')
   })
 
   it('обычный пользователь в админку не входит', async () => {
