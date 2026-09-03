@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { sendDuePushes } from '../notify/push.js'
 import { notify, notifyWedding } from '../notify/notify.js'
 import { recomputeAllRatings } from '../reviews/rating.js'
+import { reportJobFailure } from '../plugins/sentry.js'
 import { uuidv7 } from '../ids.js'
 
 /**
@@ -337,7 +338,12 @@ export async function registerJobs(app: FastifyInstance): Promise<void> {
       settings: { backoffStrategy: (attempts: number) => [60_000, 300_000, 1_500_000][attempts - 1] ?? 1_500_000 },
     },
   )
-  worker.on('failed', (job, err) => app.log.error({ err, job: job?.name }, 'фоновая задача упала'))
+  worker.on('failed', (job, err) => {
+    // Задачу никто не видит: без отчёта её падение обнаружится по тому,
+    // что перестали приходить push — то есть через сутки.
+    app.log.error({ err, job: job?.name }, 'фоновая задача упала')
+    reportJobFailure(job?.name ?? 'неизвестная', err)
+  })
 
   /* Планировщик именованный: повторный вызов при рестарте обновляет
    * расписание, а не заводит вторую такую же задачу. Иначе после десяти

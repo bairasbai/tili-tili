@@ -7,6 +7,7 @@ import { maskUrl } from './redact.js'
 import { registerDb } from './plugins/db.js'
 import { registerRedis } from './plugins/redis.js'
 import { registerRateLimit } from './plugins/ratelimit.js'
+import { registerSentry } from './plugins/sentry.js'
 import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
 import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './routes/auth.js'
@@ -105,6 +106,9 @@ export async function buildApp(
   // правил рядом. Обработчик пишет ref('Wedding'), и при правке контракта
   // валидатор меняется вместе с ним.
   app.addSchema(CONTRACT_SCHEMAS)
+
+  // Раньше базы и маршрутов: падение при старте — тоже инцидент.
+  registerSentry(app, config)
 
   await registerDb(app, config)
   await registerRedis(app, config)

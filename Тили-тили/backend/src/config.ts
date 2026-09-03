@@ -33,6 +33,8 @@ export interface Config {
   rateLimitPerSecond: number
   /** Сколько новых переписок в день начинает НЕпроверенный подрядчик (§18.2). */
   coldOutreachPerDay: number
+  /** Куда слать неожиданные ошибки. Пусто — не слать никуда и сказать об этом. */
+  sentryDsn: string | null
   /** Ключи Web Push. Пока их нет, подписка отвечает 501 — см. routes/notifications. */
   vapidPublicKey: string | null
   vapidPrivateKey: string | null
@@ -130,6 +132,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     contributionsMaxPerGuest: Number(source.CONTRIBUTIONS_MAX_PER_GUEST ?? 20),
     rateLimitPerSecond: Number(source.RATE_LIMIT_PER_SECOND ?? 10),
     coldOutreachPerDay: Number(source.COLD_OUTREACH_PER_DAY ?? 5),
+    sentryDsn: source.SENTRY_DSN ?? null,
     vapidPublicKey: source.VAPID_PUBLIC_KEY ?? null,
     vapidPrivateKey: source.VAPID_PRIVATE_KEY ?? null,
     vapidSubject: source.VAPID_SUBJECT ?? 'mailto:support@tili-tili.ru',
