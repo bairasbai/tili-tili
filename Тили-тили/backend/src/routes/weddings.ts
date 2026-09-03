@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { knownTimeZone } from '../notify/quiet.js'
 import { requireRole, type Role } from '../wedding/access.js'
 import { weddingCode } from '../wedding/codes.js'
 import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../wedding/templates.generated.js'
@@ -185,21 +186,26 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       const title = ownName ? `${ownName} ♥ ${body.partnerName}` : body.partnerName
 
       const { rows: cityRows } = await db().query<{ id: number; tz: string | null }>(
-        'select id, null::text as tz from cities where name = $1 and region = $2 limit 1',
+        'select id, tz from cities where name = $1 and region = $2 limit 1',
         [body.city.name, body.city.region],
       )
       // Город из справочника, а не строкой: иначе «Уфа» и «уфа» станут двумя
       // разными городами, и поиск подрядчиков по городу развалится.
       if (!cityRows[0]) throw notFound(`Город «${body.city.name}» не найден в справочнике`)
       const cityId = cityRows[0].id
+      /* Часовой пояс берётся из города, а не остаётся пустым. По нему
+       * открывается чат дня X, снимаются тихие часы и считается «после
+       * свадьбы»: без него вся страна живёт по Москве, и во Владивостоке
+       * чат дня X открывается в день свадьбы после обеда. */
+      const cityTz = cityRows[0].tz
 
       const weddingId = uuidv7()
       const date = body.date ?? null
 
       await db().query(
         `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
-                               budget_total, currency, invite_code)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                               budget_total, currency, invite_code, tz)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           weddingId,
           userId,
@@ -211,6 +217,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           body.budgetTotal?.amount ?? null,
           body.budgetTotal?.currency ?? 'RUB',
           weddingCode(),
+          cityTz,
         ],
       )
       await db().query(
@@ -288,20 +295,34 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       }
 
       let cityId: number | null = null
+      let cityTz: string | null = null
       if (body.city) {
-        const { rows } = await db().query<{ id: number }>(
-          'select id from cities where name = $1 and region = $2 limit 1',
+        const { rows } = await db().query<{ id: number; tz: string | null }>(
+          'select id, tz from cities where name = $1 and region = $2 limit 1',
           [body.city.name, body.city.region],
         )
         if (!rows[0]) throw notFound(`Город «${body.city.name}» не найден в справочнике`)
         cityId = rows[0].id
+        // Переехали в другой город — пояс едет вместе с ним. Явно указанный
+        // в этом же запросе побеждает: человек мог поправить его сам.
+        cityTz = rows[0].tz
+      }
+
+      /* Часовой пояс уходит в `AT TIME ZONE` внутри триггера, а неизвестная
+       * зона там — ошибка базы, то есть 500 вместо внятного отказа.
+       * Проверяем на входе (ERR-0055 — та же беда была у пользователя). */
+      if (body.tz !== undefined && knownTimeZone(body.tz as string) !== body.tz) {
+        throw new AppError(422, 'unknown_timezone', 'Неизвестный часовой пояс', {
+          tz: 'ожидается зона вида Europe/Moscow',
+        })
       }
 
       await db().query(
         `update weddings set
            date = coalesce($2::date, date), city_id = coalesce($3, city_id),
            budget_total = coalesce($4::bigint, budget_total), guests_planned = coalesce($5, guests_planned),
-           style = coalesce($6, style), venue = coalesce($7, venue), tz = coalesce($8, tz),
+           style = coalesce($6, style), venue = coalesce($7, venue),
+           tz = coalesce($8, $11, tz),
            invite_text = coalesce($9, invite_text), invite_theme_id = coalesce($10, invite_theme_id)
          where id = $1`,
         [
@@ -315,6 +336,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           (body.tz as string) ?? null,
           (body.inviteText as string) ?? null,
           (body.inviteThemeId as number) ?? null,
+          cityTz,
         ],
       )
       return loadWedding(weddingId, request.member!.role)

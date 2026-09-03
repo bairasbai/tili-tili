@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { knownTimeZone } from '../notify/quiet.js'
 
 interface ProfileRow {
   id: string
@@ -153,6 +154,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         quietHours?: { from?: string; to?: string }
       }
 
+      /* Зона уходит в расчёт тихих часов и в `AT TIME ZONE`. Мусор там —
+       * либо потерянное уведомление, либо ошибка базы; проверка длины
+       * от этого не спасает (ERR-0055). */
+      if (body.tz !== undefined && knownTimeZone(body.tz) !== body.tz) {
+        throw new AppError(422, 'unknown_timezone', 'Неизвестный часовой пояс', {
+          tz: 'ожидается зона вида Europe/Moscow',
+        })
+      }
+
       // coalesce, а не сборка SQL строками: пропущенное поле остаётся как было,
       // явный null стирает значение (правило R-17 — очистка это null, не пропуск).
       await db().query(
@@ -254,11 +264,17 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       'select device, created_at, revoked_at from sessions where user_id = $1 order by created_at',
       [userId],
     )
-    // 152-ФЗ даёт право получить ВСЕ свои данные, а не выборку. Свадьбы —
-    // главные из них; гости, сделки и переписка добавляются по мере появления.
+    /* 152-ФЗ даёт право получить ВСЕ свои данные, а не выборку.
+     *
+     * Границы выгрузки: отдаём то, что человек внёс сам или что относится
+     * лично к нему. НЕ отдаём чужие персональные данные, которые он видит
+     * по роли: гостевые токены, тексты чужих сообщений, отзывы других людей.
+     * Право на свои данные — не право на данные всех, кто рядом.
+     */
     const { rows: weddings } = await db().query(
-      `select w.id, w.title, w.date::text as date, m.role, m.joined_at,
-              c.name as city, c.region
+      `select w.id, w.title, w.date::text as date, w.tz, w.style, w.venue,
+              w.guests_planned, w.budget_total::text as budget_total, w.currency,
+              m.role, m.joined_at, c.name as city, c.region
          from wedding_members m
          join weddings w on w.id = m.wedding_id
          left join cities c on c.id = w.city_id
@@ -266,12 +282,91 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         order by m.joined_at`,
       [userId],
     )
+    const weddingIds = weddings.map((w) => (w as { id: string }).id)
+
+    // Дальше — по свадьбам, где человек состоит. Пустой список свадеб
+    // означает пустые выборки, а не выгрузку всей базы.
+    const byWeddings = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> => {
+      if (weddingIds.length === 0) return []
+      const { rows } = await db().query<T>(sql, [weddingIds])
+      return rows
+    }
+
+    const guests = await byWeddings(
+      `select wedding_id, name, phone, rsvp, plus_one, group_name, diet, diet_note,
+              transfer, comment, created_at
+         from guests where wedding_id = any($1) order by created_at`,
+    )
+    const deals = await byWeddings(
+      `select d.wedding_id, s.label as slot, d.state, d.price::text as price, d.currency,
+              coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at
+         from deals d
+         join slots s on s.id = d.slot_id
+         left join vendors v on v.id = d.vendor_id
+        where d.wedding_id = any($1) order by d.created_at`,
+    )
+    const payments = await byWeddings(
+      `select p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.created_at
+         from payments p join deals d on d.id = p.deal_id
+        where d.wedding_id = any($1) order by p.created_at`,
+    )
+    const budget = await byWeddings(
+      `select wedding_id, title, category_id, amount::text as amount, currency, created_at
+         from budget_items where wedding_id = any($1) order by created_at`,
+    )
+    const gifts = await byWeddings(
+      `select wedding_id, name, descr, price::text as price, currency, is_group,
+              funded::text as funded, created_at
+         from gifts where wedding_id = any($1) order by created_at`,
+    )
+    const tasks = await byWeddings(
+      `select wedding_id, title, period, due::text as due, done_at, source
+         from tasks where wedding_id = any($1) order by sort`,
+    )
+
+    // Личное, не зависящее от свадьбы.
+    const { rows: notifications } = await db().query(
+      `select kind, title, body, link, read_at, created_at
+         from notifications where user_id = $1 order by created_at`,
+      [userId],
+    )
+    // Только СВОИ сообщения: чужие реплики — чужие персональные данные.
+    const { rows: messages } = await db().query(
+      `select chat_id, text, created_at from messages where sender_id = $1 order by created_at`,
+      [userId],
+    )
+    const { rows: vendor } = await db().query(
+      `select v.name, v.about, v.category_id, v.price_from::text as price_from, v.currency,
+              v.years, v.published_at, v.verified_at, v.rating::text as rating, v.reviews_count
+         from vendors v where v.user_id = $1`,
+      [userId],
+    )
+    // Отзывы, написанные им как парой. Отзывы гостей о нём — чужие.
+    const { rows: reviews } = await db().query(
+      `select r.vendor_id, r.stars, r.text, r.created_at
+         from reviews r
+         join deals d on d.id = r.deal_id
+         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $1
+        where r.source = 'couple' order by r.created_at`,
+      [userId],
+    )
+
     return {
       exportedAt: new Date().toISOString(),
       profile,
       consents,
       sessions,
       weddings,
+      guests,
+      deals,
+      payments,
+      budget,
+      gifts,
+      tasks,
+      notifications,
+      messages,
+      vendorProfile: vendor[0] ?? null,
+      reviews,
     }
   })
 }
