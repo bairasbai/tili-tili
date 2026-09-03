@@ -135,6 +135,56 @@ describe('квиз', () => {
   })
 })
 
+describe('стили в квизе', () => {
+  /** Доходит до шага стиля: дата → город → гости → бюджет → формат → стиль. */
+  const toStyleStep = () => {
+    renderPage(<Quiz />)
+    fireEvent.click(screen.getByText('Ещё не решили'))
+    fireEvent.click(screen.getByText('Далее'))
+    fireEvent.click(screen.getByText('Уфа'))
+    fireEvent.click(screen.getByText('Далее'))
+    for (let step = 0; step < 3; step++) {
+      const options = screen.getAllByRole('button').filter(b => b.className.includes('card-s'))
+      fireEvent.click(options[0]!)
+      fireEvent.click(screen.getByText('Далее'))
+    }
+  }
+
+  it('стилей двенадцать, а не шесть', () => {
+    toStyleStep()
+    expect(screen.getByText('Стиль и настроение?')).toBeTruthy()
+    for (const style of ['🤍 Классика', '🌾 Рустик', '🍇 Усадьба', '⚓️ Морская', '🍋 Средиземноморская']) {
+      expect(screen.getByText(style)).toBeTruthy()
+    }
+    const options = screen.getAllByRole('button').filter(b => b.className.includes('card-s'))
+    expect(options).toHaveLength(12)
+  })
+
+  it('под каждым стилем написано, что он значит', () => {
+    toStyleStep()
+    /* Название вроде «Рустик» ничего не говорит тому, кто первый раз
+     * выбирает свадьбу, — а выбор влияет на всю выдачу каталога. */
+    expect(screen.getByText(/Амбар или база отдыха вместо банкетного зала/)).toBeTruthy()
+    expect(screen.getByText(/Свечи вместо прожекторов|свечи вместо прожекторов/)).toBeTruthy()
+
+    const options = screen.getAllByRole('button').filter(b => b.className.includes('card-s'))
+    // Пустых карточек быть не должно: объяснение есть у каждого стиля.
+    for (const option of options) expect(option.textContent!.length).toBeGreaterThan(20)
+  })
+
+  it('выбранный стиль сохраняется вместе с остальным квизом', () => {
+    toStyleStep()
+    fireEvent.click(screen.getByText('🍇 Усадьба'))
+    fireEvent.click(screen.getByText('Далее'))
+    for (let step = 0; step < 2; step++) {
+      const options = screen.getAllByRole('button').filter(b => b.className.includes('card-s'))
+      fireEvent.click(options[0]!)
+      fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
+    }
+    expect(JSON.parse(localStorage.getItem('tt_quiz')!).style).toBe('🍇 Усадьба')
+  })
+})
+
 describe('телефон подрядчика', () => {
   const openCard = (id: string) =>
     render(

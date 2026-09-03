@@ -1223,4 +1223,24 @@ Object.assign(EN, {
   'Телефон откроется после брони — до неё пишите в чат: переписка остаётся в приложении вместе с договором.': 'The phone number opens after booking — until then use the chat: the conversation stays in the app together with the contract.',
   'Рабочий телефон': 'Work phone',
   'Виден парам после брони': 'Visible to couples after booking',
+
+  // Стили свадьбы в квизе: названия и объяснения
+  'Стиль задаёт выдачу каталога — под него подбираются подрядчики': 'The style drives the catalog — vendors are matched to it',
+  // «🍇 Усадьба», «🌆 Урбан» и «🕯 Вечерняя» уже переведены выше — для историй
+  // «Вдохновения». Квиз берёт те же ключи, второй пары быть не должно.
+  '⚓️ Морская': '⚓️ Nautical',
+  '🎭 Театральная': '🎭 Theatrical',
+  '🍋 Средиземноморская': '🍋 Mediterranean',
+  'Белое платье, живые цветы, банкетный зал. Ничего лишнего и всегда уместно': 'White dress, fresh flowers, banquet hall. Nothing extra, never out of place',
+  'Пампасная трава, макраме, свободная посадка. Много воздуха и мало правил': 'Pampas grass, macramé, loose seating. Lots of air and few rules',
+  'Пустые стены, одна фактура, короткий список гостей. Красота за счёт пропорций': 'Bare walls, a single texture, a short guest list. Beauty from proportion',
+  'Хрусталь, золото, живой оркестр. Вечер, где всё дорого — и это видно': 'Crystal, gold, a live orchestra. An evening where everything is expensive and it shows',
+  'Дерево, лён, полевые цветы. Амбар или база отдыха вместо банкетного зала': 'Wood, linen, wildflowers. A barn or a country lodge instead of a banquet hall',
+  'Графика, чёрный, необычные ракурсы. Свадьба, похожая на съёмку для журнала': 'Graphic shapes, black, unusual angles. A wedding that looks like a magazine shoot',
+  'Старый дом, парк, два дня праздника. Гости остаются ночевать': 'An old house, a park, two days of celebration. Guests stay overnight',
+  'Лофт, крыша, смотровая площадка. Город вместо декораций': 'A loft, a rooftop, a viewing deck. The city instead of decorations',
+  'Церемония после заката, свечи вместо прожекторов. Камерно и тепло': 'A ceremony after sunset, candles instead of floodlights. Intimate and warm',
+  'Синий, канаты, открытая вода. Причал, яхта или берег': 'Blue, ropes, open water. A pier, a yacht or the shore',
+  'Бархат, кулисы, выход под музыку. Праздник как спектакль': 'Velvet, wings, an entrance to music. A celebration staged like a play',
+  'Лимоны, терракота, длинный стол под небом. Итальянское лето': 'Lemons, terracotta, a long table under the sky. Italian summer',
 })
