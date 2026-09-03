@@ -373,6 +373,21 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           (body.transfer as string) ?? null,
         ],
       )
+      // «Не приду» — значит держать под него сиденье и номер незачем.
+      // Счётчики поправит триггер: он считает по факту строк.
+      if (body.status === 'no') {
+        await db().query(
+          `delete from bus_bookings b using bus_routes r
+            where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+          [guest.guestId, guest.weddingId],
+        )
+        await db().query(
+          `delete from hotel_bookings b using hotel_blocks h
+            where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
+          [guest.guestId, guest.weddingId],
+        )
+      }
+
       // Ответ гостю — без чужих данных: он видит только себя.
       return { status: body.status, guestName: guest.name }
     },

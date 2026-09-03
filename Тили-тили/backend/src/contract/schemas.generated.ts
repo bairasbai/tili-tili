@@ -708,6 +708,11 @@ export const CONTRACT_SCHEMAS = {
               "sent": {
                   "type": "boolean"
               },
+              "expectedPortions": {
+                  "type": "integer",
+                  "readOnly": true,
+                  "description": "На сколько ПЕРСОН готовить. Считается по подтвердившим гостям:\nзапись с «+1» — двое. Кейтерингу нужны порции, а не строки\nсписка, и считать их на клиенте значит получить два разных\nответа на разных экранах.\n"
+              },
               "options": {
                   "type": "array",
                   "items": {

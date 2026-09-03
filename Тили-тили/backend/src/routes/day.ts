@@ -4,6 +4,7 @@ import { isCheckViolation } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
+import { personCount } from './guests.js'
 import { COMMITTED } from '../deals/state.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -460,9 +461,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          from menu_options o where o.wedding_id = $1 order by o.sort, o.name`,
       [weddingId],
     )
+    // Кейтерингу нужны ПОРЦИИ, а не строки списка: «Ольга +1» — два
+    // человека за столом и две порции. Считаем на сервере, чтобы разные
+    // экраны не получили разных ответов (ERR-0012 ровно про это).
+    const { rows: guests } = await db().query<{ status: string; plus_one: boolean }>(
+      'select rsvp as status, plus_one from guests where wedding_id = $1',
+      [weddingId],
+    )
     return {
       question: poll[0]?.question ?? 'Что будете на горячее?',
       sentAt: poll[0]?.sent_at?.toISOString() ?? null,
+      expectedPortions: personCount(guests.map((g) => ({ status: g.status, plusOne: g.plus_one }))),
       options: options.map((o) => ({ id: o.id, name: o.name, icon: o.icon, votes: Number(o.votes) })),
     }
   })
@@ -582,17 +591,29 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (request, reply) => {
+    async (request) => {
       const { guestToken } = request.params as { guestToken: string }
       const { busId } = request.body as { busId: string }
       const guest = await guestByToken(db(), guestToken)
 
+      // Ответ собирается ВНУТРИ транзакции, а отправляется после неё.
+      // `reply.send()` внутри `tx` уходит клиенту до коммита: он видит 200,
+      // а данных ещё нет — и если коммит упадёт, ему уже сказали «готово».
       return db().tx(async (client) => {
         const { rows: bus } = await client.query('select 1 from bus_routes where id = $1 and wedding_id = $2', [
           busId,
           guest.weddingId,
         ])
         if (bus.length === 0) throw notFound('Маршрут не найден')
+
+        // Гость едет ОДНИМ автобусом. Пересел на другой рейс — место
+        // в прежнем обязано освободиться, иначе водитель ждёт того,
+        // кто уехал с другой точки сбора.
+        await client.query(
+          `delete from bus_bookings b using bus_routes r
+            where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and b.bus_id <> $3`,
+          [guest.guestId, guest.weddingId, busId],
+        )
 
         // Счётчик ведёт триггер: строки исчезают и мимо обработчика —
         // удаление гостя уносит запись каскадом. Переполнение ловит
@@ -615,10 +636,62 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           [busId],
         )
         if (booked.rowCount === 0) {
-          return reply.code(200).send({ busId, alreadyBooked: true, ...rows[0]! })
+          return { busId, alreadyBooked: true, ...rows[0]! }
         }
         await client.query(`update guests set transfer = 'need' where id = $1`, [guest.guestId])
-        return reply.code(200).send({ busId, alreadyBooked: false, ...rows[0]! })
+        return { busId, alreadyBooked: false, ...rows[0]! }
+      })
+    },
+  )
+
+  app.post(
+    '/join/:guestToken/hotels',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['hotelId'],
+          additionalProperties: false,
+          properties: { hotelId: { type: 'string', maxLength: 40 } },
+        },
+      },
+    },
+    async (request) => {
+      const { guestToken } = request.params as { guestToken: string }
+      const { hotelId } = request.body as { hotelId: string }
+      const guest = await guestByToken(db(), guestToken)
+
+      return db().tx(async (client) => {
+        const { rows: block } = await client.query('select 1 from hotel_blocks where id = $1 and wedding_id = $2', [
+          hotelId,
+          guest.weddingId,
+        ])
+        if (block.length === 0) throw notFound('Блок не найден')
+
+        // Гость живёт в ОДНОМ отеле: смена блока освобождает прежний номер.
+        await client.query(
+          `delete from hotel_bookings b using hotel_blocks h
+            where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2 and b.hotel_id <> $3`,
+          [guest.guestId, guest.weddingId, hotelId],
+        )
+
+        let booked
+        try {
+          booked = await client.query(
+            'insert into hotel_bookings (hotel_id, guest_id) values ($1,$2) on conflict do nothing',
+            [hotelId, guest.guestId],
+          )
+        } catch (error) {
+          if (isCheckViolation(error, 'hotel_booked_bounded')) {
+            throw conflict('hotel_full', 'Свободных номеров в этом блоке не осталось')
+          }
+          throw error
+        }
+        const { rows } = await client.query<{ booked: number; rooms: number }>(
+          'select booked, rooms from hotel_blocks where id = $1',
+          [hotelId],
+        )
+        return { hotelId, alreadyBooked: booked.rowCount === 0, ...rows[0]! }
       })
     },
   )

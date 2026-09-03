@@ -3383,7 +3383,49 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /**
+         * Гость занимает номер в блоке
+         * @description Место занимается атомарно, при переполнении — 409. Пути записи
+         *     не было вовсе: блоки показывались, а занять номер было нечем,
+         *     хотя план требует «атомарные места в автобусе И НОМЕРЕ».
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        hotelId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Номер занят */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                409: components["responses"]["Conflict"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -5654,6 +5696,13 @@ export interface components {
         MenuPoll: {
             question?: string;
             sent?: boolean;
+            /**
+             * @description На сколько ПЕРСОН готовить. Считается по подтвердившим гостям:
+             *     запись с «+1» — двое. Кейтерингу нужны порции, а не строки
+             *     списка, и считать их на клиенте значит получить два разных
+             *     ответа на разных экранах.
+             */
+            readonly expectedPortions?: number;
             options?: {
                 id?: string;
                 name?: string;

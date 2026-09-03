@@ -145,6 +145,7 @@ describe('контракт', () => {
       'POST /weddings/:weddingId/logistics/notify-pickup',
       'POST /join/:guestToken/shuttle',
       'GET /join/:guestToken/hotels',
+      'POST /join/:guestToken/hotels',
       'GET /weddings/:weddingId/menu-poll',
       'PUT /weddings/:weddingId/menu-poll',
       'POST /weddings/:weddingId/menu-poll/remind',
@@ -183,7 +184,7 @@ describe('контракт', () => {
       if (res.statusCode === 501 && res.json().error.code === 'not_implemented') stub++
     }
     // Число падает с каждым этапом. Если оно выросло — что-то отвалилось.
-    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 91)
+    expect(stub).toBeLessThanOrEqual(CONTRACT_OPERATIONS.length - 92)
   })
 
   it('в контракте нет дублей метод+путь', () => {

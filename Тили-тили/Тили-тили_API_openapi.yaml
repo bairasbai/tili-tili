@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.7.0
+  version: 0.8.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1648,6 +1648,28 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/HotelBlock' }
+    post:
+      tags: [logistics-guest]
+      summary: Гость занимает номер в блоке
+      description: |
+        Место занимается атомарно, при переполнении — 409. Пути записи
+        не было вовсе: блоки показывались, а занять номер было нечем,
+        хотя план требует «атомарные места в автобусе И НОМЕРЕ».
+      parameters:
+        - { $ref: '#/components/parameters/GuestToken' }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hotelId]
+              properties:
+                hotelId: { type: string }
+      responses:
+        '200': { description: Номер занят }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────── ОПРОС ПО МЕНЮ (§12.2) ─────────────────────────
   /weddings/{weddingId}/menu-poll:
@@ -2922,6 +2944,14 @@ components:
       properties:
         question: { type: string }
         sent: { type: boolean }
+        expectedPortions:
+          type: integer
+          readOnly: true
+          description: |
+            На сколько ПЕРСОН готовить. Считается по подтвердившим гостям:
+            запись с «+1» — двое. Кейтерингу нужны порции, а не строки
+            списка, и считать их на клиенте значит получить два разных
+            ответа на разных экранах.
         options:
           type: array
           items:
