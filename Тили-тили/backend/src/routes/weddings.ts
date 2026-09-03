@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
+import { assertWeddingDate } from '../wedding/dates.js'
+import { rescheduleWedding } from '../wedding/reschedule.js'
 import { requireRole, type Role } from '../wedding/access.js'
 import { weddingCode } from '../wedding/codes.js'
 import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../wedding/templates.generated.js'
@@ -201,6 +203,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
 
       const weddingId = uuidv7()
       const date = body.date ?? null
+      if (date) assertWeddingDate(date)
 
       await db().query(
         `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
@@ -315,6 +318,16 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         throw new AppError(422, 'unknown_timezone', 'Неизвестный часовой пояс', {
           tz: 'ожидается зона вида Europe/Moscow',
         })
+      }
+      if (body.date !== undefined) assertWeddingDate(body.date as string)
+
+      /* От даты живут занятость подрядчиков, сроки задач и блоки тайминга.
+       * Раньше здесь менялась только колонка: подрядчик оставался занят
+       * на дне, которого больше нет, а на настоящий день свадьбы у него
+       * в календаре было пусто — и эту дату успевала занять другая пара.
+       * Теперь обе двери в это поле ведут в один и тот же перенос. */
+      if (body.date !== undefined) {
+        await db().tx((client) => rescheduleWedding(client, weddingId, body.date as string))
       }
 
       await db().query(

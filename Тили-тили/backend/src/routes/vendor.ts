@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { holdDatesOf } from '../catalog/holds.js'
+import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
@@ -310,6 +311,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       const vendorId = await myVendorId(request.caller!.userId)
       if (!vendorId) throw notFound('Анкета ещё не создана')
       const { dates, status } = request.body as { dates: string[]; status: 'free' | 'busy' }
+      // Шаблон пропускает 30 февраля, а PostgreSQL на такой дате падает.
+      for (const date of dates) assertRealDate(date, 'dates')
 
       if (status === 'busy') {
         for (const date of dates) {

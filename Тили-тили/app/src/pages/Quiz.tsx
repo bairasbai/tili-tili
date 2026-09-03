@@ -1,15 +1,22 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ChevronLeft, Check, MapPin, Search } from 'lucide-react'
-import { useStore } from '@/lib/store'
+import { ChevronLeft, Check, MapPin, Search, CalendarDays } from 'lucide-react'
+import { useStore, EMPTY_QUIZ, type QuizAnswers } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { CityPicker } from '@/components/CityPicker'
+import { DatePicker } from '@/components/DatePicker'
+import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
 
 interface Step { q: string; hint?: string; opts: string[]; multi?: boolean }
 
+/* Шаг даты и шаг города — со своими экранами: в первом календарь,
+ * во втором поиск по справочнику. Остальные — список вариантов. */
+const DATE_STEP = 0
+const CITY_STEP = 1
+
 const steps: Step[] = [
-  { q: t('Когда ваша свадьба?'), hint: t('Дату можно изменить позже'), opts: [t('14 июня 2027'), t('Примерно — лето 2027'), t('Ещё не решили')] },
+  { q: t('Когда ваша свадьба?'), hint: t('Дату можно изменить позже'), opts: [] },
   { q: t('Сколько гостей?'), opts: [t('До 30'), '30–60', '60–100', '100+'] },
   { q: t('Общий бюджет?'), hint: t('Можно примерно — поможем распределить'), opts: [t('До 500 тыс ₽'), t('500 тыс — 1 млн ₽'), t('1–2 млн ₽'), t('2 млн+ ₽'), t('Пока не знаем')] },
   { q: t('Какой формат?'), opts: [t('Классика: ЗАГС + банкет'), t('Выездная церемония'), t('Камерная свадьба'), t('Банкет+ на 2 дня')] },
@@ -24,13 +31,18 @@ export default function Quiz() {
   const [i, setI] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string[]>>({})
   const [picker, setPicker] = useState(false)
-  const CITY_STEP = 1
+  const [datePicker, setDatePicker] = useState(false)
+  const [date, setDate] = useState<string | null>(null)
+  /* «Сегодня» снимается один раз за жизнь экрана: время в теле компонента
+   * запрещено (R-04), а квиз не переживает полуночи. */
+  const [today] = useState(() => new Date())
   const total = steps.length + 1 // + шаг города
   const cityDone = i === CITY_STEP && !!answers[CITY_STEP]
   const s = i < CITY_STEP ? steps[i] : steps[i - 1]
   const sel = answers[i] ?? []
   const last = i === total - 1
-  const canNext = i === CITY_STEP ? cityDone : sel.length > 0
+  // На шаге даты «дальше» открыт и без даты: «ещё не решили» — тоже ответ.
+  const canNext = i === DATE_STEP ? date !== null || sel.includes(t('Ещё не решили')) : i === CITY_STEP ? cityDone : sel.length > 0
 
   const pick = (o: string) => {
     setAnswers(a => {
@@ -41,7 +53,20 @@ export default function Quiz() {
   }
   const next = () => {
     if (!last) return setI(i + 1)
-    finishOnboarding()
+    /* Ответы уходят в состояние: раньше они существовали только внутри
+     * этого компонента и исчезали на переходе к главной. */
+    const one = (step: number) => answers[step]?.[0] ?? null
+    const collected: QuizAnswers = {
+      ...EMPTY_QUIZ,
+      date,
+      guests: one(2),
+      budget: one(3),
+      format: one(4),
+      style: one(5),
+      planner: one(6),
+      booked: answers[7] ?? [],
+    }
+    finishOnboarding(collected)
     nav('/home')
   }
 
@@ -59,7 +84,34 @@ export default function Quiz() {
         <span className="text-[11px] text-[var(--soft)] font-semibold w-8 text-right tabular">{i + 1}/{total}</span>
       </div>
 
-      {i === CITY_STEP ? (
+      {i === DATE_STEP ? (
+        <div key="date" className="flex-1 px-6 pt-8 fade-up">
+          <h1 className="font-serif-d text-[30px] leading-tight">{steps[DATE_STEP]!.q}</h1>
+          <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('Дату можно изменить позже')}</p>
+          <button onClick={() => setDatePicker(true)} className="press w-full mt-6 card-s p-4 flex items-center gap-3 text-left">
+            <CalendarDays size={16} className="text-[var(--soft2)]" />
+            {date ? (
+              <b className="flex-1 text-[14px]">{formatWeddingDate(date)}</b>
+            ) : (
+              <span className="flex-1 text-[13.5px] text-[var(--soft2)]">{t('Выбрать день в календаре')}</span>
+            )}
+          </button>
+          <button
+            onClick={() => { setDate(null); setAnswers(a => ({ ...a, [DATE_STEP]: [t('Ещё не решили')] })) }}
+            className={cn('press w-full mt-2.5 card-s p-4 flex items-center justify-between text-left text-[14px]',
+              !date && sel.includes(t('Ещё не решили')) && 'ring-2 ring-[#C98A8A]')}
+          >
+            <span className="font-medium">{t('Ещё не решили')}</span>
+            <span className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all',
+              !date && sel.includes(t('Ещё не решили')) ? 'bg-[#C98A8A] border-[#C98A8A]' : 'border-[#EAD9CF]')}>
+              {!date && sel.includes(t('Ещё не решили')) && <Check size={13} color="#fff" strokeWidth={3} />}
+            </span>
+          </button>
+          <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">
+            {t('💡 Без даты тоже работает: чек-лист и бюджет соберутся, а сроки появятся, как только дата будет.')}
+          </p>
+        </div>
+      ) : i === CITY_STEP ? (
         <div key="city" className="flex-1 px-6 pt-8 fade-up">
           <h1 className="font-serif-d text-[30px] leading-tight">{t('Город праздника?')}</h1>
           <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('Работаем по всей России — от Уфы до райцентров вроде Сибая и Баймака')}</p>
@@ -116,6 +168,15 @@ export default function Quiz() {
         </button>
         {!last && <button onClick={next} className="w-full text-center text-[12px] text-[var(--soft)] mt-3 press">{t('Пропустить вопрос')}</button>}
       </div>
+
+      {datePicker && (
+        <DatePicker
+          value={date}
+          now={today}
+          onPick={(iso) => { setDate(iso); setAnswers(a => ({ ...a, [DATE_STEP]: [iso] })); setDatePicker(false) }}
+          onClose={() => setDatePicker(false)}
+        />
+      )}
 
       {picker && (
         <CityPicker

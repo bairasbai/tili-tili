@@ -10,6 +10,7 @@ import { AiTip, SyncNote, Tile, TopBar } from '@/components/chrome'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { rub } from '@/lib/money'
+import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* Карточка сделки */
 export function Deal() {
@@ -160,6 +161,7 @@ function downloadPdf(name: string) {
 /* Мастер договора: шаблон → данные → готово */
 export function ContractWizard() {
   const nav = useNavigate()
+  const { weddingDate } = useStore()
   const [step, setStep] = useState(0)
   const [tpl, setTpl] = useState(0)
   const [done, setDone] = useState(false)
@@ -194,7 +196,7 @@ export function ContractWizard() {
       ) : (
         <div className="px-5 mt-3 fade-up">
           <div className="card p-5 space-y-3.5">
-            {[[t('Заказчик'), couple.full], [t('Исполнитель'), t('Артём Краснов')], [t('Дата оказания услуги'), couple.date], [t('Сумма'), fmt(rub(60000))], [t('Аванс'), fmt(rub(30000)) + t(' · возврат 50% при отмене за 30 дней')]].map(([l, v]) => (
+            {[[t('Заказчик'), couple.full], [t('Исполнитель'), t('Артём Краснов')], [t('Дата оказания услуги'), weddingDate ? formatWeddingDate(weddingDate) : t('дата уточняется')], [t('Сумма'), fmt(rub(60000))], [t('Аванс'), fmt(rub(30000)) + t(' · возврат 50% при отмене за 30 дней')]].map(([l, v]) => (
               <div key={l}>
                 <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{l}</span>
                 <p className="text-[13.5px] font-medium mt-0.5">{v}</p>
@@ -325,7 +327,7 @@ export function Seating() {
 /* Редактор приглашений: сценарий → текст → вопросы гостям → рассылка */
 export function InviteEditor() {
   const nav = useNavigate()
-  const { inviteTpl, setInviteTpl, inviteText, setInviteText } = useStore()
+  const { inviteTpl, setInviteTpl, inviteText, setInviteText, weddingDate } = useStore()
   const theme = inviteTpl
   const [count, setCount] = useState(42)
   const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
@@ -350,7 +352,7 @@ export function InviteEditor() {
           <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: inviteThemes[theme].accentGrad }}>{t('А♥Т')}</div>
           <p className="font-serif-d italic text-[14px] text-[var(--soft)] mt-4">{t('Дорогая Марина Ивановна!')}</p>
           <h2 className="font-serif-d text-[26px] mt-2">{couple.bride} & {couple.groom}</h2>
-          <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>{couple.date} · {couple.city}</p>
+          <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>{weddingDate ? formatWeddingDate(weddingDate) : t('дата уточняется')} · {couple.city}</p>
           <p className="text-[11.5px] text-[var(--ink2)] font-light leading-relaxed mt-3">{inviteText}</p>
           <button onClick={() => nav('/invite')} className="press mt-4 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[11.5px] font-semibold">{t('Смотреть как гость →')}</button>
         </div>

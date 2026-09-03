@@ -1204,4 +1204,17 @@ Object.assign(EN, {
   'Забронировано': 'Booked',
   'Аванс внесён': 'Deposit paid',
   'Выполнено': 'Completed',
+
+  // Дата свадьбы: выбор в квизе и смена позже
+  'Дата свадьбы': 'Wedding date',
+  'Выбор даты свадьбы': 'Pick the wedding date',
+  'Выбрать день в календаре': 'Pick a day in the calendar',
+  'Выбрать дату свадьбы': 'Pick the wedding date',
+  'Дата не выбрана': 'Date not picked yet',
+  'дата уточняется': 'date to be confirmed',
+  'Предыдущий месяц': 'Previous month',
+  'Следующий месяц': 'Next month',
+  'Закрыть': 'Close',
+  'Дату можно менять и позже — команда и чек-лист переедут вместе с ней.': 'You can change the date later — the team and the checklist move with it.',
+  '💡 Без даты тоже работает: чек-лист и бюджет соберутся, а сроки появятся, как только дата будет.': '💡 Works without a date too: the checklist and budget come together, and deadlines appear as soon as there is a date.',
 })

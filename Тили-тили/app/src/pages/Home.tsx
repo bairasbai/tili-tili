@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { couple, aiTips, tasks, guests as initialGuests, type Guest, type Task } from '@/lib/data'
@@ -7,10 +8,16 @@ import { spentTotal, spentPct, type BudgetRow } from '@/lib/budget'
 import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { countdownTo, daysUntil, formatWeddingDate } from '@/lib/weddingDate'
 
 export default function Home() {
   const nav = useNavigate()
-  const { slots, city } = useStore()
+  const { slots, city, weddingDate } = useStore()
+  /* «Сейчас» снимается один раз за монтирование: время в теле компонента
+   * запрещено (R-04), а отсчёт до свадьбы не обязан тикать посекундно —
+   * до неё месяцы. */
+  const [now] = useState(() => new Date())
+  const left = countdownTo(weddingDate, now)
   const booked = slots.filter(s => s.state === 'booked')
   // Деньги и размер команды берутся из общего расчёта: иначе главная и бюджет
   // показывают разные суммы, и пара перестаёт верить обеим.
@@ -45,10 +52,10 @@ export default function Home() {
           <div className="absolute w-40 h-40 rounded-full bg-[var(--card)]/10 -bottom-16 -left-10" />
           <div className="absolute inset-0 rounded-[32px]" style={{ border: '1px solid rgba(255,255,255,.35)' }} />
           <h1 className="font-serif-d text-[28px] relative">{couple.bride} & {couple.groom}</h1>
-          <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {couple.date} · {couple.venue} · 16:00</p>
+          <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {weddingDate ? formatWeddingDate(weddingDate) : t('Дата не выбрана')} · {couple.venue} · 16:00</p>
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
             {[
-              [Math.max(0, Math.ceil((Date.UTC(2027, 5, 14) - Date.now()) / 86400000)), t('дней до')],
+              [weddingDate ? daysUntil(weddingDate, now) : '—', t('дней до')],
               [`${donePct}%`, t('готово')],
               [persons('yes'), t('гостей')],
               [`${booked.length}/${slots.length}`, t('команда')],
@@ -76,7 +83,7 @@ export default function Home() {
           <b className="font-serif-d text-[16px] block mt-2.5">{couple.full}</b>
           <p className="text-[11px] text-[var(--soft)] mt-1">📍 {t(city)} · 🎨 {couple.style} · 🥂 {couple.guestsTotal} {t('гостей')}</p>
           <div className="grid grid-cols-4 gap-2 mt-4">
-            {[[couple.countdown.m, t('МЕС')], [couple.countdown.d, t('ДН')], [couple.countdown.h, t('ЧАС')], [couple.countdown.min, t('МИН')]].map(([v, l]) => (
+            {[[left.m, t('МЕС')], [left.d, t('ДН')], [left.h, t('ЧАС')], [left.min, t('МИН')]].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--bg)] rounded-2xl py-3">
                 <b className="text-[19px] block tabular">{String(v).padStart(2, '0')}</b>
                 <span className="text-[8px] tracking-[.14em] text-[var(--soft)]">{l}</span>

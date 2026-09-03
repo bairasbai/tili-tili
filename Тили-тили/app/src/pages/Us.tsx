@@ -7,12 +7,17 @@ import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
 import { cn, copyText, goBack } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
+import { DatePicker } from '@/components/DatePicker'
+import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* «Мы» — профиль пары */
 export function Us() {
-  const { lang, setLang } = useStore()
+  const { lang, setLang, weddingDate, setWeddingDate } = useStore()
   const nav = useNavigate()
   const [copied, setCopied] = useState(false)
+  const [datePicker, setDatePicker] = useState(false)
+  // Время в теле компонента запрещено (R-04) — снимаем один раз.
+  const [today] = useState(() => new Date())
   const copy = (text: string, cb: () => void) => {
     copyText(text)
     cb()
@@ -28,7 +33,9 @@ export function Us() {
             <div className="w-16 h-16 rounded-full bg-[#A9BCA0] text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('Т')}</div>
           </div>
           <b className="font-serif-d text-[20px] block mt-3">{couple.full}</b>
-          <p className="text-[11.5px] text-[var(--soft)] mt-1">{couple.date} · {couple.city} · {couple.venue}</p>
+          <button onClick={() => setDatePicker(true)} className="press text-[11.5px] text-[var(--soft)] mt-1 underline decoration-dotted underline-offset-4">
+            {weddingDate ? formatWeddingDate(weddingDate) : t('Выбрать дату свадьбы')} · {couple.city} · {couple.venue}
+          </button>
           <button onClick={() => nav('/us/team')} className="press mt-4 px-5 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--rose-deep)]">
             {t('+ Пригласить в команду (партнёр, помощники, подрядчики)')}
           </button>
@@ -96,6 +103,15 @@ export function Us() {
         </button>
         <p className="text-center text-[10px] text-[var(--soft2)] mt-4">{t('Тили-тили v0.1 · MVP · сделано с любовью в Уфе')}</p>
       </div>
+
+      {datePicker && (
+        <DatePicker
+          value={weddingDate}
+          now={today}
+          onPick={(iso) => { setWeddingDate(iso); setDatePicker(false) }}
+          onClose={() => setDatePicker(false)}
+        />
+      )}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { guestByToken } from '../guests/access.js'
 import { personCount } from './guests.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
+import { assertRealDate } from '../wedding/dates.js'
 import { COMMITTED } from '../deals/state.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -378,6 +379,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         deadline?: string
         promo?: string
       }
+      // Бронь до 30 февраля не наступает никогда — а PostgreSQL на такой
+      // дате роняет запрос, и человек видит 500 вместо отказа.
+      if (body.deadline) assertRealDate(body.deadline, 'deadline')
       const id = uuidv7()
       await db().query(
         `insert into hotel_blocks (id, wedding_id, name, rooms, price, currency, deadline, promo)

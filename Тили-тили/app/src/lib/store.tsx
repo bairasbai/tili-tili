@@ -47,9 +47,29 @@ const applyPatch = (s: Slot, p: SlotPatch): Slot => ({
 
 const EMPTY_PATCH: SlotPatch = { state: 'empty', vendor: null, price: null, status: null, external: false, invited: false, phone: null }
 
+/** Что человек ответил в квизе. Раньше ответы просто выбрасывались. */
+export interface QuizAnswers {
+  /** `YYYY-MM-DD` или null: «ещё не решили» — это тоже ответ. */
+  date: string | null
+  guests: string | null
+  budget: string | null
+  format: string | null
+  style: string | null
+  planner: string | null
+  booked: string[]
+}
+
+export const EMPTY_QUIZ: QuizAnswers = {
+  date: null, guests: null, budget: null, format: null, style: null, planner: null, booked: [],
+}
+
 interface Store {
   onboarded: boolean
-  finishOnboarding: () => void
+  finishOnboarding: (answers?: QuizAnswers) => void
+  /** Дата свадьбы, `YYYY-MM-DD`. Null — ещё не выбрана, и это нормально. */
+  weddingDate: string | null
+  setWeddingDate: (iso: string | null) => void
+  quiz: QuizAnswers
   slots: Slot[]
   bookVendor: (slotId: string, vendorName: string, price: number) => void
   bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => void
@@ -82,6 +102,11 @@ const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('tt_onboarded') === '1')
+  /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
+   * Объект Date в localStorage превращается в строку с часовым поясом, и
+   * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */
+  const [weddingDate, setWeddingDateState] = usePersist<string | null>('tt_wedding_date', null)
+  const [quiz, setQuiz] = usePersist<QuizAnswers>('tt_quiz', EMPTY_QUIZ)
   const [slotPatch, setSlotPatch] = usePersist<Record<string, SlotPatch>>('tt_slots', {})
   const slots = useMemo(
     () => initialSlots.map(s => (slotPatch[s.id] ? applyPatch(s, slotPatch[s.id]) : s)),
@@ -122,7 +147,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Store>(() => ({
     onboarded,
-    finishOnboarding: () => { localStorage.setItem('tt_onboarded', '1'); setOnboarded(true) },
+    finishOnboarding: (answers?: QuizAnswers) => {
+      // Ответы квиза — это план свадьбы, ради которого его и проходят.
+      // Раньше они терялись между последним «Далее» и главным экраном.
+      if (answers) {
+        setQuiz(answers)
+        if (answers.date) setWeddingDateState(answers.date)
+      }
+      localStorage.setItem('tt_onboarded', '1')
+      setOnboarded(true)
+    },
+    weddingDate,
+    setWeddingDate: setWeddingDateState,
+    quiz,
     slots,
     bookVendor: (slotId, vendorName, price) =>
       updateSlot(slotId, () => ({ state: 'booked', vendor: vendorName, price, status: 'Забронировано', external: false, invited: false, phone: null })),
@@ -170,7 +207,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGifts(gs => persistGifts(gs.filter(g => g.id !== id)))
       setMyGifts(m => persistMine(m.filter(x => x !== id)))
     },
-  }), [onboarded, slots, updateSlot, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
+  }), [onboarded, weddingDate, setWeddingDateState, quiz, setQuiz, slots, updateSlot, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

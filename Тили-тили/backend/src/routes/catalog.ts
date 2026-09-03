@@ -4,6 +4,7 @@ import { uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
 import { holdDatesOf } from '../catalog/holds.js'
+import { assertRealDate } from '../wedding/dates.js'
 import {
   VENDOR_COLUMNS,
   VENDOR_LIVE_JOIN,
@@ -166,6 +167,8 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       }
       if (query.hasVideo) where.push("exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video')")
       if (query.date) {
+        // Фильтр по несуществующей дате роняет запрос в базе, а не пустой ответ.
+        assertRealDate(query.date, 'date')
         // Занятого на эту дату в выдаче быть не должно: иначе пара пишет тому,
         // кто заведомо не сможет, и тратит на это день.
         add('not exists (select 1 from vendor_busy_dates b where b.vendor_id = v.id and b.date = ?::date)', query.date)
