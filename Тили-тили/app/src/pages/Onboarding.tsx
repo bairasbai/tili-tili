@@ -28,8 +28,8 @@ export default function Onboarding() {
         <span className="font-serif-d text-[20px]">{t('Тили-')}<em className="grad-text not-italic font-semibold">{t('тили')}</em></span>
         <div className="flex items-center gap-3">
           <button onClick={() => { setLang(lang === 'ru' ? 'en' : 'ru'); reloadToRoot() }}
-            className="text-[11px] font-bold text-[var(--rose-deep)] press px-2.5 py-1 rounded-full bg-[var(--rose-soft)]">{lang === 'ru' ? 'EN' : 'RU'}</button>
-          <button onClick={() => nav('/auth')} className="text-[12px] text-[var(--soft)] font-medium press">{t('Пропустить')}</button>
+            className="text-[11px] font-bold text-[var(--rose-ink)] press px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)]">{lang === 'ru' ? 'EN' : 'RU'}</button>
+          <button onClick={() => nav('/auth')} className="text-[12px] text-[var(--soft)] font-medium press py-3 -my-3 px-2 -mx-2">{t('Пропустить')}</button>
         </div>
       </div>
 
@@ -42,10 +42,12 @@ export default function Onboarding() {
       </div>
 
       <div className="px-6 pb-[max(32px,env(safe-area-inset-bottom))]">
-        <div className="flex justify-center gap-2 mb-6">
+        <div className="flex justify-center -mt-3 mb-3">
           {scenes.map((_, k) => (
             <button key={k} onClick={() => setI(k)} aria-label={`${t('Слайд')} ${k + 1}`}
-              className={cn('h-1.5 rounded-full transition-all duration-500 press', k === i ? 'w-6 bg-[#C98A8A]' : 'w-1.5 bg-[#EAD9CF]')} />
+              className="w-6 h-11 grid place-items-center press">
+              <span className={cn('h-1.5 rounded-full transition-all duration-500', k === i ? 'w-6 bg-[var(--rose)]' : 'w-1.5 bg-[var(--line)]')} />
+            </button>
           ))}
         </div>
         <div className="flex gap-3">

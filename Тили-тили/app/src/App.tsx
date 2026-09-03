@@ -107,7 +107,14 @@ function Shell() {
     document.querySelector('meta[name="theme-color"]')
       ?.setAttribute('content', theme === 'dark' ? '#1E1A16' : '#FBF6F1')
   }, [theme])
-  useEffect(() => { document.documentElement.lang = lang }, [lang])
+  useEffect(() => {
+    document.documentElement.lang = lang
+    // заголовок вкладки и описание живут в <head>, вне React-дерева: без этого
+    // при EN интерфейс переведён, а вкладка и превью ссылки остаются русскими
+    document.title = t('Тили-тили — свадьба в одном приложении')
+    document.querySelector('meta[name="description"]')
+      ?.setAttribute('content', t('Тили-тили — вся свадьба в одном приложении'))
+  }, [lang])
   // новый экран — всегда с верха страницы (иначе на телефоне кажется, что «ничего не нажалось»)
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   const p = loc.pathname
@@ -117,7 +124,7 @@ function Shell() {
     p.startsWith('/us/chats/') ||
     p.startsWith('/vendor-app')
   return (
-    <div className="app-shell" key={lang}>
+    <div className={`app-shell${noTab ? ' no-tab' : ''}`} key={lang}>
       <OfflineBanner />
       <Suspense fallback={<RouteLoading />}>
         <Routes>

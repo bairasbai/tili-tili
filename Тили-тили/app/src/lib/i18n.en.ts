@@ -613,6 +613,8 @@ export const EN: Record<string, string> = {
   'Тикет': 'Ticket',
   'Тили-': 'Tili-',
   'Тили-тили v0.1 · MVP · сделано с любовью в Уфе': 'Tili-tili v0.1 · MVP · made with love in Ufa',
+  'Тили-тили — вся свадьба в одном приложении': 'Tili-tili — your whole wedding in one app',
+  'Тили-тили — свадьба в одном приложении': 'Tili-tili — a wedding in one app',
   'Тиль': 'Til',
   'Тиль:': 'Til:',
   'Тимур': 'Timur',

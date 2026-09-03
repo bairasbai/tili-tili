@@ -17,6 +17,8 @@
   --rose: #C98A8A;
   --rose-deep: #9C6161;  /* 4.55:1 — цены, ссылки, иконки-акценты */
   --rose-soft: #F2DFDC;
+  --rose-ink: #8A5252;   /* 4.80:1 на --rose-soft — буквы на розовой заливке;
+                            --rose-deep рассчитан на --bg и на заливке даёт 3.81 */
   --sage: #A9BCA0;
   --sage-deep: #617759;  /* 4.58:1 — статусы «готово», «свободен» */
   --sage-soft: #E6EEE2;
@@ -50,6 +52,7 @@
   --rose: #D69999;
   --rose-deep: #D69999;
   --rose-soft: #4A3733;
+  --rose-ink: #D69999;   /* 4.71:1 на тёмной --rose-soft */
   --sage: #A9BCA0;
   --sage-deep: #B5C7AC;
   --sage-soft: #323D2D;
@@ -220,13 +223,18 @@ input[type="range"] { accent-color: var(--rose-deep); }
 
 @media (prefers-reduced-motion: reduce) {
   .rv, .rv-scale, .rv-left, .rv-right { opacity: 1; transform: none; transition: none; }
-  .floaty, .floaty-slow, .shimmer-text, .grad-anim, .sheen::after, .halo::before, .skeleton { animation: none; }
+  .floaty, .floaty-slow, .shimmer-text, .grad-anim, .sheen::after, .halo::before, .skeleton,
+  .fade-up, .pop { animation: none; }
   .sheen::after, .halo::before { display: none; }
 }
 
 /* ---------- Десктоп (≥900px): сайдбар слева, широкая колонка ---------- */
 @media (min-width: 900px) {
   .app-shell { max-width: 1180px; padding-left: 232px; }
+  /* Экраны без таб-бара (онбординг, вход, квиз) сайдбар не рисуют. Резерв под
+     него оставлял слева мёртвые 232px и уводил контент вправо от центра экрана.
+     Ширина колонки та же (1180 - 232), меняется только выключка. */
+  .app-shell.no-tab { max-width: 948px; padding-left: 0; }
   .glass-tab {
     top: 0 !important; bottom: 0 !important;
     left: 50% !important; right: auto !important;
