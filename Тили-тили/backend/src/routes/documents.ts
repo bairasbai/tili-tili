@@ -85,14 +85,16 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
           wedding_date: string | null
           city: string | null
           performer: string | null
-          role: string
+          role: string | null
+          mine: boolean | null
         }>(
           `select d.state, d.price::text as price, d.currency, w.title as wedding_title,
                   w.date::text as wedding_date, c.name as city,
-                  coalesce(ven.name, d.external_name) as performer, m.role
+                  coalesce(ven.name, d.external_name) as performer, m.role,
+                  (ven.user_id = $2) as mine
              from deals d
              join weddings w on w.id = d.wedding_id
-             join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
+             left join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
              left join cities c on c.id = w.city_id
              left join vendors ven on ven.id = d.vendor_id
             where d.id = $1`,
@@ -100,7 +102,20 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
         )
         const deal = rows[0]
         if (!deal) throw notFound('Сделка не найдена')
-        if (deal.role !== 'couple') throw new AppError(403, 'forbidden', 'Договор оформляет только пара')
+        /* Договор оформляет любая из двух сторон сделки.
+         *
+         * План §9.2 шаг 3 описывает это со стороны подрядчика дословно:
+         * «Ирина генерирует договор из шаблона платформы, отправляет PDF».
+         * Пара — вторая сторона, ей тоже можно. Посторонний не увидит даже
+         * того, что сделка есть: чужой идентификатор — 404, а не 403. */
+        if (deal.role !== 'couple' && !deal.mine) {
+          // Свой в свадьбе знает, что сделка есть, — ему 403. Посторонний
+          // не должен узнать этого по коду ответа, поэтому ему 404.
+          if (deal.role) {
+            throw new AppError(403, 'forbidden', 'Договор оформляют пара и подрядчик, а не команда свадьбы')
+          }
+          throw notFound('Сделка не найдена')
+        }
         if (!COMMITTED.includes(deal.state as never)) {
           throw conflict('not_booked', 'Договор оформляется по забронированной сделке')
         }

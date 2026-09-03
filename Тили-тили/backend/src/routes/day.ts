@@ -6,6 +6,7 @@ import { withIdempotency } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
 import { personCount } from './guests.js'
 import { notifyWedding } from '../notify/notify.js'
+import { noteVendorUpdate } from '../vendor/updates.js'
 import { COMMITTED } from '../deals/state.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
@@ -212,6 +213,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             ],
           )
         }
+        // Тайминг переписали целиком — подрядчику приезжать к другому часу.
+        await noteVendorUpdate(client, weddingId, 'timeline', 'Тайминг дня обновлён')
         const { rows } = await client.query(
           'select id, name, location, starts_at, ends_at, who, icon, outdoor from timeline_events where wedding_id = $1 order by sort',
           [weddingId],
@@ -581,6 +584,14 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         const { rows: q } = await client.query<{ question: string; sent_at: Date | null }>(
           'select question, sent_at from menu_polls where wedding_id = $1',
           [weddingId],
+        )
+        /* §13.2: кейтеринг закупает по итогам опроса. Список блюд
+         * поменялся — это его работа, а не внутреннее дело пары. */
+        await noteVendorUpdate(
+          client,
+          weddingId,
+          'menu',
+          `Опрос меню изменён: ${rows.map((o) => o.name).join(' · ')}`,
         )
         return {
           question: q[0]!.question,

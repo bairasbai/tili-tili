@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.19.0
+  version: 0.20.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1307,6 +1307,46 @@ paths:
                           nullable: true
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         holdUntil: { type: string, format: date-time, nullable: true }
+  /vendor/updates:
+    get:
+      tags: [vendor]
+      summary: Обновления от пар
+      description: >
+        §13.2: изменения рассадки, опроса меню, тайминга и гостевых счётчиков
+        по свадьбам, где сделка подрядчика забронирована. Не уведомление,
+        а короткий список того, что надо учесть; закрывается подтверждением.
+        Правки одного вида по одной свадьбе сливаются в одну строку, пока
+        её не подтвердили: рассадку двигают мышью, и каждое движение — не новость.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    wedding: { type: string }
+                    weddingDate: { type: string, format: date, nullable: true }
+                    kind: { type: string, enum: [seating, menu, timeline, guests] }
+                    text: { type: string }
+                    createdAt: { type: string, format: date-time }
+                    ackAt: { type: string, format: date-time, nullable: true }
+
+  /vendor/updates/{updateId}/ack:
+    post:
+      tags: [vendor]
+      summary: Подтвердить получение обновления
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: updateId, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Учтено; повтор не меняет времени }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /vendor/analytics:
     get:
       tags: [vendor]
@@ -2184,7 +2224,12 @@ paths:
     post:
       tags: [documents]
       summary: Сгенерировать договор из шаблона
-      description: 'Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10).'
+      description: >
+        Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF
+        и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10).
+        Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2
+        шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде
+        свадьбы — 403: договор содержит суммы и данные сторон.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: dealId, in: path, required: true, schema: { type: string } }]
       requestBody:

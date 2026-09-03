@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { noteVendorUpdate } from '../vendor/updates.js'
 import type { Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 
@@ -192,6 +193,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         ],
       )
       if (res.rowCount === 0) throw notFound('Гость не найден')
+      /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
+       * Декоратор расставляет карточки по столам, кейтеринг считает порции —
+       * им нужно узнать об этом от нас, а не от пары накануне. */
+      if (has('tableId')) {
+        const { rows: seated } = await db().query<{ n: string }>(
+          'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
+          [weddingId],
+        )
+        await noteVendorUpdate(db(), weddingId, 'seating', `Рассадка обновлена: за столами ${seated[0]!.n} гостей`)
+      }
       return loadGuest(db(), guestId)
     },
   )
@@ -399,6 +410,15 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           [guest.guestId, guest.weddingId],
         )
       }
+
+      /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
+       * кейтеринг закупает по числу «приду», и разница в десять человек
+       * это разница в закупке, а не в таблице. */
+      const { rows: counters } = await db().query<{ yes: string }>(
+        "select count(*)::text as yes from guests where wedding_id = $1 and rsvp = 'yes'",
+        [guest.weddingId],
+      )
+      await noteVendorUpdate(db(), guest.weddingId, 'guests', `Гостей «приду»: ${counters[0]!.yes}`)
 
       // Ответ гостю — без чужих данных: он видит только себя.
       return { status: body.status, guestName: guest.name }

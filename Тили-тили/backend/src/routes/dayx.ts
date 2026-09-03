@@ -3,6 +3,7 @@ import { AppError } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { notifyWedding } from '../notify/notify.js'
+import { noteVendorUpdate } from '../vendor/updates.js'
 
 /** Насколько можно двигать день за один раз. Больше — это уже не «отстаём». */
 const MAX_SHIFT_MINUTES = 240
@@ -80,6 +81,12 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           await client.query(
             'insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)',
             [uuidv7(), weddingId, 'timeline-shift', Number(guests[0]!.n)],
+          )
+          await noteVendorUpdate(
+            client,
+            weddingId,
+            'timeline',
+            `Тайминг сдвинут на ${minutes > 0 ? '+' : ''}${minutes} мин`,
           )
           return { shifted: moved.length, guests: Number(guests[0]!.n) }
         })

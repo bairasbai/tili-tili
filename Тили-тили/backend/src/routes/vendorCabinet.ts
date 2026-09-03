@@ -59,6 +59,59 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     )
   }
 
+  /* ── обновления от пар (§13.2) ────────────────────────────────────── */
+  /**
+   * Что изменилось у пар по забронированным свадьбам.
+   *
+   * Не уведомление: уведомление уходит в общий список и тонет между
+   * «новое сообщение» и «гость ответил». Здесь короткий список того,
+   * что надо УЧЕСТЬ — пересчитать порции, переставить технику, приехать
+   * к другому часу, — и он закрывается подтверждением.
+   */
+  app.get('/vendor/updates', { preHandler: app.requireConsent }, async (request) => {
+    const vendorId = await myVendorId(request.caller!.userId)
+    const { rows } = await db().query<{
+      id: string
+      wedding: string
+      date: string | null
+      kind: string
+      text: string
+      created_at: Date
+      ack_at: Date | null
+    }>(
+      `select u.id, w.title as wedding, w.date::text as date, u.kind, u.text, u.created_at, u.ack_at
+         from vendor_updates u join weddings w on w.id = u.wedding_id
+        where u.vendor_id = $1 and w.archived_at is null and w.cancelled_at is null
+        order by (u.ack_at is not null), u.created_at desc
+        limit 50`,
+      [vendorId],
+    )
+    // Неподтверждённые сверху: подтверждённые остаются как история дня,
+    // но глаз должен упираться в то, что ещё не учтено.
+    return rows.map((r) => ({
+      id: r.id,
+      wedding: r.wedding,
+      weddingDate: r.date,
+      kind: r.kind,
+      text: r.text,
+      createdAt: r.created_at.toISOString(),
+      ackAt: r.ack_at?.toISOString() ?? null,
+    }))
+  })
+
+  app.post('/vendor/updates/:updateId/ack', { preHandler: app.requireConsent }, async (request, reply) => {
+    const { updateId } = request.params as { updateId: string }
+    if (!/^[0-9a-f-]{36}$/i.test(updateId)) throw notFound('Обновление не найдено')
+    const vendorId = await myVendorId(request.caller!.userId)
+    // Повторное подтверждение не двигает время: «учёл» случается один раз.
+    const res = await db().query(
+      'update vendor_updates set ack_at = coalesce(ack_at, now()) where id = $1 and vendor_id = $2',
+      [updateId, vendorId],
+    )
+    if (res.rowCount === 0) throw notFound('Обновление не найдено')
+    return reply.code(204).send()
+  })
+
   app.get('/vendor/leads', { preHandler: app.requireConsent }, async (request) => {
     const vendorId = await myVendorId(request.caller!.userId)
     await expireLeadHolds(vendorId)

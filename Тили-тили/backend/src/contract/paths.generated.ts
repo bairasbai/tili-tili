@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.19.0).
- * Операций: 140. Путей: 109. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.20.0).
+ * Операций: 142. Путей: 111. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -95,6 +95,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/vendor/profile/publish","url":"/vendor/profile/publish","operationId":null,"summary":"Опубликовать анкету (модерация → live)","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/reviews","url":"/vendor/reviews","operationId":null,"summary":"Отзывы на меня","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/reviews/{reviewId}/reply","url":"/vendor/reviews/:reviewId/reply","operationId":null,"summary":"Ответить на отзыв","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/updates","url":"/vendor/updates","operationId":null,"summary":"Обновления от пар","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/updates/{updateId}/ack","url":"/vendor/updates/:updateId/ack","operationId":null,"summary":"Подтвердить получение обновления","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Подать документы на верификацию","tag":"vendor"},
   {"method":"GET","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Мои свадьбы","tag":"weddings"},
   {"method":"POST","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Создать свадьбу (после квиза)","tag":"weddings"},

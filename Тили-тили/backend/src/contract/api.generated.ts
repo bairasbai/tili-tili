@@ -2483,6 +2483,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Обновления от пар
+         * @description §13.2: изменения рассадки, опроса меню, тайминга и гостевых счётчиков по свадьбам, где сделка подрядчика забронирована. Не уведомление, а короткий список того, что надо учесть; закрывается подтверждением. Правки одного вида по одной свадьбе сливаются в одну строку, пока её не подтвердили: рассадку двигают мышью, и каждое движение — не новость.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: string;
+                            wedding?: string;
+                            /** Format: date */
+                            weddingDate?: string | null;
+                            /** @enum {string} */
+                            kind?: "seating" | "menu" | "timeline" | "guests";
+                            text?: string;
+                            /** Format: date-time */
+                            createdAt?: string;
+                            /** Format: date-time */
+                            ackAt?: string | null;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/updates/{updateId}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Подтвердить получение обновления */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    updateId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Учтено; повтор не меняет времени */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/analytics": {
         parameters: {
             query?: never;
@@ -4478,7 +4566,7 @@ export interface paths {
         put?: never;
         /**
          * Сгенерировать договор из шаблона
-         * @description Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10).
+         * @description Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10). Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2 шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде свадьбы — 403: договор содержит суммы и данные сторон.
          */
         post: {
             parameters: {
