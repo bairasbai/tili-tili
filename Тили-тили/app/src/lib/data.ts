@@ -8,6 +8,8 @@ export type SlotState = 'empty' | 'candidate' | 'hold' | 'booked'
 export interface Vendor {
   id: string
   name: string
+  /** Рабочий телефон анкеты. Виден паре только после брони (§каталог). */
+  phone: string
   category: string
   categoryIcon: string
   tile: string // css class плитки
@@ -84,7 +86,7 @@ export const categories: Category[] = [
 
 export const vendors: Vendor[] = [
   {
-    id: 'v1', name: t('Елена Смирнова'), category: t('Фотограф'), categoryIcon: '📸', tile: 'bg-[#F2DFDC]',
+    id: 'v1', name: t('Елена Смирнова'), phone: '+7 917 340-11-08', category: t('Фотограф'), categoryIcon: '📸', tile: 'bg-[#F2DFDC]',
     rating: 4.9, reviews: 47, priceFrom: rub(85000), years: 5, freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Светлый живой стиль, ловлю эмоции, а не постановку. Снимаю свадьбы в Уфе и по Башкирии 5 лет — 120+ пар.'),
     packages: [
@@ -94,7 +96,7 @@ export const vendors: Vendor[] = [
     ],
   },
   {
-    id: 'v2', name: 'CinemaWedding Team', category: t('Видеооператор'), categoryIcon: '🎥', tile: 'bg-[#E6EEE2]',
+    id: 'v2', name: 'CinemaWedding Team', phone: '+7 917 402-55-19', category: t('Видеооператор'), categoryIcon: '🎥', tile: 'bg-[#E6EEE2]',
     rating: 5.0, reviews: 32, priceFrom: rub(120000), years: 7, freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Кинематографичные фильмы о дне: 2 камеры, аэросъёмка, звук с петличек. Монтаж за 30 дней.'),
     packages: [
@@ -103,7 +105,7 @@ export const vendors: Vendor[] = [
     ],
   },
   {
-    id: 'v3', name: t('Усадьба «Липовый сад»'), category: t('Площадка'), categoryIcon: '🏛️', tile: 'bg-[#F0DCB8]',
+    id: 'v3', name: t('Усадьба «Липовый сад»'), phone: '+7 347 216-70-40', category: t('Площадка'), categoryIcon: '🏛️', tile: 'bg-[#F0DCB8]',
     rating: 4.7, reviews: 89, priceFrom: rub(250000), freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Загородная усадьба в 20 минутах от Уфы: шатёр у озера до 120 гостей, липовая аллея для церемонии, номера для молодожёнов.'),
     packages: [
@@ -112,7 +114,7 @@ export const vendors: Vendor[] = [
     ],
   },
   {
-    id: 'v4', name: t('Артём Краснов'), category: t('Ведущий'), categoryIcon: '🎤', tile: 'bg-[#D9CCE3]',
+    id: 'v4', name: t('Артём Краснов'), phone: '+7 917 771-26-03', category: t('Ведущий'), categoryIcon: '🎤', tile: 'bg-[#D9CCE3]',
     rating: 4.8, reviews: 56, priceFrom: rub(60000), years: 8, freeOnDate: true, hasVideo: false, photos: 5,
     desc: t('Ведущий без пошлости и конкурсов из 2005-го. Интеллигентный юмор, живой контакт с гостями, английский — по запросу.'),
     packages: [
@@ -121,7 +123,7 @@ export const vendors: Vendor[] = [
     ],
   },
   {
-    id: 'v5', name: t('Студия «Пион»'), category: t('Флорист'), categoryIcon: '🌸', tile: 'bg-[#F2DFDC]',
+    id: 'v5', name: t('Студия «Пион»'), phone: '+7 927 318-44-92', category: t('Флорист'), categoryIcon: '🌸', tile: 'bg-[#F2DFDC]',
     rating: 4.9, reviews: 41, priceFrom: rub(45000), freeOnDate: true, hasVideo: true, photos: 5,
     desc: t('Авторская флористика: букет, бутоньерки, оформление церемонии и столов. Работаем с сезонными цветами и пионами.'),
     packages: [
@@ -131,7 +133,7 @@ export const vendors: Vendor[] = [
     ],
   },
   {
-    id: 'v6', name: t('Тимур Галин'), category: t('Фотограф'), categoryIcon: '📸', tile: 'bg-[#F2DFDC]',
+    id: 'v6', name: t('Тимур Галин'), phone: '+7 987 254-63-77', category: t('Фотограф'), categoryIcon: '📸', tile: 'bg-[#F2DFDC]',
     rating: 0, reviews: 0, priceFrom: rub(45000), years: 2, freeOnDate: true, hasVideo: false, isNew: true, photos: 3,
     desc: t('Начинающий фотограф с сильным портфолио городских съёмок. Первые свадьбы — по специальной цене.'),
     packages: [{ name: t('Полный день'), price: rub(45000), items: [t('10 часов'), t('300+ фото'), t('Онлайн-галерея')] }],

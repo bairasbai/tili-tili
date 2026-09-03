@@ -22,6 +22,8 @@ export interface VendorRow {
   verified_at: Date | null
   has_video: boolean
   created_at: Date
+  /** Рабочий телефон. В карточку попадает не всегда — см. `loadDetail`. */
+  phone?: string | null
 }
 
 /**
@@ -40,7 +42,7 @@ export const VENDOR_LIVE_JOIN =
 
 export const VENDOR_COLUMNS = `
   v.id, v.name, v.category_id, c.name as city, v.price_from::text as price_from, v.currency,
-  v.rating::text as rating, v.reviews_count, v.photo_url, v.verified_at, v.created_at,
+  v.rating::text as rating, v.reviews_count, v.photo_url, v.verified_at, v.created_at, v.phone,
   exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video') as has_video`
 
 export function toVendor(r: VendorRow) {
@@ -75,7 +77,28 @@ export interface MediaRow {
   duration_s: number | null
 }
 
-export async function loadDetail(db: Db, vendorId: string, row: VendorRow) {
+/**
+ * Кто уже вправе позвонить.
+ *
+ * Решение владельца 2026-09-03: телефон в анкете видит пара, которая этого
+ * подрядчика забронировала, — до брони разговор идёт в чате. Право даёт
+ * не роль, а сделка: помощник и координатор той же свадьбы звонят по тому
+ * же поводу, что и пара, и в день X контакты команды нужны всем троим.
+ */
+async function mayCall(db: Db, vendorId: string, userId: string | null): Promise<boolean> {
+  if (!userId) return false
+  const { rows } = await db.query<{ ok: boolean }>(
+    `select exists (
+       select 1 from deals d
+         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
+        where d.vendor_id = $1 and d.state in ('booked','paid_deposit','done')
+     ) as ok`,
+    [vendorId, userId],
+  )
+  return rows[0]!.ok
+}
+
+export async function loadDetail(db: Db, vendorId: string, row: VendorRow, viewerId: string | null = null) {
   const { rows: packages } = await db.query<PackageRow>(
     `select id, name, price::text as price, currency, items from vendor_packages
       where vendor_id = $1 order by sort, name`,
@@ -114,8 +137,16 @@ export async function loadDetail(db: Db, vendorId: string, row: VendorRow) {
     reply: r.reply ? { text: r.reply, createdAt: (r.replied_at ?? r.created_at).toISOString() } : null,
   }))
 
+  /* Своя анкета отдаётся владельцу целиком (`viewerId === null` приходит
+   * из кабинета, где строка и так своя), чужая — только с бронью. */
+  const phone = row.phone ?? null
+  const showPhone = viewerId === null || (await mayCall(db, vendorId, viewerId))
+
   return {
     ...toVendor(row),
+    // Номер приходит пустым, пока сделки нет: это не «телефона не указали»,
+    // а «ещё рано». Клиент показывает вместо него кнопку «Написать».
+    phone: showPhone ? phone : null,
     about: row_about(row),
     gallery: media.filter((m) => m.kind === 'photo').map((m) => m.url),
     media: media.map((m) => ({ kind: m.kind, url: m.url, durationS: m.duration_s })),

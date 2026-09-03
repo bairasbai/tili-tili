@@ -9,10 +9,12 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import Quiz from '@/pages/Quiz'
 import { Us } from '@/pages/Us'
+import { VendorDetail } from '@/pages/Search'
+import { vendors } from './data'
 import {
   countdownTo,
   dateRange,
@@ -130,6 +132,64 @@ describe('квиз', () => {
     expect(saved!.endsWith('-20')).toBe(true)
     // И весь остальной опрос тоже: он и есть план свадьбы.
     expect(JSON.parse(localStorage.getItem('tt_quiz')!).guests).toBeTruthy()
+  })
+})
+
+describe('телефон подрядчика', () => {
+  const openCard = (id: string) =>
+    render(
+      <MemoryRouter initialEntries={[`/vendor/${id}`]}>
+        <StoreProvider>
+          <Routes>
+            <Route path="/vendor/:id" element={<VendorDetail />} />
+          </Routes>
+        </StoreProvider>
+      </MemoryRouter>,
+    )
+
+  it('до брони номера нет — есть объяснение, почему', () => {
+    const v = vendors[0]!
+    // В моке фотограф уже забронирован — освобождаем слот, чтобы проверить
+    // именно состояние «до брони».
+    localStorage.setItem(
+      'tt_slots',
+      JSON.stringify({
+        s2: { state: 'empty', vendor: null, price: null, status: null, external: false, invited: false, phone: null },
+      }),
+    )
+    openCard(v.id)
+    /* Номер в открытом каталоге — готовая база для обзвона, и будущая
+     * комиссия со сделок при нём не работает (решение владельца
+     * 2026-09-03: показываем после брони). */
+    expect(screen.queryByText(v.phone)).toBeNull()
+    expect(screen.getByText(/Телефон откроется после брони/)).toBeTruthy()
+  })
+
+  it('после брони номер виден и звонится', () => {
+    const v = vendors[0]!
+    // Слот фотографа занят этим же подрядчиком — значит, сделка есть.
+    localStorage.setItem(
+      'tt_slots',
+      JSON.stringify({
+        s2: { state: 'booked', vendor: v.name, price: 85000, status: 'Забронировано', external: false, invited: false, phone: null },
+      }),
+    )
+    openCard(v.id)
+    expect(screen.getByText(v.phone)).toBeTruthy()
+    const call = screen.getByText('Позвонить') as HTMLAnchorElement
+    expect(call.getAttribute('href')).toBe(`tel:${v.phone.replace(/[^+\d]/g, '')}`)
+  })
+
+  it('бронь другого подрядчика чужого номера не открывает', () => {
+    const v = vendors[0]!
+    localStorage.setItem(
+      'tt_slots',
+      JSON.stringify({
+        s2: { state: 'booked', vendor: 'Кто-то другой', price: 1, status: 'Забронировано', external: false, invited: false, phone: null },
+      }),
+    )
+    openCard(v.id)
+    expect(screen.queryByText(v.phone)).toBeNull()
   })
 })
 

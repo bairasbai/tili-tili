@@ -1217,4 +1217,10 @@ Object.assign(EN, {
   'Закрыть': 'Close',
   'Дату можно менять и позже — команда и чек-лист переедут вместе с ней.': 'You can change the date later — the team and the checklist move with it.',
   '💡 Без даты тоже работает: чек-лист и бюджет соберутся, а сроки появятся, как только дата будет.': '💡 Works without a date too: the checklist and budget come together, and deadlines appear as soon as there is a date.',
+
+  // Контакт подрядчика — открывается после брони
+  'Телефон подрядчика': 'Vendor phone',
+  'Телефон откроется после брони — до неё пишите в чат: переписка остаётся в приложении вместе с договором.': 'The phone number opens after booking — until then use the chat: the conversation stays in the app together with the contract.',
+  'Рабочий телефон': 'Work phone',
+  'Виден парам после брони': 'Visible to couples after booking',
 })

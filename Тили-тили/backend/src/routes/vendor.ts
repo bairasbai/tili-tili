@@ -33,6 +33,7 @@ interface UpsertBody {
   categoryId: string
   city: { name: string; region: string }
   about?: string
+  phone?: string | null
   priceFrom?: { amount: number }
   packages?: { name: string; price?: { amount: number }; includes?: string[] }[]
   portfolioUrls?: string[]
@@ -98,6 +99,10 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
               properties: { name: { type: 'string' }, region: { type: 'string' } },
             },
             about: { type: 'string', maxLength: 4000 },
+            /* Рабочий телефон. Заполняя его, подрядчик соглашается показать
+             * номер парам, которые его забронировали: у номера входа такого
+             * согласия нет, поэтому поле отдельное. */
+            phone: { type: 'string', nullable: true, minLength: 5, maxLength: 32 },
             priceFrom: MONEY_SCHEMA,
             packages: {
               type: 'array',
@@ -170,11 +175,12 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       // проверка позволяет уникальному ключу сработать — человек видит
       // пятисотку вместо сохранённой анкеты.
       const { rows: saved } = await db().query<{ id: string }>(
-        `insert into vendors (id, user_id, category_id, city_id, name, about, price_from, currency)
-         values ($1, $2, $3, $4, $5, $6, $7, 'RUB')
+        `insert into vendors (id, user_id, category_id, city_id, name, about, price_from, currency, phone)
+         values ($1, $2, $3, $4, $5, $6, $7, 'RUB', $8)
          on conflict (user_id) do update
             set category_id = excluded.category_id, city_id = excluded.city_id,
-                name = excluded.name, about = excluded.about, price_from = excluded.price_from
+                name = excluded.name, about = excluded.about, price_from = excluded.price_from,
+                phone = excluded.phone
          returning id`,
         [
           uuidv7(),
@@ -184,6 +190,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           body.name,
           body.about ?? null,
           body.priceFrom?.amount ?? null,
+          body.phone ?? null,
         ],
       )
       const vendorId = saved[0]!.id

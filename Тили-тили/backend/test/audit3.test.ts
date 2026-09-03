@@ -120,8 +120,8 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     }
   })
 
-  it('в карточке подрядчика нет ни телефона, ни идентификатора аккаунта', async () => {
-    const vendor = await newVendor()
+  it('в карточке подрядчика нет ни телефона постороннего, ни идентификатора аккаунта', async () => {
+    const vendor = await newVendor({ phone: '+7 999 000-11-22' })
     const user = await newUser()
     const detail = await app.inject({
       method: 'GET',
@@ -129,10 +129,12 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
       headers: auth(user.token),
     })
     expect(detail.statusCode).toBe(200)
-    // Телефон подрядчика — контакт, который продаётся вместе со сделкой,
-    // а не раздаётся из каталога.
+    /* Телефон подрядчика приходит вместе со сделкой, а не раздаётся из
+     * каталога (решение владельца 2026-09-03: видит тот, кто забронировал).
+     * Поле в ответе есть — пустое: это «ещё рано», а не «номер не указан». */
+    expect(detail.json().phone).toBeNull()
+    expect(detail.body).not.toContain('999 000-11-22')
     expect(detail.body).not.toContain(vendor.id)
-    expect(detail.body).not.toContain('phone')
     expect(detail.body).not.toContain('userId')
   })
 

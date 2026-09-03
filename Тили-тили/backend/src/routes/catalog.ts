@@ -252,7 +252,8 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
      * Считаем открытие карточки, а не показ в списке: в списке анкету
      * пролистывают, а сюда заходят осознанно. */
     await db().query('update vendors set views = views + 1 where id = $1', [vendorId])
-    return loadDetail(db(), vendorId, rows[0])
+    // Телефон уходит только тому, кто этого подрядчика уже забронировал.
+    return loadDetail(db(), vendorId, rows[0], request.caller!.userId)
   })
 
   /* ── занятость ────────────────────────────────────────────────────── */

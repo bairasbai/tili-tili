@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check } from 'lucide-react'
+import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
 import { categories, vendors, fmt } from '@/lib/data'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -114,6 +114,10 @@ export function VendorDetail() {
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
   const slot = slots.find(s => s.categoryId === categories.find(c => c.name === v.category)?.id)
+  /* Телефон показывается только тому, кто этого подрядчика забронировал
+   * (решение владельца 2026-09-03). До брони разговор идёт в чате: номер
+   * в открытом каталоге — это готовая база для обзвона. */
+  const booked = slot?.state === 'booked' && slot.vendor === v.name
 
   const add = () => {
     if (slot) bookVendor(slot.id, v.name, v.packages[pkg].price)
@@ -158,6 +162,24 @@ export function VendorDetail() {
           {v.freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-deep)] whitespace-nowrap">{t('● Свободен 14.06')}</span>}
         </div>
         <p className="text-[13px] text-[var(--ink2)] leading-relaxed mt-3 font-light">{v.desc}</p>
+
+        {/* Контакт: только своим — тем, кто уже забронировал */}
+        <div className="card-s p-4 mt-3.5 flex items-center gap-3">
+          <span className="w-9 h-9 rounded-full bg-[var(--sage-soft)] flex items-center justify-center shrink-0"><Phone size={15} className="text-[#4C5B45]" /></span>
+          {booked ? (
+            <>
+              <div className="flex-1 min-w-0">
+                <span className="text-[9.5px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold block">{t('Телефон подрядчика')}</span>
+                <a href={`tel:${v.phone.replace(/[^+\d]/g, '')}`} className="text-[14px] font-semibold tabular">{v.phone}</a>
+              </div>
+              <a href={`tel:${v.phone.replace(/[^+\d]/g, '')}`} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-bold flex items-center">{t('Позвонить')}</a>
+            </>
+          ) : (
+            <p className="text-[11.5px] text-[var(--soft)] leading-relaxed">
+              {t('Телефон откроется после брони — до неё пишите в чат: переписка остаётся в приложении вместе с договором.')}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Проверка подрядчика */}

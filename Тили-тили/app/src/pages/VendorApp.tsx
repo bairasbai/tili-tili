@@ -141,6 +141,9 @@ export function VendorProfileWizard() {
   const [photos, setPhotos] = useState(3)
   const [published, setPublished] = useState(false)
   const [busyDays, setBusyDays] = usePersist<number[]>('tt_vendor_busy', [5, 6, 20, 26])
+  /* Рабочий телефон — отдельное поле анкеты, а не номер входа: публиковать
+   * личный номер без спроса нельзя, а заполненное поле и есть согласие. */
+  const [phone, setPhone] = usePersist('tt_vendor_phone', '+7 917 340-11-08')
   const [workCity, setWorkCity] = useState(t('Уфа'))
   const [workRegion, setWorkRegion] = useState(t('Башкортостан'))
   const [cityPick, setCityPick] = useState(false)
@@ -195,6 +198,20 @@ export function VendorProfileWizard() {
             <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Имя / бренд')}</span><p className="text-[14px] font-medium mt-1">{t('Елена Смирнова')}</p></div>
             <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Опыт')}</span><p className="text-[14px] font-medium mt-1">{t('5 лет · 120+ свадеб')}</p></div>
             <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('О себе')}</span><p className="text-[12.5px] text-[var(--ink2)] mt-1 font-light leading-relaxed">{t('Светлый живой стиль, ловлю эмоции, а не постановку…')}</p></div>
+            <div className="card p-4">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Рабочий телефон')}</span>
+                <span className="text-[9.5px] text-[var(--soft2)]">{t('Виден парам после брони')}</span>
+              </div>
+              <input
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                type="tel"
+                inputMode="tel"
+                aria-label={t('Рабочий телефон')}
+                className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium tabular outline-none"
+              />
+            </div>
             <button onClick={() => setCityPick(true)} className="press w-full card p-4 flex items-center gap-3 text-left">
               <span className="text-[18px]">📍</span>
               <div className="flex-1">
