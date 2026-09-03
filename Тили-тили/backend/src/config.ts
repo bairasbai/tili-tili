@@ -29,6 +29,8 @@ export interface Config {
   albumMaxPerGuest: number
   /** Сколько взносов один гость делает в один подарок или фонд. */
   contributionsMaxPerGuest: number
+  /** Запросов в секунду на токен (§13.4). Ноль выключает ограничитель. */
+  rateLimitPerSecond: number
   /** Ключи Web Push. Пока их нет, подписка отвечает 501 — см. routes/notifications. */
   vapidPublicKey: string | null
   vapidPrivateKey: string | null
@@ -124,6 +126,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
     albumMaxPerGuest: Number(source.ALBUM_MAX_PER_GUEST ?? 50),
     contributionsMaxPerGuest: Number(source.CONTRIBUTIONS_MAX_PER_GUEST ?? 20),
+    rateLimitPerSecond: Number(source.RATE_LIMIT_PER_SECOND ?? 10),
     vapidPublicKey: source.VAPID_PUBLIC_KEY ?? null,
     vapidPrivateKey: source.VAPID_PRIVATE_KEY ?? null,
     vapidSubject: source.VAPID_SUBJECT ?? 'mailto:support@tili-tili.ru',

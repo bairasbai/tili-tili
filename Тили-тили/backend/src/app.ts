@@ -6,6 +6,7 @@ import { AppError, TooManyRequests, toErrorBody } from './errors.js'
 import { maskUrl } from './redact.js'
 import { registerDb } from './plugins/db.js'
 import { registerRedis } from './plugins/redis.js'
+import { registerRateLimit } from './plugins/ratelimit.js'
 import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
 import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './routes/auth.js'
@@ -105,6 +106,10 @@ export async function buildApp(
   await registerDb(app, config)
   await registerRedis(app, config)
   await app.register(websocket)
+  // Ограничитель ставится ДО маршрутов и до разбора тела: смысл в том,
+  // чтобы поток запросов не доходил до работы, а не в том, чтобы
+  // отказывать после неё.
+  await registerRateLimit(app, config)
 
   /* Один хаб на процесс. Если Redis есть, событие идёт через него: за
    * балансировщиком процессов несколько, и без общего канала сообщение

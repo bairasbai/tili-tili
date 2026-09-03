@@ -65,9 +65,15 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
             or (mem.role = 'helper' and c.kind in ('team','day'))
             or (v.user_id = $1)
           )
-        order by c.created_at`,
+        order by coalesce(
+                   (select max(m.created_at) from messages m where m.chat_id = c.id),
+                   c.created_at
+                 ) desc`,
       [userId],
     )
+    // Сверху — где только что написали. Порядок по дате создания означал бы,
+    // что новое сообщение в старом чате никуда его не двигает, а на экране
+    // мока чаты стоят по времени последней реплики.
     return rows.map(toChat)
   })
 
