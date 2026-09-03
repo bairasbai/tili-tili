@@ -189,7 +189,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         `select ${VENDOR_COLUMNS}, ${sort.expr}::text as sort_key
            from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
           where ${where.join(' and ')}
-          order by ${sort.expr} ${sort.dir}, v.id asc
+          order by (v.downranked_at is not null), ${sort.expr} ${sort.dir}, v.id asc
           limit $${args.length}`,
         args,
       )

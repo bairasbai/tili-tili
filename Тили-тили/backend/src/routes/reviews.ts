@@ -4,6 +4,7 @@ import { uuidv7 } from '../ids.js'
 import { isUniqueViolation } from '../plugins/db.js'
 import { guestByToken, readGuestToken } from '../guests/access.js'
 import { recomputeRating } from '../reviews/rating.js'
+import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 
 /** Окно на отзыв после завершения сделки (План §18.2). */
 const REVIEW_WINDOW_DAYS = 14
@@ -13,6 +14,69 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
+
+  /* ── публичная лента отзывов ──────────────────────────────────────── */
+  app.get(
+    '/catalog/vendors/:vendorId/reviews',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            source: { type: 'string', enum: ['couple', 'guest', 'all'], default: 'all' },
+            limit: { type: 'integer', minimum: 1, maximum: 100 },
+            cursor: { type: 'string', maxLength: 200 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { vendorId } = request.params as { vendorId: string }
+      if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Подрядчик не найден')
+      const query = request.query as { source?: string }
+      const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+      const source = query.source ?? 'all'
+
+      /* Столбец `guest_token` не читается: у отзыва гостя видно, что он
+       * гостевой, но не кто его оставил (§15 и §9 — одно и то же правило).
+       * Скрытые модератором не отдаются и в рейтинг не входят. */
+      const { rows } = await db().query<{
+        id: string
+        source: string
+        stars: number
+        text: string | null
+        reply: string | null
+        replied_at: Date | null
+        created_at: Date
+      }>(
+        `select id, source, stars, text, reply, replied_at, created_at
+           from reviews
+          where vendor_id = $1 and hidden_at is null
+            and ($2 = 'all' or source = $2)
+            and ($3::text is null or (created_at, id) < ($3::timestamptz, $4::uuid))
+          order by created_at desc, id desc
+          limit $5`,
+        [vendorId, source, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+      )
+
+      return buildPage(
+        rows.map((r) => ({
+          id: r.id,
+          source: r.source,
+          // Бейдж рисуется по источнику: у пары договор, у гостя впечатление.
+          authorName: r.source === 'guest' ? 'Гость свадьбы' : 'Пара со сделкой',
+          rating: r.stars,
+          text: r.text ?? '',
+          createdAt: r.created_at.toISOString(),
+          reply: r.reply ? { text: r.reply, createdAt: (r.replied_at ?? r.created_at).toISOString() } : null,
+        })),
+        page.limit,
+        (r) => encodeCursor(r.createdAt, r.id),
+      )
+    },
+  )
 
   /* ── отзыв пары ───────────────────────────────────────────────────── */
   app.post(

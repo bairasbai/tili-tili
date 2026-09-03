@@ -1,0 +1,372 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { randomInt, randomUUID } from 'node:crypto'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../src/app.js'
+import { hashCode } from '../src/auth/otp.js'
+import { recomputeAllRatings, weightedRating, SOURCE_WEIGHT } from '../src/reviews/rating.js'
+
+/**
+ * Перепроверка этапа 8 по ОПИСАНИЮ и по источникам, на которые оно ссылается
+ * (R-56). Критерии проверяли отзыв по сделке и порог в три отзыва; §15 и
+ * список экранов остались непроверенными — там и нашлось.
+ */
+const DB = process.env.TEST_DATABASE_URL
+const live = Boolean(DB)
+
+const SECRET_A = 'a'.repeat(48)
+const SECRET_R = 'b'.repeat(48)
+
+describe('веса отзывов по источнику (§15)', () => {
+  it('отзыв пары весит больше отзыва гостя', () => {
+    expect(SOURCE_WEIGHT.couple).toBeGreaterThan(SOURCE_WEIGHT.guest)
+    // Пятёрка от пары и двойка от гостя: среднее не 3,5, а ближе к паре —
+    // у неё договор, у гостя впечатление.
+    const mixed = weightedRating([
+      { stars: 5, ageDays: 0, source: 'couple' },
+      { stars: 2, ageDays: 0, source: 'guest' },
+    ])
+    expect(mixed).toBeGreaterThan(3.5)
+  })
+
+  it('сто гостей не перевешивают одну сделку до неузнаваемости', () => {
+    const guests = Array.from({ length: 100 }, () => ({ stars: 5 as const, ageDays: 0, source: 'guest' as const }))
+    const withCouple = weightedRating([{ stars: 1, ageDays: 0, source: 'couple' }, ...guests])
+    // Гостей много и они правы — но и единица от пары не растворяется в ноль.
+    expect(withCouple).toBeLessThan(5)
+    expect(withCouple).toBeGreaterThan(4)
+  })
+})
+
+describe.skipIf(!live)('перепроверка этапа 8', () => {
+  let app: FastifyInstance
+  let counter = 0
+  const RUN = String(randomInt(100_000, 1_000_000))
+  const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
+
+  beforeAll(async () => {
+    app = await buildApp({
+      env: 'test',
+      databaseUrl: DB ?? null,
+      redisUrl: null,
+      corsOrigins: [],
+      jwtAccessSecret: SECRET_A,
+      jwtRefreshSecret: SECRET_R,
+      policyVersion: '2026-09-02',
+      otpMaxPerHourTotal: 1_000_000,
+      otpMaxPerIpHour: 1_000_000,
+    })
+    await app.ready()
+  })
+
+  afterAll(async () => {
+    await app?.close()
+  })
+
+  const nextPhone = () => `+79${RUN}${String(++counter).padStart(3, '0')}`
+  const auth = (token: string) => ({ authorization: `Bearer ${token}` })
+  const key = () => ({ 'idempotency-key': randomUUID() })
+
+  async function readCode(phone: string): Promise<string> {
+    const { rows } = await app.db!.query<{ code_hash: string }>(
+      'select code_hash from otp_codes where phone = $1 order by created_at desc limit 1',
+      [phone],
+    )
+    for (let i = 0; i < 10000; i++) {
+      const c = String(i).padStart(4, '0')
+      if (hashCode(SECRET_R, phone, c) === rows[0]!.code_hash) return c
+    }
+    throw new Error('код не подобрался')
+  }
+
+  async function newUser() {
+    const phone = nextPhone()
+    await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone }, remoteAddress: IP })
+    const v = await app.inject({
+      method: 'POST',
+      url: '/auth/otp/verify',
+      payload: { phone, code: await readCode(phone) },
+    })
+    const token = v.json().accessToken as string
+    await app.inject({
+      method: 'POST',
+      url: '/users/me/consent',
+      headers: auth(token),
+      payload: { policyVersion: '2026-09-02' },
+    })
+    const { rows } = await app.db!.query<{ id: string }>('select id from users where phone = $1', [phone])
+    return { token, userId: rows[0]!.id }
+  }
+
+  async function newWedding(date = '2027-06-14') {
+    const user = await newUser()
+    const w = await app.inject({
+      method: 'POST',
+      url: '/weddings',
+      headers: auth(user.token),
+      payload: {
+        partnerName: 'Тимур',
+        date,
+        city: { name: 'Казань', region: 'Татарстан' },
+        budgetTotal: { amount: 100_000_000, currency: 'RUB' },
+      },
+    })
+    expect(w.statusCode).toBe(201)
+    return { ...user, weddingId: w.json().id as string }
+  }
+
+  async function newVendor(name = 'Подрядчик', categoryId = 'photo') {
+    const user = await newUser()
+    const created = await app.inject({
+      method: 'PUT',
+      url: '/vendor/profile',
+      headers: auth(user.token),
+      payload: {
+        name: `${name} ${RUN}-${counter}`,
+        categoryId,
+        city: { name: 'Казань', region: 'Татарстан' },
+        priceFrom: { amount: 5_000_000, currency: 'RUB' },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(user.token) })
+    return { ...user, vendorId: created.json().id as string }
+  }
+
+  async function book(w: { token: string; weddingId: string }, vendorId: string) {
+    const slots = (
+      await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token) })
+    ).json() as { id: string; categoryId: string }[]
+    const slot = slots.find((s) => s.categoryId === 'photo') ?? slots[0]!
+    const res = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/slots/${slot.id}/book`,
+      headers: { ...auth(w.token), ...key() },
+      payload: { vendorId, price: { amount: 5_000_000, currency: 'RUB' } },
+    })
+    expect(res.statusCode).toBe(200)
+    const { rows } = await app.db!.query<{ id: string }>('select id from deals where slot_id = $1', [slot.id])
+    return rows[0]!.id
+  }
+
+  async function leaveCoupleReview(vendorId: string, date: string, stars: number) {
+    const w = await newWedding(date)
+    const dealId = await book(w, vendorId)
+    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+    const res = await app.inject({
+      method: 'POST',
+      url: `/catalog/vendors/${vendorId}/reviews`,
+      headers: auth(w.token),
+      payload: { rating: stars, text: 'Отзыв пары' },
+    })
+    expect(res.statusCode).toBe(201)
+    return w
+  }
+
+  /* ── публичная лента отзывов (§15) ────────────────────────────────── */
+  it('отзывы подрядчика читаются с пометкой источника', async () => {
+    const vendor = await newVendor('Читаемый')
+    const w = await leaveCoupleReview(vendor.vendorId, '2027-04-01', 5)
+
+    // Гостевой отзыв на той же свадьбе.
+    await app.db!.query("update weddings set date = current_date - 1 where id = $1", [w.weddingId])
+    const created = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests`,
+      headers: auth(w.token),
+      payload: { name: 'Аня' },
+    })
+    const link = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests/${created.json().id}/invite-link`,
+      headers: auth(w.token),
+    })
+    const code = (link.json().url as string).split('/').pop()!
+    const guestToken = (await app.inject({ method: 'GET', url: `/invite/${code}` })).json().guestToken as string
+    await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guest-reviews?guestToken=${encodeURIComponent(guestToken)}`,
+      payload: { vendorId: vendor.vendorId, stars: 4, text: 'Отзыв гостя' },
+    })
+
+    const reader = await newWedding('2027-05-05')
+    const feed = await app.inject({
+      method: 'GET',
+      url: `/catalog/vendors/${vendor.vendorId}/reviews`,
+      headers: auth(reader.token),
+    })
+    expect(feed.statusCode).toBe(200)
+    const items = feed.json().items as { source: string; authorName: string }[]
+    /* Без этой ленты карточка показывала рейтинг, но не показывала,
+     * за что он поставлен: §15 требует публичный список с пометкой. */
+    expect(items).toHaveLength(2)
+    expect(items.map((r) => r.source).sort()).toEqual(['couple', 'guest'])
+    // Токен гостя в ленту не попадает — как и везде (§9).
+    expect(feed.body).not.toContain(guestToken)
+
+    const onlyGuests = await app.inject({
+      method: 'GET',
+      url: `/catalog/vendors/${vendor.vendorId}/reviews?source=guest`,
+      headers: auth(reader.token),
+    })
+    expect((onlyGuests.json().items as { source: string }[]).every((r) => r.source === 'guest')).toBe(true)
+  })
+
+  it('скрытый отзыв в ленту не попадает', async () => {
+    const vendor = await newVendor('Оболганный2')
+    await leaveCoupleReview(vendor.vendorId, '2027-04-02', 1)
+    await app.db!.query("update reviews set hidden_at = now() where vendor_id = $1", [vendor.vendorId])
+
+    const reader = await newWedding('2027-05-06')
+    const feed = await app.inject({
+      method: 'GET',
+      url: `/catalog/vendors/${vendor.vendorId}/reviews`,
+      headers: auth(reader.token),
+    })
+    expect(feed.json().items).toEqual([])
+  })
+
+  /* ── сделки в кабинете ────────────────────────────────────────────── */
+  it('кабинет показывает сделки с суммами, а не список заявок', async () => {
+    const vendor = await newVendor('Сделочный')
+    const w = await newWedding('2027-04-10')
+    await book(w, vendor.vendorId)
+
+    const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })
+    expect(deals.statusCode).toBe(200)
+    const items = deals.json().items as { price: { amount: number }; state: string; coupleName: string }[]
+    /* Экран «Сделки» есть в моках, а пути под него не было: заявка и сделка —
+     * разные вещи, у заявки нет ни суммы, ни срока брони. */
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ state: 'booked' })
+    expect(items[0]!.price.amount).toBe(5_000_000)
+    // «Ожидается по сделкам» — только незакрытые.
+    expect(deals.json().expected.amount).toBe(5_000_000)
+  })
+
+  it('закрытая сделка в «ожидается» не входит', async () => {
+    const vendor = await newVendor('Закрытый')
+    const w = await newWedding('2027-04-11')
+    const dealId = await book(w, vendor.vendorId)
+    await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
+
+    const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })
+    // Закрытая сделка уже оплачена — ждать по ней нечего.
+    expect(deals.json().expected.amount).toBe(0)
+    expect((deals.json().items as { state: string }[])[0]!.state).toBe('done')
+  })
+
+  /* ── понижение в выдаче ───────────────────────────────────────────── */
+  it('понижение в выдаче действительно опускает анкету', async () => {
+    /* Метка в имени, а не категория целиком: в общей тестовой базе
+     * во «флористах» уже сотня анкет от соседних наборов, и наши две
+     * не попали бы даже на первую страницу. */
+    const mark = `Флорист${randomInt(100_000, 999_999)}`
+    const good = await newVendor(mark, 'florist')
+    const bad = await newVendor(mark, 'florist')
+    const reader = await newWedding('2027-05-07')
+
+    const order = async () =>
+      (
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/catalog/vendors?q=${encodeURIComponent(mark)}&limit=100`,
+            headers: auth(reader.token),
+          })
+        ).json().items as { id: string }[]
+      ).map((v) => v.id)
+
+    const before = await order()
+    expect(before).toContain(bad.vendorId)
+
+    await app.db!.query('update vendors set downranked_at = now() where id = $1', [bad.vendorId])
+    const after = await order()
+    /* Санкция «понижение в выдаче» ничего не понижала: колонка ставилась,
+     * а сортировка про неё не знала. */
+    expect(after.indexOf(bad.vendorId)).toBeGreaterThan(after.indexOf(good.vendorId))
+    expect(after[after.length - 1]).toBe(bad.vendorId)
+  })
+
+  /* ── затухание считается по времени ───────────────────────────────── */
+  it('рейтинг пересчитывается ночью, а не только при новом отзыве', async () => {
+    const vendor = await newVendor('Застывший')
+    await leaveCoupleReview(vendor.vendorId, '2027-04-03', 5)
+    await leaveCoupleReview(vendor.vendorId, '2027-04-04', 5)
+    await leaveCoupleReview(vendor.vendorId, '2027-04-05', 1)
+
+    // Состарим две пятёрки на три года: их вес должен упасть, а единица —
+    // остаться свежей. Без ночного пересчёта число застыло бы навсегда.
+    await app.db!.query(
+      "update reviews set created_at = now() - interval '3 years' where vendor_id = $1 and stars = 5",
+      [vendor.vendorId],
+    )
+    const { rows: stale } = await app.db!.query<{ rating: string }>(
+      'select rating::text as rating from vendors where id = $1',
+      [vendor.vendorId],
+    )
+
+    await recomputeAllRatings(app.db!)
+    const { rows: fresh } = await app.db!.query<{ rating: string }>(
+      'select rating::text as rating from vendors where id = $1',
+      [vendor.vendorId],
+    )
+    expect(Number(fresh[0]!.rating)).toBeLessThan(Number(stale[0]!.rating))
+  })
+
+  /* ── критерий этапа: выдача, а не карточка ────────────────────────── */
+  it('в ВЫДАЧЕ подрядчик с двумя отзывами идёт без числа, с тремя — с числом', async () => {
+    const category = 'decor'
+    const vendor = await newVendor('Оцениваемый', category)
+    const reader = await newWedding('2027-05-08')
+
+    const inList = async () =>
+      (
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/catalog/vendors?categoryId=${category}&limit=100`,
+            headers: auth(reader.token),
+          })
+        ).json().items as { id: string; rating: number | null; reviewsCount: number }[]
+      ).find((v) => v.id === vendor.vendorId)!
+
+    for (const [i, stars] of [5, 4].entries()) {
+      await leaveCoupleReview(vendor.vendorId, `2027-08-0${i + 1}`, stars)
+    }
+    // Критерий этапа говорит «в выдаче», а не «в карточке»: проверялось
+    // только второе.
+    expect(inList()).resolves.toMatchObject({ rating: null, reviewsCount: 2 })
+
+    await leaveCoupleReview(vendor.vendorId, '2027-08-03', 5)
+    const withNumber = await inList()
+    expect(withNumber.reviewsCount).toBe(3)
+    expect(withNumber.rating).toBeGreaterThan(4)
+  })
+
+  /* ── все пути этапа отвечают ──────────────────────────────────────── */
+  it('шестнадцать путей этапа отвечают своими обработчиками', async () => {
+    const staff = await newUser()
+    await app.db!.query('update users set is_staff = true where id = $1', [staff.userId])
+    const vendor = await newVendor('Полный')
+    const w = await newWedding('2027-04-20')
+
+    const checks: [string, string, string][] = [
+      ['GET', '/vendor/leads', vendor.token],
+      ['GET', '/vendor/deals', vendor.token],
+      ['GET', '/vendor/reviews', vendor.token],
+      ['GET', '/vendor/analytics', vendor.token],
+      ['GET', `/catalog/vendors/${vendor.vendorId}/reviews`, w.token],
+      ['GET', `/weddings/${w.weddingId}/guest-reviews`, w.token],
+      ['GET', '/admin/moderation/vendors', staff.token],
+      ['GET', '/admin/complaints', staff.token],
+      ['GET', '/admin/metrics', staff.token],
+      ['GET', `/admin/weddings/${w.weddingId}?reason=обращение%20пары`, staff.token],
+    ]
+    const wrong: string[] = []
+    for (const [method, url, token] of checks) {
+      const res = await app.inject({ method: method as 'GET', url, headers: auth(token) })
+      if (res.statusCode !== 200) wrong.push(`${url} → ${res.statusCode}`)
+    }
+    expect(wrong).toEqual([])
+  })
+})

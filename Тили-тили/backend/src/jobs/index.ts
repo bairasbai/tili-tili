@@ -2,6 +2,7 @@ import { Queue, Worker, type Job } from 'bullmq'
 import type { FastifyInstance } from 'fastify'
 import { sendDuePushes } from '../notify/push.js'
 import { notify, notifyWedding } from '../notify/notify.js'
+import { recomputeAllRatings } from '../reviews/rating.js'
 import { uuidv7 } from '../ids.js'
 
 /**
@@ -282,6 +283,7 @@ async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (name === 'digest') return weeklyDigest(app)
   if (name === 'deal-events') return announceDealEvents(app)
   if (name === 'rsvp-digest') return rsvpDigest(app)
+  if (name === 'ratings') return recomputeAllRatings(app.db)
   return { skipped: name }
 }
 
@@ -304,6 +306,9 @@ const SCHEDULE: { name: string; every?: number; pattern?: string }[] = [
   { name: 'deal-events', every: 60_000 },
   // Ответы гостей — сводкой раз в день, в 10 утра.
   { name: 'rsvp-digest', pattern: '0 10 * * *' },
+  /* Затухание рейтинга идёт по времени, а не по событиям: без ночного
+   * пересчёта у подрядчика без новых отзывов число застывает навсегда. */
+  { name: 'ratings', pattern: '30 3 * * *' },
   // Понедельник, 10:00 — по времени сервера: у дайджеста нет получателя
   // в единственном числе, а значит и «его» таймзоны.
   { name: 'digest', pattern: '0 10 * * 1' },

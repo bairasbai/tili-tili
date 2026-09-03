@@ -143,6 +143,47 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /* ── сделки ───────────────────────────────────────────────────────── */
+  app.get('/vendor/deals', { preHandler: app.requireConsent }, async (request) => {
+    const vendorId = await myVendorId(request.caller!.userId)
+    /* Заявка и сделка — разные вещи. У заявки нет ни суммы, ни срока брони,
+     * и показывать список лидов вместо сделок значило бы врать про деньги. */
+    const { rows } = await db().query<{
+      id: string
+      couple_name: string
+      wedding_date: string | null
+      price: string | null
+      currency: string
+      state: string
+      negotiating_until: Date | null
+    }>(
+      `select d.id, w.title as couple_name, w.date::text as wedding_date,
+              d.price::text as price, d.currency, d.state, d.negotiating_until
+         from deals d join weddings w on w.id = d.wedding_id
+        where d.vendor_id = $1 and w.archived_at is null
+        order by d.created_at desc`,
+      [vendorId],
+    )
+
+    /* «Ожидается по сделкам» — только то, что ещё не закрыто и не отменено:
+     * закрытая сделка уже оплачена, отменённая не принесёт ничего. */
+    const expected = rows
+      .filter((r) => r.state === 'booked' || r.state === 'paid_deposit')
+      .reduce((sum, r) => sum + Number(r.price ?? 0), 0)
+
+    return {
+      expected: { amount: expected, currency: 'RUB' },
+      items: rows.map((r) => ({
+        id: r.id,
+        coupleName: r.couple_name,
+        weddingDate: r.wedding_date,
+        price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
+        state: r.state,
+        holdUntil: r.state === 'negotiating' ? (r.negotiating_until?.toISOString() ?? null) : null,
+      })),
+    }
+  })
+
   /* ── отзывы на меня ───────────────────────────────────────────────── */
   app.get('/vendor/reviews', { preHandler: app.requireConsent }, async (request) => {
     const vendorId = await myVendorId(request.caller!.userId)
@@ -165,7 +206,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     )
     return rows.map((r) => ({
       id: r.id,
-      authorName: r.source === 'guest' ? 'Гость свадьбы' : 'Пара',
+      source: r.source,
+      authorName: r.source === 'guest' ? 'Гость свадьбы' : 'Пара со сделкой',
       rating: r.stars,
       text: r.text ?? '',
       createdAt: r.created_at.toISOString(),

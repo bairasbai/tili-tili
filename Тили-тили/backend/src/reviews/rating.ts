@@ -23,12 +23,21 @@ export function decayWeight(ageDays: number): number {
   return 0.5 ** (Math.max(ageDays, 0) / HALF_LIFE_DAYS)
 }
 
-export function weightedRating(reviews: { stars: number; ageDays: number }[]): number | null {
+/**
+ * Вес источника (§15): у пары подтверждённая сделка и договор, у гостя —
+ * впечатление участника. Оба сигнала полезны, но равными их считать нельзя:
+ * гостей на свадьбе полторы сотни, а сделка одна.
+ */
+export const SOURCE_WEIGHT = { couple: 1, guest: 0.5 } as const
+
+export type ReviewSource = keyof typeof SOURCE_WEIGHT
+
+export function weightedRating(reviews: { stars: number; ageDays: number; source?: ReviewSource }[]): number | null {
   if (reviews.length === 0) return null
   let sum = 0
   let weight = 0
   for (const review of reviews) {
-    const w = decayWeight(review.ageDays)
+    const w = decayWeight(review.ageDays) * SOURCE_WEIGHT[review.source ?? 'couple']
     sum += review.stars * w
     weight += w
   }
@@ -44,17 +53,31 @@ export function weightedRating(reviews: { stars: number; ageDays: number }[]): n
  * что уже признано недопустимым.
  */
 export async function recomputeRating(db: Queryable, vendorId: string): Promise<void> {
-  const { rows } = await db.query<{ stars: number; age_days: string }>(
-    `select stars, extract(epoch from (now() - created_at)) / 86400 as age_days
+  const { rows } = await db.query<{ stars: number; age_days: string; source: ReviewSource }>(
+    `select stars, source, extract(epoch from (now() - created_at)) / 86400 as age_days
        from reviews where vendor_id = $1 and hidden_at is null`,
     [vendorId],
   )
-  const rating = weightedRating(rows.map((r) => ({ stars: r.stars, ageDays: Number(r.age_days) })))
+  const rating = weightedRating(
+    rows.map((r) => ({ stars: r.stars, ageDays: Number(r.age_days), source: r.source })),
+  )
   await db.query('update vendors set rating = $2, reviews_count = $3 where id = $1', [
     vendorId,
     rating,
     rows.length,
   ])
+}
+
+/**
+ * Пересчёт всех рейтингов: затухание идёт по времени, а не по событиям.
+ *
+ * Без него у подрядчика без новых отзывов рейтинг застывает: он пересчитан
+ * в день последнего отзыва и с тех пор не менялся, хотя веса давно уплыли.
+ */
+export async function recomputeAllRatings(db: Queryable): Promise<number> {
+  const { rows } = await db.query<{ id: string }>('select id from vendors where reviews_count > 0')
+  for (const vendor of rows) await recomputeRating(db, vendor.id)
+  return rows.length
 }
 
 /** Число, которое можно показать: до трёх отзывов его нет. */

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.14.0
+  version: 0.15.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1276,6 +1276,37 @@ paths:
               properties: { text: { type: string } }
       responses:
         '200': { description: OK }
+  /vendor/deals:
+    get:
+      tags: [vendor]
+      summary: Сделки подрядчика
+      description: |
+        Экран «Сделки» кабинета: пара, дата, сумма, состояние. Заявка
+        и сделка — разные вещи: у заявки нет ни суммы, ни мягкой брони,
+        и показывать одно вместо другого нечестно.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expected: { $ref: '#/components/schemas/Money' }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        coupleName: { type: string }
+                        weddingDate: { type: string, format: date, nullable: true }
+                        price:
+                          allOf: [{ $ref: '#/components/schemas/Money' }]
+                          nullable: true
+                        state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
+                        holdUntil: { type: string, format: date-time, nullable: true }
   /vendor/analytics:
     get:
       tags: [vendor]
@@ -1313,6 +1344,36 @@ paths:
 
   # ───────────────────────── REVIEWS (пара → подрядчик) ─────────────────────────
   /catalog/vendors/{vendorId}/reviews:
+    get:
+      tags: [catalog]
+      summary: Отзывы о подрядчике
+      description: |
+        Публичная лента с пометкой источника (§15). Отзыв пары идёт
+        с подтверждённой сделкой, отзыв гостя — с бейджем «Гость свадьбы»:
+        у пары договор, у гостя впечатление, и смешивать их нельзя.
+
+        Скрытые модератором отзывы не отдаются и в рейтинг не входят.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: source
+          in: query
+          schema: { type: string, enum: [couple, guest, all], default: all }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Review' } }
+                  nextCursor: { type: string, nullable: true }
     post:
       tags: [catalog]
       summary: Оставить отзыв (только после завершённой сделки)
@@ -2557,7 +2618,20 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Wedding' }
+              schema:
+                type: object
+                description: |
+                  Карточка, а не свадьба целиком: ни гостей, ни переписки,
+                  ни сумм. Для разбора обращения этого достаточно, а лишнее
+                  здесь — чужая свадьба на экране поддержки.
+                properties:
+                  id: { type: string }
+                  title: { type: string }
+                  date: { type: string, format: date, nullable: true }
+                  city: { type: string, nullable: true }
+                  style: { type: string, nullable: true }
+                  guestsPlanned: { type: integer, nullable: true }
+                  createdAt: { type: string, format: date-time }
 
 components:
   securitySchemes:
@@ -2950,6 +3024,10 @@ components:
       type: object
       properties:
         id: { type: string }
+        source:
+          type: string
+          enum: [couple, guest]
+          description: 'Пара со сделкой или гость свадьбы: в рейтинге веса разные (§15).'
         authorName: { type: string }
         rating: { type: integer, minimum: 1, maximum: 5 }
         text: { type: string }

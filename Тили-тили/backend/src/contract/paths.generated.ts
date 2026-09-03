@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.14.0).
- * Операций: 132. Путей: 104. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.15.0).
+ * Операций: 134. Путей: 105. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -31,6 +31,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/catalog/vendors","url":"/catalog/vendors","operationId":null,"summary":"Каталог подрядчиков с фильтрами","tag":"catalog"},
   {"method":"GET","openapi":"/catalog/vendors/{vendorId}","url":"/catalog/vendors/:vendorId","operationId":null,"summary":"Анкета подрядчика","tag":"catalog"},
   {"method":"GET","openapi":"/catalog/vendors/{vendorId}/availability","url":"/catalog/vendors/:vendorId/availability","operationId":null,"summary":"Занятость дат (для выбора даты брони)","tag":"catalog"},
+  {"method":"GET","openapi":"/catalog/vendors/{vendorId}/reviews","url":"/catalog/vendors/:vendorId/reviews","operationId":null,"summary":"Отзывы о подрядчике","tag":"catalog"},
   {"method":"POST","openapi":"/catalog/vendors/{vendorId}/reviews","url":"/catalog/vendors/:vendorId/reviews","operationId":null,"summary":"Оставить отзыв (только после завершённой сделки)","tag":"catalog"},
   {"method":"GET","openapi":"/chats","url":"/chats","operationId":null,"summary":"Список чатов пользователя","tag":"chats"},
   {"method":"GET","openapi":"/chats/{chatId}/messages","url":"/chats/:chatId/messages","operationId":null,"summary":"История сообщений","tag":"chats"},
@@ -81,6 +82,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/analytics","url":"/vendor/analytics","operationId":null,"summary":"Аналитика анкеты (просмотры → лиды → сделки)","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Отметить даты занятыми/свободными","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/deals","url":"/vendor/deals","operationId":null,"summary":"Сделки подрядчика","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/leads","url":"/vendor/leads","operationId":null,"summary":"Входящие лиды","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/leads/{leadId}","url":"/vendor/leads/:leadId","operationId":null,"summary":"Действие с лидом: ответить / холд 72ч / отклонить / вернуть","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/profile","url":"/vendor/profile","operationId":null,"summary":"Моя анкета подрядчика","tag":"vendor"},

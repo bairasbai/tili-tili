@@ -858,6 +858,14 @@ export const CONTRACT_SCHEMAS = {
               "id": {
                   "type": "string"
               },
+              "source": {
+                  "type": "string",
+                  "enum": [
+                      "couple",
+                      "guest"
+                  ],
+                  "description": "Пара со сделкой или гость свадьбы: в рейтинге веса разные (§15)."
+              },
               "authorName": {
                   "type": "string"
               },

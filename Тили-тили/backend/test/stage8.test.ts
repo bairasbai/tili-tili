@@ -366,7 +366,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
 
     const mine = await app.inject({ method: 'GET', url: '/vendor/reviews', headers: auth(vendor.token) })
     const review = (mine.json() as { id: string; authorName: string }[])[0]!
-    expect(review.authorName).toBe('Пара')
+    expect(review.authorName).toBe('Пара со сделкой')
     expect(mine.body).not.toContain('guest_token')
 
     const replied = await app.inject({

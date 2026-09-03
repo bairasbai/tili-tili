@@ -2429,6 +2429,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Сделки подрядчика
+         * @description Экран «Сделки» кабинета: пара, дата, сумма, состояние. Заявка
+         *     и сделка — разные вещи: у заявки нет ни суммы, ни мягкой брони,
+         *     и показывать одно вместо другого нечестно.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            expected?: components["schemas"]["Money"];
+                            items?: {
+                                id?: string;
+                                coupleName?: string;
+                                /** Format: date */
+                                weddingDate?: string | null;
+                                price?: components["schemas"]["Money"] | null;
+                                /** @enum {string} */
+                                state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
+                                /** Format: date-time */
+                                holdUntil?: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/analytics": {
         parameters: {
             query?: never;
@@ -2495,7 +2549,43 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Отзывы о подрядчике
+         * @description Публичная лента с пометкой источника (§15). Отзыв пары идёт
+         *     с подтверждённой сделкой, отзыв гостя — с бейджем «Гость свадьбы»:
+         *     у пары договор, у гостя впечатление, и смешивать их нельзя.
+         *
+         *     Скрытые модератором отзывы не отдаются и в рейтинг не входят.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    source?: "couple" | "guest" | "all";
+                    limit?: components["parameters"]["Limit"];
+                    cursor?: components["parameters"]["Cursor"];
+                };
+                header?: never;
+                path: {
+                    vendorId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items?: components["schemas"]["Review"][];
+                            nextCursor?: string | null;
+                        };
+                    };
+                };
+            };
+        };
         put?: never;
         /** Оставить отзыв (только после завершённой сделки) */
         post: {
@@ -5397,7 +5487,17 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Wedding"];
+                        "application/json": {
+                            id?: string;
+                            title?: string;
+                            /** Format: date */
+                            date?: string | null;
+                            city?: string | null;
+                            style?: string | null;
+                            guestsPlanned?: number | null;
+                            /** Format: date-time */
+                            createdAt?: string;
+                        };
                     };
                 };
             };
@@ -5702,6 +5802,11 @@ export interface components {
         };
         Review: {
             id?: string;
+            /**
+             * @description Пара со сделкой или гость свадьбы: в рейтинге веса разные (§15).
+             * @enum {string}
+             */
+            source?: "couple" | "guest";
             authorName?: string;
             rating?: number;
             text?: string;
