@@ -1,7 +1,7 @@
 # Тили-тили — инструкция для агента
 
 PWA-планировщик свадьбы (tili-tili.ru). Фронт готов и работает на моках в localStorage.
-Бэкенд — каркас этапа 0: знает все 103 пути контракта, логики продукта ещё нет.
+Бэкенд готов: 111 путей контракта, 142 операции, реализованы все.
 
 Фронт: React 19 + TypeScript + Vite 7 + Tailwind 3 + shadcn/ui, react-router 7, vitest 4.
 Бэк: Node 22 + Fastify 5 + TypeScript, PostgreSQL 16, Redis 7. Хостинг — Timeweb Cloud, площадка в РФ.
@@ -21,7 +21,7 @@ PWA-планировщик свадьбы (tili-tili.ru). Фронт готов 
 
 | Документ | О чём | Когда открывать |
 |---|---|---|
-| `Тили-тили_API_openapi.yaml` | Контракт API: 48 эндпоинтов, 25 схем | Любая работа с API |
+| `Тили-тили_API_openapi.yaml` | Контракт API: 111 путей, 142 операции, 39 схем | Любая работа с API |
 | `Тили-тили_Бизнес-логика_и_бэкенд.md` | Доменная модель, машины состояний, §17 — хранение данных | Логика, бэкенд |
 | `Тили-тили_План_приложения.md` | Продукт, дизайн-токены, правила R-01…R-15, 67 экранов MVP | Спорные решения, новые фичи |
 | `Тили-тили_Карта_экранов.md` | Все экраны и блоки + журнал (правило **R-MAP**) | Любая правка UI |
@@ -76,7 +76,7 @@ node node_modules/vite/bin/vite.js build    # прод-сборка
 Бэкенд, из папки `backend`:
 
 ```bash
-node node_modules/vitest/vitest.mjs run                 # 30 тестов, включая контрактный
+node node_modules/vitest/vitest.mjs run                 # 448 тестов; с живой базой — при заданном TEST_DATABASE_URL
 node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
 node node_modules/eslint/bin/eslint.js .
 node scripts/gen-contract.mjs && node scripts/gen-schemas.mjs   # после правки контракта
@@ -137,4 +137,4 @@ node scripts/gen-contract.mjs && node scripts/gen-schemas.mjs   # после п�
 3. **Стек в плане ≠ факт.** План ч. 12.1: React 18, Vite 6, TanStack Query, Zustand, three.js, GSAP, react-i18next. По факту: React 19, Vite 7, свой Context + `usePersist`, свой `lib/i18n.ts`, ни three.js, ни GSAP.
 4. **67 экранов MVP против 48 роутов**, админка (5 экранов, §19.10) на фронте не начата — бэкенд для неё готов.
 
-**Решено по ходу:** деньги — минорные единицы плюс код валюты; машина состояний сделки — `candidate → contacted → negotiating → booked → paid_deposit → done`; контракт догнал документацию (105 путей); ссылку-приглашение выдаёт только пара.
+**Решено по ходу:** деньги — минорные единицы плюс код валюты; машина состояний сделки — `candidate → contacted → negotiating → booked → paid_deposit → done`; контракт догнал документацию (111 путей); ссылку-приглашение выдаёт только пара.
