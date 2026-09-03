@@ -132,6 +132,83 @@ describe.skipIf(!live)('третий проход по этапам 5 и 6', () 
     return { guestId: created.json().id as string, token: opened.json().guestToken as string }
   }
 
+  async function addHelper(w: { token: string; weddingId: string }) {
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/invites`,
+      headers: auth(w.token),
+      payload: { role: 'helper', label: 'Катя' },
+    })
+    const phone = nextPhone()
+    await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone }, remoteAddress: IP })
+    const v = await app.inject({
+      method: 'POST',
+      url: '/auth/otp/verify',
+      payload: { phone, code: await readCode(phone) },
+    })
+    const token = v.json().accessToken as string
+    await app.inject({
+      method: 'POST',
+      url: '/users/me/consent',
+      headers: auth(token),
+      payload: { policyVersion: '2026-09-02' },
+    })
+    const accepted = await app.inject({
+      method: 'POST',
+      url: `/invites/${invite.json().code}/accept`,
+      headers: auth(token),
+    })
+    expect(accepted.statusCode).toBe(200)
+    return token
+  }
+
+  /* ── удостоверение гостя выдаёт только пара ───────────────────────── */
+  it('помощник ведёт список гостей, но ссылку-приглашение не выдаёт', async () => {
+    const w = await newWedding()
+    const helper = await addHelper(w)
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests`,
+      headers: auth(helper),
+      payload: { name: 'Родион' },
+    })
+    // Список гостей — работа помощника, её никто не отнимал.
+    expect(created.statusCode).toBe(201)
+    const guestId = created.json().id as string
+
+    expect(
+      (await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/guests`, headers: auth(helper) })).statusCode,
+    ).toBe(200)
+    expect(
+      (
+        await app.inject({
+          method: 'PATCH',
+          url: `/weddings/${w.weddingId}/guests/${guestId}`,
+          headers: auth(helper),
+          payload: { name: 'Родион Петрович' },
+        })
+      ).statusCode,
+    ).toBe(200)
+
+    // А ссылка — удостоверение: кто её выдаёт, тот может обменять её сам
+    // и действовать от имени гостя. Для пары это неизбежно, для помощника
+    // это лишние права (решение владельца 2026-09-03).
+    const link = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests/${guestId}/invite-link`,
+      headers: auth(helper),
+    })
+    expect(link.statusCode).toBe(403)
+
+    const byCouple = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests/${guestId}/invite-link`,
+      headers: auth(w.token),
+    })
+    expect(byCouple.statusCode).toBe(200)
+  })
+
   /* ── отказ по пределу — не «повторите позже» ───────────────────────── */
   it('исчерпанный предел взносов отвечает без Retry-After', async () => {
     const w = await newWedding()
