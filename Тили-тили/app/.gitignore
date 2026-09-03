@@ -25,3 +25,4 @@ dist-ssr
 
 # Служебные папки инструментов
 .claude-flow/
+.claude/
