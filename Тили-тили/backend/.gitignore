@@ -4,3 +4,9 @@ dist/
 .env.local
 *.log
 coverage/
+
+# Кэш инкрементальной сборки TypeScript — машинный файл, в истории не нужен.
+*.tsbuildinfo
+
+# Кэш инкрементальной сборки TypeScript — машинный файл, в истории не нужен.
+*.tsbuildinfo

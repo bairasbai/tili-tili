@@ -214,7 +214,7 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
       ['GET', '/invites', { couple: 200, helper: 200, coordinator: 200 }],
       ['POST', '/invites', { couple: 201, helper: 403, coordinator: 403 }],
       ['GET', '/budget', { couple: 200, helper: 403, coordinator: 403 }],
-      ['GET', '/wishlist', { couple: 501, helper: 403, coordinator: 403 }],
+      ['GET', '/wishlist', { couple: 200, helper: 403, coordinator: 403 }],
       ['GET', '/slots', { couple: 200, helper: 200, coordinator: 200 }],
       ['GET', '/documents', { couple: 200, helper: 403, coordinator: 403 }],
       ['GET', '/guests', { couple: 200, helper: 200, coordinator: 200 }],

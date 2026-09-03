@@ -27,6 +27,8 @@ export interface Config {
   trustProxy: boolean | number
   /** Сколько кадров может добавить один гость. */
   albumMaxPerGuest: number
+  /** Сколько взносов один гость делает в один подарок или фонд. */
+  contributionsMaxPerGuest: number
   smsProvider: string | null
   smsAeroEmail: string | null
   smsAeroKey: string | null
@@ -116,6 +118,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     otpMaxPerHourTotal: Number(source.OTP_MAX_PER_HOUR_TOTAL ?? MAX_SENDS_PER_HOUR_TOTAL),
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
     albumMaxPerGuest: Number(source.ALBUM_MAX_PER_GUEST ?? 50),
+    contributionsMaxPerGuest: Number(source.CONTRIBUTIONS_MAX_PER_GUEST ?? 20),
     smsProvider: source.SMS_PROVIDER ?? null,
     smsAeroEmail: source.SMSAERO_EMAIL ?? null,
     smsAeroKey: source.SMSAERO_KEY ?? null,

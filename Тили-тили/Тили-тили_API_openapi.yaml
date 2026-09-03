@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.8.0
+  version: 0.9.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -870,7 +870,10 @@ paths:
         Возвращает ссылку вида https://tili-tili.ru/i/{shareCode}. Код одноразовый:
         при первом открытии он гаснет и гость получает персональный guestToken в свой
         браузер. Пара сырой токен не видит. Повторный вызов гасит прежний код и выдаёт
-        новый — на случай «гость потерял ссылку».
+        новый — на случай «гость потерял ссылку». Вместе с кодом гаснет и САМ ТОКЕН:
+        иначе пара, которая ссылку и выдаёт, обменяла бы её сама и увидела на гостевой
+        странице, какой подарок этот гость зарезервировал (§9). Резервы прежнего токена
+        освобождаются — подарок не должен остаться занят мёртвой ссылкой.
       parameters:
         - { name: weddingId, in: path, required: true, schema: { type: string } }
         - { name: guestId, in: path, required: true, schema: { type: string } }
@@ -1344,6 +1347,7 @@ paths:
                 name: { type: string }
                 price: { $ref: '#/components/schemas/Money' }
                 group: { type: boolean, description: можно скидываться }
+                icon: { type: string, maxLength: 16 }
                 desc: { type: string }
       responses:
         '201':
@@ -1367,6 +1371,7 @@ paths:
               properties:
                 name: { type: string }
                 price: { $ref: '#/components/schemas/Money' }
+                icon: { type: string, maxLength: 16 }
                 desc: { type: string }
       responses:
         '200':
@@ -1377,12 +1382,14 @@ paths:
     delete:
       tags: [wishlist]
       summary: Удалить желание
+      description: 'Запрещено, если в подарок уже сложились — 409, как и у фонда.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: OK }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────── WISHLIST (гость по ссылке) ─────────────────────────
   /gifts/{guestToken}:
@@ -1402,7 +1409,14 @@ paths:
                   gifts: { type: array, items: { $ref: '#/components/schemas/Gift' } }
                   funds: { type: array, items: { $ref: '#/components/schemas/Fund' } }
                   antiGifts: { type: array, items: { type: string } }
-                  fairPrice: { $ref: '#/components/schemas/Money' }
+                  fairPrice:
+                    allOf: [{ $ref: '#/components/schemas/Money' }]
+                    nullable: true
+                    description: |
+                      Деликатный ориентир «банкет на гостя»: расходы по строке
+                      «Площадка и кейтеринг», делённые на число гостей. Пока
+                      бюджет пуст или список гостей пуст — null, а не ноль
+                      и не выдуманное число.
   /gifts/{guestToken}/{giftId}/reserve:
     post:
       tags: [wishlist-guest]
@@ -1411,6 +1425,10 @@ paths:
         Атомарно: резерв проходит только если подарок свободен (conditional update
         либо unique constraint). Второй гость получает 409 — подарить дважды нельзя.
         Токен гостя сохраняется, но паре не отдаётся никогда.
+
+        Повтор тем же токеном — тот же 200: гость нажал дважды, подарок его.
+        Подарок, в который уже сложились, зарезервировать нельзя (409): иначе
+        деньги участников складчины повисают на чужом резерве.
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
@@ -1431,6 +1449,11 @@ paths:
     post:
       tags: [wishlist-guest]
       summary: Внести часть суммы (складчина)
+      description: |
+        Только для подарков с `group: true`. Сумма прибавляется к `funded`
+        до `price`; взнос, переваливающий за цену, отклоняется 409 — принять
+        больше нужного значит взять с гостя лишнее. При `funded == price`
+        подарок закрывается и больше не принимает ни взносов, ни резерва.
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
@@ -1450,6 +1473,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Gift' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /gifts/{guestToken}/funds/{fundId}:
     post:
       tags: [wishlist-guest]
@@ -1473,6 +1498,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Fund' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   # ───────────────────────── СВОИ ПОДРЯДЧИКИ (§11) ─────────────────────────
   /weddings/{weddingId}/slots/{slotId}/external:
@@ -2226,6 +2252,7 @@ paths:
               properties:
                 name: { type: string }
                 target: { $ref: '#/components/schemas/Money' }
+                icon: { type: string, maxLength: 16 }
       responses:
         '201':
           description: Создано
@@ -2908,16 +2935,32 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
+        icon:
+          type: string
+          maxLength: 16
+          nullable: true
+          description: |
+            Значок подарка (§9). Плитка (`tile` в моках) сюда не входит: это
+            цвет из палитры, он считается на клиенте по месту в списке —
+            дизайн-токен, а не данные.
         desc: { type: string, nullable: true }
         price: { $ref: '#/components/schemas/Money' }
         group: { type: boolean, description: можно скидываться }
         funded: { $ref: '#/components/schemas/Money' }
         reserved: { type: boolean, description: 'кем именно — паре не отдаётся никогда' }
+        mine:
+          type: boolean
+          readOnly: true
+          description: |
+            Резерв поставлен ЭТИМ гостем. Только в гостевом ответе; паре поле
+            не отдаётся вовсе — иначе «занято мной» на её экране и означало бы
+            того самого гостя, которого §9 обещает не показывать.
     Fund:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
+        icon: { type: string, maxLength: 16, nullable: true }
         target: { $ref: '#/components/schemas/Money' }
         collected: { $ref: '#/components/schemas/Money' }
     BusRoute:

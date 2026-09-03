@@ -17,6 +17,7 @@ import { guestRoutes } from './routes/guests.js'
 import { slotRoutes } from './routes/slots.js'
 import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { geoRoutes } from './routes/geo.js'
+import { giftRoutes } from './routes/gifts.js'
 import { healthRoutes } from './routes/health.js'
 import { inviteRoutes } from './routes/invites.js'
 import { vendorRoutes } from './routes/vendor.js'
@@ -105,6 +106,26 @@ export async function buildApp(
     return reply.code(status).send(toErrorBody(error.code ?? 'error', error.message))
   })
 
+  /**
+   * Пустое тело у POST без тела — не ошибка.
+   *
+   * Контракт объявляет `POST …/invite-link` и `POST …/reserve` без
+   * requestBody, но клиент, который ставит `content-type: application/json`
+   * на все запросы подряд (обычная настройка axios/fetch-обёртки), получал
+   * от Fastify 400 FST_ERR_CTP_EMPTY_JSON_BODY — отказ за то, чего мы
+   * не просили. Найдено живым HTTP-прогоном: app.inject заголовок
+   * не подставляет и потому молчал.
+   */
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {
+    const raw = (body as string).trim()
+    if (raw === '') return done(null, undefined)
+    try {
+      done(null, JSON.parse(raw))
+    } catch {
+      done(new AppError(422, 'invalid_json', 'Тело запроса — не JSON'), undefined)
+    }
+  })
+
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send(toErrorBody('not_found', `Нет такого адреса: ${request.method} ${request.url}`)),
   )
@@ -137,6 +158,7 @@ export async function buildApp(
   await app.register(weddingLifecycleRoutes)
   await app.register(guestRoutes)
   await app.register(dayRoutes)
+  await app.register(giftRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
 

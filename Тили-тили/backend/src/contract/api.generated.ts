@@ -2582,6 +2582,7 @@ export interface paths {
                         price: components["schemas"]["Money"];
                         /** @description можно скидываться */
                         group?: boolean;
+                        icon?: string;
                         desc?: string;
                     };
                 };
@@ -2614,7 +2615,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить желание */
+        /**
+         * Удалить желание
+         * @description Запрещено, если в подарок уже сложились — 409, как и у фонда.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2634,6 +2638,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         options?: never;
@@ -2654,6 +2659,7 @@ export interface paths {
                     "application/json": {
                         name?: string;
                         price?: components["schemas"]["Money"];
+                        icon?: string;
                         desc?: string;
                     };
                 };
@@ -2712,7 +2718,13 @@ export interface paths {
                             gifts?: components["schemas"]["Gift"][];
                             funds?: components["schemas"]["Fund"][];
                             antiGifts?: string[];
-                            fairPrice?: components["schemas"]["Money"];
+                            /**
+                             * @description Деликатный ориентир «банкет на гостя»: расходы по строке
+                             *     «Площадка и кейтеринг», делённые на число гостей. Пока
+                             *     бюджет пуст или список гостей пуст — null, а не ноль
+                             *     и не выдуманное число.
+                             */
+                            fairPrice?: components["schemas"]["Money"] | null;
                         };
                     };
                 };
@@ -2740,6 +2752,10 @@ export interface paths {
          * @description Атомарно: резерв проходит только если подарок свободен (conditional update
          *     либо unique constraint). Второй гость получает 409 — подарить дважды нельзя.
          *     Токен гостя сохраняется, но паре не отдаётся никогда.
+         *
+         *     Повтор тем же токеном — тот же 200: гость нажал дважды, подарок его.
+         *     Подарок, в который уже сложились, зарезервировать нельзя (409): иначе
+         *     деньги участников складчины повисают на чужом резерве.
          */
         post: {
             parameters: {
@@ -2820,7 +2836,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Внести часть суммы (складчина) */
+        /**
+         * Внести часть суммы (складчина)
+         * @description Только для подарков с `group: true`. Сумма прибавляется к `funded`
+         *     до `price`; взнос, переваливающий за цену, отклоняется 409 — принять
+         *     больше нужного значит взять с гостя лишнее. При `funded == price`
+         *     подарок закрывается и больше не принимает ни взносов, ни резерва.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -2858,6 +2880,8 @@ export interface paths {
                         "application/json": components["schemas"]["Gift"];
                     };
                 };
+                409: components["responses"]["Conflict"];
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -2913,6 +2937,7 @@ export interface paths {
                         "application/json": components["schemas"]["Fund"];
                     };
                 };
+                429: components["responses"]["TooManyRequests"];
             };
         };
         delete?: never;
@@ -4688,6 +4713,7 @@ export interface paths {
                     "application/json": {
                         name: string;
                         target: components["schemas"]["Money"];
+                        icon?: string;
                     };
                 };
             };
@@ -5657,6 +5683,12 @@ export interface components {
         Gift: {
             id?: string;
             name?: string;
+            /**
+             * @description Значок подарка (§9). Плитка (`tile` в моках) сюда не входит: это
+             *     цвет из палитры, он считается на клиенте по месту в списке —
+             *     дизайн-токен, а не данные.
+             */
+            icon?: string | null;
             desc?: string | null;
             price?: components["schemas"]["Money"];
             /** @description можно скидываться */
@@ -5664,10 +5696,17 @@ export interface components {
             funded?: components["schemas"]["Money"];
             /** @description кем именно — паре не отдаётся никогда */
             reserved?: boolean;
+            /**
+             * @description Резерв поставлен ЭТИМ гостем. Только в гостевом ответе; паре поле
+             *     не отдаётся вовсе — иначе «занято мной» на её экране и означало бы
+             *     того самого гостя, которого §9 обещает не показывать.
+             */
+            readonly mine?: boolean;
         };
         Fund: {
             id?: string;
             name?: string;
+            icon?: string | null;
             target?: components["schemas"]["Money"];
             collected?: components["schemas"]["Money"];
         };

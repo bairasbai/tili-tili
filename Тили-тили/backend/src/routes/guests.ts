@@ -222,6 +222,18 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       await client.query('update guest_invite_codes set used_at = now() where guest_id = $1 and used_at is null', [
         guestId,
       ])
+
+      /* Вместе с кодом гаснет и сам токен.
+       *
+       * Без этого перевыпуск отдаёт ТОТ ЖЕ токен, и пара, которая ссылку
+       * выдаёт, может обменять её сама и открыть гостевую страницу — а там
+       * видно, какой подарок этот гость зарезервировал. Анонимность §9
+       * рушится молча, гость об этом не узнаёт.
+       *
+       * Со сменой токена такой обмен выдаёт пустую личность (резервы уходят
+       * по триггеру), а у настоящего гостя ссылка перестаёт работать — он
+       * попросит новую, и подмена станет видна. */
+      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, newGuestToken()])
       let code = ''
       for (let attempt = 0; attempt < 3; attempt++) {
         code = newShareCode()

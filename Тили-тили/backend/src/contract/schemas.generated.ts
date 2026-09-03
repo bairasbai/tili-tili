@@ -435,6 +435,13 @@ export const CONTRACT_SCHEMAS = {
               "name": {
                   "type": "string"
               },
+              "icon": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 16
+              },
               "target": {
                   "$ref": "contract#/definitions/Money"
               },
@@ -451,6 +458,14 @@ export const CONTRACT_SCHEMAS = {
               },
               "name": {
                   "type": "string"
+              },
+              "icon": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 16,
+                  "description": "Значок подарка (§9). Плитка (`tile` в моках) сюда не входит: это\nцвет из палитры, он считается на клиенте по месту в списке —\nдизайн-токен, а не данные.\n"
               },
               "desc": {
                   "type": [
@@ -471,6 +486,11 @@ export const CONTRACT_SCHEMAS = {
               "reserved": {
                   "type": "boolean",
                   "description": "кем именно — паре не отдаётся никогда"
+              },
+              "mine": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "Резерв поставлен ЭТИМ гостем. Только в гостевом ответе; паре поле\nне отдаётся вовсе — иначе «занято мной» на её экране и означало бы\nтого самого гостя, которого §9 обещает не показывать.\n"
               }
           }
       },
