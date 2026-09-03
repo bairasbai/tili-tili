@@ -20,6 +20,9 @@ import { slotRoutes } from './routes/slots.js'
 import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { chatRoutes } from './routes/chats.js'
 import { realtimeRoutes } from './routes/realtime.js'
+import { vendorCabinetRoutes } from './routes/vendorCabinet.js'
+import { reviewRoutes } from './routes/reviews.js'
+import { adminRoutes } from './routes/admin.js'
 import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
 import { dayxRoutes } from './routes/dayx.js'
@@ -209,6 +212,9 @@ export async function buildApp(
   await app.register(notificationRoutes)
   await app.register(dayxRoutes)
   await app.register(realtimeRoutes)
+  await app.register(vendorCabinetRoutes)
+  await app.register(reviewRoutes)
+  await app.register(adminRoutes)
   for (const routes of extraRoutes) await app.register(routes)
   await app.register(makeNotImplementedRoutes(taken))
   await registerJobs(app)

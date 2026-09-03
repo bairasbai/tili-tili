@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.13.0
+  version: 0.14.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1293,8 +1293,16 @@ paths:
               schema:
                 type: object
                 properties:
-                  revenue: { type: integer, example: 385000 }
-                  revenueDeltaPct: { type: number, example: 38 }
+                  period: { type: string, enum: [month, season, year] }
+                  revenue: { $ref: '#/components/schemas/Money' }
+                  revenueDeltaPct:
+                    type: number
+                    nullable: true
+                    example: 38
+                    description: |
+                      Прирост к прошлому такому же периоду. `null`, если
+                      прошлого периода не было: делить на ноль нечем, а «+100 %»
+                      от нуля — это выдумка.
                   funnel:
                     type: object
                     properties:
@@ -1818,8 +1826,15 @@ paths:
       summary: Гость оставляет отзыв
       description: |
         Только по действующему токену приглашения и только после даты свадьбы.
-        Один отзыв на подрядчика на гостя: повторная отправка — редактирование, 409 при конфликте.
-      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+        Один отзыв на подрядчика на гостя: повторная отправка — редактирование.
+
+        Оценить можно лишь того, кто на этой свадьбе работал: у сделки должно
+        быть состояние `booked` или дальше. Иначе отзыв — это оценка того,
+        чего не было.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { $ref: '#/components/parameters/GuestTokenQuery' }
       requestBody:
         required: true
         content:
@@ -2925,8 +2940,8 @@ components:
       properties:
         id: { type: string }
         coupleName: { type: string }
-        weddingDate: { type: string, format: date }
-        city: { type: string }
+        weddingDate: { type: string, format: date, nullable: true }
+        city: { type: string, nullable: true }
         message: { type: string }
         status: { type: string, enum: [new, replied, hold, declined, won] }
         holdUntil: { type: string, format: date-time, nullable: true }

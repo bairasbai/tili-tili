@@ -59,49 +59,52 @@ describe('пути контракта и маршрутизатор Fastify', ()
 
 describe('заглушки и реализованные маршруты', () => {
   it('реализованный путь контракта заглушку не получает', async () => {
-    // Это главная страховка этапа 1: если отсев не работает, Fastify падает
-    // на старте с FST_ERR_DUPLICATED_ROUTE, а не отдаёт 501 поверх обработчика.
-    const op = CONTRACT_OPERATIONS.find((o) => o.method === 'GET')!
-    const app = await buildApp(TEST_CONFIG, [
-      async (instance) => {
-        instance.get(op.url, async () => ({ реализовано: true }))
-      },
-    ])
+    /* Главная страховка этапа 1: отсев занятых маршрутов. Если он не
+     * работает, Fastify падает на старте с FST_ERR_DUPLICATED_ROUTE.
+     *
+     * Раньше тест регистрировал свой обработчик поверх пути контракта.
+     * Теперь так нельзя: реализованы все пути, и лишний обработчик сам
+     * стал бы дубликатом. Проверяем то же самое с другой стороны — ни один
+     * реализованный путь не отвечает «обработчика нет».
+     */
+    const app = await buildApp(TEST_CONFIG)
     await app.ready()
 
-    const res = await app.inject({ method: 'GET', url: fill(op.url) })
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ реализовано: true })
-
-    // Соседний путь по-прежнему заглушка — отсев точечный, не отключает всё.
-    const other = CONTRACT_OPERATIONS.find((o) => o.url !== op.url)!
-    const stub = await app.inject({ method: other.method as 'GET', url: fill(other.url) })
-    expect(stub.statusCode).toBe(501)
+    const shadowed: string[] = []
+    for (const op of CONTRACT_OPERATIONS) {
+      const res = await app.inject({ method: op.method as 'GET', url: fill(op.url) })
+      if (res.statusCode === 501 && res.json().error.code === 'not_implemented') {
+        shadowed.push(`${op.method} ${op.openapi}`)
+      }
+    }
+    /* Заглушка допустима только там, где обработчика ДЕЙСТВИТЕЛЬНО нет.
+     * Сейчас таких путей не осталось: последний — вход через OAuth —
+     * отвечает своим кодом `oauth_not_configured`, а не общей заглушкой. */
+    expect(shadowed).toEqual([])
 
     await app.close()
   })
 
-  it('заглушки ставятся на все методы, а не только на GET', async () => {
-    // По мере закрытия этапов у метода может не остаться ни одной заглушки —
-    // тогда проверять нечего. Важно другое: там, где заглушка ЕЩЁ есть,
-    // она отвечает 501 с кодом not_implemented, а не 404 и не 405.
+  it('ни один путь контракта не отвечает 404 ни одним методом', async () => {
+    /* Раньше здесь проверялось, что заглушки есть у каждого метода. Этапы
+     * закрылись, заглушек почти не осталось — и проверка превратилась бы
+     * в требование не доделывать работу.
+     *
+     * Осталось то, что важно всегда: путь контракта отвечает чем угодно,
+     * кроме 404. Отсутствие адреса — это ошибка контракта или сборки,
+     * а не состояние разработки. */
     const methods = new Set(CONTRACT_OPERATIONS.map((o) => o.method))
     expect(methods.size).toBeGreaterThan(1)
 
     const app = await buildApp(TEST_CONFIG)
     await app.ready()
-    const withStub: string[] = []
-    for (const method of methods) {
-      for (const op of CONTRACT_OPERATIONS.filter((o) => o.method === method)) {
-        const res = await app.inject({ method: method as 'GET', url: fill(op.url) })
-        if (res.statusCode === 501 && res.json().error.code === 'not_implemented') {
-          withStub.push(method)
-          break
-        }
-      }
+    const missing: string[] = []
+    for (const op of CONTRACT_OPERATIONS) {
+      const res = await app.inject({ method: op.method as 'GET', url: fill(op.url) })
+      if (res.statusCode === 404) missing.push(`${op.method} ${op.openapi}`)
+      if (res.statusCode === 501) expect(typeof res.json().error.code).toBe('string')
     }
-    // Работа не закончена — заглушки обязаны где-то оставаться.
-    expect(withStub.length).toBeGreaterThan(0)
+    expect(missing).toEqual([])
     await app.close()
   })
 

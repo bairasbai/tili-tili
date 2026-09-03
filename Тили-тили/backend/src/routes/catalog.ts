@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
 import {
   VENDOR_COLUMNS,
   VENDOR_LIVE_JOIN,
@@ -105,9 +106,15 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
 
       const where: string[] = ['v.published_at is not null']
       const args: unknown[] = []
-      const add = (sql: string, value: unknown) => {
-        args.push(value)
-        where.push(sql.replace('?', `$${args.length}`))
+      // Каждый `?` заменяется своим номером по порядку: условие может
+      // просить одно значение дважды (поиск по названию и по синониму).
+      const add = (sql: string, ...values: unknown[]) => {
+        let filled = sql
+        for (const value of values) {
+          args.push(value)
+          filled = filled.replace('?', `$${args.length}`)
+        }
+        where.push(filled)
       }
 
       if (query.categoryId) add('v.category_id = ?', query.categoryId)
@@ -139,8 +146,23 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       }
       if (query.priceMin !== undefined) add('v.price_from >= ?', query.priceMin)
       if (query.priceMax !== undefined) add('v.price_from <= ?', query.priceMax)
-      if (query.ratingMin !== undefined) add('v.rating >= ?', query.ratingMin)
-      if (query.q) add("lower(v.name) like '%' || lower(?) || '%'", query.q)
+      // Фильтр по рейтингу считается только по анкетам, где число показано:
+      // иначе выдача отсеивается по цифре, которой на экране нет.
+      if (query.ratingMin !== undefined) {
+        add(`v.rating >= ? and v.reviews_count >= ${MIN_REVIEWS_TO_SHOW}`, query.ratingMin)
+      }
+      /* Поиск идёт и по названию, и по словарю синонимов: человек ищет
+       * «тамада», а категория называется «Ведущий» (План §19.2). Без
+       * словаря такой запрос возвращает пустоту, и это выглядит как
+       * «у вас никого нет». */
+      if (query.q) {
+        add(
+          `(lower(v.name) like '%' || lower(?) || '%'
+            or v.category_id in (select category_id from category_synonyms where word = lower(?)))`,
+          query.q,
+          query.q,
+        )
+      }
       if (query.hasVideo) where.push("exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video')")
       if (query.date) {
         // Занятого на эту дату в выдаче быть не должно: иначе пара пишет тому,
@@ -222,6 +244,10 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       [vendorId],
     )
     if (!rows[0]) throw notFound('Анкета не найдена')
+    /* Счётчик просмотров — первая ступень воронки в кабинете подрядчика.
+     * Считаем открытие карточки, а не показ в списке: в списке анкету
+     * пролистывают, а сюда заходят осознанно. */
+    await db().query('update vendors set views = views + 1 where id = $1', [vendorId])
     return loadDetail(db(), vendorId, rows[0])
   })
 

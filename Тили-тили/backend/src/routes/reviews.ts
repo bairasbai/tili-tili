@@ -1,0 +1,195 @@
+import type { FastifyInstance } from 'fastify'
+import { AppError, conflict, forbidden, notFound } from '../errors.js'
+import { uuidv7 } from '../ids.js'
+import { isUniqueViolation } from '../plugins/db.js'
+import { guestByToken, readGuestToken } from '../guests/access.js'
+import { recomputeRating } from '../reviews/rating.js'
+
+/** Окно на отзыв после завершения сделки (План §18.2). */
+const REVIEW_WINDOW_DAYS = 14
+
+export async function reviewRoutes(app: FastifyInstance): Promise<void> {
+  const db = () => {
+    if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
+    return app.db
+  }
+
+  /* ── отзыв пары ───────────────────────────────────────────────────── */
+  app.post(
+    '/catalog/vendors/:vendorId/reviews',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['rating', 'text'],
+          additionalProperties: false,
+          properties: {
+            rating: { type: 'integer', minimum: 1, maximum: 5 },
+            text: { type: 'string', minLength: 1, maxLength: 4000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { vendorId } = request.params as { vendorId: string }
+      if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Подрядчик не найден')
+      const body = request.body as { rating: number; text: string }
+      const userId = request.caller!.userId
+
+      /* Право на отзыв — это завершённая сделка, а не желание высказаться.
+       * Ищем её сразу с проверкой окна: «отзыв через год» — это уже
+       * не впечатление, а сведение счётов (§18.2). */
+      const { rows } = await db().query<{ id: string; wedding_id: string; too_late: boolean }>(
+        `select d.id, d.wedding_id,
+                (coalesce(d.done_at, d.created_at) < now() - make_interval(days => $3)) as too_late
+           from deals d
+           join wedding_members m on m.wedding_id = d.wedding_id
+          where d.vendor_id = $1 and m.user_id = $2 and m.role = 'couple' and d.state = 'done'
+          order by coalesce(d.done_at, d.created_at) desc limit 1`,
+        [vendorId, userId, REVIEW_WINDOW_DAYS],
+      )
+      const deal = rows[0]
+      // 403, а не 404: подрядчик существует, права на отзыв нет.
+      if (!deal) throw forbidden('Отзыв можно оставить только по завершённой сделке')
+      if (deal.too_late) {
+        throw forbidden(`Отзыв принимается ${REVIEW_WINDOW_DAYS} дней после завершения сделки`)
+      }
+
+      try {
+        await db().query(
+          `insert into reviews (id, vendor_id, wedding_id, deal_id, source, stars, text)
+           values ($1,$2,$3,$4,'couple',$5,$6)`,
+          [uuidv7(), vendorId, deal.wedding_id, deal.id, body.rating, body.text],
+        )
+      } catch (error) {
+        // Один отзыв на сделку держит уникальный индекс, а не проверка:
+        // две одновременные отправки прошли бы обе.
+        if (isUniqueViolation(error)) throw conflict('review_exists', 'По этой сделке отзыв уже оставлен')
+        throw error
+      }
+      await recomputeRating(db(), vendorId)
+      return reply.code(201).send({ vendorId, rating: body.rating })
+    },
+  )
+
+  /* ── отзывы гостей ────────────────────────────────────────────────── */
+  app.get('/weddings/:weddingId/guest-reviews', async (request) => {
+    /* Пара видит звёзды и текст, но не автора: столбец `guest_token`
+     * не читается вовсе — та же граница, что у резервов подарков (§9). */
+    const { rows } = await db().query<{
+      id: string
+      vendor_id: string
+      vendor_name: string | null
+      stars: number
+      text: string | null
+      created_at: Date
+    }>(
+      `select r.id, r.vendor_id, v.name as vendor_name, r.stars, r.text, r.created_at
+         from reviews r left join vendors v on v.id = r.vendor_id
+        where r.wedding_id = $1 and r.source = 'guest' and r.hidden_at is null
+        order by r.created_at desc`,
+      [request.member!.weddingId],
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      vendorId: r.vendor_id,
+      vendorName: r.vendor_name,
+      authorName: 'Гость свадьбы',
+      rating: r.stars,
+      text: r.text ?? '',
+      createdAt: r.created_at.toISOString(),
+    }))
+  })
+
+  app.post(
+    '/weddings/:weddingId/guest-reviews',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['vendorId', 'stars'],
+          additionalProperties: false,
+          properties: {
+            vendorId: { type: 'string', maxLength: 40 },
+            stars: { type: 'integer', minimum: 1, maximum: 5 },
+            text: { type: 'string', maxLength: 4000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const guestToken = readGuestToken(request)
+      if (!guestToken) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
+      const guest = await guestByToken(db(), guestToken)
+      const body = request.body as { vendorId: string; stars: number; text?: string }
+      const { weddingId } = request.params as { weddingId: string }
+      if (guest.weddingId !== weddingId) throw notFound('Свадьба не найдена')
+
+      /* Отзыв гостя — только после свадьбы. До неё он мог бы оценить разве
+       * что переписку, а вес у такой оценки тот же, что у настоящей. */
+      const { rows: wedding } = await db().query<{ passed: boolean }>(
+        `select (w.date is not null and w.date < (now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date) as passed
+           from weddings w where w.id = $1`,
+        [weddingId],
+      )
+      if (!wedding[0]?.passed) throw forbidden('Отзыв можно оставить после дня свадьбы')
+
+      // Оценивать можно только тех, кто на этой свадьбе работал.
+      const { rows: worked } = await db().query(
+        `select 1 from deals d where d.wedding_id = $1 and d.vendor_id = $2
+           and d.state in ('booked','paid_deposit','done')`,
+        [weddingId, body.vendorId],
+      )
+      if (worked.length === 0) throw notFound('Этот подрядчик на вашей свадьбе не работал')
+
+      /* Повторная отправка — правка своего же отзыва, а не второй отзыв
+       * (так написано в контракте). Уникальный индекс по паре «токен +
+       * подрядчик» превращает вставку в обновление. */
+      await db().query(
+        `insert into reviews (id, vendor_id, wedding_id, source, guest_token, stars, text)
+         values ($1,$2,$3,'guest',$4,$5,$6)
+         on conflict (guest_token, vendor_id) where guest_token is not null
+         do update set stars = excluded.stars, text = excluded.text`,
+        [uuidv7(), body.vendorId, weddingId, guestToken, body.stars, body.text ?? null],
+      )
+      await recomputeRating(db(), body.vendorId)
+      return reply.code(201).send({ vendorId: body.vendorId, stars: body.stars })
+    },
+  )
+
+  /* ── жалобы ───────────────────────────────────────────────────────── */
+  app.post(
+    '/complaints',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['targetKind', 'targetId', 'category'],
+          additionalProperties: false,
+          properties: {
+            targetKind: { type: 'string', enum: ['vendor', 'review', 'message', 'deal'] },
+            targetId: { type: 'string', maxLength: 40 },
+            category: { type: 'string', enum: ['fraud', 'content', 'no_show', 'spam'] },
+            text: { type: 'string', maxLength: 4000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = request.body as { targetKind: string; targetId: string; category: string; text?: string }
+      if (!/^[0-9a-f-]{36}$/i.test(body.targetId)) throw notFound('Объект жалобы не найден')
+
+      const res = await db().query(
+        `insert into complaints (id, reporter_id, target_kind, target_id, category, text)
+         values ($1,$2,$3,$4,$5,$6)
+         on conflict (reporter_id, target_kind, target_id) where reporter_id is not null do nothing`,
+        [uuidv7(), request.caller!.userId, body.targetKind, body.targetId, body.category, body.text ?? null],
+      )
+      /* Повтор — то же 201: человек нажал ещё раз, а не подал вторую жалобу.
+       * Отказ здесь выглядел бы как «вас не услышали». */
+      return reply.code(201).send({ status: 'new', duplicate: res.rowCount === 0 })
+    },
+  )
+}

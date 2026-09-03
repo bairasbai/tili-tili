@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { openLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import {
@@ -115,6 +116,10 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
              values ($1, $2, null, 'booked', $3)`,
             [uuidv7(), dealId, request.caller!.userId],
           )
+          /* Бронь — это выигранный лид. Заводим его и здесь: пара могла
+           * забронировать сразу из каталога, ни разу не написав, и тогда
+           * в кабинете подрядчика сделка появилась бы ниоткуда. */
+          await openLead(client, weddingId, body.vendorId, null, true)
 
           // Захват даты — в той же транзакции. Вторая пара упирается
           // в первичный ключ (vendor_id, date) и получает 409, а не «обе

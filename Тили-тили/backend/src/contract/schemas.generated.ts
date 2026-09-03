@@ -665,11 +665,17 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string"
               },
               "weddingDate": {
-                  "type": "string",
+                  "type": [
+                      "string",
+                      "null"
+                  ],
                   "format": "date"
               },
               "city": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ]
               },
               "message": {
                   "type": "string"

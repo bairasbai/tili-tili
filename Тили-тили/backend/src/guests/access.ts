@@ -63,4 +63,9 @@ export function readGuestToken(request: FastifyRequest): string | null {
 }
 
 /** Пути, куда гость ходит по токену, хотя в адресе есть идентификатор свадьбы. */
-export const GUEST_ACCESSIBLE_WEDDING_PATHS = new Set(['/weddings/:weddingId/album'])
+export const GUEST_ACCESSIBLE_WEDDING_PATHS = new Set([
+  '/weddings/:weddingId/album',
+  // Отзыв о подрядчике гость оставляет по своему токену: аккаунта у него
+  // нет, и общий хук доступа отвечал бы 401 на законный запрос.
+  '/weddings/:weddingId/guest-reviews',
+])

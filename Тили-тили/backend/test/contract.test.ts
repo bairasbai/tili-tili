@@ -42,13 +42,20 @@ describe('контракт', () => {
     expect(missing).toEqual([])
   })
 
-  it('нереализованные пути отвечают 501 с единым форматом ошибки', async () => {
-    const op = CONTRACT_OPERATIONS[0]!
-    const res = await app.inject({ method: op.method as 'GET', url: fill(op.url) })
-    expect(res.statusCode).toBe(501)
-    const body = res.json()
-    expect(body.error.code).toBe('not_implemented')
-    expect(typeof body.error.message).toBe('string')
+  it('оставшиеся заглушки отвечают 501 с единым форматом ошибки', async () => {
+    /* Путь ищется, а не берётся первым попавшимся: этапы закрываются,
+     * и первый путь контракта давно реализован. Когда заглушек не останется
+     * вовсе, проверять будет нечего — и это правильный конец теста,
+     * а не его поломка. */
+    for (const op of CONTRACT_OPERATIONS) {
+      const res = await app.inject({ method: op.method as 'GET', url: fill(op.url) })
+      if (res.statusCode !== 501) continue
+      const body = res.json()
+      // 501 бывает двух видов: «обработчика ещё нет» и «внешняя служба
+      // не настроена» (OAuth, S3). Оба обязаны иметь код и текст.
+      expect(typeof body.error.code).toBe('string')
+      expect(typeof body.error.message).toBe('string')
+    }
   })
 
   it('несуществующий адрес отвечает 404, а не 501', async () => {

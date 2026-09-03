@@ -2455,10 +2455,16 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            /** @example 385000 */
-                            revenue?: number;
-                            /** @example 38 */
-                            revenueDeltaPct?: number;
+                            /** @enum {string} */
+                            period?: "month" | "season" | "year";
+                            revenue?: components["schemas"]["Money"];
+                            /**
+                             * @description Прирост к прошлому такому же периоду. `null`, если
+                             *     прошлого периода не было: делить на ноль нечем, а «+100 %»
+                             *     от нуля — это выдумка.
+                             * @example 38
+                             */
+                            revenueDeltaPct?: number | null;
                             funnel?: {
                                 /** @example 1240 */
                                 views?: number;
@@ -3719,11 +3725,22 @@ export interface paths {
         /**
          * Гость оставляет отзыв
          * @description Только по действующему токену приглашения и только после даты свадьбы.
-         *     Один отзыв на подрядчика на гостя: повторная отправка — редактирование, 409 при конфликте.
+         *     Один отзыв на подрядчика на гостя: повторная отправка — редактирование.
+         *
+         *     Оценить можно лишь того, кто на этой свадьбе работал: у сделки должно
+         *     быть состояние `booked` или дальше. Иначе отзыв — это оценка того,
+         *     чего не было.
          */
         post: {
             parameters: {
-                query?: never;
+                query: {
+                    /**
+                     * @description Персональный токен гостя. Нужен там, где гость обращается к пути
+                     *     со свадьбой в адресе: подставить его в путь некуда, а без него
+                     *     сервер не отличит гостя от постороннего.
+                     */
+                    guestToken: components["parameters"]["GuestTokenQuery"];
+                };
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -5673,8 +5690,8 @@ export interface components {
             id?: string;
             coupleName?: string;
             /** Format: date */
-            weddingDate?: string;
-            city?: string;
+            weddingDate?: string | null;
+            city?: string | null;
             message?: string;
             /** @enum {string} */
             status?: "new" | "replied" | "hold" | "declined" | "won";

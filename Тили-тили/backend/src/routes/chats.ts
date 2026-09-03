@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, notFound, quotaExceeded } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { assertOpen, chatForUser, type ChatKind } from '../chats/access.js'
 import { notify } from '../notify/notify.js'
+import { openLead } from '../vendor/leads.js'
 
 /** Ответ Тиль, пока у неё нет модели. Честно, а не «думаю…» в пустоту. */
 const TILLY_STUB =
@@ -148,6 +149,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const { chat } = await chatForUser(db(), chatId, userId)
       assertOpen(chat)
 
+      await assertNotColdOutreach(chatId, chat.kind, userId)
+
       const id = uuidv7()
       const { rows } = await db().query<{ created_at: Date }>(
         `insert into messages (id, chat_id, sender_id, text, attachments)
@@ -196,6 +199,40 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send(message)
     },
   )
+
+  /**
+   * Непроверенный подрядчик — не больше пяти новых переписок в день.
+   *
+   * План §18.2 и §19.4: галочка «Проверен» стоит денег и времени, и до неё
+   * рассылать первые сообщения десяткам пар нельзя. Считаются именно ПЕРВЫЕ
+   * сообщения: ответ в уже начатой переписке ограничения не знает — иначе
+   * лимит бил бы по тем, кто нормально работает.
+   */
+  async function assertNotColdOutreach(chatId: string, kind: ChatKind, userId: string): Promise<void> {
+    if (kind !== 'vendor') return
+    const { rows } = await db().query<{ verified: boolean; mine: boolean }>(
+      `select (v.verified_at is not null) as verified, (v.user_id = $2) as mine
+         from chats c join vendors v on v.id = c.vendor_id where c.id = $1`,
+      [chatId, userId],
+    )
+    const vendor = rows[0]
+    if (!vendor || !vendor.mine || vendor.verified) return
+
+    const { rows: already } = await db().query<{ here: string; today: string }>(
+      `select (select count(*) from messages m where m.chat_id = $1 and m.sender_id = $2)::text as here,
+              (select count(distinct m.chat_id) from messages m
+                where m.sender_id = $2 and m.created_at > now() - interval '1 day')::text as today`,
+      [chatId, userId],
+    )
+    // В этой переписке он уже писал — она не новая, ограничение не про неё.
+    if (Number(already[0]!.here) > 0) return
+    if (Number(already[0]!.today) >= app.appConfig.coldOutreachPerDay) {
+      throw quotaExceeded(
+        'outreach_limit',
+        `До проверки анкеты — не больше ${app.appConfig.coldOutreachPerDay} новых переписок в день`,
+      )
+    }
+  }
 
   /** Уведомление всем, кто в этом чате состоит, кроме автора. */
   async function notifyOthers(
@@ -286,6 +323,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
        returning id, opens_at`,
       [id, weddingId, vendorId],
     )
+
+    /* «Написать» — это и есть заявка. Лид заводится здесь, а не отдельной
+     * кнопкой: подрядчик должен увидеть обращение в кабинете, даже если
+     * пара после первого сообщения пропала. */
+    await openLead(db(), weddingId, vendorId, null)
 
     const { rows: last } = await db().query<{ text: string }>(
       'select text from messages where chat_id = $1 order by created_at desc limit 1',

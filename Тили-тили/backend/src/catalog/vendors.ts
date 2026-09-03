@@ -1,4 +1,5 @@
 import type { Db } from '../plugins/db.js'
+import { publicRating } from '../reviews/rating.js'
 
 /**
  * Сборка карточек подрядчика в один слой.
@@ -31,7 +32,11 @@ export interface VendorRow {
  * живёт здесь, рядом с набором колонок, чтобы его нельзя было забыть
  * в очередном запросе каталога.
  */
-export const VENDOR_LIVE_JOIN = 'join users u on u.id = v.user_id and u.deleted_at is null'
+/* Живая анкета: аккаунт не удалён и подрядчик не заблокирован модерацией.
+ * Блокировка — крайняя санкция §18.2, и она означает «нет в выдаче»,
+ * а не «есть, но с пометкой». */
+export const VENDOR_LIVE_JOIN =
+  'join users u on u.id = v.user_id and u.deleted_at is null and v.blocked_at is null'
 
 export const VENDOR_COLUMNS = `
   v.id, v.name, v.category_id, c.name as city, v.price_from::text as price_from, v.currency,
@@ -45,7 +50,10 @@ export function toVendor(r: VendorRow) {
     categoryId: r.category_id,
     city: r.city,
     priceFrom: r.price_from === null ? null : { amount: Number(r.price_from), currency: r.currency },
-    rating: r.rating === null ? null : Number(r.rating),
+    /* До трёх отзывов числа нет — в выдаче стоит «Новый на платформе»
+     * (План §18.2). Один отзыв от знакомого это 5,0 и первое место, и
+     * прятать цифру надо здесь, в одном месте на все ответы каталога. */
+    rating: publicRating(r.rating === null ? null : Number(r.rating), r.reviews_count),
     reviewsCount: r.reviews_count,
     photoUrl: r.photo_url,
     verified: r.verified_at !== null,
