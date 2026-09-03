@@ -15,6 +15,7 @@ const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = 
   team: 'Команда свадьбы',
   day: 'Чат дня X · гости',
   tilly: 'Тиль — помощник',
+  crew: 'Чат исполнителей — ведёт координатор',
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -26,6 +27,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   interface ListRow {
     id: string
     kind: ChatKind
+    /** Пара видит строку чата исполнителей, но не его содержимое. */
+    peek: boolean
     external_name: string | null
     vendor_name: string | null
     vendor_photo: string | null
@@ -45,8 +48,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           ? externalTitle(r.external_name)
           : TITLE_BY_KIND[r.kind],
     avatarUrl: r.vendor_photo,
-    lastMessage: r.last_text ?? '',
-    unread: Number(r.unread),
+    /* Паре — факт, а не содержимое. Последняя реплика в списке выдала бы
+     * ровно то, что решено не показывать, и счётчик непрочитанных звал бы
+     * туда, куда её всё равно не пустят. */
+    lastMessage: r.peek ? 'Переписку ведёт координатор' : (r.last_text ?? ''),
+    unread: r.peek ? 0 : Number(r.unread),
     kind: r.kind,
     openFrom: r.opens_at?.toISOString() ?? null,
   })
@@ -68,7 +74,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               (select m.text from messages m where m.chat_id = c.id order by m.created_at desc limit 1) as last_text,
               (select count(*)::text from messages m
                 where m.chat_id = c.id and m.sender_id is distinct from $1
-                  and m.created_at > coalesce(r.read_at, to_timestamp(0))) as unread
+                  and m.created_at > coalesce(r.read_at, to_timestamp(0))) as unread,
+              (mem.role = 'couple' and c.kind = 'crew') as peek
          from chats c
          join weddings w on w.id = c.wedding_id
          left join vendors v on v.id = c.vendor_id
@@ -80,6 +87,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
             or (mem.role = 'coordinator' and c.kind <> 'tilly')
             or (mem.role = 'helper' and c.kind in ('team','day'))
             or (v.user_id = $1)
+            /* Забронированный подрядчик сидит в общих чатах наравне
+             * с командой (§3.11) — но только пока забронирован. */
+            or (c.kind in ('team','crew') and exists(
+                  select 1 from deals d join vendors mine on mine.id = d.vendor_id
+                   where d.wedding_id = c.wedding_id and mine.user_id = $1
+                     and d.state in ('booked','paid_deposit','done')))
           )
         order by coalesce(
                    (select max(m.created_at) from messages m where m.chat_id = c.id),
@@ -338,11 +351,18 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     text: string,
   ): Promise<void> {
     if (kind === 'tilly') return
+    /* Получатели — те же, кто видит чат. Пара из чата исполнителей
+     * исключена: уведомлять о переписке, которую не покажут, — издевательство. */
     const { rows } = await db().query<{ user_id: string }>(
-      `select mem.user_id from wedding_members mem where mem.wedding_id = $1
+      `select mem.user_id from wedding_members mem
+         where mem.wedding_id = $1 and ($3 <> 'crew' or mem.role = 'coordinator')
         union
-       select v.user_id from chats c join vendors v on v.id = c.vendor_id where c.id = $2`,
-      [weddingId, chatId],
+       select v.user_id from chats c join vendors v on v.id = c.vendor_id where c.id = $2
+        union
+       select mine.user_id from deals d join vendors mine on mine.id = d.vendor_id
+        where d.wedding_id = $1 and $3 in ('team','crew')
+          and d.state in ('booked','paid_deposit','done')`,
+      [weddingId, chatId, kind],
     )
     for (const row of rows) {
       if (row.user_id === authorId) continue

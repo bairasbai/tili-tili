@@ -10,17 +10,27 @@ import type { Role } from '../wedding/access.js'
  * матрица: проверка, размазанная по обработчикам, забывается ровно один
  * раз — и этого достаточно.
  */
-export type ChatKind = 'vendor' | 'team' | 'day' | 'tilly' | 'external'
+export type ChatKind = 'vendor' | 'team' | 'day' | 'tilly' | 'external' | 'crew'
 
-/** Что роль видит из чатов свадьбы. Роли, которой нет в списке, — ничего. */
+/**
+ * Что роль видит из чатов свадьбы. Роли, которой нет в списке, — ничего.
+ *
+ * `crew` у пары намеренно нет. Чат исполнителей ведёт координатор, и пара
+ * в нём не состоит (решение владельца 2026-09-03) — но САМ ФАКТ чата она
+ * видит: строку в списке отдаёт запрос в `routes/chats.ts`, а сюда пара
+ * не попадает и переписку не читает.
+ */
 const VISIBLE: Partial<Record<Role, ChatKind[]>> = {
   // Тиль — личный помощник пары; помощнику и координатору он не нужен.
   couple: ['vendor', 'team', 'day', 'tilly', 'external'],
   // Координатор ведёт переписку со ВСЕМИ подрядчиками — и с теми, кого пара
   // нашла сама: в день X разница между ними исчезает (Бизнес-логика §2).
-  coordinator: ['vendor', 'team', 'day', 'external'],
+  coordinator: ['vendor', 'team', 'day', 'external', 'crew'],
   helper: ['team', 'day'],
 }
+
+/** Что видит подрядчик со своей стороны — ролью в свадьбе он не числится. */
+const VENDOR_VISIBLE: ChatKind[] = ['vendor', 'team', 'crew']
 
 export interface ChatRow {
   id: string
@@ -50,8 +60,11 @@ export const CHAT_COLUMNS = 'c.id, c.wedding_id, c.kind, c.vendor_id, c.slot_id,
 export async function chatForUser(db: Queryable, chatId: string, userId: string): Promise<ChatCaller> {
   if (!/^[0-9a-f-]{36}$/i.test(chatId)) throw notFound('Чат не найден')
 
-  const { rows } = await db.query<ChatRow & { role: Role | null; owner_id: string | null }>(
-    `select ${CHAT_COLUMNS}, m.role, v.user_id as owner_id
+  const { rows } = await db.query<ChatRow & { role: Role | null; owner_id: string | null; booked: boolean }>(
+    `select ${CHAT_COLUMNS}, m.role, v.user_id as owner_id,
+            exists(select 1 from deals d join vendors mine on mine.id = d.vendor_id
+                    where d.wedding_id = c.wedding_id and mine.user_id = $2
+                      and d.state in ('booked','paid_deposit','done')) as booked
        from chats c
        join weddings w on w.id = c.wedding_id
        left join wedding_members m on m.wedding_id = c.wedding_id and m.user_id = $2
@@ -72,11 +85,22 @@ export async function chatForUser(db: Queryable, chatId: string, userId: string)
   }
 
   if (row.role) {
-    if (!(VISIBLE[row.role] ?? []).includes(row.kind)) throw forbidden('Этот чат не для вашей роли')
+    if (!(VISIBLE[row.role] ?? []).includes(row.kind)) {
+      // Паре про чат исполнителей объясняем прямо: она его видит в списке,
+      // и «не для вашей роли» выглядело бы поломкой, а не устройством.
+      if (row.kind === 'crew') {
+        throw forbidden('Чат исполнителей ведёт координатор — переписка в нём паре не показывается')
+      }
+      throw forbidden('Этот чат не для вашей роли')
+    }
     return { chat, as: row.role }
   }
-  // Подрядчик участником свадьбы не числится — он приходит в свой чат.
+  /* Подрядчик участником свадьбы не числится — он приходит со своей стороны.
+   * Свой чат открыт ему всегда, общие — только пока он забронирован:
+   * §3.11 говорит про «забронированных подрядчиков», а кандидат чужую
+   * кухню обсуждать не должен. */
   if (row.owner_id && row.owner_id === userId) return { chat, as: 'vendor' }
+  if (row.booked && VENDOR_VISIBLE.includes(row.kind)) return { chat, as: 'vendor' }
   throw notFound('Чат не найден')
 }
 

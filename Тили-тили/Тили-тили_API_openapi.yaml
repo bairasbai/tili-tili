@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.20.0
+  version: 0.21.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -3175,7 +3175,20 @@ components:
         avatarUrl: { type: string, nullable: true }
         lastMessage: { type: string }
         unread: { type: integer }
-        kind: { type: string, enum: [vendor, team, day, tilly] }
+        kind:
+          type: string
+          enum: [vendor, team, day, tilly, external, crew]
+          description: |
+            `vendor` — пара с подрядчиком из каталога. `external` — со своим
+            подрядчиком, найденным парой (§11), привязан к слоту.
+            `team` — команда свадьбы: пара, помощники и ЗАБРОНИРОВАННЫЕ
+            подрядчики (Бизнес-логика §3.11); в нём координатор командует
+            всеми разом. `crew` — чат исполнителей: координатор и
+            забронированные подрядчики, БЕЗ пары (решение владельца
+            2026-09-03). Пара видит строку `crew` в списке — с подписью
+            вместо последней реплики и нулём непрочитанных, — а на чтение
+            переписки получает 403. `tilly` — помощник, только паре.
+            `day` — чат дня X, открывается накануне.
         openFrom:
           type: string
           format: date-time
