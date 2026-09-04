@@ -6,7 +6,7 @@ import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
-import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, patchGuest, putTimeline, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -371,7 +371,9 @@ export function Budget() {
   const spentPct = pct(total, budgetTotal)
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
-    if (!weddingId) return
+    /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
+       поломка: кнопка нажимается и ничего не происходит. */
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — бюджет живёт в ней')); return }
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
@@ -489,6 +491,7 @@ export function Checklist() {
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
   /* Поля контракта опциональны — приводим один раз здесь, чтобы дальше по
      экрану не тащить `?? ''` в каждом сравнении. */
   /* Срок считает сервер от даты свадьбы. Пока даты нет, срока нет ни у одной
@@ -505,12 +508,20 @@ export function Checklist() {
      сервер, а не в `tt_tasks_done` на этом телефоне, и список перечитывается
      ответом сервера, а не подкручивается на месте. */
   const write = async (fn: () => Promise<unknown>, id: string) => {
-    if (!weddingId) return
+    /* Без свадьбы записывать некуда — и молчать об этом нельзя: кнопка, которая
+       ничего не делает и ничего не говорит, читается как поломка. */
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — задачи живут в ней')); return }
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
   }
   const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
+  /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт, и
+     крестика у них нет. */
+  const removeTask = (id: string) => void write(async () => {
+    await deleteTask(weddingId!, id)
+    setConfirmDel(null)
+  }, id)
   const addTask = () => void write(async () => {
     if (!title.trim()) return
     await addTaskApi(weddingId!, title.trim(), period)
@@ -577,19 +588,28 @@ export function Checklist() {
           </div>
         )}
         <div className="card px-4 py-1.5">
-          {list.map((t, i) => {
-            const isDone = done.includes(t.id)
+          {list.map((task, i) => {
+            const isDone = done.includes(task.id)
             return (
-              <button key={t.id} disabled={busyId === t.id} onClick={() => toggle(t.id, isDone)} className={cn('w-full flex items-center gap-3 py-3.5 text-left disabled:opacity-60', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
-                <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
-                  isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[#E8DED4] text-[var(--rose-deep)] font-bold text-[11px]')}>
-                  {isDone ? '✓' : i + 1}
-                </span>
-                <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{t.title}</span>
-                {/* Точка «важный срок» убрана: признака срочности в контракте
-                    нет, и все точки были одного цвета при подписи о двух. */}
-                {t.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(t.due)}</span>}
-              </button>
+              <div key={task.id} className={cn('flex items-center gap-1', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
+                <button disabled={busyId === task.id} onClick={() => toggle(task.id, isDone)} className="flex-1 flex items-center gap-3 py-3.5 text-left disabled:opacity-60">
+                  <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
+                    isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[#E8DED4] text-[var(--rose-deep)] font-bold text-[11px]')}>
+                    {isDone ? '✓' : i + 1}
+                  </span>
+                  <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
+                  {/* Точка «важный срок» убрана: признака срочности в контракте
+                      нет, и все точки были одного цвета при подписи о двух. */}
+                  {task.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(task.due)}</span>}
+                </button>
+                {/* Крестик — отдельной кнопкой рядом, а не внутри строки:
+                    кнопка внутри кнопки невалидна и нажимается не везде. */}
+                {task.custom && (
+                  confirmDel === task.id
+                    ? <button disabled={busyId === task.id} onClick={() => removeTask(task.id)} className="press text-[9px] font-bold px-2 py-1 rounded-full bg-[#A36666] text-white shrink-0 disabled:opacity-50">{t('Удалить?')}</button>
+                    : <button onClick={() => setConfirmDel(task.id)} className="press text-[var(--soft)] text-[13px] px-1.5 shrink-0" aria-label={t('Удалить задачу')}>×</button>
+                )}
+              </div>
             )
           })}
         </div>
@@ -657,7 +677,9 @@ export function Timeline() {
    * блок сервер понял бы как удалённый.
    */
   const save = (next: TimelineDraft[]) => void (async () => {
-    if (!weddingId) return
+    /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
+       поломка: кнопка нажимается и ничего не происходит. */
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return }
     setBusy(true)
     setErr(null)
     try { await putTimeline(weddingId, next); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
@@ -691,7 +713,9 @@ export function Timeline() {
    * стирает уже расставленные блоки, о которых человек не просил.
    */
   const autoplan = () => void (async () => {
-    if (!weddingId) return
+    /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
+       поломка: кнопка нажимается и ничего не происходит. */
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return }
     setBusy(true)
     setErr(null)
     try {
@@ -863,7 +887,9 @@ export function Guests() {
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
-    if (!weddingId) return
+    /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
+       поломка: кнопка нажимается и ничего не происходит. */
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — гости живут в ней')); return }
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }

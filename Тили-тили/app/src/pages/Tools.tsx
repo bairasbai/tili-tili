@@ -1,5 +1,5 @@
 import { createElement, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-react'
 import { contractTemplates, dressPalettes, couple, guests, fmt, type DealState, type Slot } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
@@ -9,12 +9,11 @@ import { usePersist } from '@/lib/usePersist'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { getGuests } from '@/lib/api/weddingData'
+import { getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
-import { rub } from '@/lib/money'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
 /*
@@ -126,7 +125,7 @@ function DealView({ s }: { s: Slot }) {
 
         <div className="grid grid-cols-2 gap-2.5">
           <button onClick={() => nav('/us/chats/ch3')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
-          <button onClick={() => nav('/wedding/documents/new')} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
+          <button onClick={() => nav(`/wedding/documents/new?deal=${s.dealId ?? ''}`)} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
           {/* «Внести аванс» — отдельный путь контракта, остальные шаги двигает
               PATCH сделки. Разные адреса, поэтому и кнопки разные. */}
           {cancelled ? (
@@ -163,38 +162,70 @@ function DealView({ s }: { s: Slot }) {
   )
 }
 
-/* Генерация и скачивание договора: DOCX (Word-совместимый HTML) / PDF (окно печати) */
-function contractHTML(name: string) {
+/*
+ * Генерация и скачивание договора: DOCX (Word-совместимый HTML) / PDF (окно печати).
+ *
+ * Данные подставляются из свадьбы и сделки. Раньше в тексте стояли константы:
+ * «г. Уфа», «Алина Козлова и Тимур Волков» и «торжество 14.06.2027» — документ
+ * с чужим городом, чужими именами и чужой датой скачивался у каждой пары.
+ *
+ * Настоящее место для этого — `POST /deals/{dealId}/contract`: там подстановка
+ * идёт на сервере и документ попадает в список документов свадьбы. Пока путь
+ * не подключён (этап 8), собираем текст на клиенте — но из настоящих данных.
+ */
+export interface ContractFacts {
+  city: string
+  customer: string
+  vendor: string
+  date: string
+  amount: string
+}
+
+function contractHTML(name: string, f: ContractFacts) {
   // строки переводим заранее: внутри шаблонной строки работает только ${…}
-  const [city, cust, custName, exec, p1, p2, p3, p4] = [
-    t('г. Уфа · '), t('Заказчик:'), t('Алина Козлова и Тимур Волков'), t('Исполнитель:'),
-    t('1. Предмет договора: услуги на свадебное торжество 14.06.2027.'),
-    t('2. Стоимость и порядок оплаты: аванс 30% при подписании, остаток — за 14 дней до даты.'),
+  const [cust, exec, subject, price, p3, p4] = [
+    t('Заказчик:'), t('Исполнитель:'),
+    t('1. Предмет договора: услуги на свадебное торжество '),
+    t('2. Стоимость услуг: '),
     t('3. Ответственность сторон и форс-мажор — по ГК РФ.'),
     t('4. Сформировано в приложении «Тили-тили» (tili-tili.ru).'),
   ]
-  return `<h1>${name}</h1><p>${city}${new Date().toLocaleDateString('ru-RU')}</p>
-  <p><b>${cust}</b> ${custName}<br><b>${exec}</b> ______________________</p>
-  <p>${p1}</p><p>${p2}</p><p>${p3}</p><p>${p4}</p>`
+  return `<h1>${name}</h1><p>${f.city}${new Date().toLocaleDateString('ru-RU')}</p>
+  <p><b>${cust}</b> ${f.customer}<br><b>${exec}</b> ${f.vendor}</p>
+  <p>${subject}${f.date}.</p><p>${price}${f.amount}.</p><p>${p3}</p><p>${p4}</p>`
 }
-function downloadDocx(name: string) {
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif">${contractHTML(name)}</body></html>`
+function downloadDocx(name: string, f: ContractFacts) {
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif">${contractHTML(name, f)}</body></html>`
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob(['﻿', html], { type: 'application/msword' }))
   a.download = 'dogovor-tili-tili.doc'
   a.click(); URL.revokeObjectURL(a.href)
 }
-function downloadPdf(name: string) {
+function downloadPdf(name: string, f: ContractFacts) {
   const w = window.open('', '_blank')
   if (!w) return
-  w.document.write(`<html><head><meta charset="utf-8"><title>${name}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name)}<script>window.onload=()=>window.print()${'<'}/script></body></html>`)
+  w.document.write(`<html><head><meta charset="utf-8"><title>${name}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name, f)}<script>window.onload=()=>window.print()${'<'}/script></body></html>`)
   w.document.close()
 }
 
 /* Мастер договора: шаблон → данные → готово */
 export function ContractWizard() {
   const nav = useNavigate()
-  const { weddingDate } = useStore()
+  const { weddingDate, weddingId, slots } = useStore()
+  /* Договор всегда про конкретную сделку: имя исполнителя и сумма берутся из
+     неё. Без неё поля честно говорят «уточняется», а не подставляют чужие. */
+  const [params] = useSearchParams()
+  const slot = slots.find(x => x.dealId === params.get('deal'))
+  const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const facts: ContractFacts = {
+    /* «г.» отдельным ключом переводить нечего — в английском такого сокращения
+       нет, а пустой перевод неотличим от забытого. Пишем полной строкой. */
+    city: wq.data?.city?.name ? `${t('Город: ')}${wq.data.city.name} · ` : '',
+    customer: wq.data?.title ?? t('уточняется'),
+    vendor: slot?.vendor ?? '______________________',
+    date: weddingDate ? formatWeddingDate(weddingDate) : t('уточняется'),
+    amount: slot?.price != null ? fmt(slot.price) : t('уточняется'),
+  }
   const [step, setStep] = useState(0)
   const [tpl, setTpl] = useState(0)
   const [done, setDone] = useState(false)
@@ -206,8 +237,8 @@ export function ContractWizard() {
       <h1 className="font-serif-d text-[28px] mt-7">{t('Договор готов')}</h1>
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">«{ctpl.name}{t('» сгенерирован с вашими данными. Скачайте, подпишите с подрядчиком и загрузите скан в сделку.')}</p>
       <div className="flex gap-2.5 mt-8 w-full">
-        <button onClick={() => downloadPdf(ctpl.name)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
-        <button onClick={() => downloadDocx(ctpl.name)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
+        <button onClick={() => downloadPdf(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
+        <button onClick={() => downloadDocx(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
       <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Готово')}</button>
     </div>
@@ -229,7 +260,9 @@ export function ContractWizard() {
       ) : (
         <div className="px-5 mt-3 fade-up">
           <div className="card p-5 space-y-3.5">
-            {[[t('Заказчик'), couple.full], [t('Исполнитель'), t('Артём Краснов')], [t('Дата оказания услуги'), weddingDate ? formatWeddingDate(weddingDate) : t('дата уточняется')], [t('Сумма'), fmt(rub(60000))], [t('Аванс'), fmt(rub(30000)) + t(' · возврат 50% при отмене за 30 дней')]].map(([l, v]) => (
+            {/* Аванс из списка убран: его размер брался константой 30 000 ₽ и
+                не был связан ни с какой сделкой. */}
+            {[[t('Заказчик'), facts.customer], [t('Исполнитель'), facts.vendor], [t('Дата оказания услуги'), facts.date], [t('Сумма'), facts.amount]].map(([l, v]) => (
               <div key={l}>
                 <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{l}</span>
                 <p className="text-[13.5px] font-medium mt-0.5">{v}</p>
@@ -297,7 +330,9 @@ export function Seating() {
   const unseated = attending.filter(g => !g.tableId)
 
   const write = async (fn: () => Promise<unknown>) => {
-    if (!weddingId) return
+    /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
+       поломка: кнопка нажимается и ничего не происходит. */
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — рассадка живёт в ней')); return }
     setBusy(true)
     setErr(null)
     try { await fn(); guestsQ.reload(); tablesQ.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }

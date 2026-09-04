@@ -1,3 +1,4 @@
+import { ApiError } from '@/lib/api/client'
 /*
  * Каталог для тестов экранов.
  *
@@ -49,7 +50,12 @@ export function catalogMock(detail: typeof VENDOR_DETAIL = VENDOR_DETAIL) {
   return {
     getCategories: async () => CATEGORIES,
     getVendors: async () => ({ items: [VENDOR] }),
-    getVendor: async () => detail,
+    /* Анкета отвечает по идентификатору, а не всем одинаково: иначе тест не
+       отличит «открыли другого подрядчика» от «остались на прежнем». */
+    getVendor: async (id: string) => {
+      if (id !== detail.id) throw new ApiError('http', 404, 'not_found', 'Анкета не найдена')
+      return detail
+    },
     getAvailability: async () => ({ busyDates: [] as string[] }),
     getFavorites: async () => [VENDOR],
     addFavorite: async () => undefined,

@@ -5,7 +5,7 @@ import { fmt } from '@/lib/data'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getAvailability, getCategories, getVendors, getVendor } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
-import { formatWeddingDate } from '@/lib/weddingDate'
+import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
@@ -134,7 +134,9 @@ export function VendorList() {
             {label}
           </button>
         ))}
-        <button onClick={() => nav('/compare')} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
+        {/* Сравниваем ту категорию, которую человек и открыл: без неё экран
+            сравнения показывал бы избранное, а он пришёл из списка фотографов. */}
+        <button onClick={() => nav(`/compare?cat=${catId}`)} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
       </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {list.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем каталог…')}</p>}
@@ -187,6 +189,9 @@ export function VendorDetail() {
     [id, month],
   )
   const busyDates = avail.data?.busyDates ?? []
+  /* Длина месяца и его первый день недели: тридцать клеток подряд врали в
+     феврале и в месяцах на 31 день. */
+  const grid = monthGrid(month)
   const freeOnDate = !!weddingDate && !busyDates.includes(weddingDate)
   const similar = useApi(
     () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, limit: 6 }) : Promise.resolve({ items: [] }),
@@ -351,7 +356,9 @@ export function VendorDetail() {
 
       {/* Календарь */}
       <div className="px-5 mt-5">
-        <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Июнь 2027')}</h2>
+        {/* Заголовок — тот месяц, который и нарисован. Здесь стояло «Июнь 2027»
+            константой, а сетка строилась по месяцу свадьбы. */}
+        <h2 className="font-serif-d text-[19px] px-1 mb-2">{monthTitle(month)}</h2>
         <div className="card p-4">
           <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-[var(--soft)] font-semibold mb-1">
             {[t('Пн'),t('Вт'),t('Ср'),t('Чт'),t('Пт'),t('Сб'),t('Вс')].map(d => <span key={d}>{d}</span>)}
@@ -361,7 +368,11 @@ export function VendorDetail() {
                 формулой от идентификатора: календарь выглядел настоящим и
                 показывал выдуманные даты — худший вид заглушки, потому что
                 по нему принимают решение. */}
-            {Array.from({ length: 30 }).map((_, k) => {
+            {/* Пустые клетки до первого числа: без них числа стоят не под
+                своими днями недели, и «занят в субботу» читается по чужой
+                колонке. */}
+            {Array.from({ length: grid.blanks }).map((_, k) => <div key={`blank-${k}`} />)}
+            {Array.from({ length: grid.days }).map((_, k) => {
               const day = k + 1
               const iso = month ? `${month}-${String(day).padStart(2, '0')}` : ''
               const isWedding = !!weddingDate && iso === weddingDate

@@ -163,3 +163,34 @@ export function isoAtWeddingTime(date: string, time: string, tz?: string): strin
   if (!tz) return new Date(guess).toISOString()
   return new Date(guess - tzOffsetMinutes(guess, tz) * 60_000).toISOString()
 }
+
+/**
+ * Сетка месяца `YYYY-MM`: сколько в нём дней и сколько пустых клеток слева.
+ *
+ * Календарь рисовался как «тридцать клеток подряд, первая под понедельником».
+ * Февраль получал тридцать дней, тридцать первое число пропадало, а числа
+ * стояли не под своими днями недели — и человек читал «занят в субботу» по
+ * чужой колонке.
+ */
+export function monthGrid(month: string): { days: number; blanks: number } {
+  const m = month.match(/^(\d{4})-(0[1-9]|1[0-2])$/)
+  if (!m) return { days: 0, blanks: 0 }
+  const [y, mo] = [Number(m[1]), Number(m[2])]
+  const days = new Date(Date.UTC(y, mo, 0)).getUTCDate()
+  /* getUTCDay(): 0 — воскресенье, а неделя в календаре начинается с
+     понедельника. Сдвигаем, иначе весь месяц уезжает на день. */
+  const blanks = (new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 6) % 7
+  return { days, blanks }
+}
+
+/** «Июнь 2027» — заголовок месяца в календаре. */
+export function monthTitle(month: string): string {
+  const m = month.match(/^(\d{4})-(0[1-9]|1[0-2])$/)
+  if (!m) return ''
+  const label = new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', {
+    month: 'long', year: 'numeric', timeZone: 'UTC',
+  }).format(new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)))
+  /* Русская локаль дописывает «г.» — в заголовке календаря он лишний. */
+  return label.replace(/\s*г\.$/, '').replace(/^./, c => c.toUpperCase())
+}
+

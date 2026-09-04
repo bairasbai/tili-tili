@@ -36,6 +36,8 @@ import {
   inRange,
   isRealIso,
   shortWeddingDate,
+  monthGrid,
+  monthTitle,
 } from './weddingDate'
 
 beforeEach(() => localStorage.clear())
@@ -269,3 +271,39 @@ describe('смена даты позже', () => {
     expect(screen.getByText(/Выбрать дату свадьбы/)).toBeTruthy()
   })
 })
+
+describe('сетка месяца в календаре занятости', () => {
+  /*
+   * Календарь рисовался как тридцать клеток подряд, первая под понедельником.
+   * Февраль получал тридцать дней, тридцать первое число пропадало, а числа
+   * стояли не под своими днями недели — и «занят в субботу» читалось по
+   * чужой колонке.
+   */
+  it('длина месяца настоящая, включая февраль високосного года', () => {
+    expect(monthGrid('2026-02').days).toBe(28)
+    expect(monthGrid('2028-02').days).toBe(29)
+    expect(monthGrid('2026-07').days).toBe(31)
+    expect(monthGrid('2026-09').days).toBe(30)
+  })
+
+  it('первое число встаёт под свой день недели', () => {
+    // 1 сентября 2026 — вторник: одна пустая клетка слева.
+    expect(monthGrid('2026-09').blanks).toBe(1)
+    // 1 июня 2026 — понедельник: пустых клеток нет.
+    expect(monthGrid('2026-06').blanks).toBe(0)
+    // 1 ноября 2026 — воскресенье: шесть пустых клеток, неделя с понедельника.
+    expect(monthGrid('2026-11').blanks).toBe(6)
+  })
+
+  it('мусор вместо месяца не роняет календарь', () => {
+    expect(monthGrid('')).toEqual({ days: 0, blanks: 0 })
+    expect(monthGrid('2026-13')).toEqual({ days: 0, blanks: 0 })
+    expect(monthTitle('')).toBe('')
+  })
+
+  it('заголовок называет тот месяц, который нарисован', () => {
+    expect(monthTitle('2027-06')).toBe('Июнь 2027')
+    expect(monthTitle('2026-09')).toBe('Сентябрь 2026')
+  })
+})
+

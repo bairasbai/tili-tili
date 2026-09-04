@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from './client'
 import { t } from '../i18n'
 
@@ -45,16 +45,35 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const run = useCallback(fetcher, deps)
+  /* Какой запрос уже показан: по нему отличаем смену адреса от перечитывания. */
+  const lastRun = useRef<typeof run | null>(null)
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     setError(null)
     setForbidden(false)
+    /*
+     * Сменился запрос — старые данные сбрасываем: они относятся к другому
+     * адресу. Без этого экран подрядчика, открытый по ссылке на удалённую
+     * анкету, показывал карточку того, кого смотрели до неё, вместе с живой
+     * кнопкой «Добавить в свадьбу»: проверка «анкета не пришла» не срабатывала,
+     * потому что в состоянии лежала чужая.
+     *
+     * А вот на `reload()` того же запроса данные остаются: список перечитывают
+     * после каждой галочки, и очистка давала бы мигание на ровном месте.
+     */
+    if (lastRun.current !== run) {
+      lastRun.current = run
+      setData(null)
+    }
     run()
       .then(v => { if (alive) { setData(v); setLoading(false) } })
       .catch(e => {
         if (!alive) return
+        /* И при отказе тоже: показывать данные рядом с сообщением об ошибке
+           значит утверждать, что они актуальны. */
+        setData(null)
         if (e instanceof ApiError && e.status === 403) setForbidden(true)
         else setError(explainError(e))
         setLoading(false)

@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
-import { vendors, timeline, categories, initialGuestReviews, type GuestReview } from '@/lib/data'
+import { timeline, initialGuestReviews, type GuestReview } from '@/lib/data'
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
 import { useApi } from '@/lib/api/useApi'
-import { AsyncState } from '@/components/AsyncState'
+import { AsyncState, ready } from '@/components/AsyncState'
 import { getPlanB } from '@/lib/api/weddingData'
-import { cn, goBack } from '@/lib/utils'
+import { getAvailability, getCategories, getFavorites, getVendors } from '@/lib/api/catalog'
+import { cn, goBack, plural } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 
@@ -67,45 +68,106 @@ export function Assistant() {
   )
 }
 
-/* Сравнение кандидатов */
+/*
+ * Сравнение кандидатов.
+ *
+ * Экран сравнивал три подрядчика из `lib/data.ts` — фотографа, видеографа и
+ * площадку — под подписью «3 кандидата · категория «Фотограф»», приписывал всем
+ * «Свободен 14.06 ✓ Да» и советовал первого как «лучшее соотношение цены и
+ * рейтинга». Кнопка «Выбрать» отправляла на сервер имя подрядчика там, где
+ * нужен идентификатор: запрос отваливался с 422, ошибка не всплывала нигде, а
+ * экран ставил галочку «✓ В команде» и уводил на мозаику. Ничего не
+ * бронировалось.
+ *
+ * Теперь кандидаты приходят с сервера, а «Выбрать» открывает анкету: цена
+ * сделки зависит от пакета, и придумывать её на экране сравнения нельзя.
+ */
 export function Compare() {
   const nav = useNavigate()
-  const { slots, bookVendor } = useStore()
-  const [picked, setPicked] = useState<string | null>(null)
-  const list = vendors.slice(0, 3)
-  const pick = (v: typeof list[0]) => {
-    const slot = slots.find(s => s.categoryId === categories.find(c => c.name === v.category)?.id) ?? slots.find(s => s.state === 'empty')
-    if (slot) bookVendor(slot.id, v.name, v.priceFrom)
-    setPicked(v.id)
+  const { city, weddingDate, favorites } = useStore()
+  const [params] = useSearchParams()
+  const catId = params.get('cat')
+
+  const cats = useApi(() => getCategories(), [])
+  /* Категория задана — сравниваем её выдачу. Нет — избранное: это и есть
+     короткий список, который пара сама себе отобрала. */
+  const q = useApi(
+    () => catId
+      ? getVendors({ categoryId: catId, city, limit: 3 }).then(r => r?.items ?? [])
+      : getFavorites().then(list => (list ?? []).slice(0, 3)),
+    [catId, city, favorites.length],
+  )
+  const list = q.data ?? []
+  const catTitle = (cats.data ?? []).find(c => c.id === catId)?.title
+
+  /*
+   * Занятость спрашиваем по каждому кандидату отдельно: общего пути «кто
+   * свободен в этот день» в контракте нет. Без даты свадьбы строки нет вовсе —
+   * «свободен» без дня ничего не значит.
+   */
+  const month = (weddingDate ?? '').slice(0, 7)
+  const free = useApi(
+    async () => {
+      if (!weddingDate || !list.length) return {} as Record<string, boolean>
+      const pairs = await Promise.all(list.map(async v => {
+        try {
+          const a = await getAvailability(v.id ?? '', month)
+          return [v.id ?? '', !(a?.busyDates ?? []).includes(weddingDate)] as const
+        } catch {
+          /* Календарь одного подрядчика не должен ронять сравнение остальных. */
+          return [v.id ?? '', null] as const
+        }
+      }))
+      return Object.fromEntries(pairs) as Record<string, boolean | null>
+    },
+    [weddingDate, month, list.map(v => v.id).join(',')],
+  )
+
+  const rows: [string, (v: (typeof list)[number]) => string][] = [
+    [t('Цена «от»'), v => (v.priceFrom?.amount != null ? fmt(v.priceFrom.amount) : '—')],
+    [t('Рейтинг'), v => (v.reviewsCount ? `★ ${v.rating} · ${v.reviewsCount}${t(' отзывов')}` : t('Новый'))],
+    ...(weddingDate
+      ? ([[t('Свободен на вашу дату'), v => {
+          const f = free.data?.[v.id ?? '']
+          return f === undefined || f === null ? '…' : f ? t('✓ Да') : t('✕ Занят')
+        }]] as [string, (v: (typeof list)[number]) => string][])
+      : []),
+    [t('Видео-визитка'), v => (v.hasVideo ? t('▶ Есть') : '—')],
+    [t('Проверен'), v => (v.verified ? t('✓ Да') : '—')],
+  ]
+
+  if (!list.length) {
+    return (
+      <div className="pb-28">
+        <TopBar back title={t('Сравнение')} sub={catTitle ?? t('Избранное')} />
+        <AsyncState q={q} />
+        {ready(q) && (
+          <div className="px-5 mt-8 text-center">
+            <p className="text-[12.5px] text-[var(--soft)] leading-relaxed">
+              {catId ? t('В этой категории пока некого сравнивать') : t('Добавьте подрядчиков в избранное — здесь они встанут рядом')}
+            </p>
+            <button onClick={() => nav(catId ? `/search/${catId}` : '/search')} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть каталог')}</button>
+          </div>
+        )}
+      </div>
+    )
   }
 
-  /* Переход после выбора — эффектом с отменой, а не голым setTimeout в
-     обработчике: см. тот же случай в Search.tsx. */
-  useEffect(() => {
-    if (!picked) return
-    const id = setTimeout(() => nav('/wedding'), 900)
-    return () => clearTimeout(id)
-  }, [picked, nav])
-  const rows: [string, (v: typeof list[0]) => string][] = [
-    [t('Цена «от»'), v => fmt(v.priceFrom)],
-    [t('Рейтинг'), v => (v.reviews ? `★ ${v.rating} · ${v.reviews}${t(' отзывов')}` : t('Новый'))],
-    [t('Свободен 14.06'), v => (v.freeOnDate ? t('✓ Да') : t('✕ Занят'))],
-    [t('Видео-визитка'), v => (v.hasVideo ? t('▶ Есть') : '—')],
-    [t('Пакетов'), v => String(v.packages.length)],
-  ]
   return (
     <div className="pb-28">
-      <TopBar back title={t('Сравнение')} sub={t('3 кандидата · категория «Фотограф»')} />
+      <TopBar back title={t('Сравнение')} sub={`${list.length} ${plural(list.length, t('кандидат'), t('кандидата'), t('кандидатов'))}${catTitle ? ` · ${catTitle}` : ''}`} />
+      <AsyncState q={q} />
       <div className="px-5 mt-3 overflow-x-auto no-scrollbar">
         <table className="w-full min-w-[520px]">
           <thead>
             <tr>
               <td className="w-[110px]" />
-              {list.map((v, k) => (
+              {list.map(v => (
                 <td key={v.id} className="p-1.5 align-top">
-                  <div className={cn('card-s p-3 text-center relative', v.tile)}>
-                    {k === 0 && <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[8px] font-bold px-2.5 py-1 rounded-full grad text-[var(--on-grad)] whitespace-nowrap">{t('Рекомендуем')}</span>}
-                    <span className="text-[24px]">{v.categoryIcon}</span>
+                  {/* Плашки «Рекомендуем» здесь нет: она вешалась на первого в
+                      списке и означала лишь порядок выдачи. */}
+                  <div className="card-s p-3 text-center">
+                    <span className="text-[24px]">{(cats.data ?? []).find(c => c.id === v.categoryId)?.icon ?? '📋'}</span>
                     <b className="font-serif-d text-[13px] block mt-1.5 leading-tight">{v.name}</b>
                   </div>
                 </td>
@@ -123,19 +185,16 @@ export function Compare() {
               <td />
               {list.map(v => (
                 <td key={v.id} className="p-1.5">
-                  <button onClick={() => pick(v)} className={cn('press w-full h-[40px] rounded-full text-[11px] font-bold', picked === v.id ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'grad text-[var(--on-grad)]')}>
-                    {picked === v.id ? t('✓ В команде') : t('Выбрать')}
+                  {/* Ведём в анкету, а не бронируем отсюда: цена сделки зависит
+                      от выбранного пакета, а в выдаче есть только «от». */}
+                  <button onClick={() => nav(`/vendor/${v.id}`)} className="press w-full h-[40px] rounded-full text-[11px] font-bold grad text-[var(--on-grad)]">
+                    {t('Открыть анкету')}
                   </button>
                 </td>
               ))}
             </tr>
           </tbody>
         </table>
-      </div>
-      <div className="px-5 mt-4">
-        <div className="card-s p-4 text-[11.5px] text-[var(--ink2)] leading-relaxed">
-          ✦ <b>{t('Совет Тиля:')}</b> {list[0].name} — лучшее соотношение цены и рейтинга, и свободен на вашу дату. «Выбрать» создаст hold на 72 часа — дата никому не уйдёт, пока вы решаете.
-        </div>
       </div>
     </div>
   )

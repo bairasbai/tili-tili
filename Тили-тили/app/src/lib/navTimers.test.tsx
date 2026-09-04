@@ -29,7 +29,6 @@ vi.mock('react-router', async (importOriginal) => {
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import { VendorDetail } from '@/pages/Search'
-import { Compare } from '@/pages/Smart'
 
 beforeEach(() => { resetSlots(); authorize() })
 
@@ -86,18 +85,9 @@ describe('анкета подрядчика: «Добавить в свадьб�
   })
 })
 
-describe('сравнение кандидатов: выбор подрядчика', () => {
-  it('уход с экрана до срабатывания отменяет переход', () => {
-    vi.useFakeTimers()
-    const { unmount } = renderPage(<Compare />)
-
-    // Кнопка выбора у каждого кандидата своя — берём первую доступную.
-    const pick = screen.getAllByText('Выбрать')[0]
-    expect(pick).toBeTruthy()
-    fireEvent.click(pick!)
-    unmount()
-
-    act(() => { vi.advanceTimersByTime(5000) })
-    expect(navSpy).not.toHaveBeenCalled()
-  })
-})
+/*
+ * Отложенного перехода на экране сравнения больше нет: «Выбрать» бронировало
+ * подрядчика и через 900 мс уводило на мозаику — но передавало на сервер имя
+ * там, где нужен идентификатор, и не бронировало ничего. Теперь кнопка
+ * открывает анкету сразу, таймера нет и отменять нечего.
+ */
