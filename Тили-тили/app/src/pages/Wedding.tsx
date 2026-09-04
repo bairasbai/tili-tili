@@ -1,19 +1,20 @@
 import { createElement, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
-import { budgetItems, couple, guests, contractTemplates, fmt, initialAlbum, type Guest, type Slot } from '@/lib/data'
+import { contractTemplates, fmt, initialAlbum, type Slot } from '@/lib/data'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
+import { addBudgetItem, addGuest, addTask as addTaskApi, deleteBudgetItem, deleteGuest, patchGuest, setTaskDone } from '@/lib/api/weddingWrite'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
-import { committedSlots, committedTotal, type BudgetRow } from '@/lib/budget'
+import { committedTotal } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
-import { cn, copyText } from '@/lib/utils'
+import { cn, copyText, plural } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* Навигация раздела «Свадьба» */
@@ -52,9 +53,14 @@ function WeddingNav() {
 /* Команда (мозаика слотов) */
 export function WeddingTeam() {
   const nav = useNavigate()
-  const { slots } = useStore()
+  const { slots, weddingId } = useStore()
   const booked = slots.filter(s => s.state === 'booked').length
   const progress = slots.filter(s => s.state !== 'empty').length
+  /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
+     полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
+     врала у каждой пары, кроме выдуманной. */
+  const budget = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
+  const budgetTotal = budget.data?.total?.amount ?? 0
 
   return (
     <div className="pb-28">
@@ -91,16 +97,24 @@ export function WeddingTeam() {
             )
           })}
         </div>
-        <div className="mt-4"><AiTip text={t('Пустой слот «DJ» и «Декоратор» — подобрать свободных на 14.06 под ваш бюджет?')} onPress={() => nav('/search/dj')} /></div>
+        {/* Подсказка называет настоящие пустые слоты, а не «DJ и Декоратор»
+            константой, и не обещает дату 14.06, которой у этой пары может не
+            быть. Когда пустых слотов нет — подсказки тоже нет. */}
+        {(() => {
+          const empty = slots.filter(s => s.state === 'empty')
+          if (!empty.length) return null
+          const names = empty.slice(0, 2).map(s => `«${t(s.label)}»`).join(t(' и '))
+          return <div className="mt-4"><AiTip text={`${t('Пустой слот')} ${names}${t(' — подобрать свободных под ваш бюджет?')}`} onPress={() => nav(`/search/${empty[0]!.categoryId}`)} /></div>
+        })()}
       </div>
 
       <div className="px-5">
         <SectionHead title={t('Сводка')} />
         <div className="card p-5 mt-2">
           <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[var(--soft)]">{t('Команда собрана')}</span><b>{booked} из {slots.length}</b></div>
-          <Bar pct={(booked / slots.length) * 100} />
+          <Bar pct={pct(booked, slots.length)} />
           <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{fmt(committedTotal(slots))}</b></div>
-          <Bar pct={Math.round((committedTotal(slots) / couple.budgetTotal) * 100)} />
+          <Bar pct={pct(committedTotal(slots), budgetTotal)} />
         </div>
       </div>
     </div>
@@ -301,22 +315,20 @@ function SlotView({ s }: { s: Slot }) {
  * Ошибка жила и в моке, и пережила переход на сервер, потому что «48000К»
  * выглядит правдоподобно, пока не сравнишь с итогом рядом.
  */
+/** Доля в процентах. Пустой список — это 0%, а не «NaN%» от деления на ноль. */
+const pct = (part: number, total: number) => total > 0 ? Math.round((part / total) * 100) : 0
+
 const thousands = (kopecks: number) => Math.round(kopecks / 100 / 1000)
 
 /* Бюджет */
 export function Budget() {
-  const { slots, weddingId } = useStore()
-  const booked = committedSlots(slots)
-  const [custom, setCustom] = usePersist<BudgetRow[]>('tt_budget_custom', [])
+  const { weddingId } = useStore()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
-  const add = () => {
-    const a = parseInt(amount.replace(/\D/g, ''), 10)
-    if (!name.trim() || !a) return
-    setCustom(it => [...it, { name: name.trim(), amount: rub(a), limit: rub(Math.ceil(a * 1.2)), color: 'var(--lav)' }])
-    setName(''); setAmount(''); setAdding(false)
-  }
+  const [cat, setCat] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
 
   /*
    * Бюджет считает сервер, а не браузер.
@@ -331,26 +343,44 @@ export function Budget() {
   const budgetTotal = server?.total?.amount ?? 0
   /* Без ответа сервера показываем пусто, а не мок: подстановка мок-бюджета
      означала бы, что человек без свадьбы видит чужие 677 000 ₽ и верит им. */
-  const items: BudgetRow[] = [
-    ...(server?.categories ?? []).map(c => ({
-      name: c.title ?? '',
-      amount: c.fromSlots ?? 0,
-      limit: c.planned?.amount || 1,
-      color: c.color ?? 'var(--lav)',
-      /* `live` в контракте — имена забронированной команды через разделитель,
-         а не флаг: экран показывает их подписью «из команды». */
-      live: c.live ?? undefined,
+  const cats = (server?.categories ?? []).map(c => ({
+    id: c.id ?? '',
+    name: c.title ?? '',
+    amount: c.fromSlots ?? 0,
+    limit: c.planned?.amount ?? 0,
+    color: c.color ?? 'var(--lav)',
+    /* `live` в контракте — имена забронированной команды через разделитель,
+       а не флаг: экран показывает их подписью «из команды». */
+    live: c.live ?? undefined,
+    items: (c.items ?? []).map(it => ({
+      id: it.id ?? '',
+      title: it.title ?? '',
+      amount: it.amount?.amount ?? 0,
+      custom: !!it.custom,
     })),
-    ...custom,
-  ]
-  const total = (server?.spent?.amount ?? 0) + custom.reduce((a, c) => a + c.amount, 0)
-  const pct = budgetTotal ? Math.round((total / budgetTotal) * 100) : 0
-  // Умный бюджет: fact (оплаченные авансы) vs предстоящие платежи + резерв 10%
-  const paidFact = Math.round(booked.reduce((a, s) => a + (s.price ?? 0), 0) * 0.5)
-  const upcoming = booked.map(s => ({ vendor: s.vendor ?? s.label, amount: Math.round((s.price ?? 0) * 0.5) }))
-  const upcomingTotal = upcoming.reduce((a, u) => a + u.amount, 0)
-  const reserve = Math.round(budgetTotal * 0.1)
-  const freeAfterReserve = budgetTotal - total - reserve
+  }))
+  /* Потрачено берём у сервера целиком: свои статьи он уже учёл. Раньше к
+     серверной сумме прибавлялся локальный список `tt_budget_custom`, и одна и
+     та же статья считалась дважды, как только доезжала на сервер. */
+  const total = server?.spent?.amount ?? 0
+  const spentPct = pct(total, budgetTotal)
+
+  const write = async (id: string, fn: () => Promise<unknown>) => {
+    if (!weddingId) return
+    setBusyId(id)
+    setErr(null)
+    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+  }
+  const add = () => void write('new', async () => {
+    const rubles = parseInt(amount.replace(/\D/g, ''), 10)
+    const categoryId = cat || cats[0]?.id
+    if (!name.trim() || !rubles || !categoryId) return
+    // поле «Сумма, ₽» — рубли, на сервер уходят копейки
+    await addBudgetItem(weddingId!, name.trim(), rub(rubles), categoryId)
+    setName(''); setAmount(''); setAdding(false)
+  })
+  const removeItem = (id: string) => void write(id, () => deleteBudgetItem(weddingId!, id))
+
   return (
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
@@ -359,25 +389,37 @@ export function Budget() {
         <div className="card p-5">
           <div className="flex justify-between items-end">
             <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
-            <span className="text-[var(--rose-deep)] font-bold">{pct}%</span>
+            <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>
           </div>
           <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
-          <div className="mt-3"><Bar pct={pct} /></div>
+          <div className="mt-3"><Bar pct={spentPct} /></div>
           <div className="mt-4 space-y-4">
-            {items.map((b, bi) => {
-              const p = Math.round((b.amount / b.limit) * 100)
-              return (
-                <div key={b.name}>
-                  <div className="flex justify-between text-[12.5px] items-center">
-                    <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('из команды')}</span>}</span>
-                    <b className="tabular">{thousands(b.amount)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>{bi >= budgetItems.length && <button onClick={() => setCustom(c => c.filter((_, ci) => ci !== bi - budgetItems.length))} className="press text-[var(--rose-deep)] text-[12px] ml-1.5" aria-label={t('Удалить статью')}>×</button>}</b>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${p}%`, background: b.color }} />
-                  </div>
+            {cats.map(b => (
+              <div key={b.id}>
+                <div className="flex justify-between text-[12.5px] items-center">
+                  <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('из команды')}</span>}</span>
+                  <b className="tabular">{thousands(b.amount)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span></b>
                 </div>
-              )
-            })}
+                <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct(b.amount, b.limit)}%`, background: b.color }} />
+                </div>
+                {/* Свои статьи живут внутри своей категории: сервер помечает их
+                    `custom`, и удалять можно только их. Прежний экран решал это
+                    сравнением номера строки с длиной мок-списка — при другом
+                    числе категорий крестик попадал не туда. */}
+                {b.items.map(it => (
+                  <div key={it.id} className="flex justify-between items-center text-[11.5px] mt-1.5 pl-4">
+                    <span className="text-[var(--soft)] truncate">{it.title}</span>
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <b className="tabular">{fmt(it.amount)}</b>
+                      {it.custom && (
+                        <button disabled={busyId === it.id} onClick={() => removeItem(it.id)} className="press text-[var(--rose-deep)] text-[12px] disabled:opacity-50" aria-label={t('Удалить статью')}>×</button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
         {/* Подсказка строится из настоящих чисел, а не вписана в разметку.
@@ -386,45 +428,37 @@ export function Budget() {
             Показываем только когда есть о чём говорить: категория, которая
             реально подошла к своему лимиту. */}
         {(() => {
-          const tight = items.find(b => b.limit > 0 && b.amount / b.limit >= 0.8)
+          const tight = cats.find(b => b.limit > 0 && b.amount / b.limit >= 0.8)
           if (!tight) return null
-          const pctOf = Math.round((tight.amount / tight.limit) * 100)
-          return <div className="mt-3.5"><AiTip text={`«${tight.name}»${t(' — ')}${pctOf}${t('% лимита. Проверьте, всё ли учтено, прежде чем добавлять расходы сюда.')}`} /></div>
+          return <div className="mt-3.5"><AiTip text={`«${tight.name}»${t(' — ')}${pct(tight.amount, tight.limit)}${t('% лимита. Проверьте, всё ли учтено, прежде чем добавлять расходы сюда.')}`} /></div>
         })()}
 
-        {/* Fact: оплачено · предстоит · резерв */}
-        <div className="card p-4 mt-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Деньги: факт и план')}</span>
-            <span className={cn('text-[9.5px] font-bold px-2 py-1 rounded-full', freeAfterReserve >= 0 ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--rose-soft)] text-[var(--rose-ink)]')}>
-              {freeAfterReserve >= 0 ? `${t('свободно')} ${fmt(Math.max(0, freeAfterReserve))}` : t('бюджет превышен')}
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[var(--sage-deep)]">{fmt(paidFact)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('оплачено (авансы)')}</p></div>
-            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular text-[var(--honey-deep)]">{fmt(upcomingTotal)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('предстоит доплат')}</p></div>
-            <div className="bg-[var(--bg)] rounded-xl py-2.5"><b className="text-[13px] tabular">{fmt(reserve)}</b><p className="text-[9px] text-[var(--soft)] mt-0.5">{t('резерв 10%')}</p></div>
-          </div>
-          {upcoming.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-[var(--track)] space-y-2">
-              {upcoming.slice(0, 3).map(u => (
-                <div key={u.vendor} className="flex items-center justify-between">
-                  <span className="text-[12px] font-medium truncate">{u.vendor} · {t('доплата')}</span>
-                  <span className="text-right shrink-0"><b className="text-[12.5px] tabular">{fmt(u.amount)}</b><span className="text-[9.5px] text-[var(--honey-deep)] font-semibold block">{t('за 7 дней до даты')}</span></span>
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="text-[10px] text-[var(--soft2)] mt-3 leading-relaxed">{t('Резерв 10% не трогаем: он закрывает форс-мажоры (горячая замена, +2 гостя, доп. час фотографа).')}</p>
-        </div>
+        {/*
+          * Блок «оплачено · предстоит · резерв» убран.
+          *
+          * Все три числа считались на клиенте по правилу «половина суммы
+          * брони — аванс, вторая половина — доплата за 7 дней до даты».
+          * Ни такого графика, ни резерва сервер не знает: он отдаёт цену
+          * сделки и факт оплаты. Резерв «непредвиденное» 10% по плану ч. 283
+          * заводится категорией бюджета — этого в ответе пока нет, и рисовать
+          * его на клиенте значит показывать деньги, которых никто не отложил.
+          */}
+
+        {err && <p className="text-[12px] text-[var(--rose-ink)] mt-3.5">{err}</p>}
 
         {adding ? (
           <div className="card p-4 mt-3.5 fade-up">
             <input value={name} onChange={e => setName(e.target.value)} placeholder={t('Статья расхода (например, «Фейерверк»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
             <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="numeric" placeholder={t('Сумма, ₽')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5 tabular" />
+            {/* Категорию спрашиваем, а не угадываем: сервер требует её при
+                создании статьи, и «Прочее» по умолчанию спрятало бы расход не
+                там, где его будут искать. */}
+            <select value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
+              {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить')}</button>
+              <button disabled={busyId === 'new' || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         ) : (
@@ -446,26 +480,35 @@ export function Checklist() {
      с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
      `tt_tasks_done` были заменой этому, пока сервера не было. */
   const q = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
+  /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
+     тапа по галочке — это две записи, и вторая отменяла бы первую. */
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   /* Поля контракта опциональны — приводим один раз здесь, чтобы дальше по
      экрану не тащить `?? ''` в каждом сравнении. */
+  /* Срок и признак срочности сервер не отдаёт: в контракте у задачи только
+     id, title, period, done и custom. Раньше они брались из мока. */
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
-    /* Срок и признак срочности сервер не отдаёт: в контракте у задачи только
-       id, title, period, done и custom. Раньше они брались из мока — теперь
-       их просто нет, и выдумывать их здесь нельзя. */
-    due: '', urgent: false,
   }))
   const list = allTasks.filter(t => t.period === period)
-  /* Отметка «сделано» — это запись, а не чтение: она едет на сервер на этапе 6.
-     Пока держим её локально поверх серверного списка, иначе галочка перестала
-     бы ставиться вовсе. */
-  const [doneLocal, setDoneLocal] = usePersist<string[]>('tt_tasks_done', [])
-  const done = [...doneLocal, ...allTasks.filter(t => t.done).map(t => t.id)]
-  const toggle = (id: string) => setDoneLocal(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])
-  const addTask = () => {
-    if (!title.trim()) return
-    setTitle(''); setAdding(false)
+  const done = allTasks.filter(t => t.done).map(t => t.id)
+
+  /* Галочка — общая на пару: её ставит один, а видят оба. Поэтому она едет на
+     сервер, а не в `tt_tasks_done` на этом телефоне, и список перечитывается
+     ответом сервера, а не подкручивается на месте. */
+  const write = async (fn: () => Promise<unknown>, id: string) => {
+    if (!weddingId) return
+    setBusyId(id)
+    setErr(null)
+    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
   }
+  const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
+  const addTask = () => void write(async () => {
+    if (!title.trim()) return
+    await addTaskApi(weddingId!, title.trim(), period)
+    setTitle(''); setAdding(false)
+  }, 'new')
   // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
   // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
   // его результат менялся бы от перерисовки к перерисовке.
@@ -502,11 +545,12 @@ export function Checklist() {
           </div>
         </div>
         <div className="card-s px-4 py-3 flex items-center gap-3">
+          {/* Пустой список — это 0 из 0: деление на ноль рисовало «NaN%». */}
           <b className="text-[12px] whitespace-nowrap">{done.length} из {allTasks.length}</b>
           <div className="flex-1 h-1.5 rounded-full bg-[var(--track)] overflow-hidden">
-            <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${(done.length / allTasks.length) * 100}%` }} />
+            <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${pct(done.length, allTasks.length)}%` }} />
           </div>
-          <span className="text-[10px] font-bold text-[var(--sage-deep)] tabular">{Math.round((done.length / allTasks.length) * 100)}%</span>
+          <span className="text-[10px] font-bold text-[var(--sage-deep)] tabular">{pct(done.length, allTasks.length)}%</span>
         </div>
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
@@ -521,7 +565,7 @@ export function Checklist() {
               placeholder={t('Новая задача…')} autoFocus className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Добавить')}</button>
+              <button disabled={busyId === 'new'} onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         )}
@@ -529,19 +573,20 @@ export function Checklist() {
           {list.map((t, i) => {
             const isDone = done.includes(t.id)
             return (
-              <button key={t.id} onClick={() => toggle(t.id)} className={cn('w-full flex items-center gap-3 py-3.5 text-left', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
+              <button key={t.id} disabled={busyId === t.id} onClick={() => toggle(t.id, isDone)} className={cn('w-full flex items-center gap-3 py-3.5 text-left disabled:opacity-60', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
                 <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
                   isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[#E8DED4] text-[var(--rose-deep)] font-bold text-[11px]')}>
-                  {isDone ? '✓' : i + 1 + allTasks.filter(x => x.period === period && done.includes(x.id)).length}
+                  {isDone ? '✓' : i + 1}
                 </span>
                 <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{t.title}</span>
-                <i className={cn('w-2 h-2 rounded-full', t.urgent ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]')} />
-                <span className="text-[10.5px] text-[var(--soft)]">{t.due}</span>
+                {/* Точка «важный срок» и колонка срока убраны: сервер не отдаёт
+                    ни срока, ни срочности — все точки были одного цвета, а
+                    подпись под списком обещала два. */}
               </button>
             )
           })}
         </div>
-        <p className="text-[10.5px] text-[var(--soft)] text-center mt-3">{t('● розовый — важный срок · ● зелёный — плановый')}</p>
+        {err && <p className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err}</p>}
       </div>
     </div>
   )
@@ -632,57 +677,100 @@ export function Timeline() {
   )
 }
 
-/* Гости */
+/*
+ * Гости: список, RSVP и добавление — всё на сервере.
+ *
+ * Что здесь было неправдой:
+ *  — до ответа сервера список подменялся моком из `lib/data.ts`, и человек
+ *    видел чужих «Ольгу и Дениса» как своих гостей;
+ *  — добавление и смена статуса писались в `tt_guests` на этом телефоне: у
+ *    второго из пары список оставался прежним, и никто об этом не узнавал;
+ *  — «веган / аллергия / трансфер» переключались кнопками пары и хранились в
+ *    `tt_rsvp`. Эти поля заполняет сам гость в своей форме RSVP, и контракт
+ *    правку их парой не принимает — теперь они только показываются;
+ *  — строка «✓ Автоматически уйдёт кейтерингу и площадке 1 июня» обещала
+ *    рассылку, которой нет;
+ *  — подсказка «8 гостей не ответили» считала до восьми независимо от списка,
+ *    а кнопка «отправить напоминание» только меняла надпись на экране.
+ */
+interface GuestRow {
+  id: string
+  name: string
+  status: 'yes' | 'no' | 'pending'
+  plus: boolean
+  tableId?: string | null
+  diet?: string | null
+  dietNote?: string | null
+  transfer?: string | null
+}
+
+/** Подписи ограничений по еде: ключ словаря — русская строка (R-07). */
+const DIET_LABEL: Record<string, string> = {
+  vegetarian: 'вегетарианец',
+  vegan: 'веган',
+  halal: 'халяль',
+  kosher: 'кошер',
+  gluten_free: 'без глютена',
+  other: 'особое меню',
+}
+
+const RSVP_NEXT: Record<GuestRow['status'], 'yes' | 'no' | 'pending'> = { yes: 'no', no: 'pending', pending: 'yes' }
+
 export function Guests() {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  /* Гости с сервера. Локальный список остаётся хранилищем правок до этапа 6:
-     добавление и смена статуса пока не уезжают, но список уже не выдуманный. */
   const q = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
-  /*
-   * Список — с сервера, правки — пока поверх него.
-   *
-   * Смена статуса и добавление гостя уезжают на сервер на этапе 6. До тех пор
-   * держим их в `tt_guests` и накладываем на серверный список: иначе на этапе
-   * чтения человек лишился бы уже работавшей возможности — статусы перестали
-   * бы переживать перезагрузку.
-   */
-  const [local, setLocal] = usePersist<Guest[]>('tt_guests', [])
-  /* Серверный список выводится при рендере, а не складывается в состояние
-     через эффект: setState внутри эффекта даёт каскад перерисовок и запрещён
-     линтом проекта. Форма гостя на сервере другая — статус называется
-     `status` и принимает `pending` вместо `wait`, «стороны» жениха и невесты
-     нет вовсе, стол строковый. Приводим к тому, что рисует экран. */
-  const server: Guest[] = useMemo(
-    () => (q.data ?? guests).map((g, i): Guest => ({
-      id: (g as { id?: string }).id ?? String(i),
-      name: (g as { name?: string }).name ?? '',
-      status: (g as { status?: string }).status === 'yes' ? 'yes' : (g as { status?: string }).status === 'no' ? 'no' : 'pending',
-      plus: !!(g as { plusOne?: boolean; plus?: boolean }).plusOne || !!(g as { plus?: boolean }).plus,
+
+  /* Приводим ответ сервера к тому, что рисует экран: у него `plusOne` вместо
+     `plus` и `pending` вместо `wait`. Подмены моком нет — пустой список это
+     пустой список. */
+  const list: GuestRow[] = useMemo(
+    () => (q.data ?? []).map((g, i): GuestRow => ({
+      id: g.id ?? String(i),
+      name: g.name ?? '',
+      status: g.status === 'yes' ? 'yes' : g.status === 'no' ? 'no' : 'pending',
+      plus: !!g.plusOne,
+      tableId: g.tableId,
+      diet: g.diet,
+      dietNote: g.dietNote,
+      transfer: g.transfer,
     })),
     [q.data],
   )
-  const byId = new Map(server.map(g => [g.id, g]))
-  for (const g of local) byId.set(g.id, g)
-  const list = [...byId.values()]
-  const setList = (fn: (prev: Guest[]) => Guest[]) => setLocal(fn(list))
-  const [extras, setExtras] = usePersist<Record<string, { diet?: string; transfer?: boolean }>>('tt_rsvp', {})
-  const [reminded, setReminded] = useState(false)
+
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   const [filter, setFilter] = useState('all')
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [plus, setPlus] = useState(false)
-  const add = () => {
-    if (!name.trim()) return
-    setList(l => [...l, { id: `g${Date.now()}`, name: name.trim(), status: 'pending' as const, plus }])
-    setName(''); setPlus(false); setAdding(false)
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
+
+  const write = async (id: string, fn: () => Promise<unknown>) => {
+    if (!weddingId) return
+    setBusyId(id)
+    setErr(null)
+    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
   }
+  const add = () => void write('new', async () => {
+    if (!name.trim()) return
+    await addGuest(weddingId!, { name: name.trim(), plusOne: plus })
+    setName(''); setPlus(false); setAdding(false)
+  })
+  const cycle = (g: GuestRow) => void write(g.id, () => patchGuest(weddingId!, g.id, { status: RSVP_NEXT[g.status] }))
+  const remove = (g: GuestRow) => void write(g.id, async () => {
+    await deleteGuest(weddingId!, g.id)
+    setConfirmDel(null)
+  })
+
   const yes = list.filter(g => g.status === 'yes').length
   // Считаем людей, а не записи: «Ольга и Денис» с +1 — это двое за столом
   // и две порции у кейтеринга. Иначе счётчики расходятся со сводкой ниже.
   const persons = (status: string) =>
     list.filter(g => g.status === status).reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
   const shown = filter === 'all' ? list : list.filter(g => g.status === filter)
+  const waiting = list.filter(g => g.status === 'pending').length
+
   return (
     <div className="pb-28">
       <TopBar back title={t('Гости')} sub={`${list.length}${t(' в списке · ')}${yes}${t(' подтвердили')}`} right={
@@ -700,7 +788,7 @@ export function Guests() {
               <button onClick={() => setPlus(!plus)} className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', plus ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t('с +1')}</button>
               <div className="flex-1" />
               <button onClick={() => setAdding(false)} className="press px-4 py-2 text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={add} className="press px-5 py-2 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold">{t('Добавить')}</button>
+              <button disabled={busyId === 'new'} onClick={add} className="press px-5 py-2 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         </div>
@@ -719,7 +807,9 @@ export function Guests() {
         ))}
       </div>
       <div className="px-5 mt-4">
+        {err && <p className="text-[12px] text-[var(--rose-ink)] mb-2.5">{err}</p>}
         <div className="card px-4 py-1.5">
+          {!shown.length && <p className="py-4 text-[12px] text-[var(--soft)] text-center">{list.length ? t('В этом фильтре пусто') : t('Список пуст — добавьте первого гостя')}</p>}
           {shown.map((g, i) => (
             <div key={g.id} className={cn('flex items-center gap-3 py-3', i !== shown.length - 1 && 'border-b border-[var(--track)]')}>
               <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-serif-d text-white shrink-0',
@@ -728,21 +818,28 @@ export function Guests() {
               </div>
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{g.name}</b>
-                <span className="text-[10px] text-[var(--soft)]">{g.plus ? 'с +1' : t('один/одна')}{g.table ? `${t(' · стол №')}${g.table}` : ''}</span>
-                {g.status === 'yes' && (
-                  <div className="flex gap-1.5 mt-1.5">
-                    <button onClick={() => setExtras(x => { const d = x[g.id]?.diet; const next = !d ? t('веган') : d === t('веган') ? t('аллергия') : undefined; const n = { ...x }; if (next) n[g.id] = { ...n[g.id], diet: next }; else delete n[g.id]; return n })}
-                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.diet ? 'bg-[var(--lav)] text-[var(--lav-ink)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>
-                      🍽 {extras[g.id]?.diet ?? t('всё ест')}
-                    </button>
-                    <button onClick={() => setExtras(x => ({ ...x, [g.id]: { ...x[g.id], transfer: !x[g.id]?.transfer } }))}
-                      className={cn('press text-[9px] font-bold px-2 py-0.5 rounded-full', extras[g.id]?.transfer ? 'bg-[var(--blue)] text-[var(--blue-ink)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>
-                      🚌 {t('трансфер')}
-                    </button>
+                <span className="text-[10px] text-[var(--soft)]">{g.plus ? 'с +1' : t('один/одна')}</span>
+                {/* Еда и трансфер — ответы самого гостя в его форме RSVP.
+                    Пара их не правит: PATCH гостя таких полей не принимает. */}
+                {(g.diet || g.dietNote || g.transfer === 'need') && (
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {(g.diet || g.dietNote) && (
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--lav)] text-[var(--lav-ink)]">
+                        🍽 {g.dietNote ?? t(DIET_LABEL[g.diet!] ?? g.diet!)}
+                      </span>
+                    )}
+                    {g.transfer === 'need' && (
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">🚌 {t('трансфер')}</span>
+                    )}
                   </div>
                 )}
               </div>
-              <button onClick={() => setList(l => l.map(x => x.id === g.id ? { ...x, status: x.status === 'yes' ? 'no' : x.status === 'no' ? 'pending' : 'yes' } : x))} title={t('Нажмите, чтобы сменить статус')} className={cn('press text-[9px] font-bold px-2.5 py-1 rounded-full transition-all',
+              {confirmDel === g.id ? (
+                <button disabled={busyId === g.id} onClick={() => remove(g)} className="press text-[9px] font-bold px-2.5 py-1 rounded-full bg-[#A36666] text-white disabled:opacity-50">{t('Удалить?')}</button>
+              ) : (
+                <button onClick={() => setConfirmDel(g.id)} className="press text-[9px] font-bold px-2 py-1 rounded-full text-[var(--soft)]" aria-label={t('Удалить гостя')}>×</button>
+              )}
+              <button disabled={busyId === g.id} onClick={() => cycle(g)} title={t('Нажмите, чтобы сменить статус')} className={cn('press text-[9px] font-bold px-2.5 py-1 rounded-full transition-all disabled:opacity-50',
                 g.status === 'yes' ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : g.status === 'no' ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)]' : 'bg-[var(--honey)] text-[var(--honey-ink)]')}>
                 {g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')}
               </button>
@@ -752,36 +849,44 @@ export function Guests() {
         <div className="grid grid-cols-2 gap-2.5 mt-3.5">
           <button onClick={() => nav('/wedding/seating')} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Armchair size={15} />{t('Рассадка')}</button>
           <button onClick={() => {
-            const csv = 'Имя;Статус;+1;Стол\n' + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.plus ? 'да' : 'нет'};${g.table ?? ''}`).join('\n')
+            const csv = 'Имя;Статус;+1\n' + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.plus ? 'да' : 'нет'}`).join('\n')
             const a = document.createElement('a')
-            a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv' }))
-            a.download = 'gosti-alina-timur.csv'
+            a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }))
+            /* Имя файла общее: пара в нём не названа, а прежнее «alina-timur»
+               доставалось всем скачавшим. Номер стола убран из выгрузки —
+               рассадка живёт отдельным списком столов. */
+            a.download = 'gosti.csv'
             a.click()
           }} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Список CSV')}</button>
         </div>
         <div className="mt-3.5">
           {(() => {
             const yesGuests = list.filter(g => g.status === 'yes')
-            const vegan = yesGuests.filter(g => extras[g.id]?.diet === t('веган')).length
-            const allergy = yesGuests.filter(g => extras[g.id]?.diet === t('аллергия')).length
-            const transfer = yesGuests.filter(g => extras[g.id]?.transfer).length
+            const special = yesGuests.filter(g => g.diet || g.dietNote).length
+            const transfer = yesGuests.filter(g => g.transfer === 'need').length
             const seats = yesGuests.reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
             return (
               <div className="card p-4">
                 <p className="text-[12px] font-semibold mb-1.5">🍽 {t('Для кейтеринга')}</p>
                 <p className="text-[11px] text-[var(--soft)] leading-relaxed">
-                  {seats} {t('персон')} · {vegan} {t('веган')} · {allergy} {t('аллергия')} · {transfer} {t('нужен трансфер')}
+                  {seats} {t('персон')} · {special} {t('особое меню')} · {transfer} {t('нужен трансфер')}
                 </p>
-                <p className="text-[10px] text-[var(--sage-deep)] font-medium mt-1.5">✓ {t('Автоматически уйдёт кейтерингу и площадке 1 июня — обновляется по RSVP')}</p>
+                {/* Прежняя строка обещала автоматическую отправку кейтерингу
+                    «1 июня». Такой рассылки нет — числа сводки пара передаёт
+                    сама. */}
+                <p className="text-[10px] text-[var(--soft2)] mt-1.5">{t('Цифры обновляются по ответам гостей — покажите их площадке и кейтерингу сами.')}</p>
               </div>
             )
           })()}
         </div>
-        <div className="mt-3.5">
-          {reminded
-            ? <div className="card p-3.5 text-[12px] font-medium text-[var(--sage-deep)]">✓ {t('Напоминания отправлены 8 гостям · повторим за 3 дня до дедлайна')}</div>
-            : <AiTip text={t('8 гостей не ответили — дедлайн RSVP 1 мая. Отправить напоминание одной кнопкой?')} onPress={() => setReminded(true)} />}
-        </div>
+        {waiting > 0 && (
+          <div className="mt-3.5">
+            {/* Число — из списка, а не «8» константой. Массовой рассылки
+                напоминаний контракт не умеет: ведём на экран приглашений,
+                где ссылка выдаётся каждому гостю. */}
+            <AiTip text={`${waiting} ${plural(waiting, t('гость'), t('гостя'), t('гостей'))} ${t('ещё не ответили — отправьте им приглашение ещё раз')}`} onPress={() => nav('/wedding/invites')} />
+          </div>
+        )}
       </div>
     </div>
   )

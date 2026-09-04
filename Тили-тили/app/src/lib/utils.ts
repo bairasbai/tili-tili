@@ -26,3 +26,20 @@ export function goBack(nav: (n: number) => void, go: (to: string, opts?: { repla
   const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
   if (idx > 0) nav(-1); else go(fallback, { replace: true })
 }
+
+/*
+ * Русское число: «1 гость», «2 гостя», «5 гостей».
+ *
+ * Английский обходится двумя формами, русский — тремя, и правило зависит от
+ * последних двух цифр: 11–14 всегда берут третью форму, иначе решает последняя.
+ * Подставлять одну форму на все числа значит писать «1 гостей» на каждом
+ * экране, где есть счётчик.
+ */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = Math.abs(n) % 100
+  if (mod100 >= 11 && mod100 <= 14) return many
+  const mod10 = mod100 % 10
+  if (mod10 === 1) return one
+  if (mod10 >= 2 && mod10 <= 4) return few
+  return many
+}
