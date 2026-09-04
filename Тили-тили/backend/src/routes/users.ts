@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
-import { UUID_PARAM, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
 
 interface ProfileRow {
@@ -243,7 +243,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       // `sessions.id` — колонка uuid. Без проверки чужая строка уходит прямо
       // в запрос, драйвер отвечает ошибкой синтаксиса, а обработчик переводит
       // это в 500 с записью в лог как о падении сервера (R-108, R-111).
-      schema: { params: { type: 'object', required: ['sessionId'], properties: { sessionId: UUID_PARAM } } },
+      schema: { params: { type: 'object', required: ['sessionId'], properties: { sessionId: UUID_ID } } },
     },
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }

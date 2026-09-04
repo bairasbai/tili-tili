@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, quotaExceeded } from '../errors.js'
 import { isCheckViolation } from '../plugins/db.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
 import { personCount } from './guests.js'
@@ -534,7 +534,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
                 required: ['name'],
                 additionalProperties: false,
                 properties: {
-                  id: { type: 'string' },
+                  // Пустой `id` — новое блюдо; заполненный уходит в запрос
+                  // по колонке uuid, поэтому формат проверяется схемой.
+                  id: UUID_ID,
                   name: { type: 'string', minLength: 1, maxLength: 120 },
                   icon: { type: 'string', maxLength: 16 },
                   votes: { type: 'integer' },
@@ -565,12 +567,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         let sort = 0
         for (const o of body.options) {
           if (o.id) {
-            await client.query('update menu_options set name = $2, icon = $3, sort = $4 where id = $1', [
-              o.id,
-              o.name,
-              o.icon ?? null,
-              sort++,
-            ])
+            /* Условие по свадьбе обязательно. Без него пара, приславшая
+             * идентификатор чужого блюда, переписывает меню в ЧУЖОЙ свадьбе:
+             * запрос шёл только по `id`. Соседние маршруты этого файла
+             * ограничены свадьбой все до одного — здесь строка выпала
+             * (ERR-0105). Ноль строк — блюдо не наше, и это не ошибка
+             * клиента, а попытка выйти за свою свадьбу. */
+            const touched = await client.query(
+              'update menu_options set name = $3, icon = $4, sort = $5 where id = $1 and wedding_id = $2',
+              [o.id, weddingId, o.name, o.icon ?? null, sort++],
+            )
+            if (touched.rowCount === 0) throw notFound('Блюдо не найдено')
           } else {
             await client.query('insert into menu_options (id, wedding_id, name, icon, sort) values ($1,$2,$3,$4,$5)', [
               uuidv7(),
@@ -645,7 +652,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['busId'],
           additionalProperties: false,
-          properties: { busId: { type: 'string', maxLength: 40 } },
+          properties: { busId: UUID_ID },
         },
       },
     },
@@ -710,7 +717,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['hotelId'],
           additionalProperties: false,
-          properties: { hotelId: { type: 'string', maxLength: 40 } },
+          properties: { hotelId: UUID_ID },
         },
       },
     },
@@ -773,7 +780,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['optionId'],
           additionalProperties: false,
-          properties: { optionId: { type: 'string', maxLength: 40 } },
+          properties: { optionId: UUID_ID },
         },
       },
     },

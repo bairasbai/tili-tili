@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound, quotaExceeded } from '../errors.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
-import { UUID_PARAM, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { readKeyHeader } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
 import { expireHolds } from '../deals/repo.js'
@@ -13,13 +13,13 @@ const rub = (amount: number) => ({ amount, currency: 'RUB' })
 
 /**
  * Идентификаторы из адреса обязаны быть UUID — почему именно схемой и почему
- * 422, а не 404, написано у `UUID_PARAM` в `ids.ts`.
+ * 422, а не 404, написано у `UUID_ID` в `ids.ts`.
  *
  * Здесь важно одно: ненайденный подарок остаётся 404, но уже после обращения
  * к базе. 422 — про формат, 404 — про содержимое.
  */
-const giftIdParam = { type: 'object', required: ['giftId'], properties: { giftId: UUID_PARAM } } as const
-const fundIdParam = { type: 'object', required: ['fundId'], properties: { fundId: UUID_PARAM } } as const
+const giftIdParam = { type: 'object', required: ['giftId'], properties: { giftId: UUID_ID } } as const
+const fundIdParam = { type: 'object', required: ['fundId'], properties: { fundId: UUID_ID } } as const
 
 /** Строка бюджета, куда попадает площадка: ориентир «банкет на гостя» считается по ней. */
 const VENUE_BUDGET_ID = BUDGET_BY_VENDOR_CATEGORY['venue'] ?? BUDGET_FALLBACK

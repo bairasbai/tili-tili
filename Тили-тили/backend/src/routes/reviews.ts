@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { isUniqueViolation } from '../plugins/db.js'
 import { guestByToken, readGuestToken } from '../guests/access.js'
 import { recomputeRating } from '../reviews/rating.js'
@@ -175,7 +175,7 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
           required: ['vendorId', 'stars'],
           additionalProperties: false,
           properties: {
-            vendorId: { type: 'string', maxLength: 40 },
+            vendorId: UUID_ID,
             stars: { type: 'integer', minimum: 1, maximum: 5 },
             text: { type: 'string', maxLength: 4000 },
           },

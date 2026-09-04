@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import type { Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
@@ -150,7 +150,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             plusOne: { type: 'boolean' },
             status: { type: 'string', enum: ['yes', 'no', 'pending'] },
             group: { type: 'string', maxLength: 120 },
-            tableId: { type: 'string', nullable: true },
+            // Стол уходит в колонку uuid; `null` снимает рассадку (R-17).
+            tableId: { ...UUID_ID, nullable: true },
             diet: {
               type: 'string',
               nullable: true,

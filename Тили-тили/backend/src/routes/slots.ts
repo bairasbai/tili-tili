@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
 import { openLead } from '../vendor/leads.js'
@@ -74,7 +74,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           required: ['vendorId', 'price'],
           additionalProperties: false,
           properties: {
-            vendorId: { type: 'string', maxLength: 40 },
+            vendorId: UUID_ID,
             packageId: { type: 'string', maxLength: 40 },
             price: MONEY_SCHEMA,
           },

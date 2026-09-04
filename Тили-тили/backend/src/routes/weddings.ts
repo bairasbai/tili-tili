@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { UUID_PARAM, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
@@ -393,7 +393,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     '/weddings/:weddingId/members/:userId',
     {
       schema: {
-        params: { type: 'object', required: ['userId'], properties: { userId: UUID_PARAM } },
+        params: { type: 'object', required: ['userId'], properties: { userId: UUID_ID } },
         body: {
           type: 'object',
           required: ['role'],
@@ -422,7 +422,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/weddings/:weddingId/members/:userId',
-    { schema: { params: { type: 'object', required: ['userId'], properties: { userId: UUID_PARAM } } } },
+    { schema: { params: { type: 'object', required: ['userId'], properties: { userId: UUID_ID } } } },
     async (request, reply) => {
       requireRole(request, 'couple')
       const weddingId = request.member!.weddingId

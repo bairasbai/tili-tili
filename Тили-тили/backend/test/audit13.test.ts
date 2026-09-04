@@ -450,3 +450,84 @@ describe('состояние запроса на отмену в карточк�
     }
   })
 })
+
+describe('идентификаторы в ТЕЛЕ запроса (ERR: первый свод искал только адреса)', () => {
+  /*
+   * Первый свод по параметрам пути пропустил семь мест: идентификатор приходит
+   * полем тела и точно так же уходит в колонку uuid. Схема срабатывает до
+   * обработчика, поэтому ответ 422 приходит и без входа, и без базы.
+   */
+  const cases: [string, 'POST' | 'PUT' | 'PATCH', string, unknown][] = [
+    ['автобус гостя', 'POST', '/join/tok/shuttle', { busId: 'не-uuid' }],
+    ['отель гостя', 'POST', '/join/tok/hotels', { hotelId: 'не-uuid' }],
+    ['голос за блюдо', 'POST', '/join/tok/menu-vote', { optionId: 'не-uuid' }],
+    [
+      'правка опроса меню',
+      'PUT',
+      '/weddings/0192f3a4-5b6c-7d8e-9f01-234567890abc/menu-poll',
+      { options: [{ id: 'не-uuid', name: 'Рыба' }] },
+    ],
+    [
+      'рассадка гостя',
+      'PATCH',
+      '/weddings/0192f3a4-5b6c-7d8e-9f01-234567890abc/guests/0192f3a4-5b6c-7d8e-9f01-234567890abd',
+      { tableId: 'не-uuid' },
+    ],
+    [
+      'бронь слота',
+      'POST',
+      '/weddings/0192f3a4-5b6c-7d8e-9f01-234567890abc/slots/0192f3a4-5b6c-7d8e-9f01-234567890abd/book',
+      { vendorId: 'не-uuid', price: { amount: 1000, currency: 'RUB' } },
+    ],
+    [
+      'отзыв гостя',
+      'POST',
+      '/weddings/0192f3a4-5b6c-7d8e-9f01-234567890abc/guest-reviews',
+      { vendorId: 'не-uuid', stars: 5 },
+    ],
+  ]
+
+  for (const [name, method, url, payload] of cases) {
+    it(`${name}: не-uuid в теле даёт 422, а не ошибку драйвера базы`, async () => {
+      const app = await buildApp(TEST_CONFIG)
+      try {
+        const res = await app.inject({ method, url, payload, headers: { 'idempotency-key': 'k' } })
+        expect(res.statusCode).toBe(422)
+      } finally {
+        await app.close()
+      }
+    })
+  }
+
+  it('корректный uuid в теле проходит проверку дальше', async () => {
+    // Иначе схема отсекала бы всё подряд и тесты выше проходили бы
+    // по неверной причине.
+    const app = await buildApp(TEST_CONFIG)
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/join/tok/menu-vote',
+        payload: { optionId: '0192f3a4-5b6c-7d8e-9f01-234567890abc' },
+      })
+      expect(res.statusCode).not.toBe(422)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('пустое блюдо без id по-прежнему заводится: поле необязательное', async () => {
+    // Новое блюдо приходит без `id`. Если бы схема требовала его всегда,
+    // добавить блюдо стало бы нельзя вовсе.
+    const app = await buildApp(TEST_CONFIG)
+    try {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/weddings/0192f3a4-5b6c-7d8e-9f01-234567890abc/menu-poll',
+        payload: { options: [{ name: 'Рыба' }] },
+      })
+      expect(res.statusCode).not.toBe(422)
+    } finally {
+      await app.close()
+    }
+  })
+})
