@@ -5,6 +5,7 @@ import { fmt } from '@/lib/data'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getAvailability, getCategories, getVendors, getVendor } from '@/lib/api/catalog'
 import { useApi } from '@/lib/api/useApi'
+import { formatWeddingDate } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
@@ -106,14 +107,14 @@ export function VendorList() {
     categoryId: catId,
     city,
     date: filter === 'free' ? weddingDate : null,
-    sort: filter === 'top' ? 'rating' : filter === 'budget' ? 'price_asc' : 'rating',
+    hasVideo: filter === 'video' ? true : undefined,
+    ratingMin: filter === 'top' ? 4.8 : undefined,
+    priceMax: filter === 'budget' ? 10_000_000 : undefined,
+    sort: filter === 'budget' ? 'price_asc' : 'rating',
     limit: 30,
   }), [catId, city, weddingDate, filter])
 
-  /* «С видео» сервер параметром не принимает — отбираем на своей странице
-     и честно говорим, что это отбор по загруженному. */
-  const items = list.data?.items ?? []
-  const shown = filter === 'video' ? items.filter(v => v.hasVideo) : items
+  const shown = list.data?.items ?? []
 
   return (
     <div className="pb-28">
@@ -123,7 +124,12 @@ export function VendorList() {
         </button>
       } />
       {showFilters && <div className="px-5 flex gap-2 mt-2 overflow-x-auto no-scrollbar">
-        {[['free', t('Свободны 14.06')], ['video', t('С видео')], ['top', t('Рейтинг 4.8+')], ['budget', t('до 100 тыс ₽')]].map(([id, label]) => (
+        {/* Подпись «свободны» — по выбранной дате, а не по вшитому 14.06: дату
+            выбирает пара, и чип с чужим числом врёт. Без даты чип не нужен. */}
+        {[
+          ...(weddingDate ? [['free', `${t('Свободны ')}${formatWeddingDate(weddingDate)}`]] : []),
+          ['video', t('С видео')], ['top', t('Рейтинг 4.8+')], ['budget', t('до 100 тыс ₽')],
+        ].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', filter === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>
             {label}
           </button>
@@ -132,10 +138,12 @@ export function VendorList() {
       </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {list.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем каталог…')}</p>}
-        {list.error && (
+        {(list.error || cats.error) && (
           <div className="py-6 text-center">
-            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{list.error}</p>
-            <button onClick={list.reload} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{list.error ?? cats.error}</p>
+            {/* Перезапрашиваем оба: при недоступном сервере падает и список, и
+                справочник категорий, а без второго у экрана нет даже названия. */}
+            <button onClick={() => { list.reload(); cats.reload() }} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
           </div>
         )}
         {shown.map(v => (
@@ -146,7 +154,7 @@ export function VendorList() {
             freeOnDate={filter === 'free' && !!weddingDate}
             onOpen={() => nav(`/vendor/${v.id}`)} />
         ))}
-        {!list.loading && !list.error && shown.length === 0 && (
+        {!list.loading && !list.error && !cats.error && shown.length === 0 && (
           <div className="text-center py-10 fade-up">
             <b className="text-[14px]">{t('Под фильтр никто не подходит')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Смягчите условия — или спросите Тиля, он расширит поиск')}</p>
@@ -217,7 +225,7 @@ export function VendorDetail() {
         {detail.error && (
           <>
             <p role="alert" className="text-[12.5px] text-[var(--rose-ink)] leading-relaxed">{detail.error}</p>
-            <button onClick={detail.reload} className="press mt-4 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+            <button onClick={() => { detail.reload(); cats.reload() }} className="press mt-4 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
           </>
         )}
         {!detail.loading && !detail.error && <p className="text-[12.5px] text-[var(--soft)]">{t('Анкета не найдена')}</p>}

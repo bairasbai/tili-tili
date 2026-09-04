@@ -556,6 +556,7 @@ export const EN: Record<string, string> = {
   'Свадьба при свечах после заката — без единого прожектора': 'Candlelit wedding after sunset — not a single spotlight',
   'Светлый живой стиль, ловлю эмоции, а не постановку…': 'Airy candid style — I capture emotions, not poses…',
   'Свидетель, мама, подруга. Организация без финансов.': 'Witness, mom, friend. Organization without finances.',
+  'Свободны ': 'Free on ',
   'Свободен 14.06': 'Free on 06/14',
   'Свободны 14.06': 'Free on 06/14',
   'Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.': 'Only 6 photographers are left for your date — book this month.',

@@ -28,6 +28,10 @@ export interface VendorFilters {
   categoryId?: string
   city?: string
   date?: string | null
+  /** Верхняя граница «цены от», в копейках. */
+  priceMax?: number
+  ratingMin?: number
+  hasVideo?: boolean
   sort?: 'rating' | 'price_asc' | 'price_desc' | 'popular'
   limit?: number
 }
@@ -41,6 +45,12 @@ function query(f: VendorFilters): string {
   /* Дата свадьбы убирает из выдачи занятых: иначе пара пишет тому, кто
      заведомо не сможет (описание параметра в контракте). */
   if (f.date) p.set('date', f.date)
+  /* Отбор считает сервер, а не браузер. Фильтровать загруженную страницу из
+     тридцати записей значит показывать «дешевле 100 тысяч» из случайной
+     тридцатки, а не из всего каталога: чип обещал бы то, чего не делает. */
+  if (f.priceMax !== undefined) p.set('priceMax', String(f.priceMax))
+  if (f.ratingMin !== undefined) p.set('ratingMin', String(f.ratingMin))
+  if (f.hasVideo) p.set('hasVideo', 'true')
   if (f.sort) p.set('sort', f.sort)
   p.set('limit', String(f.limit ?? 30))
   return p.toString()

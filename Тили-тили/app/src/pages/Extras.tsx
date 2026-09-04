@@ -27,7 +27,7 @@ export function Favorites() {
         {favs.error && (
           <div className="py-6 text-center">
             <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{favs.error}</p>
-            <button onClick={favs.reload} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+            <button onClick={() => { favs.reload(); cats.reload() }} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
           </div>
         )}
         {list.map(v => (
