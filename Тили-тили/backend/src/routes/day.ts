@@ -788,6 +788,45 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /* Гость видит маршруты и то, куда он уже записан. Раньше путь был только на
+     запись, и `busId` гостю брать было неоткуда. */
+  app.get('/join/:guestToken/shuttle', async (request) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const guest = await guestByToken(db(), guestToken)
+    const { rows } = await db().query(
+      `select id, name, pickup, departs::text as departs, seats, taken from bus_routes
+        where wedding_id = $1 order by departs nulls last, name`,
+      [guest.weddingId],
+    )
+    const { rows: mine } = await db().query<{ bus_id: string }>(
+      'select bus_id from bus_bookings where guest_id = $1 limit 1',
+      [guest.guestId],
+    )
+    return { myBusId: mine[0]?.bus_id ?? null, routes: rows.map((r) => toBus(r as never)) }
+  })
+
+  /* Варианты блюд задаёт пара — гостю их надо показать, иначе он голосует
+     вслепую. `chosenOptionId` возвращает его собственный выбор. */
+  app.get('/join/:guestToken/menu-vote', async (request) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const guest = await guestByToken(db(), guestToken)
+    const { rows: poll } = await db().query<{ question: string }>(
+      'select question from menu_polls where wedding_id = $1',
+      [guest.weddingId],
+    )
+    /* Варианты привязаны к свадьбе, а не к опросу: отдельной таблицы опросов
+       с идентификатором нет — `menu_polls` хранит один вопрос на свадьбу. */
+    const { rows: options } = await db().query<{ id: string; name: string }>(
+      'select id, name from menu_options where wedding_id = $1 order by sort, name',
+      [guest.weddingId],
+    )
+    const { rows: mine } = await db().query<{ option_id: string }>(
+      'select option_id from menu_votes where guest_id = $1 limit 1',
+      [guest.guestId],
+    )
+    return { question: poll[0]?.question ?? '', options, chosenOptionId: mine[0]?.option_id ?? null }
+  })
+
   app.get('/join/:guestToken/hotels', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)

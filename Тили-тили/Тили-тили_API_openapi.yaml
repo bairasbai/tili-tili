@@ -1985,6 +1985,27 @@ paths:
       responses:
         '202': { description: Принято в очередь }
   /join/{guestToken}/shuttle:
+    get:
+      tags: [logistics-guest]
+      summary: Маршруты трансфера, доступные гостю
+      description: |
+        Записаться гость мог, а увидеть, куда именно, — нет: путь был только на
+        запись, и `busId` брать было неоткуда. `myBusId` говорит, куда он уже
+        записан: без этого гость, вернувшийся по ссылке, видит пустой выбор и
+        занимает второе место.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  myBusId: { type: string, nullable: true }
+                  routes:
+                    type: array
+                    items: { $ref: '#/components/schemas/BusRoute' }
     post:
       tags: [logistics-guest]
       summary: Гость записывается в автобус
@@ -2080,6 +2101,30 @@ paths:
       responses:
         '202': { description: Принято в очередь }
   /join/{guestToken}/menu-vote:
+    get:
+      tags: [logistics-guest]
+      summary: Опрос по горячему глазами гостя
+      description: |
+        Варианты блюд задаёт пара, а голосовать гость мог вслепую: путь был
+        только на отправку выбора. `chosenOptionId` — что он уже выбрал.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question: { type: string }
+                  chosenOptionId: { type: string, nullable: true }
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
     post:
       tags: [catering]
       summary: Гость выбирает блюдо

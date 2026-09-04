@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.23.0).
- * Операций: 147. Путей: 114. */
+ * Операций: 149. Путей: 114. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -63,7 +63,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/invites/{code}/accept","url":"/invites/:code/accept","operationId":null,"summary":"Принять приглашение (после регистрации/входа)","tag":"invites"},
   {"method":"GET","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Отельные блоки для гостя","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Гость занимает номер в блоке","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Опрос по горячему глазами гостя","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Гость выбирает блюдо","tag":"catering"},
+  {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты трансфера, доступные гостю","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Гость записывается в автобус","tag":"logistics-guest"},
   {"method":"GET","openapi":"/legal/policy","url":"/legal/policy","operationId":null,"summary":"Действующая редакция оферты и политики","tag":"legal"},
   {"method":"GET","openapi":"/me/favorites","url":"/me/favorites","operationId":null,"summary":"Избранное пользователя","tag":"catalog"},
