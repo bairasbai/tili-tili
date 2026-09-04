@@ -4,6 +4,7 @@ import { uuidv7 } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import type { Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
+import type { Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -38,8 +39,20 @@ const GUEST_COLUMNS = `
  *
  * `rsvp_token` в выборке отсутствует физически: колонка не читается ни одним
  * запросом пары. Наружу идёт только одноразовая ссылка (ERR-0019).
+ *
+ * Саму ссылку видит ТОЛЬКО пара. Одноразовый код — не сведения о госте,
+ * а ключ: кто его видит, тот обменивает его на токен гостя и дальше
+ * действует от его имени — смотрит и резервирует подарки, снимает чужие
+ * резервы, грузит кадры в альбом, а у настоящего гостя ссылка перестаёт
+ * работать. Ровно поэтому выдача ссылки закрыта для помощника отдельным
+ * правилом матрицы (решение владельца 2026-09-03), но список гостей отдавал
+ * все уже выданные ссылки всей команде — и правило обходилось соседним
+ * маршрутом (ERR-0103).
+ *
+ * `inviteUrlUsed` остаётся всем: «ссылка использована» — это состояние
+ * приглашения, а не ключ, и команде оно нужно, чтобы вести список.
  */
-function toGuest(r: GuestRow) {
+export function toGuest(r: GuestRow, seesInviteUrl: boolean) {
   return {
     id: r.id,
     name: r.name,
@@ -53,10 +66,15 @@ function toGuest(r: GuestRow) {
     transfer: r.transfer,
     busId: r.bus_id,
     hotelId: r.hotel_id,
-    inviteUrl: r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null,
+    ...(seesInviteUrl
+      ? { inviteUrl: r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null }
+      : {}),
     inviteUrlUsed: r.invite_used === true,
   }
 }
+
+/** Ссылку показываем только паре — она и есть отправитель приглашения. */
+export const seesInviteUrl = (role: Role): boolean => role === 'couple'
 
 /** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
 export function personCount(guests: { status: string; plusOne: boolean }[]): number {
@@ -69,9 +87,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
 
-  const loadGuest = async (client: Queryable, guestId: string) => {
+  const loadGuest = async (client: Queryable, guestId: string, role: Role) => {
     const { rows } = await client.query<GuestRow>(`select ${GUEST_COLUMNS} from guests g where g.id = $1`, [guestId])
-    return rows[0] ? toGuest(rows[0]) : null
+    return rows[0] ? toGuest(rows[0], seesInviteUrl(role)) : null
   }
 
   /* ── список и добавление ──────────────────────────────────────────── */
@@ -80,7 +98,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       `select ${GUEST_COLUMNS} from guests g where g.wedding_id = $1 order by g.created_at`,
       [request.member!.weddingId],
     )
-    return rows.map(toGuest)
+    return rows.map((r) => toGuest(r, seesInviteUrl(request.member!.role)))
   })
 
   app.post(
@@ -116,7 +134,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           newGuestToken(),
         ],
       )
-      return reply.code(201).send(await loadGuest(db(), id))
+      return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
     },
   )
 
@@ -203,7 +221,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         )
         await noteVendorUpdate(db(), weddingId, 'seating', `Рассадка обновлена: за столами ${seated[0]!.n} гостей`)
       }
-      return loadGuest(db(), guestId)
+      return loadGuest(db(), guestId, request.member!.role)
     },
   )
 

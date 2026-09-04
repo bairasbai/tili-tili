@@ -104,7 +104,10 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         limit?: number
         cursor?: string
       }
-      const page = parsePageQuery(query)
+      // Каталог листается по рейтингу и цене, а не по времени: ключ курсора
+      // приводится к `::numeric`/`::bigint`/`::int`, и проверять его надо как
+      // число. Остальные маршруты сортируют временем — там значение по умолчанию.
+      const page = parsePageQuery(query, 'number')
 
       const where: string[] = ['v.published_at is not null']
       const args: unknown[] = []

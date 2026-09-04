@@ -6,6 +6,28 @@ import { COMMITTED } from '../deals/state.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 
+/**
+ * Сколько живёт запрос на отмену, пока его не подтвердил второй партнёр.
+ *
+ * Столько же, сколько мягкая бронь: 72 часа — срок решения, которое двое
+ * принимают не одновременно, но в рамках одного разговора. Дальше запрос
+ * протухает, и следующее нажатие снова просит подтверждения, а не отменяет.
+ */
+export const CANCEL_CONFIRM_HOURS = 72
+
+/**
+ * Жив ли запрос на отмену. Чистая функция — чтобы срок проверялся тестом,
+ * а не только живым прогоном с базой.
+ */
+export function cancelRequestPending(
+  requestedBy: string | null,
+  requestedAt: Date | null,
+  now: Date = new Date(),
+): boolean {
+  if (requestedBy === null || requestedAt === null) return false
+  return now.getTime() - requestedAt.getTime() < CANCEL_CONFIRM_HOURS * 3_600_000
+}
+
 export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -47,10 +69,11 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
     return db().tx(async (client) => {
       const { rows } = await client.query<{
         cancel_requested_by: string | null
+        cancel_requested_at: Date | null
         cancelled_at: Date | null
         couples: string
       }>(
-        `select w.cancel_requested_by, w.cancelled_at,
+        `select w.cancel_requested_by, w.cancel_requested_at, w.cancelled_at,
                 (select count(*)::text from wedding_members m
                   where m.wedding_id = w.id and m.role = 'couple') as couples
            from weddings w where w.id = $1`,
@@ -59,10 +82,28 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       const w = rows[0]!
       if (w.cancelled_at) return { state: 'cancelled' as const }
 
+      /* Запрос на отмену протухает.
+       *
+       * Без срока `cancel_requested_by` стоял в базе вечно, и колонка
+       * `cancel_requested_at` писалась, но не читалась НИГДЕ. Отсюда сценарий:
+       * в январе один партнёр в ссоре нажал «Отменить», получил «нужно
+       * подтверждение второго», остыл и забыл. В июне второй открывает тот же
+       * экран — и первое же нажатие стирает свадьбу: брони отменяются, даты
+       * уходят подрядчикам, слоты чистятся. Второй партнёр при этом ничего
+       * не подтверждал осознанно: с его стороны код идёт сразу в исполнение,
+       * а поля запроса в карточку свадьбы не отдаются, и показать «первый уже
+       * запросил» фронт не может.
+       *
+       * Срок тот же, что у мягкой брони: 72 часа — столько живёт решение,
+       * которое двое принимают не одновременно, но в рамках одного разговора.
+       */
+      const pending = cancelRequestPending(w.cancel_requested_by, w.cancel_requested_at)
+
       const couples = Number(w.couples)
       // Отмена требует подтверждения ОБОИХ партнёров: свадьба — общее решение,
       // и один в ссоре не должен стирать полгода работы двоих.
-      if (couples > 1 && w.cancel_requested_by === null) {
+      if (couples > 1 && !pending) {
+        // Протухший запрос перезаписывается новым: отсчёт идёт заново.
         await client.query('update weddings set cancel_requested_by = $2, cancel_requested_at = now() where id = $1', [
           weddingId,
           userId,

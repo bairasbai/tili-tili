@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_PARAM, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { requireRole, type Role } from '../wedding/access.js'
+import { cancelRequestPending } from './weddingLifecycle.js'
 import { weddingCode } from '../wedding/codes.js'
 import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../wedding/templates.generated.js'
 
@@ -22,6 +23,8 @@ interface WeddingRow {
   tz: string | null
   invite_theme_id: number
   invite_text: string | null
+  cancel_requested_by: string | null
+  cancel_requested_at: Date | null
 }
 
 interface MemberRow {
@@ -68,7 +71,7 @@ const money = (amount: string | null, currency: string) => {
  * и на поля повлиять не может: карточку свадьбы им смотреть можно, а сумму
  * бюджета в ней — нет. Поэтому поле вырезается здесь, на сборке ответа.
  */
-function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
+export function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
   const seesMoney = role === 'couple'
   return {
     id: w.id,
@@ -79,6 +82,21 @@ function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
     style: w.style,
     guestsPlanned: w.guests_planned,
     ...(seesMoney ? { budgetTotal: money(w.budget_total, w.currency) } : {}),
+    /* Кто запросил отмену и когда — только паре, и только пока запрос жив.
+     *
+     * Это не сведения о свадьбе, а предупреждение второму партнёру: его
+     * нажатие «Отменить» не запросит отмену, а ИСПОЛНИТ её — брони отменятся,
+     * даты уйдут подрядчикам, вернуть их будет нечем. Без этих полей показать
+     * предупреждение фронту нечем, и второй партнёр подтверждал вслепую
+     * (ERR-0101). Протухший запрос отдаётся пустым: он и не действует. */
+    ...(seesMoney
+      ? cancelRequestPending(w.cancel_requested_by, w.cancel_requested_at)
+        ? {
+            cancelRequestedBy: w.cancel_requested_by,
+            cancelRequestedAt: w.cancel_requested_at?.toISOString() ?? null,
+          }
+        : { cancelRequestedBy: null, cancelRequestedAt: null }
+      : {}),
     tz: w.tz,
     inviteThemeId: w.invite_theme_id,
     inviteText: w.invite_text,
@@ -113,7 +131,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await db().query<WeddingRow>(
       `select w.id, w.title, w.date::text as date, c.name as city_name, c.region as city_region,
               w.venue, w.style, w.guests_planned, w.budget_total::text as budget_total, w.currency,
-              w.tz, w.invite_theme_id, w.invite_text
+              w.tz, w.invite_theme_id, w.invite_text, w.cancel_requested_by, w.cancel_requested_at
          from weddings w left join cities c on c.id = w.city_id
         where w.id = $1 and w.archived_at is null`,
       [weddingId],
@@ -375,6 +393,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     '/weddings/:weddingId/members/:userId',
     {
       schema: {
+        params: { type: 'object', required: ['userId'], properties: { userId: UUID_PARAM } },
         body: {
           type: 'object',
           required: ['role'],
@@ -401,33 +420,37 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  app.delete('/weddings/:weddingId/members/:userId', async (request, reply) => {
-    requireRole(request, 'couple')
-    const weddingId = request.member!.weddingId
-    const { userId } = request.params as { userId: string }
+  app.delete(
+    '/weddings/:weddingId/members/:userId',
+    { schema: { params: { type: 'object', required: ['userId'], properties: { userId: UUID_PARAM } } } },
+    async (request, reply) => {
+      requireRole(request, 'couple')
+      const weddingId = request.member!.weddingId
+      const { userId } = request.params as { userId: string }
 
-    // Проверка «остался ли ещё кто-то с ролью couple» и само удаление — одно
-    // действие. Раздельно двое участников с этой ролью, удаляющие друг друга
-    // одновременно, оба увидели бы «остался» и оба удалили: свадьба стала бы
-    // ничьей. Условие NOT EXISTS считается в момент удаления строки.
-    const res = await db().query(
-      `delete from wedding_members m
-        where m.wedding_id = $1 and m.user_id = $2
-          and (m.role <> 'couple'
-               or exists (select 1 from wedding_members o
-                           where o.wedding_id = $1 and o.user_id <> $2 and o.role = 'couple'))`,
-      [weddingId, userId],
-    )
-    if (res.rowCount === 0) {
-      const { rows } = await db().query<{ present: boolean }>(
-        'select true as present from wedding_members where wedding_id = $1 and user_id = $2',
+      // Проверка «остался ли ещё кто-то с ролью couple» и само удаление — одно
+      // действие. Раздельно двое участников с этой ролью, удаляющие друг друга
+      // одновременно, оба увидели бы «остался» и оба удалили: свадьба стала бы
+      // ничьей. Условие NOT EXISTS считается в момент удаления строки.
+      const res = await db().query(
+        `delete from wedding_members m
+          where m.wedding_id = $1 and m.user_id = $2
+            and (m.role <> 'couple'
+                 or exists (select 1 from wedding_members o
+                             where o.wedding_id = $1 and o.user_id <> $2 and o.role = 'couple'))`,
         [weddingId, userId],
       )
-      if (rows.length === 0) throw notFound('Участник не найден')
-      throw conflict('last_couple', 'Нельзя убрать последнего участника с ролью «пара» — свадьба останется ничьей')
-    }
-    return reply.code(204).send()
-  })
+      if (res.rowCount === 0) {
+        const { rows } = await db().query<{ present: boolean }>(
+          'select true as present from wedding_members where wedding_id = $1 and user_id = $2',
+          [weddingId, userId],
+        )
+        if (rows.length === 0) throw notFound('Участник не найден')
+        throw conflict('last_couple', 'Нельзя убрать последнего участника с ролью «пара» — свадьба останется ничьей')
+      }
+      return reply.code(204).send()
+    },
+  )
 
   /**
    * Свадьба без пары становится ничьей: её нельзя ни редактировать, ни удалить,

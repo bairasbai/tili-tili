@@ -1,6 +1,6 @@
 import type { Queryable } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
-import { deliverAfter, knownTimeZone } from './quiet.js'
+import { deliverAfter, knownTimeZone, localDayBounds } from './quiet.js'
 
 /**
  * Одна дверь для всех уведомлений.
@@ -89,13 +89,17 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
      *
      * Ищем ближайший день, где место есть, а не переносим на сутки один раз:
      * при десяти новостях единственный сдвиг сложил бы семь из них в один
-     * следующий день, и лимит там был бы нарушен ровно так же. */
+     * следующий день, и лимит там был бы нарушен ровно так же.
+     *
+     * Сутки — МЕСТНЫЕ, как и тихие часы строкой выше. Раньше границу резал
+     * `date_trunc('day')` по таймзоне сессии базы, то есть по UTC, и на
+     * Камчатке лимит разрешал шесть push за местный день вместо трёх. */
     for (let day = 0; day < PUSH_SPILL_DAYS; day++) {
+      const bounds = localDayBounds(after, tz)
       const { rows: planned } = await db.query<{ n: string }>(
         `select count(*)::text as n from notifications
-          where user_id = $1 and deliver_after >= date_trunc('day', $2::timestamptz)
-            and deliver_after < date_trunc('day', $2::timestamptz) + interval '1 day'`,
-        [item.userId, after],
+          where user_id = $1 and deliver_after >= $2 and deliver_after < $3`,
+        [item.userId, bounds.from, bounds.to],
       )
       // Свыше лимита — не выбрасываем, а переносим: непрочитанное
       // в приложении всё равно видно сразу.

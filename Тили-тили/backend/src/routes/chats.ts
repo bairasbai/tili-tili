@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, notFound, quotaExceeded } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
-import { assertOpen, chatForUser, type ChatKind } from '../chats/access.js'
+import { assertOpen, chatForUser, rolesSeeing, type ChatKind } from '../chats/access.js'
 import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from '../chats/guard.js'
 import { notify } from '../notify/notify.js'
 import { openLead } from '../vendor/leads.js'
@@ -318,19 +318,36 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
    */
   async function assertNotColdOutreach(chatId: string, kind: ChatKind, userId: string): Promise<void> {
     if (kind !== 'vendor') return
-    const { rows } = await db().query<{ verified: boolean; mine: boolean }>(
-      `select (v.verified_at is not null) as verified, (v.user_id = $2) as mine
+    const { rows } = await db().query<{ verified: boolean; mine: boolean; vendor_id: string }>(
+      `select (v.verified_at is not null) as verified, (v.user_id = $2) as mine, v.id as vendor_id
          from chats c join vendors v on v.id = c.vendor_id where c.id = $1`,
       [chatId, userId],
     )
     const vendor = rows[0]
     if (!vendor || !vendor.mine || vendor.verified) return
 
+    /* Считаются переписки, которые НАЧАЛ он сам, — то есть те, где первое
+     * сообщение в чате его.
+     *
+     * Раньше считались все чаты, где он за сутки что-либо написал, включая
+     * ответы на входящие. Это ровно то, чего комментарий выше обещает не
+     * делать: подрядчику, которому за день написали пять пар и он всем
+     * ответил, шестая пара уже не могла получить ответ — он упирался в
+     * «не больше 5 новых переписок в день», не начав ни одной (ERR-0100).
+     *
+     * Чат заводит пара (`POST /chats/vendor/:vendorId` требует роль `couple`),
+     * поэтому холодное обращение здесь единственного вида: пара нажала
+     * «Написать», ушла не написав, а подрядчик пишет первым. */
     const { rows: already } = await db().query<{ here: string; today: string }>(
       `select (select count(*) from messages m where m.chat_id = $1 and m.sender_id = $2)::text as here,
-              (select count(distinct m.chat_id) from messages m
-                where m.sender_id = $2 and m.created_at > now() - interval '1 day')::text as today`,
-      [chatId, userId],
+              (select count(*) from chats c
+                 cross join lateral (
+                   select m.sender_id, m.created_at from messages m
+                    where m.chat_id = c.id order by m.created_at, m.id limit 1
+                 ) first
+                where c.vendor_id = $3 and first.sender_id = $2
+                  and first.created_at > now() - interval '1 day')::text as today`,
+      [chatId, userId, vendor.vendor_id],
     )
     // В этой переписке он уже писал — она не новая, ограничение не про неё.
     if (Number(already[0]!.here) > 0) return
@@ -351,18 +368,22 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     text: string,
   ): Promise<void> {
     if (kind === 'tilly') return
-    /* Получатели — те же, кто видит чат. Пара из чата исполнителей
-     * исключена: уведомлять о переписке, которую не покажут, — издевательство. */
+    /* Получатели — те же, кто видит чат, и берутся они из ТОЙ ЖЕ матрицы,
+     * что и доступ (`rolesSeeing`). Здесь стоял свой список, и он учитывал
+     * ровно один случай — `crew` только координатору. Всё остальное уходило
+     * всем участникам свадьбы: помощник получал в теле уведомления первые
+     * 120 символов переписки с подрядчиком, хотя по матрице ему видны только
+     * `team` и `day`, а по ссылке его ждал 403 (ERR-0099). */
     const { rows } = await db().query<{ user_id: string }>(
       `select mem.user_id from wedding_members mem
-         where mem.wedding_id = $1 and ($3 <> 'crew' or mem.role = 'coordinator')
+         where mem.wedding_id = $1 and mem.role = any($4)
         union
        select v.user_id from chats c join vendors v on v.id = c.vendor_id where c.id = $2
         union
        select mine.user_id from deals d join vendors mine on mine.id = d.vendor_id
         where d.wedding_id = $1 and $3 in ('team','crew')
           and d.state in ('booked','paid_deposit','done')`,
-      [weddingId, chatId, kind],
+      [weddingId, chatId, kind, rolesSeeing(kind)],
     )
     for (const row of rows) {
       if (row.user_id === authorId) continue

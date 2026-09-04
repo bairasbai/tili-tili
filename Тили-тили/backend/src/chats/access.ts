@@ -32,6 +32,20 @@ const VISIBLE: Partial<Record<Role, ChatKind[]>> = {
 /** Что видит подрядчик со своей стороны — ролью в свадьбе он не числится. */
 const VENDOR_VISIBLE: ChatKind[] = ['vendor', 'team', 'crew']
 
+/**
+ * Какие роли свадьбы видят чат этого вида.
+ *
+ * Выводится из `VISIBLE`, а не пишется вторым списком. Второй список уже
+ * разошёлся: рассылка уведомлений в `routes/chats.ts` учитывала единственный
+ * случай (`crew` — только координатору) и слала всем участникам всё остальное.
+ * Помощник получал в теле уведомления первые 120 символов переписки пары
+ * с подрядчиком — той самой, которую матрица от него закрывает, и открыть
+ * её по ссылке он не мог: 403 (ERR-0099).
+ */
+export function rolesSeeing(kind: ChatKind): Role[] {
+  return (Object.keys(VISIBLE) as Role[]).filter((role) => (VISIBLE[role] ?? []).includes(kind))
+}
+
 export interface ChatRow {
   id: string
   wedding_id: string

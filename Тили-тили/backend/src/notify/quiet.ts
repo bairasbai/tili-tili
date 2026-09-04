@@ -71,6 +71,33 @@ export function fromLocal(local: Local, tz: string): Date {
   return new Date(guess - offsetMinutes(new Date(guess), tz) * 60_000)
 }
 
+/**
+ * Границы МЕСТНЫХ суток, в которые попадает момент `at`.
+ *
+ * Нужны дневному лимиту push. Раньше он резал сутки через `date_trunc('day')`
+ * по таймзоне сессии PostgreSQL — она нигде не задаётся, то есть UTC. У
+ * человека на Камчатке (+12) местные сутки лежат на границе двух суток UTC,
+ * и лимит «три в сутки» разрешал шесть: три в хвосте одних и три в начале
+ * следующих. Тихие часы в этом же файле давно считаются по зоне пользователя —
+ * лимит из общего правила выпал.
+ *
+ * Считаем здесь, а не в SQL: `at time zone` в запросе зависел бы от того,
+ * знает ли база это имя зоны, а `knownTimeZone` проверяет её по ICU. Разойтись
+ * они могут, и тогда падал бы весь путь уведомления.
+ */
+export function localDayBounds(at: Date, tz: string): { from: Date; to: Date } {
+  const local = toLocal(at, tz)
+  const from = fromLocal({ ...local, minutes: 0 }, tz)
+  // Следующие сутки считаем календарём, а не прибавлением 86 400 000 мс:
+  // при переходе на летнее время сутки бывают короче и длиннее.
+  const next = new Date(Date.UTC(local.year, local.month - 1, local.day) + 86_400_000)
+  const to = fromLocal(
+    { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate(), minutes: 0 },
+    tz,
+  )
+  return { from, to }
+}
+
 /** «22:00» → 1320 минут от полуночи. Мусор на входе — начало суток. */
 export function parseTime(value: string): number {
   const m = /^(\d{1,2}):(\d{2})/.exec(value)
