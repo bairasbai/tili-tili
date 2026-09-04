@@ -8,7 +8,7 @@ import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
 import { ApiError } from '@/lib/api/client'
-import { createWedding, guestsFromRange } from '@/lib/api/wedding'
+import { budgetFromRange, createWedding, guestsFromRange } from '@/lib/api/wedding'
 
 interface Step {
   q: string
@@ -137,6 +137,7 @@ export default function Quiz() {
         city: { name: city, region: cityRegion },
         date,
         guestsPlanned: guestsFromRange(collected.guests),
+        budgetTotal: budgetFromRange(collected.budget),
         style: collected.style ?? undefined,
         quizAnswers: { ...collected },
       })

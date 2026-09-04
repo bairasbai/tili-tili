@@ -15,6 +15,8 @@ export interface WeddingDraft {
   city: { name: string; region: string }
   date?: string | null
   guestsPlanned?: number
+  /** Общий бюджет в копейках. */
+  budgetTotal?: number
   style?: string
   quizAnswers?: Record<string, unknown>
 }
@@ -31,6 +33,23 @@ export function guestsFromRange(answer: string | null): number | undefined {
   return digits?.length ? Number(digits[0]) : undefined
 }
 
+/*
+ * Бюджет квиз тоже спрашивает диапазоном — «1–2 млн ₽», «До 500 тыс ₽».
+ * Берём нижнюю границу по той же причине, что и с гостями: она не обещает
+ * больше, чем человек сказал. «Пока не знаем» — не число, и подставлять
+ * вместо него ноль нельзя: ноль на экране бюджета читается как «денег нет».
+ */
+export function budgetFromRange(answer: string | null): number | undefined {
+  if (!answer) return undefined
+  /* Берём ПЕРВУЮ пару «число + единица». Простой поиск «млн» по всей строке
+     ошибается на «500 тыс — 1 млн ₽»: там он находит миллион и завышает
+     нижнюю границу вдвое. Диапазон «1–2 млн» тоже отдаёт первое число. */
+  const m = answer.match(/(\d+)(?:\s*[–—-]\s*\d+)?\s*(тыс|млн)/)
+  if (!m) return undefined
+  const rubles = Number(m[1]) * (m[2] === 'млн' ? 1_000_000 : 1_000)
+  return rubles * 100
+}
+
 /** Создать свадьбу. Возвращает её идентификатор. */
 export async function createWedding(draft: WeddingDraft): Promise<string> {
   const created = await api.post('/weddings', {
@@ -38,6 +57,7 @@ export async function createWedding(draft: WeddingDraft): Promise<string> {
     city: draft.city,
     ...(draft.date ? { date: draft.date } : {}),
     ...(draft.guestsPlanned !== undefined ? { guestsPlanned: draft.guestsPlanned } : {}),
+    ...(draft.budgetTotal !== undefined ? { budgetTotal: { amount: draft.budgetTotal, currency: 'RUB' } } : {}),
     ...(draft.style ? { style: draft.style } : {}),
     ...(draft.quizAnswers ? { quizAnswers: draft.quizAnswers } : {}),
   })

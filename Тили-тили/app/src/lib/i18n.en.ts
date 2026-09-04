@@ -865,6 +865,8 @@ Object.assign(EN, {
   'подписан': 'signed',
   'отправлен': 'sent',
   'черновик': 'draft',
+  'Бюджет ведёт пара — у вашей роли к нему доступа нет.': 'The budget is run by the couple - your role has no access to it.',
+  '% лимита. Проверьте, всё ли учтено, прежде чем добавлять расходы сюда.': '% of the limit. Check what is already counted before adding more here.',
 })
 
 // Фонды, анти-вишлист, RSVP+, альбом, дресс-код, SOS (EN)

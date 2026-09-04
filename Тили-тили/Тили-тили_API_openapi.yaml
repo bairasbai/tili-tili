@@ -3265,6 +3265,22 @@ components:
               title: { type: string }
               planned: { $ref: '#/components/schemas/Money' }
               fromSlots: { type: integer, description: 'автосумма из броней' }
+              color:
+                type: string
+                example: '#D9A8A0'
+                description: |
+                  Цвет полосы категории в разбивке бюджета. Задаётся сервером,
+                  а не клиентом: категории приходят из справочника, и палитра
+                  должна совпадать во всех клиентах и в выгрузках.
+              live:
+                type: string
+                nullable: true
+                example: 'Елена Смирнова · Ильдар Хабиров'
+                description: |
+                  Кто из забронированной команды попал в эту категорию, через
+                  разделитель. Пусто — в категории пока только плановая сумма.
+                  Нужно, чтобы пара видела, откуда взялась автосумма: без этого
+                  «120 000 из команды» выглядит как число ниоткуда.
               items:
                 type: array
                 items: { $ref: '#/components/schemas/BudgetItem' }

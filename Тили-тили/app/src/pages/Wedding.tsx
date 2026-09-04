@@ -5,7 +5,7 @@ import { budgetItems, couple, guests, contractTemplates, fmt, initialAlbum, type
 import { useApi } from '@/lib/api/useApi'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
-import { getDocuments, getGuests, getTasks, getTimeline } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getTasks, getTimeline } from '@/lib/api/weddingData'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -249,14 +249,20 @@ export function SlotDetail() {
   )
 }
 
+/*
+ * Тысячи рублей из копеек.
+ *
+ * Здесь стояло `сумма / 1000` — деление копеек на тысячу, то есть число в сто
+ * раз больше настоящего: категория на 480 000 ₽ показывалась как «48000К».
+ * Ошибка жила и в моке, и пережила переход на сервер, потому что «48000К»
+ * выглядит правдоподобно, пока не сравнишь с итогом рядом.
+ */
+const thousands = (kopecks: number) => Math.round(kopecks / 100 / 1000)
+
 /* Бюджет */
 export function Budget() {
-  const { slots } = useStore()
-  // Бизнес-логика: категории бюджета наполняются ценами забронированных слотов команды.
-  // Отмена брони в конструкторе автоматически уменьшает бюджет.
+  const { slots, weddingId } = useStore()
   const booked = committedSlots(slots)
-  // Свои статьи расхода переживают перезагрузку и видны на главной — иначе
-  // добавленный расход исчезал вместе с вкладкой.
   const [custom, setCustom] = usePersist<BudgetRow[]>('tt_budget_custom', [])
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -267,25 +273,51 @@ export function Budget() {
     setCustom(it => [...it, { name: name.trim(), amount: rub(a), limit: rub(Math.ceil(a * 1.2)), color: 'var(--lav)' }])
     setName(''); setAmount(''); setAdding(false)
   }
-  const items = budgetRows(slots, custom)
-  const total = spentTotal(slots, custom)
-  const pct = Math.round((total / couple.budgetTotal) * 100)
+
+  /*
+   * Бюджет считает сервер, а не браузер.
+   *
+   * Он знает то, чего фронт знать не может: суммы сделок, внесённые авансы и
+   * оплаты. Локальный расчёт из цен слотов был единственно возможным без
+   * сервера, но повторяет его лишь до первой оплаты — дальше «потрачено»
+   * расходится с тем, что реально ушло подрядчикам.
+   */
+  const q = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
+  const server = q.data
+  const budgetTotal = server?.total?.amount ?? couple.budgetTotal
+  const items: BudgetRow[] = server
+    ? [
+        ...(server.categories ?? []).map(c => ({
+          name: c.title ?? '',
+          amount: c.fromSlots ?? 0,
+          limit: c.planned?.amount || 1,
+          color: c.color ?? 'var(--lav)',
+          /* `live` в контракте — имена забронированной команды через
+             разделитель, а не флаг: экран показывает их подписью «из команды». */
+          live: c.live ?? undefined,
+        })),
+        ...custom,
+      ]
+    : budgetRows(slots, custom)
+  const total = server ? (server.spent?.amount ?? 0) + custom.reduce((a, c) => a + c.amount, 0) : spentTotal(slots, custom)
+  const pct = budgetTotal ? Math.round((total / budgetTotal) * 100) : 0
   // Умный бюджет: fact (оплаченные авансы) vs предстоящие платежи + резерв 10%
   const paidFact = Math.round(booked.reduce((a, s) => a + (s.price ?? 0), 0) * 0.5)
   const upcoming = booked.map(s => ({ vendor: s.vendor ?? s.label, amount: Math.round((s.price ?? 0) * 0.5) }))
   const upcomingTotal = upcoming.reduce((a, u) => a + u.amount, 0)
-  const reserve = Math.round(couple.budgetTotal * 0.1)
-  const freeAfterReserve = couple.budgetTotal - total - reserve
+  const reserve = Math.round(budgetTotal * 0.1)
+  const freeAfterReserve = budgetTotal - total - reserve
   return (
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
+      <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">
         <div className="card p-5">
           <div className="flex justify-between items-end">
             <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
             <span className="text-[var(--rose-deep)] font-bold">{pct}%</span>
           </div>
-          <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(couple.budgetTotal)} {t('запланировано · осталось')} {(couple.budgetTotal - total).toLocaleString('ru-RU')} ₽</p>
+          <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
           <div className="mt-3"><Bar pct={pct} /></div>
           <div className="mt-4 space-y-4">
             {items.map((b, bi) => {
@@ -294,7 +326,7 @@ export function Budget() {
                 <div key={b.name}>
                   <div className="flex justify-between text-[12.5px] items-center">
                     <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('из команды')}</span>}</span>
-                    <b className="tabular">{(b.amount / 1000).toFixed(0)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {(b.limit / 1000).toFixed(0)}{t('К')}</span>{bi >= budgetItems.length && <button onClick={() => setCustom(c => c.filter((_, ci) => ci !== bi - budgetItems.length))} className="press text-[var(--rose-deep)] text-[12px] ml-1.5" aria-label={t('Удалить статью')}>×</button>}</b>
+                    <b className="tabular">{thousands(b.amount)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>{bi >= budgetItems.length && <button onClick={() => setCustom(c => c.filter((_, ci) => ci !== bi - budgetItems.length))} className="press text-[var(--rose-deep)] text-[12px] ml-1.5" aria-label={t('Удалить статью')}>×</button>}</b>
                   </div>
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${p}%`, background: b.color }} />
@@ -304,7 +336,17 @@ export function Budget() {
             })}
           </div>
         </div>
-        <div className="mt-3.5"><AiTip text={t('«Площадка и кейтеринг» на 86% лимита. Зафиксируйте меню до 1 марта — дальше цены вырастут ~10%.')} /></div>
+        {/* Подсказка строится из настоящих чисел, а не вписана в разметку.
+            Здесь стояло «Площадка и кейтеринг на 86% лимита. Зафиксируйте меню
+            до 1 марта» — текст с процентом и датой, не связанными ни с чем.
+            Показываем только когда есть о чём говорить: категория, которая
+            реально подошла к своему лимиту. */}
+        {(() => {
+          const tight = items.find(b => b.limit > 0 && b.amount / b.limit >= 0.8)
+          if (!tight) return null
+          const pctOf = Math.round((tight.amount / tight.limit) * 100)
+          return <div className="mt-3.5"><AiTip text={`«${tight.name}»${t(' — ')}${pctOf}${t('% лимита. Проверьте, всё ли учтено, прежде чем добавлять расходы сюда.')}`} /></div>
+        })()}
 
         {/* Fact: оплачено · предстоит · резерв */}
         <div className="card p-4 mt-3.5">
