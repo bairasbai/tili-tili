@@ -3,6 +3,7 @@ import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
+import { useServerHealth } from '@/lib/api/health'
 import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
 import { cn, goBack } from '@/lib/utils'
@@ -153,6 +154,9 @@ export function Bar({ pct, color }: { pct: number; color?: string }) {
 /* Баннер офлайна: приложение работает без сети, данные сохранятся */
 export function OfflineBanner() {
   const [online, setOnline] = useState(() => navigator.onLine)
+  /* Сеть и сервер — разные поломки: при живом Wi-Fi и лежащем бэкенде
+     navigator.onLine говорит «онлайн», а приложение показывает пустоту. */
+  const server = useServerHealth()
   useEffect(() => {
     const on = () => setOnline(true)
     const off = () => setOnline(false)
@@ -160,11 +164,13 @@ export function OfflineBanner() {
     window.addEventListener('offline', off)
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
   }, [])
-  if (online) return null
+  if (online && server !== 'down') return null
   return (
     <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-50 px-5 pt-2">
       <div className="rounded-2xl bg-[var(--ink)] text-[var(--bg)] text-[11.5px] font-semibold px-4 py-2.5 text-center" style={{ boxShadow: 'var(--shadow-lift)' }}>
-        {t('Нет сети — работаем офлайн, всё сохранится на устройстве')}
+        {online
+          ? t('Сервер не отвечает — показываем, что сохранено на устройстве')
+          : t('Нет сети — работаем офлайн, всё сохранится на устройстве')}
       </div>
     </div>
   )

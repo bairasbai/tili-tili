@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 39. */
+ * Схем: 40. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -863,6 +863,32 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "Readiness": {
+          "type": "object",
+          "properties": {
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "ok",
+                      "not_ready"
+                  ]
+              },
+              "db": {
+                  "type": "string",
+                  "enum": [
+                      "up",
+                      "down"
+                  ]
+              },
+              "redis": {
+                  "type": "string",
+                  "enum": [
+                      "up",
+                      "down"
+                  ]
+              }
+          }
+      },
       "Review": {
           "type": "object",
           "properties": {
@@ -1487,6 +1513,7 @@ export type ContractSchemaName =
   | "Message"
   | "Money"
   | "Notification"
+  | "Readiness"
   | "Review"
   | "Session"
   | "Slot"

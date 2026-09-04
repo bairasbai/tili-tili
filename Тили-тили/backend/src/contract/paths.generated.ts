@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.23.0).
- * Операций: 142. Путей: 111. */
+ * Операций: 144. Путей: 113. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -52,6 +52,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/guest-vendor/{token}","url":"/guest-vendor/:token","operationId":null,"summary":"Кабинет гостя-подрядчика","tag":"bookings"},
   {"method":"GET","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Переписка своего подрядчика с парой","tag":"bookings"},
   {"method":"POST","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Написать паре","tag":"bookings"},
+  {"method":"GET","openapi":"/health","url":"/health","operationId":null,"summary":"Жив ли процесс","tag":"health"},
+  {"method":"GET","openapi":"/health/ready","url":"/health/ready","operationId":null,"summary":"Готов ли принимать трафик","tag":"health"},
   {"method":"GET","openapi":"/inspiration/likes","url":"/inspiration/likes","operationId":null,"summary":"Избранные истории","tag":"catalog"},
   {"method":"DELETE","openapi":"/inspiration/likes/{storyId}","url":"/inspiration/likes/:storyId","operationId":null,"summary":"Снять отметку","tag":"catalog"},
   {"method":"PUT","openapi":"/inspiration/likes/{storyId}","url":"/inspiration/likes/:storyId","operationId":null,"summary":"Отметить историю","tag":"catalog"},

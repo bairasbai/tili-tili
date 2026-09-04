@@ -384,6 +384,47 @@ paths:
         '410': { description: Истёк/отозван/уже использован }
 
   # ───────────────────────── GEO ─────────────────────────
+  /health:
+    get:
+      tags: [health]
+      security: []
+      summary: Жив ли процесс
+      description: |
+        Отвечает 200, пока процесс работает, и не ходит ни в базу, ни в Redis.
+        По нему перезапускают контейнер. Ронять его из-за упавшей базы нельзя:
+        приложение уйдёт в цикл перезапусков и не поднимется, когда база
+        вернётся (RUNBOOK §1).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  uptime: { type: integer, description: 'секунд с запуска процесса' }
+
+  /health/ready:
+    get:
+      tags: [health]
+      security: []
+      summary: Готов ли принимать трафик
+      description: |
+        503, если недоступна база или Redis — по нему балансировщик выводит
+        машину из ротации. В теле видно, что именно упало.
+      responses:
+        '200':
+          description: Готов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+        '503':
+          description: Не готов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Readiness' }
+
   /geo/cities:
     get:
       tags: [geo]
@@ -2921,6 +2962,12 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Readiness:
+      type: object
+      properties:
+        status: { type: string, enum: [ok, not_ready] }
+        db: { type: string, enum: [up, down] }
+        redis: { type: string, enum: [up, down] }
     Error:
       type: object
       properties:

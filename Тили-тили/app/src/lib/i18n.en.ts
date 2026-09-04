@@ -1178,6 +1178,7 @@ Object.assign(EN, {
   'Оферта': 'Terms of service',
   'Условия использования сервиса': 'How the service works',
   '1. Кто оказывает услугу': '1. Who provides the service',
+  'Сервер не отвечает — показываем, что сохранено на устройстве': 'The server is not responding - showing what is saved on your device',
   'Сервис «Тили-тили» (tili-tili.ru) — информационная площадка, которая помогает паре найти подрядчиков для свадьбы, спланировать бюджет, тайминг и список гостей.': 'Tili-Tili (tili-tili.ru) is an information platform that helps a couple find wedding vendors and plan their budget, timeline and guest list.',
   '2. Площадка не является стороной сделки': '2. The platform is not a party to the deal',
   'Договор на услуги пара заключает напрямую с подрядчиком. Оплата и исполнение — между ними. Площадка не хранит и не переводит деньги, не отвечает за качество работ подрядчика и не выступает поручителем.': 'The couple contracts directly with the vendor. Payment and delivery are between them. The platform neither holds nor transfers money, is not responsible for the quality of the vendor\u2019s work and acts as no guarantor.',
