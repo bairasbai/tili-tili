@@ -84,6 +84,26 @@ function parseTrustProxy(raw: string | undefined): boolean | number {
   throw new ConfigError(`TRUST_PROXY — число прокси впереди (обычно 1) или пусто. Получено: ${JSON.stringify(raw)}`)
 }
 
+/*
+ * Число из переменной окружения.
+ *
+ * `Number(source.X ?? 50)` выглядит как «значение по умолчанию 50», но `??`
+ * срабатывает только на `undefined`. В `.env`, собранном из `.env.example`,
+ * необязательные ключи стоят пустыми — а `Number('')` это ноль. Так предел
+ * загрузок в альбом становился нулём, и гость получал 429 на первый же кадр,
+ * не нарушив ничего.
+ */
+function envNumber(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : fallback
+}
+
+/** Строка из окружения: пустая тоже значит «не задано». */
+function envText(raw: string | undefined): string | null {
+  return raw === undefined || raw.trim() === '' ? null : raw
+}
+
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   const rawEnv = source.NODE_ENV ?? 'development'
   // Опечатка вроде NODE_ENV=prod тихо переводит сервер в режим разработки:
@@ -112,8 +132,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     corsOrigins,
     // В production подключения обязательны: сервер без базы поднимется и будет
     // отдавать 200 на /health, притворяясь живым. Лучше не стартовать вовсе.
-    databaseUrl: production ? required('DATABASE_URL', source.DATABASE_URL) : (source.DATABASE_URL ?? null),
-    redisUrl: production ? required('REDIS_URL', source.REDIS_URL) : (source.REDIS_URL ?? null),
+    databaseUrl: production ? required('DATABASE_URL', source.DATABASE_URL) : envText(source.DATABASE_URL),
+    redisUrl: production ? required('REDIS_URL', source.REDIS_URL) : envText(source.REDIS_URL),
     jwtAccessSecret: production
       ? required('JWT_ACCESS_SECRET', source.JWT_ACCESS_SECRET)
       : (source.JWT_ACCESS_SECRET ?? null),
@@ -125,21 +145,21 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     // с серверной, согласие не принимается — иначе в базе окажется подпись
     // под текстом, которого пользователь не видел.
     policyVersion: source.POLICY_VERSION ?? '2026-09-02',
-    otpMaxPerIpHour: Number(source.OTP_MAX_PER_IP_HOUR ?? MAX_SENDS_PER_HOUR_PER_IP),
-    otpMaxPerHourTotal: Number(source.OTP_MAX_PER_HOUR_TOTAL ?? MAX_SENDS_PER_HOUR_TOTAL),
+    otpMaxPerIpHour: envNumber(source.OTP_MAX_PER_IP_HOUR, MAX_SENDS_PER_HOUR_PER_IP),
+    otpMaxPerHourTotal: envNumber(source.OTP_MAX_PER_HOUR_TOTAL, MAX_SENDS_PER_HOUR_TOTAL),
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
-    albumMaxPerGuest: Number(source.ALBUM_MAX_PER_GUEST ?? 50),
-    contributionsMaxPerGuest: Number(source.CONTRIBUTIONS_MAX_PER_GUEST ?? 20),
-    rateLimitPerSecond: Number(source.RATE_LIMIT_PER_SECOND ?? 10),
-    coldOutreachPerDay: Number(source.COLD_OUTREACH_PER_DAY ?? 5),
-    sentryDsn: source.SENTRY_DSN ?? null,
-    vapidPublicKey: source.VAPID_PUBLIC_KEY ?? null,
-    vapidPrivateKey: source.VAPID_PRIVATE_KEY ?? null,
+    albumMaxPerGuest: envNumber(source.ALBUM_MAX_PER_GUEST, 50),
+    contributionsMaxPerGuest: envNumber(source.CONTRIBUTIONS_MAX_PER_GUEST, 20),
+    rateLimitPerSecond: envNumber(source.RATE_LIMIT_PER_SECOND, 10),
+    coldOutreachPerDay: envNumber(source.COLD_OUTREACH_PER_DAY, 5),
+    sentryDsn: envText(source.SENTRY_DSN),
+    vapidPublicKey: envText(source.VAPID_PUBLIC_KEY),
+    vapidPrivateKey: envText(source.VAPID_PRIVATE_KEY),
     vapidSubject: source.VAPID_SUBJECT ?? 'mailto:support@tili-tili.ru',
-    smsProvider: source.SMS_PROVIDER ?? null,
-    smsAeroEmail: source.SMSAERO_EMAIL ?? null,
-    smsAeroKey: source.SMSAERO_KEY ?? null,
-    smsAeroSign: source.SMSAERO_SIGN ?? null,
+    smsProvider: envText(source.SMS_PROVIDER),
+    smsAeroEmail: envText(source.SMSAERO_EMAIL),
+    smsAeroKey: envText(source.SMSAERO_KEY),
+    smsAeroSign: envText(source.SMSAERO_SIGN),
   }
 
   if (production) {

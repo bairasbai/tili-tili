@@ -1885,6 +1885,24 @@ paths:
 
   # ───────────────────────── ЛОГИСТИКА ГОСТЕЙ (§12.1) ─────────────────────────
   /weddings/{weddingId}/logistics/buses:
+    get:
+      tags: [logistics]
+      summary: Маршруты трансфера
+      description: |
+        Пути чтения не было: маршрут можно было создать и удалить, но не
+        показать. Экран логистики после перезагрузки оставался пустым, хотя
+        автобусы стояли в базе, а `taken` — единственный источник правды о том,
+        сколько мест занято.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BusRoute' }
     post:
       tags: [logistics]
       summary: Добавить маршрут трансфера
@@ -1912,6 +1930,23 @@ paths:
       responses:
         '204': { description: OK }
   /weddings/{weddingId}/logistics/hotels:
+    get:
+      tags: [logistics]
+      summary: Отельные блоки
+      description: |
+        Симметрично автобусам: блок можно было завести и удалить, но не
+        прочитать. Гостю список отдаётся по его токену
+        (`/join/{guestToken}/hotels`), а паре — здесь.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HotelBlock' }
     post:
       tags: [logistics]
       summary: Добавить отельный блок

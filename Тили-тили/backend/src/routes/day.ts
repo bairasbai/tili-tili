@@ -282,6 +282,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     taken: number
   }) => ({ id: r.id, name: r.name, from: r.pickup, time: r.departs?.slice(0, 5) ?? null, seats: r.seats, taken: r.taken })
 
+  /* Чтения не было вовсе: маршрут заводился и удалялся, но не показывался.
+     `taken` считает сервер атомарно при записи гостя — клиенту его взять
+     больше неоткуда. */
+  app.get('/weddings/:weddingId/logistics/buses', async (request) => {
+    const { rows } = await db().query(
+      `select id, name, pickup, departs::text as departs, seats, taken from bus_routes
+        where wedding_id = $1 order by departs nulls last, name`,
+      [request.member!.weddingId],
+    )
+    return rows.map((r) => toBus(r as never))
+  })
+
   app.post(
     '/weddings/:weddingId/logistics/buses',
     {
@@ -345,6 +357,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
     deadline: r.deadline,
     promo: r.promo,
+  })
+
+  /* Симметрично автобусам. Гость видит те же блоки по своему токену
+     (`/join/:guestToken/hotels`), пара — здесь. */
+  app.get('/weddings/:weddingId/logistics/hotels', async (request) => {
+    const { rows } = await db().query(
+      `select id, name, rooms, booked, price::text as price, currency, deadline::text as deadline, promo
+         from hotel_blocks where wedding_id = $1 order by deadline nulls last, name`,
+      [request.member!.weddingId],
+    )
+    return rows.map((r) => toHotel(r as never))
   })
 
   app.post(

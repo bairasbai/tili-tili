@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.23.0).
- * Операций: 145. Путей: 114. */
+ * Операций: 147. Путей: 114. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -125,8 +125,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/invite-link","url":"/weddings/:weddingId/guests/:guestId/invite-link","operationId":null,"summary":"Выдать (или перевыпустить) одноразовую ссылку-приглашение гостю","tag":"guests"},
   {"method":"GET","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Активные приглашения","tag":"invites"},
   {"method":"POST","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Создать одноразовую ссылку-приглашение (7 дней)","tag":"invites"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Маршруты трансфера","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Добавить маршрут трансфера","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/buses/{busId}","url":"/weddings/:weddingId/logistics/buses/:busId","operationId":null,"summary":"Удалить маршрут","tag":"logistics"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Отельные блоки","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Добавить отельный блок","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/hotels/{hotelId}","url":"/weddings/:weddingId/logistics/hotels/:hotelId","operationId":null,"summary":"Удалить отельный блок","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/notify-pickup","url":"/weddings/:weddingId/logistics/notify-pickup","operationId":null,"summary":"Разослать точки сбора записавшимся гостям","tag":"logistics"},

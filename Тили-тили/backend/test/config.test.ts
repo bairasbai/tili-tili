@@ -29,6 +29,50 @@ describe('конфигурация: разработка', () => {
   })
 })
 
+describe('конфигурация: пустая переменная — не ноль', () => {
+  /*
+   * `.env` собирают из `.env.example`, где необязательные ключи стоят пустыми.
+   * Разбор был `Number(source.X ?? 50)`: `??` срабатывает только на
+   * `undefined`, а `Number('')` — это ноль. Предел загрузок в альбом
+   * становился нулевым, и гость получал 429 на первый же кадр, ничего не
+   * нарушив. Так же обнулялись лимиты OTP и частота запросов.
+   */
+  it('пустые числовые ключи дают значение по умолчанию, а не 0', () => {
+    const c = loadConfig(env({
+      NODE_ENV: 'development',
+      ALBUM_MAX_PER_GUEST: '',
+      CONTRIBUTIONS_MAX_PER_GUEST: '',
+      RATE_LIMIT_PER_SECOND: '',
+      OTP_MAX_PER_IP_HOUR: '',
+      OTP_MAX_PER_HOUR_TOTAL: '',
+      COLD_OUTREACH_PER_DAY: '  ',
+    }))
+    expect(c.albumMaxPerGuest).toBe(50)
+    expect(c.contributionsMaxPerGuest).toBe(20)
+    expect(c.rateLimitPerSecond).toBe(10)
+    expect(c.coldOutreachPerDay).toBe(5)
+    expect(c.otpMaxPerIpHour).toBeGreaterThan(0)
+    expect(c.otpMaxPerHourTotal).toBeGreaterThan(0)
+  })
+
+  it('мусор вместо числа тоже даёт значение по умолчанию', () => {
+    expect(loadConfig(env({ NODE_ENV: 'development', ALBUM_MAX_PER_GUEST: 'много' })).albumMaxPerGuest).toBe(50)
+  })
+
+  it('заданное число берётся как есть', () => {
+    expect(loadConfig(env({ NODE_ENV: 'development', ALBUM_MAX_PER_GUEST: '7' })).albumMaxPerGuest).toBe(7)
+  })
+
+  it('пустые текстовые ключи читаются как «не задано»', () => {
+    /* `SMS_PROVIDER=''` иначе считается настроенным провайдером, и код с
+       кодом OTP уходит в никуда вместо лога. */
+    const c = loadConfig(env({ NODE_ENV: 'development', SMS_PROVIDER: '', SENTRY_DSN: '', REDIS_URL: '' }))
+    expect(c.smsProvider).toBeNull()
+    expect(c.sentryDsn).toBeNull()
+    expect(c.redisUrl).toBeNull()
+  })
+})
+
 describe('конфигурация: ловушки, которые иначе всплывут в проде', () => {
   it('нечисловой PORT отвергается на старте, а не внутри listen', () => {
     expect(() => loadConfig(env({ PORT: 'три' }))).toThrow(ConfigError)

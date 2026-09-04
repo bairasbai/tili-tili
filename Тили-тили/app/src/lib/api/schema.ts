@@ -3652,7 +3652,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Маршруты трансфера
+         * @description Пути чтения не было: маршрут можно было создать и удалить, но не
+         *     показать. Экран логистики после перезагрузки оставался пустым, хотя
+         *     автобусы стояли в базе, а `taken` — единственный источник правды о том,
+         *     сколько мест занято.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BusRoute"][];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Добавить маршрут трансфера */
         post: {
@@ -3731,7 +3759,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Отельные блоки
+         * @description Симметрично автобусам: блок можно было завести и удалить, но не
+         *     прочитать. Гостю список отдаётся по его токену
+         *     (`/join/{guestToken}/hotels`), а паре — здесь.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HotelBlock"][];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Добавить отельный блок */
         post: {
