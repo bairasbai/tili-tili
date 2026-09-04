@@ -693,6 +693,7 @@ export const EN: Record<string, string> = {
   'Шатёр «Речной берег» · Уфа': '“Rechnoy Bereg” tent · Ufa',
   'Шатёр у реки · Стерлитамак': 'Riverside tent · Sterlitamak',
   'Экран столкнулся с ошибкой. Ваши данные сохранены — просто обновите.': 'The screen hit an error. Your data is safe — just refresh.',
+  'Этот раздел ведёт пара — у вашей роли к нему доступа нет.': 'This section is run by the couple - your role has no access to it.',
   'Я гость': 'I’m a guest',
   'Я подрядчик': 'I’m a vendor',
   'Язык интерфейса': 'Interface language',
@@ -857,6 +858,13 @@ Object.assign(EN, {
   'Занято': 'Taken',
   'Назад': 'Back',
   'Желания': 'Wishes',
+  'дата не выбрана': 'no date chosen',
+  'Расписание ': 'Schedule for ',
+  'Расписание дня · полный сценарий': 'Schedule of the day · the full plan',
+  'Документы ведёт пара — у вашей роли к ним доступа нет.': 'Documents are run by the couple - your role has no access to them.',
+  'подписан': 'signed',
+  'отправлен': 'sent',
+  'черновик': 'draft',
 })
 
 // Фонды, анти-вишлист, RSVP+, альбом, дресс-код, SOS (EN)

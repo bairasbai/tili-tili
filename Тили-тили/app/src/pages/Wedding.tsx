@@ -1,7 +1,11 @@
-import { createElement, useState } from 'react'
+import { createElement, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
-import { budgetItems, couple, tasks, timeline, guests, contractTemplates, fmt, initialAlbum } from '@/lib/data'
+import { budgetItems, couple, guests, contractTemplates, fmt, initialAlbum, type Guest } from '@/lib/data'
+import { useApi } from '@/lib/api/useApi'
+import { formatWeddingDate } from '@/lib/weddingDate'
+import { AsyncState, ready } from '@/components/AsyncState'
+import { getDocuments, getGuests, getTasks, getTimeline } from '@/lib/api/weddingData'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -347,25 +351,45 @@ export function Budget() {
 
 /* Чек-лист */
 export function Checklist() {
+  const { weddingId, weddingDate } = useStore()
   const [period, setPeriod] = useState('9')
-  const [extra, setExtra] = usePersist<{ id: string; title: string; period: string; due: string; urgent?: boolean }[]>('tt_tasks_extra', [])
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
-  const allTasks = [...tasks, ...extra.map(t => ({ ...t, done: false }))]
-  const [done, setDone] = usePersist<string[]>('tt_tasks_done', tasks.filter(t => t.done).map(t => t.id))
+
+  /* Чек-лист приходит с сервера: он собирается там при создании свадьбы вместе
+     с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
+     `tt_tasks_done` были заменой этому, пока сервера не было. */
+  const q = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
+  /* Поля контракта опциональны — приводим один раз здесь, чтобы дальше по
+     экрану не тащить `?? ''` в каждом сравнении. */
+  const allTasks = (q.data ?? []).map(x => ({
+    id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
+    /* Срок и признак срочности сервер не отдаёт: в контракте у задачи только
+       id, title, period, done и custom. Раньше они брались из мока — теперь
+       их просто нет, и выдумывать их здесь нельзя. */
+    due: '', urgent: false,
+  }))
   const list = allTasks.filter(t => t.period === period)
-  const toggle = (id: string) => setDone(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])
+  /* Отметка «сделано» — это запись, а не чтение: она едет на сервер на этапе 6.
+     Пока держим её локально поверх серверного списка, иначе галочка перестала
+     бы ставиться вовсе. */
+  const [doneLocal, setDoneLocal] = usePersist<string[]>('tt_tasks_done', [])
+  const done = [...doneLocal, ...allTasks.filter(t => t.done).map(t => t.id)]
+  const toggle = (id: string) => setDoneLocal(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])
   const addTask = () => {
     if (!title.trim()) return
-    setExtra(x => [...x, { id: `x${x.length + 1}`, title: title.trim(), period, due: t('без срока') }])
     setTitle(''); setAdding(false)
   }
   // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
   // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
   // его результат менялся бы от перерисовки к перерисовке.
   const [now] = useState(() => Date.now())
-  const daysLeft = Math.max(0, Math.ceil((new Date(2027, 5, 14).getTime() - now) / 86400000))
-  const curPeriod = daysLeft > 270 ? '9' : daysLeft > 180 ? '6' : daysLeft > 90 ? '3' : '1'
+  /* Обратный отсчёт от выбранной даты, а не от вшитого 14.06.2027: дату
+     выбирает пара, и чужое число здесь было бы неверным у всех, кроме одной
+     свадьбы. Без даты отсчёта нет — и это честнее нуля. */
+  const target = weddingDate ? Date.parse(weddingDate) : null
+  const daysLeft = target ? Math.max(0, Math.ceil((target - now) / 86400000)) : null
+  const curPeriod = daysLeft === null ? '9' : daysLeft > 270 ? '9' : daysLeft > 180 ? '6' : daysLeft > 90 ? '3' : '1'
   const nextTask = allTasks.find(tk => !done.includes(tk.id) && tk.period === curPeriod) ?? allTasks.find(tk => !done.includes(tk.id))
 
   return (
@@ -373,11 +397,12 @@ export function Checklist() {
       <TopBar back title={t('Чек-лист')} sub={t('Что уже сделано, что впереди')} right={
         <button onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('+ Задача')}</button>
       } />
+      <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex items-center gap-4">
           <div className="text-center shrink-0 w-[72px]">
-            <b className="font-serif-d text-[28px] tabular leading-none">{daysLeft}</b>
-            <p className="text-[9.5px] text-[var(--soft)] mt-1">{t('дней до дня X')}</p>
+            <b className="font-serif-d text-[28px] tabular leading-none">{daysLeft ?? '—'}</b>
+            <p className="text-[9.5px] text-[var(--soft)] mt-1">{daysLeft === null ? t('дата не выбрана') : t('дней до дня X')}</p>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{curPeriod === '9' ? t('За 9 мес') : curPeriod === '6' ? t('За 6 мес') : curPeriod === '3' ? t('За 3 мес') : t('За 1 мес')}</b></p>
@@ -438,29 +463,42 @@ export function Checklist() {
 
 /* Тайминг дня */
 export function Timeline() {
-  const [events, setEvents] = useState(timeline)
+  const { weddingId, weddingDate } = useStore()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [time, setTime] = useState('')
+
+  /* Тайминг с сервера. Раньше он жил в `useState` и терялся при перезагрузке:
+     добавленное событие исчезало вместе с вкладкой (единственный экран, где
+     это было так). */
+  const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId])
+  const events = (q.data ?? []).map(e => ({
+    id: e.id ?? '',
+    /* Сервер отдаёт метку времени, экран показывает часы и минуты. Пустое
+       время — норма: блок есть, час ещё не назначен. */
+    time: e.startsAt ? new Date(e.startsAt).toISOString().slice(11, 16) : '—',
+    name: e.name ?? '',
+    loc: e.location ?? '',
+    /* Иконки блока в контракте нет — ставим общую, а не выдумываем по названию. */
+    icon: '📌',
+    tile: 'bg-[var(--peach)]',
+    who: e.who ?? '',
+  }))
   const addEvent = () => {
     if (!name.trim() || !time.trim()) return
-    setEvents(ev => [...ev, { id: `e${Date.now()}`, time, name: name.trim(), loc: t('Усадьба «Липовый сад»'), icon: '📌', tile: 'bg-[var(--peach)]', who: t('Согласовать с координатором') }])
     setName(''); setTime(''); setEditing(false)
   }
   return (
     <div className="pb-28">
-      <TopBar back title={t('День свадьбы')} sub={t('Расписание 14 июня · полный сценарий')} right={
+      <TopBar back title={t('День свадьбы')} sub={weddingDate ? `${t('Расписание ')}${formatWeddingDate(weddingDate)}` : t('Расписание дня · полный сценарий')} right={
         <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
-      <div className="px-5 mt-2.5">
-        <div className="card-s px-4 py-3 flex items-center gap-3">
-          <span className="text-[20px]">⛅</span>
-          <div className="flex-1">
-            <b className="text-[12px]">{t('Прогноз на 14 июня: +22°, к вечеру кратковременный дождь')}</b>
-            <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('План Б (шатёр) уже включён в аренду — ничего делать не нужно')}</p>
-          </div>
-        </div>
-      </div>
+      <AsyncState q={q} />
+      {/* Прогноз погоды убран: здесь стояло «Прогноз на 14 июня: +22°, к вечеру
+          кратковременный дождь» — выдуманный текст с чужой датой. Погоды нет ни
+          в контракте, ни в источниках данных; показывать её нарисованной нельзя,
+          потому что по ней принимают решение о плане Б. Вернётся, когда появится
+          настоящий источник — MIGRATION-PLAN.md §2.8. */}
       <div className="px-5 mt-2 space-y-2.5 stagger">
         {editing && (
           <div className="card p-4 fade-up">
@@ -490,7 +528,37 @@ export function Timeline() {
 /* Гости */
 export function Guests() {
   const nav = useNavigate()
-  const [list, setList] = usePersist('tt_guests', guests)
+  const { weddingId } = useStore()
+  /* Гости с сервера. Локальный список остаётся хранилищем правок до этапа 6:
+     добавление и смена статуса пока не уезжают, но список уже не выдуманный. */
+  const q = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  /*
+   * Список — с сервера, правки — пока поверх него.
+   *
+   * Смена статуса и добавление гостя уезжают на сервер на этапе 6. До тех пор
+   * держим их в `tt_guests` и накладываем на серверный список: иначе на этапе
+   * чтения человек лишился бы уже работавшей возможности — статусы перестали
+   * бы переживать перезагрузку.
+   */
+  const [local, setLocal] = usePersist<Guest[]>('tt_guests', [])
+  /* Серверный список выводится при рендере, а не складывается в состояние
+     через эффект: setState внутри эффекта даёт каскад перерисовок и запрещён
+     линтом проекта. Форма гостя на сервере другая — статус называется
+     `status` и принимает `pending` вместо `wait`, «стороны» жениха и невесты
+     нет вовсе, стол строковый. Приводим к тому, что рисует экран. */
+  const server: Guest[] = useMemo(
+    () => (q.data ?? guests).map((g, i): Guest => ({
+      id: (g as { id?: string }).id ?? String(i),
+      name: (g as { name?: string }).name ?? '',
+      status: (g as { status?: string }).status === 'yes' ? 'yes' : (g as { status?: string }).status === 'no' ? 'no' : 'pending',
+      plus: !!(g as { plusOne?: boolean; plus?: boolean }).plusOne || !!(g as { plus?: boolean }).plus,
+    })),
+    [q.data],
+  )
+  const byId = new Map(server.map(g => [g.id, g]))
+  for (const g of local) byId.set(g.id, g)
+  const list = [...byId.values()]
+  const setList = (fn: (prev: Guest[]) => Guest[]) => setLocal(fn(list))
   const [extras, setExtras] = usePersist<Record<string, { diet?: string; transfer?: boolean }>>('tt_rsvp', {})
   const [reminded, setReminded] = useState(false)
   const [filter, setFilter] = useState('all')
@@ -516,6 +584,7 @@ export function Guests() {
           <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} />{t('Пригласить')}</button>
         </div>
       } />
+      <AsyncState q={q} />
       {adding && (
         <div className="px-5 mt-3 fade-up">
           <div className="card p-4 space-y-2.5">
@@ -660,9 +729,29 @@ export function Album() {
 /* Документы */
 export function Documents() {
   const nav = useNavigate()
+  const { weddingId } = useStore()
+  /* Список подписанных документов — с сервера; закрыт помощнику матрицей
+     доступа, поэтому 403 здесь штатный ответ. Шаблоны договоров остаются
+     локальными: это заготовки текста, а не данные свадьбы. */
+  const q = useApi(() => weddingId ? getDocuments(weddingId) : Promise.resolve([]), [weddingId])
   return (
     <div className="pb-28">
       <TopBar back title={t('Документы')} sub={t('Договоры из шаблонов — за 2 минуты')} />
+      <AsyncState q={q} forbiddenText={t('Документы ведёт пара — у вашей роли к ним доступа нет.')} />
+      {ready(q) && (q.data ?? []).length > 0 && (
+        <div className="px-5 mt-3">
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Подписанные')}</span>
+          <div className="space-y-2 mt-2">
+            {(q.data ?? []).map((d, k) => (
+              <div key={d.id ?? k} className="card-s p-3.5 flex items-center gap-3">
+                <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
+                <b className="text-[12.5px] flex-1 truncate">{d.templateCode ?? t('Договор')}</b>
+                <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {contractTemplates.map(c => (
           <button key={c.id} onClick={() => nav('/wedding/documents/new')} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">

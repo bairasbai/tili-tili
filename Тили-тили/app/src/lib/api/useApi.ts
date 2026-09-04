@@ -17,6 +17,8 @@ export interface AsyncData<T> {
   loading: boolean
   /** Текст для человека, не код ошибки. Null — всё в порядке. */
   error: string | null
+  /** Отказ по правам: раздел закрыт роли. Повторять бессмысленно. */
+  forbidden: boolean
   reload: () => void
 }
 
@@ -38,6 +40,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [forbidden, setForbidden] = useState(false)
   const [tick, setTick] = useState(0)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -47,12 +50,18 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
     let alive = true
     setLoading(true)
     setError(null)
+    setForbidden(false)
     run()
       .then(v => { if (alive) { setData(v); setLoading(false) } })
-      .catch(e => { if (alive) { setError(explainError(e)); setLoading(false) } })
+      .catch(e => {
+        if (!alive) return
+        if (e instanceof ApiError && e.status === 403) setForbidden(true)
+        else setError(explainError(e))
+        setLoading(false)
+      })
     return () => { alive = false }
   }, [run, tick])
 
   const reload = useCallback(() => setTick(n => n + 1), [])
-  return { data, loading, error, reload }
+  return { data, loading, error, forbidden, reload }
 }
