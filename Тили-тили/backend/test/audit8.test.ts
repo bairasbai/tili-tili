@@ -335,7 +335,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     }
     // Критерий этапа говорит «в выдаче», а не «в карточке»: проверялось
     // только второе.
-    expect(inList()).resolves.toMatchObject({ rating: null, reviewsCount: 2 })
+    await expect(inList()).resolves.toMatchObject({ rating: null, reviewsCount: 2 })
 
     await leaveCoupleReview(vendor.vendorId, '2027-08-03', 5)
     const withNumber = await inList()
