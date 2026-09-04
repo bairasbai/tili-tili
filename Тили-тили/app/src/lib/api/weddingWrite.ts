@@ -1,4 +1,4 @@
-import { api, url } from './client'
+import { api, newIdempotencyKey, url } from './client'
 
 /*
  * Запись данных свадьбы: чек-лист, гости, бюджет, столы, тайминг.
@@ -106,3 +106,56 @@ export const putTimeline = (weddingId: string, events: TimelineDraft[]) =>
  */
 export const autogenTimeline = (weddingId: string) =>
   api.post(url('/weddings/{weddingId}/timeline/autogen', { weddingId }))
+
+/* ── Логистика ── */
+
+export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number) =>
+  api.post(url('/weddings/{weddingId}/logistics/buses', { weddingId }), {
+    name,
+    ...(from ? { from } : {}),
+    ...(time ? { time } : {}),
+    seats,
+  })
+
+export const deleteBus = (weddingId: string, busId: string) =>
+  api.delete(url('/weddings/{weddingId}/logistics/buses/{busId}', { weddingId, busId }))
+
+export const addHotel = (weddingId: string, name: string, rooms: number, price?: number, deadline?: string, promo?: string) =>
+  api.post(url('/weddings/{weddingId}/logistics/hotels', { weddingId }), {
+    name,
+    rooms,
+    ...(price != null ? { price: { amount: price, currency: 'RUB' } } : {}),
+    ...(deadline ? { deadline } : {}),
+    ...(promo ? { promo } : {}),
+  })
+
+export const deleteHotel = (weddingId: string, hotelId: string) =>
+  api.delete(url('/weddings/{weddingId}/logistics/hotels/{hotelId}', { weddingId, hotelId }))
+
+/**
+ * Разослать точки сбора записавшимся.
+ *
+ * Рассылка идёт очередью, ответ — 202: «принято», а не «доставлено». Экран
+ * обязан говорить именно так, иначе обещает то, чего ещё не случилось.
+ */
+export const notifyPickup = (weddingId: string) =>
+  api.post(url('/weddings/{weddingId}/logistics/notify-pickup', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() })
+
+/* ── Опрос по меню ── */
+
+export interface MenuOptionDraft { id?: string; name: string }
+
+/** Опрос заменяется целиком: отдельного пути «добавить вариант» контракт не знает. */
+export const putMenuPoll = (weddingId: string, question: string, options: MenuOptionDraft[], sent?: boolean) =>
+  api.put(url('/weddings/{weddingId}/menu-poll', { weddingId }), {
+    question,
+    options,
+    ...(sent !== undefined ? { sent } : {}),
+  })
+
+export const remindMenuPoll = (weddingId: string) =>
+  api.post(url('/weddings/{weddingId}/menu-poll/remind', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() })
+
+/** Одноразовая ссылка-приглашение конкретному гостю. */
+export const guestInviteLink = (weddingId: string, guestId: string) =>
+  api.post(url('/weddings/{weddingId}/guests/{guestId}/invite-link', { weddingId, guestId }), {}) as Promise<{ url?: string; expiresAt?: string } | undefined>

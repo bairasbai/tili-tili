@@ -6,6 +6,25 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
+/*
+ * Гость ходит по своему токену, а не по аккаунту. Мок держит его ответ в
+ * памяти: без этого проверка «ответ сохранился» смотрела бы на состояние
+ * экрана, а не на то, что дошло до сервера.
+ */
+const { guestState } = vi.hoisted(() => ({ guestState: { status: 'pending' as string } }))
+vi.mock('@/lib/api/guest', async (orig) => ({
+  ...await orig<object>(),
+  getRsvp: async () => ({
+    guestName: 'Ольга',
+    status: guestState.status,
+    wedding: { title: 'Алина & Тимур', date: '2027-06-14', city: { name: 'Уфа' }, inviteText: 'Ждём вас', inviteThemeId: 0 },
+  }),
+  sendRsvp: async (_t: string, status: string) => { guestState.status = status },
+  getGuestMenu: async () => ({ question: '', options: [], chosenOptionId: null }),
+  getGuestShuttle: async () => ({ myBusId: null, routes: [] }),
+  getGuestHotels: async () => [],
+}))
+
 /* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
 vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
 vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
@@ -163,22 +182,39 @@ describe('день X: задержка и план Б переживают пе�
   })
 })
 
-describe('гость: ответ RSVP переживает перезагрузку', () => {
+describe('гость: ответ RSVP уходит паре, а не в браузер гостя', () => {
   const open = () => {
     const btn = screen.queryByText('Открыть приглашение')
     if (btn) fireEvent.click(btn)
   }
 
-  it('отправленный ответ не сбрасывается в пустую форму', () => {
+  beforeEach(() => {
+    guestState.status = 'pending'
+    localStorage.setItem('tt_guest_token', 'g-token')
+  })
+
+  it('ответ сохраняется на сервере и виден после перезагрузки', async () => {
+    /*
+     * Раньше ответ жил в `tt_guest_rsvp` на телефоне гостя: страница честно
+     * показывала «Ждём вас!», а пара в списке гостей не видела ничего. Теперь
+     * проверяем ответ сервера, а не то, что экран нарисовал сам.
+     */
     wrap(<Invite />)
+    await waitFor(() => expect(screen.getByText('Открыть приглашение')).toBeTruthy())
     open()
     fireEvent.click(screen.getByText('Приду с радостью'))
-    fireEvent.click(screen.getByText('Отправить ответ'))
-    expect(screen.getByText('Ждём вас!')).toBeTruthy()
-    expect(JSON.parse(localStorage.getItem('tt_guest_rsvp')!).sent).toBe(true)
+
+    await waitFor(() => expect(guestState.status).toBe('yes'))
+    await waitFor(() => expect(screen.getByText('Ждём вас!')).toBeTruthy())
+    expect(localStorage.getItem('tt_guest_rsvp')).toBeNull()
 
     reload(<Invite />)
-    open()
-    expect(screen.getByText('Ждём вас!')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Ждём вас!')).toBeTruthy())
+  })
+
+  it('без ссылки страница объясняет, что нужна ссылка, а не показывает чужое приглашение', async () => {
+    localStorage.removeItem('tt_guest_token')
+    wrap(<Invite />)
+    await waitFor(() => expect(screen.getByText('Нужна ссылка из приглашения')).toBeTruthy())
   })
 })

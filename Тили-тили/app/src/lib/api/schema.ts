@@ -3906,7 +3906,46 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Маршруты трансфера, доступные гостю
+         * @description Записаться гость мог, а увидеть, куда именно, — нет: путь был только на
+         *     запись, и `busId` брать было неоткуда. `myBusId` говорит, куда он уже
+         *     записан: без этого гость, вернувшийся по ссылке, видит пустой выбор и
+         *     занимает второе место.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            myBusId?: string | null;
+                            routes?: components["schemas"]["BusRoute"][];
+                        };
+                    };
+                };
+            };
+        };
         put?: never;
         /**
          * Гость записывается в автобус
@@ -4152,7 +4191,48 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Опрос по горячему глазами гостя
+         * @description Варианты блюд задаёт пара, а голосовать гость мог вслепую: путь был
+         *     только на отправку выбора. `chosenOptionId` — что он уже выбрал.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            question?: string;
+                            chosenOptionId?: string | null;
+                            options?: {
+                                id?: string;
+                                name?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
         put?: never;
         /**
          * Гость выбирает блюдо

@@ -33,3 +33,20 @@ export const getPlanB = (weddingId: string) =>
 
 export const getWedding = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}', { weddingId }))
+
+/*
+ * Логистика и меню.
+ *
+ * Автобусы и отельные блоки читаются паре здесь, гостю — по его токену
+ * (`lib/api/guest.ts`). `taken` и `booked` считает сервер атомарно при записи
+ * гостя: клиенту их взять больше неоткуда, и считать самому нельзя — два
+ * человека жмут «записаться» одновременно.
+ */
+export const getBuses = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/logistics/buses', { weddingId }))
+
+export const getHotels = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/logistics/hotels', { weddingId }))
+
+export const getMenuPoll = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/menu-poll', { weddingId }))

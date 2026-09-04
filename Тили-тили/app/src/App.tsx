@@ -53,6 +53,7 @@ const Chats = lazy(() => load.us().then(m => ({ default: m.Chats })))
 const Chat = lazy(() => load.us().then(m => ({ default: m.Chat })))
 
 const Invite = lazy(() => load.invite())
+const InviteRedeem = lazy(() => import('@/pages/InviteRedeem'))
 
 const Deal = lazy(() => load.tools().then(m => ({ default: m.Deal })))
 const ContractWizard = lazy(() => load.tools().then(m => ({ default: m.ContractWizard })))
@@ -120,6 +121,7 @@ function Shell() {
   const p = loc.pathname
   const noTab =
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
+    p.startsWith('/i/') ||
     p.startsWith('/join') ||
     p.startsWith('/us/chats/') ||
     p.startsWith('/vendor-app')
@@ -131,6 +133,9 @@ function Shell() {
           <Route path="/" element={<Onboarding />} />
           <Route path="/quiz" element={<Quiz />} />
           <Route path="/invite" element={<Invite />} />
+          {/* Ссылка из приглашения ведёт сюда: код меняется на токен гостя и
+              гаснет, дальше гость живёт на /invite. */}
+          <Route path="/i/:code" element={<InviteRedeem />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/join/:code" element={<Join />} />
           <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />

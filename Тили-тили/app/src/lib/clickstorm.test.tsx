@@ -4,6 +4,26 @@
 import { render, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+/* Гостевая страница живёт по токену: без него на ней нет ни одной кнопки, и
+   шторм молча проверял бы пустой экран. Мок отдаёт минимальное приглашение —
+   с вариантом меню, маршрутом и отелем, чтобы кликнуть было по чему. */
+vi.mock('@/lib/api/guest', async (orig) => ({
+  ...await orig<object>(),
+  getRsvp: async () => ({
+    guestName: 'Ольга',
+    status: 'pending',
+    wedding: { title: 'Алина & Тимур', date: '2027-06-14', city: { name: 'Уфа' }, inviteText: 'Ждём вас', inviteThemeId: 0 },
+  }),
+  sendRsvp: async () => undefined,
+  getGuestMenu: async () => ({ question: 'Что на горячее?', options: [{ id: 'o1', name: 'Мясо' }], chosenOptionId: null }),
+  getGuestShuttle: async () => ({ myBusId: null, routes: [{ id: 'b1', name: 'Автобус №1', from: 'Центр', time: '14:30', seats: 45, taken: 0 }] }),
+  getGuestHotels: async () => [{ id: 'h1', name: 'Хилтон', rooms: 10, booked: 0, price: { amount: 450000, currency: 'RUB' } }],
+  voteMenu: async () => undefined,
+  joinShuttle: async () => undefined,
+  bookHotelRoom: async () => undefined,
+}))
+
 import App from '@/App'
 
 const ROUTES = [
@@ -31,6 +51,7 @@ describe('клик-шторм: все кнопки всех экранов на�
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('tt_onboarded', '1')
+    localStorage.setItem('tt_guest_token', 'g-token')
     // браузерные API, которых нет в jsdom — подменяем, чтобы тестить логику, а не среду
     Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:x'), configurable: true })
     Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
