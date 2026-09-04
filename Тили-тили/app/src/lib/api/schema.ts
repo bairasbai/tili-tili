@@ -764,6 +764,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/legal/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Действующая редакция оферты и политики
+         * @description Отдаёт редакцию, под которой сервер сейчас принимает согласие.
+         *
+         *     Без этого пути клиент обязан прислать `policyVersion` в
+         *     `POST /users/me/consent`, а взять её ему негде: в контракте она
+         *     встречалась ровно один раз — в теле запроса. Сервер сверяет
+         *     присланное со своим значением и отказывает при расхождении, то есть
+         *     единственным способом узнать редакцию было прислать неверную
+         *     и разобрать текст ошибки.
+         *
+         *     Цена отсутствия — не неудобство: смена текста политики поднимает
+         *     `POLICY_VERSION`, развёрнутый фронт продолжает слать старую
+         *     константу, согласие перестаёт приниматься, а без согласия закрыто
+         *     всё (`requireConsent`). Ни один новый пользователь не завершает
+         *     регистрацию, пока не выкатят фронт. Юридическое действие ломало
+         *     вход (ERR-0114).
+         *
+         *     Без входа намеренно: галочка согласия стоит на экране ДО того,
+         *     как человек получил токены.
+         *
+         *     Сам текст оферты и политики живёт в приложении — сервер отдаёт
+         *     только редакцию, потому что только её он и проверяет.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @description Значение, которое ждёт POST /users/me/consent
+                             * @example 2026-09-02
+                             */
+                            policyVersion: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/geo/cities": {
         parameters: {
             query?: never;

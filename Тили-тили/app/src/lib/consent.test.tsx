@@ -35,10 +35,26 @@ describe('согласие на обработку данных', () => {
     wrap(<Auth />)
     fireEvent.click(screen.getByRole('checkbox'))
     expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('true')
+    /* Кнопка ждёт ещё и телефон: код запрашивается у сервера, и запрос без
+       номера отправлять некуда. Согласие — необходимое условие, не достаточное. */
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
     expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(false)
     const saved = JSON.parse(localStorage.getItem('tt_consent')!)
     expect(typeof saved.at).toBe('string')
     expect(Number.isNaN(Date.parse(saved.at))).toBe(false)
+  })
+
+  it('одного согласия мало — без телефона код не запросить', () => {
+    wrap(<Auth />)
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('неполный номер кнопку не открывает', () => {
+    wrap(<Auth />)
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '91712345' } })
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
   })
 
   it('согласие можно снять', () => {

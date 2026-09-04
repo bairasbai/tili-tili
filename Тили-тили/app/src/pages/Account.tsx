@@ -8,6 +8,7 @@ import { usePersist } from '@/lib/usePersist'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
+import { api, ApiError, saveTokens } from '@/lib/api/client'
 
 /* Вход: телефон → OTP → роль */
 export function Auth() {
@@ -15,15 +16,72 @@ export function Auth() {
   const [step, setStep] = useState<0 | 1 | 2>(0)
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState(['', '', '', ''])
-  const [sec, setSec] = useState(42)
+  const [sec, setSec] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   /* 152-ФЗ: согласие даётся явным действием, галочка не может стоять заранее.
-     Факт согласия сохраняем с датой — это и есть подтверждение. */
+     Факт согласия сохраняем с датой — это и есть подтверждение. До входа
+     хранить его негде, кроме устройства; сразу после входа отправляем на
+     сервер, потому что доказательством согласия должна быть наша запись,
+     а не localStorage в чужом браузере. */
   const [consent, setConsent] = usePersist<{ at: string } | null>('tt_consent', null)
   useEffect(() => {
     if (step !== 1 || sec <= 0) return
     const t = setTimeout(() => setSec(s => s - 1), 1000)
     return () => clearTimeout(t)
   }, [step, sec])
+
+  /** Текст ошибки для человека: сервер лежит и сервер отказал — разные вещи. */
+  const explain = (e: unknown): string =>
+    e instanceof ApiError
+      ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+      : t('Что-то пошло не так')
+
+  const requestCode = async () => {
+    if (phone.length !== 10 || !consent || busy) return
+    setBusy(true); setErr(null)
+    try {
+      const r = await api.post('/auth/otp', { phone: `+7${phone}` })
+      setSec(r?.resendAfter ?? 60)
+      setStep(1)
+    } catch (e) {
+      setErr(explain(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submitCode = async () => {
+    const value = code.join('')
+    if (value.length !== 4 || busy) return
+    setBusy(true); setErr(null)
+    try {
+      const r = await api.post('/auth/otp/verify', {
+        phone: `+7${phone}`,
+        code: value,
+        device: navigator.userAgent.slice(0, 120),
+      })
+      if (!r?.accessToken || !r.refreshToken) throw new Error('нет токенов в ответе')
+      saveTokens({ accessToken: r.accessToken, refreshToken: r.refreshToken })
+      /* Согласие переезжает на сервер сразу: до входа его некуда было
+         привязать, а хранить доказательство только в браузере нельзя.
+         Ошибку не глотаем: если версия документа разошлась с серверной,
+         согласие не зафиксировано, и молчать об этом по 152-ФЗ нельзя. */
+      /* Редакцию берём у сервера, а не из константы: смена текста политики
+         поднимает версию на сервере, и вшитое значение молча перестало бы
+         приниматься — а без согласия закрыто всё (ERR-0114). */
+      if (consent) {
+        const policy = await api.get('/legal/policy')
+        await api.post('/users/me/consent', { policyVersion: policy.policyVersion })
+      }
+      setStep(2)
+    } catch (e) {
+      setCode(['', '', '', ''])
+      setErr(explain(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -80,7 +138,7 @@ export function Auth() {
                 className="card-s w-full aspect-square text-center text-[22px] font-bold outline-none focus:ring-2 focus:ring-[#C98A8A]" />
             ))}
           </div>
-          <button onClick={() => sec === 0 && setSec(42)} className={cn('text-[12px] font-semibold mt-6 press', sec > 0 ? 'text-[var(--soft2)]' : 'text-[var(--rose-deep)]')}>
+          <button onClick={() => { if (sec === 0) void requestCode() }} className={cn('text-[12px] font-semibold mt-6 press', sec > 0 ? 'text-[var(--soft2)]' : 'text-[var(--rose-ink)]')}>
             {sec > 0 ? `${t('Отправить код повторно · 0:')}${String(sec).padStart(2, '0')}` : t('Отправить код повторно')}
           </button>
         </div>
@@ -111,14 +169,18 @@ export function Auth() {
       )}
 
       <div className="px-7 pb-[max(28px,env(safe-area-inset-bottom))]">
+        {err && step < 2 && (
+          <p role="alert" className="text-[12px] text-[var(--rose-ink)] text-center mb-3 leading-relaxed">{err}</p>
+        )}
         {step < 2 && (
           <button
-            onClick={() => setStep((step + 1) as 1 | 2)}
-            disabled={step === 0 && !consent}
-            className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px]', step === 0 && !consent && 'opacity-40')}
+            onClick={() => void (step === 0 ? requestCode() : submitCode())}
+            disabled={busy || (step === 0 ? !consent || phone.length !== 10 : code.join('').length !== 4)}
+            className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px]',
+              (busy || (step === 0 ? !consent || phone.length !== 10 : code.join('').length !== 4)) && 'opacity-40')}
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
-            {step === 0 ? t('Получить код') : t('Войти')}
+            {busy ? t('Секунду…') : step === 0 ? t('Получить код') : t('Войти')}
           </button>
         )}
       </div>
@@ -203,6 +265,42 @@ export function Settings() {
   const [editName, setEditName] = useState(false)
   const [androidGone, setAndroidGone] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  /*
+   * Выход и удаление идут на сервер, а не чистят хранилище.
+   *
+   * `localStorage.clear()` убирает следы в этом браузере и ничего не делает с
+   * сессией: украденный refresh продолжает работать, а «выйти со всех
+   * устройств» не выполняет своего обещания. Локальное состояние чистим после
+   * ответа сервера — если запрос не прошёл, человек остаётся там, где был,
+   * и видит причину.
+   */
+  const forgetLocally = () => {
+    saveTokens(null)
+    try { localStorage.clear() } catch { /* приватный режим */ }
+  }
+
+  const signOut = async () => {
+    try {
+      await api.delete('/users/me/sessions')
+    } catch (e) {
+      if (!(e instanceof ApiError) || !e.isDown) { /* сервер отказал — но уйти локально всё равно даём */ }
+    }
+    forgetLocally()
+    nav('/auth')
+  }
+
+  const deleteAccount = async () => {
+    try {
+      await api.delete('/users/me')
+    } catch {
+      /* Не удалили на сервере — не делаем вид, что удалили: данные остаются,
+         человек должен увидеть, что запрос не прошёл. */
+      return
+    }
+    forgetLocally()
+    nav('/')
+  }
   const [cityPick, setCityPick] = useState(false)
   const { city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
   return (
@@ -267,9 +365,9 @@ export function Settings() {
             </div>
           )}
         </div>
-        <button onClick={() => nav('/auth')} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
+        <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
         {confirmDelete ? (
-          <button onClick={() => { localStorage.clear(); nav('/') }} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
+          <button onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
         ) : (
           <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт и все данные')}</button>
         )}

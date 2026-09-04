@@ -550,6 +550,8 @@ export const EN: Record<string, string> = {
   'Сделка отменена': 'Deal cancelled',
   'Сделка: Фотограф · 85 000 ₽ · забронировано →': 'Deal: Photographer · 85,000 ₽ · booked →',
   'Сделки': 'Deals',
+  'Сервер недоступен. Попробуйте позже': 'The server is unavailable. Please try again later',
+  'Секунду…': 'One moment…',
   'Сегодня': 'Today',
   'Семья Хакимовых': 'The Khakimov family',
   'Сентябрь 2025': 'September 2025',

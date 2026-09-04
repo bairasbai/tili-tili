@@ -159,8 +159,13 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
     throw new ApiError('http', res.status, code, message)
   }
 
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
+  /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
+     у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет
+     запрос, который на самом деле прошёл. */
+  if (res.status === 204 || res.status === 205) return undefined as T
+  if (!res.headers.get('content-type')?.includes('json')) return undefined as T
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 /* ── Типизированный доступ ───────────────────────────────────────────────
