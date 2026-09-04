@@ -114,6 +114,10 @@ describe('бизнес-логика: рассадка', () => {
     // и он больше не числится среди нерассаженных — иначе был бы в двух местах
     await waitFor(() => expect(screen.getAllByText('Руслан Гареев').length).toBe(1))
 
+    /* Кнопка снятия со стола заблокирована, пока идёт запись: нажатие в этот
+       момент не долетает. Ждём, пока экран освободится, иначе тест падает
+       случайно — под нагрузкой окно записи шире. */
+    await waitFor(() => expect((screen.getByText('Руслан Гареев').closest('button') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Руслан Гареев'))
     await waitFor(() => expect(guestsState.list.find(g => g.id === 'g2')?.tableId).toBeNull())
   })

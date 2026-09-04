@@ -4,8 +4,11 @@ import { AiTip, Bar, SectionHead, SyncNote, TopBar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
 import { t } from '@/lib/i18n'
 import { copyText } from '@/lib/utils'
-import { fmt, guests, type Guest } from '@/lib/data'
+import { fmt } from '@/lib/data'
 import { rub } from '@/lib/money'
+import { useStore } from '@/lib/store'
+import { useApi } from '@/lib/api/useApi'
+import { getGuests } from '@/lib/api/weddingData'
 
 /* ---------- ЛОГИСТИКА: автобусы + отельный блок ---------- */
 
@@ -171,7 +174,12 @@ export function Catering() {
   // Кому вообще нужен ужин: реальный список гостей минус отказавшиеся,
   // с учётом «+1». Раньше здесь стояло фиксированное 44 — при восьми гостях
   // экран сам себе противоречил.
-  const [guestList] = usePersist<Guest[]>('tt_guests', guests)
+  /* Гости — с сервера. Ключ `tt_guests` больше никто не пишет, и чтение из
+     него всегда возвращало мок из `lib/data.ts`: экран считал ужин на чужих
+     людей. */
+  const { weddingId } = useStore()
+  const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const guestList = (gq.data ?? []).map(g => ({ status: g.status ?? 'pending', plus: !!g.plusOne }))
   const [adding, setAdding] = useState(false)
   const [optName, setOptName] = useState('')
   const [reminded, setReminded] = useState(false)

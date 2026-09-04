@@ -6,11 +6,9 @@ import { useApi } from '@/lib/api/useApi'
 import { getBudget, getGuests, getTasks, getWedding } from '@/lib/api/weddingData'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
-import { type BudgetRow } from '@/lib/budget'
-import { usePersist } from '@/lib/usePersist'
 import { t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
-import { countdownTo, daysUntil, formatWeddingDate } from '@/lib/weddingDate'
+import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
 
 export default function Home() {
   const nav = useNavigate()
@@ -21,9 +19,6 @@ export default function Home() {
   const [now] = useState(() => new Date())
   const left = countdownTo(weddingDate, now)
   const booked = slots.filter(s => s.state === 'booked')
-  // Деньги и размер команды берутся из общего расчёта: иначе главная и бюджет
-  // показывают разные суммы, и пара перестаёт верить обеим.
-  const [customExpenses] = usePersist<BudgetRow[]>('tt_budget_custom', [])
 
   /*
    * Главная берёт те же числа, что и разделы, — с сервера.
@@ -42,16 +37,16 @@ export default function Home() {
   const persons = (status: Guest['status']) =>
     serverGuests.filter(g => (g.status ?? 'pending') === status).reduce((a, g) => a + 1 + (g.plusOne ? 1 : 0), 0)
 
-  const [doneTasks] = usePersist<string[]>('tt_tasks_done', [])
   const serverTasks = tq.data ?? []
-  const doneCount = serverTasks.filter(x => x.done || doneTasks.includes(x.id ?? '')).length
+  const doneCount = serverTasks.filter(x => x.done).length
   const totalTasks = serverTasks.length
   const donePct = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0
 
-  /* Бюджет — с сервера. Свои статьи расхода пока живут локально и уедут
-     этапом 6, поэтому прибавляются к серверной сумме, а не заменяют её. */
+  /* Бюджет целиком с сервера: свои статьи расхода он уже учёл. Прибавлять к
+     его сумме локальный список `tt_budget_custom` было двойным счётом — та же
+     статья попадала в итог дважды, как только доезжала на сервер. */
   const budgetTotal = bq.data?.total?.amount ?? 0
-  const spent = (bq.data?.spent?.amount ?? 0) + customExpenses.reduce((a, c) => a + c.amount, 0)
+  const spent = bq.data?.spent?.amount ?? 0
   const budgetPct = budgetTotal ? Math.round((spent / budgetTotal) * 100) : 0
   /*
    * О чём сказать на главной. Берём первое незакрытое из того, что видно по
@@ -176,14 +171,13 @@ export default function Home() {
       <div className="px-5 fade-up" style={{ animationDelay: '.22s' }}>
         <SectionHead title={tr('Ближайшие дедлайны')} link={tr('Чек-лист →')} onLink={() => nav('/wedding/checklist')} />
         <div className="card px-4 py-1.5 mt-2">
-          {serverTasks.filter(x => !x.done && !doneTasks.includes(x.id ?? '')).slice(0, 3).map((t, i, arr) => (
+          {serverTasks.filter(x => !x.done).slice(0, 3).map((t, i, arr) => (
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
-              {/* Срочность и срок сервер не отдаёт: у задачи есть только период
-                  («за 9 месяцев»). Красная точка и дата справа были признаками
-                  из мока — вместо них показываем период, который есть. */}
-              <span className="w-2 h-2 rounded-full shrink-0 bg-[#A9BCA0]" />
+              {/* Признака срочности в контракте нет — цветной точки, которая
+                  что-то означает, тоже. Срок сервер считает от даты свадьбы:
+                  показываем его, пока даты нет — период («за 9 месяцев»). */}
               <span className="flex-1 text-[12.5px] font-medium truncate">{t.title}</span>
-              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.period ? `${t.period} ${tr('мес')}` : ''}</span>
+              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? `${t.period} ${tr('мес')}` : ''}</span>
             </button>
           ))}
         </div>
