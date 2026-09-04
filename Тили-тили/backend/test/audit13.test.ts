@@ -566,3 +566,35 @@ describe('вторая утечка переписки и разошедшиес
     }
   })
 })
+
+describe('редакция политики отдаётся клиенту (ERR-0114)', () => {
+  /*
+   * Сервер сверяет присланный policyVersion со своим и отказывает при
+   * расхождении, а взять её клиенту было негде: в контракте она встречалась
+   * ровно один раз — в теле запроса. Единственным способом узнать редакцию
+   * было прислать неверную и разобрать текст ошибки.
+   */
+  it('отдаётся без входа: галочка согласия стоит раньше токенов', async () => {
+    const app = await buildApp({ ...TEST_CONFIG, policyVersion: '2026-09-02' })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/legal/policy' })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ policyVersion: '2026-09-02' })
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('отдаётся ровно то значение, которое ждёт согласие', async () => {
+    /* Иначе путь был бы бесполезен: клиент прислал бы полученное и получил
+     * 409. Сверяем с тем же источником, по которому сервер и проверяет. */
+    const app = await buildApp({ ...TEST_CONFIG, policyVersion: '2099-12-31' })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/legal/policy' })
+      expect(res.json().policyVersion).toBe(app.appConfig.policyVersion)
+      expect(res.json().policyVersion).toBe('2099-12-31')
+    } finally {
+      await app.close()
+    }
+  })
+})

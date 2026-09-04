@@ -31,6 +31,7 @@ import { geoRoutes } from './routes/geo.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { giftRoutes } from './routes/gifts.js'
 import { healthRoutes } from './routes/health.js'
+import { legalRoutes } from './routes/legal.js'
 import { inspirationRoutes } from './routes/inspiration.js'
 import { inviteRoutes } from './routes/invites.js'
 import { vendorRoutes } from './routes/vendor.js'
@@ -227,6 +228,8 @@ export async function buildApp(
   app.addHook('preHandler', weddingAccessHook(app))
 
   await app.register(healthRoutes)
+  // Редакция политики — до входа: галочку согласия человек видит раньше токенов.
+  await app.register(legalRoutes)
   await app.register(authRoutes)
   await app.register(userRoutes)
   await app.register(geoRoutes)
