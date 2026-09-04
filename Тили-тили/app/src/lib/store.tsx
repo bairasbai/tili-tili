@@ -1,9 +1,11 @@
 /* eslint-disable react-refresh/only-export-components -- провайдер контекста и хук
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode, useEffect } from 'react'
 import { initialGifts, initialSlots, type Gift, type Slot, type SlotState } from './data'
 import { setI18nLang, type Lang } from './i18n'
+import { isAuthorized } from './api/client'
+import { findMyWedding } from './api/wedding'
 import { safeGet, safeSet, usePersist } from './usePersist'
 
 /*
@@ -66,6 +68,17 @@ export const EMPTY_QUIZ: QuizAnswers = {
 interface Store {
   onboarded: boolean
   finishOnboarding: (answers?: QuizAnswers) => void
+  /**
+   * Идентификатор активной свадьбы на сервере. Null — свадьбы ещё нет
+   * или человек не вошёл.
+   *
+   * Живёт на устройстве, но не является источником правды: с чистым
+   * хранилищем восстанавливается через `GET /weddings` (см. описание пути
+   * в контракте). Без него не работает ни один путь `/weddings/{weddingId}/…`,
+   * а на них висит большая часть действий приложения.
+   */
+  weddingId: string | null
+  setWeddingId: (id: string | null) => void
   /** Дата свадьбы, `YYYY-MM-DD`. Null — ещё не выбрана, и это нормально. */
   weddingDate: string | null
   setWeddingDate: (iso: string | null) => void
@@ -105,6 +118,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      выполняются в фазе рендера, и SecurityError от заблокированных данных сайта
      положил бы всё приложение на экран ошибки без выхода. */
   const [onboarded, setOnboarded] = useState(() => safeGet('tt_onboarded') === '1')
+  const [weddingId, setWeddingIdState] = usePersist<string | null>('tt_wedding_id', null)
+  /*
+   * Восстановление свадьбы после переустановки.
+   *
+   * Идентификатор лежит на устройстве, и с чистым хранилищем взять его больше
+   * неоткуда — новый телефон, приватный режим, очищенный кэш. Спрашиваем
+   * сервер один раз при запуске, если человек вошёл, а идентификатора нет.
+   * Молча: не нашлось — значит свадьбы ещё нет, это нормальное состояние
+   * до квиза, и пугать сообщением тут нечем.
+   */
+  useEffect(() => {
+    if (weddingId || !isAuthorized()) return
+    let alive = true
+    void findMyWedding()
+      .then(id => { if (alive && id) setWeddingIdState(id) })
+      .catch(() => { /* сервер недоступен — попробуем при следующем запуске */ })
+    return () => { alive = false }
+  }, [weddingId, setWeddingIdState])
   /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
    * Объект Date в localStorage превращается в строку с часовым поясом, и
    * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */
@@ -150,6 +181,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Store>(() => ({
     onboarded,
+    weddingId,
+    setWeddingId: setWeddingIdState,
     finishOnboarding: (answers?: QuizAnswers) => {
       // Ответы квиза — это план свадьбы, ради которого его и проходят.
       // Раньше они терялись между последним «Далее» и главным экраном.
@@ -210,7 +243,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGifts(gs => persistGifts(gs.filter(g => g.id !== id)))
       setMyGifts(m => persistMine(m.filter(x => x !== id)))
     },
-  }), [onboarded, weddingDate, setWeddingDateState, quiz, setQuiz, slots, updateSlot, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
+  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, updateSlot, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

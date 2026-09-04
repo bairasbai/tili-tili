@@ -54,8 +54,11 @@ describe('выход со всех устройств', () => {
 
     /* Порядок важен: сначала чужие одним запросом, потом список, чтобы найти
        свою, потом своя. Список нужен именно между ними — до него `current`
-       неоткуда взять. */
-    expect(calls).toEqual([
+       неоткуда взять.
+       Сверяем только вызовы про сессии: при запуске стор спрашивает ещё и
+       `GET /weddings`, и привязывать проверку выхода к чужому вызову значит
+       ломать её каждый раз, когда на старте появится что-то новое. */
+    expect(calls.filter(c => c.includes('sessions') || c.startsWith('saveTokens'))).toEqual([
       'DELETE /users/me/sessions',
       'GET /users/me/sessions',
       'DELETE /users/me/sessions/this-one',

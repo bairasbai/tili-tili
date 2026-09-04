@@ -119,10 +119,12 @@ describe('квиз', () => {
     // Город: берём готовую подсказку, чтобы не открывать второй оверлей.
     fireEvent.click(screen.getByText('Уфа'))
     fireEvent.click(screen.getByText('Далее'))
-    // Остальные шесть шагов — первый вариант из списка.
-    for (let step = 0; step < 6; step++) {
-      const options = screen.getAllByRole('button').filter(b => b.className.includes('card-s'))
-      fireEvent.click(options[0]!)
+    /* Остальные шаги — первый вариант из списка. Последний шаг спрашивает имя
+       партнёра полем ввода, а не выбором: без него сервер свадьбу не создаст. */
+    for (let step = 0; step < 7; step++) {
+      const name = screen.queryByPlaceholderText('Имя')
+      if (name) fireEvent.change(name, { target: { value: 'Тимур' } })
+      else fireEvent.click(screen.getAllByRole('button').filter(b => b.className.includes('card-s'))[0]!)
       fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
     }
     /* Раньше `finishOnboarding` только ставил флаг: что человек выбрал,
@@ -176,9 +178,10 @@ describe('стили в квизе', () => {
     toStyleStep()
     fireEvent.click(screen.getByText('🍇 Усадьба'))
     fireEvent.click(screen.getByText('Далее'))
-    for (let step = 0; step < 2; step++) {
-      const options = screen.getAllByRole('button').filter(b => b.className.includes('card-s'))
-      fireEvent.click(options[0]!)
+    for (let step = 0; step < 3; step++) {
+      const name = screen.queryByPlaceholderText('Имя')
+      if (name) fireEvent.change(name, { target: { value: 'Тимур' } })
+      else fireEvent.click(screen.getAllByRole('button').filter(b => b.className.includes('card-s'))[0]!)
       fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
     }
     expect(JSON.parse(localStorage.getItem('tt_quiz')!).style).toBe('🍇 Усадьба')

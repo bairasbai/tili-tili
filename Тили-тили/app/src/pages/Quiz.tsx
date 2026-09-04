@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ChevronLeft, Check, MapPin, Search, CalendarDays } from 'lucide-react'
+import { ChevronLeft, Check, MapPin, Search, CalendarDays, Heart } from 'lucide-react'
 import { useStore, EMPTY_QUIZ, type QuizAnswers } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { CityPicker } from '@/components/CityPicker'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
+import { ApiError } from '@/lib/api/client'
+import { createWedding, guestsFromRange } from '@/lib/api/wedding'
 
 interface Step {
   q: string
@@ -45,6 +47,9 @@ const STYLES: [string, string][] = [
  * во втором поиск по справочнику. Остальные — список вариантов. */
 const DATE_STEP = 0
 const CITY_STEP = 1
+/* Шаг имени — последний: добавленный в конец, он не сдвигает индексы
+   прежних ответов, на которые опирается сборка `collected`. */
+const NAME_STEP = 8
 
 const steps: Step[] = [
   { q: t('Когда ваша свадьба?'), hint: t('Дату можно изменить позже'), opts: [] },
@@ -59,16 +64,23 @@ const steps: Step[] = [
   },
   { q: t('Кто планирует?'), opts: [t('Сами'), t('С помощью агентства'), t('Ищем координатора')] },
   { q: t('Что уже забронировано?'), multi: true, opts: [t('Площадка'), t('Фотограф'), t('Видеограф'), t('Ведущий'), t('Пока ничего')] },
+  /* Имя партнёра спрашивается последним и обязательно: из него складывается
+     название свадьбы («Алина ♥ Тимур»), и без него сервер её не создаст.
+     В Плане ч. 6 этого шага нет — расхождение вынесено владельцу. */
+  { q: t('Как зовут вашего партнёра?'), hint: t('Из имён сложится название вашей свадьбы'), opts: [] },
 ]
 
 export default function Quiz() {
   const nav = useNavigate()
-  const { finishOnboarding, city, cityRegion, setCity } = useStore()
+  const { finishOnboarding, city, cityRegion, setCity, setWeddingId } = useStore()
   const [i, setI] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string[]>>({})
   const [picker, setPicker] = useState(false)
   const [datePicker, setDatePicker] = useState(false)
   const [date, setDate] = useState<string | null>(null)
+  const [partner, setPartner] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   /* «Сегодня» снимается один раз за жизнь экрана: время в теле компонента
    * запрещено (R-04), а квиз не переживает полуночи. */
   const [today] = useState(() => new Date())
@@ -78,7 +90,7 @@ export default function Quiz() {
   const sel = answers[i] ?? []
   const last = i === total - 1
   // На шаге даты «дальше» открыт и без даты: «ещё не решили» — тоже ответ.
-  const canNext = i === DATE_STEP ? date !== null || sel.includes(t('Ещё не решили')) : i === CITY_STEP ? cityDone : sel.length > 0
+  const canNext = i === DATE_STEP ? date !== null || sel.includes(t('Ещё не решили')) : i === CITY_STEP ? cityDone : i === NAME_STEP ? partner.trim().length > 0 : sel.length > 0
 
   const pick = (o: string) => {
     setAnswers(a => {
@@ -89,8 +101,24 @@ export default function Quiz() {
   }
   const next = () => {
     if (!last) return setI(i + 1)
-    /* Ответы уходят в состояние: раньше они существовали только внутри
-     * этого компонента и исчезали на переходе к главной. */
+    void create()
+  }
+
+  /*
+   * Свадьба заводится на сервере, а не только в состоянии.
+   *
+   * Раньше квиз просто складывал ответы в localStorage. Теперь из них
+   * создаётся свадьба: сервер заводит её вместе с мозаикой слотов,
+   * чек-листом и таймингом одной транзакцией. Её идентификатор нужен всему
+   * дальнейшему — на путях `/weddings/{weddingId}/…` висит большая часть
+   * приложения.
+   *
+   * Локальные ответы сохраняются в любом случае, в том числе когда сервер не
+   * ответил: человек прошёл девять шагов, и терять их из-за сети нельзя.
+   */
+  const create = async () => {
+    if (busy) return
+    setBusy(true); setErr(null)
     const one = (step: number) => answers[step]?.[0] ?? null
     const collected: QuizAnswers = {
       ...EMPTY_QUIZ,
@@ -103,7 +131,24 @@ export default function Quiz() {
       booked: answers[7] ?? [],
     }
     finishOnboarding(collected)
-    nav('/home')
+    try {
+      const id = await createWedding({
+        partnerName: partner.trim(),
+        city: { name: city, region: cityRegion },
+        date,
+        guestsPlanned: guestsFromRange(collected.guests),
+        style: collected.style ?? undefined,
+        quizAnswers: { ...collected },
+      })
+      setWeddingId(id)
+      nav('/home')
+    } catch (e) {
+      setErr(e instanceof ApiError
+        ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+        : t('Что-то пошло не так'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -145,6 +190,24 @@ export default function Quiz() {
           </button>
           <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">
             {t('💡 Без даты тоже работает: чек-лист и бюджет соберутся, а сроки появятся, как только дата будет.')}
+          </p>
+        </div>
+      ) : i === NAME_STEP ? (
+        <div key="name" className="flex-1 px-6 pt-8 fade-up">
+          <h1 className="font-serif-d text-[30px] leading-tight">{t('Как зовут вашего партнёра?')}</h1>
+          <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('Из имён сложится название вашей свадьбы')}</p>
+          <div className="card-s flex items-center gap-3 px-5 py-4 mt-6">
+            <Heart size={16} className="text-[var(--rose-ink)]" />
+            <input
+              value={partner}
+              onChange={e => setPartner(e.target.value.slice(0, 120))}
+              autoComplete="off"
+              placeholder={t('Имя')}
+              className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]"
+            />
+          </div>
+          <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">
+            {t('💡 Ваше имя подставится из профиля — его можно изменить в настройках.')}
           </p>
         </div>
       ) : i === CITY_STEP ? (
@@ -201,13 +264,14 @@ export default function Quiz() {
       )}
 
       <div className="px-6 pb-[max(28px,env(safe-area-inset-bottom))] pt-4">
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] text-center mb-3 leading-relaxed">{err}</p>}
         <button
           onClick={next}
-          disabled={!canNext}
-          className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide transition-opacity', !canNext && 'opacity-40')}
+          disabled={!canNext || busy}
+          className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] tracking-wide transition-opacity', (!canNext || busy) && 'opacity-40')}
           style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
         >
-          {last ? t('Создать мою свадьбу ✨') : t('Далее')}
+          {busy ? t('Создаём…') : last ? t('Создать мою свадьбу ✨') : t('Далее')}
         </button>
         {!last && <button onClick={next} className="w-full text-center text-[12px] text-[var(--soft)] mt-3 press">{t('Пропустить вопрос')}</button>}
       </div>
