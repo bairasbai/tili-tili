@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Check, ChevronRight, Copy, Crown, Heart, Link2, QrCode, Shield, Users, X } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
+import { api, ApiError, url } from '@/lib/api/client'
 import { useEscape } from '@/lib/useEscape'
 
 /* «Наша команда» — единое пространство свадьбы: роли и приглашения.
@@ -18,57 +19,120 @@ const ROLES = [
   { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: t('Подрядчик'), desc: t('Видит только свои сделки, чаты с вами и вашу дату в календаре.'), rights: [t('Свои сделки'), t('Чат с парой'), t('Календарь даты')] },
 ] as const
 
-/* Одноразовый код приглашения. Вынесен из компонента: Math.random() в теле
-   компонента линтер справедливо считает нечистым вызовом рендера. */
-function makeInviteCode(roleId: string): string {
-  const prefix = roleId === 'partner' ? 'ПАРА' : roleId === 'helper' ? 'ДРУГ' : roleId === 'coordinator' ? 'КООРД' : 'ПОДР'
-  return `ТИЛИ-${prefix}-${Math.floor(1000 + Math.random() * 9000)}`
+/*
+ * Код приглашения выпускает сервер, а не браузер.
+ *
+ * Раньше он собирался здесь из `Math.random()`. По этому коду человек входит
+ * в чужую свадьбу — видит бюджет, гостей, договоры, — то есть это выдача
+ * удостоверения, а не украшение. `Math.random()` предсказуем: в V8 это
+ * xorshift128+ с общим состоянием на процесс, и по нескольким выданным кодам
+ * следующие вычисляются. Ровно эта дыра закрывалась на сервере (ERR-0114),
+ * закрывать её там и оставлять здесь — бессмысленно.
+ *
+ * Роли на экране и в контракте названы по-разному: «партнёр» в интерфейсе —
+ * это `couple` на сервере, вторая половина пары с полным доступом.
+ */
+const SERVER_ROLE = { partner: 'couple', helper: 'helper', coordinator: 'coordinator', vendor: 'vendor' } as const
+
+type Member = { user?: { id?: string; name?: string }; role?: string }
+type Invite = { code?: string; url?: string; role?: string; label?: string | null; expiresAt?: string; used?: boolean }
+
+const ROLE_NAME: Record<string, string> = {
+  couple: t('Пара'), helper: t('Помощник'), coordinator: t('Координатор'), vendor: t('Подрядчик'),
+}
+const ROLE_TILE: Record<string, string> = {
+  couple: 'bg-[var(--rose-soft)]', helper: 'bg-[var(--sage-soft)]',
+  coordinator: 'bg-[var(--honey)]', vendor: 'bg-[var(--blue)]',
+}
+const ROLE_ICON: Record<string, string> = { couple: '💞', helper: '🤝', coordinator: '🎖', vendor: '📸' }
+
+/** «через 6 дней» из даты истечения: срок ссылки — семь дней (контракт). */
+function daysLeft(iso?: string): string {
+  if (!iso) return ''
+  const ms = Date.parse(iso) - Date.now()
+  if (Number.isNaN(ms) || ms <= 0) return t('истекла')
+  return `${Math.ceil(ms / 86_400_000)} ${t('дн.')}`
 }
 
 export function Team() {
   const nav = useNavigate()
-  const { city } = useStore()
+  const { city, weddingId } = useStore()
   const [invite, setInvite] = useState<typeof ROLES[number] | null>(null)
   const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
-  const [revoked, setRevoked] = useState<number[]>([])
+  const [members, setMembers] = useState<Member[]>([])
+  const [invites, setInvites] = useState<Invite[]>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   useEscape(() => setInvite(null), invite !== null)
-  /* Код выпускается в обработчике открытия шторки, а не в рендере — иначе он
-     менялся бы при каждой перерисовке, и кнопки копировали разные ссылки. */
-  const openInvite = (r: typeof ROLES[number]) => {
-    setInviteCode(makeInviteCode(r.id))
-    setInvite(r)
+
+  const explain = (e: unknown) => e instanceof ApiError
+    ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+    : t('Что-то пошло не так')
+
+  const load = useCallback(async () => {
+    if (!weddingId) return
+    try {
+      const [m, iv] = await Promise.all([
+        api.get(url('/weddings/{weddingId}/members', { weddingId })),
+        api.get(url('/weddings/{weddingId}/invites', { weddingId })),
+      ])
+      setMembers(m ?? [])
+      setInvites(iv ?? [])
+    } catch (e) { setErr(explain(e)) }
+  }, [weddingId])
+
+  useEffect(() => { void load() }, [load])
+
+  /* Код выпускает сервер: шторка открывается уже с готовым кодом, а не с
+     придуманным на клиенте. Пока запрос идёт, кнопка занята. */
+  const openInvite = async (r: typeof ROLES[number]) => {
+    if (!weddingId || busy) return
+    setBusy(true); setErr(null)
+    try {
+      const created = await api.post(url('/weddings/{weddingId}/invites', { weddingId }), {
+        role: SERVER_ROLE[r.id], label: r.name,
+      })
+      setInviteCode(created?.code ?? '')
+      setInvite(r)
+      void load()
+    } catch (e) { setErr(explain(e)) } finally { setBusy(false) }
   }
-  const members = [
-    { n: t('Алина (вы)'), role: t('Пара · создатель'), icon: '👰', tile: 'bg-[var(--rose-soft)]', online: true },
-    { n: t('Тимур'), role: t('Пара · приглашён'), icon: '🤵', tile: 'bg-[var(--blue)]', online: false },
-    { n: t('Алсу'), role: t('Координатор · главная в день X'), icon: '🎖', tile: 'bg-[var(--honey)]', online: true },
-  ]
-  const invites = [
-    { code: t('ТИЛИ-ДРУГ-3310'), role: t('Помощник'), left: t('6 дней') },
-    { code: t('ТИЛИ-КООРД-5520'), role: t('Координатор'), left: t('5 дней') },
-    { code: t('ТИЛИ-ФОТО-0917'), role: t('Подрядчик · Елена Смирнова'), left: t('2 дня') },
-  ]
+
+  const revoke = async (code?: string) => {
+    if (!code) return
+    try { await api.delete(url('/invites/{code}', { code })) } catch (e) { setErr(explain(e)); return }
+    setInvites(list => list.filter(x => x.code !== code))
+  }
+
   const copy = (text: string) => { copyText(text); setCopied(true); setTimeout(() => setCopied(false), 1800) }
-  const url = (code: string) => `tili-tili.ru/join/${code}`
+  const inviteUrl = (code: string) => `tili-tili.ru/join/${code}`
 
   return (
     <div className="pb-28">
       <TopBar back title={t('Наша команда')} sub={`${t('единое пространство · ')}${city}`} />
       <div className="px-5 mt-3 space-y-3.5">
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-1">{err}</p>}
+        {/* Без свадьбы приглашать некуда. Молчащая кнопка хуже объяснения:
+            человек жмёт и не понимает, почему ничего не происходит (R-05). */}
+        {!weddingId && (
+          <p className="text-[12px] text-[var(--soft)] leading-relaxed px-1">
+            {t('Сначала создайте свадьбу — пройдите короткий опрос, и команду можно будет собирать.')}
+          </p>
+        )}
         {/* Кто уже внутри */}
         <div className="card px-4 py-1.5">
+          {members.length === 0 && (
+            <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Пока только вы. Пригласите тех, кто планирует вместе с вами.')}</p>
+          )}
           {members.map((m, k) => (
-            <div key={m.n} className={cn('flex items-center gap-3 py-3.5', k !== members.length - 1 && 'border-b border-[var(--track)]')}>
-              <div className="relative">
-                <Tile icon={m.icon} tile={m.tile} size={42} />
-                {m.online && <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-[#A9BCA0] border-2 border-white" />}
-              </div>
+            <div key={m.user?.id ?? k} className={cn('flex items-center gap-3 py-3.5', k !== members.length - 1 && 'border-b border-[var(--track)]')}>
+              <Tile icon={ROLE_ICON[m.role ?? 'helper'] ?? '🤝'} tile={ROLE_TILE[m.role ?? 'helper'] ?? 'bg-[var(--sage-soft)]'} size={42} />
               <div className="flex-1">
-                <b className="text-[13px]">{m.n}</b>
-                <p className="text-[10px] text-[var(--soft)]">{m.role}{m.online ? ' · онлайн' : ''}</p>
+                <b className="text-[13px]">{m.user?.name ?? t('Без имени')}</b>
+                <p className="text-[10px] text-[var(--soft)]">{ROLE_NAME[m.role ?? ''] ?? m.role}</p>
               </div>
-              <Crown size={14} className="text-[var(--gold-soft)]" />
+              {m.role === 'couple' && <Crown size={14} className="text-[var(--gold-soft)]" />}
             </div>
           ))}
         </div>
@@ -80,7 +144,7 @@ export function Team() {
         </div>
         <div className="space-y-2.5">
           {ROLES.map(r => (
-            <button key={r.id} onClick={() => openInvite(r)} className="press w-full card p-4 flex items-center gap-3.5 text-left">
+            <button key={r.id} onClick={() => void openInvite(r)} disabled={!weddingId || busy} className={cn('press w-full card p-4 flex items-center gap-3.5 text-left', (!weddingId || busy) && 'opacity-40')}>
               <Tile icon={r.icon} tile={r.tile} size={46} />
               <div className="flex-1">
                 <b className="text-[14px]">{r.name}</b>
@@ -94,18 +158,21 @@ export function Team() {
         {/* Активные приглашения */}
         <div className="flex justify-between items-baseline px-1 mt-2">
           <h2 className="font-serif-d text-[18px]">{t('Активные ссылки')}</h2>
-          <span className="text-[10px] text-[var(--soft)]">{invites.length - revoked.length} {t('действуют')}</span>
+          <span className="text-[10px] text-[var(--soft)]">{invites.filter(x => !x.used).length} {t('действуют')}</span>
         </div>
         <div className="card px-4 py-1.5">
-          {invites.map((iv, k) => !revoked.includes(k) && (
-            <div key={iv.code} className={cn('flex items-center gap-3 py-3.5 fade-up', k !== invites.length - 1 && 'border-b border-[var(--track)]')}>
+          {invites.length === 0 && (
+            <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Активных ссылок нет.')}</p>
+          )}
+          {invites.map((iv, k) => (
+            <div key={iv.code ?? k} className={cn('flex items-center gap-3 py-3.5 fade-up', k !== invites.length - 1 && 'border-b border-[var(--track)]')}>
               <Link2 size={15} className="text-[var(--sage-deep)] shrink-0" />
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] tabular">{iv.code}</b>
-                <p className="text-[10px] text-[var(--soft)]">{iv.role} · истекает через {iv.left}</p>
+                <p className="text-[10px] text-[var(--soft)]">{ROLE_NAME[iv.role ?? ''] ?? iv.role} · {daysLeft(iv.expiresAt)}</p>
               </div>
-              <button onClick={() => copy(url(iv.code))} className="press text-[10.5px] font-bold text-[var(--sage-deep)]">{copied ? '✓' : t('Копия')}</button>
-              <button onClick={() => setRevoked(r => [...r, k])} className="press text-[var(--soft)]"><X size={14} /></button>
+              <button onClick={() => copy(iv.url ?? inviteUrl(iv.code ?? ''))} className="press text-[10.5px] font-bold text-[var(--sage-deep)]">{copied ? '✓' : t('Копия')}</button>
+              <button onClick={() => void revoke(iv.code)} className="press text-[var(--soft)]" aria-label={t('Отозвать ссылку')}><X size={14} /></button>
             </div>
           ))}
         </div>
@@ -136,12 +203,12 @@ export function Team() {
             <div className="card-s p-4 mt-4 flex items-center gap-3">
               <QrCode size={40} className="text-[var(--ink)] shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold tabular truncate">{url(inviteCode)}</p>
+                <p className="text-[11px] font-bold tabular truncate">{inviteUrl(inviteCode)}</p>
                 <p className="text-[9.5px] text-[var(--soft)]">{t('отправьте ссылку или покажите QR')}</p>
               </div>
-              <button onClick={() => copy(url(inviteCode))} className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
+              <button onClick={() => copy(inviteUrl(inviteCode))} className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
             </div>
-            <button onClick={() => { copy(url(inviteCode)); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+            <button onClick={() => { copy(inviteUrl(inviteCode)); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
               {copied ? t('✓ Скопировано!') : t('Скопировать ссылку')}
             </button>
             <button onClick={() => nav('/us/chats')} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>{t('Отправить в чат')}</button>

@@ -5,7 +5,24 @@
  * (приложение адаптивно и работает на десктопе от 900px).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+
+/* Код приглашения выпускает сервер, поэтому шторка команды открывается после
+   ответа, а не по нажатию. Здесь сервер подменён: проверяем роль и Escape,
+   а не сеть. */
+vi.mock('@/lib/api/client', () => ({
+  ApiError: class ApiError extends Error { kind = 'http'; status = 0; code = ''; get isDown() { return false } },
+  saveTokens: () => {},
+  isAuthorized: () => false,
+  url: (tpl: string, p: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => p[k]),
+  api: {
+    get: async () => [],
+    post: async () => ({ code: 'ТИЛИ-ДРУГ-1234', url: 'tili-tili.ru/join/ТИЛИ-ДРУГ-1234', role: 'helper' }),
+    delete: async () => undefined,
+    put: async () => undefined,
+    patch: async () => undefined,
+  },
+}))
 import { MemoryRouter } from 'react-router'
 import { StoreProvider } from './store'
 import { CityPicker } from '@/components/CityPicker'
@@ -17,7 +34,12 @@ const wrap = (node: React.ReactNode) =>
 
 const escape = () => fireEvent.keyDown(window, { key: 'Escape' })
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  /* Приглашать можно только в существующую свадьбу — без неё кнопки ролей
+     ничего не делают, и это правильное поведение, а не сбой теста. */
+  localStorage.setItem('tt_wedding_id', JSON.stringify('01a06c32-de69-7243-8ed8-066951a0e559'))
+})
 afterEach(cleanup)
 
 describe('выбор города', () => {
@@ -33,11 +55,12 @@ describe('выбор города', () => {
 })
 
 describe('шторка приглашения в команду', () => {
-  it('появляется как диалог и закрывается по Escape', () => {
+  it('появляется как диалог и закрывается по Escape', async () => {
     wrap(<Team />)
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getAllByText(/Помощник/)[0])
-    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Пригласить в команду')
+    /* Ждём ответа сервера: код выпускает он, и до ответа показывать нечего. */
+    await waitFor(() => expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Пригласить в команду'))
     escape()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
