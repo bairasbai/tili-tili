@@ -5,6 +5,9 @@ import { vendors, timeline, categories, initialGuestReviews, type GuestReview } 
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
+import { useApi } from '@/lib/api/useApi'
+import { AsyncState } from '@/components/AsyncState'
+import { getPlanB } from '@/lib/api/weddingData'
 import { cn, goBack } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
@@ -392,39 +395,50 @@ const planBRisks = [
   },
 ]
 
-const planBChecklist = [
-  t('Обзвонить всех подрядчиков за 1–2 дня: время и адрес прибытия'),
-  t('Кольца и паспорта — у свидетелей'),
-  t('Алкоголь и реквизит отвезти на площадку накануне вечером'),
-  t('Проверить прогноз погоды и план Б площадки'),
-  t('Запас 15 минут в каждом блоке тайминга'),
-  t('Powerbank, аптечка, швейный набор, присыпка от пятен'),
-]
 
 export function PlanB() {
   const nav = useNavigate()
+  const { weddingId } = useStore()
   const [open, setOpen] = useState<number | null>(null)
-  const [done, setDone] = usePersist<number[]>('tt_planb', [0, 4])
   const [rain, setRain] = useState(false)
-  const pct = Math.round(done.length / planBChecklist.length * 100)
+
+  /*
+   * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
+   * должен видеть те же галочки, что и пара. Локальный `tt_planb` держал их
+   * в одном браузере — второй человек видел пустой список.
+   */
+  const q = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId])
+  const checklist = q.data?.checklist ?? []
+  /* Отметки уедут на сервер этапом 6; пока лежат поверх серверного списка,
+     чтобы галочка не перестала ставиться на этапе чтения. */
+  const [doneLocal, setDoneLocal] = usePersist<string[]>('tt_planb', [])
+  const isDone = (id: string, serverDone: boolean) => doneLocal.includes(id) || serverDone
+  const doneCount = checklist.filter(c => isDone(c.id ?? '', !!c.done)).length
+  const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
+  const activated = !!q.data?.activatedAt
   return (
     <div className="pb-28">
       <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
+      <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4">
           <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{pct}%</b></div>
           <Bar pct={pct} />
           <div className="mt-3 space-y-2">
-            {planBChecklist.map((c, i) => (
-              <button key={c} onClick={() => setDone(d => d.includes(i) ? d.filter(x => x !== i) : [...d, i])} className="press w-full flex items-center gap-3 text-left">
-                <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', done.includes(i) ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{done.includes(i) ? '✓' : ''}</span>
-                <span className={cn('text-[12px] leading-snug', done.includes(i) && 'line-through text-[var(--soft2)]')}>{c}</span>
-              </button>
-            ))}
+            {checklist.map(c => {
+              const id = c.id ?? ''
+              const checked = isDone(id, !!c.done)
+              return (
+                <button key={id} onClick={() => setDoneLocal(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])} className="press w-full flex items-center gap-3 text-left">
+                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', checked ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{checked ? '✓' : ''}</span>
+                  <span className={cn('text-[12px] leading-snug', checked && 'line-through text-[var(--soft2)]')}>{c.title}</span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
-        {rain && (
+        {(rain || activated) && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid #7E9A74' }}>
             <b className="text-[13px]">🌧 {t('План «дождь» активирован')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Церемония переносится в зал. Уведомления ушли: площадка, декоратор, фотограф, координатор. Гостям отправлена новая точка сбора.')}</p>
