@@ -7,7 +7,7 @@ import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
 import { findMyWedding, setWeddingDateOnServer } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
-import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, type ServerSlot } from './api/slots'
+import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, type ServerSlot } from './api/slots'
 import { CATEGORY_TILE, DEFAULT_TILE } from './categoryTiles'
 import { addFavorite, getFavorites, removeFavorite } from './api/catalog'
 import { safeGet, safeSet, usePersist } from './usePersist'
@@ -56,6 +56,8 @@ interface Store {
   /** Двинуть сделку вперёд по цепочке состояний. */
   advanceDealTo: (dealId: string, state: string) => Promise<void>
   cancelBooking: (slotId: string) => Promise<void>
+  /** Убрать своего подрядчика: гасит и выданную ему ссылку-приглашение. */
+  removeExternalVendor: (slotId: string) => Promise<void>
   /** Зафиксировать оплату. Без суммы уходит вся цена сделки, как её понимает сервер. */
   paySlot: (slotId: string, amount?: number) => Promise<void>
   /** Перечитать мозаику: состояние плиток считает сервер. */
@@ -292,6 +294,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     cancelBooking: async (slotId) => {
       await cancelSlot(needWedding(), slotId)
+      refreshSlots()
+    },
+    /*
+     * Свой подрядчик убирается своим путём, а не общей отменой.
+     *
+     * Отмена только закрывает сделку, а удаление ещё и гасит выданную
+     * ссылку-приглашение. Через отмену человек, которого убрали из свадьбы,
+     * продолжал бы видеть дату, тайминг и чат по живому токену.
+     */
+    removeExternalVendor: async (slotId) => {
+      await removeExternal(needWedding(), slotId)
       refreshSlots()
     },
     bookExternal: async (slotId, vendorName, price, phone) => {

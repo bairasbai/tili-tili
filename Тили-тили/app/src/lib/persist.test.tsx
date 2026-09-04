@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 /* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
 vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
 vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
-import { authorize, resetSlots } from '@/test/slotsMock'
+import { authorize, invitesRevoked, resetSlots } from '@/test/slotsMock'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { StoreProvider, useStore } from './store'
@@ -27,7 +27,7 @@ beforeEach(() => localStorage.clear())
 afterEach(cleanup)
 
 function SlotProbe() {
-  const { slots, bookVendor, cancelBooking, paySlot } = useStore()
+  const { slots, bookVendor, cancelBooking, paySlot, bookExternal, removeExternalVendor } = useStore()
   const s = (id: string) => slots.find(x => x.id === id)
   return (
     <div>
@@ -37,9 +37,12 @@ function SlotProbe() {
       <span data-testid="s1-state">{s('s1')?.state ?? '—'}</span>
       <span data-testid="s1-vendor">{s('s1')?.vendor ?? '—'}</span>
       <span data-testid="s2-status">{s('s2')?.status ?? '—'}</span>
+      <span data-testid="s9-state">{s('s9')?.state ?? '—'}</span>
       <button onClick={() => void bookVendor('s8', 'v9', 4_000_000)}>book</button>
       <button onClick={() => void cancelBooking('s1')}>cancel</button>
       <button onClick={() => void paySlot('s2')}>pay</button>
+      <button onClick={() => void bookExternal('s9', 'Фотограф Ирек', 3_000_000, '+79170000000')}>own</button>
+      <button onClick={() => void removeExternalVendor('s9')}>drop-own</button>
     </div>
   )
 }
@@ -86,6 +89,22 @@ describe('мозаика команды живёт на сервере, а не 
     /* На экране четыре состояния плитки, на сервере пять: `paid` показываем
        как `booked` с подписью — прятать факт оплаты нельзя. */
     await waitFor(() => expect(screen.getByTestId('s2-status').textContent).toBe('Аванс внесён'))
+  })
+
+  it('свой подрядчик убирается удалением, а не отменой: ссылка гаснет', async () => {
+    /*
+     * Отмена только закрывает сделку. Удаление своего подрядчика ещё и гасит
+     * выданную ему ссылку-приглашение — без этого человек, которого убрали из
+     * свадьбы, продолжает видеть по живому токену дату, тайминг и чат.
+     */
+    wrap(<SlotProbe />)
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('12'))
+    fireEvent.click(screen.getByText('own'))
+    await waitFor(() => expect(screen.getByTestId('s9-state').textContent).toBe('booked'))
+
+    fireEvent.click(screen.getByText('drop-own'))
+    await waitFor(() => expect(screen.getByTestId('s9-state').textContent).toBe('empty'))
+    expect(invitesRevoked).toContain('s9')
   })
 
   it('ничего из мозаики не оседает в localStorage', async () => {

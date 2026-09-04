@@ -31,12 +31,16 @@ let mosaic: ServerSlot[] = []
 
 /** Мозаика на старте теста: всё пусто, кроме перечисленных броней. */
 export function resetSlots(booked: Record<string, string> = { s1: 'Усадьба Белый Сад' }): void {
+  invitesRevoked.length = 0
   mosaic = TEMPLATE.map(t => booked[t.id]
     ? { ...t, tileState: 'booked' as const, deal: { id: `d-${t.id}`, state: 'booked' as const, vendor: { id: `v-${t.id}`, name: booked[t.id] }, price: { amount: 4_500_000, currency: 'RUB' } } }
     : { ...t, tileState: 'empty' as const, deal: null })
 }
 
 const find = (slotId: string) => mosaic.find(s => s.id === slotId)
+
+/** Слоты, у которых ссылка-приглашение своему подрядчику была погашена. */
+export const invitesRevoked: string[] = []
 
 /**
  * Вход в аккаунт со свадьбой.
@@ -80,6 +84,10 @@ export const slotsWrite = {
   removeExternal: async (_w: string, slotId: string) => {
     const s = find(slotId)
     if (s) { s.tileState = 'empty'; s.deal = null }
+    /* Сервер вместе со сделкой гасит выданную ссылку-приглашение — отмена
+       этого не делает. Мок помнит разницу, иначе тест не отличил бы одно
+       действие от другого. */
+    invitesRevoked.push(slotId)
   },
   inviteExternalVendor: async () => undefined,
 }

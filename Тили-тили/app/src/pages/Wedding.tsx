@@ -146,7 +146,7 @@ export function SlotDetail() {
    хуки нельзя объявлять после условного возврата. */
 function SlotView({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { cancelBooking, bookExternal, inviteExternal } = useStore()
+  const { cancelBooking, removeExternalVendor, bookExternal, inviteExternal } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [ownOpen, setOwnOpen] = useState(false)
   const [ownName, setOwnName] = useState('')
@@ -261,7 +261,12 @@ function SlotView({ s }: { s: Slot }) {
           <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t('Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {confirmCancel ? (
-            <button onClick={() => void guard(async () => { await cancelBooking(s.id); nav('/wedding') })} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#9B6A6A' }}>{t('Точно отменить?')}</button>
+            <button onClick={() => void guard(async () => {
+              /* У своего подрядчика удаление, а не отмена: только оно гасит
+                 выданную ему ссылку-приглашение. */
+              await (s.external ? removeExternalVendor(s.id) : cancelBooking(s.id))
+              nav('/wedding')
+            })} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#9B6A6A' }}>{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
