@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
 import { vendors, timeline, categories, initialGuestReviews, type GuestReview } from '@/lib/data'
@@ -74,8 +74,15 @@ export function Compare() {
     const slot = slots.find(s => s.categoryId === categories.find(c => c.name === v.category)?.id) ?? slots.find(s => s.state === 'empty')
     if (slot) bookVendor(slot.id, v.name, v.priceFrom)
     setPicked(v.id)
-    setTimeout(() => nav('/wedding'), 900)
   }
+
+  /* Переход после выбора — эффектом с отменой, а не голым setTimeout в
+     обработчике: см. тот же случай в Search.tsx. */
+  useEffect(() => {
+    if (!picked) return
+    const id = setTimeout(() => nav('/wedding'), 900)
+    return () => clearTimeout(id)
+  }, [picked, nav])
   const rows: [string, (v: typeof list[0]) => string][] = [
     [t('Цена «от»'), v => fmt(v.priceFrom)],
     [t('Рейтинг'), v => (v.reviews ? `★ ${v.rating} · ${v.reviews}${t(' отзывов')}` : t('Новый'))],

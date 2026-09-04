@@ -11,6 +11,23 @@ import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_FALLBACK } from '../wedding/templates
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 
+/**
+ * Идентификатор из адреса обязан быть UUID.
+ *
+ * Без проверки чужая строка уходит прямо в запрос по колонке `uuid`, драйвер
+ * отвечает `invalid input syntax for type uuid`, и обработчик ошибок переводит
+ * это в 500 «внутренняя ошибка» с записью в лог как о падении сервера.
+ *
+ * Проверка схемой, а не строкой в обработчике: схема срабатывает ДО него и
+ * отвечает 422 «неверный формат». Ответить здесь 404 нельзя — путь контракта
+ * не должен отвечать 404 ни при каких параметрах (инвариант 10, закреплён
+ * routing.test.ts): такой ответ не отличить от незарегистрированного адреса.
+ * Ненайденный подарок остаётся 404, но уже после обращения к базе.
+ */
+const UUID = { type: 'string', pattern: '^[0-9a-fA-F-]{36}$' } as const
+const giftIdParam = { type: 'object', required: ['giftId'], properties: { giftId: UUID } } as const
+const fundIdParam = { type: 'object', required: ['fundId'], properties: { fundId: UUID } } as const
+
 /** Строка бюджета, куда попадает площадка: ориентир «банкет на гостя» считается по ней. */
 const VENUE_BUDGET_ID = BUDGET_BY_VENDOR_CATEGORY['venue'] ?? BUDGET_FALLBACK
 
@@ -178,6 +195,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     '/weddings/:weddingId/wishlist/:giftId',
     {
       schema: {
+        params: giftIdParam,
         body: {
           type: 'object',
           additionalProperties: false,
@@ -222,7 +240,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  app.delete('/weddings/:weddingId/wishlist/:giftId', async (request, reply) => {
+  app.delete('/weddings/:weddingId/wishlist/:giftId', { schema: { params: giftIdParam } }, async (request, reply) => {
     const { giftId } = request.params as { giftId: string }
     const { rows } = await db().query<{ funded: string }>(
       'select funded::text as funded from gifts where id = $1 and wedding_id = $2',
@@ -293,7 +311,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  app.delete('/weddings/:weddingId/funds/:fundId', async (request, reply) => {
+  app.delete('/weddings/:weddingId/funds/:fundId', { schema: { params: fundIdParam } }, async (request, reply) => {
     const { fundId } = request.params as { fundId: string }
     const { rows } = await db().query<{ collected: string }>(
       'select collected::text as collected from funds where id = $1 and wedding_id = $2',
@@ -353,7 +371,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── резерв ───────────────────────────────────────────────────────── */
 
-  app.post('/gifts/:guestToken/:giftId/reserve', async (request, reply) => {
+  app.post('/gifts/:guestToken/:giftId/reserve', { schema: { params: giftIdParam } }, async (request, reply) => {
     const { guestToken, giftId } = request.params as { guestToken: string; giftId: string }
     // Контракт объявляет заголовок обязательным. Повтор здесь безопасен и
     // без него — резерв держит первичный ключ, — но обещанное проверяем.
@@ -391,7 +409,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(200).send(body)
   })
 
-  app.delete('/gifts/:guestToken/:giftId/reserve', async (request, reply) => {
+  app.delete('/gifts/:guestToken/:giftId/reserve', { schema: { params: giftIdParam } }, async (request, reply) => {
     const { guestToken, giftId } = request.params as { guestToken: string; giftId: string }
     const guest = await guestByToken(db(), guestToken)
     const { rows } = await db().query<{ guest_token: string }>(
@@ -412,6 +430,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     '/gifts/:guestToken/:giftId/fund',
     {
       schema: {
+        params: giftIdParam,
         body: { type: 'object', required: ['amount'], additionalProperties: false, properties: { amount: money } },
       },
     },
@@ -453,6 +472,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     '/gifts/:guestToken/funds/:fundId',
     {
       schema: {
+        params: fundIdParam,
         body: { type: 'object', required: ['amount'], additionalProperties: false, properties: { amount: money } },
       },
     },

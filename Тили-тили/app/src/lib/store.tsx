@@ -4,7 +4,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { initialGifts, initialSlots, type Gift, type Slot, type SlotState } from './data'
 import { setI18nLang, type Lang } from './i18n'
-import { usePersist } from './usePersist'
+import { safeGet, safeSet, usePersist } from './usePersist'
 
 /*
  * Слоты команды переживают перезагрузку. Сохраняется только изменяемая часть слота:
@@ -101,7 +101,10 @@ interface Store {
 const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [onboarded, setOnboarded] = useState(() => localStorage.getItem('tt_onboarded') === '1')
+  /* Здесь и ниже доступ к хранилищу только через safeGet/safeSet: инициализаторы
+     выполняются в фазе рендера, и SecurityError от заблокированных данных сайта
+     положил бы всё приложение на экран ошибки без выхода. */
+  const [onboarded, setOnboarded] = useState(() => safeGet('tt_onboarded') === '1')
   /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
    * Объект Date в localStorage превращается в строку с часовым поясом, и
    * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */
@@ -120,30 +123,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }), [setSlotPatch])
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
-      const parsed = JSON.parse(localStorage.getItem('tt_fav') ?? '["v1"]')
+      const parsed = JSON.parse(safeGet('tt_fav') ?? '["v1"]')
       return Array.isArray(parsed) ? parsed : ['v1']
     } catch { return ['v1'] }
   })
-  const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem('tt_lang') === 'en' ? 'en' : 'ru'))
+  const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
-  const [inviteTpl, setInviteTplState] = useState(() => Number(localStorage.getItem('tt_invite_tpl') ?? 0))
-  const [inviteText, setInviteTextState] = useState(() => localStorage.getItem('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
-  const [city, setCityState] = useState(() => localStorage.getItem('tt_city') ?? 'Уфа')
-  const [cityRegion, setCityRegion] = useState(() => localStorage.getItem('tt_city_region') ?? 'Башкортостан')
+  const [inviteTpl, setInviteTplState] = useState(() => Number(safeGet('tt_invite_tpl') ?? 0))
+  const [inviteText, setInviteTextState] = useState(() => safeGet('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
+  const [city, setCityState] = useState(() => safeGet('tt_city') ?? 'Уфа')
+  const [cityRegion, setCityRegion] = useState(() => safeGet('tt_city_region') ?? 'Башкортостан')
   const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
-    localStorage.getItem('tt_theme') === 'dark' ? 'dark' : 'light')
+    safeGet('tt_theme') === 'dark' ? 'dark' : 'light')
   const [gifts, setGifts] = useState<Gift[]>(() => {
     try {
-      const raw = localStorage.getItem('tt_gifts')
+      const raw = safeGet('tt_gifts')
       if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p }
     } catch { /* noop */ }
     return initialGifts
   })
   const [myGifts, setMyGifts] = useState<string[]>(() => {
-    try { const p = JSON.parse(localStorage.getItem('tt_my_gifts') ?? '[]'); return Array.isArray(p) ? p : [] } catch { return [] }
+    try { const p = JSON.parse(safeGet('tt_my_gifts') ?? '[]'); return Array.isArray(p) ? p : [] } catch { return [] }
   })
-  const persistGifts = (next: Gift[]) => { localStorage.setItem('tt_gifts', JSON.stringify(next)); return next }
-  const persistMine = (next: string[]) => { localStorage.setItem('tt_my_gifts', JSON.stringify(next)); return next }
+  const persistGifts = (next: Gift[]) => { safeSet('tt_gifts', JSON.stringify(next)); return next }
+  const persistMine = (next: string[]) => { safeSet('tt_my_gifts', JSON.stringify(next)); return next }
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -154,7 +157,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setQuiz(answers)
         if (answers.date) setWeddingDateState(answers.date)
       }
-      localStorage.setItem('tt_onboarded', '1')
+      safeSet('tt_onboarded', '1')
       setOnboarded(true)
     },
     weddingDate,
@@ -171,20 +174,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     favorites,
     toggleFav: id => setFavorites(f => {
       const next = f.includes(id) ? f.filter(x => x !== id) : [...f, id]
-      localStorage.setItem('tt_fav', JSON.stringify(next))
+      safeSet('tt_fav', JSON.stringify(next))
       return next
     }),
     lang,
-    setLang: (l: Lang) => { localStorage.setItem('tt_lang', l); setI18nLang(l); setLangState(l) },
+    setLang: (l: Lang) => { safeSet('tt_lang', l); setI18nLang(l); setLangState(l) },
     inviteTpl,
-    setInviteTpl: (t: number) => { localStorage.setItem('tt_invite_tpl', String(t)); setInviteTplState(t) },
+    setInviteTpl: (t: number) => { safeSet('tt_invite_tpl', String(t)); setInviteTplState(t) },
     inviteText,
-    setInviteText: (t: string) => { localStorage.setItem('tt_invite_text', t); setInviteTextState(t) },
+    setInviteText: (t: string) => { safeSet('tt_invite_text', t); setInviteTextState(t) },
     city, cityRegion,
     theme,
-    setTheme: (t) => { localStorage.setItem('tt_theme', t); setThemeState(t) },
+    setTheme: (t) => { safeSet('tt_theme', t); setThemeState(t) },
     setCity: (name: string, region: string) => {
-      localStorage.setItem('tt_city', name); localStorage.setItem('tt_city_region', region)
+      safeSet('tt_city', name); safeSet('tt_city_region', region)
       setCityState(name); setCityRegion(region)
     },
     gifts, myGifts,

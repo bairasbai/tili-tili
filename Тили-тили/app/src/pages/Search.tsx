@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
 import { categories, vendors, fmt } from '@/lib/data'
@@ -122,8 +122,16 @@ export function VendorDetail() {
   const add = () => {
     if (slot) bookVendor(slot.id, v.name, v.packages[pkg].price)
     setAdded(true)
-    setTimeout(() => nav('/wedding'), 900)
   }
+
+  /* Переход после галочки — эффектом с отменой, а не голым setTimeout в
+     обработчике. Несмонтированный экран не должен через 900 мс утащить
+     человека на /wedding со страницы, которую он за это время открыл сам. */
+  useEffect(() => {
+    if (!added) return
+    const id = setTimeout(() => nav('/wedding'), 900)
+    return () => clearTimeout(id)
+  }, [added, nav])
 
   return (
     <div className="pb-32">

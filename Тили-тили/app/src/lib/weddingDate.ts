@@ -79,10 +79,33 @@ export interface Countdown {
 }
 
 /**
+ * `now` плюс N календарных месяцев, БЕЗ переполнения в следующий месяц.
+ *
+ * `new Date(y, m, 31)` для месяца короче 31 дня уезжает вперёд: 31 февраля
+ * становится 3 марта. Поэтому число дня подрезается по длине целевого месяца:
+ * 31 января плюс месяц — это 28 февраля, а не 3 марта.
+ */
+function addMonths(now: Date, months: number): Date {
+  const m = now.getMonth() + months
+  // Нулевой день следующего месяца — это последний день нужного.
+  const lastDay = new Date(now.getFullYear(), m + 1, 0).getDate()
+  return new Date(
+    now.getFullYear(), m, Math.min(now.getDate(), lastDay),
+    now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds(),
+  )
+}
+
+/**
  * Обратный отсчёт: месяцы, дни, часы, минуты до 16:00 дня свадьбы.
  *
  * Месяцы считаются календарём, а не делением на 30: между 14 января и
  * 14 марта ровно два месяца, а не «1 месяц 29 дней».
+ *
+ * Перебрали на месяц — пересчитываем якорь с меньшим числом месяцев от той же
+ * исходной точки. Откатывать сам якорь через setMonth(-1) нельзя: он уже
+ * переполнен, и вычитание месяца возвращает не исходное число, а смещённое
+ * (3 марта − 1 месяц = 3 февраля вместо 31 января). Отсюда брались лишние
+ * трое суток в отсчёте у пары, открывшей главный экран 31-го числа.
  */
 export function countdownTo(iso: string | null, now: Date): Countdown {
   const zero = { m: 0, d: 0, h: 0, min: 0 }
@@ -92,14 +115,12 @@ export function countdownTo(iso: string | null, now: Date): Countdown {
   if (target.getTime() <= now.getTime()) return zero
 
   let months = (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth())
-  const afterMonths = new Date(now.getFullYear(), now.getMonth() + months, now.getDate(), now.getHours(), now.getMinutes())
-  // Перебрали на месяц — откатываем: 30 марта плюс месяц это 30 апреля,
-  // а не 1 мая, и остаток дней должен считаться от той же точки.
-  if (afterMonths.getTime() > target.getTime()) {
+  let anchor = addMonths(now, months)
+  if (anchor.getTime() > target.getTime()) {
     months -= 1
-    afterMonths.setMonth(afterMonths.getMonth() - 1)
+    anchor = addMonths(now, months)
   }
-  let rest = target.getTime() - afterMonths.getTime()
+  let rest = target.getTime() - anchor.getTime()
   const d = Math.floor(rest / 86_400_000)
   rest -= d * 86_400_000
   const h = Math.floor(rest / 3_600_000)

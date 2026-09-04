@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomInt } from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
 import { AppError } from '../errors.js'
@@ -34,9 +34,20 @@ export function newGuestToken(): string {
  */
 const SHARE_ALPHABET = 'ACDEFGHJKMNPQRTUVWXYZ234679'
 
+/**
+ * randomInt, а не Math.random — по той же причине, что в `wedding/codes.ts`
+ * и `auth/otp.ts`: этот код обменивается на токен гостя, то есть он и есть
+ * доступ к чужой свадьбе.
+ *
+ * Math.random в V8 — xorshift128+ с общим состоянием на весь процесс. Пара,
+ * которая выпускает ссылки на СВОЕЙ свадьбе, набирает выборку выходов того же
+ * генератора, что обслуживает всех остальных, восстанавливает его состояние
+ * и предсказывает коды чужих гостей. Одноразовость и срок жизни от этого
+ * не защищают: предсказанный код гасится первым.
+ */
 export function newShareCode(): string {
   const group = () =>
-    Array.from({ length: 4 }, () => SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)]).join('')
+    Array.from({ length: 4 }, () => SHARE_ALPHABET[randomInt(0, SHARE_ALPHABET.length)]).join('')
   return `${group()}-${group()}`
 }
 
