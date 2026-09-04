@@ -116,11 +116,6 @@ function dueDate(weddingDate: string | null, monthsBefore: number): string | nul
   return d.toISOString().slice(0, 10)
 }
 
-function eventAt(weddingDate: string | null, hhmm: string): string | null {
-  if (!weddingDate) return null
-  return `${weddingDate}T${hhmm}:00Z`
-}
-
 export async function weddingRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -271,10 +266,16 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           )
         }
         for (const e of TIMELINE_TEMPLATE) {
+          // Время шаблона — местное на площадке, а не UTC. Собирали его строкой
+          // `${date}T08:00:00Z`, и «сборы невесты в 08:00» в Уфе (+5) выходили
+          // на экране в 13:00 — ровно на разницу поясов.
           await client.query(
             `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort)
-             values ($1, $2, $3, $4, $5, $6, $7)`,
-            [uuidv7(), weddingId, e.name, eventAt(date, e.startsAt), eventAt(date, e.endsAt), e.icon, e.sort],
+             values ($1, $2, $3,
+                     case when $4::date is null then null else (($4::date + $5::time) at time zone $8) end,
+                     case when $4::date is null then null else (($4::date + $6::time) at time zone $8) end,
+                     $7, $9)`,
+            [uuidv7(), weddingId, e.name, date, e.startsAt, e.endsAt, e.icon, cityTz, e.sort],
           )
         }
         await client.query(

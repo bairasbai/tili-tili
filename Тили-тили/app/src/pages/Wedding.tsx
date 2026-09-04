@@ -3,10 +3,10 @@ import { useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
 import { contractTemplates, fmt, initialAlbum, type Slot } from '@/lib/data'
 import { useApi, explainError } from '@/lib/api/useApi'
-import { formatWeddingDate } from '@/lib/weddingDate'
+import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
-import { addBudgetItem, addGuest, addTask as addTaskApi, deleteBudgetItem, deleteGuest, patchGuest, setTaskDone } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, patchGuest, putTimeline, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -486,10 +486,12 @@ export function Checklist() {
   const [err, setErr] = useState<string | null>(null)
   /* Поля контракта опциональны — приводим один раз здесь, чтобы дальше по
      экрану не тащить `?? ''` в каждом сравнении. */
-  /* Срок и признак срочности сервер не отдаёт: в контракте у задачи только
-     id, title, period, done и custom. Раньше они брались из мока. */
+  /* Срок считает сервер от даты свадьбы. Пока даты нет, срока нет ни у одной
+     задачи — и это честнее выдуманного «через месяц». Признака срочности в
+     контракте по-прежнему нет: цветной точки на строке не будет. */
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
+    due: x.due ?? null,
   }))
   const list = allTasks.filter(t => t.period === period)
   const done = allTasks.filter(t => t.done).map(t => t.id)
@@ -579,9 +581,9 @@ export function Checklist() {
                   {isDone ? '✓' : i + 1}
                 </span>
                 <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{t.title}</span>
-                {/* Точка «важный срок» и колонка срока убраны: сервер не отдаёт
-                    ни срока, ни срочности — все точки были одного цвета, а
-                    подпись под списком обещала два. */}
+                {/* Точка «важный срок» убрана: признака срочности в контракте
+                    нет, и все точки были одного цвета при подписи о двух. */}
+                {t.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(t.due)}</span>}
               </button>
             )
           })}
@@ -614,7 +616,13 @@ export function Timeline() {
   const { weddingId, weddingDate } = useStore()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
-  const [time, setTime] = useState('')
+  const [from, setFrom] = useState('')
+  const [till, setTill] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [conflicts, setConflicts] = useState<string[] | null>(null)
+  /* Черновик автоплана: показан, но ещё не применён. */
+  const [draft, setDraft] = useState<TimelineDraft[] | null>(null)
 
   /* Тайминг с сервера. Раньше он жил в `useState` и терялся при перезагрузке:
      добавленное событие исчезало вместе с вкладкой (единственный экран, где
@@ -625,7 +633,8 @@ export function Timeline() {
      площадке. */
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const tz = wq.data?.tz
-  const events = (q.data ?? []).map(e => ({
+  const raw = q.data ?? []
+  const events = raw.map(e => ({
     id: e.id ?? '',
     /* Сервер отдаёт метку времени, экран показывает часы и минуты в поясе
        свадьбы. Пустое время — норма: блок есть, час ещё не назначен. */
@@ -636,10 +645,72 @@ export function Timeline() {
     tile: 'bg-[var(--peach)]',
     who: e.who ?? '',
   }))
+
+  /*
+   * Тайминг сохраняется списком целиком: отдельного пути «добавить блок»
+   * контракт не знает. Значит, отправлять надо всё, что пришло, — пропущенный
+   * блок сервер понял бы как удалённый.
+   */
+  const save = (next: TimelineDraft[]) => void (async () => {
+    if (!weddingId) return
+    setBusy(true)
+    setErr(null)
+    try { await putTimeline(weddingId, next); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  })()
+
+  const asDraft = (): TimelineDraft[] => raw.map(e => ({
+    id: e.id,
+    name: e.name ?? '',
+    startsAt: e.startsAt ?? '',
+    ...(e.endsAt ? { endsAt: e.endsAt } : {}),
+    ...(e.who ? { who: e.who } : {}),
+    ...(e.location ? { location: e.location } : {}),
+    ...(e.icon ? { icon: e.icon } : {}),
+  }))
+
   const addEvent = () => {
-    if (!name.trim() || !time.trim()) return
-    setName(''); setTime(''); setEditing(false)
+    if (!name.trim() || !weddingDate) return
+    const startsAt = isoAtWeddingTime(weddingDate, from, tz)
+    if (!startsAt) { setErr(t('Укажите время в формате 19:00')); return }
+    const endsAt = till ? isoAtWeddingTime(weddingDate, till, tz) : null
+    save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}) }])
+    setName(''); setFrom(''); setTill(''); setEditing(false)
   }
+
+  const removeEvent = (id: string) => save(asDraft().filter(e => e.id !== id))
+
+  /*
+   * Автоплан сервер отдаёт предпросмотром и сам ничего не меняет — так же
+   * ведёт себя и экран: показываем, что получилось и какие нашлись конфликты,
+   * а заменяет тайминг пара отдельной кнопкой. Применять сразу нельзя: это
+   * стирает уже расставленные блоки, о которых человек не просил.
+   */
+  const autoplan = () => void (async () => {
+    if (!weddingId) return
+    setBusy(true)
+    setErr(null)
+    try {
+      const res = await autogenTimeline(weddingId)
+      setConflicts(res?.conflicts ?? [])
+      setDraft((res?.events ?? []).map(e => ({
+        id: e.id,
+        name: e.name ?? '',
+        startsAt: e.startsAt ?? '',
+        ...(e.endsAt ? { endsAt: e.endsAt } : {}),
+        ...(e.who ? { who: e.who } : {}),
+        ...(e.location ? { location: e.location } : {}),
+        ...(e.icon ? { icon: e.icon } : {}),
+      })))
+    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  })()
+
+  const applyDraft = () => {
+    if (!draft) return
+    save(draft)
+    setDraft(null)
+    setConflicts(null)
+  }
+
   return (
     <div className="pb-28">
       <TopBar back title={t('День свадьбы')} sub={weddingDate ? `${t('Расписание ')}${formatWeddingDate(weddingDate)}` : t('Расписание дня · полный сценарий')} right={
@@ -655,22 +726,62 @@ export function Timeline() {
         {editing && (
           <div className="card p-4 fade-up">
             <input value={name} onChange={e => setName(e.target.value)} placeholder={t('Событие (например, «Первый танец»)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
-            <input value={time} onChange={e => setTime(e.target.value)} placeholder={t('Время (например, 19:00 — 19:10)')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] mt-2.5" />
-            <button onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3">{t('Добавить в тайминг')}</button>
+            {/* Время вводится полями «с» и «до», а не одной строкой «19:00 —
+                19:10»: сервер хранит две метки времени, и разбирать их из
+                свободного текста значит гадать. */}
+            <div className="flex gap-2.5 mt-2.5">
+              <input value={from} onChange={e => setFrom(e.target.value)} type="time" aria-label={t('Начало')} className="flex-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none tabular" />
+              <input value={till} onChange={e => setTill(e.target.value)} type="time" aria-label={t('Конец')} className="flex-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none tabular" />
+            </div>
+            {!weddingDate && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Сначала выберите дату свадьбы — без неё у события нет дня.')}</p>}
+            <button disabled={busy || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
         )}
+        {err && <p className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
         {events.map(e => (
-          <div key={e.id} className="card-s p-4 flex gap-3 fade-up">
+          <div key={e.id} className="card-s p-4 flex gap-3 fade-up items-start">
             <Tile icon={e.icon} tile={e.tile} size={42} />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <b className="text-[13.5px]">{e.name}</b>
               <p className="text-[11px] text-[var(--soft)] mt-0.5">{e.loc}</p>
               <p className="text-[11px] text-[var(--rose-deep)] font-semibold mt-1 tabular">{e.time}</p>
               <p className="text-[10px] text-[var(--sage-deep)] mt-0.5">{e.who}</p>
             </div>
+            {editing && (
+              <button disabled={busy} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
+            )}
           </div>
         ))}
-        <div className="mt-2"><AiTip text={t('Автоплан готов: конфликтов нет. План Б на дождь для церемонии — шатёр уже включён в аренду усадьбы.')} /></div>
+        {/* Автоплан и конфликты — с сервера. Здесь стояло «Автоплан готов:
+            конфликтов нет. План Б на дождь — шатёр уже включён в аренду
+            усадьбы»: текст показывался всегда и ничего не проверял. */}
+        <button disabled={busy} onClick={autoplan} className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50">✨ {busy ? t('Считаем…') : t('Собрать автоплан по команде')}</button>
+        {conflicts !== null && (
+          <div className="card p-4">
+            <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Предложение автоплана')}</span>
+            {conflicts.length
+              ? <ul className="mt-2 space-y-1.5">{conflicts.map(c => <li key={c} className="text-[11.5px] text-[var(--rose-ink)]">• {c}</li>)}</ul>
+              : <p className="text-[11.5px] text-[var(--sage-deep)] mt-2">{t('Конфликтов не нашлось')}</p>}
+            {draft?.length ? (
+              <>
+                <div className="mt-3 space-y-1 border-t border-[var(--track)] pt-3">
+                  {draft.map(e => (
+                    <div key={`${e.name}-${e.startsAt}`} className="flex justify-between text-[11.5px]">
+                      <span className="truncate">{e.name}</span>
+                      <b className="tabular shrink-0 ml-2">{e.startsAt ? formatTime(e.startsAt, tz) : '—'}</b>
+                    </div>
+                  ))}
+                </div>
+                {/* Заменять тайминг целиком — решение пары: у неё уже могут
+                    стоять свои блоки, и молча стирать их нельзя. */}
+                <div className="flex gap-2.5 mt-3">
+                  <button onClick={() => { setDraft(null); setConflicts(null) }} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
+                  <button disabled={busy} onClick={applyDraft} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Заменить тайминг')}</button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
         <button onClick={() => window.print()} className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Скачать PDF для координатора')}</button>
       </div>
     </div>

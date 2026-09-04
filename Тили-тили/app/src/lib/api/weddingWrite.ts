@@ -72,8 +72,9 @@ export const deleteBudgetItem = (weddingId: string, itemId: string) =>
 export const getTables = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/tables', { weddingId }))
 
-export const addTable = (weddingId: string, name: string, seats: number) =>
-  api.post(url('/weddings/{weddingId}/tables', { weddingId }), { name, seats })
+/** Стол. Поле вместимости в контракте называется `capacity`, не `seats`. */
+export const addTable = (weddingId: string, name: string, capacity: number) =>
+  api.post(url('/weddings/{weddingId}/tables', { weddingId }), { name, capacity })
 
 /* ── Тайминг ── */
 
@@ -96,3 +97,12 @@ export interface TimelineDraft {
  */
 export const putTimeline = (weddingId: string, events: TimelineDraft[]) =>
   api.put(url('/weddings/{weddingId}/timeline', { weddingId }), events)
+
+/**
+ * Автоплан дня по забронированной команде.
+ *
+ * Возвращает предпросмотр и список конфликтов, но ничего не применяет —
+ * применение это отдельный `putTimeline`.
+ */
+export const autogenTimeline = (weddingId: string) =>
+  api.post(url('/weddings/{weddingId}/timeline/autogen', { weddingId }))

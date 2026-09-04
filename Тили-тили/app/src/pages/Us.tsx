@@ -7,12 +7,14 @@ import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
 import { cn, copyText, goBack } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
+import { explainError } from '@/lib/api/useApi'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* «Мы» — профиль пары */
 export function Us() {
   const { lang, setLang, weddingDate, setWeddingDate } = useStore()
+  const [dateErr, setDateErr] = useState<string | null>(null)
   const nav = useNavigate()
   const [copied, setCopied] = useState(false)
   const [datePicker, setDatePicker] = useState(false)
@@ -108,7 +110,14 @@ export function Us() {
         <DatePicker
           value={weddingDate}
           now={today}
-          onPick={(iso) => { setWeddingDate(iso); setDatePicker(false) }}
+          /* Перенос уходит на сервер и может не пройти: дата бывает занята у
+             забронированной команды (409). Пока ответа нет, шторку не
+             закрываем, а отказ показываем словами. */
+          onPick={(iso) => void (async () => {
+            setDateErr(null)
+            try { await setWeddingDate(iso); setDatePicker(false) } catch (e) { setDateErr(explainError(e)) }
+          })()}
+          error={dateErr}
           onClose={() => setDatePicker(false)}
         />
       )}

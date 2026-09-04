@@ -22,12 +22,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /* ── чек-лист ─────────────────────────────────────────────────────── */
-  const toTask = (r: { id: string; title: string; period: string | null; done_at: Date | null; source: string }) => ({
+  const toTask = (r: { id: string; title: string; period: string | null; done_at: Date | null; source: string; due?: string | null }) => ({
     id: r.id,
     title: r.title,
     period: r.period,
     done: r.done_at !== null,
     custom: r.source !== 'system',
+    /* Срок считает сервер от даты свадьбы и пересчитывает при переносе.
+       Пока даты нет — срока нет, и это честнее выдуманного «через месяц». */
+    due: r.due ?? null,
   })
 
   app.get('/weddings/:weddingId/tasks', async (request) => {
@@ -37,8 +40,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       period: string | null
       done_at: Date | null
       source: string
+      due: string | null
     }>(
-      `select id, title, period, done_at, source from tasks
+      `select id, title, period, done_at, source, due::text as due from tasks
         where wedding_id = $1 and kind = 'checklist' order by sort, title`,
       [request.member!.weddingId],
     )
@@ -71,7 +75,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         `insert into tasks (id, wedding_id, title, period, source, sort) values ($1,$2,$3,$4,'user',$5)`,
         [id, request.member!.weddingId, body.title, body.period, last[0]!.n],
       )
-      const { rows } = await db().query('select id, title, period, done_at, source from tasks where id = $1', [id])
+      const { rows } = await db().query('select id, title, period, done_at, source, due::text as due from tasks where id = $1', [id])
       return reply.code(201).send(toTask(rows[0] as never))
     },
   )

@@ -1,4 +1,4 @@
-import { api, isAuthorized } from './client'
+import { api, isAuthorized, newIdempotencyKey, url } from './client'
 
 /*
  * Свадьба на сервере: создание из квиза и восстановление после переустановки.
@@ -80,3 +80,15 @@ export async function findMyWedding(): Promise<string | null> {
   const own = list.find(w => w.role === 'couple')
   return (own ?? list[0])?.id ?? null
 }
+
+/**
+ * Перенос свадьбы на другую дату.
+ *
+ * Это не правка поля, а перенос: сервер проверяет, свободна ли новая дата у
+ * забронированной команды (409 `team_busy` — и тогда не меняется ничего),
+ * пересчитывает сроки задач, тайминг и время открытия чата дня X. Поэтому
+ * дату нельзя держать только на устройстве — там она ничего из этого не
+ * запускает, а у второго из пары остаётся старой.
+ */
+export const setWeddingDateOnServer = (weddingId: string, date: string) =>
+  api.patch(url('/weddings/{weddingId}', { weddingId }), { date }, { idempotencyKey: newIdempotencyKey() })

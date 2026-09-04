@@ -3324,6 +3324,16 @@ components:
         period: { type: string }
         done: { type: boolean }
         custom: { type: boolean }
+        due:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Срок задачи, посчитанный от даты свадьбы («за 9 месяцев» → сентябрь
+            2026 для свадьбы 14 июня 2027). Null — у свадьбы ещё нет даты, и
+            тогда срока нет ни у одной задачи. Сервер считает его сам и
+            пересчитывает при переносе: клиент вычислять его не должен, иначе
+            чек-лист на телефоне и напоминания в фоне разойдутся.
     Chat:
       type: object
       properties:

@@ -8,7 +8,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
  */
 const { guestsState } = vi.hoisted(() => ({
   guestsState: {
-    list: [] as Array<{ id: string; name: string; status: string; plusOne: boolean }>,
+    list: [] as Array<{ id: string; name: string; status: string; plusOne: boolean; tableId?: string | null }>,
+    tables: [] as Array<{ id: string; name: string; capacity: number }>,
     down: false,
   },
 }))
@@ -21,9 +22,15 @@ vi.mock('@/lib/api/weddingData', async (orig) => ({
 }))
 vi.mock('@/lib/api/weddingWrite', async (orig) => ({
   ...await orig<object>(),
-  patchGuest: async (_w: string, id: string, patch: { status?: string }) => {
+  getTables: async () => guestsState.tables.map(tb => ({ ...tb })),
+  patchGuest: async (_w: string, id: string, patch: { status?: string; tableId?: string | null }) => {
     const g = guestsState.list.find(x => x.id === id)
-    if (g && patch.status) g.status = patch.status
+    if (!g) return
+    if (patch.status) g.status = patch.status
+    /* `tableId` приходит и как `null` — «снять со стола». Проверяем наличие
+       ключа, а не истинность значения: `if (patch.tableId)` не отличил бы
+       снятие от «поле не прислали». */
+    if ('tableId' in patch) g.tableId = patch.tableId ?? null
   },
 }))
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react'
@@ -44,9 +51,10 @@ beforeEach(() => {
   localStorage.setItem('tt_wedding_id', JSON.stringify('w1'))
   guestsState.down = false
   guestsState.list = [
-    { id: 'g1', name: 'Ольга Соколова', status: 'yes', plusOne: true },
-    { id: 'g2', name: 'Руслан Гареев', status: 'pending', plusOne: false },
+    { id: 'g1', name: 'Ольга Соколова', status: 'yes', plusOne: true, tableId: null },
+    { id: 'g2', name: 'Руслан Гареев', status: 'pending', plusOne: false, tableId: null },
   ]
+  guestsState.tables = [{ id: 'tb1', name: 'Стол №1', capacity: 8 }]
 })
 afterEach(cleanup)
 
@@ -59,10 +67,12 @@ describe('дыра: битый localStorage не роняет приложени
     await waitFor(() => expect(screen.getByText(/Сервер недоступен|Что-то пошло не так/)).toBeTruthy())
     expect(screen.queryByText('Ольга Соколова')).toBeNull()
   })
-  it('рассадка: повреждённый tt_tables → дефолтные столы', () => {
-    localStorage.setItem('tt_tables', 'null!!!')
+  it('рассадка: столов ещё нет → экран говорит об этом, а не рисует четыре', async () => {
+    /* Раньше четыре стола существовали всегда: они брались из `tt_tables_count`
+       со значением по умолчанию, и пара видела зал, которого не заводила. */
+    guestsState.tables = []
     wrap(<Seating />)
-    expect(screen.getAllByText(/Стол №/).length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByText(/Столов пока нет/)).toBeTruthy())
   })
 })
 
@@ -93,14 +103,19 @@ describe('бизнес-логика: чат', () => {
 })
 
 describe('бизнес-логика: рассадка', () => {
-  it('гость садится за стол и уходит обратно в «без стола»', () => {
+  it('гость садится за стол и уходит обратно в «без стола»', async () => {
     wrap(<Seating />)
-    const unseated = screen.getAllByText('Руслан Гареев')
-    fireEvent.click(unseated[0]) // выбрать гостя
-    const table = screen.getAllByText(/Стол №/)[0].closest('div')!
-    fireEvent.click(table.parentElement!.querySelector('button') ?? table)
-    // после посадки гость должен исчезнуть из зоны «Без стола» (остаться максимум 1 раз — за столом)
-    expect(screen.getAllByText('Руслан Гареев').length).toBeLessThanOrEqual(1)
+    const guest = await screen.findByText('Руслан Гареев')
+    fireEvent.click(guest) // выбрать гостя
+    fireEvent.click(screen.getByText('Стол №1').closest('div')!.parentElement!)
+    /* Место гостя — поле на сервере, а не карта в браузере: проверяем ответ,
+       а не то, что экран нарисовал сам. */
+    await waitFor(() => expect(guestsState.list.find(g => g.id === 'g2')?.tableId).toBe('tb1'))
+    // и он больше не числится среди нерассаженных — иначе был бы в двух местах
+    await waitFor(() => expect(screen.getAllByText('Руслан Гареев').length).toBe(1))
+
+    fireEvent.click(screen.getByText('Руслан Гареев'))
+    await waitFor(() => expect(guestsState.list.find(g => g.id === 'g2')?.tableId).toBeNull())
   })
 })
 

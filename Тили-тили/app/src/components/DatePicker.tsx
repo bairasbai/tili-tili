@@ -34,12 +34,15 @@ export function DatePicker({
   now,
   onPick,
   onClose,
+  error,
 }: {
   value: string | null
   /** «Сегодня» приходит снаружи: время в теле компонента запрещено (R-04). */
   now: Date
   onPick: (iso: string) => void
   onClose: () => void
+  /** Отказ сервера в переносе: дата бывает занята у забронированной команды. */
+  error?: string | null
 }) {
   useEscape(onClose)
   const { min, max } = dateRange(now)
@@ -120,6 +123,7 @@ export function DatePicker({
         })}
       </div>
 
+      {error && <p className="px-6 mt-4 text-[12px] text-[var(--rose-ink)]">{error}</p>}
       <p className="px-6 mt-5 text-[10.5px] text-[var(--soft2)] leading-relaxed">
         {t('Дату можно менять и позже — команда и чек-лист переедут вместе с ней.')}
       </p>

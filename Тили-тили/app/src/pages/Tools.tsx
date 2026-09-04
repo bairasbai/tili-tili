@@ -1,13 +1,16 @@
 import { createElement, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-react'
-import { contractTemplates, dressPalettes, couple, guests, fmt, type DealState, type Guest, type Slot } from '@/lib/data'
+import { contractTemplates, dressPalettes, couple, guests, fmt, type DealState, type Slot } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { useBusy } from '@/lib/useBusy'
 import { usePersist } from '@/lib/usePersist'
-import { AiTip, SyncNote, Tile, TopBar } from '@/components/chrome'
-import { explainError } from '@/lib/api/useApi'
+import { Tile, TopBar } from '@/components/chrome'
+import { AsyncState } from '@/components/AsyncState'
+import { explainError, useApi } from '@/lib/api/useApi'
+import { getGuests } from '@/lib/api/weddingData'
+import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
@@ -250,104 +253,128 @@ export function ContractWizard() {
 }
 
 /* Рассадка */
-const mealIcon = (name: string) => {
-  // маркер выбора горячего из опроса меню (мок: детерминированно по имени)
-  const h = [...name].reduce((a, c) => a + c.charCodeAt(0), 0)
-  return ['🥩', '🐟', '🥦'][h % 3]
+/*
+ * Рассадка: столы и гости с сервера.
+ *
+ * Место гостя — поле `tableId` у самого гостя, а не отдельная карта в браузере:
+ * рассаживают вдвоём, и `tt_seating` на одном телефоне второй из пары не видел.
+ * «Без стола» по-прежнему вычисляется, а не хранится — иначе гость оказывался
+ * бы одновременно за столом и в списке нерассаженных.
+ *
+ * Значок горячего убран: он выдавался хешем от имени гостя и подписывался «из
+ * опроса меню». Настоящий ответ гостя лежит в `diet`, и показываем теперь его.
+ */
+const DIET_ICON: Record<string, string> = {
+  vegetarian: '🥦',
+  vegan: '🥦',
+  halal: '🍽',
+  kosher: '🍽',
+  gluten_free: '🌾',
+  other: '🍽',
 }
+
 export function Seating() {
-  /*
-   * Рассадка построена на реальном списке гостей, а не на собственном наборе имён.
-   * Раньше за столами сидели «Бабушка Зоя» и «Кузина Дина», которых нет среди
-   * гостей, а «Айгуль и Марсель» числились одновременно за столом №2 и в «без
-   * стола». Теперь хранится только назначение «гость → стол»; «без стола»
-   * вычисляется, поэтому оказаться в двух местах сразу невозможно.
-   */
-  const [guestList] = usePersist<Guest[]>('tt_guests', guests)
-  const [seatOf, setSeatOf] = usePersist<Record<string, number>>(
-    'tt_seating',
-    Object.fromEntries(guests.filter(g => g.table).map(g => [g.name, g.table as number])),
-  )
-  const [tableCount, setTableCount] = usePersist('tt_tables_count', 4)
+  const { weddingId } = useStore()
   const [selected, setSelected] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const guestsQ = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const tablesQ = useApi(() => weddingId ? getTables(weddingId) : Promise.resolve([]), [weddingId])
 
   // Рассаживать начинают до того, как ответят все, поэтому за столы попадают и
-  // ждущие ответа. Исключаются только отказавшиеся — раньше «Айгуль и Марсель»
-  // сидели за столом №2, хотя отметили, что не придут.
-  const attending = guestList.filter(g => g.status !== 'no').map(g => g.name)
-  const tables = Array.from({ length: tableCount }, (_, i) => ({
-    n: i + 1,
-    guests: attending.filter(name => seatOf[name] === i + 1),
-  }))
-  const unseated = attending.filter(name => !seatOf[name])
+  // ждущие ответа. Исключаются только отказавшиеся.
+  const attending = (guestsQ.data ?? [])
+    .filter(g => g.status !== 'no')
+    .map(g => ({ id: g.id ?? '', name: g.name ?? '', tableId: g.tableId ?? null, diet: g.diet ?? null }))
 
-  const autoSeat = () => {
-    // Тиль: раскидывает гостей без стола по свободным местам
-    setSeatOf(map => {
-      const next = { ...map }
-      const free = tables.map(tb => 8 - tb.guests.length)
-      let ti = 0
-      for (const name of unseated) {
-        while (ti < free.length && free[ti] <= 0) ti++
-        if (ti >= free.length) break
-        next[name] = ti + 1
-        free[ti]--
-      }
-      return next
-    })
+  const tables = (tablesQ.data ?? []).map(tb => ({
+    id: tb.id ?? '',
+    name: tb.name ?? '',
+    capacity: tb.capacity ?? 8,
+    guests: attending.filter(g => g.tableId === tb.id),
+  }))
+  const unseated = attending.filter(g => !g.tableId)
+
+  const write = async (fn: () => Promise<unknown>) => {
+    if (!weddingId) return
+    setBusy(true)
+    setErr(null)
+    try { await fn(); guestsQ.reload(); tablesQ.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  }
+  const seat = (tableId: string) => {
+    const tb = tables.find(x => x.id === tableId)
+    if (!selected || !tb || tb.guests.length >= tb.capacity) return
+    void write(async () => { await patchGuest(weddingId!, selected, { tableId }); setSelected(null) })
+  }
+  /* Снятие со стола шлёт именно `null`: пропущенное поле сервер читает как
+     «не трогать», и гость остался бы сидеть там, откуда его убрали. */
+  const unseat = (guestId: string) => void write(() => patchGuest(weddingId!, guestId, { tableId: null }))
+
+  const addNewTable = () => void write(() => addTable(weddingId!, `${t('Стол №')}${tables.length + 1}`, 8))
+
+  /* Тиль раскидывает нерассаженных по свободным местам. Записей столько,
+     сколько гостей: отдельного пути «рассадить всех» контракт не знает. */
+  const autoSeat = () => void write(async () => {
+    const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.guests.length }))
+    let ti = 0
+    for (const g of unseated) {
+      while (ti < free.length && free[ti]!.left <= 0) ti++
+      if (ti >= free.length) break
+      await patchGuest(weddingId!, g.id, { tableId: free[ti]!.id })
+      free[ti]!.left--
+    }
     setSelected(null)
-  }
-  // Выбрал гостя → тап по столу сажает его. Тап по гостю за столом — возвращает в «без стола».
-  const seat = (ti: number) => {
-    if (!selected) return
-    if (tables[ti].guests.length >= 8) return
-    setSeatOf(map => ({ ...map, [selected]: ti + 1 }))
-    setSelected(null)
-  }
-  const unseat = (name: string) => {
-    setSeatOf(map => {
-      const next = { ...map }
-      delete next[name]
-      return next
-    })
-  }
+  })
+
+  const selectedName = attending.find(g => g.id === selected)?.name
+
   return (
     <div className="pb-28">
-      <TopBar back title={t('Рассадка')} sub={selected ? `${t('Сажаем: ')}${selected}${t(' — выберите стол')}` : t('Выберите гостя, затем стол')} />
+      <TopBar back title={t('Рассадка')} sub={selectedName ? `${t('Сажаем: ')}${selectedName}${t(' — выберите стол')}` : t('Выберите гостя, затем стол')} />
+      <AsyncState q={guestsQ} />
       <div className="px-5 mt-3">
         <div className="card-s px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0">{t('Без стола:')}</span>
           {unseated.map(g => (
-            <button key={g} onClick={() => setSelected(s => s === g ? null : g)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)]')}>{g}</button>
+            <button key={g.id} onClick={() => setSelected(s => s === g.id ? null : g.id)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)]')}>{g.name}</button>
           ))}
-          {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{t('все рассажены ✓')}</span>}
+          {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
         </div>
       </div>
+      {err && <p className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
       <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
-        {tables.map((tb, i) => (
-          <div key={tb.n} onClick={() => seat(i)} className={cn('card p-4 text-left fade-up transition-all', selected && tb.guests.length < 8 && 'ring-2 ring-[#A9BCA0] cursor-pointer')}>
+        {tables.map(tb => (
+          <div key={tb.id} onClick={() => seat(tb.id)} className={cn('card p-4 text-left fade-up transition-all', selected && tb.guests.length < tb.capacity && 'ring-2 ring-[#A9BCA0] cursor-pointer')}>
             <div className="flex items-center justify-between">
-              <b className="font-serif-d text-[16px]">{t('Стол №')}{tb.n}</b>
-              <span className="text-[9px] text-[var(--soft)] flex items-center gap-1"><Armchair size={10} /> {tb.guests.length}/8</span>
+              <b className="font-serif-d text-[16px]">{tb.name}</b>
+              <span className="text-[9px] text-[var(--soft)] flex items-center gap-1"><Armchair size={10} /> {tb.guests.length}/{tb.capacity}</span>
             </div>
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
-                <button key={g} onClick={e => { e.stopPropagation(); unseat(g) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5"><span className="text-[10px] shrink-0">{mealIcon(g)}</span><span className="truncate">{g}</span></button>
+                <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5 disabled:opacity-50">
+                  {g.diet && <span className="text-[10px] shrink-0">{DIET_ICON[g.diet] ?? '🍽'}</span>}
+                  <span className="truncate">{g.name}</span>
+                </button>
               )) : <div className="text-[10.5px] text-[var(--soft2)] py-3 text-center border-[1.5px] border-dashed border-[#EAD9CF] rounded-xl">{t('Пусто')}</div>}
             </div>
           </div>
         ))}
+        {!tables.length && <p className="col-span-2 text-[12px] text-[var(--soft)] text-center py-4">{t('Столов пока нет — добавьте первый')}</p>}
       </div>
       <div className="px-5 mt-4 space-y-3">
-        <button onClick={autoSeat} disabled={!unseated.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', !unseated.length && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
+        <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
+        {/* Легенда описывает то, что гость сам указал в RSVP. Прежняя обещала
+            «из опроса меню» три значка, которые выдавались хешем имени. */}
         <div className="card-s px-4 py-3 flex items-center gap-3 text-[10.5px] text-[var(--soft)]">
           <span className="font-semibold tracking-[.12em] uppercase shrink-0">{t('Легенда:')}</span>
-          <span>🥩 {t('мясо')}</span><span>🐟 {t('рыба')}</span><span>🥦 {t('вег')}</span>
-          <span className="ml-auto">{t('из опроса меню')}</span>
+          <span>🥦 {t('вег')}</span><span>🌾 {t('без глютена')}</span><span>🍽 {t('особое меню')}</span>
+          <span className="ml-auto">{t('из ответа гостя')}</span>
         </div>
-        <button onClick={() => setTableCount(c => c + 1)} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить стол')}</button>
-        <AiTip text={t('Тётя Люда и дядя Рафик отмечены «не сажать вместе» — они за соседними столами, всё в порядке.')} />
-        <SyncNote to={t('Кейтеринг «Восточный банкет», ведущий Артём')} />
+        <button disabled={busy} onClick={addNewTable} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Plus size={15} />{t('Добавить стол')}</button>
+        {/* Убраны подсказка про «тётю Люду и дядю Рафика», которых нет среди
+            гостей, и плашка «подрядчик получает обновление и подтверждает»:
+            рассадка никому не рассылается. */}
         <button onClick={() => window.print()} className="press w-full h-[52px] rounded-full bg-[var(--ink)] text-[var(--bg)] font-semibold text-[13.5px] flex items-center justify-center gap-2"><Download size={15} />{t('PDF для печати А3')}</button>
       </div>
     </div>

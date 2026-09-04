@@ -5,8 +5,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { initialGifts, type Gift, type Slot, type SlotState } from './data'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
-import { findMyWedding } from './api/wedding'
-import { getSlots } from './api/weddingData'
+import { findMyWedding, setWeddingDateOnServer } from './api/wedding'
+import { getSlots, getWedding } from './api/weddingData'
 import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, type ServerSlot } from './api/slots'
 import { CATEGORY_TILE, DEFAULT_TILE } from './categoryTiles'
 import { addFavorite, getFavorites, removeFavorite } from './api/catalog'
@@ -44,7 +44,8 @@ interface Store {
   setWeddingId: (id: string | null) => void
   /** Дата свадьбы, `YYYY-MM-DD`. Null — ещё не выбрана, и это нормально. */
   weddingDate: string | null
-  setWeddingDate: (iso: string | null) => void
+  /** Перенос даты. Уходит на сервер: он проверяет занятость команды и пересчитывает сроки. */
+  setWeddingDate: (iso: string | null) => Promise<void>
   quiz: QuizAnswers
   slots: Slot[]
   /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
@@ -122,6 +123,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * Объект Date в localStorage превращается в строку с часовым поясом, и
    * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */
   const [weddingDate, setWeddingDateState] = usePersist<string | null>('tt_wedding_date', null)
+  /*
+   * Дата свадьбы — общая, а не настройка устройства.
+   *
+   * От неё считаются сроки задач, тайминг дня, занятость подрядчиков и время
+   * открытия чата дня X. Пока она лежала только в `tt_wedding_date`, ничего из
+   * этого не происходило, а второй из пары видел старую дату.
+   *
+   * Локальная копия остаётся: она нужна до ответа сервера и гостю без входа.
+   * Но источник правды — сервер, и при расхождении выигрывает он.
+   */
+  useEffect(() => {
+    if (!weddingId || !isAuthorized()) return
+    let alive = true
+    void getWedding(weddingId)
+      .then(w => { if (alive && w?.date !== undefined) setWeddingDateState(w.date ?? null) })
+      .catch(() => { /* сервер недоступен — покажем последнюю известную дату */ })
+    return () => { alive = false }
+  }, [weddingId, setWeddingDateState])
   const [quiz, setQuiz] = usePersist<QuizAnswers>('tt_quiz', EMPTY_QUIZ)
   /*
    * Мозаика команды приходит с сервера.
@@ -246,7 +265,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setOnboarded(true)
     },
     weddingDate,
-    setWeddingDate: setWeddingDateState,
+    /* Сначала сервер, потом экран: перенос может не пройти (409 `team_busy` —
+       дата занята у забронированной команды), и показывать новую дату до
+       ответа значит обещать перенос, которого не было. */
+    setWeddingDate: async (iso: string | null) => {
+      if (iso && weddingId && isAuthorized()) await setWeddingDateOnServer(weddingId, iso)
+      setWeddingDateState(iso)
+    },
     quiz,
     slots,
     refreshSlots,

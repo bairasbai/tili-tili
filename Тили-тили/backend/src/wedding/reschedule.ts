@@ -1,6 +1,7 @@
 import { AppError, conflict } from '../errors.js'
 import { isUniqueViolation, type Queryable } from '../plugins/db.js'
 import { COMMITTED } from '../deals/state.js'
+import { TIMELINE_TEMPLATE } from './templates.generated.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -25,11 +26,14 @@ export async function rescheduleWedding(
   weddingId: string,
   date: string,
 ): Promise<RescheduleReport> {
-  const { rows: w } = await client.query<{ date: string | null }>(
-    'select date::text as date from weddings where id = $1',
+  const { rows: w } = await client.query<{ date: string | null; tz: string | null }>(
+    'select date::text as date, tz from weddings where id = $1',
     [weddingId],
   )
   const oldDate = w[0]?.date ?? null
+  /* Пояс площадки: время тайминга местное, а не UTC. Без пояса «сборы в 08:00»
+     превращаются в 13:00 у пары в Уфе. */
+  const tz = w[0]?.tz ?? 'Europe/Moscow'
   if (oldDate === date) return { free: [], busy: [] }
 
   /* Кто из забронированной команды свободен на новую дату, а кто нет.
@@ -87,9 +91,35 @@ export async function rescheduleWedding(
     }
   }
 
-  /* Сроки задач и блоки тайминга считались от старой даты — сдвигаем
-   * на ту же разницу. Свадьба без прежней даты сдвигать нечего: задачи
-   * и тайминг завелись с пустыми сроками и пустыми останутся до правки. */
+  /*
+   * Сроки задач и блоки тайминга считались от старой даты — сдвигаем на ту же
+   * разницу.
+   *
+   * Если прежней даты не было, сдвигать нечего: задачи и тайминг завелись с
+   * пустыми сроками. Но и оставлять их пустыми нельзя — квиз разрешает ответ
+   * «пока не знаем», и у такой пары чек-лист навсегда оставался бы без
+   * дедлайнов, а день X — без часов. Поэтому первая дата не сдвигает, а
+   * заводит: сроки считаются от неё так же, как при создании свадьбы.
+   */
+  if (!oldDate) {
+    // «За 9 месяцев» лежит в `period` числом месяцев — тем же, что при создании.
+    await client.query(
+      `update tasks
+          set due = ($2::date - make_interval(months => period::int))::date
+        where wedding_id = $1 and due is null and period ~ '^[0-9]+$'`,
+      [weddingId, date],
+    )
+    // Время шаблона местное для площадки: пояс берём у свадьбы.
+    for (const e of TIMELINE_TEMPLATE) {
+      await client.query(
+        `update timeline_events
+            set starts_at = ($2::date + $3::time) at time zone $5,
+                ends_at = ($2::date + $4::time) at time zone $5
+          where wedding_id = $1 and sort = $6 and starts_at is null`,
+        [weddingId, date, e.startsAt, e.endsAt, tz, e.sort],
+      )
+    }
+  }
   if (oldDate) {
     await client.query(
       `update tasks set due = due + ($2::date - $3::date) where wedding_id = $1 and due is not null`,

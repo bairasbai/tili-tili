@@ -127,3 +127,39 @@ export function countdownTo(iso: string | null, now: Date): Countdown {
   rest -= h * 3_600_000
   return { m: Math.max(0, months), d, h, min: Math.floor(rest / 60_000) }
 }
+
+/*
+ * Смещение часового пояса в минутах на конкретный момент.
+ *
+ * Готового способа «собрать метку времени в чужом поясе» в стандартной
+ * библиотеке нет: Date умеет только UTC и пояс машины. Поэтому спрашиваем у
+ * Intl, который час в нужном поясе в этот момент, и считаем разницу.
+ */
+function tzOffsetMinutes(utcMs: number, tz: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date(utcMs))
+  const get = (type: string) => Number(parts.find(p => p.type === type)?.value ?? '0')
+  const asIfUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'))
+  return (asIfUtc - utcMs) / 60_000
+}
+
+/**
+ * Метка времени для «14 июня, 13:00 по месту свадьбы».
+ *
+ * Пояс берётся у свадьбы, а не у зрителя: пара может ставить тайминг из другого
+ * города, но 13:00 означает 13:00 на площадке. Без пояса считаем время
+ * локальным для UTC — иначе пришлось бы молча подставить пояс зрителя.
+ */
+export function isoAtWeddingTime(date: string, time: string, tz?: string): string | null {
+  const d = date.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const hm = time.match(/^(\d{1,2}):(\d{2})$/)
+  if (!d || !hm) return null
+  const [h, min] = [Number(hm[1]), Number(hm[2])]
+  if (h > 23 || min > 59) return null
+  const guess = Date.UTC(Number(d[1]), Number(d[2]) - 1, Number(d[3]), h, min)
+  if (!tz) return new Date(guess).toISOString()
+  return new Date(guess - tzOffsetMinutes(guess, tz) * 60_000).toISOString()
+}
