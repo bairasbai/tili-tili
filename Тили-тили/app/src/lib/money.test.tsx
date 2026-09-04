@@ -28,9 +28,10 @@ vi.mock('@/lib/api/weddingData', () => ({
   getTimeline: async () => [],
   getDocuments: async () => [],
   getPlanB: async () => ({ checklist: [], activatedAt: null, scenario: null }),
-  getSlots: async () => [],
+  getSlots: async () => (await import('@/test/slotsMock')).slotsRead.getSlots(),
   getWedding: async () => ({ title: 'Алина & Тимур', city: { name: 'Уфа' }, tz: 'Asia/Yekaterinburg' }),
 }))
+import { authorize, resetSlots } from '@/test/slotsMock'
 import { render, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
@@ -64,10 +65,11 @@ const money = (el: HTMLElement) => el.textContent!.replace(new RegExp('[' + NARR
 
 beforeEach(() => {
   localStorage.clear()
-  /* Экраны свадьбы спрашивают сервер только при известной свадьбе — без
-     идентификатора они честно показывают пусто, и проверять на них суммы
-     нечего. */
-  localStorage.setItem('tt_wedding_id', JSON.stringify('01a06c32-de69-7243-8ed8-066951a0e559'))
+  /* Экраны свадьбы спрашивают сервер только при известной свадьбе и только
+     после входа — без этого они честно показывают пусто, и проверять на них
+     суммы нечего. */
+  authorize()
+  resetSlots()
 })
 afterEach(cleanup)
 
@@ -95,11 +97,11 @@ describe('суммы показываются в рублях', () => {
     expect(money(container as HTMLElement)).toContain('1 200 000 ₽')
   })
 
-  it('сделка: аванс, доплата и итог', () => {
-    const { container } = wrap(<Deal />)
-    const text = money(container as HTMLElement)
-    expect(text).toContain('30 000 ₽')
-    expect(text).toContain('60 000 ₽')
+  it('сделка показывает сумму из ответа сервера', async () => {
+    /* Раньше здесь стояли 30 000 и 60 000 — константы разметки, не связанные
+       ни с какой сделкой: экран показывал их всем и всегда. */
+    const { container } = wrap(<Deal />, '/deal/d-s1', '/deal/:id')
+    await waitFor(() => expect(money(container as HTMLElement)).toContain('45 000 ₽'))
   })
 
   it('вишлист: цена подарка', () => {

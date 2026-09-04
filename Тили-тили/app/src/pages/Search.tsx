@@ -4,7 +4,7 @@ import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check,
 import { fmt } from '@/lib/data'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getAvailability, getCategories, getVendors, getVendor } from '@/lib/api/catalog'
-import { useApi } from '@/lib/api/useApi'
+import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -172,6 +172,8 @@ export function VendorDetail() {
   const { slots, bookVendor, city, weddingDate } = useStore()
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
 
   const detail = useApi(() => id ? getVendor(id) : Promise.resolve(null), [id])
   const cats = useApi(() => getCategories(), [])
@@ -199,10 +201,30 @@ export function VendorDetail() {
    * состояние слота в браузере — иначе локальная запись могла бы обещать
    * номер, которого сервер не прислал, или скрыть присланный. */
 
-  const add = () => {
+  /*
+   * Бронь необратима: она занимает дату в календаре подрядчика. Поэтому
+   * галочка «в моей свадьбе» ставится только после ответа сервера, а не
+   * сразу по нажатию. Раньше `setAdded(true)` стоял безусловно — экран
+   * рапортовал об успехе даже тогда, когда бронировать было нечего.
+   *
+   * Мозаика — 12 слотов, а категорий в каталоге 35. Для подрядчика из
+   * категории вне мозаики места нет, и добавить слот контракт не умеет:
+   * честнее сказать это словами, чем сделать вид, что бронь прошла.
+   */
+  const add = async () => {
     const price = v?.packages?.[pkg]?.price?.amount
-    if (slot && v?.name && price != null) bookVendor(slot.id, v.name, price)
-    setAdded(true)
+    if (!slot) { setErr(t('Эта категория пока не входит в мозаику свадьбы')); return }
+    if (!v?.id || price == null) { setErr(t('У этого подрядчика не указана цена пакета')); return }
+    setErr(null)
+    setBusy(true)
+    try {
+      await bookVendor(slot.id, v.id, price)
+      setAdded(true)
+    } catch (e) {
+      setErr(explainError(e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   /* Переход после галочки — эффектом с отменой, а не голым setTimeout в
@@ -402,10 +424,15 @@ export function VendorDetail() {
       {/* CTA */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
         <button onClick={() => nav('/us/chats/ch1')} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>{t('Написать')}</button>
-        <button onClick={add} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {added ? t('✓ В моей свадьбе!') : slot ? t('Добавить в свадьбу') : t('Забронировать')}
+        <button onClick={add} disabled={busy || added} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
         </button>
       </div>
+      {err && (
+        <div className="fixed bottom-[92px] left-1/2 -translate-x-1/2 w-full max-w-[430px] px-5 z-40">
+          <p className="rounded-2xl bg-[var(--card)] px-4 py-3 text-[12.5px] text-[var(--rose-ink)]" style={{ boxShadow: 'var(--shadow)' }}>{err}</p>
+        </div>
+      )}
     </div>
   )
 }

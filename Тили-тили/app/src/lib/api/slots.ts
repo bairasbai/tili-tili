@@ -1,0 +1,90 @@
+import { api, newIdempotencyKey, url } from './client'
+
+/*
+ * Мозаика команды: бронь, отмена, аванс, свои подрядчики.
+ *
+ * Всё, что здесь есть, необратимо на той стороне: бронь занимает дату в
+ * календаре подрядчика, аванс двигает деньги. Поэтому каждое такое действие
+ * уходит с ключом идемпотентности — сервер по нему отличает повтор одного
+ * нажатия от второго намерения.
+ *
+ * Состояние слота клиент не вычисляет: `tileState` приходит готовым и помечен
+ * readOnly. Считать его самому значит завести второй набор правил, который
+ * разойдётся с серверным на первом же непредусмотренном переходе.
+ */
+
+export interface SlotDeal {
+  id?: string
+  /* Шесть состояний сделки плюс отмена. Плитке хватает производного
+     `tileState`, но экрану сделки нужно настоящее: `paid` в мозаике — это и
+     внесённый аванс, и выполненная работа. */
+  state?: 'candidate' | 'contacted' | 'negotiating' | 'booked' | 'paid_deposit' | 'done' | 'cancelled'
+  vendor?: { id?: string; name?: string } | null
+  externalName?: string | null
+  externalPhone?: string | null
+  price?: { amount?: number; currency?: string }
+}
+
+export interface ServerSlot {
+  id?: string
+  categoryId?: string
+  label?: string
+  tileState?: 'empty' | 'candidate' | 'hold' | 'booked' | 'paid'
+  deal?: SlotDeal | null
+}
+
+const slotPath = (weddingId: string, slotId: string, tail: string) =>
+  url(`/weddings/{weddingId}/slots/{slotId}/${tail}` as '/weddings/{weddingId}/slots/{slotId}/book', { weddingId, slotId })
+
+/** Забронировать подрядчика из каталога. Цена — в копейках. */
+export const bookSlot = (weddingId: string, slotId: string, vendorId: string, price: number, packageId?: string) =>
+  api.post(
+    slotPath(weddingId, slotId, 'book'),
+    { vendorId, price: { amount: price, currency: 'RUB' }, ...(packageId ? { packageId } : {}) },
+    { idempotencyKey: newIdempotencyKey() },
+  )
+
+/** Отменить бронь. Дата уходит обратно в календарь подрядчика. */
+export const cancelSlot = (weddingId: string, slotId: string) =>
+  api.post(slotPath(weddingId, slotId, 'cancel'), {}, { idempotencyKey: newIdempotencyKey() })
+
+/**
+ * Зафиксировать оплату по сделке.
+ *
+ * Без суммы сервер записывает всю цену сделки: путь называется «оплата
+ * (доплата/полная)», а не «аванс». Первая оплата двигает сделку в
+ * `paid_deposit`, дальше меняется только сумма оплаченного.
+ */
+export const paySlotAmount = (weddingId: string, slotId: string, amount?: number) =>
+  api.post(
+    slotPath(weddingId, slotId, 'pay'),
+    amount != null ? { amount: { amount, currency: 'RUB' } } : {},
+    { idempotencyKey: newIdempotencyKey() },
+  )
+
+/** Свой подрядчик не из каталога: имя и телефон вводит пара. */
+export const addExternal = (weddingId: string, slotId: string, vendorName: string, price: number, phone?: string) =>
+  api.post(
+    slotPath(weddingId, slotId, 'external'),
+    /* Поле называется `vendorName`, а не `name`: у своего подрядчика нет
+       карточки в каталоге, и сервер отличает его именно по этому полю. */
+    { vendorName, price: { amount: price, currency: 'RUB' }, ...(phone ? { phone } : {}) },
+    { idempotencyKey: newIdempotencyKey() },
+  )
+
+export const removeExternal = (weddingId: string, slotId: string) =>
+  api.delete(slotPath(weddingId, slotId, 'external') as '/weddings/{weddingId}/slots/{slotId}/external')
+
+/**
+ * Позвать своего подрядчика в приложение.
+ *
+ * Ссылку выдаёт сервер: одноразовый токен со сроком жизни 30 дней, привязанный
+ * к слоту. Собрать её на клиенте из идентификатора слота нельзя — по такой
+ * ссылке никто никуда не войдёт.
+ */
+export const inviteExternalVendor = (weddingId: string, slotId: string) =>
+  api.post(slotPath(weddingId, slotId, 'external/invite'), {}, { idempotencyKey: newIdempotencyKey() }) as Promise<{ token?: string; url?: string; expiresAt?: string } | undefined>
+
+/** Перевести сделку в следующее состояние: контракт разрешает только вперёд. */
+export const advanceDeal = (dealId: string, state: string) =>
+  api.patch(url('/deals/{dealId}', { dealId }), { state }, { idempotencyKey: newIdempotencyKey() })

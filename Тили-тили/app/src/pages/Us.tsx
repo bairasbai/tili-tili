@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, ImagePlus, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
-import { chats, chatMessages, couple } from '@/lib/data'
+import { chats, chatMessages, couple, fmt } from '@/lib/data'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
@@ -151,6 +151,12 @@ export function Chat() {
   const { id } = useParams()
   const nav = useNavigate()
   const chat = chats.find(c => c.id === id) ?? chats[0]
+  /* Чип сделки над перепиской ведёт в настоящую сделку. Раньше он вёл на
+     `/deal` без идентификатора и подписан был константой «Фотограф · 85 000 ₽»
+     независимо от того, есть ли такая сделка вообще. Пока сделок нет — чипа
+     тоже нет: ссылка в никуда хуже её отсутствия. */
+  const { slots } = useStore()
+  const dealSlot = slots.find(x => x.dealId)
   const [msgs, setMsgs] = usePersist(`tt_chat_${id}`, chatMessages)
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
@@ -179,7 +185,9 @@ export function Chat() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
-        <div className="text-center"><button onClick={() => nav('/deal')} className="press text-[9.5px] text-[var(--soft)] bg-[var(--card)] px-3 py-1.5 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>{t('Сделка: Фотограф · 85 000 ₽ · забронировано →')}</button></div>
+        {dealSlot && (
+          <div className="text-center"><button onClick={() => nav(`/deal/${dealSlot.dealId}`)} className="press text-[9.5px] text-[var(--soft)] bg-[var(--card)] px-3 py-1.5 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>{`${t('Сделка')}: ${t(dealSlot.label)}${dealSlot.price != null ? ` · ${fmt(dealSlot.price)}` : ''}${dealSlot.status ? ` · ${t(dealSlot.status)}` : ''} →`}</button></div>
+        )}
         {msgs.map(m => (
           <div key={m.id} className={cn('flex fade-up', m.me ? 'justify-start' : 'justify-end')}>
             <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',

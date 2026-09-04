@@ -3,8 +3,12 @@
  * Оболочка приложения: пути для подпапки, deep-link шим, тема, пустые состояния.
  * Эти вещи не видны в обычных экранных тестах и ломаются молча.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+/* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
+vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
+import { authorize, resetSlots } from '@/test/slotsMock'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { StoreProvider } from './store'
 import { Logistics } from '@/pages/Logistics'
@@ -126,9 +130,11 @@ describe('пустые состояния логистики (R-04)', () => {
 })
 
 describe('плитка слота команды', () => {
-  it('показывает переводимый статус, а не латинское booked', () => {
+  it('показывает переводимый статус, а не латинское booked', async () => {
+    resetSlots()
+    authorize()
     const { container } = wrap(<WeddingTeam />, '/wedding')
+    await waitFor(() => expect(screen.getAllByText('забронирован').length).toBeGreaterThan(0))
     expect(container.textContent).not.toMatch(/\bbooked\b/)
-    expect(screen.getAllByText('забронирован').length).toBeGreaterThan(0)
   })
 })

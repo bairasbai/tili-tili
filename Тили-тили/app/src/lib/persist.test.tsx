@@ -4,8 +4,13 @@
  * Каждый блок проверяет две стороны: запись в localStorage и чтение обратно
  * при повторном монтировании (эмуляция F5).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+/* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
+vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
+vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
+import { authorize, resetSlots } from '@/test/slotsMock'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { StoreProvider, useStore } from './store'
 import { Settings, Notifications } from '@/pages/Account'
@@ -23,57 +28,74 @@ afterEach(cleanup)
 
 function SlotProbe() {
   const { slots, bookVendor, cancelBooking, paySlot } = useStore()
-  const s = (id: string) => slots.find(x => x.id === id)!
+  const s = (id: string) => slots.find(x => x.id === id)
   return (
     <div>
-      <span data-testid="s8-state">{s('s8').state}</span>
-      <span data-testid="s8-vendor">{s('s8').vendor ?? '—'}</span>
-      <span data-testid="s1-state">{s('s1').state}</span>
-      <span data-testid="s1-vendor">{s('s1').vendor ?? '—'}</span>
-      <span data-testid="s2-status">{s('s2').status ?? '—'}</span>
-      <button onClick={() => bookVendor('s8', 'DJ Иван', 40000)}>book</button>
-      <button onClick={() => cancelBooking('s1')}>cancel</button>
-      <button onClick={() => paySlot('s2')}>pay</button>
+      <span data-testid="count">{slots.length}</span>
+      <span data-testid="s8-state">{s('s8')?.state ?? '—'}</span>
+      <span data-testid="s8-vendor">{s('s8')?.vendor ?? '—'}</span>
+      <span data-testid="s1-state">{s('s1')?.state ?? '—'}</span>
+      <span data-testid="s1-vendor">{s('s1')?.vendor ?? '—'}</span>
+      <span data-testid="s2-status">{s('s2')?.status ?? '—'}</span>
+      <button onClick={() => void bookVendor('s8', 'v9', 4_000_000)}>book</button>
+      <button onClick={() => void cancelBooking('s1')}>cancel</button>
+      <button onClick={() => void paySlot('s2')}>pay</button>
     </div>
   )
 }
 
-describe('слоты команды переживают перезагрузку', () => {
-  it('бронь сохраняется и читается обратно', () => {
-    wrap(<SlotProbe />)
-    expect(screen.getByTestId('s8-state').textContent).toBe('empty')
-    fireEvent.click(screen.getByText('book'))
-    expect(screen.getByTestId('s8-state').textContent).toBe('booked')
+describe('мозаика команды живёт на сервере, а не в браузере', () => {
+  beforeEach(() => { resetSlots(); authorize() })
 
-    reload(<SlotProbe />)
-    expect(screen.getByTestId('s8-state').textContent).toBe('booked')
-    expect(screen.getByTestId('s8-vendor').textContent).toBe('DJ Иван')
+  it('гость без свадьбы видит пустую мозаику, а не выдуманную', async () => {
+    /* Раньше двенадцать слотов лежали в `initialSlots`, и три из них были
+       «забронированы» у каждого, кто открыл приложение. */
+    localStorage.clear()
+    wrap(<SlotProbe />)
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'))
   })
 
-  it('отмена брони не «воскресает» после перезагрузки (undefined теряется в JSON)', () => {
+  it('бронь показывается после ответа сервера и переживает перезагрузку', async () => {
     wrap(<SlotProbe />)
-    expect(screen.getByTestId('s1-state').textContent).toBe('booked')
+    await waitFor(() => expect(screen.getByTestId('s8-state').textContent).toBe('empty'))
+    fireEvent.click(screen.getByText('book'))
+    await waitFor(() => expect(screen.getByTestId('s8-state').textContent).toBe('booked'))
+
+    /* F5 — данные приходят заново с сервера, локальной копии нет. */
+    reload(<SlotProbe />)
+    await waitFor(() => expect(screen.getByTestId('s8-vendor').textContent).toBe('Подрядчик v9'))
+  })
+
+  it('отмена брони не «воскресает» после перезагрузки', async () => {
+    wrap(<SlotProbe />)
+    await waitFor(() => expect(screen.getByTestId('s1-state').textContent).toBe('booked'))
     fireEvent.click(screen.getByText('cancel'))
-    expect(screen.getByTestId('s1-state').textContent).toBe('empty')
+    await waitFor(() => expect(screen.getByTestId('s1-state').textContent).toBe('empty'))
 
     reload(<SlotProbe />)
-    expect(screen.getByTestId('s1-state').textContent).toBe('empty')
+    await waitFor(() => expect(screen.getByTestId('s1-state').textContent).toBe('empty'))
     expect(screen.getByTestId('s1-vendor').textContent).toBe('—')
   })
 
-  it('оплата сохраняется', () => {
+  it('аванс виден подписью, а плитка остаётся забронированной', async () => {
+    /* Аванс вносят по существующей сделке — на пустом слоте платить нечего. */
+    resetSlots({ s1: 'Усадьба Белый Сад', s2: 'Фотостудия «Кадр»' })
     wrap(<SlotProbe />)
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('12'))
     fireEvent.click(screen.getByText('pay'))
-    reload(<SlotProbe />)
-    expect(screen.getByTestId('s2-status').textContent).toBe('Оплачено полностью')
+    /* На экране четыре состояния плитки, на сервере пять: `paid` показываем
+       как `booked` с подписью — прятать факт оплаты нельзя. */
+    await waitFor(() => expect(screen.getByTestId('s2-status').textContent).toBe('Аванс внесён'))
   })
 
-  it('статус хранится русским ключом i18n даже при EN-интерфейсе', () => {
-    localStorage.setItem('tt_lang', 'en')
+  it('ничего из мозаики не оседает в localStorage', async () => {
     wrap(<SlotProbe />)
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('12'))
     fireEvent.click(screen.getByText('book'))
-    const saved = JSON.parse(localStorage.getItem('tt_slots')!)
-    expect(saved.s8.status).toBe('Забронировано')
+    await waitFor(() => expect(screen.getByTestId('s8-state').textContent).toBe('booked'))
+    /* Вторая копия мозаики на устройстве разошлась бы с серверной на первом
+       же действии из другого устройства или из кабинета подрядчика. */
+    expect(localStorage.getItem('tt_slots')).toBeNull()
   })
 })
 

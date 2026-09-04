@@ -1,8 +1,8 @@
 import { createElement, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
-import { budgetItems, couple, guests, contractTemplates, fmt, initialAlbum, type Guest } from '@/lib/data'
-import { useApi } from '@/lib/api/useApi'
+import { budgetItems, couple, guests, contractTemplates, fmt, initialAlbum, type Guest, type Slot } from '@/lib/data'
+import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
@@ -109,24 +109,62 @@ export function WeddingTeam() {
 
 /* Деталь слота */
 export function SlotDetail() {
+  const { slots } = useStore()
+  /* Идентификатор — из маршрута, а не разбором `location.pathname`: разбор
+     руками ломается на первом же вложенном адресе. Подмены «не нашли — покажем
+     первый слот» здесь нет: чужая ссылка должна открывать «не найдено», а не
+     чужой слот. */
+  const { id } = useParams()
+  const s = slots.find(x => x.id === id)
+  /* Мозаика приходит с сервера, и до ответа слот не «пустой», а неизвестный:
+     разница видна человеку — пустой предлагает выбрать подрядчика, неизвестный
+     просит подождать. */
+  if (!s) return (
+    <div className="pb-28">
+      <TopBar back title={t('Слот команды')} />
+      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{slots.length ? t('Слот не найден') : t('Загружаем…')}</p>
+    </div>
+  )
+  return <SlotView s={s} />
+}
+
+/* Тело экрана вынесено отдельно: состояние слота нужно до первого хука, а
+   хуки нельзя объявлять после условного возврата. */
+function SlotView({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { slots, cancelBooking, bookExternal, inviteExternal } = useStore()
-  const id = location.pathname.split('/').pop()
-  const s = slots.find(x => x.id === id) ?? slots[0]
+  const { cancelBooking, bookExternal, inviteExternal } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [ownOpen, setOwnOpen] = useState(false)
   const [ownName, setOwnName] = useState('')
   const [ownPrice, setOwnPrice] = useState('')
   const [ownPhone, setOwnPhone] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
+  /* Ссылку выдаёт сервер — одноразовый токен на 30 дней. Собрать её из
+     идентификатора слота нельзя: по такой ссылке никто никуда не войдёт.
+     Пережить перезагрузку она не может — контракт не отдаёт уже выданную,
+     и кнопка честно выпишет новую. */
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
   const [ownBusy, runOwn] = useBusy()
-  const addOwn = () => runOwn(() => {
+
+  /* Любое действие здесь уходит на сервер и меняет чужой календарь. Ошибку
+     показываем словами, а не глотаем: «сделали вид, что получилось» на
+     необратимом действии дороже честного отказа. */
+  const guard = async (fn: () => Promise<unknown>) => {
+    setErr(null)
+    try { await fn() } catch (e) { setErr(explainError(e)) }
+  }
+
+  const addOwn = () => runOwn(async () => {
     if (!ownName.trim() || !Number(ownPrice)) return
-    // поле «Цена, ₽» — рубли, в состоянии храним копейки
-    bookExternal(s.id, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim() || undefined)
-    setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
+    // поле «Цена, ₽» — рубли, на сервер уходят копейки
+    await guard(async () => {
+      await bookExternal(s.id, ownName.trim(), rub(Number(ownPrice)), ownPhone.trim() || undefined)
+      setOwnOpen(false); setOwnName(''); setOwnPrice(''); setOwnPhone('')
+    })
   })
-  const inviteLink = `tili-tili.ru/join/ТИЛИ-СВОЙ-${s.id.toUpperCase()}`
+
+  const errBlock = err && <p className="mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>
 
   /* Свой подрядчик: форма добавления/приглашения (пустой слот или внешний) */
   const ownBlock = (
@@ -150,6 +188,7 @@ export function SlotDetail() {
           </div>
         </div>
       )}
+      {errBlock}
     </div>
   )
 
@@ -192,51 +231,56 @@ export function SlotDetail() {
             <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1.5">
               {t('По ссылке он зайдёт как гость-подрядчик — без регистрации в каталоге: увидит дату, тайминг и чат с вами.')}
             </p>
-            {s.invited ? (
+            {inviteLink ? (
               <div className="flex items-center gap-2 mt-3">
                 <code className="flex-1 text-[10.5px] bg-[var(--track)] rounded-[12px] px-3 py-2.5 truncate">{inviteLink}</code>
                 <button onClick={() => { copyText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-[var(--on-grad)]">{linkCopied ? '✓' : t('Копия')}</button>
               </div>
             ) : (
-              <button onClick={() => inviteExternal(s.id)} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
+              <button onClick={() => void guard(async () => setInviteLink(await inviteExternal(s.id)))} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
             )}
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-2.5 mt-3">
           <button onClick={() => nav('/us/chats/ch1')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
-          <button onClick={() => nav('/deal')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Сделка')}</button>
+          <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t('Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {confirmCancel ? (
-            <button onClick={() => { cancelBooking(s.id); nav('/wedding') }} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#9B6A6A' }}>{t('Точно отменить?')}</button>
+            <button onClick={() => void guard(async () => { await cancelBooking(s.id); nav('/wedding') })} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#9B6A6A' }}>{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
         </div>
+        {errBlock}
 
-        {s.price && (
+        {/*
+          * Деньги показываем те, о которых знает сервер: сумму сделки и то,
+          * внесён ли аванс. График «50% сейчас, 50% за неделю» здесь был
+          * выдуман на клиенте — вместе с отметкой «✓ Оплачен», которая стояла
+          * всегда, даже когда не платили ничего.
+          */}
+        {s.price != null && (
           <div className="card p-4 mt-3.5">
-            <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('График платежей')}</span>
-            {[
-              [t('Аванс · при бронировании'), Math.round(s.price * 0.5), true],
-              [t('Доплата · за 7 дней до даты'), s.price - Math.round(s.price * 0.5), false],
-            ].map(([l, v, paid]) => (
-              <div key={String(l)} className="flex items-center justify-between mt-3">
-                <span className="text-[12px] text-[var(--ink2)]">{l}</span>
-                <span className="flex items-center gap-2">
-                  <b className="text-[12.5px] tabular">{fmt(Number(v))}</b>
-                  <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', paid ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--honey)] text-[var(--honey-ink)]')}>{paid ? t('✓ Оплачен') : t('Ожидает')}</span>
-                </span>
-              </div>
-            ))}
+            <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Деньги по сделке')}</span>
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[12px] text-[var(--ink2)]">{t('Сумма сделки')}</span>
+              <b className="text-[12.5px] tabular">{fmt(s.price)}</b>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <span className="text-[12px] text-[var(--ink2)]">{t('Оплата')}</span>
+              <span className={cn('text-[8.5px] font-bold px-2 py-1 rounded-full', s.dealState === 'paid_deposit' || s.dealState === 'done' ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--honey)] text-[var(--honey-ink)]')}>
+                {s.dealState === 'paid_deposit' || s.dealState === 'done' ? t('✓ Зафиксирована') : t('Ожидает')}
+              </span>
+            </div>
           </div>
         )}
 
         <div className="card px-4 py-1.5 mt-3.5">
           {[
-            ['📄', 'bg-[var(--blue)]', t('Договор подписан обеими сторонами'), '/wedding/documents'],
-            ['🗓', 'bg-[var(--honey)]', t('Дата 14.06 закрыта у подрядчика'), '/wedding/timeline'],
-            ['💬', 'bg-[var(--sage-soft)]', t('Чат по сделке — 3 новых сообщения'), '/us/chats/ch1'],
+            ['📄', 'bg-[var(--blue)]', t('Документы свадьбы'), '/wedding/documents'],
+            ['🗓', 'bg-[var(--honey)]', t('Тайминг дня'), '/wedding/timeline'],
+            ['💬', 'bg-[var(--sage-soft)]', t('Чат по сделке'), '/us/chats/ch1'],
           ].map(([ic, tile, l, to], i) => (
             <button key={String(l)} onClick={() => nav(String(to))} className={cn('press w-full flex items-center gap-3 py-3 text-left', i !== 2 && 'border-b border-[var(--track)]')}>
               <Tile icon={String(ic)} tile={String(tile)} size={34} />

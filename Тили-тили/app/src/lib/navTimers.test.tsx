@@ -7,11 +7,17 @@
  * дольше экрана и утаскивал человека со страницы, которую он за эти 900 мс
  * успел открыть сам.
  */
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 /* Анкета приходит с сервера — кнопка появляется после ответа. Общий набор
    ответов каталога: src/test/catalogMock.ts. */
 vi.mock('@/lib/api/catalog', async () => (await import('@/test/catalogMock')).catalogMock())
+/* Бронь уходит на сервер, и галочка ставится только после ответа: без живой
+   мозаики кнопка честно скажет «этой категории нет в мозаике» и никуда не
+   уведёт. Общий набор ответов: src/test/slotsMock.ts. */
+vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
+vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
+import { authorize, resetSlots } from '@/test/slotsMock'
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 
 const { navSpy } = vi.hoisted(() => ({ navSpy: vi.fn() }))
@@ -24,6 +30,8 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import { VendorDetail } from '@/pages/Search'
 import { Compare } from '@/pages/Smart'
+
+beforeEach(() => { resetSlots(); authorize() })
 
 afterEach(() => {
   cleanup()
@@ -53,6 +61,10 @@ describe('анкета подрядчика: «Добавить в свадьб�
     vi.useFakeTimers()
 
     fireEvent.click(add)
+    /* Галочка ставится после ответа сервера, и только она заводит таймер.
+       Промисы поддельные таймеры не трогают — их нужно прокрутить руками,
+       иначе advanceTimersByTime сработает раньше, чем таймер появится. */
+    await act(async () => {})
     expect(navSpy).not.toHaveBeenCalled()
 
     act(() => { vi.advanceTimersByTime(900) })
@@ -65,6 +77,7 @@ describe('анкета подрядчика: «Добавить в свадьб�
     vi.useFakeTimers()
 
     fireEvent.click(add)
+    await act(async () => {}) // дождались ответа сервера — таймер заведён
     unmount() // человек нажал «назад» и открыл другой экран
 
     act(() => { vi.advanceTimersByTime(5000) })

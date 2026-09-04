@@ -106,7 +106,23 @@ async function refreshTokens(): Promise<Tokens | null> {
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
-async function raw(method: Method, path: string, body: unknown, token: string | null): Promise<Response> {
+/**
+ * Ключ идемпотентности.
+ *
+ * Бронь, оплата и другие необратимые действия требуют его заголовком: по нему
+ * сервер отличает повтор одного нажатия от второго намерения. Без него двойной
+ * тап по «Забронировать» на медленной сети создаёт две сделки, и вторую уже
+ * никто не отменит.
+ */
+export const newIdempotencyKey = (): string =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${performance.now()}`
+
+interface Options {
+  /** Значение заголовка `Idempotency-Key` для необратимых действий. */
+  idempotencyKey?: string
+}
+
+async function raw(method: Method, path: string, body: unknown, token: string | null, opts?: Options): Promise<Response> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
   try {
@@ -116,6 +132,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
       headers: {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(opts?.idempotencyKey ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
@@ -124,11 +141,11 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
   }
 }
 
-async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: Method, path: string, body?: unknown, opts?: Options): Promise<T> {
   let tokens = readTokens()
   let res: Response
   try {
-    res = await raw(method, path, body, tokens?.accessToken ?? null)
+    res = await raw(method, path, body, tokens?.accessToken ?? null, opts)
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
       throw new ApiError('timeout', 0, 'timeout', 'Сервер не ответил вовремя')
@@ -141,7 +158,7 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
     tokens = await refreshTokens()
     if (tokens) {
       try {
-        res = await raw(method, path, body, tokens.accessToken)
+        res = await raw(method, path, body, tokens.accessToken, opts)
       } catch {
         throw new ApiError('network', 0, 'network', 'Нет связи с сервером')
       }
@@ -183,12 +200,15 @@ type Ok<T> = T extends { responses: infer R }
 export const api = {
   get: <P extends PathsWith<'get'>>(path: P) =>
     request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string),
-  post: <P extends PathsWith<'post'>>(path: P, body?: unknown) =>
-    request<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, body ?? {}),
-  put: <P extends PathsWith<'put'>>(path: P, body?: unknown) =>
-    request<Ok<paths[P] extends { put: infer O } ? O : never>>('PUT', path as string, body ?? {}),
-  patch: <P extends PathsWith<'patch'>>(path: P, body?: unknown) =>
-    request<Ok<paths[P] extends { patch: infer O } ? O : never>>('PATCH', path as string, body ?? {}),
+  post: <P extends PathsWith<'post'>>(path: P, body?: unknown, opts?: Options) =>
+    request<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, body ?? {}, opts),
+  /* PUT и PATCH тоже принимают ключ идемпотентности: контракт требует его,
+     например, на переходах сделки — без него второе нажатие на плохой связи
+     двигает состояние дважды. */
+  put: <P extends PathsWith<'put'>>(path: P, body?: unknown, opts?: Options) =>
+    request<Ok<paths[P] extends { put: infer O } ? O : never>>('PUT', path as string, body ?? {}, opts),
+  patch: <P extends PathsWith<'patch'>>(path: P, body?: unknown, opts?: Options) =>
+    request<Ok<paths[P] extends { patch: infer O } ? O : never>>('PATCH', path as string, body ?? {}, opts),
   delete: <P extends PathsWith<'delete'>>(path: P) =>
     request<Ok<paths[P] extends { delete: infer O } ? O : never>>('DELETE', path as string),
 }

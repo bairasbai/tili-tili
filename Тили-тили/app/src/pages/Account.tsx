@@ -193,7 +193,10 @@ export function Notifications() {
   const nav = useNavigate()
   const [readIds, setReadIds] = usePersist<number[]>('tt_notif_read', [])
   const items = [
-    { icon: '💰', tile: 'bg-[var(--honey)]', title: t('Аванс подтверждён'), text: t('Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.'), time: '14:20', unread: true, today: true, to: '/deal' },
+    /* Список уведомлений пока выдуман — он придёт с сервера отдельным этапом.
+       Адрес сделки здесь вести некуда: экран сделки открывается по её
+       идентификатору, а у выдуманного уведомления его нет. Ведём в мозаику. */
+    { icon: '💰', tile: 'bg-[var(--honey)]', title: t('Аванс подтверждён'), text: t('Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.'), time: '14:20', unread: true, today: true, to: '/wedding' },
     { icon: '✦', tile: 'bg-[var(--rose-soft)]', title: t('Тиль'), text: t('Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.'), time: '11:05', unread: true, today: true, to: '/assistant' },
     { icon: '💌', tile: 'bg-[var(--lav)]', title: 'RSVP', text: t('Ольга и Денис Соколовы подтвердили приезд с +1.'), time: t('вчера'), unread: false, today: false, to: '/wedding/guests' },
     { icon: '📄', tile: 'bg-[var(--blue)]', title: t('Договор готов'), text: t('Договор с фотографом сгенерирован — скачайте и подпишите.'), time: t('вчера'), unread: false, today: false, to: '/wedding/documents' },

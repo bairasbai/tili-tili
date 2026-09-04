@@ -1,129 +1,159 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { createElement, useState } from 'react'
+import { useNavigate, useParams } from 'react-router'
 import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-react'
-import { contractTemplates, dressPalettes, couple, guests, fmt, type Guest } from '@/lib/data'
+import { contractTemplates, dressPalettes, couple, guests, fmt, type DealState, type Guest, type Slot } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { useBusy } from '@/lib/useBusy'
 import { usePersist } from '@/lib/usePersist'
 import { AiTip, SyncNote, Tile, TopBar } from '@/components/chrome'
+import { explainError } from '@/lib/api/useApi'
+import { catIcon } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { rub } from '@/lib/money'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
-/* Карточка сделки */
+/*
+ * Карточка сделки.
+ *
+ * Экран был полностью выдуман: имя подрядчика, даты платежей, история из
+ * четырёх событий и слот `s4` в обработчиках — всё это стояло в разметке
+ * константами и не зависело ни от какой сделки. Теперь он показывает одну
+ * настоящую сделку, найденную по идентификатору из адреса.
+ *
+ * Шесть состояний — решение владельца 2026-09-02, План §8.1. Двигать их можно
+ * только вперёд по цепочке: сервер отвечает 409 на любой другой переход,
+ * поэтому кнопка предлагает ровно один следующий шаг.
+ */
+const DEAL_STEPS: ReadonlyArray<{ state: DealState; label: string }> = [
+  { state: 'candidate', label: 'Кандидат' },
+  { state: 'contacted', label: 'Написали' },
+  { state: 'negotiating', label: 'Переговоры' },
+  { state: 'booked', label: 'Забронировано' },
+  { state: 'paid_deposit', label: 'Аванс внесён' },
+  { state: 'done', label: 'Выполнено' },
+]
+
 export function Deal() {
+  const { slots } = useStore()
+  const { id } = useParams()
+  const s = slots.find(x => x.dealId === id)
+  if (!s) return (
+    <div className="pb-28">
+      <TopBar back title={t('Сделка')} />
+      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{slots.length ? t('Сделка не найдена') : t('Загружаем…')}</p>
+    </div>
+  )
+  return <DealView s={s} />
+}
+
+function DealView({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { paySlot, cancelBooking } = useStore()
-  const [paid, setPaid] = useState(false)
+  const { paySlot, cancelBooking, advanceDealTo } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [cancelled, setCancelled] = useState(false)
-  const [dispute, setDispute] = useState(false)
-  const [payBusy, runPay] = useBusy()
-  /* Шесть состояний сделки — решение владельца 2026-09-02, План §8.1.
-     Экран и документы обязаны называть шаги одинаково, иначе бэкенд получит
-     один список, а пара увидит другой. Мягкая бронь (hold 72 ч) — не отдельный
-     шаг, а срок жизни этапа «Переговоры», см. §18.3. */
-  const steps = [
-    { label: t('Кандидат'), done: true },
-    { label: t('Написали'), done: true },
-    { label: t('Переговоры'), done: true },
-    { label: t('Забронировано'), done: true },
-    { label: t('Аванс внесён'), done: true },
-    { label: t('Выполнено'), done: paid },
-  ]
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, run] = useBusy()
+
+  const at = DEAL_STEPS.findIndex(x => x.state === s.dealState)
+  const next = at >= 0 ? DEAL_STEPS[at + 1] : undefined
+  const cancelled = s.dealState === 'cancelled'
+
+  /* Каждое действие здесь необратимо на той стороне: двигает сделку, освобождает
+     дату в календаре подрядчика или фиксирует деньги. Ошибку показываем словами. */
+  const guard = (fn: () => Promise<unknown>) => run(async () => {
+    setErr(null)
+    try { await fn() } catch (e) { setErr(explainError(e)) }
+  })
+
   return (
     <div className="pb-28">
-      <TopBar back title={t('Сделка')} sub={t('Ведущий · Артём Краснов')} />
+      <TopBar back title={t('Сделка')} sub={`${t(s.label)} · ${s.vendor ?? t('Исполнитель не выбран')}`} />
       <div className="px-5 mt-3 space-y-3.5">
         <div className="card p-5">
           <div className="flex items-center gap-3">
-            <Tile icon="🎤" tile="bg-[var(--lav)]" size={52} />
-            <div className="flex-1">
-              <b className="font-serif-d text-[17px]">{t('Артём Краснов')}</b>
-              <p className="text-[11px] text-[var(--soft)]">{t('Банкет + церемония · 14.06.2027')}</p>
+            <div className={cn('w-[52px] h-[52px] rounded-[18px] flex items-center justify-center shrink-0', s.tile)}>
+              {createElement(catIcon(s.categoryId), { size: 24, className: 'text-[var(--ink2)]' })}
             </div>
-            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)]">{t('⏳ Аванс 50%')}</span>
+            <div className="flex-1 min-w-0">
+              <b className="font-serif-d text-[17px] block truncate">{s.vendor ?? t('Исполнитель не выбран')}</b>
+              <p className="text-[11px] text-[var(--soft)]">{t(s.label)}</p>
+            </div>
+            {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
           <div className="flex items-center mt-5">
-            {steps.map((s, k) => (
-              <div key={s.label} className="flex items-center flex-1 last:flex-none">
-                <div className="flex flex-col items-center">
-                  <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', s.done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{s.done ? '✓' : k + 1}</span>
-                  <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', s.done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{s.label}</span>
+            {DEAL_STEPS.map((step, k) => {
+              /* Пройденным считаем шаг не позже текущего: «выполнено» ставилось
+                 галочкой всем шестерым сразу, включая те, до которых не дошли. */
+              const done = at >= 0 && k <= at
+              return (
+                <div key={step.state} className="flex items-center flex-1 last:flex-none">
+                  <div className="flex flex-col items-center">
+                    <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{done ? '✓' : k + 1}</span>
+                    <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{t(step.label)}</span>
+                  </div>
+                  {k < DEAL_STEPS.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', done ? 'bg-[#A9BCA0]' : 'bg-[var(--track)]')} />}
                 </div>
-                {k < steps.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', s.done ? 'bg-[#A9BCA0]' : 'bg-[var(--track)]')} />}
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
+        {/* Сумма — та, что записана в сделке. Графика платежей контракт не
+            отдаёт, и выдумывать его здесь нельзя: раньше на экране стояли
+            «аванс 10 фев» и «доплата 14 июн» с суммами, не связанными ни с
+            какой сделкой. */}
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
           <div className="flex justify-between items-center mt-3">
-            <span className="text-[12.5px]">{t('Аванс · 10 фев')}</span>
-            <b className="tabular text-[13px] text-[var(--sage-deep)]">✓ {fmt(rub(30000))}</b>
+            <span className="text-[12.5px]">{t('Оплата')}</span>
+            <b className={cn('tabular text-[13px]', s.dealState === 'paid_deposit' || s.dealState === 'done' ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>
+              {s.dealState === 'paid_deposit' || s.dealState === 'done' ? t('✓ Зафиксирована') : t('Ожидает')}
+            </b>
           </div>
-          <div className="flex justify-between items-center mt-2.5">
-            <span className="text-[12.5px]">{t('Доплата · 14 июн')}</span>
-            <b className={cn('tabular text-[13px]', paid ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>{paid ? `✓ ${fmt(rub(30000))}` : fmt(rub(30000))}</b>
-          </div>
+          {/* Сколько уже оплачено, контракт не отдаёт: в `Deal` есть цена и
+              состояние, но нет суммы платежей. Поэтому строка показывает факт
+              оплаты, а не остаток — придумывать остаток нельзя. */}
           <div className="h-[1.5px] bg-[var(--track)] my-3" />
           <div className="flex justify-between items-center">
             <b className="text-[13px]">{t('Итого по договору')}</b>
-            <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{fmt(rub(60000))}</b>
+            <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{s.price != null ? fmt(s.price) : '—'}</b>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
           <button onClick={() => nav('/us/chats/ch3')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button onClick={() => nav('/wedding/documents/new')} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
-          {paid ? (
-            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] text-center">{t('✓ Оплачено полностью')}</div>
-          ) : (
-            <button disabled={payBusy} onClick={() => runPay(() => { setPaid(true); paySlot('s4') })} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] disabled:opacity-50">{payBusy ? t('Проводим…') : t('✓ Отметить доплату')}</button>
-          )}
+          {/* «Внести аванс» — отдельный путь контракта, остальные шаги двигает
+              PATCH сделки. Разные адреса, поэтому и кнопки разные. */}
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Сделка отменена')}</div>
+          ) : s.dealState === 'booked' ? (
+            <button disabled={busy} onClick={() => guard(() => paySlot(s.id))} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] disabled:opacity-50">{busy ? t('Проводим…') : t('✓ Отметить оплату')}</button>
+          ) : next ? (
+            <button disabled={busy || !s.dealId} onClick={() => guard(() => advanceDealTo(s.dealId!, next.state))} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{busy ? t('Проводим…') : t(next.label)}</button>
+          ) : (
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] text-center">{t('✓ Выполнено')}</div>
+          )}
+          {cancelled ? (
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Дата свободна')}</div>
           ) : confirmCancel ? (
-            <button onClick={() => { setCancelled(true); setConfirmCancel(false); cancelBooking('s4') }} className="press py-3.5 rounded-[18px] bg-[#A36666] text-white text-[13px] font-semibold">{t('Точно отменить?')}</button>
+            <button disabled={busy} onClick={() => guard(async () => { await cancelBooking(s.id); setConfirmCancel(false); nav('/wedding') })} className="press py-3.5 rounded-[18px] bg-[#A36666] text-white text-[13px] font-semibold disabled:opacity-50">{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{t('Отменить сделку')}</button>
           )}
         </div>
-        <div className="card p-5">
-          <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('История')}</span>
-          {[
-            [t('10 фев'), t('Аванс подтверждён подрядчиком'), true],
-            [t('8 фев'), t('Договор подписан обеими сторонами'), true],
-            [t('3 фев'), t('Hold 72 ч → подрядчик подтвердил дату'), true],
-            [t('1 фев'), t('Вы добавили Артёма в команду'), true],
-          ].map(([d, t]) => (
-            <div key={String(t)} className="flex gap-3 mt-3">
-              <span className="text-[10px] text-[var(--soft2)] font-semibold w-[38px] shrink-0 pt-0.5 tabular">{d}</span>
-              <div className="relative pl-4">
-                <span className="absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full bg-[#A9BCA0]" />
-                <p className="text-[12px] text-[var(--ink2)]">{t}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        {err && <p className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
 
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Защита сделки')}</span>
           <div className="mt-3 space-y-2.5 text-[12px] text-[var(--soft)] leading-relaxed">
-            <p>🛡 <b className="text-[var(--ink)]">{t('Эскроу:')}</b> {t('деньги заморожены на платформе и уйдут подрядчику только после того, как вы подтвердите выполнение в день X.')}</p>
-            <p>📅 <b className="text-[var(--ink)]">{t('Отмена:')}</b> {t('до 30 дней — возврат 100%, до 14 — 50%, позже — по договору. Подрядчику за его отмену — штраф рейтинга и полный возврат вам.')}</p>
-            <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('Тиль собирает переписку, договор и чек-лист выполнения, решение модерации — до 48 часов.')}</p>
+            <p>💸 <b className="text-[var(--ink)]">{t('Оплата:')}</b> {t('деньги идут напрямую подрядчику — приложение фиксирует факт оплаты, но не держит их у себя. Эскроу появится позже.')}</p>
+            <p>📅 <b className="text-[var(--ink)]">{t('Отмена:')}</b> {t('условия возврата — в договоре со сторонами. Отмена освобождает вашу дату в календаре подрядчика сразу.')}</p>
+            <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('напишите в поддержку — переписка и договор останутся в приложении и будут приложены к обращению.')}</p>
           </div>
-          {dispute ? (
-            <div className="mt-3 rounded-xl bg-[var(--sage-soft)] px-3.5 py-2.5 text-[11.5px] text-[var(--sage-ink)]">{t('Спор открыт: Тиль уже собрал материалы и передал модерации. Ответим в течение 48 часов ✓')}</div>
-          ) : (
-            <button onClick={() => setDispute(true)} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Открыть спор по сделке')}</button>
-          )}
+          <button onClick={() => nav('/support')} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Написать в поддержку')}</button>
         </div>
-
         <p className="text-[10px] text-[var(--soft2)] text-center leading-relaxed">{t('Отмена менее чем за 30 дней до даты блокирует отзывы обеим сторонам до решения модерации.')}</p>
       </div>
     </div>

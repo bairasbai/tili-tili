@@ -162,7 +162,7 @@ function Shell() {
           <Route path="/wedding/invites" element={<InviteEditor />} />
           <Route path="/wedding/documents" element={<Documents />} />
           <Route path="/wedding/documents/new" element={<ContractWizard />} />
-          <Route path="/deal" element={<Deal />} />
+          <Route path="/deal/:id" element={<Deal />} />
           <Route path="/assistant" element={<Assistant />} />
           <Route path="/dayx" element={<DayX />} />
           <Route path="/after" element={<After />} />

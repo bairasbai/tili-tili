@@ -140,7 +140,18 @@ export const vendors: Vendor[] = [
   },
 ]
 
-export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string; external?: boolean; invited?: boolean; phone?: string }
+/*
+ * Слот команды в том виде, в котором его рисуют экраны.
+ *
+ * `state` — производная подпись плитки, её считает сервер (`tileState`).
+ * `dealState` — настоящее состояние сделки из шести: плитке хватает четырёх,
+ * а экрану сделки нужны все, иначе «внесён аванс» и «выполнено» сольются в
+ * одну картинку.
+ */
+export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string; external?: boolean; phone?: string; dealId?: string; dealState?: DealState }
+
+/** Шесть состояний сделки плюс отмена — те же, что в контракте. */
+export type DealState = 'candidate' | 'contacted' | 'negotiating' | 'booked' | 'paid_deposit' | 'done' | 'cancelled'
 
 export const initialSlots: Slot[] = [
   { id: 's1', categoryId: 'venue', label: t('Площадка'), icon: '🏛️', tile: 'bg-[#F0DCB8]', state: 'booked', vendor: t('Усадьба «Липовый сад»'), price: rub(250000), status: 'Забронировано' },

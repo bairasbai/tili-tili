@@ -2,53 +2,15 @@
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode, useEffect } from 'react'
-import { initialGifts, initialSlots, type Gift, type Slot, type SlotState } from './data'
+import { initialGifts, type Gift, type Slot, type SlotState } from './data'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
 import { findMyWedding } from './api/wedding'
+import { getSlots } from './api/weddingData'
+import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, type ServerSlot } from './api/slots'
+import { CATEGORY_TILE, DEFAULT_TILE } from './categoryTiles'
 import { addFavorite, getFavorites, removeFavorite } from './api/catalog'
 import { safeGet, safeSet, usePersist } from './usePersist'
-
-/*
- * Слоты команды переживают перезагрузку. Сохраняется только изменяемая часть слота:
- * подписи, иконки и плитки берутся из initialSlots на каждом запуске, поэтому смена
- * языка не «замораживает» старые переводы. Статус хранится русским ключом i18n
- * (перевод — при рендере через t()), иначе EN-строка застряла бы в localStorage.
- * Все поля патча всегда присутствуют: undefined исчезает при JSON-сериализации,
- * и слот «воскресал» бы из базовых данных после отмены брони.
- */
-export interface SlotPatch {
-  state: SlotState
-  vendor: string | null
-  price: number | null
-  status: string | null
-  external: boolean
-  invited: boolean
-  phone: string | null
-}
-
-const patchOf = (s: Slot): SlotPatch => ({
-  state: s.state,
-  vendor: s.vendor ?? null,
-  price: s.price ?? null,
-  status: s.status ?? null,
-  external: !!s.external,
-  invited: !!s.invited,
-  phone: s.phone ?? null,
-})
-
-const applyPatch = (s: Slot, p: SlotPatch): Slot => ({
-  ...s,
-  state: p.state,
-  vendor: p.vendor ?? undefined,
-  price: p.price ?? undefined,
-  status: p.status ?? undefined,
-  external: p.external || undefined,
-  invited: p.invited || undefined,
-  phone: p.phone ?? undefined,
-})
-
-const EMPTY_PATCH: SlotPatch = { state: 'empty', vendor: null, price: null, status: null, external: false, invited: false, phone: null }
 
 /** Что человек ответил в квизе. Раньше ответы просто выбрасывались. */
 export interface QuizAnswers {
@@ -85,11 +47,18 @@ interface Store {
   setWeddingDate: (iso: string | null) => void
   quiz: QuizAnswers
   slots: Slot[]
-  bookVendor: (slotId: string, vendorName: string, price: number) => void
-  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => void
-  inviteExternal: (slotId: string) => void
-  cancelBooking: (slotId: string) => void
-  paySlot: (slotId: string) => void
+  /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
+  bookVendor: (slotId: string, vendorId: string, price: number) => Promise<void>
+  bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => Promise<void>
+  /** Позвать своего подрядчика: возвращает ссылку, выданную сервером. */
+  inviteExternal: (slotId: string) => Promise<string | null>
+  /** Двинуть сделку вперёд по цепочке состояний. */
+  advanceDealTo: (dealId: string, state: string) => Promise<void>
+  cancelBooking: (slotId: string) => Promise<void>
+  /** Зафиксировать оплату. Без суммы уходит вся цена сделки, как её понимает сервер. */
+  paySlot: (slotId: string, amount?: number) => Promise<void>
+  /** Перечитать мозаику: состояние плиток считает сервер. */
+  refreshSlots: () => void
   favorites: string[]
   toggleFav: (id: string) => void
   lang: 'ru' | 'en'
@@ -110,6 +79,17 @@ interface Store {
   addGift: (g: Omit<Gift, 'id' | 'funded' | 'reserved'>) => void
   removeGift: (id: string) => void
   myGifts: string[]
+}
+
+/*
+ * Подписи состояний сделки. Ключ — русская строка словаря (R-07): перевод
+ * происходит при рендере, а в состоянии лежит русский ключ.
+ */
+const DEAL_LABEL: Record<string, string | undefined> = {
+  negotiating: 'Бронь держится 72 часа',
+  booked: 'Забронировано',
+  paid_deposit: 'Аванс внесён',
+  done: 'Выполнено',
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -143,17 +123,71 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */
   const [weddingDate, setWeddingDateState] = usePersist<string | null>('tt_wedding_date', null)
   const [quiz, setQuiz] = usePersist<QuizAnswers>('tt_quiz', EMPTY_QUIZ)
-  const [slotPatch, setSlotPatch] = usePersist<Record<string, SlotPatch>>('tt_slots', {})
-  const slots = useMemo(
-    () => initialSlots.map(s => (slotPatch[s.id] ? applyPatch(s, slotPatch[s.id]) : s)),
-    [slotPatch],
-  )
-  const updateSlot = useCallback((id: string, fn: (p: SlotPatch) => SlotPatch) =>
-    setSlotPatch(prev => {
-      const src = initialSlots.find(s => s.id === id)
-      const base = prev[id] ?? (src ? patchOf(src) : EMPTY_PATCH)
-      return { ...prev, [id]: fn(base) }
-    }), [setSlotPatch])
+  /*
+   * Мозаика команды приходит с сервера.
+   *
+   * Прежде она собиралась из `initialSlots` и локальных заплаток: двенадцать
+   * выдуманных слотов, три из которых «уже забронированы» у всех подряд.
+   * Состояние плитки (`tileState`) считает сервер и помечает readOnly —
+   * повторять эту логику здесь значит завести второй набор правил, который
+   * разойдётся с серверным на первом же непредусмотренном переходе.
+   */
+  const [serverSlots, setServerSlots] = useState<ServerSlot[]>([])
+  const [slotsTick, setSlotsTick] = useState(0)
+  useEffect(() => {
+    /* Сброс делаем не синхронно в теле эффекта, а внутри ответа: синхронный
+       setState в эффекте даёт каскад перерисовок и запрещён линтом. Пока
+       свадьбы нет, спрашивать нечего — просто ничего не запрашиваем. */
+    if (!weddingId || !isAuthorized()) return
+    let alive = true
+    void getSlots(weddingId)
+      .then(list => { if (alive) setServerSlots(list ?? []) })
+      .catch(() => { /* сервер недоступен — мозаика останется пустой, а не выдуманной */ })
+    return () => { alive = false }
+  }, [weddingId, slotsTick])
+  /** Перечитать мозаику после действия: состояние плитки считает сервер. */
+  const refreshSlots = useCallback(() => setSlotsTick(n => n + 1), [])
+
+  /*
+   * Без свадьбы записывать некуда.
+   *
+   * Молчаливый выход отсюда стоил бы дороже отказа: экран показал бы галочку
+   * «забронировано», а на сервере не было бы ничего.
+   */
+  const needWedding = useCallback(() => {
+    if (!weddingId) throw new Error('Свадьба ещё не создана')
+    return weddingId
+  }, [weddingId])
+
+  const slots: Slot[] = useMemo(() => serverSlots.map(s => {
+    const d = s.deal
+    /* Пять состояний сервера против четырёх на экране: `paid` показываем как
+       `booked` с подписью об оплате — плитка «оплачено» в мозаике не
+       предусмотрена, а прятать факт оплаты нельзя. */
+    const state: SlotState = s.tileState === 'paid' ? 'booked'
+      : s.tileState === 'booked' ? 'booked'
+      : s.tileState === 'hold' ? 'hold'
+      : s.tileState === 'candidate' ? 'candidate'
+      : 'empty'
+    return {
+      id: s.id ?? '',
+      categoryId: s.categoryId ?? '',
+      label: s.label ?? '',
+      icon: '',
+      tile: CATEGORY_TILE[s.categoryId ?? ''] ?? DEFAULT_TILE,
+      state,
+      vendor: d?.vendor?.name ?? d?.externalName ?? undefined,
+      price: d?.price?.amount,
+      /* Подпись берём из состояния сделки, а не из плитки: `paid` в мозаике —
+         это и внесённый аванс, и выполненная работа, а на экране сделки это
+         разные вещи. */
+      status: DEAL_LABEL[d?.state ?? ''],
+      external: !!d?.externalName,
+      phone: d?.externalPhone ?? undefined,
+      dealId: d?.id,
+      dealState: d?.state,
+    }
+  }), [serverSlots])
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const parsed = JSON.parse(safeGet('tt_fav') ?? '["v1"]')
@@ -215,13 +249,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWeddingDate: setWeddingDateState,
     quiz,
     slots,
-    bookVendor: (slotId, vendorName, price) =>
-      updateSlot(slotId, () => ({ state: 'booked', vendor: vendorName, price, status: 'Забронировано', external: false, invited: false, phone: null })),
-    cancelBooking: (slotId) => updateSlot(slotId, () => ({ ...EMPTY_PATCH })),
-    bookExternal: (slotId, vendorName, price, phone) =>
-      updateSlot(slotId, () => ({ state: 'booked', vendor: vendorName, price, status: 'Свой подрядчик', external: true, invited: false, phone: phone ?? null })),
-    inviteExternal: (slotId) => updateSlot(slotId, p => ({ ...p, invited: true })),
-    paySlot: (slotId) => updateSlot(slotId, p => ({ ...p, status: 'Оплачено полностью' })),
+    refreshSlots,
+    /*
+     * Действия над слотом уходят на сервер и перечитывают мозаику.
+     *
+     * Перечитываем, а не правим состояние у себя: `tileState` — производная,
+     * которую считает сервер, и подставлять её вручную значит гадать, что он
+     * решит. Бронь ещё и меняет бюджет — его пересчитывает та же сторона.
+     *
+     * Ошибку не глотаем и не откатываем на месте: бронь необратима, и «сделали
+     * вид, что получилось» здесь опаснее честного отказа. Экран узнаёт о ней
+     * из проброшенного исключения.
+     */
+    bookVendor: async (slotId, vendorId, price) => {
+      await bookSlot(needWedding(), slotId, vendorId, price)
+      refreshSlots()
+    },
+    cancelBooking: async (slotId) => {
+      await cancelSlot(needWedding(), slotId)
+      refreshSlots()
+    },
+    bookExternal: async (slotId, vendorName, price, phone) => {
+      await addExternal(needWedding(), slotId, vendorName, price, phone)
+      refreshSlots()
+    },
+    inviteExternal: async (slotId) => {
+      /* Ссылку возвращаем экрану: собрать её на клиенте нельзя — это
+         одноразовый токен сервера, а не адрес из идентификатора слота. */
+      const res = await inviteExternalVendor(needWedding(), slotId)
+      refreshSlots()
+      return res?.url ?? null
+    },
+    paySlot: async (slotId, amount) => {
+      await paySlotAmount(needWedding(), slotId, amount)
+      refreshSlots()
+    },
+    advanceDealTo: async (dealId, state) => {
+      await advanceDeal(dealId, state)
+      refreshSlots()
+    },
     favorites,
     /*
      * Избранное — данные аккаунта, а не устройства.
@@ -276,7 +342,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGifts(gs => persistGifts(gs.filter(g => g.id !== id)))
       setMyGifts(m => persistMine(m.filter(x => x !== id)))
     },
-  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, updateSlot, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
+  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

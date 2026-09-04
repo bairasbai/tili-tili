@@ -15,7 +15,7 @@ const ROUTES = [
   '/wedding/invites', '/wedding/seating', '/wedding/wishlist', '/gifts', '/wedding/album',
   '/wedding/logistics', '/wedding/catering', '/wedding/planb',
   '/us', '/us/chats', '/us/chats/ch1', '/us/team',
-  '/deal', '/tools/alcohol', '/assistant', '/compare', '/dayx', '/after',
+  '/deal/d1', '/tools/alcohol', '/assistant', '/compare', '/dayx', '/after',
   '/favorites', '/notes', '/inspiration', '/venues',
   '/vendor-app', '/vendor-app/profile', '/vendor-app/deals',
   '/vendor-app/leads/l1', '/vendor-app/reviews', '/vendor-app/analytics',
