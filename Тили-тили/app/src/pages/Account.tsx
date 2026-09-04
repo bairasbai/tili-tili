@@ -8,7 +8,7 @@ import { usePersist } from '@/lib/usePersist'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t, reloadToRoot } from '@/lib/i18n'
-import { api, ApiError, saveTokens } from '@/lib/api/client'
+import { api, ApiError, saveTokens, url } from '@/lib/api/client'
 
 /* Вход: телефон → OTP → роль */
 export function Auth() {
@@ -280,11 +280,26 @@ export function Settings() {
     try { localStorage.clear() } catch { /* приватный режим */ }
   }
 
+  /*
+   * «Выйти со всех устройств» — именно со всех, включая это.
+   *
+   * `DELETE /users/me/sessions` гасит все ЧУЖИЕ сессии и намеренно оставляет
+   * текущую: на сервере это «выгнать постороннего, не выгоняя себя». Если
+   * ограничиться им, кнопка врёт — своя сессия остаётся живой, а браузер
+   * просто забывает токен. Поэтому дальше находим свою в списке (`current`)
+   * и гасим отдельно.
+   */
   const signOut = async () => {
     try {
       await api.delete('/users/me/sessions')
-    } catch (e) {
-      if (!(e instanceof ApiError) || !e.isDown) { /* сервер отказал — но уйти локально всё равно даём */ }
+      const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
+      if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
+      /* Своя гасится последней и по идентификатору из списка: угадывать её
+         нечем, а погасив раньше, мы потеряли бы доступ к самому списку. */
+    } catch {
+      /* Сервер не ответил. Локально уйти всё равно даём — иначе человек
+         заперт в аккаунте, из которого хочет выйти. Живая сессия при этом
+         остаётся, и это честнее, чем не пустить его на экран входа. */
     }
     forgetLocally()
     nav('/auth')
