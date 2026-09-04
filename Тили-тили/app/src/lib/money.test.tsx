@@ -11,6 +11,26 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 /* Анкета подрядчика ходит в сеть — в jsdom её нет. Ответы каталога общие
    для всех экранных тестов: src/test/catalogMock.ts. */
 vi.mock('@/lib/api/catalog', async () => (await import('@/test/catalogMock')).catalogMock())
+
+/* Данные свадьбы тоже приходят с сервера: бюджет и главная должны считать по
+   одному и тому же ответу, иначе «одинаковый итог» проверяется на двух разных
+   источниках и ничего не значит. */
+vi.mock('@/lib/api/weddingData', () => ({
+  getBudget: async () => ({
+    total: { amount: 120_000_000, currency: 'RUB' },
+    spent: { amount: 67_700_000, currency: 'RUB' },
+    categories: [
+      { id: 'b1', title: 'Площадка и кейтеринг', planned: { amount: 56_000_000 }, fromSlots: 48_000_000, color: '#D9A8A0', live: null, items: [] },
+    ],
+  }),
+  getTasks: async () => [{ id: 't1', title: 'Выбрать дату', period: '9', done: false, custom: false }],
+  getGuests: async () => [],
+  getTimeline: async () => [],
+  getDocuments: async () => [],
+  getPlanB: async () => ({ checklist: [], activatedAt: null, scenario: null }),
+  getSlots: async () => [],
+  getWedding: async () => ({ title: 'Алина & Тимур', city: { name: 'Уфа' }, tz: 'Asia/Yekaterinburg' }),
+}))
 import { render, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
@@ -42,7 +62,13 @@ const wrap = (node: React.ReactNode, route = '/', path?: string) =>
 const NARROW = String.fromCharCode(160, 8239)
 const money = (el: HTMLElement) => el.textContent!.replace(new RegExp('[' + NARROW + ']', 'g'), ' ')
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  /* Экраны свадьбы спрашивают сервер только при известной свадьбе — без
+     идентификатора они честно показывают пусто, и проверять на них суммы
+     нечего. */
+  localStorage.setItem('tt_wedding_id', JSON.stringify('01a06c32-de69-7243-8ed8-066951a0e559'))
+})
 afterEach(cleanup)
 
 describe('суммы показываются в рублях', () => {
@@ -54,16 +80,19 @@ describe('суммы показываются в рублях', () => {
     expect(money(container as HTMLElement)).toContain('130 000 ₽')
   })
 
-  it('бюджет: итог и лимит', () => {
+  it('бюджет: итог и лимит', async () => {
     const { container } = wrap(<Budget />)
-    const text = money(container as HTMLElement)
-    expect(text).toContain('677 000 ₽')
-    expect(text).toContain('1 200 000 ₽')
+    await waitFor(() => expect(money(container as HTMLElement)).toContain('677 000 ₽'))
+    expect(money(container as HTMLElement)).toContain('1 200 000 ₽')
   })
 
-  it('главная показывает тот же итог, что бюджет', () => {
+  it('главная показывает тот же итог, что бюджет', async () => {
+    /* Смысл проверки — не число само по себе, а совпадение: оба экрана считают
+       по одному ответу сервера. Раньше главная считала по мокам и расходилась
+       с бюджетом на всю сумму. */
     const { container } = wrap(<Home />, '/home')
-    expect(money(container as HTMLElement)).toContain('677 000 ₽')
+    await waitFor(() => expect(money(container as HTMLElement)).toContain('677 000 ₽'))
+    expect(money(container as HTMLElement)).toContain('1 200 000 ₽')
   })
 
   it('сделка: аванс, доплата и итог', () => {

@@ -5,12 +5,12 @@ import { budgetItems, couple, guests, contractTemplates, fmt, initialAlbum, type
 import { useApi } from '@/lib/api/useApi'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getTasks, getTimeline } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
-import { budgetRows, committedSlots, committedTotal, spentTotal, type BudgetRow } from '@/lib/budget'
+import { committedSlots, committedTotal, type BudgetRow } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText } from '@/lib/utils'
@@ -284,22 +284,22 @@ export function Budget() {
    */
   const q = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
   const server = q.data
-  const budgetTotal = server?.total?.amount ?? couple.budgetTotal
-  const items: BudgetRow[] = server
-    ? [
-        ...(server.categories ?? []).map(c => ({
-          name: c.title ?? '',
-          amount: c.fromSlots ?? 0,
-          limit: c.planned?.amount || 1,
-          color: c.color ?? 'var(--lav)',
-          /* `live` в контракте — имена забронированной команды через
-             разделитель, а не флаг: экран показывает их подписью «из команды». */
-          live: c.live ?? undefined,
-        })),
-        ...custom,
-      ]
-    : budgetRows(slots, custom)
-  const total = server ? (server.spent?.amount ?? 0) + custom.reduce((a, c) => a + c.amount, 0) : spentTotal(slots, custom)
+  const budgetTotal = server?.total?.amount ?? 0
+  /* Без ответа сервера показываем пусто, а не мок: подстановка мок-бюджета
+     означала бы, что человек без свадьбы видит чужие 677 000 ₽ и верит им. */
+  const items: BudgetRow[] = [
+    ...(server?.categories ?? []).map(c => ({
+      name: c.title ?? '',
+      amount: c.fromSlots ?? 0,
+      limit: c.planned?.amount || 1,
+      color: c.color ?? 'var(--lav)',
+      /* `live` в контракте — имена забронированной команды через разделитель,
+         а не флаг: экран показывает их подписью «из команды». */
+      live: c.live ?? undefined,
+    })),
+    ...custom,
+  ]
+  const total = (server?.spent?.amount ?? 0) + custom.reduce((a, c) => a + c.amount, 0)
   const pct = budgetTotal ? Math.round((total / budgetTotal) * 100) : 0
   // Умный бюджет: fact (оплаченные авансы) vs предстоящие платежи + резерв 10%
   const paidFact = Math.round(booked.reduce((a, s) => a + (s.price ?? 0), 0) * 0.5)
@@ -503,6 +503,23 @@ export function Checklist() {
   )
 }
 
+/*
+ * Часы и минуты блока тайминга в часовом поясе свадьбы.
+ *
+ * Прежняя версия брала `toISOString().slice(11, 16)` — то есть UTC. Церемония
+ * в 13:00 в Уфе показывалась как 08:00, ровно на разницу поясов. Пояс берётся
+ * у свадьбы, а не у зрителя: пара может смотреть тайминг из другого города,
+ * а координатор — из третьего, но час на площадке один.
+ */
+function formatTime(iso: string, tz?: string): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: tz, hour12: false }).format(new Date(iso))
+  } catch {
+    /* Неизвестный пояс не должен ронять экран: показываем по месту зрителя. */
+    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
+  }
+}
+
 /* Тайминг дня */
 export function Timeline() {
   const { weddingId, weddingDate } = useStore()
@@ -514,15 +531,19 @@ export function Timeline() {
      добавленное событие исчезало вместе с вкладкой (единственный экран, где
      это было так). */
   const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId])
+  /* Часовой пояс места свадьбы, а не зрителя: по нему живёт день X. Пара может
+     смотреть тайминг из другого города, и «13:00» должно означать 13:00 на
+     площадке. */
+  const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const tz = wq.data?.tz
   const events = (q.data ?? []).map(e => ({
     id: e.id ?? '',
-    /* Сервер отдаёт метку времени, экран показывает часы и минуты. Пустое
-       время — норма: блок есть, час ещё не назначен. */
-    time: e.startsAt ? new Date(e.startsAt).toISOString().slice(11, 16) : '—',
+    /* Сервер отдаёт метку времени, экран показывает часы и минуты в поясе
+       свадьбы. Пустое время — норма: блок есть, час ещё не назначен. */
+    time: e.startsAt ? formatTime(e.startsAt, tz) : '—',
     name: e.name ?? '',
     loc: e.location ?? '',
-    /* Иконки блока в контракте нет — ставим общую, а не выдумываем по названию. */
-    icon: '📌',
+    icon: e.icon ?? '📌',
     tile: 'bg-[var(--peach)]',
     who: e.who ?? '',
   }))

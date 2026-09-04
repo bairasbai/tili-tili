@@ -3611,6 +3611,14 @@ components:
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
         who: { type: string, description: кто отвечает }
+        icon:
+          type: string
+          example: 🌅
+          description: |
+            Значок блока. Приходит с сервера, потому что шаблон тайминга
+            собирается там при создании свадьбы: клиент не знает, что «Сборы
+            невесты» — это рассвет, а «Первый танец» — музыка, и подбирать
+            значок по названию значит гадать по строке.
         outdoor: { type: boolean, description: 'блок под открытым небом — к нему привязывается план Б' }
     AlbumPhoto:
       type: object

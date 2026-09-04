@@ -867,6 +867,10 @@ Object.assign(EN, {
   'черновик': 'draft',
   'Бюджет ведёт пара — у вашей роли к нему доступа нет.': 'The budget is run by the couple - your role has no access to it.',
   '% лимита. Проверьте, всё ли учтено, прежде чем добавлять расходы сюда.': '% of the limit. Check what is already counted before adding more here.',
+  'Выберите дату свадьбы — от неё считаются сроки в чек-листе и занятость подрядчиков.': 'Pick your wedding date - the checklist deadlines and vendor availability are counted from it.',
+  'Чек-лист готов. Начните с первого пункта — остальные подтянутся по срокам.': 'Your checklist is ready. Start with the first item - the rest follow by deadline.',
+  'Добавьте гостей — от их числа зависят площадка, кейтеринг и рассадка.': 'Add your guests - the venue, catering and seating all depend on the count.',
+  'Спросите Тиля, если не знаете, с чего продолжить.': 'Ask Til if you are not sure what to do next.',
 })
 
 // Фонды, анти-вишлист, RSVP+, альбом, дресс-код, SOS (EN)
