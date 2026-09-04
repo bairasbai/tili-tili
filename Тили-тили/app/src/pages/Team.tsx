@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { api, ApiError, url } from '@/lib/api/client'
+import { findMyWedding } from '@/lib/api/wedding'
 import { useEscape } from '@/lib/useEscape'
 
 /* «Наша команда» — единое пространство свадьбы: роли и приглашения.
@@ -220,13 +221,57 @@ export function Team() {
 }
 
 /* Принятие приглашения: /join/:code */
+/* Роль на экране приглашения выводится из ответа сервера, а не из строки кода:
+   код читаемый, но он подсказка человеку, а не источник прав. */
+const ROLE_CARD: Record<string, typeof ROLES[number]> = {
+  couple: ROLES[0], helper: ROLES[1], coordinator: ROLES[2], vendor: ROLES[3],
+}
+
 export function Join() {
   const nav = useNavigate()
   const { code } = useParams()
-  const { finishOnboarding } = useStore()
+  const { finishOnboarding, setWeddingId } = useStore()
   const [joined, setJoined] = useState(false)
-  const isPartner = (code ?? '').includes('ПАРА')
-  const role = isPartner ? ROLES[0] : (code ?? '').includes('ПОДР') ? ROLES[2] : ROLES[1]
+  const [preview, setPreview] = useState<{ role?: string; weddingTitle?: string; inviterName?: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  /* Что за приглашение — спрашиваем сервер. Раньше роль угадывалась по
+     подстроке в коде, а имена пары и дата были нарисованы в разметке: экран
+     показывал «Алина и Тимур · 14 июня 2027» кому угодно по любой ссылке. */
+  useEffect(() => {
+    if (!code) return
+    let alive = true
+    void api.get(url('/invites/{code}', { code }))
+      .then(p => { if (alive) setPreview(p ?? null) })
+      .catch(e => {
+        if (!alive) return
+        setErr(e instanceof ApiError
+          ? (e.status === 410 ? t('Ссылка истекла или отозвана') : e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+          : t('Что-то пошло не так'))
+      })
+    return () => { alive = false }
+  }, [code])
+
+  const accept = async () => {
+    if (!code || busy) return
+    setBusy(true); setErr(null)
+    try {
+      await api.post(url('/invites/{code}/accept', { code }))
+      /* Свадьба у приглашённого появляется только сейчас: до принятия он в
+         ней не состоит, и `GET /weddings` вернул бы пусто. */
+      const id = await findMyWedding()
+      if (id) setWeddingId(id)
+      setJoined(true)
+    } catch (e) {
+      setErr(e instanceof ApiError
+        ? (e.status === 401 ? t('Сначала войдите — код придёт по SMS') : e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+        : t('Что-то пошло не так'))
+    } finally { setBusy(false) }
+  }
+
+  const isPartner = preview?.role === 'couple'
+  const role = ROLE_CARD[preview?.role ?? 'helper'] ?? ROLES[1]
 
   if (joined) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
@@ -242,15 +287,25 @@ export function Join() {
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <Tile icon={role.icon} tile={role.tile} size={72} />
-      <h1 className="font-serif-d text-[26px] mt-6">{t('Алина и Тимур')}<br />{t('приглашают вас')}</h1>
-      <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[var(--rose-deep)]">{role.name.toLowerCase()}</b>{t('· свадьба 14 июня 2027')}</p>
+      {/* Без ответа сервера имени свадьбы нет — не склеиваем заглушку с
+          «приглашают вас», иначе выходит «Вас приглашают приглашают вас». */}
+      <h1 className="font-serif-d text-[26px] mt-6">
+        {preview?.weddingTitle ? <>{preview.weddingTitle}<br />{t('приглашают вас')}</> : t('Приглашение')}
+      </h1>
+      {preview && <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[var(--rose-ink)]">{role.name.toLowerCase()}</b></p>}
+      {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-3 leading-relaxed">{err}</p>}
       <div className="card p-4 mt-6 w-full text-left">
         <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold">{t('Вам будет доступно')}</span>
         <div className="mt-2.5 space-y-1.5">
           {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[var(--sage-deep)]" />{r}</p>)}
         </div>
       </div>
-      <button onClick={() => setJoined(true)} className="press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Принять приглашение')}</button>
+      <button onClick={() => void accept()} disabled={busy || !preview} className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-5', (busy || !preview) && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{busy ? t('Секунду…') : t('Принять приглашение')}</button>
+      {/* Тупика быть не должно: приглашение не открылось — человек всё равно
+          должен куда-то уйти, а не остаться на экране с одной серой кнопкой. */}
+      {!preview && (
+        <button onClick={() => nav('/')} className="press w-full text-center text-[12px] text-[var(--soft)] mt-4">{t('Открыть приложение')}</button>
+      )}
       <p className="text-[10px] text-[var(--soft2)] mt-4 flex items-center gap-1.5"><Users size={11} />{t('код')} {code}{t('· одноразовый')}</p>
     </div>
   )
