@@ -151,6 +151,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         [body.city.name, body.city.region],
       )
       if (!cityRows[0]) throw notFound(`Город «${body.city.name}» не найден в справочнике`)
+      // Достаём до транзакции: внутри замыкания TypeScript теряет сужение типа.
+      const cityId = cityRows[0].id
 
       const media = body.media ?? []
       // Схема уже отклонила бы длинное видео, но проверка нужна и здесь:
@@ -170,56 +172,68 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      // Вставка с разрешением конфликта, а не «проверить и вставить»: двойное
-      // нажатие «Сохранить» на медленной связи даёт два запроса, и раздельная
-      // проверка позволяет уникальному ключу сработать — человек видит
-      // пятисотку вместо сохранённой анкеты.
-      const { rows: saved } = await db().query<{ id: string }>(
-        `insert into vendors (id, user_id, category_id, city_id, name, about, price_from, currency, phone)
-         values ($1, $2, $3, $4, $5, $6, $7, 'RUB', $8)
-         on conflict (user_id) do update
-            set category_id = excluded.category_id, city_id = excluded.city_id,
-                name = excluded.name, about = excluded.about, price_from = excluded.price_from,
-                phone = excluded.phone
-         returning id`,
-        [
-          uuidv7(),
-          userId,
-          body.categoryId,
-          cityRows[0].id,
-          body.name,
-          body.about ?? null,
-          body.priceFrom?.amount ?? null,
-          body.phone ?? null,
-        ],
-      )
-      const vendorId = saved[0]!.id
-
-      // Пакеты и медиа заменяются целиком: мастер присылает полное состояние
-      // формы, а не список правок. Дописывание оставило бы удалённые позиции.
-      await db().query('delete from vendor_packages where vendor_id = $1', [vendorId])
-      let sort = 0
-      for (const pkg of body.packages ?? []) {
-        await db().query(
-          'insert into vendor_packages (id, vendor_id, name, price, currency, items, sort) values ($1,$2,$3,$4,$5,$6,$7)',
-          [uuidv7(), vendorId, pkg.name, pkg.price?.amount ?? null, 'RUB', JSON.stringify(pkg.includes ?? []), sort++],
-        )
-      }
-
-      await db().query('delete from vendor_media where vendor_id = $1', [vendorId])
-      sort = 0
       const all = [
         ...(body.portfolioUrls ?? []).map((url) => ({ kind: 'photo' as const, url, durationS: null })),
         ...media,
       ]
-      for (const m of all) {
-        await db().query(
-          'insert into vendor_media (id, vendor_id, kind, url, duration_s, sort) values ($1,$2,$3,$4,$5,$6)',
-          [uuidv7(), vendorId, m.kind, m.url, m.durationS ?? null, sort++],
+
+      /* Сохранение — одной транзакцией.
+       *
+       * Пакеты и медиа заменяются целиком, то есть сначала удаляются. Раздельными
+       * запросами сбой на середине оставлял анкету разорённой: пакеты стёрты,
+       * медиа заменены наполовину, и вернуть их неоткуда — форму прислали
+       * один раз. Портфолио из шестидесяти работ так теряется от одной ошибки
+       * вставки (ERR-0109). Соседние «заменить целиком» — тайминг и опрос меню
+       * в `day.ts` — давно в транзакции; этот выпал. */
+      const vendorId = await db().tx(async (client) => {
+        // Вставка с разрешением конфликта, а не «проверить и вставить»: двойное
+        // нажатие «Сохранить» на медленной связи даёт два запроса, и раздельная
+        // проверка позволяет уникальному ключу сработать — человек видит
+        // пятисотку вместо сохранённой анкеты.
+        const { rows: saved } = await client.query<{ id: string }>(
+          `insert into vendors (id, user_id, category_id, city_id, name, about, price_from, currency, phone)
+           values ($1, $2, $3, $4, $5, $6, $7, 'RUB', $8)
+           on conflict (user_id) do update
+              set category_id = excluded.category_id, city_id = excluded.city_id,
+                  name = excluded.name, about = excluded.about, price_from = excluded.price_from,
+                  phone = excluded.phone
+           returning id`,
+          [
+            uuidv7(),
+            userId,
+            body.categoryId,
+            cityId,
+            body.name,
+            body.about ?? null,
+            body.priceFrom?.amount ?? null,
+            body.phone ?? null,
+          ],
         )
-      }
-      const firstPhoto = all.find((m) => m.kind === 'photo')?.url ?? null
-      await db().query('update vendors set photo_url = $2 where id = $1', [vendorId, firstPhoto])
+        const id = saved[0]!.id
+
+        // Мастер присылает полное состояние формы, а не список правок:
+        // дописывание оставило бы удалённые позиции.
+        await client.query('delete from vendor_packages where vendor_id = $1', [id])
+        let sort = 0
+        for (const pkg of body.packages ?? []) {
+          await client.query(
+            'insert into vendor_packages (id, vendor_id, name, price, currency, items, sort) values ($1,$2,$3,$4,$5,$6,$7)',
+            [uuidv7(), id, pkg.name, pkg.price?.amount ?? null, 'RUB', JSON.stringify(pkg.includes ?? []), sort++],
+          )
+        }
+
+        await client.query('delete from vendor_media where vendor_id = $1', [id])
+        sort = 0
+        for (const m of all) {
+          await client.query(
+            'insert into vendor_media (id, vendor_id, kind, url, duration_s, sort) values ($1,$2,$3,$4,$5,$6)',
+            [uuidv7(), id, m.kind, m.url, m.durationS ?? null, sort++],
+          )
+        }
+        const firstPhoto = all.find((m) => m.kind === 'photo')?.url ?? null
+        await client.query('update vendors set photo_url = $2 where id = $1', [id, firstPhoto])
+        return id
+      })
 
       return loadMine(vendorId)
     },

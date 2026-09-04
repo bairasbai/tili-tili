@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { notify } from '../notify/notify.js'
+import { rolesSeeing } from '../chats/access.js'
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
@@ -190,6 +192,31 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             body.text,
           ])
           await app.realtime.publish({ chatId: chat[0].id, type: 'message', actorId: request.caller!.userId })
+
+          /* И уведомление — тоже как у обычного сообщения.
+           *
+           * Ответ из кабинета лидов писал в тот же чат, но никого не звал:
+           * живой канал доходит только до того, у кого чат открыт прямо
+           * сейчас, а пара узнавала об ответе, лишь заглянув туда сама. Один
+           * и тот же поступок через два входа давал разный результат — при
+           * том, что комментарий выше объясняет, зачем переписка сведена
+           * в одно место (ERR-0107).
+           *
+           * Получатели — по матрице видимости, а не все участники: помощник
+           * чат с подрядчиком не открывает (ERR-0099). */
+          const { rows: members } = await db().query<{ user_id: string }>(
+            'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
+            [found[0]!.wedding_id, rolesSeeing('vendor')],
+          )
+          for (const m of members) {
+            await notify(db(), {
+              userId: m.user_id,
+              kind: 'chat',
+              title: 'Новое сообщение',
+              body: body.text.length > 120 ? `${body.text.slice(0, 119)}…` : body.text,
+              link: `/chats/${chat[0].id}`,
+            })
+          }
         }
       }
       return toLead(rows[0]!)

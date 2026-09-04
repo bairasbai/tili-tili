@@ -531,3 +531,38 @@ describe('идентификаторы в ТЕЛЕ запроса (ERR: перв
     }
   })
 })
+
+describe('вторая утечка переписки и разошедшиеся пути (финальный проход)', () => {
+  it('чат своего подрядчика помощнику не пересказывают', () => {
+    /* ERR-0099 я починил в chats.ts — то есть в МЕСТЕ, а не в классе.
+     * Вторая рассылка текста сообщения живёт в slots.ts, в кабинете своего
+     * подрядчика, и слала его всем участникам свадьбы (ERR-0106). Проверка
+     * та же: помощник чат `external` не открывает. */
+    expect(rolesSeeing('external')).not.toContain('helper')
+    expect([...rolesSeeing('external')].sort()).toEqual(['coordinator', 'couple'])
+  })
+
+  it('идентификатор избранного в адресе проверяется на формат', async () => {
+    // У соседнего PUT проверка была, у DELETE — нет.
+    const app = await buildApp(TEST_CONFIG)
+    try {
+      const res = await app.inject({ method: 'DELETE', url: '/me/favorites/не-uuid' })
+      expect(res.statusCode).toBe(422)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('корректный uuid избранного проходит проверку дальше', async () => {
+    const app = await buildApp(TEST_CONFIG)
+    try {
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/me/favorites/0192f3a4-5b6c-7d8e-9f01-234567890abc',
+      })
+      expect(res.statusCode).not.toBe(422)
+    } finally {
+      await app.close()
+    }
+  })
+})

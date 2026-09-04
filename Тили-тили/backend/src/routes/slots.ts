@@ -4,6 +4,7 @@ import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
+import { rolesSeeing } from '../chats/access.js'
 import { openLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -454,11 +455,17 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       }
       await app.realtime.publish({ chatId, type: 'message', actorId: 'external', payload: { message } })
 
-      // Пара узнаёт о сообщении так же, как о любом другом: подрядчик без
-      // аккаунта — не повод молчать в её уведомлениях.
+      /* Пара узнаёт о сообщении так же, как о любом другом: подрядчик без
+       * аккаунта — не повод молчать в её уведомлениях.
+       *
+       * Получатели — те, кому чат `external` виден по матрице, а не все
+       * участники свадьбы. Помощник его не открывает (403), но получал бы
+       * в теле уведомления первые 120 символов переписки — ровно та же
+       * утечка, что закрыта в `chats.ts` (ERR-0099). Там я починил место
+       * вызова, а не класс, и второе место осталось (ERR-0106). */
       const { rows: members } = await db().query<{ user_id: string }>(
-        'select user_id from wedding_members where wedding_id = $1',
-        [invite.wedding_id],
+        'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
+        [invite.wedding_id, rolesSeeing('external')],
       )
       for (const m of members) {
         await notify(db(), {

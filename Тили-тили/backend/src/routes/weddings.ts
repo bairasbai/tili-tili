@@ -223,55 +223,65 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       const date = body.date ?? null
       if (date) assertWeddingDate(date)
 
-      await db().query(
-        `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
-                               budget_total, currency, invite_code, tz)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          weddingId,
-          userId,
-          title,
-          date,
-          cityId,
-          body.style ?? null,
-          body.guestsPlanned ?? null,
-          body.budgetTotal?.amount ?? null,
-          body.budgetTotal?.currency ?? 'RUB',
-          weddingCode(),
-          cityTz,
-        ],
-      )
-      await db().query(
-        `insert into wedding_members (wedding_id, user_id, role) values ($1, $2, 'couple')`,
-        [weddingId, userId],
-      )
+      /* Свадьба и её содержимое заводятся одной транзакцией.
+       *
+       * Здесь больше тридцати вставок подряд: сама свадьба, пара, 12 слотов
+       * мозаики, чек-лист и тайминг. Раздельными запросами сбой на середине
+       * оставлял свадьбу без части шаблона — например, с восемью слотами
+       * вместо двенадцати, — и починить это человеку нечем: маршрута
+       * «доложить недостающее» нет, а завести вторую свадьбу вместо кривой
+       * он не догадается (ERR-0109). */
+      await db().tx(async (client) => {
+        await client.query(
+          `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
+                                 budget_total, currency, invite_code, tz)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            weddingId,
+            userId,
+            title,
+            date,
+            cityId,
+            body.style ?? null,
+            body.guestsPlanned ?? null,
+            body.budgetTotal?.amount ?? null,
+            body.budgetTotal?.currency ?? 'RUB',
+            weddingCode(),
+            cityTz,
+          ],
+        )
+        await client.query(
+          `insert into wedding_members (wedding_id, user_id, role) values ($1, $2, 'couple')`,
+          [weddingId, userId],
+        )
 
-      // Мозаика, чек-лист и тайминг заводятся сразу: пустая свадьба без
-      // 12 слотов — это экран, на котором нечего делать.
-      for (const s of SLOT_TEMPLATE) {
-        await db().query(
-          'insert into slots (id, wedding_id, category_id, label, sort) values ($1, $2, $3, $4, $5)',
-          [uuidv7(), weddingId, s.categoryId, s.label, s.sort],
+        // Мозаика, чек-лист и тайминг заводятся сразу: пустая свадьба без
+        // 12 слотов — это экран, на котором нечего делать.
+        for (const s of SLOT_TEMPLATE) {
+          await client.query(
+            'insert into slots (id, wedding_id, category_id, label, sort) values ($1, $2, $3, $4, $5)',
+            [uuidv7(), weddingId, s.categoryId, s.label, s.sort],
+          )
+        }
+        for (const t of TASK_TEMPLATE) {
+          await client.query(
+            `insert into tasks (id, wedding_id, title, period, due, source, sort)
+             values ($1, $2, $3, $4, $5, 'system', $6)`,
+            [uuidv7(), weddingId, t.title, String(t.monthsBefore), dueDate(date, t.monthsBefore), t.sort],
+          )
+        }
+        for (const e of TIMELINE_TEMPLATE) {
+          await client.query(
+            `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort)
+             values ($1, $2, $3, $4, $5, $6, $7)`,
+            [uuidv7(), weddingId, e.name, eventAt(date, e.startsAt), eventAt(date, e.endsAt), e.icon, e.sort],
+          )
+        }
+        await client.query(
+          `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'wedding.created', 'wedding', $2)`,
+          [userId, weddingId],
         )
-      }
-      for (const t of TASK_TEMPLATE) {
-        await db().query(
-          `insert into tasks (id, wedding_id, title, period, due, source, sort)
-           values ($1, $2, $3, $4, $5, 'system', $6)`,
-          [uuidv7(), weddingId, t.title, String(t.monthsBefore), dueDate(date, t.monthsBefore), t.sort],
-        )
-      }
-      for (const e of TIMELINE_TEMPLATE) {
-        await db().query(
-          `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort)
-           values ($1, $2, $3, $4, $5, $6, $7)`,
-          [uuidv7(), weddingId, e.name, eventAt(date, e.startsAt), eventAt(date, e.endsAt), e.icon, e.sort],
-        )
-      }
-      await db().query(
-        `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'wedding.created', 'wedding', $2)`,
-        [userId, weddingId],
-      )
+      })
 
       return reply.code(201).send(await loadWedding(weddingId, 'couple'))
     },

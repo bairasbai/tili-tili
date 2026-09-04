@@ -97,13 +97,25 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     // Отзыв согласия равносилен удалению аккаунта: без согласия обрабатывать
     // данные нельзя, а без данных сервис не работает.
     const userId = request.caller!.userId
-    await db().query('update consents set withdrawn_at = now() where user_id = $1 and withdrawn_at is null', [userId])
-    await db().query('update users set deleted_at = now() where id = $1 and deleted_at is null', [userId])
-    await db().query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [userId])
-    await db().query(
-      `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'consent.withdrawn', 'user', $1)`,
-      [userId],
-    )
+    /* Все четыре шага — одной транзакцией.
+     *
+     * Раздельно они оставляли возможность половинчатого состояния: согласие
+     * отозвано, а аккаунт жив. Человек после этого не может пользоваться
+     * сервисом (`requireConsent` отвечает 403), его данные не поставлены
+     * в очередь на удаление, и повторить отзыв ему нечем — согласия уже нет.
+     * Для 152-ФЗ это хуже, чем неудавшийся запрос: тот можно повторить,
+     * а зависшее состояние надо чинить руками в базе (ERR-0108). */
+    await db().tx(async (client) => {
+      await client.query('update consents set withdrawn_at = now() where user_id = $1 and withdrawn_at is null', [
+        userId,
+      ])
+      await client.query('update users set deleted_at = now() where id = $1 and deleted_at is null', [userId])
+      await client.query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [userId])
+      await client.query(
+        `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'consent.withdrawn', 'user', $1)`,
+        [userId],
+      )
+    })
     return reply.code(204).send()
   })
 

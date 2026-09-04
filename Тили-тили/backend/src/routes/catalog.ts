@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
 import { holdDatesOf } from '../catalog/holds.js'
@@ -404,13 +404,23 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(204).send()
   })
 
-  app.delete('/me/favorites/:vendorId', { preHandler: app.requireConsent }, async (request, reply) => {
-    const { vendorId } = request.params as { vendorId: string }
-    await db().query('delete from favorites where user_id = $1 and vendor_id = $2', [
-      request.caller!.userId,
-      vendorId,
-    ])
-    // Удаление того, чего нет, — тоже успех: результат ровно тот, которого хотели.
-    return reply.code(204).send()
-  })
+  app.delete(
+    '/me/favorites/:vendorId',
+    {
+      preHandler: app.requireConsent,
+      // `favorites.vendor_id` — колонка uuid. У соседнего PUT проверка есть,
+      // у удаления её не было: чужая строка роняла запрос ошибкой драйвера
+      // и превращалась в 500 (ERR-0104, R-118).
+      schema: { params: { type: 'object', required: ['vendorId'], properties: { vendorId: UUID_ID } } },
+    },
+    async (request, reply) => {
+      const { vendorId } = request.params as { vendorId: string }
+      await db().query('delete from favorites where user_id = $1 and vendor_id = $2', [
+        request.caller!.userId,
+        vendorId,
+      ])
+      // Удаление того, чего нет, — тоже успех: результат ровно тот, которого хотели.
+      return reply.code(204).send()
+    },
+  )
 }
