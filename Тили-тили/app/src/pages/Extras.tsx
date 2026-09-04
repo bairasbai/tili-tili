@@ -1,23 +1,43 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Heart, Plus, Trash2, Wine, Users } from 'lucide-react'
-import { vendors, fmt } from '@/lib/data'
+import { fmt } from '@/lib/data'
+import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
+import { getCategories, getFavorites } from '@/lib/api/catalog'
+import { useApi } from '@/lib/api/useApi'
 import { Tile, TopBar, VendorCard } from '@/components/chrome'
-import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* Избранное — отложенные подрядчики (боль: «кандидаты теряются в переписках») */
 export function Favorites() {
   const nav = useNavigate()
-  const { favorites } = useStore()
-  const list = vendors.filter(v => favorites.includes(v.id))
+  /* Список приходит с сервера, а не собирается из мока по локальным
+     идентификаторам: избранное — это данные аккаунта, и на новом телефоне
+     оно должно быть тем же. */
+  const favs = useApi(() => getFavorites(), [])
+  const cats = useApi(() => getCategories(), [])
+  const list = favs.data ?? []
+  const catOf = (id?: string) => (cats.data ?? []).find(c => c.id === id)
   return (
     <div className="pb-28">
       <TopBar back title={t('Избранное')} sub={`${list.length}${t(' отложено · сравните и выберите')}`} />
       <div className="px-5 mt-3 space-y-3.5 stagger">
-        {list.map(v => <VendorCard key={v.id} v={v} onOpen={() => nav(`/vendor/${v.id}`)} />)}
-        {list.length === 0 && (
+        {favs.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>}
+        {favs.error && (
+          <div className="py-6 text-center">
+            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{favs.error}</p>
+            <button onClick={favs.reload} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+          </div>
+        )}
+        {list.map(v => (
+          <VendorCard key={v.id} v={v}
+            categoryTitle={catOf(v.categoryId)?.title}
+            categoryIcon={catOf(v.categoryId)?.icon}
+            tile={CATEGORY_TILE[v.categoryId ?? ''] ?? DEFAULT_TILE}
+            onOpen={() => nav(`/vendor/${v.id}`)} />
+        ))}
+        {!favs.loading && !favs.error && list.length === 0 && (
           <div className="text-center py-14 fade-up">
             <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center"><Heart size={26} className="text-[var(--rose-ink)]" /></div>
             <b className="text-[15px] block mt-4">{t('Пока пусто')}</b>

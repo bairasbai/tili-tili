@@ -7,14 +7,26 @@
  * ответы квиза выбрасывались, а на экранах показывалась константа из
  * `lib/data.ts`. Обратный отсчёт был нарисованным числом.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+/*
+ * Телефон подрядчика теперь решает сервер: он присылает номер только той паре,
+ * у которой есть бронь, иначе null. Тесты переключают ответ каталога, а не
+ * состояние слота: слот на фронте — следствие, а не причина.
+ */
+vi.mock('@/lib/api/catalog', async () => {
+  const m = await import('@/test/catalogMock')
+  return {
+    ...m.catalogMock(),
+    getVendor: async () => (globalThis as { __phone?: boolean }).__phone ? m.VENDOR_DETAIL_BOOKED : m.VENDOR_DETAIL,
+  }
+})
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import Quiz from '@/pages/Quiz'
 import { Us } from '@/pages/Us'
 import { VendorDetail } from '@/pages/Search'
-import { vendors } from './data'
 import {
   countdownTo,
   dateRange,
@@ -200,49 +212,42 @@ describe('телефон подрядчика', () => {
       </MemoryRouter>,
     )
 
-  it('до брони номера нет — есть объяснение, почему', () => {
-    const v = vendors[0]!
-    // В моке фотограф уже забронирован — освобождаем слот, чтобы проверить
-    // именно состояние «до брони».
-    localStorage.setItem(
-      'tt_slots',
-      JSON.stringify({
-        s2: { state: 'empty', vendor: null, price: null, status: null, external: false, invited: false, phone: null },
-      }),
-    )
-    openCard(v.id)
+  it('до брони номера нет — есть объяснение, почему', async () => {
+    (globalThis as { __phone?: boolean }).__phone = false
+    openCard('v1')
+    await screen.findByText(/Телефон откроется после брони/)
     /* Номер в открытом каталоге — готовая база для обзвона, и будущая
      * комиссия со сделок при нём не работает (решение владельца
      * 2026-09-03: показываем после брони). */
-    expect(screen.queryByText(v.phone)).toBeNull()
-    expect(screen.getByText(/Телефон откроется после брони/)).toBeTruthy()
+    expect(screen.queryByText('+7 917 340-11-08')).toBeNull()
   })
 
-  it('после брони номер виден и звонится', () => {
-    const v = vendors[0]!
-    // Слот фотографа занят этим же подрядчиком — значит, сделка есть.
+  it('после брони номер виден и звонится', async () => {
+    (globalThis as { __phone?: boolean }).__phone = true
     localStorage.setItem(
       'tt_slots',
       JSON.stringify({
-        s2: { state: 'booked', vendor: v.name, price: 85000, status: 'Забронировано', external: false, invited: false, phone: null },
+        s2: { state: 'booked', vendor: 'Елена Смирнова', price: 8_500_000, status: 'Забронировано', external: false, invited: false, phone: null },
       }),
     )
-    openCard(v.id)
-    expect(screen.getByText(v.phone)).toBeTruthy()
+    openCard('v1')
+    const phone = '+7 917 340-11-08'
+    expect(await screen.findByText(phone)).toBeTruthy()
     const call = screen.getByText('Позвонить') as HTMLAnchorElement
-    expect(call.getAttribute('href')).toBe(`tel:${v.phone.replace(/[^+\d]/g, '')}`)
+    expect(call.getAttribute('href')).toBe(`tel:${phone.replace(/[^+\d]/g, '')}`)
   })
 
-  it('бронь другого подрядчика чужого номера не открывает', () => {
-    const v = vendors[0]!
+  it('бронь другого подрядчика чужого номера не открывает', async () => {
+    (globalThis as { __phone?: boolean }).__phone = false
     localStorage.setItem(
       'tt_slots',
       JSON.stringify({
         s2: { state: 'booked', vendor: 'Кто-то другой', price: 1, status: 'Забронировано', external: false, invited: false, phone: null },
       }),
     )
-    openCard(v.id)
-    expect(screen.queryByText(v.phone)).toBeNull()
+    openCard('v1')
+    await screen.findByText(/Телефон откроется после брони/)
+    expect(screen.queryByText('+7 917 340-11-08')).toBeNull()
   })
 })
 

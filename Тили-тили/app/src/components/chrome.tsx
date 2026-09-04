@@ -3,6 +3,7 @@ import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
+import type { Vendor as ServerVendor } from '@/lib/api/catalog'
 import { useServerHealth } from '@/lib/api/health'
 import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
@@ -72,18 +73,35 @@ export function TabBar() {
 }
 
 /* Карточка подрядчика в выдаче */
-export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOpen: () => void }) {
+/*
+ * Карточка подрядчика из каталога сервера.
+ *
+ * Раньше принимала мок-запись со своими полями: цветом плитки, годами опыта и
+ * значком «✓ проверен», который стоял у всех подряд. Теперь поля приходят с
+ * сервера, и «проверен» показывается только тем, у кого документы правда
+ * сверены (`verified`): значок доверия, стоящий у каждого, доверия не значит.
+ *
+ * `freeOnDate` не поле, а следствие запроса: когда выдача спрошена с датой
+ * свадьбы, занятых в ней уже нет — сервер их отфильтровал.
+ */
+export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, onOpen }: {
+  v: ServerVendor
+  categoryTitle?: string
+  categoryIcon?: string
+  tile?: string
+  freeOnDate?: boolean
+  onOpen: () => void
+}) {
   const { favorites, toggleFav } = useStore()
-  const fav = favorites.includes(v.id)
+  const id = v.id ?? ''
+  const fav = favorites.includes(id)
   return (
     <div className="card overflow-hidden fade-up group">
       <button className="w-full text-left" onClick={onOpen}>
-        <div className={cn('h-[104px] relative transition-transform duration-700 group-hover:scale-[1.03]', v.tile)} style={{ transitionTimingFunction: 'var(--ease)' }}>
+        <div className={cn('h-[104px] relative transition-transform duration-700 group-hover:scale-[1.03]', tile ?? 'bg-[var(--rose-soft)]')} style={{ transitionTimingFunction: 'var(--ease)' }}>
           <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 70% 25%, rgba(255,255,255,.65), transparent 55%)' }} />
-          <span className="absolute top-3 left-3 text-[26px]">{v.categoryIcon}</span>
-          {v.freeOnDate
-            ? <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-[var(--on-grad)]">{t('● Свободен на вашу дату')}</span>
-            : <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--card)]/80 text-[var(--soft)]">{t('Дата занята')}</span>}
+          <span className="absolute top-3 left-3 text-[26px]">{categoryIcon}</span>
+          {freeOnDate && <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-[var(--on-grad)]">{t('● Свободен на вашу дату')}</span>}
           {v.hasVideo && <span className="absolute bottom-3 right-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-black/45 text-white">{t('▶ Видео')}</span>}
         </div>
       </button>
@@ -91,14 +109,16 @@ export function VendorCard({ v, onOpen }: { v: import('@/lib/data').Vendor; onOp
         <button className="text-left min-w-0" onClick={onOpen}>
           <b className="font-serif-d text-[15px] block truncate">{v.name}</b>
           <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
-            {v.category}{v.years ? ` · ${v.years}${t(' лет опыта')}` : ''}
-            {v.reviews > 0 ? ` · ★ ${v.rating} (${v.reviews})` : t(' · Новый на платформе')}
-            <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>
+            {categoryTitle}
+            {(v.reviewsCount ?? 0) > 0 ? ` · ★ ${v.rating} (${v.reviewsCount})` : t(' · Новый на платформе')}
+            {v.verified && <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>}
           </span>
-          <span className="font-serif-d text-[14px] text-[var(--rose-deep)] font-semibold block mt-1">{t('от')} {fmt(v.priceFrom)}</span>
+          {v.priceFrom?.amount != null && (
+            <span className="font-serif-d text-[14px] text-[var(--rose-ink)] font-semibold block mt-1">{t('от')} {fmt(v.priceFrom.amount)}</span>
+          )}
         </button>
-        <button onClick={() => toggleFav(v.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
-          <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[var(--rose-deep)]' : 'text-[var(--soft)]'} />
+        <button onClick={() => toggleFav(id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
+          <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[var(--rose-ink)]' : 'text-[var(--soft)]'} />
         </button>
       </div>
     </div>

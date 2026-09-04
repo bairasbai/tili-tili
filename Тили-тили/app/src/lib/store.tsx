@@ -6,6 +6,7 @@ import { initialGifts, initialSlots, type Gift, type Slot, type SlotState } from
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
 import { findMyWedding } from './api/wedding'
+import { addFavorite, getFavorites, removeFavorite } from './api/catalog'
 import { safeGet, safeSet, usePersist } from './usePersist'
 
 /*
@@ -128,6 +129,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * Молча: не нашлось — значит свадьбы ещё нет, это нормальное состояние
    * до квиза, и пугать сообщением тут нечем.
    */
+
   useEffect(() => {
     if (weddingId || !isAuthorized()) return
     let alive = true
@@ -158,6 +160,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return Array.isArray(parsed) ? parsed : ['v1']
     } catch { return ['v1'] }
   })
+
+  /* Избранное с сервера при запуске: на новом устройстве локальный список
+     пуст, а аккаунт свой список помнит. */
+  useEffect(() => {
+    if (!isAuthorized()) return
+    let alive = true
+    void getFavorites()
+      .then(list => {
+        if (!alive || !list) return
+        const ids = list.map(v => v.id).filter((x): x is string => !!x)
+        setFavorites(ids)
+        safeSet('tt_fav', JSON.stringify(ids))
+      })
+      .catch(() => { /* offline — остаётся локальная копия */ })
+    return () => { alive = false }
+  }, [])
   const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
   const [inviteTpl, setInviteTplState] = useState(() => Number(safeGet('tt_invite_tpl') ?? 0))
@@ -205,11 +223,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     inviteExternal: (slotId) => updateSlot(slotId, p => ({ ...p, invited: true })),
     paySlot: (slotId) => updateSlot(slotId, p => ({ ...p, status: 'Оплачено полностью' })),
     favorites,
-    toggleFav: id => setFavorites(f => {
-      const next = f.includes(id) ? f.filter(x => x !== id) : [...f, id]
+    /*
+     * Избранное — данные аккаунта, а не устройства.
+     *
+     * Сначала меняем на экране, потом отправляем: сердечко должно отзываться
+     * мгновенно, а не через круг до сервера. Если запрос не прошёл — возвращаем
+     * как было, иначе экран показывает то, чего на сервере нет.
+     * Локальная копия остаётся: она нужна, пока список не загрузился, и
+     * гостю без входа, у которого сервер избранное не хранит.
+     */
+    toggleFav: id => {
+      const wasFav = favorites.includes(id)
+      const next = wasFav ? favorites.filter(x => x !== id) : [...favorites, id]
+      setFavorites(next)
       safeSet('tt_fav', JSON.stringify(next))
-      return next
-    }),
+      if (!isAuthorized()) return
+      void (wasFav ? removeFavorite(id) : addFavorite(id)).catch(() => {
+        setFavorites(favorites)
+        safeSet('tt_fav', JSON.stringify(favorites))
+      })
+    },
     lang,
     setLang: (l: Lang) => { safeSet('tt_lang', l); setI18nLang(l); setLangState(l) },
     inviteTpl,

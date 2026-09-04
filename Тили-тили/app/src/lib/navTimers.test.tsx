@@ -8,6 +8,10 @@
  * успел открыть сам.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
+
+/* Анкета приходит с сервера — кнопка появляется после ответа. Общий набор
+   ответов каталога: src/test/catalogMock.ts. */
+vi.mock('@/lib/api/catalog', async () => (await import('@/test/catalogMock')).catalogMock())
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 
 const { navSpy } = vi.hoisted(() => ({ navSpy: vi.fn() }))
@@ -16,7 +20,7 @@ vi.mock('react-router', async (importOriginal) => {
   return { ...actual, useNavigate: () => navSpy }
 })
 
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import { VendorDetail } from '@/pages/Search'
 import { Compare } from '@/pages/Smart'
@@ -28,30 +32,39 @@ afterEach(() => {
   localStorage.clear()
 })
 
+/* Анкета читает `:id` через useParams — маршрут объявляем, иначе экран
+   честно показывает «не найдена». Раньше это скрывала подстановка первого
+   подрядчика из мока. */
 const renderPage = (ui: React.ReactElement) =>
   render(
-    <MemoryRouter>
-      <StoreProvider>{ui}</StoreProvider>
+    <MemoryRouter initialEntries={['/vendor/v1']}>
+      <StoreProvider>
+        <Routes><Route path="/vendor/:id" element={ui} /></Routes>
+      </StoreProvider>
     </MemoryRouter>,
   )
 
 describe('анкета подрядчика: «Добавить в свадьбу»', () => {
-  it('переход происходит, если человек остался на экране', () => {
-    vi.useFakeTimers()
+  it('переход происходит, если человек остался на экране', async () => {
     renderPage(<VendorDetail />)
+    /* Ждём анкету на настоящих таймерах: с поддельными промис ответа не
+       доезжает, и кнопки на экране ещё нет. */
+    const add = await screen.findByText('Добавить в свадьбу')
+    vi.useFakeTimers()
 
-    fireEvent.click(screen.getByText('Добавить в свадьбу'))
+    fireEvent.click(add)
     expect(navSpy).not.toHaveBeenCalled()
 
     act(() => { vi.advanceTimersByTime(900) })
     expect(navSpy).toHaveBeenCalledWith('/wedding')
   })
 
-  it('уход с экрана до срабатывания отменяет переход', () => {
-    vi.useFakeTimers()
+  it('уход с экрана до срабатывания отменяет переход', async () => {
     const { unmount } = renderPage(<VendorDetail />)
+    const add = await screen.findByText('Добавить в свадьбу')
+    vi.useFakeTimers()
 
-    fireEvent.click(screen.getByText('Добавить в свадьбу'))
+    fireEvent.click(add)
     unmount() // человек нажал «назад» и открыл другой экран
 
     act(() => { vi.advanceTimersByTime(5000) })

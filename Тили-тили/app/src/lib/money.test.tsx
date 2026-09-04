@@ -6,9 +6,13 @@
  * пользователь. Ошибка в сто раз — самая вероятная при смене единиц измерения
  * и самая незаметная в коде, поэтому проверяются конкретные строки.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+/* Анкета подрядчика ходит в сеть — в jsdom её нет. Ответы каталога общие
+   для всех экранных тестов: src/test/catalogMock.ts. */
+vi.mock('@/lib/api/catalog', async () => (await import('@/test/catalogMock')).catalogMock())
+import { render, cleanup, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import { VendorDetail } from '@/pages/Search'
 import { Budget } from '@/pages/Wedding'
@@ -16,8 +20,21 @@ import { Deal } from '@/pages/Tools'
 import { WishlistManage } from '@/pages/Wishlist'
 import Home from '@/pages/Home'
 
-const wrap = (node: React.ReactNode, route = '/') =>
-  render(<MemoryRouter initialEntries={[route]}><StoreProvider>{node}</StoreProvider></MemoryRouter>)
+/*
+ * Экран рендерится внутри маршрута, а не просто под роутером.
+ *
+ * Анкета подрядчика читает `:id` через useParams: без объявленного пути он
+ * пустой, и раньше это скрывалось подстановкой первого подрядчика из мока —
+ * тест «проходил», глядя на чужую анкету.
+ */
+const wrap = (node: React.ReactNode, route = '/', path?: string) =>
+  render(
+    <MemoryRouter initialEntries={[route]}>
+      <StoreProvider>
+        {path ? <Routes><Route path={path} element={node} /></Routes> : node}
+      </StoreProvider>
+    </MemoryRouter>,
+  )
 
 /** Неразрывные пробелы из Intl приводим к обычным, чтобы сравнивать по-человечески. */
 /** Intl разделяет разряды неразрывным пробелом — приводим к обычному,
@@ -29,9 +46,11 @@ beforeEach(() => localStorage.clear())
 afterEach(cleanup)
 
 describe('суммы показываются в рублях', () => {
-  it('анкета подрядчика: цена пакета', () => {
-    const { container } = wrap(<VendorDetail />, '/vendor/v1')
-    expect(money(container as HTMLElement)).toContain('85 000 ₽')
+  it('анкета подрядчика: цена пакета', async () => {
+    const { container } = wrap(<VendorDetail />, '/vendor/v1', '/vendor/:id')
+    /* Анкета приходит с сервера — суммы появляются после ответа, а не в
+       первом кадре. */
+    await waitFor(() => expect(money(container as HTMLElement)).toContain('85 000 ₽'))
     expect(money(container as HTMLElement)).toContain('130 000 ₽')
   })
 
