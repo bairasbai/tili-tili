@@ -20,6 +20,33 @@ vi.mock('@/lib/api/weddingData', async (orig) => ({
     return guestsState.list.map(g => ({ ...g }))
   },
 }))
+/*
+ * Чат тоже живёт на сервере. Мок повторяет его поведение: отправленное
+ * сообщение появляется в истории с моим `senderId`, и НИКТО не отвечает.
+ * Раньше экран сам дописывал ответ через 1,6 секунды — тест это и проверял.
+ */
+const { chatState } = vi.hoisted(() => ({
+  chatState: {
+    messages: [] as Array<{ id: string; chatId: string; senderId: string | null; text: string; sentAt: string }>,
+    typingSent: 0,
+  },
+}))
+vi.mock('@/lib/api/chats', async (orig) => ({
+  ...await orig<object>(),
+  getChats: async () => [{ id: 'ch1', title: 'Фотостудия «Кадр»', kind: 'vendor', unread: 0, lastMessage: '' }],
+  getMessages: async () => ({ items: chatState.messages.map(m => ({ ...m })), nextCursor: null }),
+  sendMessage: async (chatId: string, text: string) => {
+    const m = { id: `m${chatState.messages.length + 1}`, chatId, senderId: 'u1', text, sentAt: new Date().toISOString() }
+    chatState.messages.push(m)
+    return m
+  },
+  sendTyping: async () => { chatState.typingSent++ },
+  openChatSocket: () => () => undefined,
+}))
+vi.mock('@/lib/api/auth', async (orig) => ({
+  ...await orig<object>(),
+  getMe: async () => ({ id: 'u1', name: 'Алина' }),
+}))
 vi.mock('@/lib/api/weddingWrite', async (orig) => ({
   ...await orig<object>(),
   getTables: async () => guestsState.tables.map(tb => ({ ...tb })),
@@ -34,7 +61,7 @@ vi.mock('@/lib/api/weddingWrite', async (orig) => ({
   },
 }))
 import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import { Guests } from '@/pages/Wedding'
 import { Chat } from '@/pages/Us'
@@ -43,6 +70,18 @@ import { Seating } from '@/pages/Tools'
 const wrap = (node: React.ReactNode, route = '/') =>
   render(<MemoryRouter initialEntries={[route]}><StoreProvider>{node}</StoreProvider></MemoryRouter>)
 
+/* Экран чата берёт идентификатор из адреса, поэтому и в тесте он должен
+   приходить оттуда же: без маршрута `useParams` пуст, и проверялся бы чат
+   «без адреса», которого в приложении не бывает. */
+const wrapChat = (route: string) =>
+  render(
+    <MemoryRouter initialEntries={[route]}>
+      <StoreProvider>
+        <Routes><Route path="/us/chats/:id" element={<Chat />} /></Routes>
+      </StoreProvider>
+    </MemoryRouter>,
+  )
+
 beforeEach(() => {
   localStorage.clear()
   /* Экраны свадьбы спрашивают сервер только после входа и при известной
@@ -50,6 +89,8 @@ beforeEach(() => {
   localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
   localStorage.setItem('tt_wedding_id', JSON.stringify('w1'))
   guestsState.down = false
+  chatState.messages = []
+  chatState.typingSent = 0
   guestsState.list = [
     { id: 'g1', name: 'Ольга Соколова', status: 'yes', plusOne: true, tableId: null },
     { id: 'g2', name: 'Руслан Гареев', status: 'pending', plusOne: false, tableId: null },
@@ -89,16 +130,43 @@ describe('бизнес-логика: статусы гостей', () => {
 })
 
 describe('бизнес-логика: чат', () => {
-  it('отправка: сообщение своё (справа), затем typing и автоответ', async () => {
-    vi.useFakeTimers()
-    wrap(<Chat />, '/us/chats/ch1')
-    const input = screen.getByPlaceholderText(/Сообщение/i)
+  it('сообщение уходит на сервер и возвращается из истории', async () => {
+    wrapChat('/us/chats/ch1')
+    const input = await screen.findByPlaceholderText(/Сообщение/i)
     fireEvent.change(input, { target: { value: 'Здравствуйте!' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(screen.getByText('Здравствуйте!')).toBeTruthy()
-    await act(async () => { vi.advanceTimersByTime(1700) })
-    expect(screen.getByText(/Отлично, принято/)).toBeTruthy()
-    vi.useRealTimers()
+
+    /* Проверяем ответ сервера, а не то, что экран нарисовал сам: сообщение
+       появляется, потому что пришло в истории. */
+    await waitFor(() => expect(chatState.messages.map(m => m.text)).toEqual(['Здравствуйте!']))
+    await waitFor(() => expect(screen.getByText('Здравствуйте!')).toBeTruthy(), { timeout: 4000 })
+  })
+
+  it('никто не отвечает сам: фальшивого автоответа больше нет', async () => {
+    vi.useFakeTimers()
+    try {
+      wrapChat('/us/chats/ch1')
+      await act(async () => { await Promise.resolve() })
+      const input = screen.getByPlaceholderText(/Сообщение/i)
+      fireEvent.change(input, { target: { value: 'Здравствуйте!' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      /* Прежний экран через 1,6 секунды дописывал «Отлично, принято! Отвечу
+         подробно чуть позже сегодня 🙌» — человек считал, что ему ответили. */
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      expect(screen.queryByText(/Отлично, принято/)).toBeNull()
+      expect(chatState.messages.every(m => m.senderId === 'u1')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('набор текста поднимает «печатает…» у собеседника, но не на каждую букву', async () => {
+    wrapChat('/us/chats/ch1')
+    const input = await screen.findByPlaceholderText(/Сообщение/i)
+    fireEvent.change(input, { target: { value: 'З' } })
+    fireEvent.change(input, { target: { value: 'Зд' } })
+    fireEvent.change(input, { target: { value: 'Здр' } })
+    await waitFor(() => expect(chatState.typingSent).toBe(1))
   })
 })
 

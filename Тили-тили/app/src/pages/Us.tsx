@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, ImagePlus, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
-import { chats, chatMessages, couple, fmt } from '@/lib/data'
+import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
+import { couple } from '@/lib/data'
 import { Tile, TopBar } from '@/components/chrome'
+import { AsyncState, ready } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
-import { usePersist } from '@/lib/usePersist'
 import { cn, copyText, goBack } from '@/lib/utils'
-import { t, reloadToRoot } from '@/lib/i18n'
-import { explainError } from '@/lib/api/useApi'
+import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
+import { explainError, useApi } from '@/lib/api/useApi'
+import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '@/lib/api/chats'
+import { getMe } from '@/lib/api/auth'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -127,29 +129,52 @@ export function Us() {
   )
 }
 
-/* Список чатов */
+/*
+ * Список чатов.
+ *
+ * Прежний список был витриной: «Елена Смирнова · Отправила вам договор»,
+ * «Артём Краснов · Аванс получил», «Чат дня X · откроется 13 июня» — одни и
+ * те же пять строк у каждого, кто открывал экран. Теперь чаты приходят с
+ * сервера: у пары — подрядчики, команда и день X, у подрядчика — его пары.
+ */
 export function Chats() {
   const nav = useNavigate()
   const [q, setQ] = useState('')
-  const shown = chats.filter(c => c.name.toLowerCase().includes(q.toLowerCase()) || c.last.toLowerCase().includes(q.toLowerCase()))
+  const list = useApi(() => getChats(), [])
+  const chats = list.data ?? []
+  const shown = chats.filter(c =>
+    (c.title ?? '').toLowerCase().includes(q.toLowerCase()) ||
+    (c.lastMessage ?? '').toLowerCase().includes(q.toLowerCase()))
+
   return (
     <div className="pb-28">
       <TopBar back title={t('Чаты')} sub={t('Подрядчики · команда · день X')} />
+      <AsyncState q={list} />
       <div className="px-5 mt-3">
         <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={t('Поиск по чатам…')} className="w-full card-s px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
       </div>
+      {!chats.length && ready(list) && (
+        <p className="px-5 mt-4 text-[12.5px] text-[var(--soft)] leading-relaxed">
+          {t('Чатов пока нет. Они появляются, когда вы пишете подрядчику из каталога или собираете команду свадьбы.')}
+        </p>
+      )}
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {shown.map(c => (
           <button key={c.id} onClick={() => nav(`/us/chats/${c.id}`)} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
-            <Tile icon={c.icon} tile={c.tile} size={48} />
+            <Tile icon={CHAT_ICON[c.kind ?? ''] ?? '💬'} tile={CHAT_TILE[c.kind ?? ''] ?? 'bg-[var(--track)]'} size={48} />
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-baseline gap-2">
-                <b className="text-[13.5px] truncate">{c.name}</b>
-                <span className="text-[10px] text-[var(--soft)] shrink-0">{c.time}</span>
+                <b className="text-[13.5px] truncate">{c.title}</b>
               </div>
-              <p className="text-[11.5px] text-[var(--soft)] truncate mt-0.5">{c.last}</p>
+              {/* Чат дня X до срока закрыт — вместо реплики говорим, когда он
+                  откроется. Пустая строка читалась бы как «сообщений нет». */}
+              <p className="text-[11.5px] text-[var(--soft)] truncate mt-0.5">
+                {c.kind === 'day' && c.openFrom && new Date(c.openFrom) > new Date()
+                  ? `${t('Откроется')} ${new Date(c.openFrom).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`
+                  : c.lastMessage || t('Сообщений пока нет')}
+              </p>
             </div>
-            {c.unread > 0 && <span className="w-5 h-5 rounded-full grad text-[var(--on-grad)] text-[10px] font-bold flex items-center justify-center shrink-0">{c.unread}</span>}
+            {!!c.unread && <span className="w-5 h-5 rounded-full grad text-[var(--on-grad)] text-[10px] font-bold flex items-center justify-center shrink-0">{c.unread}</span>}
           </button>
         ))}
       </div>
@@ -157,72 +182,195 @@ export function Chats() {
   )
 }
 
-/* Диалог */
+const CHAT_ICON: Record<string, string> = {
+  vendor: '💼', external: '🤝', team: '💍', crew: '🛠', day: '🥂', tilly: '✦',
+}
+
+const CHAT_TILE: Record<string, string> = {
+  vendor: 'bg-[var(--rose-soft)]',
+  external: 'bg-[var(--peach)]',
+  team: 'bg-[var(--sage-soft)]',
+  crew: 'bg-[var(--lav)]',
+  day: 'bg-[var(--honey)]',
+  tilly: 'bg-[var(--blue)]',
+}
+
+/*
+ * Диалог.
+ *
+ * Раньше собеседник был таймером: через 1,6 секунды после отправки экран сам
+ * дописывал «Отлично, принято! Отвечу подробно чуть позже сегодня 🙌». Человек
+ * видел ответ, которого никто не писал, и ждал того, чего не будет.
+ *
+ * Теперь история и отправка идут на сервер, а доставка — двумя путями. Живой
+ * канал отдаёт событие сразу; если его нет (Redis не поднят, сеть режет
+ * соединение, вкладка в фоне) — опрос раз в 30 секунд, штатный запасной путь
+ * §13.4. Оба пути делают одно и то же: перечитывают хвост истории.
+ */
 export function Chat() {
   const { id } = useParams()
   const nav = useNavigate()
-  const chat = chats.find(c => c.id === id) ?? chats[0]
-  /* Чип сделки над перепиской ведёт в настоящую сделку. Раньше он вёл на
-     `/deal` без идентификатора и подписан был константой «Фотограф · 85 000 ₽»
-     независимо от того, есть ли такая сделка вообще. Пока сделок нет — чипа
-     тоже нет: ссылка в никуда хуже её отсутствия. */
-  const { slots } = useStore()
-  const dealSlot = slots.find(x => x.dealId)
-  const [msgs, setMsgs] = usePersist(`tt_chat_${id}`, chatMessages)
+  const chatId = id ?? ''
+  const [tick, setTick] = useState(0)
   const [text, setText] = useState('')
-  const [typing, setTyping] = useState(false)
-  const send = () => {
-    if (!text.trim()) return
-    setMsgs(m => [...m, { id: `m${m.length + 1}`, me: false, text: text.trim(), time: t('сейчас') }])
-    setText('')
-    setTyping(true)
-    setTimeout(() => {
-      setMsgs(m => [...m, { id: `m${m.length + 1}`, me: true, text: t('Отлично, принято! Отвечу подробно чуть позже сегодня 🙌'), time: t('сейчас') }])
-      setTyping(false)
-    }, 1600)
+  const [sending, setSending] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [peerTyping, setPeerTyping] = useState(false)
+  const [live, setLive] = useState(false)
+
+  const chats = useApi(() => getChats(), [])
+  /* Чат ищем среди своих: чужой идентификатор в адресе не должен открывать
+     пустую переписку с работающим полем ввода. */
+  const chat = (chats.data ?? []).find(c => c.id === chatId)
+  const missing = !!chatId && ready(chats) && !chat
+  const q = useApi(() => chatId ? getMessages(chatId) : Promise.resolve(null), [chatId, tick])
+  /* Сервер отдаёт свежие первыми — так работает курсор «листать назад». В
+     переписке порядок обратный: последняя реплика внизу, как в любом чате. */
+  const messages = [...(q.data?.items ?? [])].reverse()
+
+  const me = useApi(() => getMe(), [])
+  const myId = me.data?.id
+
+  /* Живой канал и опрос — один механизм: оба просто просят перечитать хвост.
+     Опрос не выключается при живом канале нарочно: обрыв соединения проходит
+     молча, и без опроса чат тихо застывает. */
+  useEffect(() => {
+    if (!chatId) return
+    const close = openChatSocket(chatId, e => {
+      if (e.type === 'message') { setLive(true); setTick(n => n + 1) }
+      if (e.type === 'typing') {
+        setLive(true)
+        setPeerTyping(true)
+        window.setTimeout(() => setPeerTyping(false), 4000)
+      }
+    })
+    const poll = window.setInterval(() => setTick(n => n + 1), 30_000)
+    return () => { close(); window.clearInterval(poll) }
+  }, [chatId])
+
+  /* Прокрутка к последней реплике: без неё новое сообщение приходит за край
+     экрана, и человек видит старую переписку, считая, что ничего не пришло. */
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages.length, peerTyping])
+
+  /* «Печатает…» уходит не на каждую букву: событие живёт секунды, а запросов
+     на каждый символ было бы столько же, сколько нажатий. */
+  const typingSentAt = useRef(0)
+  const onType = (value: string) => {
+    setText(value)
+    const now = Date.now()
+    if (value.trim() && now - typingSentAt.current > 3000) {
+      typingSentAt.current = now
+      void sendTyping(chatId).catch(() => undefined)
+    }
   }
+
+  const send = () => void (async () => {
+    const body = text.trim()
+    if (!body || sending) return
+    setSending(true)
+    setErr(null)
+    try {
+      await sendMessage(chatId, body)
+      setText('')
+      setTick(n => n + 1)
+    } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
+  })()
+
+  /* Два состояния, которые не являются поломкой и требуют своих слов.
+     Чат дня X до срока закрыт (423) — это расписание, а не отказ. Чат
+     исполнителей пара не читает вовсе (403): его ведёт координатор без неё
+     (решение владельца 2026-09-03), и общий текст «у вашей роли нет доступа»
+     здесь врёт — роль как раз её. */
+  const locked = q.error && chat?.kind === 'day'
+  const closedToMe = q.forbidden
+
+  if (!chatId || missing) return (
+    <div className="pb-28">
+      <TopBar back title={t('Чат')} />
+      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{t('Такого чата у вас нет')}</p>
+    </div>
+  )
+
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
         <button onClick={() => goBack(n => nav(n), (to, o) => nav(to, o), '/us/chats')} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
           <ChevronLeft size={17} />
         </button>
-        <Tile icon={chat.icon} tile={chat.tile} size={38} />
+        <Tile icon={CHAT_ICON[chat?.kind ?? ''] ?? '💬'} tile={CHAT_TILE[chat?.kind ?? ''] ?? 'bg-[var(--track)]'} size={38} />
         <div className="flex-1 min-w-0">
-          <b className="text-[14px] block truncate">{chat.name}</b>
-          <span className="text-[10px] text-[var(--sage-deep)]">{t('● онлайн · сделка: фотограф, 14.06')}</span>
+          <b className="text-[14px] block truncate">{chat?.title ?? t('Чат')}</b>
+          {/* Раньше здесь стояло «● онлайн · сделка: фотограф, 14.06» — у всех
+              и всегда. Кто в сети, сервер не сообщает; вместо выдумки говорим
+              то, что знаем: доходят ли события живым каналом. */}
+          <span className="text-[10px] text-[var(--soft)]">{live ? t('связь живая') : t('обновление раз в 30 секунд')}</span>
         </div>
-        <button onClick={() => setMsgs(m => [...m, { id: `m${m.length + 1}`, me: false, text: t('📷 Референс_букета.jpg · 2,4 МБ'), time: t('сейчас') }])} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Вложение')}><ImagePlus size={16} /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
-        {dealSlot && (
-          <div className="text-center"><button onClick={() => nav(`/deal/${dealSlot.dealId}`)} className="press text-[9.5px] text-[var(--soft)] bg-[var(--card)] px-3 py-1.5 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>{`${t('Сделка')}: ${t(dealSlot.label)}${dealSlot.price != null ? ` · ${fmt(dealSlot.price)}` : ''}${dealSlot.status ? ` · ${t(dealSlot.status)}` : ''} →`}</button></div>
-        )}
-        {msgs.map(m => (
-          <div key={m.id} className={cn('flex fade-up', m.me ? 'justify-start' : 'justify-end')}>
-            <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',
-              m.me ? 'card rounded-br-[6px] text-[var(--ink)]' : 'grad text-[var(--on-grad)] rounded-bl-[6px]')}
-              style={{ borderRadius: 18 }}>
-              {m.text}
-              <span className={cn('block text-[9px] mt-1 text-right', m.me ? 'text-[var(--soft)]' : 'text-white/70')}>{m.time}</span>
-            </div>
-          </div>
-        ))}
-        {typing && (
-          <div className="flex justify-start fade-up">
-            <div className="card rounded-[18px] px-4 py-3 flex gap-1">
-              {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#C98A8A] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
-            </div>
-          </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
+        {closedToMe ? (
+          <p className="text-center text-[12.5px] text-[var(--soft)] px-6 mt-6 leading-relaxed">
+            {chat?.kind === 'crew'
+              ? t('Эту переписку ведёт координатор с подрядчиками — без вас. Вы видите, что она есть, но не читаете её.')
+              : t('Эта переписка закрыта для вашей роли.')}
+          </p>
+        ) : locked ? (
+          <p className="text-center text-[12.5px] text-[var(--soft)] px-6 mt-6 leading-relaxed">
+            {chat?.openFrom
+              ? `${t('Чат дня свадьбы откроется')} ${new Date(chat.openFrom).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`
+              : t('Чат дня свадьбы ещё закрыт')}
+          </p>
+        ) : (
+          <>
+            <AsyncState q={q} />
+            {!messages.length && ready(q) && (
+              <p className="text-center text-[12px] text-[var(--soft)] py-6">{t('Сообщений пока нет — напишите первым')}</p>
+            )}
+            {messages.map(m => {
+              const mine = !!myId && m.senderId === myId
+              return (
+                <div key={m.id} className={cn('flex fade-up', mine ? 'justify-end' : 'justify-start')}>
+                  <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',
+                    mine ? 'grad text-[var(--on-grad)] rounded-br-[6px]' : 'card rounded-bl-[6px] text-[var(--ink)]')}
+                    style={{ borderRadius: 18 }}>
+                    {m.text}
+                    {/* Предупреждение о выводе сделки мимо платформы приходит
+                        с сообщением: оно доставлено, но обе стороны видят, чем
+                        рискуют (§18.2). */}
+                    {m.warning && <span className="block text-[10.5px] mt-1.5 opacity-90">⚠ {m.warning}</span>}
+                    <span className={cn('block text-[9px] mt-1 text-right', mine ? 'text-white/70' : 'text-[var(--soft)]')}>
+                      {m.sentAt ? new Date(m.sentAt).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+            {peerTyping && (
+              <div className="flex justify-start fade-up">
+                <div className="card rounded-[18px] px-4 py-3 flex gap-1">
+                  {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#C98A8A] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      <div className="glass-tab border-t-0 border-b-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
-          placeholder={t('Сообщение…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
-        <button onClick={send} className="press w-[48px] h-[48px] rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Отправить')}><Send size={17} /></button>
-      </div>
+      {err && <p role="alert" className="px-5 pb-2 text-[12px] text-[var(--rose-ink)]">{err}</p>}
+      {!locked && !closedToMe && (
+        <div className="glass-tab border-t-0 border-b-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
+          {/* Кнопки вложения нет: она добавляла строку «📷 Референс_букета.jpg ·
+              2,4 МБ» в переписку, хотя файл никуда не уходил. Вложения появятся
+              вместе с файловым хранилищем. */}
+          <input value={text} onChange={e => onType(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
+            placeholder={t('Сообщение…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
+          <button disabled={sending || !text.trim()} onClick={send} className="press w-[48px] h-[48px] rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0 disabled:opacity-40" aria-label={t('Отправить')}><Send size={17} /></button>
+        </div>
+      )}
     </div>
   )
 }
