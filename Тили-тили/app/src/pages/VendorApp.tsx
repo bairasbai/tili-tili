@@ -71,7 +71,15 @@ export function VendorDashboard() {
     catch (e) { setBusyErr(explainError(e)) } finally { setSaving(null) }
   })()
 
-  if (!profile.loading && !p) return <VendorNoProfile />
+  /* Пока анкета не пришла, кабинет не рисуем: иначе на секунду показываются
+     нули и «анкета не опубликована» — то есть неправда о чужом состоянии. */
+  if (!ready(profile)) return (
+    <div className="pb-28">
+      <TopBar title={t('Кабинет подрядчика')} />
+      <AsyncState q={profile} />
+    </div>
+  )
+  if (!p) return <VendorNoProfile />
 
   return (
     <div className="pb-28">
@@ -335,7 +343,7 @@ export function VendorProfileWizard() {
 
   /* Сохранение — на каждом переходе: мастер длинный, и потерять введённое на
      пятом шаге из-за закрытой вкладки нельзя. */
-  const saveAnd = (next: () => void) => void (async () => {
+  const saveAnd = (next: () => void | Promise<void>) => void (async () => {
     if (!form) return
     if (!form.name.trim() || !form.categoryId || !form.city.name) {
       setErr(t('Имя, категория и город обязательны — без них анкету не показать паре'))
@@ -344,13 +352,16 @@ export function VendorProfileWizard() {
     }
     setBusy(true)
     setErr(null)
-    try { await saveVendorProfile(form); next() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try { await saveVendorProfile(form); await next() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
 
-  const publish = () => saveAnd(() => void (async () => {
-    setBusy(true)
-    try { await publishVendorProfile(); setPublishedNow(true) } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
-  })())
+  /* Сохранение и публикация — одна операция для человека, значит и один
+     признак занятости: раньше `saveAnd` снимал его, не дождавшись публикации,
+     и второе нажатие уходило на сервер. */
+  const publish = () => saveAnd(async () => {
+    await publishVendorProfile()
+    setPublishedNow(true)
+  })
 
   const addPkg = () => {
     const rubles = parseInt(pkgPrice.replace(/\D/g, ''), 10)

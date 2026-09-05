@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
+import { plural } from '../text/plural.js'
 import type { Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import type { Role } from '../wedding/access.js'
@@ -220,7 +221,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
           [weddingId],
         )
-        await noteVendorUpdate(db(), weddingId, 'seating', `Рассадка обновлена: за столами ${seated[0]!.n} гостей`)
+        const n = Number(seated[0]!.n)
+        await noteVendorUpdate(
+          db(),
+          weddingId,
+          'seating',
+          `Рассадка обновлена: за столами ${n} ${plural(n, 'гость', 'гостя', 'гостей')}`,
+        )
       }
       return loadGuest(db(), guestId, request.member!.role)
     },

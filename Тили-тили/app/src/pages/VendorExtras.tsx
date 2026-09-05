@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { Check, X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
+import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -88,12 +88,24 @@ export function VendorLead() {
                 <button key={x} disabled={busy} onClick={() => act('reply', x)} className="press w-full card-s px-4 py-3 text-left text-[12px] text-[var(--ink2)] disabled:opacity-50">{x}</button>
               ))}
             </div>
-            <div className="grid grid-cols-3 gap-2.5 pt-1">
+            {/* Кнопки «В чат» здесь нет: список чатов ещё на моках (этап 10),
+                и подрядчик попадал в чужую выдуманную переписку. Ответ уходит
+                отсюда — полем ниже, и он же ложится в чат пары. */}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
               <button disabled={busy} onClick={() => act('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] text-[11.5px] font-bold flex items-center justify-center gap-1 disabled:opacity-50"><Clock size={13} />{t('Hold 72 ч')}</button>
               <button disabled={busy} onClick={() => act('decline')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] text-[11.5px] font-bold flex items-center justify-center gap-1 disabled:opacity-50"><X size={13} />{t('Отклонить')}</button>
-              <button onClick={() => nav('/us/chats')} className="press h-11 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-bold flex items-center justify-center gap-1"><Check size={13} />{t('В чат')}</button>
             </div>
           </>
+        )}
+        {/* Выигранная заявка — уже сделка, и действий над ней здесь нет.
+            Без этой строки экран выглядит пустым и сломанным: ни кнопок, ни
+            объяснения, куда делась заявка. */}
+        {status === 'won' && (
+          <div className="card-s p-4 text-center">
+            <b className="text-[13px]">{t('Заявка стала сделкой')}</b>
+            <p className="text-[11px] text-[var(--soft)] mt-1">{t('Пара забронировала вас — дальше всё в разделе «Сделки»: сумма, аванс и состояние.')}</p>
+            <button onClick={() => nav('/vendor-app/deals')} className="press mt-3 text-[11px] font-bold text-[var(--sage-deep)]">{t('Открыть сделки →')}</button>
+          </div>
         )}
         {(status === 'hold' || status === 'declined') && (
           <div className="card-s p-4 text-center">
@@ -162,6 +174,13 @@ export function VendorReviews() {
             <div className="flex-1">
               <Bar pct={pct(answered, reviews.length)} />
               <p className="text-[10.5px] text-[var(--soft)] mt-2">{t('Отвечено на')} {answered} {t('из')} {reviews.length}. {t('Ответ виден парам в карточке анкеты.')}</p>
+              {/* Число слева — простое среднее по вашим отзывам. В каталоге
+                  стоит другое: взвешенное, со скидкой на давность и на вес
+                  гостя, и оно появляется только с третьего отзыва — один
+                  отзыв от знакомого не должен делать пятёрку. */}
+              {reviews.length < 3 && (
+                <p className="text-[10px] text-[var(--soft2)] mt-1">{t('В каталоге оценка появится с третьего отзыва')}</p>
+              )}
             </div>
           </div>
         )}

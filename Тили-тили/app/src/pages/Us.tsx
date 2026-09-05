@@ -68,7 +68,6 @@ export function Us() {
               <Tile icon="" tile={it.tile} size={38} />
               <span className="absolute ml-3"><it.icon size={16} className="text-[var(--ink2)]" /></span>
               <span className="flex-1 text-[13px] font-medium ml-1">{it.label}</span>
-              {it.badge && <span className="text-[9.5px] text-[var(--soft)]">{it.badge}</span>}
             </button>
           ))}
           <div className="flex items-center gap-3 py-3.5">
@@ -89,13 +88,16 @@ export function Us() {
             { icon: Bell, label: t('Избранное'), tile: 'bg-[var(--rose-soft)]', to: '/favorites' },
             { icon: FileText, label: t('Заметки и идеи'), tile: 'bg-[var(--peach)]', to: '/notes' },
             { icon: PartyPopper, label: t('После свадьбы'), tile: 'bg-[var(--honey)]', to: '/after' },
-            { icon: Store, label: t('Кабинет подрядчика'), tile: 'bg-[var(--sage-soft)]', badge: t('демо'), to: '/vendor-app' },
+            /* Плашка «демо» снята: кабинет настоящий, и всё, что там нажимается,
+               меняет данные. Пара, у которой анкеты нет, увидит там честное
+               «Анкеты ещё нет» и предложение её завести — это вторая роль, а
+               не витрина. */
+            { icon: Store, label: t('Кабинет подрядчика'), tile: 'bg-[var(--sage-soft)]', to: '/vendor-app' },
           ].map(it => (
             <button key={it.label} onClick={() => nav(it.to)} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[var(--track)] last:border-none">
               <Tile icon="" tile={it.tile} size={38} />
               <span className="absolute ml-3"><it.icon size={16} className="text-[var(--ink2)]" /></span>
               <span className="flex-1 text-[13px] font-medium ml-1">{it.label}</span>
-              {it.badge && <span className="text-[9.5px] text-[var(--soft)]">{it.badge}</span>}
             </button>
           ))}
         </div>

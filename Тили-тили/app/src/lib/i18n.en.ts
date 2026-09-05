@@ -1549,4 +1549,8 @@ Object.assign(EN, {
   'Пара держит дату — ждём подтверждения сделки': 'A couple is holding this date — waiting for the deal to be confirmed',
   'Дата занята сделкой': 'The date is taken by a deal',
   'Тап — закрыть или открыть дату. Дни в рамке заняты сделкой или мягкой бронью: их снимает не календарь, а сама сделка.': 'Tap to close or open a date. Outlined days are taken by a deal or a soft hold: the deal frees them, not the calendar.',
+  'В каталоге оценка появится с третьего отзыва': 'The catalogue rating appears from the third review',
+  'Заявка стала сделкой': 'The lead became a deal',
+  'Пара забронировала вас — дальше всё в разделе «Сделки»: сумма, аванс и состояние.': 'The couple booked you — everything else is in Deals: amount, deposit and state.',
+  'Открыть сделки →': 'Open deals →',
 })
