@@ -200,6 +200,59 @@ describe.skipIf(!live)('прод: календарь подрядчика и о�
     expect(ids(busy)).not.toContain(vendor.vendorId)
   })
 
+  /* ── правка анкеты не должна стирать то, чем она не занимается ────── */
+  it('сохранение анкеты без портфолио оставляет портфолио на месте', async () => {
+    const vendor = await newVendor()
+    // Заводим портфолио и пакет так, как это сделает экран загрузки после S3.
+    const withMedia = await app.inject({
+      method: 'PUT',
+      url: '/vendor/profile',
+      headers: auth(vendor.token),
+      payload: {
+        name: `Студия ${RUN}-media`,
+        categoryId: 'florist',
+        city: { name: 'Уфа', region: 'Башкортостан' },
+        portfolioUrls: ['https://cdn.example/1.jpg', 'https://cdn.example/2.jpg'],
+        packages: [{ name: 'Букет невесты', price: { amount: 1_500_000, currency: 'RUB' } }],
+      },
+    })
+    expect(withMedia.statusCode).toBe(200)
+    expect(withMedia.json().gallery).toHaveLength(2)
+
+    /* Мастер анкеты портфолио не редактирует и полей о нём не шлёт. Раньше это
+       означало «стереть»: одно сохранение имени уносило все работы. */
+    const renamed = await app.inject({
+      method: 'PUT',
+      url: '/vendor/profile',
+      headers: auth(vendor.token),
+      payload: {
+        name: `Студия ${RUN}-переименована`,
+        categoryId: 'florist',
+        city: { name: 'Уфа', region: 'Башкортостан' },
+        packages: [{ name: 'Букет невесты', price: { amount: 1_500_000, currency: 'RUB' } }],
+      },
+    })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json().name).toContain('переименована')
+    expect(renamed.json().gallery).toHaveLength(2)
+    expect(renamed.json().packages).toHaveLength(1)
+
+    // Пустой список — это «очисти»: удалённый последний пакет должен уйти.
+    const cleared = await app.inject({
+      method: 'PUT',
+      url: '/vendor/profile',
+      headers: auth(vendor.token),
+      payload: {
+        name: `Студия ${RUN}-переименована`,
+        categoryId: 'florist',
+        city: { name: 'Уфа', region: 'Башкортостан' },
+        packages: [],
+      },
+    })
+    expect(cleared.json().packages).toEqual([])
+    expect(cleared.json().gallery).toHaveLength(2)
+  })
+
   /* ── обновления от пар ────────────────────────────────────────────── */
   it('обновление о рассадке приходит подрядчику и согласовано по числу', async () => {
     const vendor = await newVendor()

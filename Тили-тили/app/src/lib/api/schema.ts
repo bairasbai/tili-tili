@@ -6597,6 +6597,14 @@ export interface components {
             }[];
             reviews?: components["schemas"]["Review"][];
         };
+        /**
+         * @description Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):
+         *     **поля нет — список не трогаем, пустой массив — очищаем**.
+         *
+         *     Иначе экран, который списком не занимается — мастер анкеты портфолио не
+         *     редактирует, загрузка ждёт хранилища, — стирал бы чужие работы при
+         *     сохранении имени или телефона.
+         */
         VendorUpsert: {
             name: string;
             categoryId: string;

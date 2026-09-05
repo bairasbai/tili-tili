@@ -177,6 +177,19 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         ...media,
       ]
 
+      /*
+       * Отсутствующее поле — «не трогай», пустой массив — «очисти».
+       *
+       * Мастер анкеты портфолио не редактирует вовсе: загрузка ждёт хранилища.
+       * При прежнем правиле «нет поля — значит пусто» каждое сохранение имени
+       * или телефона стирало бы фотографии и видео, о которых форма не знает.
+       * Терять чужие работы из-за поля, которого клиент не прислал, — худший
+       * из возможных отказов, поэтому список заменяется только тогда, когда о
+       * нём сказали явно.
+       */
+      const touchesMedia = body.portfolioUrls !== undefined || body.media !== undefined
+      const touchesPackages = body.packages !== undefined
+
       /* Сохранение — одной транзакцией.
        *
        * Пакеты и медиа заменяются целиком, то есть сначала удаляются. Раздельными
@@ -211,27 +224,31 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
         )
         const id = saved[0]!.id
 
-        // Мастер присылает полное состояние формы, а не список правок:
-        // дописывание оставило бы удалённые позиции.
-        await client.query('delete from vendor_packages where vendor_id = $1', [id])
-        let sort = 0
-        for (const pkg of body.packages ?? []) {
-          await client.query(
-            'insert into vendor_packages (id, vendor_id, name, price, currency, items, sort) values ($1,$2,$3,$4,$5,$6,$7)',
-            [uuidv7(), id, pkg.name, pkg.price?.amount ?? null, 'RUB', JSON.stringify(pkg.includes ?? []), sort++],
-          )
+        // Присланный список заменяет прежний целиком: дописывание оставило бы
+        // удалённые позиции. Не присланный — не трогается вовсе.
+        if (touchesPackages) {
+          await client.query('delete from vendor_packages where vendor_id = $1', [id])
+          let sort = 0
+          for (const pkg of body.packages ?? []) {
+            await client.query(
+              'insert into vendor_packages (id, vendor_id, name, price, currency, items, sort) values ($1,$2,$3,$4,$5,$6,$7)',
+              [uuidv7(), id, pkg.name, pkg.price?.amount ?? null, 'RUB', JSON.stringify(pkg.includes ?? []), sort++],
+            )
+          }
         }
 
-        await client.query('delete from vendor_media where vendor_id = $1', [id])
-        sort = 0
-        for (const m of all) {
-          await client.query(
-            'insert into vendor_media (id, vendor_id, kind, url, duration_s, sort) values ($1,$2,$3,$4,$5,$6)',
-            [uuidv7(), id, m.kind, m.url, m.durationS ?? null, sort++],
-          )
+        if (touchesMedia) {
+          await client.query('delete from vendor_media where vendor_id = $1', [id])
+          let sort = 0
+          for (const m of all) {
+            await client.query(
+              'insert into vendor_media (id, vendor_id, kind, url, duration_s, sort) values ($1,$2,$3,$4,$5,$6)',
+              [uuidv7(), id, m.kind, m.url, m.durationS ?? null, sort++],
+            )
+          }
+          const firstPhoto = all.find((m) => m.kind === 'photo')?.url ?? null
+          await client.query('update vendors set photo_url = $2 where id = $1', [id, firstPhoto])
         }
-        const firstPhoto = all.find((m) => m.kind === 'photo')?.url ?? null
-        await client.query('update vendors set photo_url = $2 where id = $1', [id, firstPhoto])
         return id
       })
 

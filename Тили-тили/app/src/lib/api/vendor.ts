@@ -35,9 +35,11 @@ export const saveVendorProfile = (draft: VendorDraft) =>
     ...(draft.about ? { about: draft.about } : {}),
     ...(draft.phone ? { phone: draft.phone } : {}),
     ...(draft.priceFrom ? { priceFrom: { amount: draft.priceFrom, currency: 'RUB' } } : {}),
-    ...(draft.packages?.length
-      ? { packages: draft.packages.map(p => ({ name: p.name, price: { amount: p.price, currency: 'RUB' } })) }
-      : {}),
+    /* Пакеты отправляем всегда, даже пустым списком: правило сервера —
+       «поля нет, значит не трогай». Без этого удалённый последний пакет
+       остался бы жить в анкете. Портфолио, наоборот, не отправляем вовсе —
+       мастер им не занимается, и стирать его нечем. */
+    packages: (draft.packages ?? []).map(p => ({ name: p.name, price: { amount: p.price, currency: 'RUB' } })),
   })
 
 /** Публикация: анкета появляется в каталоге, модерация идёт следом (пост-модерация). */

@@ -3449,6 +3449,13 @@ components:
               items: { $ref: '#/components/schemas/Review' }
     VendorUpsert:
       type: object
+      description: |
+        Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):
+        **поля нет — список не трогаем, пустой массив — очищаем**.
+
+        Иначе экран, который списком не занимается — мастер анкеты портфолио не
+        редактирует, загрузка ждёт хранилища, — стирал бы чужие работы при
+        сохранении имени или телефона.
       required: [name, categoryId, city]
       properties:
         name: { type: string }
