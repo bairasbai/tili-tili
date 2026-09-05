@@ -140,7 +140,15 @@ export function Us() {
 export function Chats() {
   const nav = useNavigate()
   const [q, setQ] = useState('')
-  const list = useApi(() => getChats(), [])
+  const [tick, setTick] = useState(0)
+  /* Список тоже перечитывается сам. Живого канала у него нет — он не про
+     конкретный чат, — но человек, оставивший экран открытым, иначе не увидит
+     ни новой реплики, ни значка непрочитанного, пока не уйдёт и не вернётся. */
+  useEffect(() => {
+    const poll = window.setInterval(() => setTick(n => n + 1), 30_000)
+    return () => window.clearInterval(poll)
+  }, [])
+  const list = useApi(() => getChats(), [tick])
   const chats = list.data ?? []
   const shown = chats.filter(c =>
     (c.title ?? '').toLowerCase().includes(q.toLowerCase()) ||
