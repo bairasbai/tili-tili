@@ -85,3 +85,20 @@ export const getGuestShuttle = (token: string) =>
 /** Опрос по горячему: вопрос, варианты и выбор самого гостя. */
 export const getGuestMenu = (token: string) =>
   api.get(url('/join/{guestToken}/menu-vote', { guestToken: token }))
+
+/** Кто работал на свадьбе: нужен, чтобы гость выбрал, кого оценивает. */
+export const getGuestTeam = (token: string) =>
+  api.get(url('/join/{guestToken}/team', { guestToken: token }))
+
+/**
+ * Отзыв гостя о подрядчике.
+ *
+ * Токен идёт параметром строки запроса — так описан этот путь в контракте
+ * (у него нет заголовка авторизации вовсе). Один отзыв на подрядчика: повтор
+ * редактирует прежний, а не заводит второй.
+ */
+export const sendGuestReview = (weddingId: string, token: string, vendorId: string, stars: number, text?: string) =>
+  api.post(
+    `${url('/weddings/{weddingId}/guest-reviews', { weddingId })}?guestToken=${encodeURIComponent(token)}` as '/weddings/{weddingId}/guest-reviews',
+    { vendorId, stars, ...(text ? { text } : {}) },
+  )

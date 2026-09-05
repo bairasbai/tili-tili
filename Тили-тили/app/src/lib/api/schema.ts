@@ -4007,6 +4007,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/join/{guestToken}/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Кто работал на свадьбе — глазами гостя
+         * @description Нужен, чтобы гость мог оставить отзыв: `POST /weddings/{weddingId}/guest-reviews`
+         *     принимает `vendorId`, а взять его гостю было неоткуда — списка команды
+         *     по гостевому токену не существовало, и форма отзыва предлагала имена из
+         *     мока.
+         *
+         *     Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
+         *     идентификатор. Сумма сделки, телефон и состояние сделки — нет.
+         *     Подрядчики только забронированные: оценивать того, кто не работал,
+         *     нечего.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @description Нужен гостю, чтобы отправить отзыв: путь отзыва —
+                             *     `/weddings/{weddingId}/guest-reviews`, а взять этот
+                             *     идентификатор ему больше неоткуда. Секрета в нём нет:
+                             *     токен гостя и так привязан к этой свадьбе.
+                             */
+                            weddingId?: string;
+                            vendors?: {
+                                vendorId?: string;
+                                name?: string;
+                                categoryId?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/join/{guestToken}/hotels": {
         parameters: {
             query?: never;

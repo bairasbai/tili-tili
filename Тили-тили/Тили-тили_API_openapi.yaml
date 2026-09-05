@@ -2039,6 +2039,44 @@ paths:
       responses:
         '200': { description: Записан }
         '409': { $ref: '#/components/responses/Conflict' }
+  /join/{guestToken}/team:
+    get:
+      tags: [logistics-guest]
+      summary: Кто работал на свадьбе — глазами гостя
+      description: |
+        Нужен, чтобы гость мог оставить отзыв: `POST /weddings/{weddingId}/guest-reviews`
+        принимает `vendorId`, а взять его гостю было неоткуда — списка команды
+        по гостевому токену не существовало, и форма отзыва предлагала имена из
+        мока.
+
+        Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
+        идентификатор. Сумма сделки, телефон и состояние сделки — нет.
+        Подрядчики только забронированные: оценивать того, кто не работал,
+        нечего.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  weddingId:
+                    type: string
+                    description: |
+                      Нужен гостю, чтобы отправить отзыв: путь отзыва —
+                      `/weddings/{weddingId}/guest-reviews`, а взять этот
+                      идентификатор ему больше неоткуда. Секрета в нём нет:
+                      токен гостя и так привязан к этой свадьбе.
+                  vendors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        vendorId: { type: string }
+                        name: { type: string }
+                        categoryId: { type: string }
   /join/{guestToken}/hotels:
     get:
       tags: [logistics-guest]

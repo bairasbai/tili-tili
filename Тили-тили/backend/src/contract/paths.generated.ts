@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.23.0).
- * Операций: 149. Путей: 114. */
+ * Операций: 150. Путей: 115. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -67,6 +67,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Гость выбирает блюдо","tag":"catering"},
   {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты трансфера, доступные гостю","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Гость записывается в автобус","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/team","url":"/join/:guestToken/team","operationId":null,"summary":"Кто работал на свадьбе — глазами гостя","tag":"logistics-guest"},
   {"method":"GET","openapi":"/legal/policy","url":"/legal/policy","operationId":null,"summary":"Действующая редакция оферты и политики","tag":"legal"},
   {"method":"GET","openapi":"/me/favorites","url":"/me/favorites","operationId":null,"summary":"Избранное пользователя","tag":"catalog"},
   {"method":"DELETE","openapi":"/me/favorites/{vendorId}","url":"/me/favorites/:vendorId","operationId":null,"summary":"Убрать из избранного","tag":"catalog"},

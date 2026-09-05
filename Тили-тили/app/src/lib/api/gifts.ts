@@ -97,3 +97,16 @@ export const contributeToFund = (token: string, fundId: string, amount: number) 
     { amount: { amount, currency: 'RUB' } },
     { idempotencyKey: newIdempotencyKey() },
   )
+
+/* ── Общий фотоальбом ── */
+
+/**
+ * Кадры гостей. Пара читает по своему токену, гость — по своему параметром
+ * `guestToken`: один и тот же путь, разные ключи.
+ */
+export const getAlbum = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/album', { weddingId }))
+
+/** Одобрить или скрыть кадр. Скрытый виден только паре. */
+export const setPhotoApproved = (weddingId: string, photoId: string, approved: boolean) =>
+  api.patch(url('/weddings/{weddingId}/album/{photoId}', { weddingId, photoId }), { approved })

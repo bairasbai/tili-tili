@@ -354,8 +354,21 @@ export interface paths {
                         budgetTotal?: components["schemas"]["Money"];
                         guestsPlanned?: number;
                         style?: string;
+                        venue?: string;
+                        /** @description явный пояс важнее пояса города */
+                        tz?: string;
+                        /** @description обращение пары в приглашении — его видит гость */
                         inviteText?: string;
+                        /**
+                         * @description Сценарий оформления приглашения. Хранится у свадьбы, а не в
+                         *     браузере пары: гость открывает приглашение со своего
+                         *     устройства, и тема должна приехать к нему вместе с текстом.
+                         */
                         inviteThemeId?: number;
+                        /** @description идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема */
+                        dressCode?: string;
+                        /** @description пожелание словами: «дамы — без белого» */
+                        dressNote?: string;
                     };
                 };
             };
@@ -3652,7 +3665,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Маршруты трансфера
+         * @description Пути чтения не было: маршрут можно было создать и удалить, но не
+         *     показать. Экран логистики после перезагрузки оставался пустым, хотя
+         *     автобусы стояли в базе, а `taken` — единственный источник правды о том,
+         *     сколько мест занято.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BusRoute"][];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Добавить маршрут трансфера */
         post: {
@@ -3731,7 +3772,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Отельные блоки
+         * @description Симметрично автобусам: блок можно было завести и удалить, но не
+         *     прочитать. Гостю список отдаётся по его токену
+         *     (`/join/{guestToken}/hotels`), а паре — здесь.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["HotelBlock"][];
+                    };
+                };
+            };
+        };
         put?: never;
         /** Добавить отельный блок */
         post: {
@@ -3851,7 +3919,46 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Маршруты трансфера, доступные гостю
+         * @description Записаться гость мог, а увидеть, куда именно, — нет: путь был только на
+         *     запись, и `busId` брать было неоткуда. `myBusId` говорит, куда он уже
+         *     записан: без этого гость, вернувшийся по ссылке, видит пустой выбор и
+         *     занимает второе место.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            myBusId?: string | null;
+                            routes?: components["schemas"]["BusRoute"][];
+                        };
+                    };
+                };
+            };
+        };
         put?: never;
         /**
          * Гость записывается в автобус
@@ -3894,6 +4001,76 @@ export interface paths {
                 409: components["responses"]["Conflict"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/join/{guestToken}/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Кто работал на свадьбе — глазами гостя
+         * @description Нужен, чтобы гость мог оставить отзыв: `POST /weddings/{weddingId}/guest-reviews`
+         *     принимает `vendorId`, а взять его гостю было неоткуда — списка команды
+         *     по гостевому токену не существовало, и форма отзыва предлагала имена из
+         *     мока.
+         *
+         *     Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
+         *     идентификатор. Сумма сделки, телефон и состояние сделки — нет.
+         *     Подрядчики только забронированные: оценивать того, кто не работал,
+         *     нечего.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @description Нужен гостю, чтобы отправить отзыв: путь отзыва —
+                             *     `/weddings/{weddingId}/guest-reviews`, а взять этот
+                             *     идентификатор ему больше неоткуда. Секрета в нём нет:
+                             *     токен гостя и так привязан к этой свадьбе.
+                             */
+                            weddingId?: string;
+                            vendors?: {
+                                vendorId?: string;
+                                name?: string;
+                                categoryId?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4097,7 +4274,48 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Опрос по горячему глазами гостя
+         * @description Варианты блюд задаёт пара, а голосовать гость мог вслепую: путь был
+         *     только на отправку выбора. `chosenOptionId` — что он уже выбрал.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            question?: string;
+                            chosenOptionId?: string | null;
+                            options?: {
+                                id?: string;
+                                name?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
         put?: never;
         /**
          * Гость выбирает блюдо
@@ -6109,6 +6327,9 @@ export interface components {
             tz?: string;
             inviteText?: string;
             inviteThemeId?: number;
+            /** @description палитра дресс-кода — её же видит гость */
+            dressCode?: string | null;
+            dressNote?: string | null;
             /** @description Кто из пары запросил отмену свадьбы и ждёт подтверждения второго. Видно только паре. Нужно, чтобы второй партнёр понимал: его нажатие «Отменить» не запросит отмену, а ИСПОЛНИТ её — брони отменятся, даты уйдут подрядчикам. Без этого поля показать предупреждение нечем. Пусто — запроса нет или он протух (срок 72 часа). */
             cancelRequestedBy?: string | null;
             /**
@@ -6127,6 +6348,9 @@ export interface components {
             inviteText?: string;
             inviteThemeId?: number;
             venue?: string | null;
+            /** @description идентификатор палитры — гость видит её в приглашении */
+            dressCode?: string | null;
+            dressNote?: string | null;
         };
         /** @description Член свадьбы — тот, у кого есть аккаунт и доступ в приложение. Гость (guest) и свой подрядчик (guest-vendor) членами НЕ являются: они опознаются токеном по ссылке, аккаунта не имеют и в members не попадают. Матрица доступа (§4 плана) описывает все шесть ролей, эта схема — только четыре с аккаунтом. */
         Member: {
@@ -6330,6 +6554,15 @@ export interface components {
             period?: string;
             done?: boolean;
             custom?: boolean;
+            /**
+             * Format: date
+             * @description Срок задачи, посчитанный от даты свадьбы («за 9 месяцев» → сентябрь
+             *     2026 для свадьбы 14 июня 2027). Null — у свадьбы ещё нет даты, и
+             *     тогда срока нет ни у одной задачи. Сервер считает его сам и
+             *     пересчитывает при переносе: клиент вычислять его не должен, иначе
+             *     чек-лист на телефоне и напоминания в фоне разойдутся.
+             */
+            due?: string | null;
         };
         Chat: {
             id?: string;

@@ -827,6 +827,27 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     return { question: poll[0]?.question ?? '', options, chosenOptionId: mine[0]?.option_id ?? null }
   })
 
+  /* Команда свадьбы глазами гостя: только имя и категория тех, кто
+     забронирован. Нужна для отзыва — `vendorId` гостю взять больше неоткуда.
+     Денег и телефонов здесь нет: гость их не видел и видеть не должен. */
+  app.get('/join/:guestToken/team', async (request) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const guest = await guestByToken(db(), guestToken)
+    const { rows } = await db().query<{ vendor_id: string; name: string; category_id: string }>(
+      `select v.id as vendor_id, v.name, v.category_id
+         from deals d
+         join slots s on s.id = d.slot_id
+         join vendors v on v.id = d.vendor_id
+        where s.wedding_id = $1 and d.state = any($2::text[])
+        order by v.name`,
+      [guest.weddingId, COMMITTED],
+    )
+    return {
+      weddingId: guest.weddingId,
+      vendors: rows.map((r) => ({ vendorId: r.vendor_id, name: r.name, categoryId: r.category_id })),
+    }
+  })
+
   app.get('/join/:guestToken/hotels', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)

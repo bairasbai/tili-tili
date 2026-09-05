@@ -1,15 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { MessageSquareHeart, Plus, ShieldCheck, Star, Trash2, Users, X } from 'lucide-react'
-import { fmt, initialGuestReviews, type GuestReview } from '@/lib/data'
+import { fmt } from '@/lib/data'
 import { rub } from '@/lib/money'
 import { Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { addFund, addGift as addGiftApi, contributeToFund, deleteFund, deleteGift as deleteGiftApi, fundGift, getGuestGifts, getWishlist, putAntiGifts, releaseGift, reserveGift } from '@/lib/api/gifts'
-import { guestToken } from '@/lib/api/guest'
+import { getGuestTeam, guestToken, sendGuestReview } from '@/lib/api/guest'
 import { useStore } from '@/lib/store'
-import { usePersist } from '@/lib/usePersist'
 import { cn, goBack, pct } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -451,6 +450,10 @@ export function GiftPick() {
         </>
       )}
 
+      {/* Отзывы: список подрядчиков и отправка идут на сервер. */}
+      <SectionHead title={t('Как прошла свадьба?')} sub={t('ваш отзыв будет помечен «от гостя»')} />
+      <GuestReviewForm />
+
       <div className="px-5 mt-6">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o), '/invite')} className="press w-full card-s py-4 text-[13px] font-semibold">{t('Назад')}</button>
       </div>
@@ -458,20 +461,45 @@ export function GiftPick() {
   )
 }
 
-/* Форма отзыва гостя: подрядчик → звёзды → текст; сохраняется с пометкой «гость» */
+/*
+ * Отзыв гостя о подрядчике.
+ *
+ * Прежняя форма предлагала пять имён из мока («Елена Смирнова · фотограф») и
+ * складывала отзыв в `tt_guest_reviews` браузера гостя: до пары он не доходил,
+ * а оценить можно было того, кто на этой свадьбе не работал.
+ *
+ * Теперь список — те, кто действительно забронирован, а отзыв уходит на
+ * сервер. Он же следит за остальным: оценивать можно только после свадьбы и
+ * только того, у кого есть сделка, — повтор редактирует прежний отзыв.
+ */
 export function GuestReviewForm() {
-  const [reviews, setReviews] = usePersist<GuestReview[]>('tt_guest_reviews', initialGuestReviews)
-  const [vendor, setVendor] = useState('')
+  const token = guestToken()
+  const q = useApi(() => token ? getGuestTeam(token) : Promise.resolve(null), [token])
+  /* Идентификатор свадьбы приходит вместе с командой: путь отзыва требует его,
+     а гостю взять его больше неоткуда. */
+  const weddingId = q.data?.weddingId
+  const team = q.data?.vendors ?? []
+  const [vendorId, setVendorId] = useState('')
   const [stars, setStars] = useState(0)
   const [text, setText] = useState('')
   const [sentOk, setSentOk] = useState(false)
-  const vendorOptions = [t('Елена Смирнова · фотограф'), t('Артём Краснов · ведущий'), t('Студия «Пион» · флористика'), t('Усадьба «Липовый сад»'), t('«Марципан» · торт')]
-  const submit = () => {
-    if (!vendor || !stars) return
-    setReviews(r => [{ id: `gr${Date.now()}`, vendor, stars, text: text.trim() || t('Без комментария'), at: t('сегодня') }, ...r])
-    setVendor(''); setStars(0); setText(''); setSentOk(true)
-    setTimeout(() => setSentOk(false), 2200)
-  }
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  /* Без команды оценивать некого — форму не показываем вовсе, а не рисуем
+     пустой список кнопок. */
+  if (!token || !weddingId || !team.length) return null
+
+  const submit = () => void (async () => {
+    if (!vendorId || !stars) return
+    setBusy(true)
+    setErr(null)
+    try {
+      await sendGuestReview(weddingId, token, vendorId, stars, text.trim() || undefined)
+      setVendorId(''); setStars(0); setText(''); setSentOk(true)
+    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  })()
+
   return (
     <div className="px-5 space-y-3">
       <div className="card p-4">
@@ -482,8 +510,8 @@ export function GuestReviewForm() {
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {vendorOptions.map(v => (
-            <button key={v} onClick={() => setVendor(v)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full transition-all', vendor === v ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{v}</button>
+          {team.map(v => (
+            <button key={v.vendorId} onClick={() => setVendorId(v.vendorId ?? '')} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full transition-all', vendorId === v.vendorId ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{v.name}</button>
           ))}
         </div>
         <div className="flex items-center gap-1.5 mt-3">
@@ -495,24 +523,14 @@ export function GuestReviewForm() {
           {stars > 0 && <span className="text-[11px] text-[var(--soft)] ml-1.5">{stars}/5</span>}
         </div>
         <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={t('Пара слов о впечатлениях (необязательно)')} className="w-full mt-2.5 px-4 py-3 rounded-xl bg-[var(--bg)] text-[12.5px] outline-none resize-none placeholder:text-[var(--soft2)]" />
-        <button onClick={submit} disabled={!vendor || !stars} className="press w-full h-[46px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold mt-2.5 disabled:opacity-40">
-          {sentOk ? t('✓ Спасибо! Отзыв отправлен') : t('Отправить отзыв гостя')}
+        {err && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2">{err}</p>}
+        <button onClick={submit} disabled={busy || !vendorId || !stars} className="press w-full h-[46px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold mt-2.5 disabled:opacity-40">
+          {busy ? t('Отправляем…') : sentOk ? t('✓ Спасибо! Отзыв отправлен') : t('Отправить отзыв гостя')}
         </button>
+        {/* Список уже оставленных отзывов убран: он читался из `tt_guest_reviews`
+            того же браузера и показывал гостю его собственные записи как «отзывы
+            гостей». Настоящие отзывы читает пара — путь у неё свой. */}
       </div>
-      {reviews.length > 0 && (
-        <div className="space-y-2">
-          {reviews.slice(0, 3).map(r => (
-            <div key={r.id} className="card-s p-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <b className="text-[12px] truncate">{r.vendor}</b>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)] shrink-0">{t('Гость свадьбы')}</span>
-              </div>
-              <p className="text-[10px] text-[var(--honey-deep)] mt-1">{'★'.repeat(r.stars)}{'☆'.repeat(5 - r.stars)} <span className="text-[var(--soft2)]">· {r.at}</span></p>
-              <p className="text-[11.5px] text-[var(--ink2)] mt-1 font-light">{r.text}</p>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

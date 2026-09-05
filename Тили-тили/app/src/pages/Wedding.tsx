@@ -1,16 +1,16 @@
 import { createElement, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
-import { contractTemplates, fmt, initialAlbum, type Slot } from '@/lib/data'
+import { contractTemplates, fmt, type Slot } from '@/lib/data'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
+import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
-import { usePersist } from '@/lib/usePersist'
 import { committedTotal } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
@@ -1033,46 +1033,84 @@ export function Guests() {
 
 /* Общий фотоальбом гостей: QR на столах + модерация парой */
 export function Album() {
-  const [photos, setPhotos] = usePersist('tt_album', initialAlbum)
-  const [moderated, setModerated] = useState(0)
-  const pool = ['💃', '🥂', '🎆', '🤳', '🍰', '💐', '🎤', '🕺', '📸', '❤️']
+  const { weddingId } = useStore()
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  /*
+   * Кадры гостей приходят с сервера.
+   *
+   * Раньше альбом жил в `tt_album` браузера пары и наполнялся кнопкой
+   * «Загрузить фото (демо)», которая добавляла эмодзи из списка. Гость,
+   * снявший что-то на свадьбе, до пары не доходил вовсе.
+   */
+  const q = useApi(() => weddingId ? getAlbum(weddingId) : Promise.resolve([]), [weddingId])
+  const photos = q.data ?? []
   const pending = photos.filter(p => !p.approved).length
-  const addPhoto = () => setPhotos(ps => [...ps, { id: 'p' + Date.now(), emoji: pool[ps.length % pool.length], tile: ['bg-[var(--rose-soft)]', 'bg-[var(--sage-soft)]', 'bg-[var(--honey)]', 'bg-[var(--lav)]'][ps.length % 4], approved: false, at: t('сейчас') }])
+
+  const moderate = (photoId: string, approved: boolean) => void (async () => {
+    if (!weddingId) return
+    setBusyId(photoId)
+    setErr(null)
+    try { await setPhotoApproved(weddingId, photoId, approved); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+  })()
+
+  const approveAll = () => void (async () => {
+    if (!weddingId) return
+    setBusyId('all')
+    setErr(null)
+    try {
+      for (const p of photos.filter(x => !x.approved)) await setPhotoApproved(weddingId, p.id ?? '', true)
+      q.reload()
+    } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+  })()
+
   return (
     <div className="pb-28">
-      <TopBar back title={t('Фотоальбом гостей')} sub={`${photos.length} ${t('кадров ·')} ${pending} ${t('на модерации')}`} />
+      <TopBar back title={t('Фотоальбом гостей')} sub={`${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}`} />
+      <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
-        <div className="card p-4 flex items-center gap-4">
-          <div className="w-[76px] h-[76px] rounded-[16px] bg-[var(--ink)] grid grid-cols-4 gap-[3px] p-2.5 shrink-0">
-            {Array.from({ length: 16 }).map((_, i) => <span key={i} className="rounded-[2px]" style={{ background: (i * 7 + 3) % 3 ? '#EFE9DF' : 'transparent' }} />)}
-          </div>
-          <div className="flex-1">
-            <p className="text-[13px] font-semibold">{t('QR-код для столов')}</p>
-            <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-0.5">{t('Гости сканируют и загружают фото и видео без регистрации — всё попадает сюда.')}</p>
-            <button onClick={addPhoto} className="press mt-2 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('＋ Загрузить фото (демо)')}</button>
-          </div>
+        {/*
+          * QR-квадрат из шестнадцати клеточек и кнопка «Загрузить фото (демо)»
+          * убраны. Настоящей ссылки для гостя нет, а загрузка упирается в
+          * объектное хранилище: сервер честно отвечает, что бакет и ключи не
+          * подключены. Рисовать вместо этого работающий вид — обещать то,
+          * чего сегодня нет.
+          */}
+        <div className="card p-4">
+          <p className="text-[13px] font-semibold">{t('Загрузка фото пока не подключена')}</p>
+          <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
+            {t('Гости смогут загружать кадры без регистрации, когда будет подключено файловое хранилище. Кадры, которые уже пришли, видны ниже.')}
+          </p>
         </div>
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
         {pending > 0 && (
           <div className="card p-3.5 flex items-center justify-between">
             <p className="text-[12px] font-medium">{t('Новых на модерации:')} {pending}</p>
-            <button onClick={() => { setPhotos(ps => ps.map(p => ({ ...p, approved: true }))); setModerated(m => m + 1) }} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)]">{t('Одобрить все')}</button>
+            <button disabled={busyId === 'all'} onClick={approveAll} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === 'all' ? t('Одобряем…') : t('Одобрить все')}</button>
           </div>
         )}
-        {moderated > 0 && pending === 0 && <p className="text-[11px] text-[var(--sage-deep)] font-medium px-1">✓ {t('Все кадры одобрены и видны гостям')}</p>}
+        {!photos.length && ready(q) && (
+          <p className="text-[12px] text-[var(--soft)] text-center py-4">{t('Кадров пока нет')}</p>
+        )}
       </div>
       <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
         {photos.map((p, i) => (
-          <button key={p.id} onClick={() => setPhotos(ps => ps.map(x => x.id === p.id ? { ...x, approved: !x.approved } : x))}
-            className={cn('press relative aspect-square rounded-[20px] flex items-center justify-center text-[38px]', p.tile, !p.approved && 'opacity-50')} style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
-            {p.emoji}
+          <button key={p.id} disabled={busyId === p.id} onClick={() => moderate(p.id ?? '', !p.approved)}
+            className={cn('press relative aspect-square rounded-[20px] overflow-hidden bg-[var(--track)] disabled:opacity-40', !p.approved && 'opacity-50')}
+            style={{ animationDelay: `${i * 30}ms`, boxShadow: 'var(--shadow)' }}>
+            {/* Кадр — настоящий файл гостя. Эмодзи-заглушки из палитры больше
+                нет: она изображала фотографии, которых не было. */}
+            {p.url && <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />}
             <span className={cn('absolute top-1.5 right-1.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full', p.approved ? 'bg-[var(--sage)] text-[var(--on-grad)]' : 'bg-[var(--ink)] text-[var(--bg)]')}>
               {p.approved ? '✓' : '…'}
             </span>
-            <span className="absolute bottom-1.5 left-2 text-[8.5px] text-[var(--soft)]">{p.at}</span>
           </button>
         ))}
       </div>
-      <p className="px-6 mt-3 text-center text-[10.5px] text-[var(--soft)]">{t('Тап по фото — одобрить/скрыть. Скрытые видите только вы.')}</p>
+      {photos.length > 0 && (
+        <p className="px-6 mt-3 text-center text-[10.5px] text-[var(--soft)]">{t('Тап по фото — одобрить/скрыть. Скрытые видите только вы.')}</p>
+      )}
     </div>
   )
 }
