@@ -53,8 +53,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
   }
 
   const loadMine = async (vendorId: string) => {
-    const { rows } = await db().query<VendorRow & { about: string | null }>(
-      `select ${VENDOR_COLUMNS}, v.about
+    const { rows } = await db().query<VendorRow & { about: string | null; city_region: string | null }>(
+      `select ${VENDOR_COLUMNS}, v.about, c.region as city_region
          from vendors v left join cities c on c.id = v.city_id
         where v.id = $1`,
       [vendorId],
@@ -68,6 +68,9 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
     )
     return {
       ...detail,
+      /* Регион отдаём владельцу: город в ответе — одна строка, и без региона
+         анкету нельзя вернуть обратно, не потеряв справочную привязку. */
+      cityRegion: rows[0]!.city_region,
       published: state[0]!.published_at !== null,
       moderated: state[0]!.moderated_at !== null,
     }
@@ -92,9 +95,12 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             name: { type: 'string', minLength: 2, maxLength: 120 },
             categoryId: { type: 'string', maxLength: 40 },
+            /* Регион необязателен: в ответе город приходит одной строкой, и
+               клиент, который просто вернул анкету обратно, региона не знает.
+               Пока имя города в справочнике единственное — этого хватает. */
             city: {
               type: 'object',
-              required: ['name', 'region'],
+              required: ['name'],
               additionalProperties: false,
               properties: { name: { type: 'string' }, region: { type: 'string' } },
             },
@@ -146,11 +152,19 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       const { rows: cat } = await db().query('select 1 from categories where id = $1', [body.categoryId])
       if (cat.length === 0) throw notFound(`Категория «${body.categoryId}» не найдена`)
 
+      /* С регионом ищем точно, без региона — по имени. Если одноимённых
+         городов несколько, region обязателен: молча выбрать первый значит
+         записать подрядчика в чужую область. */
       const { rows: cityRows } = await db().query<{ id: number }>(
-        'select id from cities where name = $1 and region = $2 limit 1',
-        [body.city.name, body.city.region],
+        body.city.region
+          ? 'select id from cities where name = $1 and region = $2 limit 1'
+          : 'select id from cities where name = $1 limit 2',
+        body.city.region ? [body.city.name, body.city.region] : [body.city.name],
       )
       if (!cityRows[0]) throw notFound(`Город «${body.city.name}» не найден в справочнике`)
+      if (!body.city.region && cityRows.length > 1) {
+        throw new AppError(422, 'city_ambiguous', `Городов с названием «${body.city.name}» несколько — укажите регион`)
+      }
       // Достаём до транзакции: внутри замыкания TypeScript теряет сужение типа.
       const cityId = cityRows[0].id
 

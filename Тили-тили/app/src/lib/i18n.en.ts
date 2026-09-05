@@ -1553,4 +1553,6 @@ Object.assign(EN, {
   'Заявка стала сделкой': 'The lead became a deal',
   'Пара забронировала вас — дальше всё в разделе «Сделки»: сумма, аванс и состояние.': 'The couple booked you — everything else is in Deals: amount, deposit and state.',
   'Открыть сделки →': 'Open deals →',
+  'Изменения сохранены': 'Changes saved',
+  'Пары видят анкету в новом виде — обновлять ничего не нужно.': 'Couples see the updated profile — nothing to refresh.',
 })

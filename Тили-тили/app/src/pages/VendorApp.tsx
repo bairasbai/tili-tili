@@ -325,7 +325,10 @@ export function VendorProfileWizard() {
     setForm({
       name: p?.name ?? '',
       categoryId: p?.categoryId ?? '',
-      city: { name: p?.city ?? '' },
+      /* Регион приходит отдельным полем: в `city` только название, а
+         справочник различает одноимённые города по региону. Без него правка
+         анкеты падала с «городом не найден». */
+      city: { name: p?.city ?? '', ...(p?.cityRegion ? { region: p.cityRegion } : {}) },
       about: p?.about ?? '',
       phone: p?.phone ?? '',
       priceFrom: p?.priceFrom?.amount,
@@ -373,8 +376,14 @@ export function VendorProfileWizard() {
   if (publishedNow) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <div className="w-20 h-20 rounded-full grad flex items-center justify-center pop"><Check size={34} className="text-white" /></div>
-      <h2 className="font-serif-d text-[26px] mt-6">{t('Анкета опубликована!')}</h2>
-      <p className="text-[12.5px] text-[var(--soft)] mt-2.5 leading-relaxed">{t('Вы в каталоге и в фильтре «свободен на дату». Заявки придут в кабинет.')}</p>
+      {/* Публикация и правка — разные события. Опубликованной анкете «Анкета
+          опубликована!» сообщает о том, чего не происходило. */}
+      <h2 className="font-serif-d text-[26px] mt-6">{p?.published ? t('Изменения сохранены') : t('Анкета опубликована!')}</h2>
+      <p className="text-[12.5px] text-[var(--soft)] mt-2.5 leading-relaxed">
+        {p?.published
+          ? t('Пары видят анкету в новом виде — обновлять ничего не нужно.')
+          : t('Вы в каталоге и в фильтре «свободен на дату». Заявки придут в кабинет.')}
+      </p>
       <button onClick={() => nav('/vendor-app')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-6" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('В кабинет')}</button>
     </div>
   )
