@@ -43,3 +43,13 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (mod10 >= 2 && mod10 <= 4) return few
   return many
 }
+
+/**
+ * Доля в процентах.
+ *
+ * Пустой список — это 0%, а не «NaN%»: деление на ноль давало на экране
+ * буквальное «NaN%» в прогрессе чек-листа и в занятости автобуса.
+ */
+export const pct = (part: number | undefined, total: number | undefined) =>
+  total && total > 0 ? Math.round(((part ?? 0) / total) * 100) : 0
+

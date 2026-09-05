@@ -14,7 +14,7 @@ import { usePersist } from '@/lib/usePersist'
 import { committedTotal } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
-import { cn, copyText, plural } from '@/lib/utils'
+import { cn, copyText, pct, plural } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* Навигация раздела «Свадьба» */
@@ -320,9 +320,6 @@ function SlotView({ s }: { s: Slot }) {
  * Ошибка жила и в моке, и пережила переход на сервер, потому что «48000К»
  * выглядит правдоподобно, пока не сравнишь с итогом рядом.
  */
-/** Доля в процентах. Пустой список — это 0%, а не «NaN%» от деления на ноль. */
-const pct = (part: number, total: number) => total > 0 ? Math.round((part / total) * 100) : 0
-
 const thousands = (kopecks: number) => Math.round(kopecks / 100 / 1000)
 
 /* Бюджет */

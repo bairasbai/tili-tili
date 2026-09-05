@@ -5,8 +5,34 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
+/*
+ * Логистика тоже с сервера. Держим её в памяти мока: без этого проверка
+ * «последний блок удалён» смотрела бы на состояние экрана, а не на ответ.
+ */
+const { logisticsState } = vi.hoisted(() => ({
+  logisticsState: {
+    buses: [] as Array<{ id: string; name: string; seats: number; taken: number }>,
+    hotels: [] as Array<{ id: string; name: string; rooms: number; booked: number }>,
+  },
+}))
+
 /* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
-vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
+vi.mock('@/lib/api/weddingData', async (orig) => ({
+  ...await orig<object>(),
+  ...(await import('@/test/slotsMock')).slotsRead,
+  getBuses: async () => logisticsState.buses.map(b => ({ ...b })),
+  getHotels: async () => logisticsState.hotels.map(h => ({ ...h })),
+  getGuests: async () => [],
+}))
+vi.mock('@/lib/api/weddingWrite', async (orig) => ({
+  ...await orig<object>(),
+  deleteHotel: async (_w: string, id: string) => {
+    logisticsState.hotels = logisticsState.hotels.filter(h => h.id !== id)
+  },
+  deleteBus: async (_w: string, id: string) => {
+    logisticsState.buses = logisticsState.buses.filter(b => b.id !== id)
+  },
+}))
 import { authorize, resetSlots } from '@/test/slotsMock'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
@@ -113,19 +139,30 @@ const wrap = (node: React.ReactNode, route = '/') =>
   render(<MemoryRouter initialEntries={[route]}><StoreProvider>{node}</StoreProvider></MemoryRouter>)
 
 describe('пустые состояния логистики (R-04)', () => {
-  it('без маршрутов и отельных блоков экран объясняет, что делать', () => {
-    localStorage.setItem('tt_buses', '[]')
-    localStorage.setItem('tt_hotels', '[]')
+  /* Маршруты и отельные блоки приходят с сервера: раньше они лежали в
+     `tt_buses` и `tt_hotels` на телефоне того, кто их завёл. */
+  beforeEach(() => {
+    logisticsState.buses = []
+    logisticsState.hotels = []
+    authorize()
+  })
+
+  it('без маршрутов и отельных блоков экран объясняет, что делать', async () => {
     wrap(<Logistics />)
-    expect(screen.getByText('Маршрутов пока нет')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Маршрутов пока нет')).toBeTruthy())
     expect(screen.getByText('Отельных блоков пока нет')).toBeTruthy()
   })
 
-  it('последний отельный блок можно удалить и экран не пустеет молча', () => {
+  it('последний отельный блок можно удалить и экран не пустеет молча', async () => {
+    logisticsState.hotels = [{ id: 'h1', name: 'Хилтон', rooms: 6, booked: 0 }]
     wrap(<Logistics />)
+    await waitFor(() => expect(screen.getByText('Хилтон')).toBeTruthy())
     expect(screen.queryByText('Отельных блоков пока нет')).toBeNull()
+
     for (const b of screen.getAllByLabelText('Удалить')) fireEvent.click(b)
-    expect(screen.getByText('Отельных блоков пока нет')).toBeTruthy()
+    // Удаление уходит на сервер, а список перечитывается его ответом.
+    await waitFor(() => expect(logisticsState.hotels).toHaveLength(0))
+    await waitFor(() => expect(screen.getByText('Отельных блоков пока нет')).toBeTruthy())
   })
 })
 
