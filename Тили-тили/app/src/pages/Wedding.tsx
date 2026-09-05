@@ -15,6 +15,7 @@ import { committedTotal } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
+import { chatRouteForVendor } from '@/lib/api/chats'
 import { t } from '@/lib/i18n'
 
 /* Навигация раздела «Свадьба» */
@@ -257,7 +258,9 @@ function SlotView({ s }: { s: Slot }) {
         )}
 
         <div className="grid grid-cols-2 gap-2.5 mt-3">
-          <button onClick={() => nav('/us/chats/ch1')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
+          {/* У своего подрядчика идентификатора каталога нет: тогда ведём в
+              список чатов, где его переписка отдельной строкой. */}
+          <button onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t('Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {confirmCancel ? (
@@ -299,9 +302,12 @@ function SlotView({ s }: { s: Slot }) {
           {[
             ['📄', 'bg-[var(--blue)]', t('Документы свадьбы'), '/wedding/documents'],
             ['🗓', 'bg-[var(--honey)]', t('Тайминг дня'), '/wedding/timeline'],
-            ['💬', 'bg-[var(--sage-soft)]', t('Чат по сделке'), '/us/chats/ch1'],
+            /* Чат по сделке — переписка с этим же подрядчиком: адрес берём у
+               сервера, как и у кнопки «Написать» выше. Прежний `ch1` вёл в
+               выдуманную переписку. */
+            ['💬', 'bg-[var(--sage-soft)]', t('Чат по сделке'), ''],
           ].map(([ic, tile, l, to], i) => (
-            <button key={String(l)} onClick={() => nav(String(to))} className={cn('press w-full flex items-center gap-3 py-3 text-left', i !== 2 && 'border-b border-[var(--track)]')}>
+            <button key={String(l)} onClick={() => void (async () => nav(to ? String(to) : await chatRouteForVendor(s.vendorId)))()} className={cn('press w-full flex items-center gap-3 py-3 text-left', i !== 2 && 'border-b border-[var(--track)]')}>
               <Tile icon={String(ic)} tile={String(tile)} size={34} />
               <span className="flex-1 text-[12px] font-medium">{l}</span>
             </button>

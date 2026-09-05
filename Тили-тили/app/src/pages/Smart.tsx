@@ -13,6 +13,7 @@ import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { getAvailability, getCategories, getFavorites, getVendors } from '@/lib/api/catalog'
 import { cn, goBack, plural } from '@/lib/utils'
+import { dayChatRoute, teamChatRoute } from '@/lib/api/chats'
 import { t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 
@@ -237,7 +238,9 @@ export function DayX() {
           </div>
           <div className="flex gap-2.5 mt-4">
             <button onClick={() => setDelay(d => d + 15)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold" style={{ background: '#C9A96A', color: '#141210' }}>{t('+15 мин задержка')}</button>
-            <button onClick={() => nav('/us/chats/ch5')} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[#4a443c]">{t('Чат дня X')}</button>
+            {/* Адрес чата дня X знает только сервер: он один на свадьбу и
+                создаётся вместе с ней. Прежний `ch5` был выдуман. */}
+            <button onClick={() => void (async () => nav(await dayChatRoute()))()} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[#4a443c]">{t('Чат дня X')}</button>
           </div>
           <button onClick={() => setSos(s2 => !s2)} className="press w-full mt-2.5 h-[44px] rounded-full text-[12px] font-bold" style={{ background: '#C4705A', color: '#fff' }}>🆘 {t('SOS — координатор дня')}</button>
           {sos && (
@@ -251,7 +254,10 @@ export function DayX() {
                 <span className="w-2 h-2 rounded-full" style={{ background: '#8FB08A' }} />
               </div>
               <div className="flex gap-2 mt-3">
-                <button onClick={() => nav('/us/chats/ch2')} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c]">{t('Написать')}</button>
+                {/* Координатор дня — участник команды свадьбы, отдельного чата
+                    с ним контракт не знает. Ведём в командный чат, где он и
+                    читает: прежний `ch2` не существовал вовсе. */}
+                <button onClick={() => void (async () => nav(await teamChatRoute()))()} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c]">{t('Написать')}</button>
                 <a href="tel:+70000000000" className="press flex-1 h-[38px] rounded-full text-[11px] font-bold flex items-center justify-center" style={{ background: '#C9A96A', color: '#141210' }}>{t('Позвонить')}</a>
               </div>
             </div>

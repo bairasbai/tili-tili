@@ -79,3 +79,34 @@ export function openChatSocket(chatId: string, onEvent: (e: ChatEvent) => void):
     try { s.close() } catch { /* уже закрыт */ }
   }
 }
+
+/**
+ * Открыть переписку с подрядчиком и получить адрес её экрана.
+ *
+ * Кнопка «Написать» стоит в четырёх местах — карточка каталога, слот команды,
+ * экран сделки и сравнение. Раньше все они вели на выдуманный `ch1`; теперь
+ * путь один: чат создаётся (или находится) на сервере, и человек попадает
+ * именно в свою переписку.
+ *
+ * У своего подрядчика (§11) идентификатора в каталоге нет, и открыть чат по
+ * нему нельзя: возвращаем список чатов — его переписка там строкой.
+ */
+export async function chatRouteForVendor(vendorId?: string | null): Promise<string> {
+  if (!vendorId) return '/us/chats'
+  const chat = await openVendorChat(vendorId)
+  return chat?.id ? `/us/chats/${chat.id}` : '/us/chats'
+}
+
+/** Чат дня X: он один, и адрес его знает только сервер. */
+export async function dayChatRoute(): Promise<string> {
+  const chats = await getChats()
+  const day = (chats ?? []).find(c => c.kind === 'day')
+  return day?.id ? `/us/chats/${day.id}` : '/us/chats'
+}
+
+/** Командный чат свадьбы: пара, помощники и забронированные подрядчики. */
+export async function teamChatRoute(): Promise<string> {
+  const chats = await getChats()
+  const team = (chats ?? []).find(c => c.kind === 'team')
+  return team?.id ? `/us/chats/${team.id}` : '/us/chats'
+}

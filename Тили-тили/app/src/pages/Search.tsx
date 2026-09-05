@@ -9,6 +9,7 @@ import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
+import { chatRouteForVendor } from '@/lib/api/chats'
 import { t } from '@/lib/i18n'
 
 /* Каталог категорий */
@@ -434,7 +435,10 @@ export function VendorDetail() {
 
       {/* CTA */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
-        <button onClick={() => nav('/us/chats/ch1')} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>{t('Написать')}</button>
+        {/* Раньше кнопка вела на выдуманный чат `ch1` — один и тот же у всех
+            подрядчиков. Теперь переписка создаётся на сервере и открывается
+            своя. */}
+        <button onClick={() => void (async () => nav(await chatRouteForVendor(v.id)))()} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>{t('Написать')}</button>
         <button onClick={add} disabled={busy || added} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
         </button>

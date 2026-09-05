@@ -11,6 +11,7 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { saveInviteDesign } from '@/lib/api/wedding'
 import { guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
+import { chatRouteForVendor } from '@/lib/api/chats'
 import { ready } from '@/components/AsyncState'
 import { getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
@@ -141,7 +142,7 @@ function DealView({ s }: { s: Slot }) {
         {s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
 
         <div className="grid grid-cols-2 gap-2.5">
-          <button onClick={() => nav('/us/chats/ch3')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
+          <button onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button onClick={() => nav(`/wedding/documents/new?deal=${s.dealId ?? ''}`)} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
           {/* «Внести аванс» — отдельный путь контракта, остальные шаги двигает
               PATCH сделки. Разные адреса, поэтому и кнопки разные. */}
