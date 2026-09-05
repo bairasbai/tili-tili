@@ -7,7 +7,7 @@ import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/wed
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, remindGuests, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -366,6 +366,9 @@ export function Budget() {
      та же статья считалась дважды, как только доезжала на сервер. */
   const total = server?.spent?.amount ?? 0
   const spentPct = pct(total, budgetTotal)
+  /* Резерв на непредвиденное считает сервер — 10% от общего бюджета (План
+     ч. 283). Доля на клиенте разошлась бы с серверной на первой правке. */
+  const reserve = server?.reserve?.amount ?? 0
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
@@ -397,6 +400,18 @@ export function Budget() {
           </div>
           <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
           <div className="mt-3"><Bar pct={spentPct} /></div>
+          {reserve > 0 && (
+            /* Отдельной строкой, а не категорией: категории делят сто процентов
+               между собой, и резерв внутри них означал бы, что часть сметы
+               просто уменьшили. */
+            <div className="flex justify-between items-center mt-3 pt-3 border-t border-[var(--track)]">
+              <span className="text-[11.5px] text-[var(--soft)]">🛟 {t('Резерв на непредвиденное (10%)')}</span>
+              <b className="text-[12.5px] tabular">{fmt(reserve)}</b>
+            </div>
+          )}
+          {reserve > 0 && total > budgetTotal - reserve && (
+            <p className="text-[10.5px] text-[var(--rose-ink)] mt-1.5">{t('Обязательства уже съели резерв — на неожиданности запаса нет')}</p>
+          )}
           <div className="mt-4 space-y-4">
             {cats.map(b => (
               <div key={b.id}>
@@ -882,6 +897,7 @@ export function Guests() {
   const [name, setName] = useState('')
   const [plus, setPlus] = useState(false)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [reminded, setReminded] = useState<string | null>(null)
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
@@ -1019,11 +1035,25 @@ export function Guests() {
           })()}
         </div>
         {waiting > 0 && (
-          <div className="mt-3.5">
-            {/* Число — из списка, а не «8» константой. Массовой рассылки
-                напоминаний контракт не умеет: ведём на экран приглашений,
-                где ссылка выдаётся каждому гостю. */}
-            <AiTip text={`${waiting} ${plural(waiting, t('гость'), t('гостя'), t('гостей'))} ${t('ещё не ответили — отправьте им приглашение ещё раз')}`} onPress={() => nav('/wedding/invites')} />
+          <div className="mt-3.5 space-y-2">
+            {/* Число — из списка, а не «8» константой. */}
+            <AiTip text={`${waiting} ${plural(waiting, t('гость'), t('гостя'), t('гостей'))} ${t('ещё не ответили')}`} onPress={() => nav('/wedding/invites')} />
+            {/* Одно СМС каждому молчащему — вместо обхода списка руками.
+                Кому не уйдёт, сервер называет отдельно: без телефона и с уже
+                открытой ссылкой (новая ссылка увела бы за собой выбор гостя). */}
+            <button disabled={busyId === 'remind'} onClick={() => void write('remind', async () => {
+              /* Итог прошлой попытки убираем сразу: иначе рядом с отказом
+                 висит «Отправлено: 1» и читается как успех. */
+              setReminded(null)
+              const res = await remindGuests(weddingId!)
+              const parts = [`${t('Отправлено:')} ${res?.sent ?? 0}`]
+              if (res?.skippedNoPhone) parts.push(`${t('без телефона:')} ${res.skippedNoPhone}`)
+              if (res?.skippedLinkUsed) parts.push(`${t('ссылку уже открыли:')} ${res.skippedLinkUsed}`)
+              setReminded(parts.join(' · '))
+            })} className="press w-full card-s py-3.5 text-[12.5px] font-semibold disabled:opacity-50">
+              {busyId === 'remind' ? t('Отправляем…') : t('Напомнить не ответившим')}
+            </button>
+            {reminded && <p className="text-[11px] text-[var(--soft)] px-1">{reminded}</p>}
           </div>
         )}
       </div>

@@ -159,3 +159,14 @@ export const remindMenuPoll = (weddingId: string) =>
 /** Одноразовая ссылка-приглашение конкретному гостю. */
 export const guestInviteLink = (weddingId: string, guestId: string) =>
   api.post(url('/weddings/{weddingId}/guests/{guestId}/invite-link', { weddingId, guestId }), {}) as Promise<{ url?: string; expiresAt?: string } | undefined>
+
+/**
+ * Напомнить тем, кто не ответил на приглашение.
+ *
+ * Одно СМС каждому молчащему с телефоном — раньше пара обходила список руками.
+ * Гостю, чья личная ссылка уже открыта, отсюда не пишут: новая ссылка гасит
+ * его токен и уводит за собой всё, что он выбрал (§9). Сервер называет такие
+ * случаи отдельным числом, а не прячет их в «отправлено».
+ */
+export const remindGuests = (weddingId: string) =>
+  api.post(url('/weddings/{weddingId}/guests/remind', { weddingId }), {})

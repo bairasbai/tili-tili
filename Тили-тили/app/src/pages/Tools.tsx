@@ -5,17 +5,18 @@ import { contractTemplates, dressPalettes, fmt, type DealState, type Slot } from
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { useBusy } from '@/lib/useBusy'
-import { Tile, TopBar } from '@/components/chrome'
+import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { saveInviteDesign } from '@/lib/api/wedding'
 import { guestInviteLink } from '@/lib/api/weddingWrite'
+import { getDealEvents } from '@/lib/api/slots'
 import { ready } from '@/components/AsyncState'
 import { getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
-import { cn, copyText } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { cn, copyText, pct } from '@/lib/utils'
+import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
 /*
@@ -103,27 +104,41 @@ function DealView({ s }: { s: Slot }) {
           </div>
         </div>
 
-        {/* Сумма — та, что записана в сделке. Графика платежей контракт не
-            отдаёт, и выдумывать его здесь нельзя: раньше на экране стояли
-            «аванс 10 фев» и «доплата 14 июн» с суммами, не связанными ни с
-            какой сделкой. */}
+        {/* Сумма — та, что записана в сделке, и та, что по ней уже внесена.
+            Графика платежей контракт не отдаёт, и выдумывать его здесь нельзя:
+            раньше на экране стояли «аванс 10 фев» и «доплата 14 июн» с суммами,
+            не связанными ни с какой сделкой. */}
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
+          {/* Сумму платежей считает сервер: до этого её в ответе не было, и
+              строка могла показать только факт оплаты, но не остаток долга. */}
           <div className="flex justify-between items-center mt-3">
-            <span className="text-[12.5px]">{t('Оплата')}</span>
-            <b className={cn('tabular text-[13px]', s.dealState === 'paid_deposit' || s.dealState === 'done' ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>
-              {s.dealState === 'paid_deposit' || s.dealState === 'done' ? t('✓ Зафиксирована') : t('Ожидает')}
+            <span className="text-[12.5px]">{t('Оплачено')}</span>
+            <b className={cn('tabular text-[13px]', (s.paid ?? 0) > 0 ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>
+              {fmt(s.paid ?? 0)}{s.price != null && ` ${t('из')} ${fmt(s.price)}`}
             </b>
           </div>
-          {/* Сколько уже оплачено, контракт не отдаёт: в `Deal` есть цена и
-              состояние, но нет суммы платежей. Поэтому строка показывает факт
-              оплаты, а не остаток — придумывать остаток нельзя. */}
+          {s.price != null && s.price > 0 && (
+            <div className="mt-2.5">
+              <Bar pct={pct(s.paid ?? 0, s.price)} />
+              <p className="text-[10.5px] text-[var(--soft)] mt-1.5">
+                {s.price - (s.paid ?? 0) > 0
+                  ? `${t('осталось')} ${fmt(s.price - (s.paid ?? 0))}`
+                  : t('оплачено полностью')}
+              </p>
+            </div>
+          )}
           <div className="h-[1.5px] bg-[var(--track)] my-3" />
           <div className="flex justify-between items-center">
             <b className="text-[13px]">{t('Итого по договору')}</b>
             <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{s.price != null ? fmt(s.price) : '—'}</b>
           </div>
         </div>
+
+        {/* `revision` — состояние и оплаченное: после действия на этом же
+            экране журнал обязан перечитаться, иначе он показывает историю до
+            последнего шага и выглядит так, будто шага не было. */}
+        {s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
 
         <div className="grid grid-cols-2 gap-2.5">
           <button onClick={() => nav('/us/chats/ch3')} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
@@ -159,6 +174,66 @@ function DealView({ s }: { s: Slot }) {
           <button onClick={() => nav('/support')} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Написать в поддержку')}</button>
         </div>
         <p className="text-[10px] text-[var(--soft2)] text-center leading-relaxed">{t('Отмена менее чем за 30 дней до даты блокирует отзывы обеим сторонам до решения модерации.')}</p>
+      </div>
+    </div>
+  )
+}
+
+/*
+ * Журнал сделки: что и когда с ней происходило.
+ *
+ * Раньше на этом экране стояла выдуманная история из четырёх событий —
+ * одинаковая у всех пар. Настоящие события писались в базу с самого начала,
+ * но прочитать их было негде: при споре «мы договаривались о другой сумме»
+ * доказательство лежало и молчало.
+ *
+ * Автор события приходит ролью, а не именем: ни пара, ни подрядчик не
+ * получают отсюда чужой идентификатор.
+ */
+const EVENT_STATE: Record<string, string> = {
+  candidate: 'Кандидат',
+  contacted: 'Написали',
+  negotiating: 'Переговоры — бронь держится 72 часа',
+  booked: 'Забронировано',
+  paid_deposit: 'Аванс внесён',
+  done: 'Выполнено',
+  cancelled: 'Сделка отменена',
+}
+
+const EVENT_BY: Record<string, string> = {
+  couple: 'вы',
+  vendor: 'подрядчик',
+  system: 'автоматически',
+}
+
+function DealJournal({ dealId, revision }: { dealId: string; revision: string }) {
+  const q = useApi(() => getDealEvents(dealId), [dealId, revision])
+  const events = q.data ?? []
+
+  return (
+    <div className="card p-5">
+      <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</span>
+      <AsyncState q={q} />
+      {!events.length && ready(q) && (
+        <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>
+      )}
+      <div className="mt-3 space-y-3">
+        {events.map(e => (
+          <div key={e.id} className="flex gap-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12.5px] font-medium">
+                {/* Правка цены несёт свой текст — старую и новую сумму; у перехода
+                    состояния текста нет, и его даёт словарь. */}
+                {e.kind === 'price' ? (e.note ?? t('Цена изменена')) : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}
+              </p>
+              <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
+                {e.at ? new Date(e.at).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
+                {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

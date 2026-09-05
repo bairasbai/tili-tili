@@ -23,6 +23,11 @@ export interface SlotDeal {
   externalName?: string | null
   externalPhone?: string | null
   price?: { amount?: number; currency?: string }
+  /* Сколько уже внесено по сделке и когда был последний платёж. Считает
+     сервер: сумма, посчитанная на клиенте, разошлась бы с его расчётом на
+     первом же возврате. Приходит только тому, кто видит деньги. */
+  paid?: { amount?: number; currency?: string }
+  paidAt?: string | null
 }
 
 export interface ServerSlot {
@@ -88,3 +93,13 @@ export const inviteExternalVendor = (weddingId: string, slotId: string) =>
 /** Перевести сделку в следующее состояние: контракт разрешает только вперёд. */
 export const advanceDeal = (dealId: string, state: string) =>
   api.patch(url('/deals/{dealId}', { dealId }), { state }, { idempotencyKey: newIdempotencyKey() })
+
+/**
+ * Журнал сделки: переходы состояния и правки цены.
+ *
+ * События писались с самого начала и не читались нигде — при споре «мы
+ * договаривались о другой сумме» доказательство лежало в базе. Автор назван
+ * ролью: чужого имени и идентификатора здесь нет.
+ */
+export const getDealEvents = (dealId: string) =>
+  api.get(url('/deals/{dealId}/events', { dealId }))
