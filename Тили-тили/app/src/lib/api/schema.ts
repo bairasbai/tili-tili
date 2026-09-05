@@ -354,7 +354,16 @@ export interface paths {
                         budgetTotal?: components["schemas"]["Money"];
                         guestsPlanned?: number;
                         style?: string;
+                        venue?: string;
+                        /** @description явный пояс важнее пояса города */
+                        tz?: string;
+                        /** @description обращение пары в приглашении — его видит гость */
                         inviteText?: string;
+                        /**
+                         * @description Сценарий оформления приглашения. Хранится у свадьбы, а не в
+                         *     браузере пары: гость открывает приглашение со своего
+                         *     устройства, и тема должна приехать к нему вместе с текстом.
+                         */
                         inviteThemeId?: number;
                     };
                 };

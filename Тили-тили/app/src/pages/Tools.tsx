@@ -1,7 +1,7 @@
 import { createElement, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { Download, Check, FileText, Plus, Minus, Send, Armchair } from 'lucide-react'
-import { contractTemplates, dressPalettes, couple, guests, fmt, type DealState, type Slot } from '@/lib/data'
+import { Download, Check, Copy, FileText, Plus, Armchair } from 'lucide-react'
+import { contractTemplates, dressPalettes, couple, fmt, type DealState, type Slot } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { useBusy } from '@/lib/useBusy'
@@ -9,10 +9,13 @@ import { usePersist } from '@/lib/usePersist'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
+import { saveInviteDesign } from '@/lib/api/wedding'
+import { guestInviteLink } from '@/lib/api/weddingWrite'
+import { ready } from '@/components/AsyncState'
 import { getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
-import { cn } from '@/lib/utils'
+import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -419,13 +422,46 @@ export function Seating() {
 /* Редактор приглашений: сценарий → текст → вопросы гостям → рассылка */
 export function InviteEditor() {
   const nav = useNavigate()
-  const { inviteTpl, setInviteTpl, inviteText, setInviteText, weddingDate } = useStore()
+  const { inviteTpl, setInviteTpl, inviteText, setInviteText, weddingDate, weddingId } = useStore()
   const theme = inviteTpl
-  const [count, setCount] = useState(42)
   const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
-  const [sentInvites, setSentInvites] = useState(false)
   const [dress, setDress] = usePersist('tt_dress', 'd1')
   const [dressNote, setDressNote] = usePersist('tt_dress_note', '')
+  const [saved, setSaved] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [links, setLinks] = useState<Record<string, string>>({})
+  const [copied, setCopied] = useState<string | null>(null)
+
+  /* Гости — с сервера: ссылка именная, и выдаётся она конкретной записи. */
+  const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const guestList = gq.data ?? []
+
+  const run = async (id: string, fn: () => Promise<unknown>) => {
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — приглашения живут в ней')); return }
+    setBusyId(id)
+    setErr(null)
+    try { await fn() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+  }
+
+  /* Текст и тему сохраняем на сервере: гость открывает приглашение со своего
+     устройства, и в localStorage пары заглянуть не может. */
+  const saveDesign = () => void run('design', async () => {
+    await saveInviteDesign(weddingId!, inviteText, theme)
+    setSaved(true)
+  })
+
+  /* Ссылка одноразовая и именная. Повторный выпуск гасит прежнюю — так
+     работает контракт, и это правильно: ссылка, ушедшая не тому, отзывается. */
+  const issueLink = (guestId: string) => void run(guestId, async () => {
+    const res = await guestInviteLink(weddingId!, guestId)
+    if (res?.url) setLinks(m => ({ ...m, [guestId]: res.url! }))
+  })
+
+  const copy = (url: string) => {
+    copyText(url)
+    setCopied(url); setTimeout(() => setCopied(null), 1600)
+  }
   const qRow = (key: keyof typeof questions, label: string) => (
     <div className="flex items-center justify-between py-3 border-b border-[var(--track)] last:border-none">
       <span className="text-[12.5px] font-medium">{label}</span>
@@ -498,46 +534,53 @@ export function InviteEditor() {
           {qRow('transfer', t('Нужен ли трансфер'))}
         </div>
 
-        {/* Рассылка */}
-        <div className="card p-5 mt-4">
-          <div className="flex items-center justify-between">
-            <b className="text-[13px]">{t('Гостей в рассылке')}</b>
-            <div className="flex items-center gap-3">
-              <button onClick={() => setCount(Math.max(1, count - 1))} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center"><Minus size={14} /></button>
-              <b className="tabular text-[16px] w-8 text-center">{count}</b>
-              <button onClick={() => setCount(Math.min(guests.length * 10, count + 1))} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center"><Plus size={14} /></button>
-            </div>
-          </div>
-          <p className="text-[10.5px] text-[var(--soft)] mt-3">{t('Каждому — именная ссылка и QR. Ответы RSVP приходят в раздел «Гости» в реальном времени.')}</p>
-        </div>
+        {/* Сохранение оформления: текст и тему видит гость, значит они на сервере */}
+        <button disabled={busyId === 'design'} onClick={saveDesign} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2 disabled:opacity-50" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          <Check size={15} /> {busyId === 'design' ? t('Сохраняем…') : saved ? t('Оформление сохранено ✓') : t('Сохранить оформление')}
+        </button>
 
-        {/* Ссылка и QR */}
+        {/*
+          * Именные ссылки вместо «разослать».
+          *
+          * Здесь стояли счётчик «гостей в рассылке» с кнопками ±, нарисованный
+          * QR-квадрат, общая ссылка `tili-tili.ru/i/alina-timur` и кнопка
+          * «Разослать приглашения», которая меняла только надпись на экране.
+          * Ничего не отправлялось, и ссылки такой не существовало.
+          *
+          * Рассылку контракт не умеет: SMS и почта не подключены. Зато он
+          * выдаёт каждому гостю личную одноразовую ссылку — её пара
+          * пересылает сама, любым мессенджером.
+          */}
         <div className="card p-5 mt-4">
-          <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Ссылка и QR')}</span>
-          <div className="flex items-center gap-3 mt-3">
-            <div className="w-[72px] h-[72px] rounded-2xl bg-[var(--ink)] p-2 grid grid-cols-5 gap-[3px]">
-              {Array.from({ length: 25 }).map((_, k) => (
-                <span key={k} className="rounded-[2px]" style={{ background: [0,1,2,4,5,10,12,14,20,21,23,24,7,17].includes(k) ? 'var(--bg)' : 'transparent' }} />
-              ))}
-            </div>
-            <div className="flex-1 min-w-0">
-              <b className="text-[12px] block truncate">tili-tili.ru/i/alina-timur</b>
-              <p className="text-[10px] text-[var(--soft)] mt-1">{t('Мессенджер сам подтянет обложку и имена — гость увидит приглашение ещё до клика.')}</p>
-            </div>
+          <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Именные ссылки')}</span>
+          <p className="text-[10.5px] text-[var(--soft)] mt-2 leading-relaxed">
+            {t('Каждая ссылка открывается один раз и подставляет имя гостя. Отправьте её сами — так приглашение не разойдётся по чужим чатам.')}
+          </p>
+          {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-2">{err}</p>}
+          <div className="mt-3 space-y-2">
+            {!guestList.length && ready(gq) && (
+              <p className="text-[12px] text-[var(--soft)] py-2">{t('Список гостей пуст — добавьте гостей, чтобы выдать ссылки')}</p>
+            )}
+            {guestList.map(g => {
+              const url = links[g.id ?? '']
+              return (
+                <div key={g.id} className="flex items-center gap-2">
+                  <span className="flex-1 text-[12.5px] truncate">{g.name}</span>
+                  {url ? (
+                    <button onClick={() => copy(url)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--bg)] flex items-center gap-1.5">
+                      {copied === url ? <><Check size={12} className="text-[var(--sage-deep)]" />{t('Скопировано')}</> : <><Copy size={12} />{t('Копировать')}</>}
+                    </button>
+                  ) : (
+                    <button disabled={busyId === g.id} onClick={() => issueLink(g.id ?? '')} className="press text-[11px] font-bold px-3 py-1.5 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">
+                      {busyId === g.id ? t('Выдаём…') : t('Выдать ссылку')}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
+          <button onClick={() => nav('/wedding/guests')} className="press mt-4 w-full card-s py-3 text-[12px] font-semibold">{t('К списку гостей →')}</button>
         </div>
-
-        {sentInvites ? (
-          <div className="card p-5 mt-4 text-center pop">
-            <b className="text-[15px]">{t('✓ Отправлено')} {count} {t('гостям')}</b>
-            <p className="text-[11px] text-[var(--soft)] mt-1.5">{t('Ответы RSVP появятся в разделе «Гости» в реальном времени')}</p>
-            <button onClick={() => nav('/wedding/guests')} className="press mt-4 px-6 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('К списку гостей →')}</button>
-          </div>
-        ) : (
-          <button onClick={() => setSentInvites(true)} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-            <Send size={15} /> {t('Разослать приглашения')}
-          </button>
-        )}
       </div>
     </div>
   )

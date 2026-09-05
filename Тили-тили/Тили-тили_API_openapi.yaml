@@ -238,8 +238,17 @@ paths:
                 budgetTotal: { $ref: '#/components/schemas/Money' }
                 guestsPlanned: { type: integer }
                 style: { type: string }
-                inviteText: { type: string }
-                inviteThemeId: { type: integer, minimum: 0, maximum: 9 }
+                venue: { type: string, maxLength: 200 }
+                tz: { type: string, maxLength: 64, description: 'явный пояс важнее пояса города' }
+                inviteText: { type: string, maxLength: 2000, description: 'обращение пары в приглашении — его видит гость' }
+                inviteThemeId:
+                  type: integer
+                  minimum: 0
+                  maximum: 9
+                  description: |
+                    Сценарий оформления приглашения. Хранится у свадьбы, а не в
+                    браузере пары: гость открывает приглашение со своего
+                    устройства, и тема должна приехать к нему вместе с текстом.
       responses:
         '200':
           description: OK

@@ -92,3 +92,13 @@ export async function findMyWedding(): Promise<string | null> {
  */
 export const setWeddingDateOnServer = (weddingId: string, date: string) =>
   api.patch(url('/weddings/{weddingId}', { weddingId }), { date }, { idempotencyKey: newIdempotencyKey() })
+
+/**
+ * Оформление приглашения: обращение пары и сценарий.
+ *
+ * Хранится у свадьбы, а не в браузере пары: гость открывает приглашение со
+ * своего устройства, и текст с темой должны приехать к нему с сервера. Пока
+ * они лежали в localStorage, пара правила текст, которого гость не видел.
+ */
+export const saveInviteDesign = (weddingId: string, inviteText: string, inviteThemeId: number) =>
+  api.patch(url('/weddings/{weddingId}', { weddingId }), { inviteText, inviteThemeId }, { idempotencyKey: newIdempotencyKey() })
