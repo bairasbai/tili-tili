@@ -1133,6 +1133,7 @@ Object.assign(EN, {
   'Слот не найден': 'Slot not found',
   '✓ Зафиксирована': '✓ Recorded',
   'Оплата': 'Payment',
+  'В очереди ✓': 'Queued ✓',
   'Ссылка больше не действует': 'This link no longer works',
   'Похоже, пара выслала новое приглашение — прежняя ссылка после этого гаснет. Попросите у неё свежую.': 'It looks like the couple sent a new invitation — the previous link goes dark after that. Ask them for a fresh one.',
   'Понятно': 'Got it',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Check, ChevronRight, Copy, Crown, Heart, Link2, QrCode, Shield, Users, X } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
@@ -65,7 +65,10 @@ export function Team() {
   const [invites, setInvites] = useState<Invite[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  useEscape(() => setInvite(null), invite !== null)
+  /* Закрыли до ответа — значит, открывать уже нечего (см. `openInvite`). */
+  const cancelled = useRef(false)
+  const closeInvite = () => { cancelled.current = true; setInvite(null) }
+  useEscape(closeInvite, true)
 
   const explain = (e: unknown) => e instanceof ApiError
     ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
@@ -85,18 +88,27 @@ export function Team() {
 
   useEffect(() => { void load() }, [load])
 
-  /* Код выпускает сервер: шторка открывается уже с готовым кодом, а не с
-     придуманным на клиенте. Пока запрос идёт, кнопка занята. */
+  /*
+   * Код выпускает сервер: шторка открывается уже с готовым кодом, а не с
+   * придуманным на клиенте. Пока запрос идёт, кнопка занята.
+   *
+   * Если человек успел нажать Escape, пока код выпускался, шторку не
+   * открываем: поздний ответ выталкивал её обратно поверх экрана, который
+   * человек только что закрыл. Ссылка при этом создана и видна в списке
+   * активных — отменять выпуск задним числом было бы хуже.
+   */
   const openInvite = async (r: typeof ROLES[number]) => {
     if (!weddingId || busy) return
     setBusy(true); setErr(null)
+    cancelled.current = false
     try {
       const created = await api.post(url('/weddings/{weddingId}/invites', { weddingId }), {
         role: SERVER_ROLE[r.id], label: r.name,
       })
+      void load()
+      if (cancelled.current) return
       setInviteCode(created?.code ?? '')
       setInvite(r)
-      void load()
     } catch (e) { setErr(explain(e)) } finally { setBusy(false) }
   }
 
@@ -186,7 +198,7 @@ export function Team() {
 
       {/* Шторка приглашения */}
       {invite && (
-        <div role="dialog" aria-modal="true" aria-label={t('Пригласить в команду')} className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center" onClick={() => setInvite(null)}>
+        <div role="dialog" aria-modal="true" aria-label={t('Пригласить в команду')} className="fixed inset-0 z-50 bg-black/40 flex items-end justify-center" onClick={closeInvite}>
           <div className="w-full max-w-[430px] bg-[var(--bg)] rounded-t-[32px] p-6 pb-[max(28px,env(safe-area-inset-bottom))] fade-up" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3">
               <Tile icon={invite.icon} tile={invite.tile} size={46} />
@@ -194,7 +206,7 @@ export function Team() {
                 <b className="font-serif-d text-[19px]">{t('Пригласить:')}{invite.name}</b>
                 <p className="text-[10.5px] text-[var(--soft)]">{t('ссылка одноразовая · живёт 7 дней')}</p>
               </div>
-              <button onClick={() => setInvite(null)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center"><X size={15} /></button>
+              <button onClick={closeInvite} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center"><X size={15} /></button>
             </div>
             <div className="flex flex-wrap gap-1.5 mt-4">
               {invite.rights.map(r => (
