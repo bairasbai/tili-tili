@@ -152,9 +152,11 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
       url: '/vendor/calendar?month=2027-07',
       headers: auth(vendor.token),
     })
+    // `source` отличает свою занятость от даты под сделкой: снять вторую
+    // нельзя, и кабинет обязан показать это до нажатия.
     expect(calendar.json()).toEqual([
-      { date: '2027-07-03', status: 'busy' },
-      { date: '2027-07-04', status: 'busy' },
+      { date: '2027-07-03', status: 'busy', source: 'manual' },
+      { date: '2027-07-04', status: 'busy', source: 'manual' },
     ])
 
     const availability = await app.inject({

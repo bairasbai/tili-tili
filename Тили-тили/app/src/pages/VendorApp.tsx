@@ -1,34 +1,109 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Check, ChevronRight, Eye, MessageCircle, CalendarDays, TrendingUp, Plus, Star } from 'lucide-react'
+import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
+import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
-import { usePersist } from '@/lib/usePersist'
-import { cn } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { ApiError } from '@/lib/api/client'
+import { explainError, useApi } from '@/lib/api/useApi'
+import {
+  ackVendorUpdate,
+  getVendorCalendar,
+  getVendorLeads,
+  getVendorProfile,
+  getVendorReviews,
+  getVendorUpdates,
+  publishVendorProfile,
+  getVendorDeals,
+  saveVendorProfile,
+  setVendorBusy,
+  type VendorDraft,
+} from '@/lib/api/vendor'
+import { getCategories } from '@/lib/api/catalog'
+import { cn, plural } from '@/lib/utils'
+import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, rub } from '@/lib/money'
+import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/lib/weddingDate'
 
-/* Кабинет подрядчика: дашборд */
+/*
+ * Кабинет подрядчика: дашборд.
+ *
+ * Экран был витриной целиком: «Елена Смирнова · анкета заполнена на 90%»,
+ * семь заявок, двенадцать просмотров в день, рейтинг 4.9 с распределением
+ * звёзд, три выдуманных обновления от пар и календарь июня из тридцати клеток
+ * в `tt_vendor_busy`. Ни одна цифра не относилась к тому, кто смотрел.
+ *
+ * Теперь всё приходит с сервера, а чего сервер не считает — того на экране
+ * нет. Заполненность анкеты считается тут же по её полям: это не данные, а
+ * подсказка «что ещё заполнить».
+ */
 export function VendorDashboard() {
   const nav = useNavigate()
-  const [busyDays, setBusyDays] = usePersist<number[]>('tt_vendor_busy', [5, 6, 14, 26])
-  const toggleDay = (day: number) => setBusyDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort((a, b) => a - b))
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [busyErr, setBusyErr] = useState<string | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
+
+  const profile = useApi(() => getVendorProfile().catch(noProfile), [])
+  const leads = useApi(() => getVendorLeads(), [])
+  const reviews = useApi(() => getVendorReviews(), [])
+  const updates = useApi(() => getVendorUpdates(), [])
+  const calendar = useApi(() => getVendorCalendar(month), [month])
+
+  const p = profile.data
+  const leadList = leads.data ?? []
+  const reviewList = reviews.data ?? []
+  const updateList = (updates.data ?? []).filter(u => !u.ackAt)
+  const days = calendar.data ?? []
+
+  /* Заполненность — подсказка, а не оценка: показываем, чего не хватает. */
+  const filled = [!!p?.name, !!p?.categoryId, !!p?.city, !!p?.about, !!p?.phone, !!(p?.packages?.length), !!(p?.gallery?.length)]
+  const donePct = Math.round(filled.filter(Boolean).length / filled.length * 100)
+
+  const stars = reviewList.length
+    ? Math.round(reviewList.reduce((sum, r) => sum + (r.rating ?? 0), 0) / reviewList.length * 10) / 10
+    : null
+  const newLeads = leadList.filter(l => l.status === 'new').length
+
+  const toggleDay = (date: string, busy: boolean) => void (async () => {
+    setSaving(date)
+    setBusyErr(null)
+    try { await setVendorBusy([date], busy ? 'free' : 'busy'); calendar.reload() }
+    catch (e) { setBusyErr(explainError(e)) } finally { setSaving(null) }
+  })()
+
+  if (!profile.loading && !p) return <VendorNoProfile />
+
   return (
     <div className="pb-28">
-      <TopBar title={t('Елена Смирнова')} sub={t('Фотограф · анкета заполнена на 90%')} right={
+      <TopBar title={p?.name ?? t('Кабинет подрядчика')} sub={p?.city ?? ''} right={
         <button onClick={() => nav('/vendor-app/profile')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-bold">{t('Анкета')}</button>
       } />
+      <AsyncState q={profile} />
       <div className="px-5 mt-2">
         <div className="card p-4">
-          <div className="flex justify-between text-[12px] mb-2"><span className="text-[var(--soft)]">{t('Заполненность анкеты')}</span><b>90%</b></div>
-          <Bar pct={90} />
-          <p className="text-[10.5px] text-[var(--soft)] mt-2.5">{t('Анкеты с видео получают в 3 раза больше откликов — добавьте видео-визитку.')}</p>
+          <div className="flex justify-between text-[12px] mb-2"><span className="text-[var(--soft)]">{t('Заполненность анкеты')}</span><b>{donePct}%</b></div>
+          <Bar pct={donePct} />
+          {donePct < 100 && (
+            /* Называем недостающее поле, а не советуем «добавить видео» вообще:
+               прежняя подсказка стояла константой и не зависела от анкеты. */
+            <p className="text-[10.5px] text-[var(--soft)] mt-2.5">
+              {t('Не хватает:')} {[!p?.about && t('рассказа о себе'), !p?.phone && t('рабочего телефона'), !p?.packages?.length && t('пакетов услуг'), !p?.gallery?.length && t('фотографий')].filter(Boolean).join(', ')}
+            </p>
+          )}
+          {/* Опубликована или нет — главный факт кабинета: пока нет, заявок
+              не будет, сколько ни заполняй поля. */}
+          <p className="text-[10.5px] mt-2">
+            {p?.published
+              ? <span className="text-[var(--sage-deep)] font-semibold">{t('Анкета опубликована — вы в каталоге')}</span>
+              : <span className="text-[var(--honey-deep)] font-semibold">{t('Анкета не опубликована — пары её не видят')}</span>}
+          </p>
         </div>
+
         <div className="grid grid-cols-3 gap-2.5 mt-3.5 stagger">
           {([
-            ['7', t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
-            ['12', t('просмотров/день'), Eye, 'bg-[var(--sage-soft)]'],
-            ['3', t('свадьбы в июне'), CalendarDays, 'bg-[var(--honey)]'],
+            [String(newLeads), t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
+            [stars === null ? '—' : String(stars), t('средняя оценка'), Star, 'bg-[var(--honey)]'],
+            [String(days.filter(d => d.status === 'busy' || d.status === 'hold').length), t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
           ] as const).map(([v, l, Icon, tile]) => (
             <div key={l} className="card-s p-3.5 text-center fade-up">
               <div className={cn('w-9 h-9 rounded-[12px] mx-auto flex items-center justify-center', tile)}><Icon size={16} className="text-[var(--ink2)]" /></div>
@@ -38,94 +113,123 @@ export function VendorDashboard() {
           ))}
         </div>
 
-        {/* Живые обновления от пар по забронированным свадьбам */}
+        {/* Обновления от пар: настоящие правки по забронированным свадьбам.
+            Раньше здесь стояли три строки про «Алину & Тимура» — у любого
+            подрядчика одни и те же. */}
         <div className="card p-4 mt-3.5">
           <div className="flex items-center gap-2.5">
-            <span className="relative flex w-2.5 h-2.5 shrink-0">
-              <span className="absolute inline-flex w-full h-full rounded-full bg-[#7E9A74] opacity-60 animate-ping" />
-              <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-[#7E9A74]" />
-            </span>
             <b className="text-[13px]">{t('Обновления от пар')}</b>
-            <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('живая связь')}</span>
+            {updateList.length > 0 && <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{updateList.length}</span>}
           </div>
+          <AsyncState q={updates} />
+          {!updateList.length && ready(updates) && (
+            <p className="text-[11px] text-[var(--soft)] mt-2.5">{t('Новых изменений нет')}</p>
+          )}
           <div className="mt-3 space-y-2">
-            {[
-              [t('Алина & Тимур · 14.06'), t('Рассадка обновлена: стол 4, +2 гостя'), t('10 мин назад')],
-              [t('Алина & Тимур · 14.06'), t('Меню: мясо 4 · рыба 2 · вег 1'), t('1 ч назад')],
-              [t('Дина & Руслан · 21.06'), t('Тайминг сдвинут: банкет на 15 мин позже'), t('вчера')],
-            ].map(([w, txt, when]) => (
-              <div key={String(txt)} className="flex items-start gap-3 bg-[var(--bg)] rounded-xl px-3 py-2.5">
+            {updateList.map(u => (
+              <div key={u.id} className="flex items-start gap-3 bg-[var(--bg)] rounded-xl px-3 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="text-[9.5px] font-bold text-[var(--soft2)] uppercase tracking-wide">{w}</p>
-                  <p className="text-[11.5px] mt-0.5">{txt}</p>
+                  <p className="text-[9.5px] font-bold text-[var(--soft2)] uppercase tracking-wide">{u.wedding}{u.weddingDate ? ` · ${shortWeddingDate(u.weddingDate)}` : ''}</p>
+                  <p className="text-[11.5px] mt-0.5">{u.text}</p>
                 </div>
-                <span className="text-[9px] text-[var(--soft2)] shrink-0 pt-0.5">{when}</span>
+                <button onClick={() => void (async () => { await ackVendorUpdate(u.id ?? ''); updates.reload() })()} className="press text-[9.5px] font-bold text-[var(--sage-deep)] shrink-0 pt-0.5">{t('Учтено')}</button>
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-[var(--soft2)] mt-2.5">{t('Вы видите изменения мгновенно — переспрашивать пару не нужно. Подтвердите получение одним тапом.')}</p>
         </div>
 
-        {/* Рейтинг и отзывы */}
         <button onClick={() => nav('/vendor-app/reviews')} className="press w-full card p-4 mt-3.5 flex items-center gap-4 text-left">
           <div className="text-center">
-            <b className="font-serif-d text-[30px] tabular">4.9</b>
-            <p className="text-[9.5px] text-[var(--honey-deep)]">★★★★★</p>
+            <b className="font-serif-d text-[30px] tabular">{stars ?? '—'}</b>
+            <p className="text-[9.5px] text-[var(--honey-deep)]">{stars ? '★'.repeat(Math.round(stars)) : ''}</p>
           </div>
-          <div className="flex-1 space-y-1.5">
-            {[['5', 90], ['4', 8], ['3', 2]].map(([s, p]) => (
-              <div key={String(s)} className="flex items-center gap-2">
-                <span className="text-[9.5px] text-[var(--soft)] w-2">{s}</span>
-                <div className="flex-1 h-1.5 rounded-full bg-[var(--track)] overflow-hidden"><div className="h-full rounded-full bg-[var(--gold-soft)]" style={{ width: `${p}%` }} /></div>
-                <span className="text-[9px] text-[var(--soft2)] w-7 text-right tabular">{p}%</span>
-              </div>
-            ))}
+          <div className="flex-1">
+            <b className="text-[13px]">{t('Отзывы')}</b>
+            <p className="text-[10.5px] text-[var(--soft)]">
+              {reviewList.length
+                ? `${reviewList.length} ${plural(reviewList.length, t('отзыв'), t('отзыва'), t('отзывов'))} · ${t('без ответа')} ${reviewList.filter(r => !r.reply).length}`
+                : t('пока ни одного')}
+            </p>
           </div>
-          <span className="text-[9px] font-bold text-[var(--sage-deep)] shrink-0">{t('Отзывы →')}</span>
+          <span className="text-[9px] font-bold text-[var(--sage-deep)] shrink-0">→</span>
         </button>
 
-        {/* Аналитика */}
         <button onClick={() => nav('/vendor-app/analytics')} className="press w-full card-s p-4 mt-2.5 flex items-center gap-3 text-left">
           <Tile icon="📈" tile="bg-[var(--sage-soft)]" size={42} />
           <div className="flex-1">
             <b className="text-[13px]">{t('Аналитика анкеты')}</b>
-            <p className="text-[10.5px] text-[var(--soft)]">{t('воронка: 1 240 просмотров → 34 заявки → 8 сделок')}</p>
+            <p className="text-[10.5px] text-[var(--soft)]">{t('просмотры, заявки, сделки и доход')}</p>
           </div>
-          <span className="text-[11px] font-bold text-[var(--sage-deep)]">+38% ↑</span>
+          <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>
 
-        {/* Календарь июня */}
+        <button onClick={() => nav('/vendor-app/verification')} className="press w-full card-s p-4 mt-2.5 flex items-center gap-3 text-left">
+          <Tile icon={p?.verified ? '✓' : '🛡'} tile={p?.verified ? 'bg-[var(--sage-soft)]' : 'bg-[var(--honey)]'} size={42} />
+          <div className="flex-1">
+            <b className="text-[13px]">{p?.verified ? t('Вы проверены') : t('Пройти верификацию')}</b>
+            <p className="text-[10.5px] text-[var(--soft)]">{p?.verified ? t('галочка видна парам в каталоге') : t('пары чаще пишут проверенным')}</p>
+          </div>
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </button>
+
+        {/* Календарь занятости. Раньше это были тридцать клеток «июня» без
+            смещения по дням недели и без связи с сервером (ERR-0130). */}
         <div className="card p-4 mt-3.5">
-          <div className="flex justify-between items-baseline mb-2.5">
-            <b className="text-[13px]">{t('Июнь 2027')}</b>
-            <span className="text-[10px] text-[var(--soft)]">{t('занято')} {busyDays.length} {t('даты · нажмите на день')}</span>
+          <div className="flex justify-between items-center mb-2.5">
+            <button onClick={() => setMonth(shiftMonth(month, -1))} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Прошлый месяц')}>‹</button>
+            <b className="text-[13px]">{monthTitle(month)}</b>
+            <button onClick={() => setMonth(shiftMonth(month, 1))} className="press w-7 h-7 rounded-full bg-[var(--bg)] text-[12px]" aria-label={t('Следующий месяц')}>›</button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-[var(--soft)] font-semibold mb-1">
+            {[t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')].map(d => <span key={d}>{d}</span>)}
           </div>
           <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: 30 }).map((_, k) => {
-              const day = k + 1
-              const busy = busyDays.includes(day)
-              return <button key={day} onClick={() => toggleDay(day)} className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px]', busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]')}>{day}</button>
+            {Array.from({ length: monthGrid(month).blanks }).map((_, k) => <span key={`b${k}`} />)}
+            {Array.from({ length: monthGrid(month).days }).map((_, k) => {
+              const date = `${month}-${String(k + 1).padStart(2, '0')}`
+              const day = days.find(d => d.date === date)
+              const busy = day?.status === 'busy'
+              const hold = day?.status === 'hold'
+              /* День под сделкой не снимается: сервер такую дату держит, и
+                 предлагать «открыть» её значит обещать чужой отказ. Мягкая
+                 бронь — тоже не ваша: она уйдёт сама, если пара не подтвердит. */
+              const locked = hold || day?.source === 'deal'
+              return (
+                <button key={date} disabled={saving === date || locked} onClick={() => toggleDay(date, busy)}
+                  title={locked ? (hold ? t('Пара держит дату — ждём подтверждения сделки') : t('Дата занята сделкой')) : undefined}
+                  className={cn('press aspect-square rounded-lg flex items-center justify-center text-[10px] disabled:opacity-100',
+                    hold ? 'bg-[var(--honey)] text-[var(--honey-ink)] font-bold' : busy ? 'grad text-[var(--on-grad)] font-bold' : 'bg-[var(--bg)] text-[var(--ink2)]',
+                    locked && 'ring-2 ring-[var(--ink)]/15')}>
+                  {k + 1}
+                </button>
+              )
             })}
           </div>
+          {busyErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{busyErr}</p>}
+          {/* День под сделкой закрыт сервером: открыть его значило бы увести у
+              пары дату, о которой договорились. */}
+          <p className="text-[10px] text-[var(--soft2)] mt-2.5">{t('Тап — закрыть или открыть дату. Дни в рамке заняты сделкой или мягкой бронью: их снимает не календарь, а сама сделка.')}</p>
         </div>
 
         <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
           <h2 className="font-serif-d text-[19px]">{t('Входящие заявки')}</h2>
-          <span className="text-[10px] font-bold text-[var(--sage-deep)] flex items-center gap-1"><TrendingUp size={11} />{t('+3 за неделю')}</span>
+          <button onClick={() => nav('/vendor-app/deals')} className="press text-[10.5px] font-bold text-[var(--sage-deep)]">{t('Сделки →')}</button>
         </div>
+        <AsyncState q={leads} />
+        {!leadList.length && ready(leads) && (
+          <p className="text-[12px] text-[var(--soft)] py-3">{t('Заявок пока нет. Они приходят из каталога, когда пара пишет или бронирует.')}</p>
+        )}
         <div className="space-y-2.5 stagger">
-          {[
-            { id: 'ch1', n: t('Алина и Тимур'), d: t('14 июня 2027 · до 90 тыс ₽'), st: t('Новая'), hot: true },
-            { id: 'ch2', n: t('Дина и Руслан'), d: t('5 сентября 2027 · пакет «Полный день»'), st: t('Hold 72 ч'), hot: false },
-            { id: 'ch3', n: t('Анна и Марк'), d: t('18 июля 2027 · церемония'), st: t('Новая'), hot: true },
-          ].map(r => (
-            <button key={r.n} onClick={() => nav(`/vendor-app/leads/${r.id}`)} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
-              <div className="w-11 h-11 rounded-full grad flex items-center justify-center text-[var(--on-grad)] font-serif-d text-[15px] shrink-0">{r.n[0]}</div>
+          {leadList.map(l => (
+            <button key={l.id} onClick={() => nav(`/vendor-app/leads/${l.id}`)} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
+              <div className="w-11 h-11 rounded-full grad flex items-center justify-center text-[var(--on-grad)] font-serif-d text-[15px] shrink-0">{(l.coupleName ?? '?')[0]}</div>
               <div className="flex-1 min-w-0">
-                <b className="text-[13.5px]">{r.n}</b>
-                <p className="text-[10.5px] text-[var(--soft)] mt-0.5">{r.d}</p>
+                <b className="text-[13.5px]">{l.coupleName}</b>
+                <p className="text-[10.5px] text-[var(--soft)] mt-0.5 truncate">
+                  {[l.weddingDate ? formatWeddingDate(l.weddingDate) : t('дата не назначена'), l.city].filter(Boolean).join(' · ')}
+                </p>
               </div>
-              <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', r.hot ? 'grad text-[var(--on-grad)]' : 'bg-[var(--honey)] text-[var(--honey-ink)]')}>{r.st}</span>
+              <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full shrink-0', LEAD_TILE[l.status ?? 'new'])}>{t(LEAD_LABEL[l.status ?? 'new'] ?? '')}</span>
             </button>
           ))}
         </div>
@@ -134,100 +238,210 @@ export function VendorDashboard() {
   )
 }
 
-/* Мастер анкеты: 5 шагов */
+/** Подписи и цвета состояний заявки — те же слова, что у сервера. */
+const LEAD_LABEL: Record<string, string> = {
+  new: 'Новая',
+  replied: 'Отвечено',
+  hold: 'Держим дату',
+  declined: 'Отклонена',
+  won: 'Сделка',
+}
+
+const LEAD_TILE: Record<string, string> = {
+  new: 'grad text-[var(--on-grad)]',
+  replied: 'bg-[var(--blue)] text-[var(--blue-ink)]',
+  hold: 'bg-[var(--honey)] text-[var(--honey-ink)]',
+  declined: 'bg-[var(--track)] text-[var(--track-ink)]',
+  won: 'bg-[var(--sage-soft)] text-[var(--sage-ink)]',
+}
+
+/** `2027-06` ± месяц. Без библиотеки: нужен один сдвиг, а не арифметика дат. */
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(Date.UTC(y ?? 2026, (m ?? 1) - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * Анкеты ещё нет.
+ *
+ * 404 на своей анкете — не ошибка, а состояние: подрядчик только зашёл.
+ * Показывать ему пустой кабинет с нулями значит делать вид, что анкета есть.
+ */
+function VendorNoProfile() {
+  const nav = useNavigate()
+  return (
+    <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
+      <p className="font-serif-d text-[22px]">{t('Анкеты ещё нет')}</p>
+      <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
+        {t('Заполните её — категория, город, пакеты и цены. После публикации вы появитесь в каталоге и в фильтре «свободен на дату».')}
+      </p>
+      <button onClick={() => nav('/vendor-app/profile')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-6">{t('Заполнить анкету')}</button>
+    </div>
+  )
+}
+
+/** 404 на своей анкете — «её ещё нет», а не поломка. Остальные ошибки летят дальше. */
+const noProfile = (e: unknown) => {
+  if (e instanceof ApiError && e.status === 404) return null
+  throw e
+}
+
+/*
+ * Мастер анкеты.
+ *
+ * Прежний мастер ничего не сохранял: имя, опыт и рассказ о себе стояли в
+ * разметке константами («Елена Смирнова», «5 лет · 120+ свадеб»), категория
+ * выбиралась из шести эмодзи, пакеты жили в состоянии экрана, календарь — в
+ * `tt_vendor_busy`, а «Опубликовать» переключал локальный флаг. Подрядчик
+ * заполнял анкету, видел «Опубликовано» и не попадал никуда.
+ *
+ * Теперь каждый шаг — это поля настоящей анкеты, а «Опубликовать» уходит в
+ * `POST /vendor/profile/publish` и ставит анкету в каталог.
+ */
 export function VendorProfileWizard() {
   const nav = useNavigate()
   const [step, setStep] = useState(0)
-  const [photos, setPhotos] = useState(3)
-  const [published, setPublished] = useState(false)
-  const [busyDays, setBusyDays] = usePersist<number[]>('tt_vendor_busy', [5, 6, 20, 26])
-  /* Рабочий телефон — отдельное поле анкеты, а не номер входа: публиковать
-   * личный номер без спроса нельзя, а заполненное поле и есть согласие. */
-  const [phone, setPhone] = usePersist('tt_vendor_phone', '+7 917 340-11-08')
-  const [workCity, setWorkCity] = useState(t('Уфа'))
-  const [workRegion, setWorkRegion] = useState(t('Башкортостан'))
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [publishedNow, setPublishedNow] = useState(false)
+
+  const profile = useApi(() => getVendorProfile().catch(noProfile), [])
+  const cats = useApi(() => getCategories(), [])
+
+  /* Поля заполняются ответом сервера один раз — дальше ими владеет форма.
+     Без этого каждое перечитывание анкеты затирало бы то, что человек печатает. */
+  const [form, setForm] = useState<VendorDraft | null>(null)
+  const p = profile.data
+  if (form === null && ready(profile)) {
+    setForm({
+      name: p?.name ?? '',
+      categoryId: p?.categoryId ?? '',
+      city: { name: p?.city ?? '' },
+      about: p?.about ?? '',
+      phone: p?.phone ?? '',
+      priceFrom: p?.priceFrom?.amount,
+      packages: (p?.packages ?? []).map(x => ({ name: x.name ?? '', price: x.price?.amount ?? 0 })),
+    })
+  }
+
   const [cityPick, setCityPick] = useState(false)
-  const [cat, setCat] = useState(t('📸 Фотограф'))
-  const [packages, setPackages] = useState<string[][]>([[t('Утро и церемония'), '45 000 ₽'], [t('Полный день'), '85 000 ₽'], [t('Люкс'), '130 000 ₽']])
   const [pkgForm, setPkgForm] = useState(false)
   const [pkgName, setPkgName] = useState('')
   const [pkgPrice, setPkgPrice] = useState('')
+
+  const steps = [t('Категория'), t('О себе'), t('Услуги и цены'), t('Портфолио'), t('Публикация')]
+  const set = (patch: Partial<VendorDraft>) => setForm(f => (f ? { ...f, ...patch } : f))
+
+  /* Сохранение — на каждом переходе: мастер длинный, и потерять введённое на
+     пятом шаге из-за закрытой вкладки нельзя. */
+  const saveAnd = (next: () => void) => void (async () => {
+    if (!form) return
+    if (!form.name.trim() || !form.categoryId || !form.city.name) {
+      setErr(t('Имя, категория и город обязательны — без них анкету не показать паре'))
+      setStep(form.categoryId ? 1 : 0)
+      return
+    }
+    setBusy(true)
+    setErr(null)
+    try { await saveVendorProfile(form); next() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  })()
+
+  const publish = () => saveAnd(() => void (async () => {
+    setBusy(true)
+    try { await publishVendorProfile(); setPublishedNow(true) } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  })())
+
   const addPkg = () => {
-    const p = parseInt(pkgPrice.replace(/\D/g, ''), 10)
-    if (!pkgName.trim() || !p) return
-    setPackages(pk => [...pk, [pkgName.trim(), fmt(rub(p))]])
+    const rubles = parseInt(pkgPrice.replace(/\D/g, ''), 10)
+    if (!pkgName.trim() || !rubles) return
+    set({ packages: [...(form?.packages ?? []), { name: pkgName.trim(), price: rub(rubles) }] })
     setPkgName(''); setPkgPrice(''); setPkgForm(false)
   }
-  const toggleDay = (day: number) => setBusyDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort((a, b) => a - b))
-  const steps = [t('Категория'), t('О себе'), t('Услуги и цены'), t('Портфолио'), t('Календарь')]
-  if (published) return (
+
+  if (publishedNow) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <div className="w-20 h-20 rounded-full grad flex items-center justify-center pop"><Check size={34} className="text-white" /></div>
       <h2 className="font-serif-d text-[26px] mt-6">{t('Анкета опубликована!')}</h2>
-      <p className="text-[12.5px] text-[var(--soft)] mt-2.5 leading-relaxed">{t('Вы уже в каталоге и в фильтре «Свободны на дату». Первые заявки придут в пуш и в раздел «Сделки».')}</p>
-      <div className="card-s px-4 py-3 mt-5 text-[11.5px] text-[var(--ink2)] w-full">{t('✦ Тиль: добавьте видео-визитку — анкеты с видео получают в 3 раза больше откликов.')}</div>
+      <p className="text-[12.5px] text-[var(--soft)] mt-2.5 leading-relaxed">{t('Вы в каталоге и в фильтре «свободен на дату». Заявки придут в кабинет.')}</p>
       <button onClick={() => nav('/vendor-app')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-6" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('В кабинет')}</button>
     </div>
   )
+
   return (
     <div className="min-h-dvh flex flex-col pb-10">
       <TopBar back title={t('Моя анкета')} sub={`${t('Шаг ')}${step + 1}${t(' из 5 · ')}${steps[step]}`} />
+      <AsyncState q={profile} />
       <div className="px-5 mt-2 flex gap-1.5">
         {steps.map((_, k) => <span key={k} className={cn('flex-1 h-1.5 rounded-full', k <= step ? 'grad' : 'bg-[var(--track)]')} />)}
       </div>
       <div key={step} className="flex-1 px-5 mt-5 fade-up">
-        <div className="card-s px-4 py-3 mb-4 flex gap-2.5">
-          <span>✦</span>
-          <p className="text-[11px] text-[var(--ink2)] leading-relaxed">{[
-            t('Смежные категории (например, «Фотограф» + «Свадебная съёмка») удваивают охват.'),
-            t('Пары читают первые две строки — начните с главного: стиль и опыт.'),
-            t('Пакеты с понятными названиями бронируют на 40% чаще, чем «индивидуально».'),
-            t('Анкеты с видео получают в 3 раза больше откликов.'),
-            t('Открытые даты = попадание в фильтр «Свободны на дату».'),
-          ][step]}</p>
-        </div>
         {step === 0 && (
-          <div className="grid grid-cols-2 gap-2.5">
-            {[t('📸 Фотограф'), t('🎥 Видеограф'), t('🎤 Ведущий'), t('🌸 Флорист'), t('🎂 Кондитер'), t('✨ Декоратор')].map(c => (
-              <button key={c} onClick={() => setCat(c)} className={cn('press card-s p-4 text-[13px] font-semibold text-left', cat === c && 'ring-2 ring-[#C98A8A]')}>{c}</button>
-            ))}
-          </div>
+          <>
+            {/* Категории — те же 35, что в каталоге и в базе. Шесть эмодзи в
+                разметке значили, что подрядчик из седьмой категории не мог
+                завести анкету вовсе. */}
+            <AsyncState q={cats} />
+            <div className="grid grid-cols-2 gap-2.5">
+              {(cats.data ?? []).map(c => (
+                <button key={c.id} onClick={() => set({ categoryId: c.id ?? '' })}
+                  className={cn('press card-s p-4 text-[12.5px] font-semibold text-left', form?.categoryId === c.id && 'ring-2 ring-[#C98A8A]')}>
+                  {c.icon} {c.title}
+                </button>
+              ))}
+            </div>
+          </>
         )}
-        {step === 1 && (
+
+        {step === 1 && form && (
           <div className="space-y-3">
-            <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Имя / бренд')}</span><p className="text-[14px] font-medium mt-1">{t('Елена Смирнова')}</p></div>
-            <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Опыт')}</span><p className="text-[14px] font-medium mt-1">{t('5 лет · 120+ свадеб')}</p></div>
-            <div className="card p-4"><span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('О себе')}</span><p className="text-[12.5px] text-[var(--ink2)] mt-1 font-light leading-relaxed">{t('Светлый живой стиль, ловлю эмоции, а не постановку…')}</p></div>
+            <label className="card p-4 block">
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Имя / бренд')}</span>
+              <input value={form.name} onChange={e => set({ name: e.target.value })} placeholder={t('Как вас искать парам')}
+                className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium outline-none" />
+            </label>
+            <label className="card p-4 block">
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('О себе')}</span>
+              <textarea value={form.about ?? ''} onChange={e => set({ about: e.target.value })} rows={4} placeholder={t('Стиль, опыт, чем вы отличаетесь')}
+                className="w-full mt-1.5 px-4 py-3 rounded-[18px] bg-[var(--bg)] text-[12.5px] outline-none resize-none" />
+            </label>
             <div className="card p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Рабочий телефон')}</span>
                 <span className="text-[9.5px] text-[var(--soft2)]">{t('Виден парам после брони')}</span>
               </div>
-              <input
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                type="tel"
-                inputMode="tel"
-                aria-label={t('Рабочий телефон')}
-                className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium tabular outline-none"
-              />
+              {/* Телефон — поле анкеты, а не номер входа: заполняя его,
+                  подрядчик соглашается показать номер забронировавшей паре. */}
+              <input value={form.phone ?? ''} onChange={e => set({ phone: e.target.value })} type="tel" inputMode="tel" aria-label={t('Рабочий телефон')}
+                className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium tabular outline-none" />
             </div>
             <button onClick={() => setCityPick(true)} className="press w-full card p-4 flex items-center gap-3 text-left">
               <span className="text-[18px]">📍</span>
               <div className="flex-1">
                 <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold block">{t('Город работы')}</span>
-                <p className="text-[13.5px] font-medium mt-0.5">{workCity}{workRegion ? ` · ${workRegion}` : ''}</p>
+                <p className="text-[13.5px] font-medium mt-0.5">{form.city.name || t('не выбран')}</p>
               </div>
               <span className="text-[10.5px] font-bold text-[var(--rose-deep)]">{t('Изменить')}</span>
             </button>
-            {cityPick && <CityPicker onClose={() => setCityPick(false)} onPick={(c) => { setWorkCity(c.n); setWorkRegion(c.r); setCityPick(false) }} />}
+            {cityPick && <CityPicker onClose={() => setCityPick(false)} onPick={c => { set({ city: { name: c.n, region: c.r } }); setCityPick(false) }} />}
           </div>
         )}
-        {step === 2 && (
+
+        {step === 2 && form && (
           <div className="space-y-3">
-            {packages.map(([n, p]) => (
-              <div key={n} className="card p-4 flex justify-between items-center">
-                <b className="text-[13px]">{n}</b><span className="font-serif-d text-[15px] text-[var(--rose-deep)] font-semibold tabular">{p}</span>
+            <label className="card p-4 block">
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Цена «от», ₽')}</span>
+              <input value={form.priceFrom ? String(Math.round(form.priceFrom / 100)) : ''} onChange={e => set({ priceFrom: rub(Number(e.target.value.replace(/\D/g, '')) || 0) })}
+                inputMode="numeric" placeholder={t('С какой суммы начинается работа')}
+                className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium tabular outline-none" />
+            </label>
+            {(form.packages ?? []).map((pkg, k) => (
+              <div key={`${pkg.name}-${k}`} className="card p-4 flex justify-between items-center">
+                <b className="text-[13px]">{pkg.name}</b>
+                <span className="flex items-center gap-2.5">
+                  <span className="font-serif-d text-[15px] text-[var(--rose-deep)] font-semibold tabular">{fmt(pkg.price)}</span>
+                  <button onClick={() => set({ packages: (form.packages ?? []).filter((_, i) => i !== k) })} className="press text-[var(--rose-deep)] text-[13px]" aria-label={t('Удалить')}>×</button>
+                </span>
               </div>
             ))}
             {pkgForm ? (
@@ -244,86 +458,197 @@ export function VendorProfileWizard() {
             )}
           </div>
         )}
+
         {step === 3 && (
-          <div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {Array.from({ length: 5 }).map((_, k) => (
-                <button key={k} onClick={() => setPhotos(Math.min(5, photos + (k >= photos ? 1 : 0)))} className={cn('press aspect-[0.8] rounded-[18px] flex items-center justify-center text-[22px]', k < photos ? 'bg-[var(--rose-soft)]' : 'border-[1.5px] border-dashed border-[#D8B4AE]')}>
-                  {k < photos ? '📷' : '+'}
-                </button>
-              ))}
-              <div className="aspect-[0.8] rounded-[18px] bg-[var(--sage-soft)] flex flex-col items-center justify-center gap-1">
-                <span className="text-[20px]">▶</span><span className="text-[9px] text-[var(--sage-ink)] font-bold">{t('Видео 1:40')}</span>
+          <div className="card p-4">
+            {/* Загрузка фото упирается в объектное хранилище: сервер отвечает
+                `storage_not_configured`. Прежний шаг рисовал пять рамок и
+                «видео 1:40», хотя ни одного файла никуда не уходило. */}
+            <p className="text-[13px] font-semibold">{t('Портфолио пока не загружается')}</p>
+            <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
+              {t('Фото и видео появятся здесь, когда будет подключено файловое хранилище. Анкету это не блокирует — опубликовать её можно уже сейчас.')}
+            </p>
+            {!!p?.gallery?.length && (
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                {p.gallery.map(src => <img key={src} src={src} alt="" className="aspect-[0.8] w-full object-cover rounded-[16px]" loading="lazy" />)}
               </div>
-            </div>
-            <p className="text-[10.5px] text-[var(--soft)] text-center mt-3">{photos} {t('из 5 фото · видео до 3 минут · загрузка с триммером')}</p>
+            )}
           </div>
         )}
-        {step === 4 && (
-          <div className="card p-4">
-            <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-[var(--soft)] font-semibold mb-1">{[t('Пн'),t('Вт'),t('Ср'),t('Чт'),t('Пт'),t('Сб'),t('Вс')].map(d => <span key={d}>{d}</span>)}</div>
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: 30 }).map((_, k) => {
-                const day = k + 1
-                const busy = busyDays.includes(day)
-                return <button key={day} onClick={() => toggleDay(day)} className={cn('press aspect-square rounded-xl flex items-center justify-center text-[11.5px]', busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through font-bold' : 'bg-[var(--bg)]')}>{day}</button>
-              })}
+
+        {step === 4 && form && (
+          <div className="space-y-3">
+            <div className="card p-4">
+              <b className="text-[14px]">{form.name || t('Без имени')}</b>
+              <p className="text-[11.5px] text-[var(--soft)] mt-1">
+                {(cats.data ?? []).find(c => c.id === form.categoryId)?.title ?? t('категория не выбрана')} · {form.city.name || t('город не выбран')}
+              </p>
+              {form.priceFrom ? <p className="text-[12px] mt-1.5">{t('от')} <b className="tabular">{fmt(form.priceFrom)}</b></p> : null}
+              <p className="text-[11.5px] text-[var(--ink2)] mt-2 leading-relaxed">{form.about || t('Рассказа о себе пока нет')}</p>
             </div>
-            <p className="text-[10.5px] text-[var(--soft)] mt-3">{t('Нажмите на дату, чтобы закрыть/открыть. Занято:')}{busyDays.join(', ')}.</p>
+            <p className="text-[11px] text-[var(--soft)] leading-relaxed px-1">
+              {p?.published
+                ? t('Анкета уже опубликована. Изменения видны парам сразу после сохранения.')
+                : t('После публикации анкета появляется в каталоге сразу, модерация проверит её в течение суток.')}
+            </p>
           </div>
         )}
       </div>
-      <div className="px-5 pt-5">
-        <button onClick={() => step === 4 ? setPublished(true) : setStep(Math.min(4, step + 1))} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {step === 4 ? t('Опубликовать анкету ✨') : t('Далее')} <ChevronRight size={16} />
+
+      {err && <p role="alert" className="px-5 text-[12px] text-[var(--rose-ink)]">{err}</p>}
+      <div className="px-5 pt-5 space-y-2">
+        <button disabled={busy || !form} onClick={() => step === 4 ? publish() : saveAnd(() => setStep(Math.min(4, step + 1)))}
+          className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2 disabled:opacity-50"
+          style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          {busy ? t('Сохраняем…') : step === 4 ? (p?.published ? t('Сохранить изменения') : t('Опубликовать анкету ✨')) : t('Далее')} <ChevronRight size={16} />
         </button>
+        {step > 0 && <button onClick={() => setStep(step - 1)} className="press w-full h-11 rounded-full bg-[var(--bg)] text-[12.5px] font-semibold text-[var(--soft)]">{t('Назад')}</button>}
       </div>
     </div>
   )
 }
 
-/* Сделки подрядчика */
+/*
+ * Сделки подрядчика.
+ *
+ * Экран показывал три выдуманные пары, «215 000 ₽ ожидается» константой и
+ * кнопку «Запросить отзыв у пары», которая только переключала флаг в браузере.
+ * Ни одна строка не относилась к тому, кто смотрел.
+ *
+ * Заявка и сделка — разные вещи: у заявки нет ни суммы, ни мягкой брони.
+ * Поэтому здесь только сделки, а заявки живут в кабинете отдельным списком.
+ */
 export function VendorDeals() {
-  const [reviewAsked, setReviewAsked] = useState(false)
-  const nav = useNavigate()
+  const q = useApi(() => getVendorDeals(), [])
+  const items = q.data?.items ?? []
+  const expected = q.data?.expected?.amount ?? 0
+  const active = items.filter(d => d.state !== 'cancelled' && d.state !== 'done').length
+
   return (
     <div className="pb-28">
       <TopBar back title={t('Сделки')} sub={t('Активные и архив')} />
+      <AsyncState q={q} />
       <div className="px-5 mt-3 grid grid-cols-2 gap-2.5">
-        <div className="card-s p-4"><b className="font-serif-d text-[20px] tabular block">215 000 ₽</b><span className="text-[9.5px] text-[var(--soft)]">{t('ожидается по сделкам')}</span></div>
-        <div className="card-s p-4"><b className="font-serif-d text-[20px] tabular block">3</b><span className="text-[9.5px] text-[var(--soft)]">{t('активные · 1 в hold')}</span></div>
-      </div>
-      <div className="px-5 mt-3 space-y-2.5 stagger">
-        {[
-          { n: t('Алина и Тимур'), d: t('14 июня 2027'), sum: '85 000 ₽', st: t('Аванс получен'), cls: 'bg-[var(--honey)] text-[var(--honey-ink)]', icon: '💍', tile: 'bg-[var(--rose-soft)]' },
-          { n: t('Дина и Руслан'), d: t('5 сентября 2027'), sum: '45 000 ₽', st: t('Hold 72 ч'), cls: 'bg-[var(--lav)] text-[var(--lav-ink)]', icon: '⏳', tile: 'bg-[var(--honey)]' },
-          { n: t('Анна и Марк'), d: t('18 июля 2027'), sum: '85 000 ₽', st: t('Переговоры'), cls: 'bg-[var(--blue)] text-[var(--blue-ink)]', icon: '💬', tile: 'bg-[var(--sage-soft)]' },
-        ].map(dl => (
-          <button key={dl.n} onClick={() => nav('/us/chats')} className="press w-full card-s p-4 flex items-center gap-3 fade-up text-left">
-            <Tile icon={dl.icon} tile={dl.tile} size={44} />
-            <div className="flex-1 min-w-0">
-              <b className="text-[13.5px]">{dl.n}</b>
-              <p className="text-[10.5px] text-[var(--soft)]">{dl.d} · <b className="text-[var(--rose-deep)]">{dl.sum}</b></p>
-            </div>
-            <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full whitespace-nowrap', dl.cls)}>{dl.st}</span>
-          </button>
-        ))}
-        {/* Завершённая сделка: сбор отзыва */}
-        <div className="card-s p-4 fade-up">
-          <div className="flex items-center gap-3">
-            <Tile icon="✓" tile="bg-[var(--rose-soft)]" size={44} />
-            <div className="flex-1 min-w-0">
-              <b className="text-[13.5px]">{t('Гульнара и Тимур')}</b>
-              <p className="text-[10.5px] text-[var(--soft)]">{t('23 мая 2026 ·')}<b className="text-[var(--rose-deep)]">85 000 ₽</b></p>
-            </div>
-            <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('Завершена')}</span>
-          </div>
-          {reviewAsked ? (
-            <p className="mt-3 text-[11.5px] font-semibold text-[var(--sage-deep)] flex items-center gap-1.5"><Star size={13} />{t('Запрос отзыва отправлен паре в чат ✓')}</p>
-          ) : (
-            <button onClick={() => setReviewAsked(true)} className="press mt-3 w-full h-10 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] text-[12px] font-bold flex items-center justify-center gap-1.5"><Star size={13} />{t('Запросить отзыв у пары')}</button>
-          )}
+        <div className="card-s p-4">
+          <b className="font-serif-d text-[20px] tabular block">{fmt(expected)}</b>
+          <span className="text-[9.5px] text-[var(--soft)]">{t('ожидается по сделкам')}</span>
         </div>
+        <div className="card-s p-4">
+          <b className="font-serif-d text-[20px] tabular block">{active}</b>
+          <span className="text-[9.5px] text-[var(--soft)]">{t('активных сделок')}</span>
+        </div>
+      </div>
+      {!items.length && ready(q) && (
+        <p className="px-5 mt-4 text-[12px] text-[var(--soft)]">{t('Сделок пока нет. Они появляются, когда пара бронирует вас из каталога.')}</p>
+      )}
+      <div className="px-5 mt-3 space-y-2.5 stagger">
+        {items.map(d => (
+          <div key={d.id} className="card-s p-4 flex items-center gap-3 fade-up">
+            <Tile icon={DEAL_ICON[d.state ?? ''] ?? '💬'} tile="bg-[var(--rose-soft)]" size={44} />
+            <div className="flex-1 min-w-0">
+              <b className="text-[13.5px]">{d.coupleName}</b>
+              <p className="text-[10.5px] text-[var(--soft)]">
+                {d.weddingDate ? formatWeddingDate(d.weddingDate) : t('дата не назначена')}
+                {d.price ? <> · <b className="text-[var(--rose-deep)]">{fmt(d.price.amount ?? 0)}</b></> : null}
+              </p>
+              {/* Мягкая бронь — срок, а не подпись: до него пара может
+                  подтвердить сделку, после он сгорает сам. */}
+              {d.holdUntil && <p className="text-[10px] text-[var(--honey-deep)] mt-0.5">{t('держим до')} {new Date(d.holdUntil).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
+            </div>
+            <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full whitespace-nowrap', DEAL_TILE[d.state ?? ''] ?? 'bg-[var(--track)] text-[var(--track-ink)]')}>
+              {t(DEAL_STATE_LABEL[d.state ?? ''] ?? d.state ?? '')}
+            </span>
+          </div>
+        ))}
+      </div>
+      {/* Кнопка «Запросить отзыв у пары» убрана: пути для такого запроса нет,
+          она лишь переключала флаг в браузере. Отзыв пара оставляет сама после
+          завершённой сделки — сервер это и проверяет. */}
+    </div>
+  )
+}
+
+const DEAL_STATE_LABEL: Record<string, string> = {
+  candidate: 'Кандидат',
+  contacted: 'Написали',
+  negotiating: 'Держим дату',
+  booked: 'Забронировано',
+  paid_deposit: 'Аванс получен',
+  done: 'Завершена',
+  cancelled: 'Отменена',
+}
+
+const DEAL_TILE: Record<string, string> = {
+  negotiating: 'bg-[var(--lav)] text-[var(--lav-ink)]',
+  booked: 'bg-[var(--blue)] text-[var(--blue-ink)]',
+  paid_deposit: 'bg-[var(--honey)] text-[var(--honey-ink)]',
+  done: 'bg-[var(--sage-soft)] text-[var(--sage-ink)]',
+  cancelled: 'bg-[var(--track)] text-[var(--track-ink)]',
+}
+
+const DEAL_ICON: Record<string, string> = {
+  negotiating: '⏳',
+  booked: '💍',
+  paid_deposit: '💰',
+  done: '✓',
+  cancelled: '×',
+}
+
+/*
+ * Верификация.
+ *
+ * Галочка «Проверен» даётся за сверку документов с ФНС, и рисовать её без
+ * документов нельзя. Сами файлы кладутся в объектное хранилище, которого пока
+ * нет: сервер отвечает `storage_not_configured`. Экран говорит это словами и
+ * показывает, что именно понадобится, — вместо кнопки, которая молча падает.
+ */
+export function VendorVerification() {
+  const q = useApi(() => getVendorProfile().catch(noProfile), [])
+  const [kind, setKind] = useState<'passport' | 'ip' | 'company'>('passport')
+  const verified = q.data?.verified
+
+  return (
+    <div className="pb-28">
+      <TopBar back title={t('Верификация')} sub={verified ? t('пройдена') : t('галочка «Проверен» в каталоге')} />
+      <AsyncState q={q} />
+      <div className="px-5 mt-3 space-y-3">
+        {verified ? (
+          <div className="card p-5 text-center">
+            <span className="text-[28px]">✓</span>
+            <p className="text-[13.5px] font-semibold mt-2">{t('Вы проверены')}</p>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Галочка видна парам в каталоге. Документы не публикуются никогда.')}</p>
+          </div>
+        ) : (
+          <>
+            <div className="card p-4">
+              <p className="text-[12px] text-[var(--soft)] leading-relaxed">
+                {t('Проверенные подрядчики получают больше заявок: пара видит, что за анкетой стоит живой человек с документами. Документы уходят только модератору и не публикуются никогда.')}
+              </p>
+            </div>
+            <div className="card p-4">
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Кто вы')}</span>
+              <div className="flex gap-2 mt-2">
+                {([['passport', t('Физлицо')], ['ip', t('ИП')], ['company', t('Компания')]] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => setKind(id)} className={cn('press flex-1 h-10 rounded-full text-[12px] font-semibold', kind === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{label}</button>
+                ))}
+              </div>
+
+            </div>
+            <div className="card p-4">
+              <p className="text-[13px] font-semibold">{t('Загрузка документов пока не подключена')}</p>
+              <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
+                {kind === 'passport'
+                  ? t('Понадобится разворот паспорта. Файл уйдёт в защищённое хранилище, как только оно будет подключено.')
+                  : t('Понадобится выписка из ЕГРЮЛ или ЕГРИП. Файл уйдёт в защищённое хранилище, как только оно будет подключено.')}
+              </p>
+              {/* Кнопки отправки здесь нет намеренно. Без файла запрос отвечает
+                  «не прошёл проверку» — это правда про формат, но ложь про
+                  причину: документ отправить некуда, пока нет хранилища.
+                  Кнопка, у которой один исход — ошибка, хуже её отсутствия. */}
+              <p className="text-[11px] text-[var(--soft2)] mt-3">{t('Отправка появится вместе с хранилищем — тогда же, когда заработает загрузка портфолио.')}</p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

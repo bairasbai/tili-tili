@@ -301,7 +301,9 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       )
       const busy = new Set(rows.map((r) => r.date))
       return [
-        ...rows.map((r) => ({ date: r.date, status: 'busy' as const })),
+        /* `source` уходит наружу: день под сделкой снять нельзя, и кабинет
+           должен показать это до нажатия, а не после молчаливого 204. */
+        ...rows.map((r) => ({ date: r.date, status: 'busy' as const, source: r.source })),
         ...holdDates.filter((d) => !busy.has(d)).map((date) => ({ date, status: 'hold' as const })),
       ].sort((a, b) => a.date.localeCompare(b.date))
     },

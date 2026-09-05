@@ -69,6 +69,7 @@ const PlanB = lazy(() => load.smart().then(m => ({ default: m.PlanB })))
 const VendorDashboard = lazy(() => load.vendorApp().then(m => ({ default: m.VendorDashboard })))
 const VendorProfileWizard = lazy(() => load.vendorApp().then(m => ({ default: m.VendorProfileWizard })))
 const VendorDeals = lazy(() => load.vendorApp().then(m => ({ default: m.VendorDeals })))
+const VendorVerification = lazy(() => load.vendorApp().then(m => ({ default: m.VendorVerification })))
 const VendorLead = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorLead })))
 const VendorReviews = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorReviews })))
 const VendorAnalytics = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorAnalytics })))
@@ -174,6 +175,7 @@ function Shell() {
           <Route path="/vendor-app" element={<VendorDashboard />} />
           <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />
           <Route path="/vendor-app/deals" element={<VendorDeals />} />
+          <Route path="/vendor-app/verification" element={<VendorVerification />} />
           <Route path="/vendor-app/leads/:id" element={<VendorLead />} />
           <Route path="/vendor-app/reviews" element={<VendorReviews />} />
           <Route path="/vendor-app/analytics" element={<VendorAnalytics />} />
