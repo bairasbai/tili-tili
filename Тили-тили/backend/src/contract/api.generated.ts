@@ -1780,6 +1780,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/guests/remind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Напомнить гостям, которые не ответили
+         * @description Одно СМС каждому, кто не ответил на приглашение и у кого есть телефон.
+         *     Раньше пара обходила список руками — на полусотне гостей это вечер.
+         *
+         *     **Кому не уходит и почему.** Гостю, чья личная ссылка уже открыта,
+         *     напоминание отсюда не идёт: новая ссылка гасит его токен, а вместе с
+         *     ним теряется всё, что он выбрал — резерв подарка в том числе (§9).
+         *     Такому гостю пара выдаёт ссылку поштучно, осознанно.
+         *
+         *     **Не чаще раза в сутки.** Рассылка стоит денег и приходит чужим людям.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Отправлено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description сколько сообщений ушло */
+                            sent?: number;
+                            /** @description не ответили, но телефона нет */
+                            skippedNoPhone?: number;
+                            /** @description не ответили, но личная ссылка уже открыта — им ссылку выдают поштучно */
+                            skippedLinkUsed?: number;
+                        };
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                429: components["responses"]["TooManyRequests"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/guests/{guestId}/invite-link": {
         parameters: {
             query?: never;
@@ -6565,6 +6623,15 @@ export interface components {
         Budget: {
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
+            /**
+             * @description Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).
+             *     Отдельная строка, а не категория: категории делят сто процентов
+             *     между собой, и резерв внутри них означал бы, что часть сметы
+             *     просто уменьшили.
+             *
+             *     Считает сервер, чтобы доля не разошлась между экранами.
+             */
+            reserve?: components["schemas"]["Money"];
             categories?: {
                 id?: string;
                 title?: string;

@@ -238,6 +238,71 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /* ── одноразовая ссылка ───────────────────────────────────────────── */
+  /**
+   * Напоминание тем, кто не ответил.
+   *
+   * Пара обходила список руками: на полусотне гостей это вечер, и половина
+   * забывается. Здесь одно СМС каждому молчащему — с его же личной ссылкой.
+   *
+   * Ссылка берётся ТА ЖЕ, что уже выдана: перевыпуск гасит токен гостя, а
+   * вместе с ним теряется всё, что он выбрал, — резерв подарка в том числе.
+   * Поэтому гостю, чья ссылка уже открыта, отсюда не пишут: пара выдаёт ему
+   * новую поштучно и осознанно.
+   */
+  app.post('/weddings/:weddingId/guests/remind', async (request) => {
+    const weddingId = request.member!.weddingId
+
+    // Рассылка стоит денег и приходит чужим людям: не чаще раза в сутки.
+    const { rows: wedding } = await db().query<{ recent: boolean }>(
+      `select (guests_reminded_at is not null and guests_reminded_at > now() - interval '24 hours') as recent
+         from weddings where id = $1`,
+      [weddingId],
+    )
+    if (wedding[0]?.recent) {
+      throw new AppError(429, 'too_often', 'Напоминание уходит не чаще раза в сутки — гости получают его лично')
+    }
+
+    const { rows: pending } = await db().query<{ id: string; name: string; phone: string | null; code: string | null }>(
+      `select g.id, g.name, g.phone,
+              (select c.code from guest_invite_codes c
+                where c.guest_id = g.id and c.used_at is null and c.expires_at > now()
+                order by c.expires_at desc limit 1) as code
+         from guests g
+        where g.wedding_id = $1 and g.rsvp = 'pending'`,
+      [weddingId],
+    )
+
+    let sent = 0
+    let skippedNoPhone = 0
+    let skippedLinkUsed = 0
+    for (const guest of pending) {
+      if (!guest.phone) {
+        skippedNoPhone++
+        continue
+      }
+      if (!guest.code) {
+        skippedLinkUsed++
+        continue
+      }
+      try {
+        await app.sms.send(
+          guest.phone,
+          `${guest.name}, напоминаем о свадьбе: ответьте, пожалуйста, придёте ли вы — https://tili-tili.ru/i/${guest.code}`,
+        )
+        sent++
+      } catch {
+        // Отказ провайдера на одном номере не должен ронять всю рассылку:
+        // остальные гости не виноваты. Ошибка уже в логе отправителя.
+        skippedNoPhone++
+      }
+    }
+
+    if (sent > 0) {
+      await db().query('update weddings set guests_reminded_at = now() where id = $1', [weddingId])
+    }
+    return { sent, skippedNoPhone, skippedLinkUsed }
+  })
+
   app.post('/weddings/:weddingId/guests/:guestId/invite-link', async (request) => {
     const weddingId = request.member!.weddingId
     const { guestId } = request.params as { guestId: string }

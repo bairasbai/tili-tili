@@ -54,6 +54,14 @@ export const CONTRACT_SCHEMAS = {
               "spent": {
                   "$ref": "contract#/definitions/Money"
               },
+              "reserve": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).\nОтдельная строка, а не категория: категории делят сто процентов\nмежду собой, и резерв внутри них означал бы, что часть сметы\nпросто уменьшили.\n\nСчитает сервер, чтобы доля не разошлась между экранами.\n"
+              },
               "categories": {
                   "type": "array",
                   "items": {

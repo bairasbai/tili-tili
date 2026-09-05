@@ -12,6 +12,15 @@ import {
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 
+/**
+ * Резерв на непредвиденное (План ч. 283).
+ *
+ * Отдельной строкой, а не категорией: категории делят сто процентов между
+ * собой, и резерв внутри них означал бы, что часть сметы просто уменьшили.
+ * Доля считается на сервере — иначе два экрана посчитают её по-разному.
+ */
+const RESERVE_SHARE = 0.1
+
 export async function budgetRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -91,7 +100,7 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
     const spent =
       [...fromSlots.values()].reduce((a, b) => a + b, 0) + items.reduce((a, i) => a + Number(i.amount), 0)
 
-    return { total: rub(total), spent: rub(spent), categories }
+    return { total: rub(total), spent: rub(spent), reserve: rub(Math.round(total * RESERVE_SHARE)), categories }
   })
 
   app.post(

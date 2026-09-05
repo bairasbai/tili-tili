@@ -969,6 +969,37 @@ paths:
       responses:
         '200': { description: Принято }
 
+  /weddings/{weddingId}/guests/remind:
+    post:
+      tags: [guests]
+      summary: Напомнить гостям, которые не ответили
+      description: |
+        Одно СМС каждому, кто не ответил на приглашение и у кого есть телефон.
+        Раньше пара обходила список руками — на полусотне гостей это вечер.
+
+        **Кому не уходит и почему.** Гостю, чья личная ссылка уже открыта,
+        напоминание отсюда не идёт: новая ссылка гасит его токен, а вместе с
+        ним теряется всё, что он выбрал — резерв подарка в том числе (§9).
+        Такому гостю пара выдаёт ссылку поштучно, осознанно.
+
+        **Не чаще раза в сутки.** Рассылка стоит денег и приходит чужим людям.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: Отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: integer, description: 'сколько сообщений ушло' }
+                  skippedNoPhone: { type: integer, description: 'не ответили, но телефона нет' }
+                  skippedLinkUsed:
+                    type: integer
+                    description: 'не ответили, но личная ссылка уже открыта — им ссылку выдают поштучно'
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /weddings/{weddingId}/guests/{guestId}/invite-link:
     post:
       tags: [guests]
@@ -3459,6 +3490,15 @@ components:
       properties:
         total: { $ref: '#/components/schemas/Money' }  # example: 1500000
         spent: { $ref: '#/components/schemas/Money' }  # example: 560000
+        reserve:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |
+            Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).
+            Отдельная строка, а не категория: категории делят сто процентов
+            между собой, и резерв внутри них означал бы, что часть сметы
+            просто уменьшили.
+
+            Считает сервер, чтобы доля не разошлась между экранами.
         categories:
           type: array
           items:
