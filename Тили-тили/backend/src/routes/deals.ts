@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import {
@@ -62,6 +62,77 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
     if (deal.role !== 'couple') throw new AppError(403, 'forbidden', 'Сделками распоряжается только пара')
     return deal
   }
+
+  /**
+   * Журнал сделки: что и когда произошло.
+   *
+   * События писались с самого начала и не читались нигде — при споре «мы
+   * договаривались на другую сумму» доказательство лежало в базе и никому не
+   * показывалось.
+   *
+   * Видят обе стороны: пара и подрядчик. Автор назван ролью, а не именем —
+   * ни пара, ни подрядчик не получают отсюда чужой идентификатор.
+   */
+  app.get(
+    '/deals/:dealId/events',
+    /* Формат идентификатора проверяет схема: 422 — про формат, 404 — про
+       содержимое. Путь контракта не имеет права отвечать 404 на кривой id,
+       иначе «адреса нет» и «сделки нет» сливаются в один ответ. */
+    {
+      /* Журнал — часть сделки: тот же вход, что и у правки. Без этого
+         `request.caller` пуст, и путь падает пятисоткой вместо отказа. */
+      preHandler: app.requireConsent,
+      schema: { params: { type: 'object', required: ['dealId'], properties: { dealId: UUID_ID } } },
+    },
+    async (request) => {
+    const { dealId } = request.params as { dealId: string }
+    const userId = request.caller!.userId
+
+    const { rows: access } = await db().query<{ side: string }>(
+      `select 'couple' as side from deals d
+         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
+        where d.id = $1
+       union all
+       select 'vendor' as side from deals d
+         join vendors v on v.id = d.vendor_id and v.user_id = $2
+        where d.id = $1`,
+      [dealId, userId],
+    )
+    // Чужая сделка — 404: по кодам ответа не должно быть видно, какие
+    // идентификаторы существуют.
+    if (access.length === 0) throw notFound('Сделка не найдена')
+
+    const { rows } = await db().query<{
+      id: string
+      kind: string
+      from_state: string | null
+      to_state: string
+      note: string | null
+      at: Date
+      by: string | null
+    }>(
+      `select e.id, e.kind, e.from_state, e.to_state, e.note, e.at,
+              case
+                when e.actor_id is null then 'system'
+                when exists(select 1 from vendors v where v.id = d.vendor_id and v.user_id = e.actor_id) then 'vendor'
+                else 'couple'
+              end as by
+         from deal_events e join deals d on d.id = e.deal_id
+        where e.deal_id = $1
+        order by e.at`,
+      [dealId],
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      fromState: r.from_state,
+      toState: r.to_state,
+      by: r.by,
+      note: r.note,
+      at: r.at.toISOString(),
+    }))
+  },
+  )
 
   app.patch(
     '/deals/:dealId',

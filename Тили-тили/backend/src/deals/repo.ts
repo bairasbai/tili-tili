@@ -18,11 +18,25 @@ export interface DealRow {
   booked_at: Date | null
   done_at: Date | null
   cancelled_at: Date | null
+  paid: string | null
+  paid_at: Date | null
 }
+
+/*
+ * Оплаченное считается на лету, а не хранится в сделке: сохранённая сумма
+ * расходится с платежами на первой же правке (§3.1, ERR-0012).
+ *
+ * Возврат вычитается, отменённый платёж не считается вовсе: «оплачено»
+ * должно означать «деньги у подрядчика», а не «когда-то была запись».
+ */
+const PAID_SUM = `(select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
+                     from payments p where p.deal_id = d.id and p.status <> 'cancelled')`
 
 export const DEAL_COLUMNS = `
   d.id, d.state, d.vendor_id, d.external_name, d.external_phone,
   d.price::text as price, d.currency, d.negotiating_until, d.booked_at, d.done_at, d.cancelled_at,
+  ${PAID_SUM}::text as paid,
+  (select max(p.created_at) from payments p where p.deal_id = d.id and p.status <> 'cancelled') as paid_at,
   ven.name as vendor_name, ven.category_id as vendor_category, vc.name as vendor_city`
 
 export const DEAL_JOINS = `
@@ -45,7 +59,12 @@ export function toDeal(r: DealRow, seesMoney: boolean) {
     externalName: r.external_name,
     externalPhone: r.external_phone,
     ...(seesMoney
-      ? { price: r.price === null ? null : { amount: Number(r.price), currency: r.currency } }
+      ? {
+          price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
+          // Оплаченное — те же деньги: кто не видит цену, не видит и платежей.
+          paid: { amount: Number(r.paid ?? 0), currency: r.currency },
+          paidAt: r.paid_at?.toISOString() ?? null,
+        }
       : {}),
     negotiatingUntil: r.negotiating_until?.toISOString() ?? null,
     bookedAt: r.booked_at?.toISOString() ?? null,

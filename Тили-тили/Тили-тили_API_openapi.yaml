@@ -2427,6 +2427,44 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────── СДЕЛКИ: ПЕРЕХОДЫ И ДОГОВОРЫ ─────────────────────────
+  /deals/{dealId}/events:
+    get:
+      tags: [deals]
+      summary: Журнал сделки
+      description: |
+        Что и когда произошло со сделкой: переходы состояния и правки цены.
+        Пишется в `deal_events` с самого начала, но прочитать его было негде —
+        при споре «мы договаривались на другую сумму» доказательства лежали в
+        базе и никому не показывались.
+
+        Видят обе стороны сделки: пара и подрядчик. Автор события назван
+        ролью, а не именем — «пара», «подрядчик», «система» (истёкшая мягкая
+        бронь — событие без человека).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    kind: { type: string, enum: [state, price], description: 'переход состояния или правка цены' }
+                    fromState: { $ref: '#/components/schemas/DealState' }
+                    toState: { $ref: '#/components/schemas/DealState' }
+                    by: { type: string, enum: [couple, vendor, system] }
+                    note: { type: string, nullable: true, description: 'для правки цены — старая и новая сумма' }
+                    at: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /deals/{dealId}:
     patch:
       tags: [bookings]
@@ -3123,6 +3161,13 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: |
+        Доступ закрыт роли или стороне. Это нормальный ответ, а не поломка:
+        помощник не видит денег, посторонний — чужой сделки (план §6).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Не найдено
       content:
@@ -3630,6 +3675,21 @@ components:
         externalName: { type: string, nullable: true, description: имя своего подрядчика }
         externalPhone: { type: string, nullable: true }
         price: { $ref: '#/components/schemas/Money' }
+        paid:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: |
+            Сколько уже внесено по этой сделке: платежи `deposit` и `balance`
+            минус возвраты, без отменённых. Считается на лету, в базе не
+            хранится (§3.1: производное значение расходится с источником).
+
+            Без него «оплачено 30 000 из 50 000» показать нечем, и человек
+            держит остаток долга в голове. Уходит вместе с ценой — тому, кто
+            видит деньги: помощник и координатор не видят ни того, ни другого.
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: дата последнего платежа. Пусто — платежей не было
         negotiatingUntil:
           type: string
           format: date-time

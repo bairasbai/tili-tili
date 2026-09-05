@@ -4903,6 +4903,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Журнал сделки
+         * @description Что и когда произошло со сделкой: переходы состояния и правки цены.
+         *     Пишется в `deal_events` с самого начала, но прочитать его было негде —
+         *     при споре «мы договаривались на другую сумму» доказательства лежали в
+         *     базе и никому не показывались.
+         *
+         *     Видят обе стороны сделки: пара и подрядчик. Автор события назван
+         *     ролью, а не именем — «пара», «подрядчик», «система» (истёкшая мягкая
+         *     бронь — событие без человека).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: string;
+                            /**
+                             * @description переход состояния или правка цены
+                             * @enum {string}
+                             */
+                            kind?: "state" | "price";
+                            fromState?: components["schemas"]["DealState"];
+                            toState?: components["schemas"]["DealState"];
+                            /** @enum {string} */
+                            by?: "couple" | "vendor" | "system";
+                            /** @description для правки цены — старая и новая сумма */
+                            note?: string | null;
+                            /** Format: date-time */
+                            at?: string;
+                        }[];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deals/{dealId}": {
         parameters: {
             query?: never;
@@ -6714,6 +6779,21 @@ export interface components {
             externalPhone?: string | null;
             price?: components["schemas"]["Money"];
             /**
+             * @description Сколько уже внесено по этой сделке: платежи `deposit` и `balance`
+             *     минус возвраты, без отменённых. Считается на лету, в базе не
+             *     хранится (§3.1: производное значение расходится с источником).
+             *
+             *     Без него «оплачено 30 000 из 50 000» показать нечем, и человек
+             *     держит остаток долга в голове. Уходит вместе с ценой — тому, кто
+             *     видит деньги: помощник и координатор не видят ни того, ни другого.
+             */
+            paid?: components["schemas"]["Money"];
+            /**
+             * Format: date-time
+             * @description дата последнего платежа. Пусто — платежей не было
+             */
+            paidAt?: string | null;
+            /**
              * Format: date-time
              * @description срок мягкой брони: 72 ч на этапе negotiating (§18.3)
              */
@@ -6902,6 +6982,18 @@ export interface components {
     responses: {
         /** @description Не авторизован */
         Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description Доступ закрыт роли или стороне. Это нормальный ответ, а не поломка:
+         *     помощник не видит денег, посторонний — чужой сделки (план §6).
+         */
+        Forbidden: {
             headers: {
                 [name: string]: unknown;
             };

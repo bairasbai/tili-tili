@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.23.0).
- * Операций: 150. Путей: 115. */
+ * Операций: 151. Путей: 116. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -42,6 +42,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/complaints","url":"/complaints","operationId":null,"summary":"Пожаловаться","tag":"moderation"},
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
+  {"method":"GET","openapi":"/deals/{dealId}/events","url":"/deals/:dealId/events","operationId":null,"summary":"Журнал сделки","tag":"deals"},
   {"method":"GET","openapi":"/geo/cities","url":"/geo/cities","operationId":null,"summary":"Поиск городов (автокомплит CityPicker)","tag":"geo"},
   {"method":"GET","openapi":"/geo/nearest","url":"/geo/nearest","operationId":null,"summary":"Ближайший город по координатам (кнопка геолокации)","tag":"geo"},
   {"method":"GET","openapi":"/gifts/{guestToken}","url":"/gifts/:guestToken","operationId":null,"summary":"Список подарков глазами гостя","tag":"wishlist-guest"},
