@@ -2,7 +2,7 @@
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode, useEffect } from 'react'
-import { initialGifts, type Gift, type Slot, type SlotState } from './data'
+import { type Slot, type SlotState } from './data'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
 import { findMyWedding, setWeddingDateOnServer } from './api/wedding'
@@ -75,13 +75,6 @@ interface Store {
   setCity: (name: string, region: string) => void
   theme: 'light' | 'dark'
   setTheme: (t: 'light' | 'dark') => void
-  gifts: Gift[]
-  reserveGift: (id: string) => void
-  releaseGift: (id: string) => void
-  fundGift: (id: string, amount: number) => void
-  addGift: (g: Omit<Gift, 'id' | 'funded' | 'reserved'>) => void
-  removeGift: (id: string) => void
-  myGifts: string[]
 }
 
 /*
@@ -239,18 +232,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [cityRegion, setCityRegion] = useState(() => safeGet('tt_city_region') ?? 'Башкортостан')
   const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
     safeGet('tt_theme') === 'dark' ? 'dark' : 'light')
-  const [gifts, setGifts] = useState<Gift[]>(() => {
-    try {
-      const raw = safeGet('tt_gifts')
-      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) return p }
-    } catch { /* noop */ }
-    return initialGifts
-  })
-  const [myGifts, setMyGifts] = useState<string[]>(() => {
-    try { const p = JSON.parse(safeGet('tt_my_gifts') ?? '[]'); return Array.isArray(p) ? p : [] } catch { return [] }
-  })
-  const persistGifts = (next: Gift[]) => { safeSet('tt_gifts', JSON.stringify(next)); return next }
-  const persistMine = (next: string[]) => { safeSet('tt_my_gifts', JSON.stringify(next)); return next }
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -360,27 +341,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       safeSet('tt_city', name); safeSet('tt_city_region', region)
       setCityState(name); setCityRegion(region)
     },
-    gifts, myGifts,
-    reserveGift: (id) => {
-      setGifts(gs => persistGifts(gs.map(g => g.id === id && !g.reserved ? { ...g, reserved: true } : g)))
-      setMyGifts(m => persistMine(m.includes(id) ? m : [...m, id]))
-    },
-    releaseGift: (id) => {
-      setGifts(gs => persistGifts(gs.map(g => g.id === id ? { ...g, reserved: false } : g)))
-      setMyGifts(m => persistMine(m.filter(x => x !== id)))
-    },
-    fundGift: (id, amount) =>
-      setGifts(gs => persistGifts(gs.map(g => {
-        if (g.id !== id || !g.group || g.reserved) return g
-        const funded = Math.min(g.price, g.funded + Math.max(0, amount))
-        return { ...g, funded, reserved: funded >= g.price }
-      }))),
-    addGift: (g) => setGifts(gs => persistGifts([...gs, { ...g, id: 'gf' + Date.now(), funded: 0, reserved: false }])),
-    removeGift: (id) => {
-      setGifts(gs => persistGifts(gs.filter(g => g.id !== id)))
-      setMyGifts(m => persistMine(m.filter(x => x !== id)))
-    },
-  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme, gifts, myGifts])
+    /*
+     * Подарков здесь больше нет: резерв — общее состояние пары и всех гостей,
+     * а не настройка устройства. В `tt_gifts` он жил только в одном браузере,
+     * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
+     * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
+     */
+  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

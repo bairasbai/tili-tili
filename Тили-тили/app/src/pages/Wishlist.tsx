@@ -1,34 +1,64 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Gift as GiftIcon, MessageSquareHeart, Plus, ShieldCheck, ShoppingBag, Star, Trash2, Users, X } from 'lucide-react'
-import { fmt, initialAntiGifts, initialFunds, initialGuestReviews, type Fund, type Gift, type GuestReview } from '@/lib/data'
+import { MessageSquareHeart, Plus, ShieldCheck, Star, Trash2, Users, X } from 'lucide-react'
+import { fmt, initialGuestReviews, type GuestReview } from '@/lib/data'
 import { rub } from '@/lib/money'
-import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
+import { Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
+import { AsyncState, ready } from '@/components/AsyncState'
+import { useApi, explainError } from '@/lib/api/useApi'
+import { addFund, addGift as addGiftApi, contributeToFund, deleteFund, deleteGift as deleteGiftApi, fundGift, getGuestGifts, getWishlist, putAntiGifts, releaseGift, reserveGift } from '@/lib/api/gifts'
+import { guestToken } from '@/lib/api/guest'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
-import { cn, goBack } from '@/lib/utils'
+import { cn, goBack, pct } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /* ── Сторона пары: управление списком желаний ── */
+
+/*
+ * Подарки, фонды и «просим не дарить» живут на сервере.
+ *
+ * Прежде они лежали в `tt_gifts`, `tt_funds` и `tt_anti` — и это работало
+ * ровно до второго устройства. Гость выбирает подарок со своего телефона:
+ * его резерв не доходил до пары, а два гостя спокойно «занимали» одну и ту же
+ * вещь, потому что каждый видел свою копию списка.
+ *
+ * Кто именно зарезервировал, паре не показывается никогда (§9) — сервер этого
+ * поля ей и не отдаёт.
+ */
 export function WishlistManage() {
-  const nav = useNavigate()
-  const { gifts, addGift, removeGift } = useStore()
+  const { weddingId } = useStore()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
   const [group, setGroup] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const q = useApi(() => weddingId ? getWishlist(weddingId) : Promise.resolve(null), [weddingId])
+  const gifts = q.data?.gifts ?? []
+  const funds = q.data?.funds ?? []
+  const anti = q.data?.antiGifts ?? []
+
+  const write = async (id: string, fn: () => Promise<unknown>) => {
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — список желаний живёт в ней')); return }
+    setBusyId(id)
+    setErr(null)
+    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+  }
 
   const reserved = gifts.filter(g => g.reserved).length
-  const submit = () => {
+  const submit = () => void write('new', async () => {
     if (!name.trim() || !Number(price)) return
-    const palette = ['bg-[var(--rose-soft)]', 'bg-[var(--sage-soft)]', 'bg-[var(--honey)]', 'bg-[var(--lav)]', 'bg-[var(--blue)]', 'bg-[var(--peach)]']
-    addGift({ name: name.trim(), price: rub(Number(price)), group, icon: '🎁', tile: palette[gifts.length % palette.length] })
+    // поле «Цена, ₽» — рубли, на сервер уходят копейки
+    await addGiftApi(weddingId!, { name: name.trim(), price: rub(Number(price)), group, icon: '🎁' })
     setName(''); setPrice(''); setGroup(false); setAdding(false)
-  }
+  })
 
   return (
     <div className="pb-28">
       <TopBar back title={t('Список желаний')} sub={t('Что подарить вам на свадьбу')} />
+      <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4 flex gap-3 items-start">
           <ShieldCheck size={20} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
@@ -37,15 +67,17 @@ export function WishlistManage() {
           </p>
         </div>
 
-        <div className="card p-4">
-          <div className="flex justify-between text-[12px] mb-2">
-            <span className="font-medium">{t('Зарезервировано гостями')}</span>
-            <span className="text-[var(--soft)]">{reserved} {t('из')} {gifts.length}</span>
+        {gifts.length > 0 && (
+          <div className="card p-4">
+            <div className="flex justify-between text-[12px] mb-2">
+              <span className="font-medium">{t('Зарезервировано гостями')}</span>
+              <span className="text-[var(--soft)]">{reserved} {t('из')} {gifts.length}</span>
+            </div>
+            <Bar pct={pct(reserved, gifts.length)} />
           </div>
-          <Bar pct={gifts.length ? (reserved / gifts.length) * 100 : 0} />
-        </div>
+        )}
 
-        <AiTip text={t('Добавьте подарки разной цены — от 5 000 до складчины на мечту. Так каждый гость найдёт вариант по бюджету.')} />
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
 
         {!adding ? (
           <button onClick={() => setAdding(true)} className="press w-full card-s p-4 flex items-center justify-center gap-2 text-[13px] font-semibold">
@@ -63,7 +95,7 @@ export function WishlistManage() {
             </button>
             <div className="flex gap-2">
               <button onClick={() => setAdding(false)} className="press flex-1 card-s py-3 text-[12.5px] font-semibold">{t('Отмена')}</button>
-              <button onClick={submit} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Добавить')}</button>
+              <button disabled={busyId === 'new'} onClick={submit} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         )}
@@ -71,57 +103,64 @@ export function WishlistManage() {
 
       <SectionHead title={t('Наши желания')} sub={t('видно гостям по ссылке-приглашению')} />
       <div className="px-5 space-y-2.5">
-        {gifts.map((g, i) => <CoupleGiftRow key={g.id} g={g} i={i} onRemove={() => removeGift(g.id)} />)}
+        {!gifts.length && ready(q) && (
+          <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока пусто — добавьте первое желание')}</p>
+        )}
+        {gifts.map((g, i) => (
+          <CoupleGiftRow key={g.id} g={g} i={i} busy={busyId === g.id} onRemove={() => write(g.id ?? '', () => deleteGiftApi(weddingId!, g.id ?? ''))} />
+        ))}
       </div>
 
-      <FundsManage />
-      <AntiManage />
+      <FundsManage weddingId={weddingId} funds={funds} busyId={busyId} write={write} />
+      <AntiManage weddingId={weddingId} anti={anti} busy={busyId === 'anti'} write={write} />
 
-      <div className="px-5 mt-6">
-        <button onClick={() => nav('/gifts')} className="press w-full py-4 rounded-[20px] grad text-[var(--on-grad)] text-[14px] font-semibold flex items-center justify-center gap-2">
-          <GiftIcon size={17} />{t('Открыть глазами гостя')}
-        </button>
-      </div>
+      {/* Кнопка «Открыть глазами гостя» убрана: гостевой экран подарков
+          открывается по личному токену, которого у пары нет, — переход
+          упирался бы в «нужна ссылка». Что видит гость, описано выше. */}
     </div>
   )
 }
 
+type Wish = NonNullable<Awaited<ReturnType<typeof getWishlist>>>
+type WriteFn = (id: string, fn: () => Promise<unknown>) => Promise<void>
+
 /* Денежные фонды — сторона пары */
-function FundsManage() {
-  const [funds, setFunds] = usePersist<Fund[]>('tt_funds', initialFunds)
+function FundsManage({ weddingId, funds, busyId, write }: {
+  weddingId: string | null
+  funds: NonNullable<Wish['funds']>
+  busyId: string | null
+  write: WriteFn
+}) {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [target, setTarget] = useState('')
-  const submit = () => {
+  const submit = () => void write('fund', async () => {
     if (!name.trim() || !Number(target)) return
-    setFunds(f => [...f, { id: 'f' + Date.now(), name: name.trim(), icon: '💌', tile: 'bg-[var(--rose-soft)]', target: rub(Number(target)), collected: 0 }])
+    await addFund(weddingId!, name.trim(), rub(Number(target)), '💌')
     setName(''); setTarget(''); setAdding(false)
-  }
+  })
   return (
     <>
       <SectionHead title={t('Денежные фонды')} sub={t('гости переводят на цель вместо вещей')} />
       <div className="px-5 space-y-2.5">
-        {funds.map(f => {
-          const pct = f.target ? Math.round((f.collected / f.target) * 100) : 0
-          return (
-            <div key={f.id} className="card p-3.5">
-              <div className="flex items-center gap-3">
-                <Tile icon={f.icon} tile={f.tile} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13.5px] font-semibold truncate">{f.name}</p>
-                  <p className="text-[11px] text-[var(--soft)]">{t('цель')} {fmt(f.target)}</p>
-                </div>
-                <button onClick={() => setFunds(fs => fs.filter(x => x.id !== f.id))} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--track-ink)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
+        {funds.map(f => (
+          <div key={f.id} className="card p-3.5">
+            <div className="flex items-center gap-3">
+              <Tile icon={f.icon ?? '💌'} tile="bg-[var(--rose-soft)]" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[13.5px] font-semibold truncate">{f.name}</p>
+                <p className="text-[11px] text-[var(--soft)]">{t('цель')} {fmt(f.target?.amount ?? 0)}</p>
               </div>
-              <div className="mt-3">
-                <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
-                  <span>{t('Собрано')} {fmt(f.collected)}</span><span>{pct}%</span>
-                </div>
-                <Bar pct={pct} />
-              </div>
+              <button disabled={busyId === f.id} onClick={() => write(f.id ?? '', () => deleteFund(weddingId!, f.id ?? ''))} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--track-ink)] disabled:opacity-50" aria-label={t('Удалить')}><Trash2 size={14} /></button>
             </div>
-          )
-        })}
+            <div className="mt-3">
+              <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
+                <span>{t('Собрано')} {fmt(f.collected?.amount ?? 0)}</span><span>{pct(f.collected?.amount, f.target?.amount)}%</span>
+              </div>
+              <Bar pct={pct(f.collected?.amount, f.target?.amount)} />
+            </div>
+          </div>
+        ))}
         {!adding ? (
           <button onClick={() => setAdding(true)} className="press w-full card-s p-4 flex items-center justify-center gap-2 text-[13px] font-semibold">
             <Plus size={16} />{t('Добавить фонд')}
@@ -132,7 +171,7 @@ function FundsManage() {
             <input value={target} onChange={e => setTarget(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма цели, ₽')} className="w-full bg-[var(--track)] rounded-[14px] px-4 py-3 text-[13px] outline-none" />
             <div className="flex gap-2">
               <button onClick={() => setAdding(false)} className="press flex-1 card-s py-3 text-[12.5px] font-semibold">{t('Отмена')}</button>
-              <button onClick={submit} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Добавить')}</button>
+              <button disabled={busyId === 'fund'} onClick={submit} className="press flex-1 py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-semibold disabled:opacity-50">{busyId === 'fund' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         )}
@@ -142,10 +181,17 @@ function FundsManage() {
 }
 
 /* Анти-вишлист — сторона пары */
-function AntiManage() {
-  const [anti, setAnti] = usePersist<string[]>('tt_anti', initialAntiGifts)
+function AntiManage({ weddingId, anti, busy, write }: {
+  weddingId: string | null
+  anti: string[]
+  busy: boolean
+  write: WriteFn
+}) {
   const [val, setVal] = useState('')
-  const add = () => { if (val.trim()) { setAnti(a => [...a, val.trim()]); setVal('') } }
+  /* Список заменяется целиком: отдельного пути «добавить строку» контракт не
+     знает, и отправлять надо всё, что было. */
+  const save = (items: string[]) => void write('anti', () => putAntiGifts(weddingId!, items))
+  const add = () => { if (val.trim()) { save([...anti, val.trim()]); setVal('') } }
   return (
     <>
       <SectionHead title={t('Просим не дарить')} sub={t('анти-вишлист')} />
@@ -155,13 +201,13 @@ function AntiManage() {
             {anti.map(a => (
               <span key={a} className="flex items-center gap-1.5 text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">
                 {a}
-                <button onClick={() => setAnti(x => x.filter(y => y !== a))} className="press" aria-label={t('Удалить')}><X size={12} /></button>
+                <button disabled={busy} onClick={() => save(anti.filter(y => y !== a))} className="press disabled:opacity-50" aria-label={t('Удалить')}><X size={12} /></button>
               </span>
             ))}
           </div>
           <div className="flex gap-2 mt-3">
             <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder={t('Например: сервизы')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-            <button onClick={add} className="press px-4 py-2.5 rounded-[12px] card-s text-[12px] font-bold">{t('Добавить')}</button>
+            <button disabled={busy} onClick={add} className="press px-4 py-2.5 rounded-[12px] card-s text-[12px] font-bold disabled:opacity-50">{t('Добавить')}</button>
           </div>
         </div>
       </div>
@@ -169,30 +215,37 @@ function AntiManage() {
   )
 }
 
-function CoupleGiftRow({ g, i, onRemove }: { g: Gift; i: number; onRemove: () => void }) {
+function CoupleGiftRow({ g, i, busy, onRemove }: {
+  g: NonNullable<Wish['gifts']>[number]
+  i: number
+  busy: boolean
+  onRemove: () => void
+}) {
   const [confirm, setConfirm] = useState(false)
-  const pct = g.price ? Math.round((g.funded / g.price) * 100) : 0
+  /* Цвет плитки — дизайн-токен, а не данные: он считается по месту в списке.
+     Сервер его и не отдаёт (см. описание `Gift.icon` в контракте). */
+  const palette = ['bg-[var(--rose-soft)]', 'bg-[var(--sage-soft)]', 'bg-[var(--honey)]', 'bg-[var(--lav)]', 'bg-[var(--blue)]', 'bg-[var(--peach)]']
   return (
     <div className="card p-3.5 fade-up" style={{ animationDelay: `${i * 40}ms` }}>
       <div className="flex items-center gap-3">
-        <Tile icon={g.icon} tile={g.tile} />
+        <Tile icon={g.icon ?? '🎁'} tile={palette[i % palette.length]!} />
         <div className="flex-1 min-w-0">
           <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
-          <p className="text-[11px] text-[var(--soft)]">{fmt(g.price)}{g.group && ` · ${t('складчина')}`}</p>
+          <p className="text-[11px] text-[var(--soft)]">{fmt(g.price?.amount ?? 0)}{g.group && ` · ${t('складчина')}`}</p>
         </div>
         {g.reserved
           ? <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('Зарезервирован')}</span>
           : <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Свободен')}</span>}
         {!confirm
           ? <button onClick={() => setConfirm(true)} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--track-ink)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
-          : <button onClick={onRemove} className="press text-[10px] font-bold px-2.5 py-1.5 rounded-full text-white" style={{ background: '#9B6A6A' }}>{t('Точно?')}</button>}
+          : <button disabled={busy} onClick={onRemove} className="press text-[10px] font-bold px-2.5 py-1.5 rounded-full text-white disabled:opacity-50" style={{ background: '#9B6A6A' }}>{t('Точно?')}</button>}
       </div>
       {g.group && (
         <div className="mt-3">
           <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
-            <span>{t('Собрано')} {fmt(g.funded)}</span><span>{pct}%</span>
+            <span>{t('Собрано')} {fmt(g.funded?.amount ?? 0)}</span><span>{pct(g.funded?.amount, g.price?.amount)}%</span>
           </div>
-          <Bar pct={pct} />
+          <Bar pct={pct(g.funded?.amount, g.price?.amount)} />
         </div>
       )}
     </div>
@@ -200,37 +253,72 @@ function CoupleGiftRow({ g, i, onRemove }: { g: Gift; i: number; onRemove: () =>
 }
 
 /* ── Сторона гостя: выбор подарка (анонимно) ── */
+
+/*
+ * Гость приходит сюда по своей ссылке-приглашению — тем же токеном, что и на
+ * страницу RSVP. Раньше экран читал `tt_gifts` и `tt_funds` из браузера, и это
+ * работало ровно до второго устройства: резерв не доходил до пары, а два гостя
+ * спокойно занимали одну вещь, каждый в своей копии списка.
+ *
+ * Резерв атомарен на сервере: занятый подарок пропадает из выбора остальных, а
+ * повторная попытка получает отказ, а не молчаливое «уже ваш».
+ */
 export function GiftPick() {
   const nav = useNavigate()
-  const { gifts, myGifts, reserveGift, releaseGift, fundGift } = useStore()
-  const [funds, setFunds] = usePersist<Fund[]>('tt_funds', initialFunds)
-  const [anti] = usePersist<string[]>('tt_anti', initialAntiGifts)
-  const [bought, setBought] = usePersist<string[]>('tt_bought', [])
+  const token = guestToken()
+  const q = useApi(() => token ? getGuestGifts(token) : Promise.resolve(null), [token])
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [fundFor, setFundFor] = useState<string | null>(null)
   const [amount, setAmount] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
 
-  const mine = gifts.filter(g => myGifts.includes(g.id))
-  const available = gifts.filter(g => !g.reserved && !myGifts.includes(g.id))
-  const taken = gifts.filter(g => g.reserved && !myGifts.includes(g.id))
-  const fairPrice = rub(15000) // ориентир: стоимость банкета на гостя (деликатная подсказка)
+  const gifts = q.data?.gifts ?? []
+  const funds = q.data?.funds ?? []
+  const anti = q.data?.antiGifts ?? []
+  /* Ориентир «банкет на гостя» считает сервер по бюджету и числу гостей. Пока
+     их нет — поля нет, и подставлять сюда 15 000 нельзя: это была выдуманная
+     цифра, по которой человек решал, сколько потратить. */
+  const fairPrice = q.data?.fairPrice?.amount ?? null
 
-  const doFund = (id: string) => {
+  const mine = gifts.filter(g => g.mine)
+  const available = gifts.filter(g => !g.reserved)
+  const taken = gifts.filter(g => g.reserved && !g.mine)
+
+  const write = async (id: string, fn: () => Promise<unknown>) => {
+    if (!token) return
+    setBusyId(id)
+    setErr(null)
+    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+  }
+  const doReserve = (id: string) => void write(id, async () => { await reserveGift(token!, id); setConfirmId(null) })
+  const doRelease = (id: string) => void write(id, () => releaseGift(token!, id))
+  const doFund = (id: string) => void write(id, async () => {
     const a = Number(amount)
     if (!a) return
-    fundGift(id, rub(a))
+    await fundGift(token!, id, rub(a))
     setAmount(''); setFundFor(null)
-  }
-  const doFundMoney = (id: string) => {
+  })
+  const doFundMoney = (id: string) => void write(id, async () => {
     const a = Number(amount)
     if (!a) return
-    setFunds(fs => fs.map(f => f.id === id ? { ...f, collected: Math.min(f.target, f.collected + rub(a)) } : f))
+    await contributeToFund(token!, id, rub(a))
     setAmount(''); setFundFor(null)
-  }
+  })
+
+  if (!token) return (
+    <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
+      <p className="font-serif-d text-[22px]">{t('Нужна ссылка из приглашения')}</p>
+      <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
+        {t('Список подарков открывается по личной ссылке: по ней приложение узнаёт, чей это резерв.')}
+      </p>
+    </div>
+  )
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Подарки')} sub={t('Алина & Тимур · 14 июня 2027')} />
+      <TopBar back title={t('Подарки')} sub={t('анонимно · резерв виден только вам')} />
+      <AsyncState q={q} />
       <div className="px-5 mt-3">
         <div className="card p-4 flex gap-3 items-start">
           <ShieldCheck size={20} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
@@ -238,7 +326,10 @@ export function GiftPick() {
             {t('Полностью анонимно: молодожёны увидят только, что подарок зарезервирован, но не кем. Выбранный подарок сразу закрывается для других гостей.')}
           </p>
         </div>
-        <p className="text-[10.5px] text-[var(--soft)] mt-2.5 px-1">{t('Деликатный ориентир: банкет на гостя ≈')} {fmt(fairPrice)}</p>
+        {fairPrice != null && (
+          <p className="text-[10.5px] text-[var(--soft)] mt-2.5 px-1">{t('Деликатный ориентир: банкет на гостя ≈')} {fmt(fairPrice)}</p>
+        )}
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-2.5">{err}</p>}
       </div>
 
       {anti.length > 0 && (
@@ -256,29 +347,26 @@ export function GiftPick() {
         <>
           <SectionHead title={t('Денежные фонды')} sub={t('анонимный перевод на цель')} />
           <div className="px-5 space-y-2.5">
-            {funds.map(f => {
-              const pct = f.target ? Math.round((f.collected / f.target) * 100) : 0
-              return (
-                <div key={f.id} className="card p-3.5">
-                  <div className="flex items-center gap-3">
-                    <Tile icon={f.icon} tile={f.tile} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13.5px] font-semibold truncate">{f.name}</p>
-                      <p className="text-[11px] text-[var(--soft)]">{t('Собрано')} {fmt(f.collected)} {t('из')} {fmt(f.target)}</p>
-                    </div>
+            {funds.map(f => (
+              <div key={f.id} className="card p-3.5">
+                <div className="flex items-center gap-3">
+                  <Tile icon={f.icon ?? '💌'} tile="bg-[var(--rose-soft)]" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13.5px] font-semibold truncate">{f.name}</p>
+                    <p className="text-[11px] text-[var(--soft)]">{t('Собрано')} {fmt(f.collected?.amount ?? 0)} {t('из')} {fmt(f.target?.amount ?? 0)}</p>
                   </div>
-                  <div className="mt-3"><Bar pct={pct} /></div>
-                  {fundFor === f.id ? (
-                    <div className="flex gap-2 mt-2.5">
-                      <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-                      <button onClick={() => doFundMoney(f.id)} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold">{t('Внести')}</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => { setFundFor(f.id); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Перевести на цель')}</button>
-                  )}
                 </div>
-              )
-            })}
+                <div className="mt-3"><Bar pct={pct(f.collected?.amount, f.target?.amount)} /></div>
+                {fundFor === f.id ? (
+                  <div className="flex gap-2 mt-2.5">
+                    <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
+                    <button disabled={busyId === f.id} onClick={() => doFundMoney(f.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Внести')}</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setFundFor(f.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Перевести на цель')}</button>
+                )}
+              </div>
+            ))}
           </div>
         </>
       )}
@@ -289,12 +377,12 @@ export function GiftPick() {
           <div className="px-5 space-y-2.5">
             {mine.map(g => (
               <div key={g.id} className="card p-3.5 flex items-center gap-3" style={{ border: '1.5px solid rgba(169,188,160,.5)' }}>
-                <Tile icon={g.icon} tile={g.tile} />
+                <Tile icon={g.icon ?? '🎁'} tile="bg-[var(--sage-soft)]" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
                   <p className="text-[11px] text-[var(--sage-deep)] font-medium">{t('Вы зарезервировали этот подарок')}</p>
                 </div>
-                <button onClick={() => releaseGift(g.id)} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Снять резерв')}</button>
+                <button disabled={busyId === g.id} onClick={() => doRelease(g.id ?? '')} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)] disabled:opacity-50">{t('Снять резерв')}</button>
               </div>
             ))}
           </div>
@@ -304,41 +392,37 @@ export function GiftPick() {
       <SectionHead title={t('Свободные желания')} />
       <div className="px-5 space-y-2.5">
         {available.map((g, i) => {
-          const pct = g.price ? Math.round((g.funded / g.price) * 100) : 0
-          const left = g.price - g.funded
+          const price = g.price?.amount ?? 0
+          const funded = g.funded?.amount ?? 0
           return (
             <div key={g.id} className="card p-3.5 fade-up" style={{ animationDelay: `${i * 40}ms` }}>
               <div className="flex items-center gap-3">
-                <Tile icon={g.icon} tile={g.tile} />
+                <Tile icon={g.icon ?? '🎁'} tile="bg-[var(--rose-soft)]" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
-                  <p className="text-[11px] text-[var(--soft)]">{g.desc ? `${g.desc} · ` : ''}{fmt(g.price)}</p>
+                  <p className="text-[11px] text-[var(--soft)]">{g.desc ? `${g.desc} · ` : ''}{fmt(price)}</p>
                 </div>
-                {confirmId === g.id
-                  ? <button onClick={() => { reserveGift(g.id); setConfirmId(null) }} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)]">{t('Подтвердить')}</button>
-                  : !g.group && (
-                    <div className="flex flex-col gap-1.5 items-end">
-                      <button onClick={() => setConfirmId(g.id)} className="press text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Подарю')}</button>
-                      {bought.includes(g.id)
-                        ? <span className="text-[9.5px] font-bold text-[var(--sage-deep)]">✓ {t('Заказ оформлен')}</span>
-                        : <button onClick={() => { setBought(b => [...b, g.id]); reserveGift(g.id) }} className="press text-[10px] font-bold px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)] flex items-center gap-1"><ShoppingBag size={11} />{t('Купить в приложении')}</button>}
-                    </div>
-                  )}
+                {/* «Купить в приложении» убрано: магазина и оплаты в приложении
+                    нет, кнопка лишь ставила отметку «заказ оформлен». Гость
+                    резервирует подарок и покупает его сам. */}
+                {!g.group && (confirmId === g.id
+                  ? <button disabled={busyId === g.id} onClick={() => doReserve(g.id ?? '')} className="press text-[11px] font-bold px-3.5 py-2 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">{busyId === g.id ? t('Резервируем…') : t('Подтвердить')}</button>
+                  : <button onClick={() => setConfirmId(g.id ?? null)} className="press text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Подарю')}</button>)}
               </div>
               {g.group && (
                 <div className="mt-3">
                   <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
-                    <span>{t('Собрано')} {fmt(g.funded)} {t('из')} {fmt(g.price)}</span><span>{pct}%</span>
+                    <span>{t('Собрано')} {fmt(funded)} {t('из')} {fmt(price)}</span><span>{pct(funded, price)}%</span>
                   </div>
-                  <Bar pct={pct} />
+                  <Bar pct={pct(funded, price)} />
                   {fundFor === g.id ? (
                     <div className="flex gap-2 mt-2.5">
                       <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-                      <button onClick={() => doFund(g.id)} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold">{t('Внести')}</button>
+                      <button disabled={busyId === g.id} onClick={() => doFund(g.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Внести')}</button>
                     </div>
                   ) : (
-                    <button onClick={() => { setFundFor(g.id); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">
-                      {t('Скинуться')} · {t('осталось')} {fmt(left)}
+                    <button onClick={() => { setFundFor(g.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">
+                      {t('Скинуться')} · {t('осталось')} {fmt(Math.max(0, price - funded))}
                     </button>
                   )}
                 </div>
@@ -346,7 +430,7 @@ export function GiftPick() {
             </div>
           )
         })}
-        {available.length === 0 && <p className="text-center text-[12px] text-[var(--soft)] py-6">{t('Все желания уже зарезервированы 🎉')}</p>}
+        {!available.length && ready(q) && <p className="text-center text-[12px] text-[var(--soft)] py-6">{gifts.length ? t('Все желания уже зарезервированы 🎉') : t('Список желаний пока пуст')}</p>}
       </div>
 
       {taken.length > 0 && (
@@ -355,10 +439,10 @@ export function GiftPick() {
           <div className="px-5 space-y-2.5">
             {taken.map(g => (
               <div key={g.id} className="card p-3.5 flex items-center gap-3 opacity-55">
-                <Tile icon={g.icon} tile={g.tile} />
+                <Tile icon={g.icon ?? '🎁'} tile="bg-[var(--track)]" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
-                  <p className="text-[11px] text-[var(--soft)]">{fmt(g.price)}</p>
+                  <p className="text-[11px] text-[var(--soft)]">{fmt(g.price?.amount ?? 0)}</p>
                 </div>
                 <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Занято')}</span>
               </div>
@@ -366,10 +450,6 @@ export function GiftPick() {
           </div>
         </>
       )}
-
-      {/* Отзывы гостей о подрядчиках (после свадьбы) */}
-      <SectionHead title={t('Как прошла свадьба?')} sub={t('ваш отзыв будет помечен «от гостя»')} />
-      <GuestReviewForm />
 
       <div className="px-5 mt-6">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o), '/invite')} className="press w-full card-s py-4 text-[13px] font-semibold">{t('Назад')}</button>

@@ -12,6 +12,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
    для всех экранных тестов: src/test/catalogMock.ts. */
 vi.mock('@/lib/api/catalog', async () => (await import('@/test/catalogMock')).catalogMock())
 
+/* Список желаний приходит с сервера: цена на экране — это его ответ, а не
+   константа мока. */
+vi.mock('@/lib/api/gifts', async (orig) => ({
+  ...await orig<object>(),
+  getWishlist: async () => ({
+    gifts: [{ id: 'gf1', name: 'Робот-пылесос', icon: '🤖', price: { amount: 8_999_000, currency: 'RUB' }, funded: { amount: 0, currency: 'RUB' }, group: false, reserved: false }],
+    funds: [],
+    antiGifts: [],
+  }),
+}))
+
 /* Данные свадьбы тоже приходят с сервера: бюджет и главная должны считать по
    одному и тому же ответу, иначе «одинаковый итог» проверяется на двух разных
    источниках и ничего не значит. */
@@ -104,9 +115,12 @@ describe('суммы показываются в рублях', () => {
     await waitFor(() => expect(money(container as HTMLElement)).toContain('45 000 ₽'))
   })
 
-  it('вишлист: цена подарка', () => {
+  it('вишлист: цена подарка приходит с сервера', async () => {
+    /* Раньше список желаний лежал в `tt_gifts` браузера, и цена бралась из
+       мока. Теперь она приходит с сервера — как и резерв, общий на пару и
+       всех гостей. */
     const { container } = wrap(<WishlistManage />)
-    expect(money(container as HTMLElement)).toContain('89 990 ₽')
+    await waitFor(() => expect(money(container as HTMLElement)).toContain('89 990 ₽'))
   })
 
   it('нигде не мелькают суммы, увеличенные в сто раз', () => {
