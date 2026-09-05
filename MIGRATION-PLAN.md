@@ -119,8 +119,8 @@
 | | включить SOS | `tt_dayx` | — **нет эндпоинта** | **нет** |
 | | активировать план Б | `tt_planb` | `POST /weddings/{id}/planb/activate` | да |
 | | открыть план Б | мок | `GET /weddings/{id}/planb` | да |
-| **Smart** (после свадьбы) | оценить подрядчика | `tt_after_stars` | `POST /catalog/vendors/{vendorId}/reviews` | да (сделано в перепроверке этапа 8) |
-| | прочитать отзывы гостей | `tt_guest_reviews` | `GET /weddings/{id}/guest-reviews` | да (сделано в перепроверке этапа 8) |
+| **Smart** (после свадьбы) | оценить подрядчика | `tt_after_stars` | `POST /catalog/vendors/{vendorId}/reviews` | ✅ сделано |
+| | прочитать отзывы гостей | `tt_guest_reviews` | `GET /weddings/{id}/guest-reviews` | ✅ сделано |
 | | скачать общий альбом (ZIP) | таймер в браузере | — **нет эндпоинта** | **нет** |
 | | отметить пункт «после» | локально | `PATCH …/tasks/{taskId}` | да |
 | **Us** (чаты) | открыть список чатов | мок `chats` (5) | `GET /chats` | да |
