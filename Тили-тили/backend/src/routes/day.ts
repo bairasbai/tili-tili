@@ -842,8 +842,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         order by v.name`,
       [guest.weddingId, COMMITTED],
     )
+    /* Дата нужна форме отзыва: до свадьбы отзыв не принимается, и сказать об
+       этом надо до заполнения, а не отказом после отправки. */
+    const { rows: wedding } = await db().query<{ date: string | null }>(
+      "select to_char(date, 'YYYY-MM-DD') as date from weddings where id = $1",
+      [guest.weddingId],
+    )
     return {
       weddingId: guest.weddingId,
+      weddingDate: wedding[0]?.date ?? null,
       vendors: rows.map((r) => ({ vendorId: r.vendor_id, name: r.name, categoryId: r.category_id })),
     }
   })

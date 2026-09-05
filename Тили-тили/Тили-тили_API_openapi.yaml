@@ -2069,6 +2069,14 @@ paths:
                       `/weddings/{weddingId}/guest-reviews`, а взять этот
                       идентификатор ему больше неоткуда. Секрета в нём нет:
                       токен гостя и так привязан к этой свадьбе.
+                  weddingDate:
+                    type: string
+                    format: date
+                    nullable: true
+                    description: |
+                      Отзыв принимается только после дня свадьбы. Без даты гость
+                      заполнил бы форму и получил отказ там, где сказать нужно
+                      было заранее.
                   vendors:
                     type: array
                     items:
@@ -2199,7 +2207,12 @@ paths:
     get:
       tags: [reviews]
       summary: Отзывы гостей о подрядчиках (для пары)
-      description: Пара видит их анонимно — без имени гостя.
+      description: |
+        Пара видит их анонимно — без имени гостя.
+
+        Схема своя, а не общий `Review`: там подрядчик подразумевается адресом
+        (`/catalog/vendors/{id}/reviews`), а здесь в одном списке отзывы обо всей
+        команде — без `vendorId` и имени отзыв не к чему отнести.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       responses:
@@ -2209,7 +2222,16 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/Review' }
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    vendorId: { type: string }
+                    vendorName: { type: string, nullable: true }
+                    authorName: { type: string, example: Гость свадьбы }
+                    rating: { type: integer, minimum: 1, maximum: 5 }
+                    text: { type: string }
+                    createdAt: { type: string, format: date-time }
     post:
       tags: [reviews]
       summary: Гость оставляет отзыв

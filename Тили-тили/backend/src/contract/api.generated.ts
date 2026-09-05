@@ -4059,6 +4059,13 @@ export interface paths {
                              *     токен гостя и так привязан к этой свадьбе.
                              */
                             weddingId?: string;
+                            /**
+                             * Format: date
+                             * @description Отзыв принимается только после дня свадьбы. Без даты гость
+                             *     заполнил бы форму и получил отказ там, где сказать нужно
+                             *     было заранее.
+                             */
+                            weddingDate?: string | null;
                             vendors?: {
                                 vendorId?: string;
                                 name?: string;
@@ -4371,6 +4378,10 @@ export interface paths {
         /**
          * Отзывы гостей о подрядчиках (для пары)
          * @description Пара видит их анонимно — без имени гостя.
+         *
+         *     Схема своя, а не общий `Review`: там подрядчик подразумевается адресом
+         *     (`/catalog/vendors/{id}/reviews`), а здесь в одном списке отзывы обо всей
+         *     команде — без `vendorId` и имени отзыв не к чему отнести.
          */
         get: {
             parameters: {
@@ -4389,7 +4400,17 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Review"][];
+                        "application/json": {
+                            id?: string;
+                            vendorId?: string;
+                            vendorName?: string | null;
+                            /** @example Гость свадьбы */
+                            authorName?: string;
+                            rating?: number;
+                            text?: string;
+                            /** Format: date-time */
+                            createdAt?: string;
+                        }[];
                     };
                 };
             };

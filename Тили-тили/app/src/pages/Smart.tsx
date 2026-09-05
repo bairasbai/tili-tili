@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
-import { timeline, initialGuestReviews, type GuestReview } from '@/lib/data'
+import { timeline } from '@/lib/data'
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { usePersist } from '@/lib/usePersist'
-import { useApi } from '@/lib/api/useApi'
+import { explainError, useApi } from '@/lib/api/useApi'
 import { AsyncState, ready } from '@/components/AsyncState'
-import { getPlanB } from '@/lib/api/weddingData'
+import { getGuests, getPlanB, getWedding } from '@/lib/api/weddingData'
+import { getAlbum } from '@/lib/api/gifts'
+import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
+import { formatWeddingDate } from '@/lib/weddingDate'
 import { getAvailability, getCategories, getFavorites, getVendors } from '@/lib/api/catalog'
 import { cn, goBack, plural } from '@/lib/utils'
 import { t } from '@/lib/i18n'
@@ -327,83 +330,148 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
   )
 }
 
+/*
+ * «После свадьбы» — итоги.
+ *
+ * Экран был витриной: «Алина & Тимур», 14 подрядчиков, 76 гостей, 312 фото и
+ * два выдуманных отзыва гостей — одни и те же числа у любой пары. Отзыв команде
+ * складывался в `tt_after_stars` браузера и до подрядчика не доходил, а «отзывы
+ * гостей» читались из `tt_guest_reviews`: пара видела мок вместо того, что ей
+ * действительно написали её гости.
+ *
+ * Теперь всё считается по своей свадьбе, а отзывы ходят на сервер обе стороны.
+ */
 export function After() {
-  const [dl, setDl] = useState(0)
+  const { weddingId, slots } = useStore()
+  const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const guests = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const album = useApi(() => weddingId ? getAlbum(weddingId) : Promise.resolve([]), [weddingId])
+  const reviews = useApi(() => weddingId ? getGuestReviews(weddingId) : Promise.resolve([]), [weddingId])
   const [rating, setRating] = useState(false)
-  const [stars, setStars] = usePersist<Record<string, number>>('tt_after_stars', {})
-  const [guestReviews] = usePersist<GuestReview[]>('tt_guest_reviews', initialGuestReviews)
-  const reviewList = [t('Елена Смирнова · фотограф'), t('Артём Краснов · ведущий'), t('Студия «Пион» · флористика'), t('Усадьба «Липовый сад»'), t('«Марципан» · торт')]
-  const stats = [
-    ['14', t('подрядчиков'), '🤝'],
-    ['76', t('гостей'), '🥂'],
-    ['312', t('фото от гостей'), '📸'],
-    ['9', t('отзывов оставлено'), '★'],
+
+  const date = w.data?.date ?? null
+  const photos = album.data ?? []
+  const guestReviews = reviews.data ?? []
+  /* Команда — те, с кем есть сделка. Свой подрядчик (§11) сюда не попадает:
+     он не из каталога, и отзыв о нём публиковать негде. */
+  const team = slots.filter(s => s.vendorId && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
+  const stats: [number, string][] = [
+    [team.length, plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
+    [guests.data?.length ?? 0, plural(guests.data?.length ?? 0, t('гость'), t('гостя'), t('гостей'))],
+    [photos.length, plural(photos.length, t('кадр от гостей'), t('кадра от гостей'), t('кадров от гостей'))],
+    [guestReviews.length, plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))],
   ]
+  const icons = ['🤝', '🥂', '📸', '★']
+
   return (
     <div className="pb-28">
-      <TopBar back title={t('После свадьбы')} sub={t('14 июня 2027 · это было прекрасно')} />
+      <TopBar back title={t('После свадьбы')} sub={formatWeddingDate(date) || t('дата пока не назначена')} />
+      <AsyncState q={w} />
       <div className="px-5 mt-3">
         <div className="grad rounded-[32px] p-7 text-[var(--on-grad)] text-center relative overflow-hidden fade-up">
           <Heart size={26} className="mx-auto opacity-90" />
-          <h2 className="font-serif-d text-[26px] mt-3">{t('Алина & Тимур')}</h2>
-          <p className="text-[12px] opacity-90 mt-1">{t('Поздравляем! Ваша свадьба состоялась')}</p>
+          <h2 className="font-serif-d text-[26px] mt-3">{w.data?.title ?? t('Ваша свадьба')}</h2>
+          {/* Свадьба может быть ещё впереди: экран открыт из раздела «Мы»
+              всегда, и «Поздравляем, ваша свадьба состоялась» до неё —
+              неправда. */}
+          <p className="text-[12px] opacity-90 mt-1">
+            {date && date < new Date().toISOString().slice(0, 10) ? t('Поздравляем! Ваша свадьба состоялась') : t('Итоги соберутся здесь после дня свадьбы')}
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-2.5 mt-4 stagger">
-          {stats.map(([v, l, ic]) => (
+          {stats.map(([v, l], i) => (
             <div key={l} className="card-s p-4 text-center fade-up">
-              <span className="text-[20px]">{ic}</span>
+              <span className="text-[20px]">{icons[i]}</span>
               <b className="font-serif-d text-[24px] block mt-1 tabular">{v}</b>
               <span className="text-[10px] text-[var(--soft)]">{l}</span>
             </div>
           ))}
         </div>
-        <div className="card p-5 mt-4">
-          <div className="flex justify-between text-[12px] mb-2"><span className="text-[var(--soft)]">{t('Отзывы команде')}</span><b>{t('9 из 14')}</b></div>
-          <div className="h-1.5 rounded-full bg-[var(--track)] overflow-hidden"><div className="h-full grad rounded-full" style={{ width: '64%' }} /></div>
-          <p className="text-[10.5px] text-[var(--soft)] mt-2.5">{t('Отзывы помогают другим парам и поднимают рейтинг тех, кто сделал ваш день.')}</p>
-        </div>
-        <button onClick={() => {
-            if (dl !== 0) return
-            setDl(1)
-            const t = setInterval(() => setDl(d => { if (d >= 100) { clearInterval(t); return 100 } return d + 5 }), 120)
-          }}
-          className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {dl === 0 ? t('Скачать общий альбом (ZIP)') : dl < 100 ? t('Собираем архив…') + ` ${dl}%` : t('✓ Архив готов · ссылка отправлена')}
-        </button>
-        {dl > 0 && dl < 100 && <div className="h-1.5 rounded-full bg-[var(--track)] mt-2.5 overflow-hidden"><div className="h-full grad rounded-full transition-all" style={{ width: `${dl}%` }} /></div>}
-        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-2.5 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
+
+        {/* Кнопка «Скачать общий альбом (ZIP)» убрана: она рисовала прогресс
+            интервалом и заканчивалась словами «ссылка отправлена», хотя ни
+            архива, ни письма не существовало. Архив появится вместе с
+            файловым хранилищем — тем же, что нужно загрузке кадров. */}
+        <p className="text-[10.5px] text-[var(--soft)] leading-relaxed mt-4 px-1">
+          {t('Общий архив альбома появится вместе с файловым хранилищем — тогда же, когда гости смогут загружать кадры.')}
+        </p>
+
+        <button onClick={() => setRating(!rating)} className="press w-full card-s mt-3 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
         {rating && (
-          <div className="card px-4 py-1.5 mt-3 fade-up">
-            {reviewList.map((r, i) => (
-              <div key={r} className={cn('flex items-center justify-between py-3', i !== reviewList.length - 1 && 'border-b border-[var(--track)]')}>
-                <span className="text-[12px] font-medium flex-1">{r}</span>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map(s => (
-                    <button key={s} onClick={() => setStars(x => ({ ...x, [r]: s }))} className="press text-[15px]" style={{ color: (stars[r] ?? 0) >= s ? 'var(--gold-soft)' : 'var(--track)' }}>★</button>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="mt-3 space-y-2.5 fade-up">
+            {!team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
+            {team.map(s => <CoupleReviewRow key={s.id} vendorId={s.vendorId!} name={s.vendor ?? ''} done={s.dealState === 'done'} />)}
           </div>
         )}
+
         <div className="mt-4">
           <SectionHeadSm title={t('Отзывы от гостей')} sub={t('гости отмечены значком и не смешиваются с вашими отзывами')} />
+          <AsyncState q={reviews} />
           <div className="flex flex-col gap-2">
-            {guestReviews.slice(0, 5).map(r => (
+            {guestReviews.map(r => (
               <div key={r.id} className="card-s p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <b className="text-[12.5px] flex-1">{r.vendor}</b>
+                  <b className="text-[12.5px] flex-1">{r.vendorName ?? t('Подрядчик')}</b>
                   <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)]">{t('Гость свадьбы')}</span>
                 </div>
-                <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.stars)}<span className="text-[var(--track)]">{'★'.repeat(5 - r.stars)}</span><span className="text-[10px] text-[var(--soft2)] ml-1.5">{r.at}</span></div>
-                <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>
+                <div className="flex items-center gap-1 mt-1.5 text-[11px]" style={{ color: 'var(--gold-soft)' }}>{'★'.repeat(r.rating ?? 0)}<span className="text-[var(--track)]">{'★'.repeat(5 - (r.rating ?? 0))}</span></div>
+                {r.text && <p className="text-[11.5px] text-[var(--ink2)] mt-1.5 leading-relaxed">{r.text}</p>}
               </div>
             ))}
+            {!guestReviews.length && ready(reviews) && (
+              <p className="text-[11.5px] text-[var(--soft)] py-2">{t('Гости пока не оставили отзывов. Форма открывается им после дня свадьбы.')}</p>
+            )}
           </div>
           <p className="text-[10.5px] text-[var(--soft2)] mt-2.5 leading-relaxed">{t('Отзывы гостей видны вам и учитываются в рейтинге подрядчика отдельно от отзывов пар.')}</p>
         </div>
         <p className="text-center text-[10.5px] text-[var(--soft2)] mt-5">{t('Проект и документы хранятся бессрочно. Встретимся в годовщину 💌')}</p>
       </div>
+    </div>
+  )
+}
+
+/*
+ * Отзыв пары об одном подрядчике.
+ *
+ * Право на отзыв даёт завершённая сделка — это проверяет сервер, и до неё
+ * форма не открывается: звёзды, которые никуда не уйдут, хуже честной строки
+ * «после завершения сделки».
+ */
+function CoupleReviewRow({ vendorId, name, done }: { vendorId: string; name: string; done: boolean }) {
+  const [stars, setStars] = useState(0)
+  const [text, setText] = useState('')
+  const [sent, setSent] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const send = () => void (async () => {
+    if (!stars || !text.trim()) return
+    setBusy(true)
+    setErr(null)
+    try { await sendCoupleReview(vendorId, stars, text.trim()); setSent(true) } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+  })()
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-2">
+        <b className="text-[12.5px] flex-1">{name}</b>
+        {!done && <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('после завершения сделки')}</span>}
+      </div>
+      {done && !sent && (
+        <>
+          <div className="flex items-center gap-1.5 mt-2">
+            {[1, 2, 3, 4, 5].map(n => (
+              <button key={n} onClick={() => setStars(n)} className="press text-[17px]" aria-label={`${n}`} style={{ color: n <= stars ? 'var(--gold-soft)' : 'var(--track)' }}>★</button>
+            ))}
+          </div>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={t('Что получилось, а что нет')} className="w-full mt-2 px-4 py-3 rounded-xl bg-[var(--bg)] text-[12.5px] outline-none resize-none placeholder:text-[var(--soft2)]" />
+          {err && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-1.5">{err}</p>}
+          <button disabled={busy || !stars || !text.trim()} onClick={send} className="press w-full h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-2 disabled:opacity-40">
+            {busy ? t('Отправляем…') : t('Отправить отзыв')}
+          </button>
+        </>
+      )}
+      {sent && <p className="text-[11.5px] text-[var(--sage-deep)] font-medium mt-1.5">{t('✓ Отзыв отправлен')}</p>}
     </div>
   )
 }

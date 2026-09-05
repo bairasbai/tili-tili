@@ -191,6 +191,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       tile: CATEGORY_TILE[s.categoryId ?? ''] ?? DEFAULT_TILE,
       state,
       vendor: d?.vendor?.name ?? d?.externalName ?? undefined,
+      /* Идентификатор нужен там, где речь о самом подрядчике, а не о строке
+         мозаики: отзыв уходит по `vendorId`. У своего подрядчика (§11) его нет
+         вовсе — он не из каталога, и оценивать его в каталоге негде. */
+      vendorId: d?.vendor?.id,
       price: d?.price?.amount,
       /* Подпись берём из состояния сделки, а не из плитки: `paid` в мозаике —
          это и внесённый аванс, и выполненная работа, а на экране сделки это

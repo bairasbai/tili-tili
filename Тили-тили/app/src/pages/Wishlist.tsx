@@ -450,8 +450,9 @@ export function GiftPick() {
         </>
       )}
 
-      {/* Отзывы: список подрядчиков и отправка идут на сервер. */}
-      <SectionHead title={t('Как прошла свадьба?')} sub={t('ваш отзыв будет помечен «от гостя»')} />
+      {/* Отзывы: список подрядчиков и отправка идут на сервер. Заголовок
+          рисует сама форма — до свадьбы и без команды показывать нечего, а
+          «Как прошла свадьба?» над пустым местом читается как поломка. */}
       <GuestReviewForm />
 
       <div className="px-5 mt-6">
@@ -486,9 +487,22 @@ export function GuestReviewForm() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  /* Без команды оценивать некого — форму не показываем вовсе, а не рисуем
-     пустой список кнопок. */
+  /* Без команды оценивать некого — формы нет вовсе, а не пустой список кнопок. */
   if (!token || !weddingId || !team.length) return null
+
+  /* До свадьбы отзыв не принимается — это правило сервера, и сказать о нём
+     нужно здесь, а не отказом после заполнения формы. */
+  const date = q.data?.weddingDate ?? null
+  if (!date || date >= new Date().toISOString().slice(0, 10)) return (
+    <>
+      <SectionHead title={t('Как прошла свадьба?')} sub={t('отзыв о команде')} />
+      <div className="px-5">
+        <p className="text-[11.5px] text-[var(--soft)] leading-relaxed card p-4">
+          {t('Оценить команду можно после дня свадьбы — тогда здесь появится форма отзыва.')}
+        </p>
+      </div>
+    </>
+  )
 
   const submit = () => void (async () => {
     if (!vendorId || !stars) return
@@ -501,7 +515,9 @@ export function GuestReviewForm() {
   })()
 
   return (
-    <div className="px-5 space-y-3">
+    <>
+      <SectionHead title={t('Как прошла свадьба?')} sub={t('ваш отзыв будет помечен «от гостя»')} />
+      <div className="px-5 space-y-3">
       <div className="card p-4">
         <div className="flex gap-3 items-start">
           <MessageSquareHeart size={20} className="text-[var(--rose-deep)] shrink-0 mt-0.5" />
@@ -531,6 +547,7 @@ export function GuestReviewForm() {
             того же браузера и показывал гостю его собственные записи как «отзывы
             гостей». Настоящие отзывы читает пара — путь у неё свой. */}
       </div>
-    </div>
+      </div>
+    </>
   )
 }

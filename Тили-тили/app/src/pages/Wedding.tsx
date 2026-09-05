@@ -1059,10 +1059,12 @@ export function Album() {
     if (!weddingId) return
     setBusyId('all')
     setErr(null)
+    /* Перечитываем в любом случае: если одобрение сорвалось на середине,
+       часть кадров уже одобрена — экран, оставшийся на старых данных, покажет
+       на модерации то, чего там больше нет. */
     try {
       for (const p of photos.filter(x => !x.approved)) await setPhotoApproved(weddingId, p.id ?? '', true)
-      q.reload()
-    } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+    } catch (e) { setErr(explainError(e)) } finally { setBusyId(null); q.reload() }
   })()
 
   return (

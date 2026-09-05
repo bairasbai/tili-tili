@@ -148,7 +148,7 @@ export const vendors: Vendor[] = [
  * а экрану сделки нужны все, иначе «внесён аванс» и «выполнено» сольются в
  * одну картинку.
  */
-export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; price?: number; status?: string; external?: boolean; phone?: string; dealId?: string; dealState?: DealState }
+export interface Slot { id: string; categoryId: string; label: string; icon: string; tile: string; state: SlotState; vendor?: string; vendorId?: string; price?: number; status?: string; external?: boolean; phone?: string; dealId?: string; dealState?: DealState }
 
 /** Шесть состояний сделки плюс отмена — те же, что в контракте. */
 export type DealState = 'candidate' | 'contacted' | 'negotiating' | 'booked' | 'paid_deposit' | 'done' | 'cancelled'
