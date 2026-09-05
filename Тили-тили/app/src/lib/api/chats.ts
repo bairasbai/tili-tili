@@ -42,40 +42,77 @@ export interface ChatEvent {
   code?: string
 }
 
+/** Задержка перед новой попыткой подключиться. */
+const RECONNECT_MS = 3000
+
 /**
  * Живой канал чата.
  *
  * Токен уходит строкой запроса: браузерный WebSocket заголовки ставить не
  * умеет — так устроен протокол, и контракт это оговаривает отдельно.
  *
- * Возвращает функцию закрытия. Отказы приходят внутрь соединения событием
- * `error` и закрывают его: клиент должен понимать разницу между «ссылка
- * устарела» и «сеть барахлит», иначе он переподключается бесконечно.
+ * **Канал недолговечен по устройству.** Сервер закрывает соединение вместе с
+ * истечением токена (15 минут): открытый сокет не должен переживать право
+ * доступа. Значит обрыв — это норма, а не авария, и клиент обязан
+ * переподключаться сам. Без этого чат, открытый дольше пятнадцати минут,
+ * тихо оставался бы на одном опросе, продолжая писать «связь живая».
+ *
+ * `onStatus` сообщает, есть ли канал прямо сейчас: экран показывает это
+ * человеку, а не гадает. Возвращённая функция закрывает канал насовсем —
+ * после неё попыток переподключения нет.
  */
-export function openChatSocket(chatId: string, onEvent: (e: ChatEvent) => void): () => void {
-  const token = accessTokenForWs()
-  if (!token || typeof WebSocket === 'undefined') return () => undefined
+export function openChatSocket(
+  chatId: string,
+  onEvent: (e: ChatEvent) => void,
+  onStatus?: (live: boolean) => void,
+): () => void {
+  if (typeof WebSocket === 'undefined') return () => undefined
 
-  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api'
-  const httpUrl = new URL(`${base}/chats/${chatId}/ws`, window.location.origin)
-  httpUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-  httpUrl.searchParams.set('token', token)
-
+  let closedByUs = false
   let socket: WebSocket | null = null
-  try {
-    socket = new WebSocket(httpUrl.toString())
-  } catch {
-    /* Небезопасный адрес или заблокированный протокол — остаётся опрос. */
-    return () => undefined
+  let retry: number | undefined
+
+  const connect = () => {
+    if (closedByUs) return
+    const token = accessTokenForWs()
+    if (!token) return
+
+    const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api'
+    const httpUrl = new URL(`${base}/chats/${chatId}/ws`, window.location.origin)
+    httpUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+    httpUrl.searchParams.set('token', token)
+
+    try {
+      socket = new WebSocket(httpUrl.toString())
+    } catch {
+      /* Небезопасный адрес или заблокированный протокол — остаётся опрос. */
+      onStatus?.(false)
+      return
+    }
+
+    socket.onopen = () => onStatus?.(true)
+    socket.onmessage = (e: MessageEvent<string>) => {
+      try { onEvent(JSON.parse(e.data) as ChatEvent) } catch { /* чужой формат — не наше дело */ }
+    }
+    socket.onclose = () => {
+      onStatus?.(false)
+      if (closedByUs) return
+      /* Токен к этому времени уже обновлён обычными запросами: опрос истории
+         идёт своим чередом и продлевает сессию. Берём его заново при каждой
+         попытке — старый закрыли именно потому, что он истёк. */
+      retry = window.setTimeout(connect, RECONNECT_MS)
+    }
   }
 
-  socket.onmessage = (e: MessageEvent<string>) => {
-    try { onEvent(JSON.parse(e.data) as ChatEvent) } catch { /* чужой формат — не наше дело */ }
-  }
+  connect()
 
-  const s = socket
   return () => {
+    closedByUs = true
+    if (retry) window.clearTimeout(retry)
+    const s = socket
+    if (!s) return
     s.onmessage = null
+    s.onclose = null
     try { s.close() } catch { /* уже закрыт */ }
   }
 }

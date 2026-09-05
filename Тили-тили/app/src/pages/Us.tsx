@@ -212,6 +212,9 @@ export function Chat() {
   const nav = useNavigate()
   const chatId = id ?? ''
   const [tick, setTick] = useState(0)
+  /* Сколько последних сообщений показываем. Раньше история молча обрывалась
+     на пятидесяти: переписка длиннее выглядела так, будто началась с середины. */
+  const [limit, setLimit] = useState(50)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -223,7 +226,7 @@ export function Chat() {
      пустую переписку с работающим полем ввода. */
   const chat = (chats.data ?? []).find(c => c.id === chatId)
   const missing = !!chatId && ready(chats) && !chat
-  const q = useApi(() => chatId ? getMessages(chatId) : Promise.resolve(null), [chatId, tick])
+  const q = useApi(() => chatId ? getMessages(chatId, limit) : Promise.resolve(null), [chatId, tick, limit])
   /* Сервер отдаёт свежие первыми — так работает курсор «листать назад». В
      переписке порядок обратный: последняя реплика внизу, как в любом чате. */
   const messages = [...(q.data?.items ?? [])].reverse()
@@ -236,14 +239,20 @@ export function Chat() {
      молча, и без опроса чат тихо застывает. */
   useEffect(() => {
     if (!chatId) return
-    const close = openChatSocket(chatId, e => {
-      if (e.type === 'message') { setLive(true); setTick(n => n + 1) }
-      if (e.type === 'typing') {
-        setLive(true)
-        setPeerTyping(true)
-        window.setTimeout(() => setPeerTyping(false), 4000)
-      }
-    })
+    const close = openChatSocket(
+      chatId,
+      e => {
+        if (e.type === 'message') setTick(n => n + 1)
+        if (e.type === 'typing') {
+          setPeerTyping(true)
+          window.setTimeout(() => setPeerTyping(false), 4000)
+        }
+      },
+      /* Состояние канала сообщает он сам. Раньше экран выводил его из
+         пришедшего события и больше не менял: сокет закрывался вместе с
+         истечением токена, а подпись до конца сеанса обещала «связь живая». */
+      setLive,
+    )
     const poll = window.setInterval(() => setTick(n => n + 1), 30_000)
     return () => { close(); window.clearInterval(poll) }
   }, [chatId])
@@ -251,10 +260,14 @@ export function Chat() {
   /* Прокрутка к последней реплике: без неё новое сообщение приходит за край
      экрана, и человек видит старую переписку, считая, что ничего не пришло. */
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  /* Прыгаем вниз на новую реплику, а не на любое изменение списка: подгрузка
+     старых сообщений добавляет их сверху, и прыжок вниз отбросил бы человека
+     от того места, куда он поднялся. */
+  const lastId = messages[messages.length - 1]?.id
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages.length, peerTyping])
+  }, [lastId, peerTyping])
 
   /* «Печатает…» уходит не на каждую букву: событие живёт секунды, а запросов
      на каждый символ было бы столько же, сколько нажатий. */
@@ -327,21 +340,40 @@ export function Chat() {
         ) : (
           <>
             <AsyncState q={q} />
+            {/* Сервер сказал, что есть ещё — значит история не начинается
+                здесь, и человек должен это видеть. */}
+            {q.data?.nextCursor && (
+              <div className="text-center">
+                <button onClick={() => setLimit(l => l + 50)} className="press text-[11px] font-semibold text-[var(--soft)] bg-[var(--card)] px-4 py-2 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>
+                  {t('Показать сообщения раньше')}
+                </button>
+              </div>
+            )}
             {!messages.length && ready(q) && (
               <p className="text-center text-[12px] text-[var(--soft)] py-6">{t('Сообщений пока нет — напишите первым')}</p>
             )}
             {messages.map(m => {
               const mine = !!myId && m.senderId === myId
+              /* Пустой отправитель значит разное в разных чатах (так написано
+                 в контракте): у своего подрядчика — это он сам, аккаунта у
+                 него нет; у Тиль — сама Тиль; в остальных — система, то есть
+                 предупреждение платформы. Показывать предупреждение пузырём
+                 собеседника нельзя: пара прочтёт его как слова подрядчика. */
+              const system = m.senderId === null && chat?.kind !== 'external' && chat?.kind !== 'tilly'
+              if (system) return (
+                <p key={m.id} className="text-center text-[11px] text-[var(--soft)] leading-relaxed px-6 py-2">
+                  ⚠ {m.text}
+                </p>
+              )
               return (
                 <div key={m.id} className={cn('flex fade-up', mine ? 'justify-end' : 'justify-start')}>
                   <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',
                     mine ? 'grad text-[var(--on-grad)] rounded-br-[6px]' : 'card rounded-bl-[6px] text-[var(--ink)]')}
                     style={{ borderRadius: 18 }}>
+                    {/* Предупреждение о выводе сделки мимо платформы (§18.2)
+                        приходит отдельным системным сообщением от сервера — его
+                        видят обе стороны, и рисовать его на пузыре не нужно. */}
                     {m.text}
-                    {/* Предупреждение о выводе сделки мимо платформы приходит
-                        с сообщением: оно доставлено, но обе стороны видят, чем
-                        рискуют (§18.2). */}
-                    {m.warning && <span className="block text-[10.5px] mt-1.5 opacity-90">⚠ {m.warning}</span>}
                     <span className={cn('block text-[9px] mt-1 text-right', mine ? 'text-white/70' : 'text-[var(--soft)]')}>
                       {m.sentAt ? new Date(m.sentAt).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>

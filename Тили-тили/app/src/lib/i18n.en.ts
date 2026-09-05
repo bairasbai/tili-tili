@@ -1567,4 +1567,5 @@ Object.assign(EN, {
   'Такого чата у вас нет': 'You have no such chat',
   'Эту переписку ведёт координатор с подрядчиками — без вас. Вы видите, что она есть, но не читаете её.': 'This thread is run by the coordinator with the vendors — without you. You can see it exists, but you do not read it.',
   'Эта переписка закрыта для вашей роли.': 'This thread is closed to your role.',
+  'Показать сообщения раньше': 'Show earlier messages',
 })

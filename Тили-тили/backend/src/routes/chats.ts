@@ -35,18 +35,33 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     opens_at: Date | null
     last_text: string | null
     unread: string
+    /** Название свадьбы: подрядчику оно и есть имя собеседника. */
+    wedding_title: string | null
+    /** Смотрит не команда свадьбы, а подрядчик со стороны. */
+    outsider: boolean
   }
 
   const externalTitle = (name: string | null) => (name ? `${name} · свой подрядчик` : 'Свой подрядчик')
 
+  /*
+   * Название чата зависит от того, кто смотрит.
+   *
+   * Собеседник у пары — подрядчик, у подрядчика — пара. Раньше заголовок
+   * считался один на всех: подрядчик с тремя свадьбами видел три строки со
+   * СВОИМ именем и не мог отличить их друг от друга. Общие чаты (команда,
+   * исполнители, день X) у него тоже повторяются по числу свадеб — к ним
+   * добавляем, чья свадьба.
+   */
   const toChat = (r: ListRow) => ({
     id: r.id,
     title:
       r.kind === 'vendor'
-        ? (r.vendor_name ?? 'Подрядчик')
+        ? (r.outsider ? (r.wedding_title ?? 'Пара') : (r.vendor_name ?? 'Подрядчик'))
         : r.kind === 'external'
           ? externalTitle(r.external_name)
-          : TITLE_BY_KIND[r.kind],
+          : r.outsider
+            ? `${TITLE_BY_KIND[r.kind]} · ${r.wedding_title ?? ''}`.trim()
+            : TITLE_BY_KIND[r.kind],
     avatarUrl: r.vendor_photo,
     /* Паре — факт, а не содержимое. Последняя реплика в списке выдала бы
      * ровно то, что решено не показывать, и счётчик непрочитанных звал бы
@@ -68,6 +83,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
        * когда пара его убирает, слот освобождается — а переписка остаётся,
        * и «Свой подрядчик» без имени в списке ничего не говорит. */
       `select c.id, c.kind, v.name as vendor_name, v.photo_url as vendor_photo, c.opens_at,
+              w.title as wedding_title,
+              -- Кто смотрит: команда свадьбы или подрядчик со стороны.
+              (mem.role is null) as outsider,
               (select d.external_name from deals d
                 where d.slot_id = c.slot_id and d.external_name is not null
                 order by (d.state <> 'cancelled') desc, d.created_at desc limit 1) as external_name,
