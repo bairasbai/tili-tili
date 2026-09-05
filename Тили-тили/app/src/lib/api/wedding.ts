@@ -100,5 +100,20 @@ export const setWeddingDateOnServer = (weddingId: string, date: string) =>
  * своего устройства, и текст с темой должны приехать к нему с сервера. Пока
  * они лежали в localStorage, пара правила текст, которого гость не видел.
  */
-export const saveInviteDesign = (weddingId: string, inviteText: string, inviteThemeId: number) =>
-  api.patch(url('/weddings/{weddingId}', { weddingId }), { inviteText, inviteThemeId }, { idempotencyKey: newIdempotencyKey() })
+export const saveInviteDesign = (
+  weddingId: string,
+  inviteText: string,
+  inviteThemeId: number,
+  dressCode?: string,
+  dressNote?: string,
+) =>
+  api.patch(
+    url('/weddings/{weddingId}', { weddingId }),
+    {
+      inviteText,
+      inviteThemeId,
+      ...(dressCode ? { dressCode } : {}),
+      ...(dressNote ? { dressNote } : {}),
+    },
+    { idempotencyKey: newIdempotencyKey() },
+  )

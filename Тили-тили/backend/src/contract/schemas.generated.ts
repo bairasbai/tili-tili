@@ -1451,6 +1451,19 @@ export const CONTRACT_SCHEMAS = {
               "inviteThemeId": {
                   "type": "integer"
               },
+              "dressCode": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "палитра дресс-кода — её же видит гость"
+              },
+              "dressNote": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
               "cancelRequestedBy": {
                   "type": [
                       "string",
@@ -1495,6 +1508,19 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer"
               },
               "venue": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "dressCode": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "идентификатор палитры — гость видит её в приглашении"
+              },
+              "dressNote": {
                   "type": [
                       "string",
                       "null"

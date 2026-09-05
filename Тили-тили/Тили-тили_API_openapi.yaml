@@ -249,6 +249,11 @@ paths:
                     Сценарий оформления приглашения. Хранится у свадьбы, а не в
                     браузере пары: гость открывает приглашение со своего
                     устройства, и тема должна приехать к нему вместе с текстом.
+                dressCode:
+                  type: string
+                  maxLength: 32
+                  description: 'идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема'
+                dressNote: { type: string, maxLength: 300, description: 'пожелание словами: «дамы — без белого»' }
       responses:
         '200':
           description: OK
@@ -3150,6 +3155,8 @@ components:
         tz: { type: string, example: Asia/Yekaterinburg, description: 'таймзона места свадьбы. По ней открывается чат дня X и считаются напоминания — не по таймзоне пользователя' }
         inviteText: { type: string }
         inviteThemeId: { type: integer }
+        dressCode: { type: string, nullable: true, description: 'палитра дресс-кода — её же видит гость' }
+        dressNote: { type: string, nullable: true }
         cancelRequestedBy:
           type: string
           nullable: true
@@ -3177,6 +3184,8 @@ components:
         inviteText: { type: string }
         inviteThemeId: { type: integer }
         venue: { type: string, nullable: true }
+        dressCode: { type: string, nullable: true, description: 'идентификатор палитры — гость видит её в приглашении' }
+        dressNote: { type: string, nullable: true }
     Member:
       type: object
       description: >

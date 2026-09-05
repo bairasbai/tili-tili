@@ -11,14 +11,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
  * памяти: без этого проверка «ответ сохранился» смотрела бы на состояние
  * экрана, а не на то, что дошло до сервера.
  */
-const { guestState } = vi.hoisted(() => ({ guestState: { status: 'pending' as string } }))
+const { guestState } = vi.hoisted(() => ({ guestState: { status: 'pending' as string, dead: false } }))
 vi.mock('@/lib/api/guest', async (orig) => ({
   ...await orig<object>(),
-  getRsvp: async () => ({
-    guestName: 'Ольга',
-    status: guestState.status,
-    wedding: { title: 'Алина & Тимур', date: '2027-06-14', city: { name: 'Уфа' }, inviteText: 'Ждём вас', inviteThemeId: 0 },
-  }),
+  getRsvp: async () => {
+    if (guestState.dead) {
+      const { ApiError } = await import('@/lib/api/client')
+      throw new ApiError('http', 401, 'unauthorized', 'Ссылка недействительна')
+    }
+    return {
+      guestName: 'Ольга',
+      status: guestState.status,
+      wedding: { title: 'Алина & Тимур', date: '2027-06-14', city: { name: 'Уфа' }, inviteText: 'Ждём вас', inviteThemeId: 0 },
+    }
+  },
   sendRsvp: async (_t: string, status: string) => { guestState.status = status },
   getGuestMenu: async () => ({ question: '', options: [], chosenOptionId: null }),
   getGuestShuttle: async () => ({ myBusId: null, routes: [] }),
@@ -190,6 +196,7 @@ describe('гость: ответ RSVP уходит паре, а не в брау
 
   beforeEach(() => {
     guestState.status = 'pending'
+    guestState.dead = false
     localStorage.setItem('tt_guest_token', 'g-token')
   })
 
@@ -216,5 +223,35 @@ describe('гость: ответ RSVP уходит паре, а не в брау
     localStorage.removeItem('tt_guest_token')
     wrap(<Invite />)
     await waitFor(() => expect(screen.getByText('Нужна ссылка из приглашения')).toBeTruthy())
+  })
+
+  it('ответ можно изменить: планы меняются, и сервер это принимает', async () => {
+    /*
+     * Экран показывал «Ждём вас!» и не давал вернуться: гостю, который
+     * передумал, оставалось звонить паре, чтобы та переписала ответ руками.
+     * Сервер же принимает новый ответ поверх старого.
+     */
+    guestState.status = 'yes'
+    wrap(<Invite />)
+    await waitFor(() => expect(screen.getByText('Открыть приглашение')).toBeTruthy())
+    open()
+    fireEvent.click(screen.getByText('Не смогу прийти'))
+
+    await waitFor(() => expect(guestState.status).toBe('no'))
+    await waitFor(() => expect(screen.getByText('Спасибо за честный ответ')).toBeTruthy())
+  })
+
+  it('погашенная ссылка объясняет, что делать, и стирает мёртвый токен', async () => {
+    /*
+     * Пара перевыпустила приглашение — прежний токен умер. Экран показывал
+     * голое «Ссылка недействительна» и оставлял гостя в тупике; мёртвый токен
+     * при этом лежал в браузере и мешал открыть новую ссылку.
+     */
+    guestState.dead = true
+    wrap(<Invite />)
+    await waitFor(() => expect(screen.getByText('Ссылка больше не действует')).toBeTruthy())
+
+    fireEvent.click(screen.getByText('Понятно'))
+    await waitFor(() => expect(localStorage.getItem('tt_guest_token')).toBeFalsy())
   })
 })

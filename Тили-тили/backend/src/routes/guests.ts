@@ -346,9 +346,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       invite_text: string | null
       invite_theme_id: number
       venue: string | null
+      dress_code: string | null
+      dress_note: string | null
     }>(
       `select g.rsvp, w.title, w.date::text as date, c.name as city, c.region,
-              w.invite_text, w.invite_theme_id, w.venue
+              w.invite_text, w.invite_theme_id, w.venue, w.dress_code, w.dress_note
          from guests g join weddings w on w.id = g.wedding_id
          left join cities c on c.id = w.city_id
         where g.id = $1`,
@@ -365,6 +367,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         inviteText: r.invite_text,
         inviteThemeId: r.invite_theme_id,
         venue: r.venue,
+        /* Дресс-код видит гость — ради него он и заводится (План ч. 976). */
+        dressCode: r.dress_code,
+        dressNote: r.dress_note,
       },
     }
   })

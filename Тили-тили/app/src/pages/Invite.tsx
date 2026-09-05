@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError } from '@/lib/api/useApi'
 import {
   bookHotelRoom, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
-  joinShuttle, sendRsvp, voteMenu,
+  joinShuttle, saveGuestToken, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
+import { dressPalettes } from '@/lib/data'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
-import { cn } from '@/lib/utils'
+import { cn, plural } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
 /*
@@ -23,10 +25,10 @@ import { t } from '@/lib/i18n'
  * «14 июня 2027 · Уфа», программа дня из мока и ответ, который сохранялся в
  * `tt_guest_rsvp` на телефоне гостя — то есть никуда. Пара его не видела.
  *
- * Чего здесь намеренно нет: программы дня и дресс-кода. Тайминг гостю контракт
- * не отдаёт (его видит только свой подрядчик по своему токену), а дресс-код
- * пара задаёт у себя в localStorage — на телефоне гостя этих данных нет вовсе,
- * и прежние блоки показывали значения по умолчанию, выдавая их за выбор пары.
+ * Чего здесь намеренно нет: программы дня. Тайминг гостю контракт не отдаёт —
+ * его видит только свой подрядчик по своему токену. Дресс-код вернулся: пара
+ * хранила его в localStorage своего браузера, гость видел палитру по умолчанию
+ * и принимал её за выбор пары — теперь палитра приходит со свадьбы.
  */
 
 /** Скачивание .ics: событие календаря у гостя. */
@@ -48,6 +50,7 @@ function downloadICS(title: string, date: string, location: string) {
 }
 
 export default function Invite() {
+  const nav = useNavigate()
   const token = guestToken()
   const q = useApi(() => token ? getRsvp(token) : Promise.resolve(null), [token])
   const page = q.data
@@ -91,7 +94,22 @@ export default function Invite() {
   if (!page) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       {q.loading && <p className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
-      {q.error && <p role="alert" className="text-[13px] text-[var(--rose-ink)] leading-relaxed">{q.error}</p>}
+      {/*
+        * Недействительный токен — это не поломка, а замена ссылки: пара
+        * перевыпустила приглашение, и прежнее погасло. Голое «Ссылка
+        * недействительна» оставляло гостя в тупике, поэтому объясняем, что
+        * делать, и стираем мёртвый токен — иначе он мешает открыть новую
+        * ссылку с этого же устройства.
+        */}
+      {q.error && (
+        <>
+          <p role="alert" className="font-serif-d text-[20px]">{t('Ссылка больше не действует')}</p>
+          <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
+            {t('Похоже, пара выслала новое приглашение — прежняя ссылка после этого гаснет. Попросите у неё свежую.')}
+          </p>
+          <button onClick={() => { saveGuestToken(null); nav('/', { replace: true }) }} className="press mt-5 px-5 h-[42px] rounded-full card-s text-[12.5px] font-semibold">{t('Понятно')}</button>
+        </>
+      )}
     </div>
   )
 
@@ -108,6 +126,8 @@ interface RsvpPage {
     inviteText?: string
     inviteThemeId?: number
     venue?: string | null
+    dressCode?: string | null
+    dressNote?: string | null
   }
 }
 
@@ -272,10 +292,36 @@ function InviteView({
                 <p className="text-[11.5px] mt-2" style={{ color: T.soft }}>
                   {page.status === 'yes' ? t('Ваш ответ уже виден паре в списке гостей.') : t('Пара получила ваш ответ. ♥')}
                 </p>
+                {/* Планы меняются, и сервер принимает новый ответ поверх
+                    старого. Экран, который этого не позволял, заставлял бы
+                    гостя звонить паре, чтобы его переписали руками. */}
+                <button disabled={busy} onClick={() => answer(page.status === 'yes' ? 'no' : 'yes')} className="press mt-4 text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>
+                  {busy ? t('Отправляем…') : page.status === 'yes' ? t('Не смогу прийти') : t('Всё-таки приду')}
+                </button>
               </div>
             )}
           </div>
         </div>
+
+        {/* Дресс-код. Блок вернулся: палитру и пожелание теперь хранит свадьба,
+            а не браузер пары — раньше гость видел палитру по умолчанию и
+            принимал её за выбор пары. */}
+        {w.dressCode && (() => {
+          const palette = dressPalettes.find(x => x.id === w.dressCode)
+          if (!palette) return null
+          return (
+            <div className="px-6 mt-12 text-center relative z-10 rv">
+              <h2 className={cn('text-[24px]', disp)}>{t('Дресс-код')}</h2>
+              <p className="text-[11px] mt-1.5" style={{ color: T.soft }}>{t(palette.name)}</p>
+              <div className="flex justify-center gap-3 mt-4">
+                {palette.colors.map((c, k) => (
+                  <span key={c} className={cn('w-10 h-10 rounded-full border-[3px]', k % 2 ? 'floaty' : 'floaty-slow')} style={{ background: c, borderColor: T.card, boxShadow: '0 8px 20px -8px rgba(0,0,0,.3)' }} />
+                ))}
+              </div>
+              {w.dressNote && <p className="text-[11.5px] mt-4 font-light leading-relaxed" style={{ color: T.soft }}>{w.dressNote}</p>}
+            </div>
+          )
+        })()}
 
         {/* Дальше — только тем, кто придёт: меню, трансфер, отель */}
         {page.status === 'yes' && (
@@ -363,7 +409,7 @@ function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: s
                   <span className="text-[10.5px] opacity-80">{[r.from, r.time].filter(Boolean).join(' · ')}</span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">
-                  {mine ? t('вы записаны') : full ? t('мест нет') : `${(r.seats ?? 0) - (r.taken ?? 0)} ${t('мест')}`}
+                  {mine ? t('вы записаны') : full ? t('мест нет') : `${(r.seats ?? 0) - (r.taken ?? 0)} ${plural((r.seats ?? 0) - (r.taken ?? 0), t('место'), t('места'), t('мест'))}`}
                 </span>
               </button>
             )
@@ -406,7 +452,7 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
                   </span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">
-                  {full ? t('мест нет') : `${(h.rooms ?? 0) - (h.booked ?? 0)} ${t('номеров')}`}
+                  {full ? t('мест нет') : `${(h.rooms ?? 0) - (h.booked ?? 0)} ${plural((h.rooms ?? 0) - (h.booked ?? 0), t('номер'), t('номера'), t('номеров'))}`}
                 </span>
               </button>
             )

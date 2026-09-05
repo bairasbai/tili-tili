@@ -1,11 +1,10 @@
 import { createElement, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, Copy, FileText, Plus, Armchair } from 'lucide-react'
-import { contractTemplates, dressPalettes, couple, fmt, type DealState, type Slot } from '@/lib/data'
+import { contractTemplates, dressPalettes, fmt, type DealState, type Slot } from '@/lib/data'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { useBusy } from '@/lib/useBusy'
-import { usePersist } from '@/lib/usePersist'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -425,8 +424,14 @@ export function InviteEditor() {
   const { inviteTpl, setInviteTpl, inviteText, setInviteText, weddingDate, weddingId } = useStore()
   const theme = inviteTpl
   const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
-  const [dress, setDress] = usePersist('tt_dress', 'd1')
-  const [dressNote, setDressNote] = usePersist('tt_dress_note', '')
+  /* Дресс-код хранится у свадьбы: его видит гость. Пока он лежал в
+     `tt_dress` браузера пары, гость получал палитру по умолчанию и принимал
+     её за выбор пары. */
+  const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const [dress, setDress] = useState<string | null>(null)
+  const [dressNote, setDressNote] = useState<string | null>(null)
+  const dressId = dress ?? wq.data?.dressCode ?? 'd1'
+  const dressText = dressNote ?? wq.data?.dressNote ?? ''
   const [saved, setSaved] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -447,7 +452,8 @@ export function InviteEditor() {
   /* Текст и тему сохраняем на сервере: гость открывает приглашение со своего
      устройства, и в localStorage пары заглянуть не может. */
   const saveDesign = () => void run('design', async () => {
-    await saveInviteDesign(weddingId!, inviteText, theme)
+    await saveInviteDesign(weddingId!, inviteText, theme, dressId, dressText)
+    wq.reload()
     setSaved(true)
   })
 
@@ -477,12 +483,22 @@ export function InviteEditor() {
         {/* Превью сценария */}
         <div className="card p-6 text-center relative overflow-hidden">
           <div className="absolute inset-x-0 top-0 h-2" style={{ background: inviteThemes[theme].accentGrad }} />
-          <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: inviteThemes[theme].accentGrad }}>{t('А♥Т')}</div>
-          <p className="font-serif-d italic text-[14px] text-[var(--soft)] mt-4">{t('Дорогая Марина Ивановна!')}</p>
-          <h2 className="font-serif-d text-[26px] mt-2">{couple.bride} & {couple.groom}</h2>
-          <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>{weddingDate ? formatWeddingDate(weddingDate) : t('дата уточняется')} · {couple.city}</p>
+          {/*
+            * Превью показывает то, что увидит гость, а не мок. Здесь стояли
+            * «А♥Т», «Дорогая Марина Ивановна!», имена и город из `lib/data.ts`
+            * — пара смотрела на чужую свадьбу. Имя гостя осталось подписью-
+            * образцом и названо образцом: у каждого гостя оно своё.
+            */}
+          <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: inviteThemes[theme].accentGrad }}>♥</div>
+          <p className="font-serif-d italic text-[14px] text-[var(--soft)] mt-4">{t('Имя гостя')}</p>
+          <h2 className="font-serif-d text-[26px] mt-2">{wq.data?.title ?? t('Название свадьбы')}</h2>
+          <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>
+            {[weddingDate ? formatWeddingDate(weddingDate) : t('дата уточняется'), wq.data?.city?.name].filter(Boolean).join(' · ')}
+          </p>
           <p className="text-[11.5px] text-[var(--ink2)] font-light leading-relaxed mt-3">{inviteText}</p>
-          <button onClick={() => nav('/invite')} className="press mt-4 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[11.5px] font-semibold">{t('Смотреть как гость →')}</button>
+          {/* Кнопка «Смотреть как гость» убрана: гостевая страница открывается
+              по личному токену, и у пары его нет — переход упирался в
+              «Нужна ссылка из приглашения». */}
         </div>
 
         {/* 10 сценариев */}
@@ -505,16 +521,16 @@ export function InviteEditor() {
           <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Дресс-код и палитра')}</span>
           <div className="space-y-2.5 mt-3">
             {dressPalettes.map(p => (
-              <button key={p.id} onClick={() => setDress(p.id)} className={cn('press w-full flex items-center gap-3 rounded-[14px] p-2 text-left', dress === p.id && 'ring-2 ring-[#C98A8A] bg-[var(--track)]')}>
+              <button key={p.id} onClick={() => setDress(p.id)} className={cn('press w-full flex items-center gap-3 rounded-[14px] p-2 text-left', dressId === p.id && 'ring-2 ring-[#C98A8A] bg-[var(--track)]')}>
                 <span className="flex -space-x-1.5">
                   {p.colors.map(c => <span key={c} className="w-6 h-6 rounded-full border-2 border-[var(--card)]" style={{ background: c }} />)}
                 </span>
                 <span className="text-[12px] font-medium flex-1">{p.name}</span>
-                {dress === p.id && <span className="text-[var(--sage-deep)] text-[13px]">✓</span>}
+                {dressId === p.id && <span className="text-[var(--sage-deep)] text-[13px]">✓</span>}
               </button>
             ))}
           </div>
-          <input value={dressNote} onChange={e => setDressNote(e.target.value)} placeholder={t('Комментарий: например, дамы — без белого')}
+          <input value={dressText} onChange={e => setDressNote(e.target.value)} placeholder={t('Комментарий: например, дамы — без белого')}
             className="w-full bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none mt-3" />
         </div>
 

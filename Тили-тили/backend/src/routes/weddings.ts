@@ -22,6 +22,8 @@ interface WeddingRow {
   currency: string
   tz: string | null
   invite_theme_id: number
+  dress_code: string | null
+  dress_note: string | null
   invite_text: string | null
   cancel_requested_by: string | null
   cancel_requested_at: Date | null
@@ -99,6 +101,8 @@ export function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
       : {}),
     tz: w.tz,
     inviteThemeId: w.invite_theme_id,
+    dressCode: w.dress_code,
+    dressNote: w.dress_note,
     inviteText: w.invite_text,
     members: members.map((m) => ({
       user: { id: m.user_id, name: m.name ?? '' },
@@ -126,7 +130,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await db().query<WeddingRow>(
       `select w.id, w.title, w.date::text as date, c.name as city_name, c.region as city_region,
               w.venue, w.style, w.guests_planned, w.budget_total::text as budget_total, w.currency,
-              w.tz, w.invite_theme_id, w.invite_text, w.cancel_requested_by, w.cancel_requested_at
+              w.tz, w.invite_theme_id, w.invite_text, w.dress_code, w.dress_note,
+              w.cancel_requested_by, w.cancel_requested_at
          from weddings w left join cities c on c.id = w.city_id
         where w.id = $1 and w.archived_at is null`,
       [weddingId],
@@ -315,6 +320,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             tz: { type: 'string', maxLength: 64 },
             inviteText: { type: 'string', maxLength: 2000 },
             inviteThemeId: { type: 'integer', minimum: 0, maximum: 9 },
+            dressCode: { type: 'string', maxLength: 32 },
+            dressNote: { type: 'string', maxLength: 300 },
           },
         },
       },
@@ -365,7 +372,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
            budget_total = coalesce($4::bigint, budget_total), guests_planned = coalesce($5, guests_planned),
            style = coalesce($6, style), venue = coalesce($7, venue),
            tz = coalesce($8, $11, tz),
-           invite_text = coalesce($9, invite_text), invite_theme_id = coalesce($10, invite_theme_id)
+           invite_text = coalesce($9, invite_text), invite_theme_id = coalesce($10, invite_theme_id),
+           dress_code = coalesce($12, dress_code), dress_note = coalesce($13, dress_note)
          where id = $1`,
         [
           weddingId,
@@ -379,6 +387,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           (body.inviteText as string) ?? null,
           (body.inviteThemeId as number) ?? null,
           cityTz,
+          (body.dressCode as string) ?? null,
+          (body.dressNote as string) ?? null,
         ],
       )
       return loadWedding(weddingId, request.member!.role)

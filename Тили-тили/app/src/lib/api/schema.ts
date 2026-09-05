@@ -365,6 +365,10 @@ export interface paths {
                          *     устройства, и тема должна приехать к нему вместе с текстом.
                          */
                         inviteThemeId?: number;
+                        /** @description идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема */
+                        dressCode?: string;
+                        /** @description пожелание словами: «дамы — без белого» */
+                        dressNote?: string;
                     };
                 };
             };
@@ -6253,6 +6257,9 @@ export interface components {
             tz?: string;
             inviteText?: string;
             inviteThemeId?: number;
+            /** @description палитра дресс-кода — её же видит гость */
+            dressCode?: string | null;
+            dressNote?: string | null;
             /** @description Кто из пары запросил отмену свадьбы и ждёт подтверждения второго. Видно только паре. Нужно, чтобы второй партнёр понимал: его нажатие «Отменить» не запросит отмену, а ИСПОЛНИТ её — брони отменятся, даты уйдут подрядчикам. Без этого поля показать предупреждение нечем. Пусто — запроса нет или он протух (срок 72 часа). */
             cancelRequestedBy?: string | null;
             /**
@@ -6271,6 +6278,9 @@ export interface components {
             inviteText?: string;
             inviteThemeId?: number;
             venue?: string | null;
+            /** @description идентификатор палитры — гость видит её в приглашении */
+            dressCode?: string | null;
+            dressNote?: string | null;
         };
         /** @description Член свадьбы — тот, у кого есть аккаунт и доступ в приложение. Гость (guest) и свой подрядчик (guest-vendor) членами НЕ являются: они опознаются токеном по ссылке, аккаунта не имеют и в members не попадают. Матрица доступа (§4 плана) описывает все шесть ролей, эта схема — только четыре с аккаунтом. */
         Member: {
