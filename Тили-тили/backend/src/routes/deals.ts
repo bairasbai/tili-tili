@@ -170,9 +170,14 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           const deal = await dealForCouple(client, dealId, userId)
           await expireHolds(client, deal.wedding_id)
 
-          const { rows: fresh } = await client.query<{ state: DealState }>('select state from deals where id = $1', [
-            dealId,
-          ])
+          /* `for update`: два одновременных перехода читали одно состояние и
+           * оба проходили `assertTransition` — две записи в журнале и два
+           * уведомления об одном событии. Второй ждёт первого и видит уже
+           * новое состояние (R-49). */
+          const { rows: fresh } = await client.query<{ state: DealState }>(
+            'select state from deals where id = $1 for update',
+            [dealId],
+          )
           const from = fresh[0]!.state
 
           /* Смена цены без смены состояния — отдельный случай, и журнал

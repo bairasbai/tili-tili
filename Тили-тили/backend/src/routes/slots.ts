@@ -193,8 +193,13 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           const slot = await slotOf(client, weddingId, slotId)
           if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нет сделки')
 
+          /* `for update`: два одновременных «Оплатить» с разными ключами
+           * иначе оба читали одну и ту же сумму «уже оплачено», оба проходили
+           * проверку переплаты и оба записывались — деньги сверх цены
+           * (R-49: «прочитали, убедились, записали» — не защита). Блокировка
+           * строки сделки ставит второго в очередь за первым. */
           const { rows } = await client.query<{ state: DealState; price: string | null }>(
-            'select state, price::text as price from deals where id = $1',
+            'select state, price::text as price from deals where id = $1 for update',
             [slot.deal_id],
           )
           const deal = rows[0]!

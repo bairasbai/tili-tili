@@ -60,24 +60,29 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
  * независимо от того, зашёл ли кто-нибудь.
  */
 export async function expireStaleHolds(app: FastifyInstance): Promise<number> {
-  const { rows } = await app.db!.query<{ id: string }>(
-    `update deals set state = 'candidate', negotiating_until = null
-      where state = 'negotiating' and negotiating_until is not null and negotiating_until <= now()
-      returning id`,
-  )
-  /* Запись в журнал сделки — та же, что и на ленивом пути: история
-   * не должна зависеть от того, кто первым заметил истечение. Уведомление
-   * отсюда не шлём: его разошлёт `announceDealEvents` по этой же записи —
-   * иначе о снятой броне сообщали бы дважды, а о снятой в обработчике
-   * не сообщали бы вовсе. */
-  for (const row of rows) {
-    await app.db!.query(
-      `insert into deal_events (id, deal_id, from_state, to_state, note)
-       values ($1, $2, 'negotiating', 'candidate', 'истёк срок мягкой брони')`,
-      [uuidv7(), row.id],
+  /* Снятие брони и запись в журнал — одна транзакция: без записи
+   * `announceDealEvents` о снятой броне не узнает, а повтор задачи уже
+   * не найдёт сделку в `negotiating` (R-122). */
+  return app.db!.tx(async (client) => {
+    const { rows } = await client.query<{ id: string }>(
+      `update deals set state = 'candidate', negotiating_until = null
+        where state = 'negotiating' and negotiating_until is not null and negotiating_until <= now()
+        returning id`,
     )
-  }
-  return rows.length
+    /* Запись в журнал сделки — та же, что и на ленивом пути: история
+     * не должна зависеть от того, кто первым заметил истечение. Уведомление
+     * отсюда не шлём: его разошлёт `announceDealEvents` по этой же записи —
+     * иначе о снятой броне сообщали бы дважды, а о снятой в обработчике
+     * не сообщали бы вовсе. */
+    for (const row of rows) {
+      await client.query(
+        `insert into deal_events (id, deal_id, from_state, to_state, note)
+         values ($1, $2, 'negotiating', 'candidate', 'истёк срок мягкой брони')`,
+        [uuidv7(), row.id],
+      )
+    }
+    return rows.length
+  })
 }
 
 /**

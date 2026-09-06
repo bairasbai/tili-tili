@@ -269,13 +269,25 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.post('/weddings/:weddingId/guests/remind', async (request) => {
     const weddingId = request.member!.weddingId
 
-    // Рассылка стоит денег и приходит чужим людям: не чаще раза в сутки.
-    const { rows: wedding } = await db().query<{ recent: boolean }>(
-      `select (guests_reminded_at is not null and guests_reminded_at > now() - interval '24 hours') as recent
-         from weddings where id = $1`,
+    /* Рассылка стоит денег и приходит чужим людям: не чаще раза в сутки.
+     *
+     * Захват — одним условным UPDATE, а не «прочитали, проверили, отправили»:
+     * два нажатия подряд на плохой связи иначе оба проходили проверку и
+     * каждый гость получал два SMS (R-49 про гонки — то же самое). Если
+     * отправлять оказалось некому, захват снимается ниже: пара, дописавшая
+     * телефоны, не должна ждать сутки. */
+    /* Условие — на самой обновляемой строке, а не на присоединённом
+     * подзапросе: при параллельном обновлении PostgreSQL перепроверяет
+     * условие по новой версии строки только для целевой таблицы, а
+     * значения из подзапроса берёт из старого снимка — и второй запрос
+     * проходил бы. */
+    const claimed = await db().query(
+      `update weddings set guests_reminded_at = now()
+        where id = $1
+          and (guests_reminded_at is null or guests_reminded_at <= now() - interval '24 hours')`,
       [weddingId],
     )
-    if (wedding[0]?.recent) {
+    if (claimed.rowCount === 0) {
       throw new AppError(429, 'too_often', 'Напоминание уходит не чаще раза в сутки — гости получают его лично')
     }
 
@@ -314,8 +326,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    if (sent > 0) {
-      await db().query('update weddings set guests_reminded_at = now() where id = $1', [weddingId])
+    if (sent === 0) {
+      /* Никому не ушло — суточный запрет не заслужен: снимаем захват. Прежняя
+       * отметка либо пуста, либо старше суток — для правила это одно и то же. */
+      await db().query('update weddings set guests_reminded_at = null where id = $1', [weddingId])
     }
     return { sent, skippedNoPhone, skippedLinkUsed }
   })
@@ -484,47 +498,52 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as Record<string, unknown>
       const guest = await guestByToken(db(), guestToken)
 
-      await db().query(
-        `update guests set rsvp = $2, rsvp_at = now(),
-                plus_one = coalesce($3, plus_one),
-                comment = coalesce($4, comment),
-                diet = coalesce($5, diet),
-                diet_note = coalesce($6, diet_note),
-                transfer = coalesce($7, transfer)
-          where id = $1`,
-        [
-          guest.guestId,
-          body.status,
-          (body.plusOne as boolean) ?? null,
-          (body.comment as string) ?? null,
-          (body.diet as string) ?? null,
-          (body.dietNote as string) ?? null,
-          (body.transfer as string) ?? null,
-        ],
-      )
-      // «Не приду» — значит держать под него сиденье и номер незачем.
-      // Счётчики поправит триггер: он считает по факту строк.
-      if (body.status === 'no') {
-        await db().query(
-          `delete from bus_bookings b using bus_routes r
-            where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
-          [guest.guestId, guest.weddingId],
+      /* Ответ и освобождение мест — одна транзакция (R-122): «не приду»
+       * с сиденьем, оставшимся за гостем, — состояние, которого не бывает
+       * в норме, а до 2026-09-06 сбой между запросами его давал. */
+      await db().tx(async (client) => {
+        await client.query(
+          `update guests set rsvp = $2, rsvp_at = now(),
+                  plus_one = coalesce($3, plus_one),
+                  comment = coalesce($4, comment),
+                  diet = coalesce($5, diet),
+                  diet_note = coalesce($6, diet_note),
+                  transfer = coalesce($7, transfer)
+            where id = $1`,
+          [
+            guest.guestId,
+            body.status,
+            (body.plusOne as boolean) ?? null,
+            (body.comment as string) ?? null,
+            (body.diet as string) ?? null,
+            (body.dietNote as string) ?? null,
+            (body.transfer as string) ?? null,
+          ],
         )
-        await db().query(
-          `delete from hotel_bookings b using hotel_blocks h
-            where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
-          [guest.guestId, guest.weddingId],
-        )
-      }
+        // «Не приду» — значит держать под него сиденье и номер незачем.
+        // Счётчики поправит триггер: он считает по факту строк.
+        if (body.status === 'no') {
+          await client.query(
+            `delete from bus_bookings b using bus_routes r
+              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+            [guest.guestId, guest.weddingId],
+          )
+          await client.query(
+            `delete from hotel_bookings b using hotel_blocks h
+              where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
+            [guest.guestId, guest.weddingId],
+          )
+        }
 
-      /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
-       * кейтеринг закупает по числу «приду», и разница в десять человек
-       * это разница в закупке, а не в таблице. */
-      const { rows: counters } = await db().query<{ yes: string }>(
-        "select count(*)::text as yes from guests where wedding_id = $1 and rsvp = 'yes'",
-        [guest.weddingId],
-      )
-      await noteVendorUpdate(db(), guest.weddingId, 'guests', `Гостей «приду»: ${counters[0]!.yes}`)
+        /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
+         * кейтеринг закупает по числу «приду», и разница в десять человек
+         * это разница в закупке, а не в таблице. */
+        const { rows: counters } = await client.query<{ yes: string }>(
+          "select count(*)::text as yes from guests where wedding_id = $1 and rsvp = 'yes'",
+          [guest.weddingId],
+        )
+        await noteVendorUpdate(client, guest.weddingId, 'guests', `Гостей «приду»: ${counters[0]!.yes}`)
+      })
 
       // Ответ гостю — без чужих данных: он видит только себя.
       return { status: body.status, guestName: guest.name }

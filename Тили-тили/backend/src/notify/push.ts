@@ -16,7 +16,19 @@ import type { Db } from '../plugins/db.js'
 export interface PushResult {
   sent: number
   dropped: number
+  /** Созрели больше суток назад и отправлены не были: звонить о них поздно. */
+  expired: number
 }
+
+/**
+ * Сколько push живёт в очереди, если его некому было отправить.
+ *
+ * Без VAPID-ключей очередь только копится (на dev-базе накопилось 552 строки).
+ * Первый же запуск с ключами разослал бы их разом — человек получил бы
+ * полсотни звонков о событиях прошлой недели. Просроченное помечается
+ * отправленным без отправки: в приложении уведомление остаётся.
+ */
+export const PUSH_MAX_AGE_MS = 24 * 3_600_000
 
 interface Due {
   id: string
@@ -37,8 +49,16 @@ export function pushConfigured(config: Config): boolean {
 }
 
 export async function sendDuePushes(db: Db, config: Config, limit = 200): Promise<PushResult> {
-  if (!pushConfigured(config)) return { sent: 0, dropped: 0 }
+  if (!pushConfigured(config)) return { sent: 0, dropped: 0, expired: 0 }
   webpush.setVapidDetails(config.vapidSubject, config.vapidPublicKey!, config.vapidPrivateKey!)
+
+  // Просроченное — мимо отправки, но с отметкой: иначе оно созревает вечно.
+  const stale = await db.query(
+    `update notifications set pushed_at = now()
+      where pushed_at is null and deliver_after <= now() - ($1 || ' milliseconds')::interval`,
+    [String(PUSH_MAX_AGE_MS)],
+  )
+  const expired = stale.rowCount ?? 0
 
   /* Помечаем отправленными СРАЗУ и в той же выборке.
    *
@@ -57,7 +77,7 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       returning id, user_id, title, body, link`,
     [limit],
   )
-  if (due.length === 0) return { sent: 0, dropped: 0 }
+  if (due.length === 0) return { sent: 0, dropped: 0, expired }
 
   const byUser = new Map<string, Due[]>()
   for (const row of due) byUser.set(row.user_id, [...(byUser.get(row.user_id) ?? []), row])
@@ -89,5 +109,5 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       }
     }
   }
-  return { sent, dropped }
+  return { sent, dropped, expired }
 }

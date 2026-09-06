@@ -103,7 +103,18 @@ async function refreshTokens(): Promise<Tokens | null> {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken: current.refreshToken }),
       })
-      if (!res.ok) { saveTokens(null); return null }
+      if (!res.ok) {
+        /* Отказ на refresh не всегда значит «вход кончился». Вторая вкладка
+           того же браузера могла обменять токен секундой раньше и уже
+           положить новую пару в общее хранилище — тогда наш refresh просто
+           устарел (сервер отвечает `refresh_superseded`). Стирать хранилище
+           в этот момент значит выкинуть и ту вкладку, у которой всё в
+           порядке. Сначала смотрим, не сменилась ли пара под нами. */
+        const stored = readTokens()
+        if (stored && stored.refreshToken !== current.refreshToken) return stored
+        saveTokens(null)
+        return null
+      }
       const body = (await res.json()) as Tokens
       const next = { accessToken: body.accessToken, refreshToken: body.refreshToken }
       saveTokens(next)

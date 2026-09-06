@@ -31,6 +31,13 @@ function clientIp(request: FastifyRequest): string | null {
   return request.ip || null
 }
 
+/**
+ * Сколько после обмена прежний refresh считается «второй вкладкой», а не
+ * кражей. Вкладки одного браузера расходятся на миллисекунды; десяти секунд
+ * хватает с запасом, а вору за это окно достаётся только 401.
+ */
+export const REFRESH_GRACE_MS = 10_000
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -254,14 +261,27 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         device: string | null
         revoked_at: Date | null
         last_used_at: Date
+        rotated_at: Date | null
         current: boolean
       }>(
-        `select id, user_id, device, revoked_at, last_used_at, (refresh_hash = $1) as current
+        `select id, user_id, device, revoked_at, last_used_at, rotated_at, (refresh_hash = $1) as current
            from sessions where refresh_hash = $1 or prev_refresh_hash = $1`,
         [hash],
       )
       const session = rows[0]
       if (!session) throw unauthorized('Токен обновления недействителен')
+
+      if (!session.current && session.rotated_at && Date.now() - session.rotated_at.getTime() < REFRESH_GRACE_MS) {
+        /* Прежний refresh предъявлен через секунды после обмена — это не
+         * вор, а вторая вкладка того же браузера: обе проснулись с одним
+         * истёкшим access и обе пошли обновляться, вторая — уже со старым
+         * токеном. До 2026-09-06 это считалось кражей и гасило ВСЕ сессии
+         * человека за то, что у него открыты две вкладки. Ей отвечаем
+         * «уже обменян» без гашения: свежая пара у первой вкладки жива,
+         * а хранилище у них общее. Окно короткое: вор со старым токеном
+         * внутри него получает ровно то же — ничего. */
+        throw new AppError(401, 'refresh_superseded', 'Токен обновления уже обменян — возьмите новый из хранилища')
+      }
 
       if (!session.current) {
         // Предъявлен предыдущий refresh этой сессии. Настоящий владелец так

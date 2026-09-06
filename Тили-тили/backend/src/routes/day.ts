@@ -890,13 +890,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       if (option.length === 0) throw notFound('Такого блюда нет в опросе')
 
       // Один голос на гостя: первичный ключ по гостю превращает повтор
-      // в смену выбора, а не во второй голос.
-      await db().query(
-        `insert into menu_votes (guest_id, option_id) values ($1,$2)
-         on conflict (guest_id) do update set option_id = excluded.option_id, at = now()`,
-        [guest.guestId, optionId],
-      )
-      await db().query('update guests set menu_option_id = $2 where id = $1', [guest.guestId, optionId])
+      // в смену выбора, а не во второй голос. Голос и отметка у гостя —
+      // одна транзакция: опрос и список гостей читают их порознь (R-122).
+      await db().tx(async (client) => {
+        await client.query(
+          `insert into menu_votes (guest_id, option_id) values ($1,$2)
+           on conflict (guest_id) do update set option_id = excluded.option_id, at = now()`,
+          [guest.guestId, optionId],
+        )
+        await client.query('update guests set menu_option_id = $2 where id = $1', [guest.guestId, optionId])
+      })
       return { optionId }
     },
   )

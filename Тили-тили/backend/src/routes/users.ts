@@ -243,12 +243,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }
     // Мягкое удаление на 30 дней (План §19.1): человек передумывает чаще,
     // чем кажется, а восстановить стёртую свадьбу неоткуда.
-    await db().query('update users set deleted_at = now() where id = $1 and deleted_at is null', [userId])
-    await db().query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [userId])
-    await db().query(
-      `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'user.deleted', 'user', $1)`,
-      [userId],
-    )
+    // Три шага — одна транзакция, как у отзыва согласия (ERR-0108, R-122).
+    await db().tx(async (client) => {
+      await client.query('update users set deleted_at = now() where id = $1 and deleted_at is null', [userId])
+      await client.query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [userId])
+      await client.query(
+        `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'user.deleted', 'user', $1)`,
+        [userId],
+      )
+    })
     return reply.code(204).send()
   })
 

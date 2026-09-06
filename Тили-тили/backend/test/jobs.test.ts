@@ -115,7 +115,7 @@ describe.skipIf(!live)('фоновые задачи', () => {
     const id = await addNotification(user.userId, -1)
 
     expect(pushConfigured(app.appConfig)).toBe(false)
-    expect(await sendDuePushes(app.db!, app.appConfig)).toEqual({ sent: 0, dropped: 0 })
+    expect(await sendDuePushes(app.db!, app.appConfig)).toEqual({ sent: 0, dropped: 0, expired: 0 })
 
     const { rows } = await app.db!.query<{ pushed_at: Date | null }>(
       'select pushed_at from notifications where id = $1',

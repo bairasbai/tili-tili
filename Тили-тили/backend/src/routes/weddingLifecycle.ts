@@ -55,7 +55,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       return withIdempotency(db(), request, reply, 'weddings.reschedule', async () => {
         /* Вся работа — в одной транзакции: между освобождением старых дат
          * и захватом новых другая пара успевает занять подрядчика. */
-        const report = await db().tx((client) => rescheduleWedding(client, weddingId, date))
+        const report = await db().tx((client) => rescheduleWedding(client, weddingId, date, request.caller!.userId))
         return { status: 200 as const, body: report }
       })
     },

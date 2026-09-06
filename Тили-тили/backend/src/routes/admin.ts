@@ -4,6 +4,7 @@ import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { VENDOR_COLUMNS, toVendor, type VendorRow } from '../catalog/vendors.js'
 import { recomputeRating } from '../reviews/rating.js'
 import { notify } from '../notify/notify.js'
+import type { Queryable } from '../plugins/db.js'
 
 /**
  * Админка платформы.
@@ -34,8 +35,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return userId
   }
 
-  async function audit(actorId: string, action: string, entity: string, entityId: string, diff: unknown) {
-    await db().query('insert into audit_log (actor_id, action, entity, entity_id, diff) values ($1,$2,$3,$4,$5)', [
+  async function audit(actorId: string, action: string, entity: string, entityId: string, diff: unknown, client: Queryable = db()) {
+    await client.query('insert into audit_log (actor_id, action, entity, entity_id, diff) values ($1,$2,$3,$4,$5)', [
       actorId,
       action,
       entity,
@@ -98,23 +99,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         verify: 'moderated_at = now(), verified_at = now()',
       }[body.action]
 
-      const res = await db().query(`update vendors set ${sets} where id = $1`, [vendorId])
-      if (res.rowCount === 0) throw notFound('Анкета не найдена')
+      /* Решение по анкете, статус заявки на проверку и запись в журнал —
+       * одна транзакция (R-122): галочка «проверен» без закрытой заявки
+       * оставляла бы её «на проверке» в кабинете навсегда. */
+      await db().tx(async (client) => {
+        const res = await client.query(`update vendors set ${sets} where id = $1`, [vendorId])
+        if (res.rowCount === 0) throw notFound('Анкета не найдена')
 
-      if (body.action === 'verify') {
-        await db().query(
-          "update vendor_verifications set status = 'approved', checked_at = now() where vendor_id = $1 and status = 'pending'",
-          [vendorId],
-        )
-      }
-      if (body.action === 'reject') {
-        await db().query(
-          "update vendor_verifications set status = 'rejected', checked_at = now() where vendor_id = $1 and status = 'pending'",
-          [vendorId],
-        )
-      }
+        if (body.action === 'verify') {
+          await client.query(
+            "update vendor_verifications set status = 'approved', checked_at = now() where vendor_id = $1 and status = 'pending'",
+            [vendorId],
+          )
+        }
+        if (body.action === 'reject') {
+          await client.query(
+            "update vendor_verifications set status = 'rejected', checked_at = now() where vendor_id = $1 and status = 'pending'",
+            [vendorId],
+          )
+        }
 
-      await audit(staffId, `vendor.${body.action}`, 'vendor', vendorId, { reason: body.reason ?? null })
+        await audit(staffId, `vendor.${body.action}`, 'vendor', vendorId, { reason: body.reason ?? null }, client)
+      })
 
       const { rows: owner } = await db().query<{ user_id: string }>('select user_id from vendors where id = $1', [
         vendorId,
@@ -194,39 +200,44 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       if (!/^[0-9a-f-]{36}$/i.test(complaintId)) throw notFound('Жалоба не найдена')
       const body = request.body as { action: 'dismiss' | 'warn' | 'downrank' | 'block'; note?: string }
 
-      const { rows } = await db().query<{ target_kind: string; target_id: string }>(
-        `update complaints set status = 'resolved', resolution = $2, note = $3, resolved_at = now()
-          where id = $1 and status = 'new'
-          returning target_kind, target_id`,
-        [complaintId, body.action, body.note ?? null],
-      )
-      // Повторное решение по разобранной жалобе — не ошибка данных,
-      // а гонка двух модераторов: второй должен увидеть, что уже поздно.
-      if (rows.length === 0) throw notFound('Жалоба не найдена или уже разобрана')
-      const target = rows[0]!
-
-      /* Санкции по возрастанию (§18.2). Предупреждение остаётся в журнале:
-       * оно ничего не меняет в выдаче, но следующая жалоба приходит уже
-       * не на чистого подрядчика. */
-      if (target.target_kind === 'vendor' && body.action === 'downrank') {
-        await db().query('update vendors set downranked_at = now() where id = $1', [target.target_id])
-      }
-      if (target.target_kind === 'vendor' && body.action === 'block') {
-        await db().query('update vendors set blocked_at = now() where id = $1', [target.target_id])
-      }
-      if (target.target_kind === 'review' && (body.action === 'block' || body.action === 'downrank')) {
-        // Скрытый отзыв уходит и из показа, и из рейтинга: наказывать
-        // подрядчика звёздами за текст, признанный недопустимым, нельзя.
-        const { rows: hidden } = await db().query<{ vendor_id: string }>(
-          'update reviews set hidden_at = now(), moderated_at = now() where id = $1 returning vendor_id',
-          [target.target_id],
+      /* Жалоба разобрана и санкция наложена — одна транзакция (R-122):
+       * «разобрана» без санкции — это жалоба, которую больше никто не
+       * откроет, и подрядчик, которого никто не наказал. */
+      await db().tx(async (client) => {
+        const { rows } = await client.query<{ target_kind: string; target_id: string }>(
+          `update complaints set status = 'resolved', resolution = $2, note = $3, resolved_at = now()
+            where id = $1 and status = 'new'
+            returning target_kind, target_id`,
+          [complaintId, body.action, body.note ?? null],
         )
-        if (hidden[0]) await recomputeRating(db(), hidden[0].vendor_id)
-      }
+        // Повторное решение по разобранной жалобе — не ошибка данных,
+        // а гонка двух модераторов: второй должен увидеть, что уже поздно.
+        if (rows.length === 0) throw notFound('Жалоба не найдена или уже разобрана')
+        const target = rows[0]!
 
-      await audit(staffId, `complaint.${body.action}`, target.target_kind, target.target_id, {
-        complaintId,
-        note: body.note ?? null,
+        /* Санкции по возрастанию (§18.2). Предупреждение остаётся в журнале:
+         * оно ничего не меняет в выдаче, но следующая жалоба приходит уже
+         * не на чистого подрядчика. */
+        if (target.target_kind === 'vendor' && body.action === 'downrank') {
+          await client.query('update vendors set downranked_at = now() where id = $1', [target.target_id])
+        }
+        if (target.target_kind === 'vendor' && body.action === 'block') {
+          await client.query('update vendors set blocked_at = now() where id = $1', [target.target_id])
+        }
+        if (target.target_kind === 'review' && (body.action === 'block' || body.action === 'downrank')) {
+          // Скрытый отзыв уходит и из показа, и из рейтинга: наказывать
+          // подрядчика звёздами за текст, признанный недопустимым, нельзя.
+          const { rows: hidden } = await client.query<{ vendor_id: string }>(
+            'update reviews set hidden_at = now(), moderated_at = now() where id = $1 returning vendor_id',
+            [target.target_id],
+          )
+          if (hidden[0]) await recomputeRating(client, hidden[0].vendor_id)
+        }
+
+        await audit(staffId, `complaint.${body.action}`, target.target_kind, target.target_id, {
+          complaintId,
+          note: body.note ?? null,
+        }, client)
       })
       return { complaintId, action: body.action }
     },

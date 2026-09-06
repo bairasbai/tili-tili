@@ -144,40 +144,46 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
     const code = normalizeCode((request.params as { code: string }).code)
     const userId = request.caller!.userId
 
-    // Одноразовость держится условием `accepted_at is null` прямо в UPDATE:
-    // два одновременных перехода по ссылке иначе добавили бы в команду двоих.
-    const claimed = await db().query<{ wedding_id: string; role: Role }>(
-      `update invites set accepted_by = $2, accepted_at = now()
-        where code = $1 and accepted_at is null and revoked_at is null and expires_at > now()
-        returning wedding_id, role`,
-      [code, userId],
-    )
-    const invite = claimed.rows[0]
-    if (!invite) throw gone('Ссылка недействительна: истекла, отозвана или уже использована')
-
-    const inserted = await db().query<{ role: Role; joined_at: Date }>(
-      `insert into wedding_members (wedding_id, user_id, role) values ($1, $2, $3)
-       on conflict (wedding_id, user_id) do nothing
-       returning role, joined_at`,
-      [invite.wedding_id, userId, invite.role],
-    )
-    if (inserted.rowCount === 0) {
-      // Уже в команде — код всё равно погашен. Возвращаем текущее членство,
-      // а не ошибку: для человека переход по ссылке сработал.
-      const { rows } = await db().query<{ role: Role; joined_at: Date }>(
-        'select role, joined_at from wedding_members where wedding_id = $1 and user_id = $2',
-        [invite.wedding_id, userId],
+    /* Гашение кода и вступление в команду — одна транзакция (R-122).
+     * Код одноразовый: погашенный без записи в `wedding_members` — это
+     * человек, которого приглашение уже не пустит, а второго кода у него
+     * нет. До 2026-09-06 шаги шли тремя отдельными запросами. */
+    return db().tx(async (client) => {
+      // Одноразовость держится условием `accepted_at is null` прямо в UPDATE:
+      // два одновременных перехода по ссылке иначе добавили бы в команду двоих.
+      const claimed = await client.query<{ wedding_id: string; role: Role }>(
+        `update invites set accepted_by = $2, accepted_at = now()
+          where code = $1 and accepted_at is null and revoked_at is null and expires_at > now()
+          returning wedding_id, role`,
+        [code, userId],
       )
-      const existing = rows[0]!
-      return member(userId, existing.role, existing.joined_at)
-    }
+      const invite = claimed.rows[0]
+      if (!invite) throw gone('Ссылка недействительна: истекла, отозвана или уже использована')
 
-    await db().query(
-      `insert into audit_log (actor_id, action, entity, entity_id, diff)
-       values ($1, 'invite.accepted', 'wedding', $2, $3)`,
-      [userId, invite.wedding_id, JSON.stringify({ role: invite.role })],
-    )
-    return member(userId, inserted.rows[0]!.role, inserted.rows[0]!.joined_at)
+      const inserted = await client.query<{ role: Role; joined_at: Date }>(
+        `insert into wedding_members (wedding_id, user_id, role) values ($1, $2, $3)
+         on conflict (wedding_id, user_id) do nothing
+         returning role, joined_at`,
+        [invite.wedding_id, userId, invite.role],
+      )
+      if (inserted.rowCount === 0) {
+        // Уже в команде — код всё равно погашен. Возвращаем текущее членство,
+        // а не ошибку: для человека переход по ссылке сработал.
+        const { rows } = await client.query<{ role: Role; joined_at: Date }>(
+          'select role, joined_at from wedding_members where wedding_id = $1 and user_id = $2',
+          [invite.wedding_id, userId],
+        )
+        const existing = rows[0]!
+        return member(userId, existing.role, existing.joined_at)
+      }
+
+      await client.query(
+        `insert into audit_log (actor_id, action, entity, entity_id, diff)
+         values ($1, 'invite.accepted', 'wedding', $2, $3)`,
+        [userId, invite.wedding_id, JSON.stringify({ role: invite.role })],
+      )
+      return member(userId, inserted.rows[0]!.role, inserted.rows[0]!.joined_at)
+    })
   })
 
   async function member(userId: string, role: Role, joinedAt: Date) {

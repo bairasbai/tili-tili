@@ -1,6 +1,8 @@
 import { AppError, conflict } from '../errors.js'
 import { isUniqueViolation, type Queryable } from '../plugins/db.js'
 import { COMMITTED } from '../deals/state.js'
+import { notifyWedding } from '../notify/notify.js'
+import { noteVendorUpdate } from '../vendor/updates.js'
 import { TIMELINE_TEMPLATE } from './templates.generated.js'
 
 /**
@@ -25,6 +27,8 @@ export async function rescheduleWedding(
   client: Queryable,
   weddingId: string,
   date: string,
+  /** Кто перенёс: ему самому новость не шлём. */
+  actorId: string | null = null,
 ): Promise<RescheduleReport> {
   const { rows: w } = await client.query<{ date: string | null; tz: string | null }>(
     'select date::text as date, tz from weddings where id = $1',
@@ -135,5 +139,29 @@ export async function rescheduleWedding(
       [weddingId, date, oldDate],
     )
   }
+
+  /* Перенос — новость для всех, кого он двигает, а не только запись в базе.
+   *
+   * До 2026-09-06 подрядчик узнавал о новой дате, только открыв календарь:
+   * его занятость молча переезжала, а команда свадьбы не получала ничего.
+   * Подрядчику — карточка обновления в кабинете, как у сдвига тайминга
+   * (§13.2); команде и подрядчикам — уведомление мимо тихих часов: дата
+   * свадьбы — из тех новостей, которые не ждут утра (§18.6). */
+  const human = date.split('-').reverse().join('.')
+  await noteVendorUpdate(client, weddingId, 'timeline', `Свадьба перенесена на ${human}: тайминг сдвинут на новый день`)
+  await notifyWedding(
+    client,
+    weddingId,
+    actorId,
+    {
+      kind: 'system',
+      title: 'Дата свадьбы изменена',
+      body: `Теперь свадьба ${human}. Сроки задач и тайминг сдвинуты.`,
+      link: '/wedding',
+      critical: true,
+    },
+    new Date(),
+    true,
+  )
   return { free, busy }
 }

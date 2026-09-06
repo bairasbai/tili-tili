@@ -363,7 +363,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * в календаре было пусто — и эту дату успевала занять другая пара.
        * Теперь обе двери в это поле ведут в один и тот же перенос. */
       if (body.date !== undefined) {
-        await db().tx((client) => rescheduleWedding(client, weddingId, body.date as string))
+        await db().tx((client) => rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId))
       }
 
       await db().query(

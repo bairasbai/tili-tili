@@ -118,7 +118,100 @@
   «попробуйте ещё раз», в контракт не вынесен; `GET /weddings/{id}/album` при `security: []` без обоих удостоверений отвечает 401 —
   по замыслу (гость по токену, команда по Bearer), исключение прописано в тесте.
 
-**Прогон после блока 1:** бэкенд `Test Files 50 passed · Tests 566 passed | 9 skipped (575) · EXIT=0` (+11 к базовой линии);
+**Прогон после блока 1 (коммит `b072a3b`):** бэкенд `Test Files 50 passed · Tests 566 passed | 9 skipped (575) · EXIT=0` (+11 к базовой линии);
 фронт `Test Files 23 passed · Tests 297 passed (297) · ✓ built in 6.38s · EXIT=0` (+2). Первый полный прогон фронта шёл
 параллельно с бэкендом и дал два ложных падения `nomocks.test.tsx` по таймауту ожидания экрана; в одиночку 38/38 и полный
-`verify` зелёный — R-177 распространяется и на фронт: сюиты не гонять одновременно. Коммит блока: см. `git log` — «Аудит, блок 1».
+`verify` зелёный — R-177 распространяется и на фронт: сюиты не гонять одновременно. Коммит блока: `b072a3b`.
+
+---
+
+## Блок 2. Бэкенд: корректность
+
+Метод: три свода (`audit-tx.mjs` — записи вне транзакции по обработчикам; grep по деньгам — `parseFloat|toFixed|Math.round|numeric|/ 100`;
+grep по времени — `date_trunc|::date|current_date|toISOString().slice|at time zone|Date.UTC`) плюс чтение `jobs/index.ts`,
+`weddingLifecycle.ts`, `wedding/reschedule.ts`, `deals/idempotency.ts`, `catalog/holds.ts`, `notify/*.ts`, `routes/auth.ts`,
+`routes/invites.ts`, `guests/access.ts`, `routes/slots.ts` (оплата, свой подрядчик, кабинет по токену), `routes/deals.ts`,
+`routes/chats.ts` (лимит переписок, рассылка), `routes/guests.ts` (RSVP, напоминание, обмен кода), `routes/day.ts` (голос, отели,
+рассылки), `routes/admin.ts`, `routes/gifts.ts` (резерв, складчина). Триггеры и ограничения сняты из `information_schema`/`pg_constraint`.
+Проверка транзакций — инъекцией сбоя (временный триггер роняет второй шаг), гонок — двумя параллельными `inject`.
+
+- [x] НАЙДЕНО И ЗАКРЫТО — **Транзакции.** Свод: 17 обработчиков с двумя и более записями вне `db().tx`; по признаку R-122 («откат
+  любого шага в одиночку оставляет состояние, которого не бывает») подтверждены 6 (ERR-0168): `POST /invites/{code}/accept`
+  (код погашен — человека в команде нет), `POST /rsvp/{token}` («не приду» с занятым сиденьем), `POST /join/{token}/menu-vote`
+  (голос без отметки у гостя), `DELETE /users/me`, `POST /admin/moderation/vendors/{id}`, `POST /admin/complaints/{id}`
+  (разобрана без санкции), фоновая `expireStaleHolds` (бронь снята без события — уведомления не будет никогда).
+  Остальные 11 — без последствий: `POST /auth/otp` (удалить старые + вставить), `/auth/otp/verify` (код гасится атомарно
+  `where consumed_at is null`; сбой дальше — повторный запрос кода), `/auth/refresh` (один UPDATE), `POST /chats/{id}/messages`
+  (сообщение записано, уведомления — по журналу), `DELETE …/hotels/{id}` (каскад FK), `/referral/{code}/apply` (PK атомарен),
+  `/guest-vendor/{t}/messages`, `/users/me/consent`, `PATCH /users/me`, `/vendor/profile/publish`, `/vendor/calendar/busy`.
+  Уже в транзакции: `POST /weddings`, `PUT /vendor/profile` (ERR-0109), отмена и перенос свадьбы, бронь/отмена/оплата слота,
+  резерв и складчина. Тесты: `test/audit15.test.ts`, шесть инъекций сбоя — все шесть краснеют без фикса.
+- [x] НАЙДЕНО И ЗАКРЫТО — **Гонки.** Оплата слота: сумма «уже оплачено» читалась без блокировки строки сделки — две
+  параллельные оплаты по 60 000 при цене 100 000 обе проходили (ERR-0169) → `select … for update` (`slots.ts`). Переход сделки:
+  два `PATCH state=done` давали две записи в журнале и два уведомления → `for update` (`deals.ts`). Напоминание гостям: проверка
+  «раз в сутки» читалась до рассылки, отметка ставилась после — двойное нажатие = два SMS каждому (ERR-0171) → атомарный захват
+  условием на обновляемой строке (`guests.ts`). Уже закрыты ограничениями БД и проверены тестами прошлых этапов: бронь слота
+  (`update … where deal_id is null`, ERR-0035), резерв подарка (`PK gift_reservations(gift_id)` + `for update`, `gifts.ts:376`),
+  складчина (`for update` + `claimContribution`, `gifts.ts:434,483`), места в автобусе и номера (`CHECK taken <= seats`, триггеры
+  `bus_bookings_count`/`hotel_bookings_count`), приём приглашения (`update … where accepted_at is null`, `invites.ts`), обмен
+  кода гостя (`where used_at is null`, `guests.ts:380`), код OTP (`where consumed_at is null`, `auth.ts`), рефералка (PK `invited_id`),
+  ключ идемпотентности (`insert … on conflict do nothing`, `idempotency.ts`). Отмена свадьбы двумя партнёрами одновременно: оба
+  ставят запрос, отмена — следующим нажатием любого (безопасная сторона). Не закрыто и записано: две одновременные заявки консьержу
+  могут дать дубль (`catalog.ts:357` — чтение перед вставкой; нужен частичный уникальный индекс = миграция, стоп-условие) — цена
+  дубля: одна лишняя ручная задача, в блокеры не идёт. Регрессия гонки оплаты без фикса в одиночном прогоне не покраснела (окно
+  узкое) — закрепляет чтение диффа и тот же приём, что у перехода, где тест краснеет стабильно.
+- [x] НАЙДЕНО И ЗАКРЫТО — **Refresh из двух вкладок (ERR-0170).** Прежний refresh считался кражей и гасил все сессии;
+  две вкладки одного браузера — штатный случай. Сервер: окно `REFRESH_GRACE_MS = 10 с` → 401 `refresh_superseded` без гашения
+  (`auth.ts`); фронт: на отказ перечитывает хранилище (`client.ts`). Тест кражи в `stage1.test.ts` переписан (обмен отматывается
+  на минуту — поведение кражи прежнее). Регрессии: `audit15` (внутри окна / за окном), `app/src/lib/api/client.test.ts` (2).
+- [x] ПРОВЕРЕНО, ЧИСТО — **Идемпотентность денег и рассылок.** `withIdempotency` на 10 путях (бронь, оплата, отмена слота, сделка,
+  договор — необязательно, перенос, сдвиг тайминга, план Б, точки сбора, напоминание по меню): ключ привязан к пользователю и
+  маршруту, повтор с другим телом — 409, повтор во время исполнения — 409 `idempotency_in_progress`, ключи чистятся через сутки
+  (`deals/idempotency.ts:64-95`). Взносы гостей — `claimContribution` с `UNIQUE (guest_token, idempotency_key)`. Массовые
+  рассылки (`broadcast`, `day.ts`) — дебаунс 30 с по журналу `broadcasts`, чистка 90 дней. Фоновые: `deal_events.notified_at`,
+  `chats.opened_notified_at`, `deals.hold_reminded_at`, `digest_sent(user_id, week)` — повтор задачи пуст. `rsvpDigest` отметки
+  не имеет: BullMQ повторяет только упавшую задачу (`attempts: 3`), а сводка идёт раз в сутки — записано как известная граница.
+- [x] ПРОВЕРЕНО, ЧИСТО — **Деньги — копейки.** Все 13 денежных колонок `bigint` (`information_schema.columns`: `budget_items.amount`,
+  `deals.price`, `payments.amount`, `gifts.price/funded`, `gift_contributions.amount`, `fund_contributions.amount`,
+  `hotel_blocks.price`, `vendor_packages.price`, `vendors.price_from`, `weddings.budget_total`, `concierge_requests.budget`).
+  Схема `Money`: `amount: integer` (`slots.ts:24-32`, контракт). Единственная дробная арифметика — доли бюджета
+  `Math.round(total * c.share)` (`budget.ts:87,103`) и «справедливая цена» `Math.round(venue / guests)` (`gifts.ts:362`) — результат
+  целый, в базу не пишется; `deals.ts:25` — форматирование текста. `parseFloat`/`toFixed`/`numeric` в бэкенде нет (grep пуст;
+  `::numeric` только как сортировочный cast рейтинга, `catalog.ts:31`). Фронт: деление на 100 живёт в `fmt()` (блок 7).
+- [x] ПРОВЕРЕНО, ЧИСТО — **Каскады.** Перенос даты (`wedding/reschedule.ts`): занятость команды на новую дату проверяется до
+  записи (409 `team_busy` целиком, без частичного переноса), старые даты снимаются и новые захватываются в одной транзакции,
+  сроки задач и блоки тайминга сдвигаются на разницу дней (или заводятся, если даты не было, R-142), час открытия чата дня X —
+  триггер `weddings_chats`; обе двери (`POST …/reschedule`, `PATCH /weddings` с `date`) ведут сюда (R-102). Время автобусов —
+  `time` без даты, дедлайн отеля вводится парой — сдвигать нечего. Отмена (`weddingLifecycle.ts`): сделки → `cancelled` с
+  событием в журнале (уведомление обеим сторонам по `announceDealEvents`), занятость снята, слоты очищены, свадьба в архив;
+  гостевые токены и токен своего подрядчика перестают работать через `w.cancelled_at is null` в `guestByToken` и `inviteByToken`.
+  Удаление гостя — триггер `guests_release_reservations` (резервы) + триггеры счётчиков; удаление аккаунта с живой сделкой —
+  409 (блок 1). Мягко удалённый подрядчик выпадает из каталога и брони (`VENDOR_LIVE_JOIN`, `slots.ts:95`).
+- [x] НАЙДЕНО И ЗАКРЫТО — **Перенос никому не сообщался (ERR-0172).** Ни подрядчику, ни второму партнёру. Теперь
+  `vendor_updates` (вид `timeline`) забронированным подрядчикам и критическое уведомление команде и подрядчикам, кроме автора.
+  Тест в `audit15`.
+- [x] ПРОВЕРЕНО, ЧИСТО — **Таймзоны и границы суток.** Тихие часы и дневной лимит push — в поясе получателя (`notify/quiet.ts`,
+  `localDayBounds`, тест на четырёх поясах, ERR-0102); «сегодня свадьба» и «свадьба прошла» — в поясе свадьбы
+  (`notify.ts:66`, `reviews.ts:196`); блоки тайминга пишутся `($date + $time) at time zone $tz` (`weddings.ts:280`,
+  `reschedule.ts:116`, ERR-0123); неизвестная зона отсекается на входе (`knownTimeZone`, `users.ts:174`, `weddings.ts:355`);
+  даты проверяются календарём (`wedding/dates.ts`, ERR-0088). Осознанно по времени сервера: дайджест недели (`current_date`,
+  `jobs/index.ts:159`), сводка RSVP в 10:00 и пересчёт рейтингов в 03:30 — у задач нет получателя в единственном числе,
+  комментарий в `SCHEDULE`. `toISOString().slice(0,10)` — только над датами без часов (`catalog.ts:44`, `vendor.ts:316`,
+  `weddings.ts:120`, `dates.ts:47`).
+- [x] НАЙДЕНО И ЗАКРЫТО — **Фоновые задачи.** Не дублируют: планировщик именованный (`upsertJobScheduler`, повторный деплой не
+  заводит вторую задачу), push берутся `update … for update skip locked` и помечаются в той же выборке (`push.ts`), события
+  сделок — `notified_at` в том же `UPDATE … returning`. Не теряют: истечение брони — теперь в транзакции с журналом
+  (ERR-0168); ленивый путь `expireHolds` дублирует часовой проход. Не спамят: лимит 3 push/сутки с переносом на ближайший
+  свободный день, тихие часы, день X — исключение (ERR-0053/0057); найдено и закрыто: **без VAPID очередь копилась (552 строки на
+  dev-базе) и выстрелила бы разом при первом запуске с ключами** (ERR-0173) → созревшее старше суток помечается `expired`, не
+  рассылается. Отметка «отправлено» ставится до отправки (at-most-once): при падении процесса посреди пачки оставшиеся
+  теряются, но не дублируются — записано как выбранная сторона компромисса. Без Redis задачи не идут вовсе: в production
+  `REDIS_URL` обязателен (`config.ts:136`), в разработке это ожидаемо (см. блоки 8 и 9).
+- [x] ПРОВЕРЕНО, ЧИСТО — **Лимиты, которые держит база, а не код** (снято из `pg_constraint`): `deals_state_known`,
+  `deals_price_nonneg`, `deals_has_performer`, `payments_amount_positive`, `payments_kind_known`, `gift_/fund_contributions_amount_positive`,
+  `bus_taken_bounded`, `hotel_booked_bounded`, `otp_attempts_bounded (0..5)`, `reviews_stars_range`, `reviews_key_matches_source`,
+  `weddings_currency_rub`, `weddings_budget_nonneg`, `vendor_busy_dates_pk (vendor_id, date)`, `slots_deal_unique`,
+  `sessions_refresh_hash_key`, `wedding_members_pk`, `menu_votes_pk (guest_id)`.
+
+**Прогон после блока 2:** бэкенд `Test Files 51 passed · Tests 578 passed | 9 skipped (587) · EXIT=0` (+12 к блоку 1);
+фронт `Test Files 24 passed · Tests 299 passed (299) · ✓ built in 10.89s · EXIT=0` (+2). Коммит блока: см. `git log` — «Аудит, блок 2».

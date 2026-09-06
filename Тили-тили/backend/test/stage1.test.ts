@@ -252,6 +252,13 @@ describe.skipIf(!live)('этап 1: вход, согласие, профиль, 
     expect(rotated.statusCode).toBe(200)
     const fresh = rotated.json() as { accessToken: string }
 
+    /* Через секунды после обмена прежний refresh — это вторая вкладка, и
+       она получает 401 без гашения (аудит 2026-09-06, `REFRESH_GRACE_MS`).
+       Кража — это предъявление ПОЗЖЕ: отматываем обмен на минуту назад. */
+    await app.db!.query(`update sessions set rotated_at = now() - interval '1 minute' where user_id = $1`, [
+      session.user.id,
+    ])
+
     // Тот же старый refresh предъявлен второй раз — это либо вор, либо жертва.
     const reuse = await app.inject({
       method: 'POST',
