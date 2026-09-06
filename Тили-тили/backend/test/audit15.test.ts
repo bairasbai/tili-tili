@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { randomInt } from 'node:crypto'
 import webpush from 'web-push'
 import type { FastifyInstance } from 'fastify'
@@ -468,24 +468,42 @@ describe.skipIf(!live)('блок 2: транзакции, гонки, рассы
   /* ── push: просроченное не рассылается ────────────────────────────── */
 
   it('созревшие больше суток назад push помечаются просроченными, а не рассылаются', async () => {
+    /* База у тестов общая, и соседний набор может забрать созревшие строки
+       раньше нас — поэтому счётчик `expired` своего вызова не утверждаем
+       (R-166). Утверждаем то, что от соседей не зависит: просроченное
+       НЕ уходит в `sendNotification` этим процессом, и обе строки помечены. */
     const user = await newUser()
     const old = uuidv7()
     const fresh = uuidv7()
+    const marker = `Старое-${RUN}-${++counter}`
+    /* Просроченная строка — самая старая в базе (десять лет назад, как в
+       ERR-0158): очередь берёт двести САМЫХ РАННИХ созревших, а на общей
+       базе созревших сотни, и «трёхдневная» в выборку могла не попасть. */
     await app.db!.query(
       `insert into notifications (id, user_id, kind, title, body, deliver_after) values
-         ($1, $3, 'system', 'Старое', 'Текст', now() - interval '3 days'),
+         ($1, $3, 'system', $4, 'Текст', now() - interval '10 years'),
          ($2, $3, 'system', 'Свежее', 'Текст', now() - interval '1 minute')`,
-      [old, fresh, user.userId],
+      [old, fresh, user.userId, marker],
     )
-    const keys = webpush.generateVAPIDKeys()
-    const result = await sendDuePushes(app.db!, {
-      ...app.appConfig,
-      vapidPublicKey: keys.publicKey,
-      vapidPrivateKey: keys.privateKey,
-      vapidSubject: 'mailto:test@example.com',
-    })
-    // До фикса поле `expired` не существовало, а трёхдневная строка уходила бы в рассылку.
-    expect(result.expired).toBeGreaterThanOrEqual(1)
+    await app.db!.query(
+      `insert into push_subscriptions (id, user_id, endpoint, keys) values ($1, $2, $3, $4)`,
+      [uuidv7(), user.userId, `https://127.0.0.1:9/${uuidv7()}`, JSON.stringify({ p256dh: 'BP'.padEnd(87, 'A'), auth: 'AAAAAAAAAAAAAAAAAAAAAA' })],
+    )
+    const sent = vi.spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201, body: '', headers: {} })
+    try {
+      const keys = webpush.generateVAPIDKeys()
+      await sendDuePushes(app.db!, {
+        ...app.appConfig,
+        vapidPublicKey: keys.publicKey,
+        vapidPrivateKey: keys.privateKey,
+        vapidSubject: 'mailto:test@example.com',
+      })
+      // До фикса трёхдневная строка уходила в рассылку наравне со свежей.
+      const titles = sent.mock.calls.map(([, payload]) => (JSON.parse(String(payload)) as { title: string }).title)
+      expect(titles).not.toContain(marker)
+    } finally {
+      sent.mockRestore()
+    }
     const { rows } = await app.db!.query<{ id: string; pushed: boolean }>(
       'select id, (pushed_at is not null) as pushed from notifications where id = any($1)',
       [[old, fresh]],

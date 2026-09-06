@@ -89,7 +89,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
     const userId = request.caller!.userId
 
     const { rows: access } = await db().query<{ side: string }>(
-      `select 'couple' as side from deals d
+      `select m.role as side from deals d
          join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
         where d.id = $1
        union all
@@ -101,6 +101,13 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
     // Чужая сделка — 404: по кодам ответа не должно быть видно, какие
     // идентификаторы существуют.
     if (access.length === 0) throw notFound('Сделка не найдена')
+    /* Журнал — деньги: «сумма изменена: 100 000 ₽ → 80 000 ₽» лежит в нём
+     * текстом. Помощник и координатор денег не видят нигде (§6, ERR-0026),
+     * а здесь до 2026-09-06 видели: проверка спрашивала «участник ли»,
+     * а не «пара ли». Им 403, не 404: сделку они и так знают по мозаике. */
+    if (!access.some((a) => a.side === 'couple' || a.side === 'vendor')) {
+      throw new AppError(403, 'forbidden', 'Журнал сделки видят пара и подрядчик — в нём суммы')
+    }
 
     const { rows } = await db().query<{
       id: string

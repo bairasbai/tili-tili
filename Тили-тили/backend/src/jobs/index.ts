@@ -39,7 +39,7 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
     "delete from sessions where revoked_at is not null and revoked_at < now() - interval '90 days'",
   )
   // Мягко удалённый аккаунт живёт 30 дней (План §19.1) — потом насовсем.
-  await drop('users', "delete from users where deleted_at is not null and deleted_at < now() - interval '30 days'")
+  out['users'] = await eraseDeletedUsers(app)
   /* Прочитанное уведомление старше 90 дней никому не нужно, а таблица
    * растёт от каждого сообщения в чате. Это ERR-0041 в другом месте:
    * журнал рассылок рос ровно так же. Непрочитанное не трогаем — человек
@@ -49,6 +49,65 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
     "delete from notifications where read_at is not null and read_at < now() - interval '90 days'",
   )
   return out
+}
+
+/**
+ * Стирание аккаунта через 30 дней после мягкого удаления (152-ФЗ, План §19.1).
+ *
+ * Голый `delete from users` здесь стоял с этапа 1 и не прошёл бы ни у кого,
+ * кто хоть раз выдавал приглашение: три внешних ключа без каскада —
+ * `invites.created_by`/`accepted_by`, `weddings.cancel_requested_by`,
+ * `deals.vendor_id` — роняли запрос, а с ним и всю остальную уборку (она
+ * идёт одним списком). Хуже второе: `weddings.owner_id` каскадный, и
+ * стирание одного партнёра сносило бы свадьбу целиком у второго — гостей,
+ * сделки, переписку. Найдено аудитом 2026-09-06 по графу внешних ключей.
+ *
+ * Поэтому по шагам, в транзакции на человека:
+ *   1. свадьбы, где он владелец, переходят живому партнёру с ролью «пара»
+ *      (нет партнёра — свадьба уходит вместе с ним, это его данные);
+ *   2. ссылки на него в приглашениях и запросе отмены обнуляются;
+ *   3. его сделки как подрядчика остаются паре историей — с именем
+ *      исполнителя и без ссылки на анкету (`deals_has_performer` держит);
+ *   4. сам аккаунт удаляется — остальное уносит каскад.
+ * Сбой на одном человеке не останавливает остальных: ошибка в лог, дальше.
+ */
+export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
+  const db = app.db!
+  const { rows } = await db.query<{ id: string }>(
+    "select id from users where deleted_at is not null and deleted_at < now() - interval '30 days' order by deleted_at limit 100",
+  )
+  let erased = 0
+  for (const { id } of rows) {
+    try {
+      await db.tx(async (client) => {
+        await client.query(
+          `update weddings w set owner_id = heir.user_id
+             from (select distinct on (m.wedding_id) m.wedding_id, m.user_id
+                     from wedding_members m join users u on u.id = m.user_id
+                    where m.role = 'couple' and m.user_id <> $1 and u.deleted_at is null
+                    order by m.wedding_id, m.joined_at) heir
+            where w.owner_id = $1 and heir.wedding_id = w.id`,
+          [id],
+        )
+        await client.query('update invites set created_by = null where created_by = $1', [id])
+        await client.query('update invites set accepted_by = null where accepted_by = $1', [id])
+        await client.query(
+          'update weddings set cancel_requested_by = null, cancel_requested_at = null where cancel_requested_by = $1',
+          [id],
+        )
+        await client.query(
+          `update deals d set vendor_id = null, external_name = coalesce(d.external_name, v.name)
+             from vendors v where v.id = d.vendor_id and v.user_id = $1`,
+          [id],
+        )
+        await client.query('delete from users where id = $1', [id])
+      })
+      erased += 1
+    } catch (err) {
+      app.log.error({ err, userId: id }, 'не удалось стереть аккаунт')
+    }
+  }
+  return erased
 }
 
 /**

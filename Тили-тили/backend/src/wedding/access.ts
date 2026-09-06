@@ -134,7 +134,7 @@ export function weddingAccessHook(app: FastifyInstance) {
 
     // Гость приходит на свою свадьбу по токену и аккаунта не имеет.
     // Пускаем его только на явно перечисленные пути и только на свою свадьбу.
-    const guestToken = GUEST_ACCESSIBLE_WEDDING_PATHS.has(url) ? readGuestToken(request) : null
+    const guestToken = GUEST_ACCESSIBLE_WEDDING_PATHS.has(`${request.method} ${url}`) ? readGuestToken(request) : null
     if (guestToken) {
       const guest = await guestByToken(app.db!, guestToken)
       const asked = (request.params as { weddingId?: string }).weddingId

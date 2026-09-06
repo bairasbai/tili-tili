@@ -73,10 +73,18 @@ export function readGuestToken(request: FastifyRequest): string | null {
   return fromQuery ?? null
 }
 
-/** Пути, куда гость ходит по токену, хотя в адресе есть идентификатор свадьбы. */
+/**
+ * Операции, куда гость ходит по токену, хотя в адресе есть идентификатор свадьбы.
+ *
+ * Ключ — «метод + путь», а не путь: `GET …/guest-reviews` читает пара, и
+ * гостю он не положен. Пока список был по пути, хук пускал гостя и на GET,
+ * обработчик ждал участника свадьбы, которого нет, — и падал в 500.
+ * Гость одним запросом писал в журнал аварию (аудит 2026-09-06, блок 3).
+ */
 export const GUEST_ACCESSIBLE_WEDDING_PATHS = new Set([
-  '/weddings/:weddingId/album',
+  'GET /weddings/:weddingId/album',
+  'POST /weddings/:weddingId/album',
   // Отзыв о подрядчике гость оставляет по своему токену: аккаунта у него
   // нет, и общий хук доступа отвечал бы 401 на законный запрос.
-  '/weddings/:weddingId/guest-reviews',
+  'POST /weddings/:weddingId/guest-reviews',
 ])
