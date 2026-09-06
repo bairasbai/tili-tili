@@ -253,6 +253,9 @@ export function VendorAnalytics() {
             <button key={x} onClick={() => setPeriod(x)} className={cn('press flex-1 h-9 rounded-full text-[11.5px] font-semibold', period === x ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t(PERIOD_LABEL[x])}</button>
           ))}
         </div>
+        {/* Доход и воронка — только когда цифры пришли. «Доход 0 ₽» при
+            отказе сервера читается как факт о своём месяце. */}
+        {ready(q) && (
         <div className="card p-5 grad text-[var(--on-grad)] mt-3">
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t('Доход')}</span>
@@ -267,6 +270,9 @@ export function VendorAnalytics() {
           <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(a?.revenue?.amount ?? 0)}</b>
         </div>
 
+        )}
+
+        {ready(q) && (<>
         <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
           <h2 className="font-serif-d text-[19px]">{t('Воронка анкеты')}</h2>
           {views > 0 && <span className="text-[10px] text-[var(--soft)]">{t('в заявку')} {pct(f?.leads ?? 0, views)}%</span>}
@@ -282,9 +288,10 @@ export function VendorAnalytics() {
             </div>
           ))}
         </div>
-        {views === 0 && ready(q) && (
+        {views === 0 && (
           <p className="text-[11.5px] text-[var(--soft)] mt-3 px-1">{t('Пока нет данных: анкету ещё не смотрели. Числа появятся, когда она будет опубликована и попадёт в выдачу.')}</p>
         )}
+        </>)}
 
         <button onClick={() => nav('/vendor-app/profile')} className="press w-full card-s p-4 mt-3.5 flex items-center gap-3 text-left">
           <Tile icon="🚀" tile="bg-[var(--rose-soft)]" size={42} />

@@ -153,7 +153,7 @@ export function Compare() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Сравнение')} sub={`${list.length} ${plural(list.length, t('кандидат'), t('кандидата'), t('кандидатов'))}${catTitle ? ` · ${catTitle}` : ''}`} />
+      <TopBar back title={t('Сравнение')} sub={ready(q) ? `${list.length} ${plural(list.length, t('кандидат'), t('кандидата'), t('кандидатов'))}${catTitle ? ` · ${catTitle}` : ''}` : catTitle ?? undefined} />
       <AsyncState q={q} />
       <div className="px-5 mt-3 overflow-x-auto no-scrollbar">
         <table className="w-full min-w-[520px]">
@@ -227,6 +227,12 @@ export function DayX() {
   const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId, tick])
   const events = q.data ?? []
+  /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
+     включённый сценарий, а экран «План Б» рядом писал «активирован»: два
+     экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
+     команде и гостям повторную рассылку. */
+  const pb = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId, tick])
+  const planBOn = !!pb.data?.activatedAt
 
   /* «Сейчас» — это блок, который уже начался и ещё не сменился следующим.
      Раньше здесь стояла «Фотосессия до 16:30» независимо от времени суток. */
@@ -338,14 +344,18 @@ export function DayX() {
                 гостям сразу. Поэтому подтверждение в два нажатия, как у отмены
                 сделки, — комментарий обещал это и раньше, а кнопка срабатывала
                 с первого касания. */}
-            <button
-              disabled={busy === 'planb'}
-              onClick={() => (confirmPlanB ? act('planb', () => activatePlanB(weddingId!)) : setConfirmPlanB(true))}
-              className="press px-4 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c] disabled:opacity-50"
-              style={confirmPlanB ? { background: '#C4705A', borderColor: '#C4705A' } : undefined}
-            >
-              {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}
-            </button>
+            {planBOn ? (
+              <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0" style={{ background: '#7E9A74', color: '#fff' }}>{t('Включён')}</span>
+            ) : (
+              <button
+                disabled={busy === 'planb'}
+                onClick={() => (confirmPlanB ? act('planb', () => activatePlanB(weddingId!)) : setConfirmPlanB(true))}
+                className="press px-4 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c] disabled:opacity-50"
+                style={confirmPlanB ? { background: '#C4705A', borderColor: '#C4705A' } : undefined}
+              >
+                {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}
+              </button>
+            )}
           </div>
         </div>
 

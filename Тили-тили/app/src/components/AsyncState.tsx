@@ -33,3 +33,15 @@ export function AsyncState({ q, forbiddenText }: { q: AsyncData<unknown>; forbid
 export function ready(q: AsyncData<unknown>): boolean {
   return !q.loading && !q.error && !q.forbidden
 }
+
+/**
+ * Число, которое можно показать. Пока ответа нет — прочерк.
+ *
+ * Ноль — это значение, а не «неизвестно». Счётчики считались от `?? []`, и при
+ * лежащем сервере рядом с честным «Сервер недоступен» стояло «0 гостей»,
+ * «0 забронировано», «Доход 0 ₽». Пара читает это не как «мы не знаем», а как
+ * «никто не ответил» — и звонит подрядчикам выяснять, куда делись гости.
+ */
+export function num(q: AsyncData<unknown>, value: number | string): string {
+  return ready(q) ? String(value) : '—'
+}

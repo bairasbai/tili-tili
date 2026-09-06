@@ -548,16 +548,20 @@ export function VendorDeals() {
     <div className="pb-28">
       <TopBar back title={t('Сделки')} sub={t('Активные и архив')} />
       <AsyncState q={q} />
-      <div className="px-5 mt-3 grid grid-cols-2 gap-2.5">
-        <div className="card-s p-4">
-          <b className="font-serif-d text-[20px] tabular block">{fmt(expected)}</b>
-          <span className="text-[9.5px] text-[var(--soft)]">{t('ожидается по сделкам')}</span>
+      {/* Плитки — только по ответу сервера. «0 ₽ ожидается по сделкам» рядом
+          с «Сервер недоступен» подрядчик читает как «денег не будет». */}
+      {ready(q) && (
+        <div className="px-5 mt-3 grid grid-cols-2 gap-2.5">
+          <div className="card-s p-4">
+            <b className="font-serif-d text-[20px] tabular block">{fmt(expected)}</b>
+            <span className="text-[9.5px] text-[var(--soft)]">{t('ожидается по сделкам')}</span>
+          </div>
+          <div className="card-s p-4">
+            <b className="font-serif-d text-[20px] tabular block">{active}</b>
+            <span className="text-[9.5px] text-[var(--soft)]">{t('активных сделок')}</span>
+          </div>
         </div>
-        <div className="card-s p-4">
-          <b className="font-serif-d text-[20px] tabular block">{active}</b>
-          <span className="text-[9.5px] text-[var(--soft)]">{t('активных сделок')}</span>
-        </div>
-      </div>
+      )}
       {!items.length && ready(q) && (
         <p className="px-5 mt-4 text-[12px] text-[var(--soft)]">{t('Сделок пока нет. Они появляются, когда пара бронирует вас из каталога.')}</p>
       )}

@@ -45,13 +45,19 @@ const DEAL_STEPS: ReadonlyArray<{ state: DealState; label: string }> = [
 ]
 
 export function Deal() {
-  const { slots } = useStore()
+  const { slots, slotsState } = useStore()
   const { id } = useParams()
   const s = slots.find(x => x.dealId === id)
   if (!s) return (
     <div className="pb-28">
       <TopBar back title={t('Сделка')} />
-      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{slots.length ? t('Сделка не найдена') : t('Загружаем…')}</p>
+      {/* Три случая, и раньше все три выглядели как «Загружаем…»: при
+          недоступном сервере экран обещал загрузку до конца сеанса. */}
+      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">
+        {slotsState === 'error'
+          ? t('Сервер недоступен. Попробуйте позже')
+          : slotsState === 'ready' ? t('Сделка не найдена') : t('Загружаем…')}
+      </p>
     </div>
   )
   return <DealView s={s} />

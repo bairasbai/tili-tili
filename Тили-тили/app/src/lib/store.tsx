@@ -48,6 +48,15 @@ interface Store {
   setWeddingDate: (iso: string | null) => Promise<void>
   quiz: QuizAnswers
   slots: Slot[]
+  /**
+   * Состояние загрузки мозаики.
+   *
+   * Пустой массив слотов означает три разных вещи: свадьбы нет, мозаика ещё
+   * едет, сервер не ответил. Экраны выводили из длины массива «загружаем…» и
+   * висели с этой надписью навсегда, когда сервер лежал. Ноль — не «пусто»,
+   * и «пусто» — не «неизвестно».
+   */
+  slotsState: 'idle' | 'loading' | 'ready' | 'error'
   /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
   bookVendor: (slotId: string, vendorId: string, price: number) => Promise<void>
   bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => Promise<void>
@@ -147,6 +156,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * разойдётся с серверным на первом же непредусмотренном переходе.
    */
   const [serverSlots, setServerSlots] = useState<ServerSlot[]>([])
+  const [slotsState, setSlotsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [slotsTick, setSlotsTick] = useState(0)
   useEffect(() => {
     /* Сброс делаем не синхронно в теле эффекта, а внутри ответа: синхронный
@@ -155,12 +165,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!weddingId || !isAuthorized()) return
     let alive = true
     void getSlots(weddingId)
-      .then(list => { if (alive) setServerSlots(list ?? []) })
-      .catch(() => { /* сервер недоступен — мозаика останется пустой, а не выдуманной */ })
+      .then(list => { if (alive) { setServerSlots(list ?? []); setSlotsState('ready') } })
+      /* Отказ раньше глотался молча. Мозаика оставалась пустой — и экраны
+         слота и сделки говорили «Загружаем…» до конца сеанса, потому что
+         выводили загрузку из нулевой длины списка. */
+      .catch(() => { if (alive) setSlotsState('error') })
     return () => { alive = false }
   }, [weddingId, slotsTick])
   /** Перечитать мозаику после действия: состояние плитки считает сервер. */
   const refreshSlots = useCallback(() => setSlotsTick(n => n + 1), [])
+
+  /* «Грузим» ставим здесь, а не в эффекте: синхронный setState в теле эффекта
+     запрещён линтом, а знать об этом экранам надо с первой отрисовки. */
+  const slotsPhase: 'idle' | 'loading' | 'ready' | 'error' =
+    !weddingId || !isAuthorized() ? 'idle' : slotsState === 'idle' ? 'loading' : slotsState
 
   /*
    * Без свадьбы записывать некуда.
@@ -268,6 +286,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     quiz,
     slots,
+    slotsState: slotsPhase,
     refreshSlots,
     /*
      * Действия над слотом уходят на сервер и перечитывают мозаику.
@@ -358,7 +377,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
+  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

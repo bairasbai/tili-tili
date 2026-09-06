@@ -1318,4 +1318,11 @@ Object.assign(EN, {
   'Договор из шаблона: предмет, сроки и стоимость письменно': 'Contract from a template: scope, dates and price in writing',
   'Отменил в последний момент — каталог сразу покажет свободных на вашу дату': 'If they cancel at the last minute, the catalogue shows who is free on your date',
   '«Горячая замена»: каталог показывает только свободных на вашу дату. Аванс возвращает подрядчик по договору — потому договор и нужен; шаблон есть в разделе «Документы».': '"Hot swap": the catalogue shows only those free on your date. The deposit is returned by the vendor under the contract — that is what the contract is for; a template is in Documents.',
+  'Сервер недоступен — команда не загрузилась': 'The server is unavailable — the team did not load',
+  'Включён': 'On',
+  'приглашено:': 'invited:',
+  'Код появится, когда сервер его выдаст.': 'The code appears once the server issues it.',
+  'По именной ссылке — без установки приложения. RSVP занимает около минуты.': 'By a personal link — no app to install. RSVP takes about a minute.',
+  'одноразовая ссылка — отправьте её лично': 'one-time link — send it personally',
+  'Скопировать и открыть чаты': 'Copy and open chats',
 })

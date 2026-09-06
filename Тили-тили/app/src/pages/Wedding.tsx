@@ -56,7 +56,7 @@ function WeddingNav() {
 /* Команда (мозаика слотов) */
 export function WeddingTeam() {
   const nav = useNavigate()
-  const { slots, weddingId } = useStore()
+  const { slots, slotsState, weddingId } = useStore()
   const booked = slots.filter(s => s.state === 'booked').length
   const progress = slots.filter(s => s.state !== 'empty').length
   /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
@@ -67,7 +67,15 @@ export function WeddingTeam() {
 
   return (
     <div className="pb-28">
-      <TopBar title={t('Наш день')} sub={`${booked}${t(' забронировано · ')}${progress - booked}${t(' в работе · ')}${slots.length - progress}${t(' пустых')}`} />
+      {/* Пока мозаика не пришла, подписи нет вовсе: «0 забронировано · 0 в
+          работе · 0 пустых» при лежащем сервере читается как факт о своей
+          свадьбе. */}
+      <TopBar
+        title={t('Наш день')}
+        sub={slotsState === 'ready'
+          ? `${booked}${t(' забронировано · ')}${progress - booked}${t(' в работе · ')}${slots.length - progress}${t(' пустых')}`
+          : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : undefined}
+      />
       <WeddingNav />
       <div className="px-5 mt-3.5">
         <button onClick={() => nav('/dayx')} className="press w-full rounded-[22px] p-4 flex items-center gap-3 text-left text-white" style={{ background: 'linear-gradient(120deg,#3A322B,#1E1A16)', boxShadow: 'var(--shadow)' }}>
@@ -128,7 +136,7 @@ export function WeddingTeam() {
 
 /* Деталь слота */
 export function SlotDetail() {
-  const { slots } = useStore()
+  const { slots, slotsState } = useStore()
   /* Идентификатор — из маршрута, а не разбором `location.pathname`: разбор
      руками ломается на первом же вложенном адресе. Подмены «не нашли — покажем
      первый слот» здесь нет: чужая ссылка должна открывать «не найдено», а не
@@ -137,11 +145,17 @@ export function SlotDetail() {
   const s = slots.find(x => x.id === id)
   /* Мозаика приходит с сервера, и до ответа слот не «пустой», а неизвестный:
      разница видна человеку — пустой предлагает выбрать подрядчика, неизвестный
-     просит подождать. */
+     просит подождать, а недоступный сервер — сказать об этом прямо. */
   if (!s) return (
     <div className="pb-28">
       <TopBar back title={t('Слот команды')} />
-      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{slots.length ? t('Слот не найден') : t('Загружаем…')}</p>
+      {/* Три разных случая, и раньше все три выглядели как «Загружаем…»:
+          при лежащем сервере экран обещал загрузку до конца сеанса. */}
+      <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">
+        {slotsState === 'error'
+          ? t('Сервер недоступен. Попробуйте позже')
+          : slotsState === 'ready' ? t('Слот не найден') : t('Загружаем…')}
+      </p>
     </div>
   )
   return <SlotView s={s} />
@@ -403,6 +417,10 @@ export function Budget() {
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">
+        {/* Сводка — только когда бюджет пришёл. Без ответа здесь стояло
+            «0 ₽ · 0% · из 0 ₽ запланировано», и это не «пусто», а
+            «неизвестно»: такой экран пара читает как «денег не осталось». */}
+        {ready(q) && (
         <div className="card p-5">
           <div className="flex justify-between items-end">
             <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
@@ -451,6 +469,7 @@ export function Budget() {
             ))}
           </div>
         </div>
+        )}
         {/* Подсказка строится из настоящих чисел, а не вписана в разметку.
             Здесь стояло «Площадка и кейтеринг на 86% лимита. Зафиксируйте меню
             до 1 марта» — текст с процентом и датой, не связанными ни с чем.
@@ -938,7 +957,9 @@ export function Guests() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Гости')} sub={`${list.length}${t(' в списке · ')}${yes}${t(' подтвердили')}`} right={
+      {/* Числа появляются вместе с ответом сервера. «0 в списке · 0
+          подтвердили» при отказе читается как «нам никто не ответил». */}
+      <TopBar back title={t('Гости')} sub={ready(q) ? `${list.length}${t(' в списке · ')}${yes}${t(' подтвердили')}` : undefined} right={
         <div className="flex gap-2">
           <button onClick={() => setAdding(!adding)} className="press h-10 w-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить гостя')}><Plus size={16} /></button>
           <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} />{t('Пригласить')}</button>
@@ -1109,7 +1130,7 @@ export function Album() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Фотоальбом гостей')} sub={`${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}`} />
+      <TopBar back title={t('Фотоальбом гостей')} sub={ready(q) ? `${photos.length} ${plural(photos.length, t('кадр'), t('кадра'), t('кадров'))} · ${pending} ${t('на модерации')}` : undefined} />
       <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
         {/*

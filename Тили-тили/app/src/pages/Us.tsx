@@ -9,7 +9,7 @@ import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '@/lib/api/chats'
 import { getWedding } from '@/lib/api/weddingData'
-import { getMe } from '@/lib/api/auth'
+import { getMe, getReferral } from '@/lib/api/auth'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -24,6 +24,8 @@ export function Us() {
   const nav = useNavigate()
   const [copied, setCopied] = useState(false)
   const [datePicker, setDatePicker] = useState(false)
+  /* Реферальный код — свой, а не написанный в разметке. */
+  const ref = useApi(() => getReferral(), [])
   // Время в теле компонента запрещено (R-04) — снимаем один раз.
   const [today] = useState(() => new Date())
   const copy = (text: string, cb: () => void) => {
@@ -54,23 +56,33 @@ export function Us() {
           </button>
         </div>
 
+        {/* Код выдаёт сервер. Здесь стояло «ТИЛИ-АЛИНА · приглашено: 2» —
+            код выдуманной пары, который кнопка «Копировать» клала человеку в
+            буфер обмена. Своего кода он при этом не узнавал никогда. */}
         <div className="card p-5 mt-4 relative overflow-hidden">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-[var(--rose-soft)] opacity-70" />
           <span className="text-[10px] tracking-[.18em] uppercase text-[var(--rose-deep)] font-semibold relative">{t('Реферальная программа')}</span>
           <p className="text-[12px] text-[var(--ink2)] mt-2 leading-relaxed relative">{t('Пригласите пару — оба получите')} <b>3 000 ₽</b> {t('на премиум-функции после её первой сделки.')}</p>
-          <div className="flex items-center gap-2.5 mt-3.5 relative">
-            <div className="flex-1 card-s px-4 py-3 flex items-center justify-between">
-              <b className="text-[13px] tracking-[.12em]">{t('ТИЛИ-АЛИНА')}</b>
-              <span className="text-[9.5px] text-[var(--soft)]">{t('приглашено: 2')}</span>
+          {ready(ref) && ref.data?.code ? (
+            <div className="flex items-center gap-2.5 mt-3.5 relative">
+              <div className="flex-1 card-s px-4 py-3 flex items-center justify-between">
+                <b className="text-[13px] tracking-[.12em]">{ref.data.code}</b>
+                <span className="text-[9.5px] text-[var(--soft)]">{t('приглашено:')} {ref.data.invited ?? 0}</span>
+              </div>
+              <button onClick={() => copy(ref.data!.code!, () => setCopied(true))} className="press h-[44px] px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{copied ? t('✓ Скопировано') : t('Копировать')}</button>
             </div>
-            <button onClick={() => copy(t('ТИЛИ-АЛИНА'), () => setCopied(true))} className="press h-[44px] px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{copied ? t('✓ Скопировано') : t('Копировать')}</button>
-          </div>
+          ) : (
+            <p className="text-[11px] text-[var(--soft)] mt-3.5 relative">{t('Код появится, когда сервер его выдаст.')}</p>
+          )}
         </div>
 
         <div className="card px-4 py-1.5 mt-4">
           {[
             { icon: Settings, label: t('Настройки'), tile: 'bg-[var(--peach)]', to: '/settings' },
-            { icon: Bell, label: t('Уведомления и тихие часы'), tile: 'bg-[var(--honey)]', badge: '22:00–09:00', to: '/settings' },
+            /* Подпись «22:00–09:00» отсюда убрана: она никогда не
+               рисовалась (поле `badge` не читается), а тихие часы теперь
+               настраиваются и могут быть выключены. */
+            { icon: Bell, label: t('Уведомления и тихие часы'), tile: 'bg-[var(--honey)]', to: '/settings' },
             { icon: LifeBuoy, label: t('Поддержка и FAQ'), tile: 'bg-[var(--rose-soft)]', to: '/support' },
             { icon: FileText, label: t('Оферта и конфиденциальность'), tile: 'bg-[var(--blue)]', to: '/legal/offer' },
             { icon: Shield, label: t('Сессии и устройства'), tile: 'bg-[var(--sage-soft)]', to: '/settings' },

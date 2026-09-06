@@ -6,6 +6,7 @@ import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getCategories, getFavorites } from '@/lib/api/catalog'
 import { useApi } from '@/lib/api/useApi'
 import { Tile, TopBar, VendorCard } from '@/components/chrome'
+import { ready } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 
@@ -21,7 +22,7 @@ export function Favorites() {
   const catOf = (id?: string) => (cats.data ?? []).find(c => c.id === id)
   return (
     <div className="pb-28">
-      <TopBar back title={t('Избранное')} sub={`${list.length}${t(' отложено · сравните и выберите')}`} />
+      <TopBar back title={t('Избранное')} sub={ready(favs) ? `${list.length}${t(' отложено · сравните и выберите')}` : undefined} />
       <div className="px-5 mt-3 space-y-3.5 stagger">
         {favs.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>}
         {favs.error && (

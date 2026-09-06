@@ -38,7 +38,7 @@ export function SearchCategories() {
 
   return (
     <div className="pb-28">
-      <TopBar title={t('Все специалисты')} sub={`${cats.data?.length ?? 0}${t(' категорий · ')}${t(city)}`} />
+      <TopBar title={t('Все специалисты')} sub={ready(cats) ? `${cats.data?.length ?? 0}${t(' категорий · ')}${t(city)}` : t(city)} />
       <div className="px-5 mt-2">
         <div className="card-s flex items-center gap-2.5 px-4 py-3.5">
           <SearchIcon size={17} className="text-[var(--soft)]" />
@@ -121,7 +121,7 @@ export function VendorList() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={cat?.title ?? t('Категория')} sub={`${shown.length}${t(' рядом · сортировка: рекомендованные')}`} right={
+      <TopBar back title={cat?.title ?? t('Категория')} sub={ready(list) ? `${shown.length}${t(' рядом · сортировка: рекомендованные')}` : undefined} right={
         <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Фильтры')}>
           <SlidersHorizontal size={16} />
         </button>

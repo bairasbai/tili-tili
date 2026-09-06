@@ -31,3 +31,12 @@ export const getSessions = () => api.get('/users/me/sessions')
 /** Завершить чужую сессию. Свою гасить этим путём нельзя — это выход. */
 export const endSession = (sessionId: string) =>
   api.delete(url('/users/me/sessions/{sessionId}', { sessionId }))
+
+/**
+ * Свой реферальный код, число приглашённых и начисленное.
+ *
+ * Код выдаёт сервер (вида `ТИЛИ-ИМЯ`). Экран показывал написанный в разметке
+ * «ТИЛИ-АЛИНА» и «приглашено: 2» — код чужой выдуманной пары, который кнопка
+ * «Копировать» честно клала человеку в буфер обмена.
+ */
+export const getReferral = () => api.get('/users/me/referral')

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { Check, ChevronRight, Copy, Crown, Heart, Link2, QrCode, Shield, Users, X } from 'lucide-react'
+import { Check, ChevronRight, Copy, Crown, Heart, Link2, Shield, Users, X } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
@@ -62,6 +62,9 @@ export function Team() {
   const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [members, setMembers] = useState<Member[]>([])
+  /* Список пришёл. Без этого «Пока только вы» стояло и тогда, когда состав
+     неизвестен: пустой массив до ответа и пустой массив после — разные вещи. */
+  const [loaded, setLoaded] = useState(false)
   const [invites, setInvites] = useState<Invite[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -83,6 +86,7 @@ export function Team() {
       ])
       setMembers(m ?? [])
       setInvites(iv ?? [])
+      setLoaded(true)
     } catch (e) { setErr(explain(e)) }
   }, [weddingId])
 
@@ -135,7 +139,10 @@ export function Team() {
         )}
         {/* Кто уже внутри */}
         <div className="card px-4 py-1.5">
-          {members.length === 0 && (
+          {/* Утверждение о составе команды — только когда состав известен.
+              При отказе сервера «Пока только вы» врало бы о том, что
+              помощников нет. */}
+          {loaded && members.length === 0 && (
             <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Пока только вы. Пригласите тех, кто планирует вместе с вами.')}</p>
           )}
           {members.map((m, k) => (
@@ -216,18 +223,25 @@ export function Team() {
                 <span key={r} className="text-[10px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] flex items-center gap-1"><Check size={10} className="text-[var(--sage-deep)]" />{r}</span>
               ))}
             </div>
+            {/* Значок QR отсюда убран вместе с обещанием «покажите QR»:
+                это была иконка, а не код — показывать было нечего.
+                Генератора QR в приложении нет (тот же случай, что в альбоме
+                и в приглашениях). */}
             <div className="card-s p-4 mt-4 flex items-center gap-3">
-              <QrCode size={40} className="text-[var(--ink)] shrink-0" />
+              <Link2 size={22} className="text-[var(--ink2)] shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-bold tabular truncate">{inviteUrl(inviteCode)}</p>
-                <p className="text-[9.5px] text-[var(--soft)]">{t('отправьте ссылку или покажите QR')}</p>
+                <p className="text-[9.5px] text-[var(--soft)]">{t('одноразовая ссылка — отправьте её лично')}</p>
               </div>
               <button onClick={() => copy(inviteUrl(inviteCode))} className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
             </div>
             <button onClick={() => { copy(inviteUrl(inviteCode)); setInvite(null) }} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-4" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
               {copied ? t('✓ Скопировано!') : t('Скопировать ссылку')}
             </button>
-            <button onClick={() => nav('/us/chats')} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>{t('Отправить в чат')}</button>
+            {/* Кнопка называлась «Отправить в чат» и просто открывала список
+                чатов: ссылка оставалась здесь, отправлять было нечего.
+                Теперь она кладёт ссылку в буфер и ведёт туда, где её вставить. */}
+            <button onClick={() => { copy(inviteUrl(inviteCode)); nav('/us/chats') }} className="press w-full h-[48px] rounded-full bg-[var(--card)] font-semibold text-[13px] mt-2" style={{ boxShadow: 'var(--shadow)' }}>{t('Скопировать и открыть чаты')}</button>
           </div>
         </div>
       )}

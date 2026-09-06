@@ -95,7 +95,8 @@ export function Logistics() {
       {err && <p role="alert" className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
 
       {/* АВТОБУСЫ */}
-      <SectionHead title={t('Трансфер для гостей')} sub={`${totalTaken}/${totalSeats} ${t('мест занято')}`} />
+      {/* «0/0 мест занято» без ответа сервера — не «пусто», а «неизвестно». */}
+      <SectionHead title={t('Трансфер для гостей')} sub={ready(busesQ) ? `${totalTaken}/${totalSeats} ${t('мест занято')}` : undefined} />
       <div className="px-5 mt-2 space-y-2.5 stagger">
         <div className="card-s px-4 py-3 text-[11px] text-[var(--soft)] leading-relaxed">
           {t('Гость выбирает автобус в своём приглашении — места считаются сами, обзванивать никого не нужно.')}

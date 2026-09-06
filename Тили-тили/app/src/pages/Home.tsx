@@ -3,15 +3,18 @@ import { useNavigate } from 'react-router'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
 import { getBudget, getGuests, getTasks, getWedding } from '@/lib/api/weddingData'
+import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
+import { ready, num } from '@/components/AsyncState'
+import { cn } from '@/lib/utils'
 import { t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
 
 export default function Home() {
   const nav = useNavigate()
-  const { slots, weddingDate, weddingId } = useStore()
+  const { slots, slotsState, weddingDate, weddingId } = useStore()
   /* «Сейчас» снимается один раз за монтирование: время в теле компонента
    * запрещено (R-04), а отсчёт до свадьбы не обязан тикать посекундно —
    * до неё месяцы. */
@@ -31,6 +34,10 @@ export default function Home() {
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
+     контракте нет, поэтому считаем по списку. */
+  const nq = useApi(() => getNotifications(), [])
+  const unread = (nq.data ?? []).filter(n => !n.read).length
 
   const serverGuests = gq.data ?? []
   const persons = (status: 'yes' | 'no' | 'pending') =>
@@ -62,6 +69,15 @@ export default function Home() {
   /* Ни имени, ни города не выдумываем: пустая свадьба выглядит пустой, а не
      чужой. Раньше подставлялись «Алина & Тимур» и «Уфа» из моков. */
   const title = wq.data?.title ?? tr('Ваша свадьба')
+  /*
+   * Буквы в кружках — первые буквы имён из названия свадьбы («Алина ♥ Тимур»).
+   * Пока названия нет, кружок один и пустой: выдумывать инициалы нельзя.
+   */
+  const letters = (wq.data?.title ?? '')
+    .split(/[&♥+]/)
+    .map(part => part.trim()[0])
+    .filter((ch): ch is string => !!ch)
+    .slice(0, 2)
   const cityName = wq.data?.city?.name ?? null
   const guestsPlanned = wq.data?.guestsPlanned ?? null
   const style = wq.data?.style ?? null
@@ -72,7 +88,10 @@ export default function Home() {
         <span className="font-serif-d text-[20px]">{tr('Тили-')}<em className="grad-text not-italic font-semibold">{tr('тили')}</em></span>
         <button onClick={() => nav('/notifications')} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center relative" style={{ boxShadow: 'var(--shadow)' }} aria-label={tr('Уведомления')}>
           <Bell size={17} />
-          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />
+          {/* Точка горела всегда — независимо от того, есть ли непрочитанное.
+              Человек открывал уведомления, отмечал всё прочитанным и видел
+              её снова. Теперь она отражает ответ сервера. */}
+          {unread > 0 && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#C98A8A]" />}
         </button>
       </div>
 
@@ -86,12 +105,16 @@ export default function Home() {
           {/* Площадка и час брались из мока — «Усадьба «Липовый сад» · 16:00» стояли
               у всех. Площадка появится, когда её забронируют; час дня — в тайминге. */}
           <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {[weddingDate ? formatWeddingDate(weddingDate) : tr('Дата не выбрана'), cityName].filter(Boolean).join(' · ')}</p>
+          {/* Прочерк вместо нуля, пока ответа нет.
+              «0% готово · 0 гостей · 0/0 команда» при лежащем сервере пара
+              читает не как «мы не знаем», а как «всё пропало»: чек-лист пуст,
+              никто не ответил, подрядчиков нет. */}
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
             {[
               [weddingDate ? daysUntil(weddingDate, now) : '—', tr('дней до')],
-              [`${donePct}%`, tr('готово')],
-              [persons('yes'), tr('гостей')],
-              [`${booked.length}/${slots.length}`, tr('команда')],
+              [ready(tq) ? `${donePct}%` : '—', tr('готово')],
+              [num(gq, persons('yes')), tr('гостей')],
+              [slotsState === 'ready' ? `${booked.length}/${slots.length}` : '—', tr('команда')],
             ].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--card)]/25 rounded-2xl py-3 text-center backdrop-blur-sm">
                 <b className="text-[19px] block tabular">{v}</b>
@@ -105,13 +128,14 @@ export default function Home() {
       {/* Обратный отсчёт */}
       <div className="px-5 fade-up" style={{ animationDelay: '.1s' }}>
         <div className="card p-5 mt-4 text-center">
+          {/* Буквы — из названия своей свадьбы. Здесь стояли «А» и «Т» —
+              инициалы Алины и Тимура из моков, одни и те же у каждой пары. */}
           <div className="flex justify-center -space-x-3.5">
-            <div className="w-14 h-14 rounded-full grad p-[2.5px]">
-              <div className="w-full h-full rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[22px] flex items-center justify-center border-2 border-white">{tr('А')}</div>
-            </div>
-            <div className="w-14 h-14 rounded-full grad p-[2.5px]">
-              <div className="w-full h-full rounded-full bg-[#A9BCA0] text-[var(--on-grad)] font-serif-d text-[22px] flex items-center justify-center border-2 border-white">{tr('Т')}</div>
-            </div>
+            {letters.map((ch, i) => (
+              <div key={i} className="w-14 h-14 rounded-full grad p-[2.5px]">
+                <div className={cn('w-full h-full rounded-full text-[var(--on-grad)] font-serif-d text-[22px] flex items-center justify-center border-2 border-white', i === 0 ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]')}>{ch}</div>
+              </div>
+            ))}
           </div>
           <b className="font-serif-d text-[16px] block mt-2.5">{title}</b>
           {/* Город, стиль и число гостей — то, что известно о свадьбе. Чего
@@ -135,13 +159,22 @@ export default function Home() {
         <button className="press w-full text-left card p-5 mt-4" onClick={() => nav('/wedding/budget')}>
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{tr('Бюджет')}</span>
-            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{budgetPct}%</span>
+            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{num(bq, `${budgetPct}%`)}</span>
           </div>
-          <div className="flex justify-between items-baseline mt-1.5">
-            <b className="font-serif-d text-[22px] tabular">{fmt(spent)}</b>
-            <span className="text-[11px] text-[var(--soft)]">{tr('из')} {fmt(budgetTotal)}</span>
-          </div>
-          <div className="mt-3"><Bar pct={budgetPct} /></div>
+          {/* Суммы — только когда бюджет пришёл. «0 ₽ из 0 ₽» при отказе
+              сервера пара читает как «мы ничего не потратили и ничего не
+              запланировали». */}
+          {ready(bq) ? (
+            <>
+              <div className="flex justify-between items-baseline mt-1.5">
+                <b className="font-serif-d text-[22px] tabular">{fmt(spent)}</b>
+                <span className="text-[11px] text-[var(--soft)]">{tr('из')} {fmt(budgetTotal)}</span>
+              </div>
+              <div className="mt-3"><Bar pct={budgetPct} /></div>
+            </>
+          ) : (
+            <p className="text-[11px] text-[var(--soft)] mt-1.5">{tr('Бюджет не загрузился')}</p>
+          )}
         </button>
       </div>
 
