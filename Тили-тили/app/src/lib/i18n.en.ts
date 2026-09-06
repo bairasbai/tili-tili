@@ -1325,4 +1325,8 @@ Object.assign(EN, {
   'По именной ссылке — без установки приложения. RSVP занимает около минуты.': 'By a personal link — no app to install. RSVP takes about a minute.',
   'одноразовая ссылка — отправьте её лично': 'one-time link — send it personally',
   'Скопировать и открыть чаты': 'Copy and open chats',
+  'редакция от': 'redaction of',
+  'Редакция от': 'Redaction of',
+  'Документы обновились. Обновите приложение — подписываться под редакцией, которой вы не видели, нельзя.': 'The documents have been updated. Update the app — you cannot sign a redaction you have not seen.',
+  'Не удалось проверить редакцию документов. Без неё согласие не зафиксировать.': 'Could not check the redaction of the documents. Without it consent cannot be recorded.',
 })

@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { api, ApiError, saveTokens, url } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
+import { getPolicy } from '@/lib/api/legal'
+import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, getMe, getSessions, patchMe } from '@/lib/api/auth'
 import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
 import type { components } from '@/lib/api/schema'
@@ -43,6 +45,21 @@ export function Auth() {
      сервер, потому что доказательством согласия должна быть наша запись,
      а не localStorage в чужом браузере. */
   const [consent, setConsent] = usePersist<{ at: string } | null>('tt_consent', null)
+  /*
+   * Действующая редакция — с сервера, и СВЕРЯЕТСЯ с той, что лежит в сборке.
+   *
+   * Раньше редакцию брали у сервера только в момент отправки согласия: человек
+   * читал экран без номера и без даты, а в базу ложилась редакция, о которой он
+   * не знал. Если тексты в сборке и редакция на сервере разойдутся — юрист
+   * заменил текст, сборку не выкатили, или наоборот, — в согласии окажется
+   * номер, под текстом которого никто не подписывался. По 152-ФЗ доказательство
+   * согласия это подпись под конкретным текстом; восстановить его будет нечем.
+   */
+  const policy = useApi(() => getPolicy(), [])
+  const serverVersion = policy.data?.policyVersion ?? null
+  /* Расхождение — не ошибка сети: галочку в этом состоянии ставить нельзя. */
+  const versionMismatch = !!serverVersion && serverVersion !== LEGAL_TEXT_VERSION
+  const canConsent = !!serverVersion && !versionMismatch
   useEffect(() => {
     if (step !== 1 || sec <= 0) return
     const t = setTimeout(() => setSec(s => s - 1), 1000)
@@ -81,16 +98,26 @@ export function Auth() {
       })
       if (!r?.accessToken || !r.refreshToken) throw new Error('нет токенов в ответе')
       saveTokens({ accessToken: r.accessToken, refreshToken: r.refreshToken })
-      /* Согласие переезжает на сервер сразу: до входа его некуда было
-         привязать, а хранить доказательство только в браузере нельзя.
-         Ошибку не глотаем: если версия документа разошлась с серверной,
-         согласие не зафиксировано, и молчать об этом по 152-ФЗ нельзя. */
-      /* Редакцию берём у сервера, а не из константы: смена текста политики
-         поднимает версию на сервере, и вшитое значение молча перестало бы
-         приниматься — а без согласия закрыто всё (ERR-0114). */
+      /*
+       * Согласие фиксируется на сервере сразу: до входа его некуда привязать,
+       * а хранить доказательство только в браузере нельзя.
+       *
+       * Не удалось — токены снимаем. Иначе человек остаётся ВОШЕДШИМ БЕЗ
+       * СОГЛАСИЯ: `requireConsent` стоит на каждом защищённом маршруте, и все
+       * экраны отвечают 403 «у вашей роли нет доступа» — при том, что роль ни
+       * при чём. Половинчатое состояние он не может ни исправить, ни понять;
+       * честнее вернуть его на шаг входа, где всё начинается заново.
+       *
+       * Редакция — та, которую он видел: галочка недоступна, пока она не
+       * совпала с серверной (`lib/legal.ts`).
+       */
       if (consent) {
-        const policy = await api.get('/legal/policy')
-        await api.post('/users/me/consent', { policyVersion: policy.policyVersion })
+        try {
+          await api.post('/users/me/consent', { policyVersion: LEGAL_TEXT_VERSION })
+        } catch (e) {
+          saveTokens(null)
+          throw e
+        }
       }
       setStep(2)
     } catch (e) {
@@ -121,8 +148,9 @@ export function Auth() {
               inputMode="tel" placeholder="917 123-45-67" className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]" />
           </div>
           <button
-            onClick={() => setConsent(consent ? null : { at: new Date().toISOString() })}
-            className="press w-full flex items-start gap-3 mt-5 text-left"
+            onClick={() => canConsent && setConsent(consent ? null : { at: new Date().toISOString() })}
+            disabled={!canConsent}
+            className="press w-full flex items-start gap-3 mt-5 text-left disabled:opacity-60"
             role="checkbox"
             aria-checked={!!consent}
             aria-label={t('Я согласен на обработку персональных данных')}
@@ -135,8 +163,25 @@ export function Auth() {
               <b onClick={e => { e.stopPropagation(); nav('/legal/offer') }} className="text-[var(--rose-deep)] underline underline-offset-2">{t('оферту')}</b>{' '}
               {t('и')}{' '}
               <b onClick={e => { e.stopPropagation(); nav('/legal/privacy') }} className="text-[var(--rose-deep)] underline underline-offset-2">{t('политику конфиденциальности')}</b>
+              {/* Под какой именно редакцией подписывается человек. Раньше здесь
+                  не было ни номера, ни даты. */}
+              {serverVersion && !versionMismatch && (
+                <span className="block text-[10px] text-[var(--soft2)] mt-1">
+                  {t('редакция от')} {formatRedaction(serverVersion, getI18nLang())}
+                </span>
+              )}
             </span>
           </button>
+          {versionMismatch && (
+            <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mt-2.5">
+              {t('Документы обновились. Обновите приложение — подписываться под редакцией, которой вы не видели, нельзя.')}
+            </p>
+          )}
+          {policy.error && (
+            <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mt-2.5">
+              {t('Не удалось проверить редакцию документов. Без неё согласие не зафиксировать.')}
+            </p>
+          )}
         </div>
       )}
 

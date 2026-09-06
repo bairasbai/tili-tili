@@ -1,5 +1,6 @@
 import { TopBar } from '@/components/chrome'
-import { t } from '@/lib/i18n'
+import { getI18nLang, t } from '@/lib/i18n'
+import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 
 /*
  * Юридические документы.
@@ -15,6 +16,22 @@ function Draft() {
     <div className="card-s px-4 py-3 mt-3 text-[11px] leading-relaxed" style={{ background: 'var(--honey)', color: 'var(--ink)' }}>
       <b>{t('Черновик.')}</b> {t('Текст не проверен юристом и не является публичной офертой. До запуска подлежит замене.')}
     </div>
+  )
+}
+
+/*
+ * Редакция текста, который человек сейчас читает.
+ *
+ * Экраны стояли без номера и без даты. Согласие при этом фиксируется именно
+ * по номеру редакции — и человек подписывался под числом, которого нигде не
+ * видел. Теперь оно на экране, и это то же самое число, что уходит в базу:
+ * его называет сборка, а экран входа сверяет с серверным (`lib/legal.ts`).
+ */
+function Redaction() {
+  return (
+    <p className="text-[10.5px] text-[var(--soft2)] mt-3 px-1">
+      {t('Редакция от')} {formatRedaction(LEGAL_TEXT_VERSION, getI18nLang())}
+    </p>
   )
 }
 
@@ -34,6 +51,7 @@ export function Offer() {
       <TopBar back title={t('Оферта')} sub={t('Условия использования сервиса')} />
       <div className="px-5">
         <Draft />
+        <Redaction />
         <Section title={t('1. Кто оказывает услугу')}>
           <p>{t('Сервис «Тили-тили» (tili-tili.ru) — информационная площадка, которая помогает паре найти подрядчиков для свадьбы, спланировать бюджет, тайминг и список гостей.')}</p>
         </Section>
@@ -61,6 +79,7 @@ export function Privacy() {
       <TopBar back title={t('Персональные данные')} sub={t('Что собираем и зачем')} />
       <div className="px-5">
         <Draft />
+        <Redaction />
         <Section title={t('1. Какие данные собираем')}>
           <p>{t('Номер телефона — для входа. Имена пары и дату свадьбы — чтобы собрать план. Имена и контакты гостей — если вы внесли их сами. Переписку с подрядчиками — чтобы вы могли к ней вернуться.')}</p>
         </Section>
