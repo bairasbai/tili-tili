@@ -550,6 +550,13 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ]
               },
+              "phone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "для напоминаний по SMS; вводит пара"
+              },
               "status": {
                   "type": "string",
                   "enum": [
@@ -765,12 +772,21 @@ export const CONTRACT_SCHEMAS = {
       },
       "MenuPoll": {
           "type": "object",
+          "required": [
+              "options"
+          ],
           "properties": {
               "question": {
                   "type": "string"
               },
-              "sent": {
-                  "type": "boolean"
+              "sentAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "readOnly": true,
+                  "description": "когда сводка ушла кейтерингу (POST …/menu-poll/remind); null — ещё не уходила"
               },
               "expectedPortions": {
                   "type": "integer",
@@ -1151,7 +1167,9 @@ export const CONTRACT_SCHEMAS = {
                   "type": [
                       "string",
                       "null"
-                  ]
+                  ],
+                  "readOnly": true,
+                  "description": "Пока только читается: отправителя писем нет (хвост владельца), и\nпринимать адрес, на который ничего не уйдёт, — обещать доставку.\nПравка появится вместе с отправителем и подтверждением адреса.\n"
               },
               "lang": {
                   "type": "string",

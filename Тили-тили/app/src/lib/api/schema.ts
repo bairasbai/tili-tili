@@ -193,6 +193,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                501: components["responses"]["NotConfigured"];
             };
         };
         put?: never;
@@ -455,6 +456,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         options?: never;
@@ -474,7 +476,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        role?: "couple" | "helper" | "coordinator";
+                        role: "couple" | "helper" | "coordinator";
                     };
                 };
             };
@@ -1292,11 +1294,19 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Отменить бронь (слот → free, бюджет минус) */
+        /**
+         * Отменить бронь (слот → free, бюджет минус)
+         * @description Идемпотентно по `Idempotency-Key`, как бронь и оплата: отмена освобождает
+         *     дату у подрядчика и рассылает уведомления, повтор на плохой связи не
+         *     должен делать этого дважды. Сервер требовал заголовок с этапа 4, а
+         *     контракт его не называл (класс ERR-0038) — выправлено в v0.24.
+         */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                     slotId: string;
@@ -1314,6 +1324,7 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -1370,6 +1381,7 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -1548,6 +1560,8 @@ export interface paths {
                         plusOne?: boolean;
                         /** @example Родня невесты */
                         group?: string;
+                        /** @description для напоминаний по SMS (POST …/guests/remind) */
+                        phone?: string;
                     };
                 };
             };
@@ -1622,6 +1636,14 @@ export interface paths {
                         /** @enum {string} */
                         status?: "yes" | "no" | "pending";
                         tableId?: string | null;
+                        group?: string | null;
+                        /** @description null — стереть номер */
+                        phone?: string | null;
+                        /** @enum {string|null} */
+                        diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                        dietNote?: string | null;
+                        /** @enum {string|null} */
+                        transfer?: null | "need" | "own";
                     };
                 };
             };
@@ -1761,6 +1783,11 @@ export interface paths {
                         status: "yes" | "no";
                         plusOne?: boolean;
                         comment?: string;
+                        /** @enum {string|null} */
+                        diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                        dietNote?: string;
+                        /** @enum {string} */
+                        transfer?: "need" | "own";
                     };
                 };
             };
@@ -2038,6 +2065,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         options?: never;
@@ -2178,6 +2206,7 @@ export interface paths {
                     };
                 };
                 423: components["responses"]["Locked"];
+                429: components["responses"]["QuotaExceeded"];
             };
         };
         delete?: never;
@@ -2598,6 +2627,7 @@ export interface paths {
                         "application/json": components["schemas"]["Lead"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -2956,6 +2986,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -3183,6 +3214,7 @@ export interface paths {
                         "application/json": components["schemas"]["Gift"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         trace?: never;
@@ -3446,6 +3478,7 @@ export interface paths {
                         "application/json": components["schemas"]["Fund"];
                     };
                 };
+                409: components["responses"]["Conflict"];
                 429: components["responses"]["QuotaExceeded"];
             };
         };
@@ -3497,6 +3530,7 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         /**
@@ -4527,7 +4561,6 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -4573,6 +4606,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         /**
@@ -4862,6 +4896,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                501: components["responses"]["NotConfigured"];
             };
         };
         /** Отписаться от push */
@@ -5143,6 +5178,7 @@ export interface paths {
                         "application/json": components["schemas"]["Document"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -5589,6 +5625,7 @@ export interface paths {
                         };
                     };
                 };
+                501: components["responses"]["NotConfigured"];
             };
         };
         delete?: never;
@@ -5709,7 +5746,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        approved?: boolean;
+                        approved: boolean;
                     };
                 };
             };
@@ -5985,6 +6022,8 @@ export interface paths {
                         categoryId: string;
                         budget?: components["schemas"]["Money"];
                         comment?: string;
+                        /** @description город поиска, если отличается от города свадьбы */
+                        city?: string;
                     };
                 };
             };
@@ -5996,6 +6035,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -6091,6 +6131,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -6713,6 +6754,8 @@ export interface components {
             name?: string;
             plusOne?: boolean;
             group?: string | null;
+            /** @description для напоминаний по SMS; вводит пара */
+            phone?: string | null;
             /** @enum {string} */
             status?: "yes" | "no" | "pending";
             tableId?: string | null;
@@ -6982,7 +7025,11 @@ export interface components {
         };
         MenuPoll: {
             question?: string;
-            sent?: boolean;
+            /**
+             * Format: date-time
+             * @description когда сводка ушла кейтерингу (POST …/menu-poll/remind); null — ещё не уходила
+             */
+            readonly sentAt?: string | null;
             /**
              * @description На сколько ПЕРСОН готовить. Считается по подтвердившим гостям:
              *     запись с «+1» — двое. Кейтерингу нужны порции, а не строки
@@ -6990,7 +7037,7 @@ export interface components {
              *     ответа на разных экранах.
              */
             readonly expectedPortions?: number;
-            options?: {
+            options: {
                 id?: string;
                 name?: string;
                 icon?: string;
@@ -7001,7 +7048,12 @@ export interface components {
             readonly id?: string;
             name?: string;
             readonly phone?: string;
-            email?: string | null;
+            /**
+             * @description Пока только читается: отправителя писем нет (хвост владельца), и
+             *     принимать адрес, на который ничего не уйдёт, — обещать доставку.
+             *     Правка появится вместе с отправителем и подтверждением адреса.
+             */
+            readonly email?: string | null;
             /** @enum {string} */
             lang?: "ru" | "en";
             /**
@@ -7165,6 +7217,21 @@ export interface components {
          *     отказ, а не таймер.
          */
         QuotaExceeded: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description Путь согласован, обработчик есть, но внешняя служба не подключена
+         *     (OAuth-приложения, VAPID-ключи, объектное хранилище). Код ошибки
+         *     называет, чего именно нет: `oauth_not_configured`,
+         *     `push_not_configured`, `storage_not_configured`. Это хвост владельца,
+         *     а не недоделка сервера — 501 с общим `not_implemented` здесь не бывает.
+         */
+        NotConfigured: {
             headers: {
                 [name: string]: unknown;
             };

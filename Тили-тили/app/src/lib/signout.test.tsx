@@ -16,9 +16,15 @@ import { MemoryRouter } from 'react-router'
 import { StoreProvider } from './store'
 
 const calls: string[] = []
+/* Что ответит сервер на `DELETE /users/me`: null — 204, строка — отказ с этим текстом. */
+const flags = vi.hoisted(() => ({ deleteAccountRefusal: null as string | null }))
 
 vi.mock('@/lib/api/client', () => ({
-  ApiError: class ApiError extends Error { kind = 'http'; status = 0; code = ''; get isDown() { return false } },
+  ApiError: class ApiError extends Error {
+    kind: string; status: number; code: string
+    constructor(kind: string, status: number, code: string, message: string) { super(message); this.kind = kind; this.status = status; this.code = code }
+    get isDown() { return this.kind !== 'http' || this.status >= 500 }
+  },
   saveTokens: () => { calls.push('saveTokens(null)') },
   isAuthorized: () => true,
   url: (tpl: string, p: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => p[k]),
@@ -33,7 +39,13 @@ vi.mock('@/lib/api/client', () => ({
       }
       return undefined
     },
-    delete: async (path: string) => { calls.push(`DELETE ${path}`) },
+    delete: async (path: string) => {
+      calls.push(`DELETE ${path}`)
+      if (path === '/users/me' && flags.deleteAccountRefusal) {
+        const { ApiError } = await import('@/lib/api/client')
+        throw new ApiError('http', 409, 'active_deals', flags.deleteAccountRefusal)
+      }
+    },
     post: async (path: string) => { calls.push(`POST ${path}`) },
     put: async () => undefined,
     patch: async () => undefined,
@@ -82,5 +94,34 @@ describe('выход со всех устройств', () => {
        поштучно: её уже накрыл общий запрос. */
     expect(calls).toContain('DELETE /users/me/sessions/this-one')
     expect(calls).not.toContain('DELETE /users/me/sessions/other-1')
+  })
+})
+
+describe('удаление аккаунта', () => {
+  /*
+   * Сервер отвечает 409 `active_deals`, пока у человека живая сделка
+   * (контракт обещал это с v0.2, реализовано 2026-09-06). До фикса `catch {}`
+   * в обработчике глотал отказ молча: кнопка «Подтвердить удаление» не делала
+   * ничего видимого, и человек не узнавал, что сначала надо закрыть сделки
+   * (R-128). Этот тест падал бы на том коде: текста на экране не было.
+   */
+  afterEach(() => { flags.deleteAccountRefusal = null })
+
+  it('отказ сервера показывается словами сервера, локальное не чистится', async () => {
+    flags.deleteAccountRefusal = 'Сначала завершите или отмените сделки (1): Студия «Пион»'
+    render(<MemoryRouter><StoreProvider><Settings /></StoreProvider></MemoryRouter>)
+    fireEvent.click(screen.getByText('Удалить аккаунт и все данные').closest('button')!)
+    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся').closest('button')!)
+
+    await waitFor(() => expect(calls).toContain('DELETE /users/me'))
+    expect(await screen.findByText('Сначала завершите или отмените сделки (1): Студия «Пион»')).toBeTruthy()
+    expect(calls).not.toContain('saveTokens(null)')
+  })
+
+  it('при 204 локальное чистится', async () => {
+    render(<MemoryRouter><StoreProvider><Settings /></StoreProvider></MemoryRouter>)
+    fireEvent.click(screen.getByText('Удалить аккаунт и все данные').closest('button')!)
+    fireEvent.click(screen.getByText('Подтвердить удаление — данные сотрутся').closest('button')!)
+    await waitFor(() => expect(calls).toContain('saveTokens(null)'))
   })
 })

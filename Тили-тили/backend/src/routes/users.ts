@@ -212,6 +212,35 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/users/me', { preHandler: app.requireConsent }, async (request, reply) => {
     const userId = request.caller!.userId
+    /* Живая сделка держит вторую сторону: у подрядчика занята дата, у пары
+     * обещаны деньги. Контракт обещает здесь 409 со списком — до 2026-09-06
+     * его не было, и аккаунт с забронированной свадьбой стирался молча,
+     * оставляя подрядчику дату, занятую призраком. Сделки свадьбы принадлежат
+     * свадьбе, а не человеку: партнёр, уходящий вторым из пары, свадьбу
+     * не бросает — держит только последний из «пары». */
+    const { rows: active } = await db().query<{ side: string; title: string }>(
+      `select 'vendor' as side, w.title
+         from deals d join vendors v on v.id = d.vendor_id join weddings w on w.id = d.wedding_id
+        where v.user_id = $1 and d.state in ('booked', 'paid_deposit')
+       union all
+       select 'couple' as side, coalesce(v.name, d.external_name, '')
+         from deals d join weddings w on w.id = d.wedding_id
+         left join vendors v on v.id = d.vendor_id
+        where d.state in ('booked', 'paid_deposit')
+          and w.archived_at is null
+          and exists (select 1 from wedding_members m where m.wedding_id = w.id and m.user_id = $1 and m.role = 'couple')
+          and not exists (select 1 from wedding_members m2 join users u2 on u2.id = m2.user_id
+                           where m2.wedding_id = w.id and m2.user_id <> $1 and m2.role = 'couple' and u2.deleted_at is null)`,
+      [userId],
+    )
+    if (active.length > 0) {
+      const names = active.map((r) => r.title).filter(Boolean).slice(0, 5).join(', ')
+      throw new AppError(
+        409,
+        'active_deals',
+        `Сначала завершите или отмените сделки (${active.length}): ${names || 'см. раздел «Свадьба»'}`,
+      )
+    }
     // Мягкое удаление на 30 дней (План §19.1): человек передумывает чаще,
     // чем кажется, а восстановить стёртую свадьбу неоткуда.
     await db().query('update users set deleted_at = now() where id = $1 and deleted_at is null', [userId])

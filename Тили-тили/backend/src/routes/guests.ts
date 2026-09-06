@@ -14,6 +14,7 @@ interface GuestRow {
   name: string
   plus_one: boolean
   group_name: string | null
+  phone: string | null
   rsvp: string
   table_id: string | null
   diet: string | null
@@ -27,7 +28,7 @@ interface GuestRow {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.name, g.plus_one, g.group_name, g.rsvp, g.table_id, g.diet, g.diet_note,
+  g.id, g.name, g.plus_one, g.group_name, g.phone, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
@@ -59,6 +60,10 @@ export function toGuest(r: GuestRow, seesInviteUrl: boolean) {
     name: r.name,
     plusOne: r.plus_one,
     group: r.group_name,
+    /* Телефон вводит пара ради `POST …/guests/remind`; без него в ответе
+     * команда не видит, кому напоминание не уйдёт, и не может поправить
+     * опечатку. Гостевые пути (`/rsvp`, `/gifts`) этот объект не отдают. */
+    phone: r.phone,
     status: r.rsvp,
     tableId: r.table_id,
     diet: r.diet,
@@ -151,6 +156,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             plusOne: { type: 'boolean' },
             status: { type: 'string', enum: ['yes', 'no', 'pending'] },
             group: { type: 'string', maxLength: 120 },
+            // `null` стирает номер — гость попросил не писать ему (R-17).
+            phone: { type: 'string', nullable: true, maxLength: 32 },
             // Стол уходит в колонку uuid; `null` снимает рассадку (R-17).
             tableId: { ...UUID_ID, nullable: true },
             diet: {
@@ -192,7 +199,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
            table_id = case when $8 then $9::uuid else table_id end,
            diet = case when $10 then $11 else diet end,
            diet_note = case when $12 then $13 else diet_note end,
-           transfer = case when $14 then $15 else transfer end
+           transfer = case when $14 then $15 else transfer end,
+           phone = case when $16 then $17 else phone end
          where id = $1 and wedding_id = $2`,
         [
           guestId,
@@ -210,6 +218,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           (body.dietNote as string) ?? null,
           has('transfer'),
           (body.transfer as string) ?? null,
+          has('phone'),
+          (body.phone as string) ?? null,
         ],
       )
       if (res.rowCount === 0) throw notFound('Гость не найден')

@@ -210,6 +210,27 @@ export async function buildApp(
     }
   })
 
+  /**
+   * NUL-байт (` `) — единственный символ, который PostgreSQL не принимает
+   * ни в одной текстовой колонке: драйвер отвечает «invalid byte sequence»,
+   * обработчик переводит это в 500 и пишет в лог как о падении сервера.
+   * Прилететь он может откуда угодно — телом, строкой запроса, сегментом
+   * адреса (`/rsvp/a%00b`), и ни одна схема поля его не отсекает: для JSON
+   * Schema это обычная строка. Одна проверка на входе вместо шаблона
+   * в каждом из трёхсот строковых полей (R-111: формат проверяется ДО базы).
+   */
+  app.addHook('preValidation', async (request) => {
+    const hasNul = (value: unknown): boolean => {
+      if (typeof value === 'string') return value.includes(' ')
+      if (Array.isArray(value)) return value.some(hasNul)
+      if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasNul)
+      return false
+    }
+    if (hasNul(request.params) || hasNul(request.query) || hasNul(request.body)) {
+      throw new AppError(422, 'invalid_character', 'В запросе недопустимый символ (NUL)')
+    }
+  })
+
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send(toErrorBody('not_found', `Нет такого адреса: ${request.method} ${request.url}`)),
   )

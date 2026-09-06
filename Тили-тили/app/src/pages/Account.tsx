@@ -473,12 +473,21 @@ export function Settings() {
     nav('/auth')
   }
 
+  const [deleteErr, setDeleteErr] = useState<string | null>(null)
   const deleteAccount = async () => {
+    setDeleteErr(null)
     try {
       await api.delete('/users/me')
-    } catch {
+    } catch (e) {
       /* Не удалили на сервере — не делаем вид, что удалили: данные остаются,
-         человек должен увидеть, что запрос не прошёл. */
+         а причина показывается словами сервера. Молчащий catch здесь прятал
+         409 `active_deals` («сначала завершите сделки») — кнопка выглядела
+         сломанной (R-128). */
+      setDeleteErr(
+        e instanceof ApiError
+          ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+          : t('Что-то пошло не так'),
+      )
       return
     }
     forgetLocally()
@@ -569,6 +578,7 @@ export function Settings() {
         ) : (
           <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт и все данные')}</button>
         )}
+        {deleteErr && <p className="text-[11px] text-center text-[var(--rose-deep)]">{deleteErr}</p>}
         <p className="flex items-center justify-center gap-1.5 text-[10px] text-[var(--soft2)]"><Shield size={11} />{t('Данные защищены по 152-ФЗ · удаление аккаунта — по запросу')}</p>
       </div>
       {cityPick && <CityPicker onClose={() => setCityPick(false)} onPick={(c) => { setCity(c.n, c.r); setCityPick(false) }} />}
