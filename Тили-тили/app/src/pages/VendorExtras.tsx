@@ -6,7 +6,7 @@ import { AsyncState, ready } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorLeads, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
 import { cn, pct, plural } from '@/lib/utils'
-import { fmt } from '@/lib/data'
+import { fmt } from '@/lib/money'
 import { t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 

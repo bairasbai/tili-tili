@@ -1,7 +1,9 @@
 import { createElement, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
-import { contractTemplates, fmt, type Slot } from '@/lib/data'
+import { contractTemplates } from '@/lib/contractTemplates'
+import { fmt } from '@/lib/money'
+import type { Slot } from '@/lib/types'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, ready } from '@/components/AsyncState'
@@ -72,9 +74,11 @@ export function WeddingTeam() {
           <span className="text-[22px]">🎬</span>
           <span className="flex-1">
             <b className="text-[13px] block">{t('Режим дня X')}</b>
-            <span className="text-[10px] text-white/60">{t('Live-тайминг, задержки, план Б и SOS')}</span>
+            {/* Ни «демо», ни SOS здесь больше нет: экран дня X работает на
+                серверном тайминге, а отдельной кнопки «позвать координатора»
+                контракт не знает — вместо неё командный чат (R-163). */}
+            <span className="text-[10px] text-white/60">{t('Тайминг, сдвиг всей программы, план Б и чат команды')}</span>
           </span>
-          <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--card)]/15">{t('демо')}</span>
         </button>
       </div>
       <div className="px-5 mt-5">
@@ -1192,30 +1196,12 @@ export function Documents() {
         ))}
       </div>
 
-      <div className="px-5 mt-5">
-        <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Подписанные')}</h2>
-        <div className="space-y-2.5">
-          {[
-            [t('Договор с фотографом'), t('подписан обеими сторонами · PDF'), '✓'],
-            [t('Аренда усадьбы «Липовый сад»'), t('подписан · скан загружен'), '✓'],
-          ].map(([n, d]) => (
-            <button key={n} onClick={() => {
-              const html = `<html><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.7"><h1>${n}</h1><p>${t('г. Уфа · подписан обеими сторонами')}</p><p>${t('Заказчик: Алина Козлова и Тимур Волков. Предмет, стоимость, ответственность сторон — по шаблону «Тили-тили».')}</p><p><i>${t('Сформировано tili-tili.ru')}</i></p></body></html>`
-              const a = document.createElement('a')
-              a.href = URL.createObjectURL(new Blob(['﻿', html], { type: 'application/msword' }))
-              a.download = `${n.replace(/[«»\s]+/g, '-').toLowerCase()}.doc`
-              a.click(); URL.revokeObjectURL(a.href)
-            }} className="press w-full card-s p-4 flex items-center gap-3 text-left">
-              <div className="w-10 h-10 rounded-[14px] bg-[var(--sage-soft)] flex items-center justify-center">📄</div>
-              <div className="flex-1 min-w-0">
-                <b className="text-[12.5px] block truncate">{n}</b>
-                <span className="text-[10px] text-[var(--sage-deep)]">{d}</span>
-              </div>
-              <Download size={14} className="text-[var(--soft2)] shrink-0" />
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Здесь стоял второй, выдуманный список «Подписанные»: «Договор с
+          фотографом · подписан обеими сторонами · PDF» и «Аренда усадьбы
+          «Липовый сад»». Нажатие скачивало .doc, в котором заказчиком значились
+          «Алина Козлова и Тимур Волков» — чужие имена в документе, который
+          человек мог отнести подрядчику. Настоящий список подписанных стоит
+          выше и приходит с сервера. */}
 
       <p className="px-6 mt-4 text-[10.5px] text-[var(--soft)] leading-relaxed text-center">
         {t('Шаблоны носят информационный характер и не заменяют консультацию юриста. Данные подставляются автоматически из сделки.')}

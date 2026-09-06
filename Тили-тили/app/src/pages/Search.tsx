@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
-import { fmt } from '@/lib/data'
+import { fmt } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getAvailability, getCategories, getVendors, getVendor } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
+import { AsyncState, ready } from '@/components/AsyncState'
+import { getVendorReviews } from '@/lib/api/reviews'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
@@ -194,6 +196,10 @@ export function VendorDetail() {
      феврале и в месяцах на 31 день. */
   const grid = monthGrid(month)
   const freeOnDate = !!weddingDate && !busyDates.includes(weddingDate)
+  /* Отзывы — публичная лента этого подрядчика, а не общая заготовка. */
+  const reviews = useApi(() => id ? getVendorReviews(id) : Promise.resolve(null), [id])
+  const reviewItems = reviews.data?.items ?? []
+
   const similar = useApi(
     () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, limit: 6 }) : Promise.resolve({ items: [] }),
     [v?.categoryId, city],
@@ -327,10 +333,21 @@ export function VendorDetail() {
             <span className="ml-auto text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('✓ верифицирован')}</span>
           </div>
           <div className="mt-3 space-y-1.5 text-[11.5px] text-[var(--soft)]">
-            <p>✓ {t('Паспорт / ИП сверены с базой ФНС')}</p>
+            {/*
+              Здесь стояли два обещания, которых нет ни в коде, ни в контракте:
+              «Оплата через эскроу: деньги заморожены до дня X» и «За отмену в
+              последний момент — штраф рейтинга». Эскроу не существует —
+              платёжный провайдер не подключён, и в разделе «Поддержка» то же
+              приложение отвечает обратное: «оплата — напрямую подрядчику по
+              договору, мы агрегатор и не являемся стороной сделки». Рейтинг
+              считается только по отзывам, за отмену он не меняется. Обещать
+              человеку защиту денег, которой нет, — худшее, что может сделать
+              этот экран.
+            */}
+            <p>✓ {t('Паспорт / ИП сверены модератором')}</p>
             <p>✓ {t('Отзывы — только от пар после реальной сделки')}</p>
-            <p>✓ {t('Оплата через эскроу: деньги заморожены до дня X')}</p>
-            <p>✓ {t('За отмену в последний момент — штраф рейтинга и горячая замена вам')}</p>
+            <p>✓ {t('Договор из шаблона: предмет, сроки и стоимость письменно')}</p>
+            <p>✓ {t('Отменил в последний момент — каталог сразу покажет свободных на вашу дату')}</p>
           </div>
         </div>
       </div>
@@ -390,31 +407,41 @@ export function VendorDetail() {
         </div>
       </div>
 
-      {/* Отзывы */}
+      {/* Отзывы.
+          Раньше здесь у КАЖДОГО подрядчика стояли одни и те же три отзыва,
+          написанные в коде, — «Гульнара и Тимур», «Дина и Руслан» и «Гость
+          свадьбы Алины и Тимура», — да ещё с пометкой «сделка через
+          «Тили-тили» — отзыв подтверждён». Пара выбирала человека по чужой
+          выдумке, а подрядчику приписывались слова, которых о нём никто не
+          говорил. */}
       <div className="px-5 mt-5">
-        <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Отзывы пар')}</h2>
+        <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Отзывы')}</h2>
+        <AsyncState q={reviews} />
+        {ready(reviews) && !reviewItems.length && (
+          <p className="text-[11.5px] text-[var(--soft)] px-1 leading-relaxed">{t('Отзывов пока нет. Они появляются после завершённых сделок и от гостей свадеб.')}</p>
+        )}
         <div className="space-y-2.5">
-          {[
-            [t('Гульнара и Тимур'), '★★★★★', t('Сняла даже то, чего мы не заметили. Фото прислала через неделю — все 600 обработанных!')],
-            [t('Дина и Руслан'), '★★★★★', t('Спокойная, ненавязчивая, с чувством света. Родители в восторге от семейных кадров.')],
-          ].map(([n, st, tx]) => (
-            <div key={n} className="card-s p-4">
-              <div className="flex justify-between items-center">
-                <b className="text-[12.5px]">{n}</b>
-                <span className="text-[10px] text-[var(--honey-deep)] tracking-wide">{st}</span>
+          {reviewItems.map(r => (
+            <div key={r.id} className="card-s p-4">
+              <div className="flex justify-between items-center gap-2">
+                <b className="text-[12.5px]">{r.authorName}</b>
+                <span className="text-[10px] text-[var(--honey-deep)] tracking-wide">{'★'.repeat(r.rating ?? 0)}</span>
               </div>
-              <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{tx}</p>
-              <p className="text-[9px] font-bold text-[var(--sage-deep)] mt-2">✓ {t('сделка через «Тили-тили» — отзыв подтверждён')}</p>
+              <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{r.text}</p>
+              {/* Источник ставит сервер: у пары договор, у гостя впечатление. */}
+              {r.source === 'couple' ? (
+                <p className="text-[9px] font-bold text-[var(--sage-deep)] mt-2">✓ {t('сделка через «Тили-тили» — отзыв подтверждён')}</p>
+              ) : (
+                <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)] mt-2">{t('Гость свадьбы')}</span>
+              )}
+              {r.reply?.text && (
+                <div className="mt-2.5 pl-3 border-l-2 border-[var(--track)]">
+                  <p className="text-[10px] font-bold text-[var(--soft)]">{t('Ответ подрядчика')}</p>
+                  <p className="text-[11px] text-[var(--ink2)] leading-relaxed font-light">{r.reply.text}</p>
+                </div>
+              )}
             </div>
           ))}
-          <div className="card-s p-4">
-            <div className="flex justify-between items-center gap-2">
-              <b className="text-[12.5px]">{t('Гость свадьбы Алины и Тимура')}</b>
-              <span className="text-[10px] text-[var(--honey-deep)] tracking-wide">★★★★★</span>
-            </div>
-            <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed mt-1.5 font-light">{t('Фотографировала нас незаметно, но на фото мы все — и бабушки, и дети. Очень живые кадры!')}</p>
-            <span className="inline-block text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--blue)] text-[var(--blue-ink)] mt-2">{t('Гость свадьбы')}</span>
-          </div>
         </div>
       </div>
 

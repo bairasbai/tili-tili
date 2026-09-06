@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, url } from './client'
 
 /*
  * Свой профиль.
@@ -9,3 +9,25 @@ import { api } from './client'
  * профиля: имя и язык меняются без перевыпуска.
  */
 export const getMe = () => api.get('/users/me')
+
+/**
+ * Настройки профиля: имя, язык, зона, четыре канала push и тихие часы.
+ *
+ * Пропущенное поле сервер не трогает — можно слать только изменённое.
+ * Тихие часы выключаются пустым окном (`22:00–22:00`), а не отсутствием
+ * полей: «не прислали» на сервере значит «оставить как было».
+ */
+export const patchMe = (patch: {
+  name?: string
+  lang?: 'ru' | 'en'
+  tz?: string
+  push?: Partial<Record<'tasks' | 'chats' | 'deals' | 'tips', boolean>>
+  quietHours?: { from: string; to: string }
+}) => api.patch('/users/me', patch)
+
+/** Устройства, с которых входили. `current` — то, где человек прямо сейчас. */
+export const getSessions = () => api.get('/users/me/sessions')
+
+/** Завершить чужую сессию. Свою гасить этим путём нельзя — это выход. */
+export const endSession = (sessionId: string) =>
+  api.delete(url('/users/me/sessions/{sessionId}', { sessionId }))

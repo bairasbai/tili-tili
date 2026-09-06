@@ -170,3 +170,20 @@ export const guestInviteLink = (weddingId: string, guestId: string) =>
  */
 export const remindGuests = (weddingId: string) =>
   api.post(url('/weddings/{weddingId}/guests/remind', { weddingId }), {})
+
+/**
+ * Сдвинуть день X на N минут.
+ *
+ * Двигает все последующие блоки тайминга и рассылает команде и гостям (§19.6).
+ * Раньше кнопка «+15 мин» копила задержку в `tt_dayx` браузера: у пары число
+ * росло, а команда о сдвиге не знала.
+ */
+export const shiftTimeline = (weddingId: string, minutes: number) =>
+  api.post(url('/weddings/{weddingId}/timeline/shift', { weddingId }), { minutes }, { idempotencyKey: newIdempotencyKey() })
+
+/**
+ * Включить запасной сценарий: тайминг пересобирается, команда и гости получают
+ * новую точку сбора. Тоже было тумблером в браузере.
+ */
+export const activatePlanB = (weddingId: string, scenario = 'rain') =>
+  api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }), { scenario }, { idempotencyKey: newIdempotencyKey() })

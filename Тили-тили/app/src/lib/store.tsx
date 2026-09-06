@@ -2,7 +2,7 @@
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode, useEffect } from 'react'
-import { type Slot, type SlotState } from './data'
+import type { Slot, SlotState } from './types'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
 import { findMyWedding, setWeddingDateOnServer } from './api/wedding'
@@ -210,11 +210,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dealState: d?.state,
     }
   }), [serverSlots])
+  /* Пустой список, а не `['v1']`: подрядчика с таким номером не существует —
+     он остался от мок-каталога. Сердечко на пустом месте показывало
+     избранным то, чего в каталоге нет. */
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
-      const parsed = JSON.parse(safeGet('tt_fav') ?? '["v1"]')
-      return Array.isArray(parsed) ? parsed : ['v1']
-    } catch { return ['v1'] }
+      const parsed: unknown = JSON.parse(safeGet('tt_fav') ?? '[]')
+      return Array.isArray(parsed) ? (parsed as string[]) : []
+    } catch { return [] }
   })
 
   /* Избранное с сервера при запуске: на новом устройстве локальный список

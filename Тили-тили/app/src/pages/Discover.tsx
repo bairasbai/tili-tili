@@ -3,13 +3,27 @@ import { useNavigate } from 'react-router'
 import { Heart, MapPin, Users, Wallet, ChevronRight, Navigation } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
-import { usePersist } from '@/lib/usePersist'
+import { getInspoLikes, getVendors, likeStory, unlikeStory } from '@/lib/api/catalog'
+import { AsyncState, ready } from '@/components/AsyncState'
+import { isAuthorized } from '@/lib/api/client'
+import { useApi } from '@/lib/api/useApi'
 import { cn } from '@/lib/utils'
-import { fmt } from '@/lib/data'
+import { fmt } from '@/lib/money'
 import { t } from '@/lib/i18n'
 import { useEscape } from '@/lib/useEscape'
 
-/* «Вдохновение» — реальные свадьбы пар региона (контент для виральности и SEO) */
+/*
+ * «Вдохновение» — подборка сценариев свадеб региона.
+ *
+ * Истории живут во фронте намеренно: контракт говорит это прямо — на сервере
+ * только идентификаторы отмеченных (`/inspiration/likes`). Это контент, а не
+ * данные пары.
+ *
+ * Подписи «реальные свадьбы пар Башкортостана» здесь больше нет: пары и суммы
+ * собраны редакцией как примеры, а выдавать их за конкретные чужие свадьбы
+ * значит врать читателю. Заменить на настоящие истории — задача владельца,
+ * она в списке блокеров.
+ */
 type Story = { id: string; pair: string; style: string; styleName: string; place: string; guests: number; budget: number; photo: string; tip: string; grad: string; split: [string, number][]; season: string }
 const STORIES: Story[] = [
   { id: 'w1', pair: t('Дина и Руслан'), style: 'boho', styleName: t('🌾 Бохо'), place: t('Шатёр у реки · Стерлитамак'), guests: 60, budget: 950000, photo: '🌾', season: t('Август 2025'), tip: t('Сэкономили на площадке — вложились в декор и живую музыку'), grad: 'from-[#A9BCA0] to-[#7E9A74]', split: [[t('Площадка и кейтеринг'), 42], [t('Декор и флористика'), 18], [t('Фото и видео'), 16], [t('Музыка и ведущий'), 12], [t('Образы и детали'), 12]] },
@@ -28,12 +42,30 @@ export function Inspiration() {
   const [budget, setBudget] = useState('all')
   const [open, setOpen] = useState<Story | null>(null)
   useEscape(() => setOpen(null), open !== null)
-  const [liked, setLiked] = usePersist<string[]>('tt_inspo_likes', [])
+  /*
+   * Отметки — аккаунта, а не браузера. Раньше они лежали в `tt_inspo_likes`:
+   * на втором устройстве сердечки были пустые, а смена телефона стирала их.
+   */
+  const likes = useApi(() => isAuthorized() ? getInspoLikes() : Promise.resolve({ storyIds: [] }), [])
+  /* Ответ сервера — источник правды, поверх него лежат отметки этого сеанса:
+     сердечко должно отзываться сразу, а не через круг до сервера. Отказ
+     снимает наложение, и экран снова показывает то, что есть на сервере. */
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const liked = (id: string) => touched[id] ?? (likes.data?.storyIds ?? []).includes(id)
+
+  const toggleLike = (id: string) => {
+    const next = !liked(id)
+    setTouched(m => ({ ...m, [id]: next }))
+    if (!isAuthorized()) return
+    void (next ? likeStory(id) : unlikeStory(id)).catch(() => {
+      setTouched(m => { const rest = { ...m }; delete rest[id]; return rest })
+    })
+  }
   const budgetOk = (b: number) => budget === 'all' || (budget === 'low' && b <= 700000) || (budget === 'mid' && b > 700000 && b <= 1200000) || (budget === 'high' && b > 1200000)
   const shown = STORIES.filter(s => (style === 'all' || s.style === style) && budgetOk(s.budget))
   return (
     <div className="pb-28">
-      <TopBar back title={t('Вдохновение')} sub={t('Реальные свадьбы пар Башкортостана')} />
+      <TopBar back title={t('Вдохновение')} sub={t('Сценарии свадеб региона: стили, бюджеты и на чём экономят')} />
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
         {[['all', t('Все стили')], ['classic', t('🤍 Классика')], ['boho', t('🌾 Бохо')], ['minimal', t('◻️ Минимализм')]].map(([id, l]) => (
           <button key={id} onClick={() => setStyle(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', style === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
@@ -60,8 +92,8 @@ export function Inspiration() {
                   <b className="font-serif-d text-[17px]">{s.pair}</b>
                   <p className="text-[10.5px] text-[var(--soft)] mt-0.5 flex items-center gap-1"><MapPin size={10} /> {s.place}</p>
                 </button>
-                <button onClick={() => setLiked(l => l.includes(s.id) ? l.filter(x => x !== s.id) : [...l, s.id])} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center" aria-label={t('Нравится')}>
-                  <Heart size={15} className={liked.includes(s.id) ? 'text-[var(--rose-deep)] fill-[#C98A8A]' : 'text-[var(--soft2)]'} />
+                <button onClick={() => toggleLike(s.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center" aria-label={t('Нравится')}>
+                  <Heart size={15} className={liked(s.id) ? 'text-[var(--rose-deep)] fill-[#C98A8A]' : 'text-[var(--soft2)]'} />
                 </button>
               </div>
               <div className="flex gap-2 mt-3 flex-wrap">
@@ -110,37 +142,53 @@ export function Inspiration() {
   )
 }
 
-/* Карта площадок: Яндекс-виджет (без API-ключа) + карточки с маршрутом */
+/*
+ * Площадки города.
+ *
+ * Экран был картой из четырёх выдуманных площадок с выдуманными координатами
+ * и ценами: «Усадьба «Липовый сад» · 54.8690,55.9210 · от 250 000 ₽». Подпись
+ * под картой признавалась сама: «Точки приблизительные в моке». Кнопка
+ * «Маршрут» вела в Яндекс.Карты по этим же придуманным координатам — человек
+ * поехал бы в поле.
+ *
+ * Координат в контракте нет вовсе (геокодер не подключён), поэтому карты
+ * здесь больше нет: показываем настоящие площадки каталога своего города, а
+ * «Найти на карте» ищет по названию, а не ставит точку, которой мы не знаем.
+ */
 export function VenuesMap() {
+  const nav = useNavigate()
   const { city } = useStore()
-  const venues = [
-    { n: t('Усадьба «Липовый сад»'), d: t('загородная · до 150 гостей'), p: 250000, ll: '54.8690,55.9210', tile: 'bg-[var(--honey)]', icon: '🏛' },
-    { n: t('Банкетный зал «Маркони»'), d: t('город · до 200 гостей'), p: 180000, ll: '54.7355,55.9919', tile: 'bg-[var(--rose-soft)]', icon: '🥂' },
-    { n: t('Шатёр «Речной берег»'), d: t('у воды · до 80 гостей'), p: 120000, ll: '54.7100,55.8500', tile: 'bg-[var(--sage-soft)]', icon: '⛺' },
-    { n: t('Лофт «Этажи»'), d: t('индустриальный · до 60 гостей'), p: 90000, ll: '54.7500,56.0100', tile: 'bg-[var(--lav)]', icon: '🏙' },
-  ]
+  const q = useApi(() => getVendors({ categoryId: 'venue', city, limit: 20 }), [city])
+  const venues = q.data?.items ?? []
+
   return (
     <div className="pb-28">
-      <TopBar back title={t('Площадки на карте')} sub={`${city}${t(' и окрестности')}`} />
+      <TopBar back title={t('Площадки')} sub={`${t(city)}${t(' и окрестности')}`} />
       <div className="px-5 mt-3">
-        <div className="card overflow-hidden !p-0">
-          <iframe
-            title={t('Карта площадок')}
-            src={`https://yandex.ru/map-widget/v1/?ll=${city === 'Уфа' ? '55.9711%2C54.7388' : '58.6658%2C52.7181'}&z=10&pt=${venues.map(v => `${v.ll.split(',').reverse().join(',')},pm2rdm`).join('~')}`}
-            className="w-full h-[300px] border-0"
-            loading="lazy"
-          />
-        </div>
-        <p className="text-[10px] text-[var(--soft2)] mt-2 px-1">{t('Точки приблизительные в моке; точные адреса — после подключения Яндекс Геокодера.')}</p>
-        <div className="space-y-2.5 mt-3.5 stagger">
+        <AsyncState q={q} />
+        {ready(q) && !venues.length && (
+          <p className="text-[12px] text-[var(--soft)] py-8 text-center leading-relaxed">{t('В вашем городе площадок пока нет. Мы добавляем их постоянно.')}</p>
+        )}
+        <div className="space-y-2.5 stagger">
           {venues.map(v => (
-            <div key={v.n} className="card-s p-4 flex items-center gap-3 fade-up">
-              <Tile icon={v.icon} tile={v.tile} size={44} />
-              <div className="flex-1 min-w-0">
-                <b className="text-[13px] block truncate">{v.n}</b>
-                <span className="text-[10px] text-[var(--soft)]">{v.d} · от {fmt(v.p)}</span>
-              </div>
-              <a href={`https://yandex.ru/maps/?rtext=~${v.ll}`} target="_blank" rel="noreferrer" className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Маршрут')}><Navigation size={15} /></a>
+            <div key={v.id} className="card-s p-4 flex items-center gap-3 fade-up">
+              <button onClick={() => nav(`/vendor/${v.id}`)} className="press flex items-center gap-3 flex-1 min-w-0 text-left">
+                <Tile icon="🏛" tile="bg-[var(--honey)]" size={44} />
+                <span className="flex-1 min-w-0">
+                  <b className="text-[13px] block truncate">{v.name}</b>
+                  <span className="text-[10px] text-[var(--soft)]">
+                    {v.priceFrom ? `${t('от')} ${fmt(v.priceFrom.amount ?? 0)}` : t('цена по запросу')}
+                  </span>
+                </span>
+              </button>
+              {/* Поиск по названию, а не маршрут к выдуманной точке. */}
+              <a
+                href={`https://yandex.ru/maps/?text=${encodeURIComponent(`${v.name} ${v.city ?? city}`)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="press w-10 h-10 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0"
+                aria-label={t('Найти на карте')}
+              ><Navigation size={15} /></a>
             </div>
           ))}
         </div>

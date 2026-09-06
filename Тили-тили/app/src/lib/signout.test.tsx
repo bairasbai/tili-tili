@@ -48,6 +48,13 @@ afterEach(cleanup)
 describe('выход со всех устройств', () => {
   it('гасит чужие сессии и свою тоже', async () => {
     render(<MemoryRouter><StoreProvider><Settings /></StoreProvider></MemoryRouter>)
+    /* Экран сам показывает список устройств, поэтому один `GET
+       /users/me/sessions` уходит ещё при открытии. Он к выходу отношения не
+       имеет: ждём его и начинаем счёт заново, иначе проверка порядка
+       сравнивала бы загрузку экрана с последовательностью выхода. */
+    await waitFor(() => expect(calls).toContain('GET /users/me/sessions'))
+    calls.length = 0
+
     fireEvent.click(screen.getByText('Выйти со всех устройств').closest('button')!)
 
     await waitFor(() => expect(calls).toContain('saveTokens(null)'))

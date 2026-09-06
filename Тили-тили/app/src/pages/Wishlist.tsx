@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { MessageSquareHeart, Plus, ShieldCheck, Star, Trash2, Users, X } from 'lucide-react'
-import { fmt } from '@/lib/data'
+import { fmt } from '@/lib/money'
 import { rub } from '@/lib/money'
 import { Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'

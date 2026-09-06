@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
-import { couple, type Guest } from '@/lib/data'
 import { useApi } from '@/lib/api/useApi'
 import { getBudget, getGuests, getTasks, getWedding } from '@/lib/api/weddingData'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
@@ -34,7 +33,7 @@ export default function Home() {
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
 
   const serverGuests = gq.data ?? []
-  const persons = (status: Guest['status']) =>
+  const persons = (status: 'yes' | 'no' | 'pending') =>
     serverGuests.filter(g => (g.status ?? 'pending') === status).reduce((a, g) => a + 1 + (g.plusOne ? 1 : 0), 0)
 
   const serverTasks = tq.data ?? []
@@ -60,8 +59,10 @@ export default function Home() {
       : serverGuests.length === 0
         ? tr('Добавьте гостей — от их числа зависят площадка, кейтеринг и рассадка.')
         : tr('Спросите Тиля, если не знаете, с чего продолжить.')
-  const title = wq.data?.title ?? `${couple.bride} & ${couple.groom}`
-  const cityName = wq.data?.city?.name ?? couple.city
+  /* Ни имени, ни города не выдумываем: пустая свадьба выглядит пустой, а не
+     чужой. Раньше подставлялись «Алина & Тимур» и «Уфа» из моков. */
+  const title = wq.data?.title ?? tr('Ваша свадьба')
+  const cityName = wq.data?.city?.name ?? null
   const guestsPlanned = wq.data?.guestsPlanned ?? null
   const style = wq.data?.style ?? null
 
@@ -84,7 +85,7 @@ export default function Home() {
           <h1 className="font-serif-d text-[28px] relative">{title}</h1>
           {/* Площадка и час брались из мока — «Усадьба «Липовый сад» · 16:00» стояли
               у всех. Площадка появится, когда её забронируют; час дня — в тайминге. */}
-          <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {weddingDate ? formatWeddingDate(weddingDate) : tr('Дата не выбрана')} · {tr(cityName)}</p>
+          <p className="text-[12px] opacity-90 mt-1.5 relative">💍 {[weddingDate ? formatWeddingDate(weddingDate) : tr('Дата не выбрана'), cityName].filter(Boolean).join(' · ')}</p>
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
             {[
               [weddingDate ? daysUntil(weddingDate, now) : '—', tr('дней до')],
@@ -113,7 +114,11 @@ export default function Home() {
             </div>
           </div>
           <b className="font-serif-d text-[16px] block mt-2.5">{title}</b>
-          <p className="text-[11px] text-[var(--soft)] mt-1">📍 {tr(cityName)}{style ? ` · 🎨 ${style}` : ''}{guestsPlanned ? ` · 🥂 ${guestsPlanned} ${tr('гостей')}` : ''}</p>
+          {/* Город, стиль и число гостей — то, что известно о свадьбе. Чего
+              нет, того не рисуем: раньше пустые поля подменялись моком. */}
+          <p className="text-[11px] text-[var(--soft)] mt-1">
+            {[cityName ? `📍 ${cityName}` : null, style ? `🎨 ${style}` : null, guestsPlanned ? `🥂 ${guestsPlanned} ${tr('гостей')}` : null].filter(Boolean).join(' · ') || tr('Город пока не выбран')}
+          </p>
           <div className="grid grid-cols-4 gap-2 mt-4">
             {[[left.m, tr('МЕС')], [left.d, tr('ДН')], [left.h, tr('ЧАС')], [left.min, tr('МИН')]].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--bg)] rounded-2xl py-3">

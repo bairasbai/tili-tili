@@ -1,72 +1,66 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ChevronLeft, Send, CloudRain, Zap, Heart } from 'lucide-react'
-import { timeline } from '@/lib/data'
+import { ChevronLeft, CloudRain, Zap, Heart } from 'lucide-react'
+
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
-import { usePersist } from '@/lib/usePersist'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { AsyncState, ready } from '@/components/AsyncState'
-import { getGuests, getPlanB, getWedding } from '@/lib/api/weddingData'
+import { getGuests, getPlanB, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
+import { activatePlanB, setTaskDone, shiftTimeline } from '@/lib/api/weddingWrite'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { getAvailability, getCategories, getFavorites, getVendors } from '@/lib/api/catalog'
 import { cn, goBack, plural } from '@/lib/utils'
-import { dayChatRoute, teamChatRoute } from '@/lib/api/chats'
-import { t } from '@/lib/i18n'
+import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
+import { getI18nLang, t } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
 
-/* ИИ-координатор «Тиль» */
+/*
+ * ИИ-координатор «Тиль».
+ *
+ * Экран был имитацией разговора. Переписка лежала в `tt_assistant`, «Тиль»
+ * отвечала тремя ветками `if` по подстрокам: на «алкогол» — норма спиртного
+ * на 80 гостей, на «забыл» — «Проверил проект: пустые слоты — DJ, декоратор,
+ * транспорт, платье, кольца. Ближайший дедлайн — приглашения до 1 марта»,
+ * на всё остальное — «Принято! Записал в план». Ни проекта, ни слотов, ни
+ * дедлайнов она не читала: числа были написаны в коде. В шапке стояло
+ * «42/50 сообщений сегодня» — счётчика не существовало. Точки «печатает…»
+ * шли по таймеру на 900 мс.
+ *
+ * Разговор с Тиль — обычный чат свадьбы (`kind: tilly`), он заводится вместе
+ * со свадьбой. Модели за ним пока нет, и сервер отвечает честно: вопрос
+ * сохранён, ответ придёт, когда помощник заработает. Это и есть правда, а
+ * выдуманный совет про 0,5 л игристого на человека пара приняла бы за расчёт
+ * по своей свадьбе.
+ *
+ * Экран остаётся адресом `/assistant`: на него ведут подсказка на главной,
+ * пустой поиск и уведомления. Он открывает настоящую переписку.
+ */
 export function Assistant() {
   const nav = useNavigate()
-  const [msgs, setMsgs] = usePersist<{ me: boolean; text: string }[]>('tt_assistant', [
-    { me: false, text: t('Здравствуйте, Алина и Тимур! Я Тиль — ваш ИИ-координатор. Слежу за бюджетом, дедлайнами и датами подрядчиков. Что обсудим?') },
-  ])
-  const [text, setText] = useState('')
-  const [typing, setTyping] = useState(false)
-  const canned: Record<string, string> = {}
-  const answer = (q: string) =>
-    canned[q] ?? (q.includes('алкогол')
-      ? t('На 80 гостей банкетного формата закладывайте: игристое 0,5 л/чел, вино 0,4 л/чел, крепкое 0,25 л/чел + безалкогольное 1,5 л/чел. Для усадьбы уточните пробковый сбор.')
-      : q.includes('забыл') || q.includes('забыли')
-      ? t('Проверил проект: пустые слоты — DJ, декоратор, транспорт, платье, кольца. Ближайший дедлайн — приглашения до 1 марта. С чего начнём?')
-      : t('Принято! Записал в план. Хотите, добавлю задачу в чек-лист с дедлайном?'))
-  const quick = [t('Что мы забыли?'), t('Сколько алкоголя на 80 гостей?'), t('Найди DJ до 40 тыс ₽'), t('Собери план дня')]
-  const send = (t: string) => {
-    if (!t.trim()) return
-    setMsgs(m => [...m, { me: true, text: t }])
-    setText('')
-    setTyping(true)
-    setTimeout(() => { setMsgs(m => [...m, { me: false, text: answer(t) }]); setTyping(false) }, 900)
-  }
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void tillyChatRoute()
+      .then(route => { if (alive) nav(route, { replace: true }) })
+      .catch(e => { if (alive) setErr(explainError(e)) })
+    return () => { alive = false }
+  }, [nav])
+
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}><ChevronLeft size={17} /></button>
         <div className="w-[38px] h-[38px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[15px]">✦</div>
-        <div className="flex-1"><b className="text-[14px]">{t('Тиль')}</b><p className="text-[10px] text-[var(--sage-deep)]">{t('ИИ-координатор · на связи · 42/50 сообщений сегодня')}</p></div>
+        <div className="flex-1"><b className="text-[14px]">{t('Тиль')}</b></div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
-        {msgs.map((m, k) => (
-          <div key={k} className={cn('flex fade-up', m.me ? 'justify-end' : 'justify-start')}>
-            <div className={cn('max-w-[80%] px-4 py-3 text-[13px] leading-relaxed', m.me ? 'grad text-[var(--on-grad)] rounded-[18px] rounded-br-[6px]' : 'card rounded-[18px] rounded-bl-[6px]')}>{m.text}</div>
-          </div>
-        ))}
-        {typing && (
-          <div className="flex justify-start fade-up">
-            <div className="card rounded-[18px] rounded-bl-[6px] px-4 py-3.5 flex gap-1.5">
-              {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#C98A8A] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
-        {quick.map(q => <button key={q} onClick={() => send(q)} className="press px-4 py-2 rounded-full bg-[var(--card)] text-[11px] font-semibold whitespace-nowrap text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{q}</button>)}
-      </div>
-      <div className="glass-tab border-t-0 px-4 pt-2 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send(text)} placeholder={t('Спросите Тиля…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
-        <button onClick={() => send(text)} className="press w-[48px] h-[48px] rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Отправить')}><Send size={17} /></button>
+      <div className="flex-1 flex items-center justify-center px-8 text-center">
+        {err
+          ? <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{err}</p>
+          : <p className="text-[12px] text-[var(--soft)]">{t('Открываем переписку…')}</p>}
       </div>
     </div>
   )
@@ -204,123 +198,163 @@ export function Compare() {
   )
 }
 
-/* День X — тёмный live-режим пары */
+/*
+ * День X — тёмный режим пары в день свадьбы.
+ *
+ * Экран был выдуман целиком: «14 июня · День X» в заголовке, «СЕЙЧАС ·
+ * Фотосессия · до 16:30 · парк у усадьбы», тайминг из `lib/data.ts`, четыре
+ * подрядчика со статусами «на месте» и «едет · 20 мин» и четыре телефона
+ * `+7 000 000-00-00`. Кнопка «+15 мин задержка» копила число в `tt_dayx`
+ * браузера, а «План Б» переключал там же тумблер: у пары всё менялось, а
+ * команда об этом не узнавала.
+ *
+ * Теперь тайминг приходит с сервера, сдвиг уходит в `POST …/timeline/shift`
+ * и рассылается команде и гостям, план Б — в `POST …/planb/activate`.
+ * Статусов подрядчиков («едет», «на месте») в контракте нет вовсе, и
+ * рисовать их нельзя: пара приняла бы выдумку за факт в день, когда цена
+ * ошибки максимальна.
+ */
 export function DayX() {
   const nav = useNavigate()
-  /* День X переживает перезагрузку телефона: накопленная задержка и включённый
-     план Б — это то, по чему в моменте живёт вся команда. */
-  const [live, setLive] = usePersist('tt_dayx', { delay: 0, planB: false })
-  const delay = live.delay
-  const setDelay = (fn: (d: number) => number) => setLive(l => ({ ...l, delay: fn(l.delay) }))
-  const planB = live.planB
-  const setPlanB = (v: boolean) => setLive(l => ({ ...l, planB: v }))
-  const [sos, setSos] = useState(false)
+  const { weddingId, slots } = useStore()
+  const [tick, setTick] = useState(0)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [confirmPlanB, setConfirmPlanB] = useState(false)
+  // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
+  const [now] = useState(() => new Date())
+
+  const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId, tick])
+  const events = q.data ?? []
+
+  /* «Сейчас» — это блок, который уже начался и ещё не сменился следующим.
+     Раньше здесь стояла «Фотосессия до 16:30» независимо от времени суток. */
+  const started = events.filter(e => e.startsAt && new Date(e.startsAt) <= now)
+  const current = started[started.length - 1]
+  const next = events.find(e => e.startsAt && new Date(e.startsAt) > now)
+
+  const team = slots.filter(s => s.vendor && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
+
+  const act = (name: string, fn: () => Promise<unknown>) => void (async () => {
+    if (!weddingId) return
+    setBusy(name)
+    setErr(null)
+    try { await fn(); setTick(n => n + 1) } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
+  })()
+
+  const time = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''
+
   return (
     <div className="min-h-dvh pb-10" style={{ background: 'linear-gradient(180deg,#1E1A16,#0E0C0A)', color: '#EFE9DF' }}>
       <div className="px-5 pt-7 flex items-center justify-between">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#2A2520' }} aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
-          <b className="font-serif-d text-[19px]">{t('14 июня · День X')}</b>
-          <p className="text-[9.5px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>LIVE · {delay > 0 ? `+${delay}${t(' МИН К ПЛАНУ')}` : t('ИДЁМ ПО ГРАФИКУ')}</p>
+          <b className="font-serif-d text-[19px]">{w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
+          <p className="text-[9.5px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
         </div>
         <div className="w-10" />
       </div>
 
       <div className="px-5 mt-5">
         <div className="rounded-[26px] p-5" style={{ background: '#2A2520' }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[9px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{t('СЕЙЧАС')}</span>
-              <b className="font-serif-d text-[21px] block mt-1">{t('Фотосессия')}</b>
-              <p className="text-[11px] opacity-60 mt-0.5">{t('до 16:30 · парк у усадьбы')}</p>
+          {current ? (
+            <div className="flex items-center justify-between">
+              <div className="min-w-0">
+                <span className="text-[9px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{t('СЕЙЧАС')}</span>
+                <b className="font-serif-d text-[21px] block mt-1 truncate">{current.name}</b>
+                <p className="text-[11px] opacity-60 mt-0.5">
+                  {time(current.startsAt)}{next ? ` · ${t('дальше')} ${time(next.startsAt)} · ${next.name}` : ''}
+                </p>
+              </div>
+              <span className="text-[10px] font-bold px-3 py-1.5 rounded-full shrink-0" style={{ background: '#C4705A' }}>● LIVE</span>
             </div>
-            <span className="text-[10px] font-bold px-3 py-1.5 rounded-full" style={{ background: '#C4705A' }}>● LIVE</span>
-          </div>
+          ) : (
+            <div>
+              <span className="text-[9px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{next ? t('ДАЛЬШЕ') : t('ТАЙМИНГ')}</span>
+              {/* До первого блока и после последнего честнее сказать это
+                  словами, чем показывать «идёт фотосессия». */}
+              <b className="font-serif-d text-[21px] block mt-1">{next ? next.name : t('Тайминг пуст')}</b>
+              <p className="text-[11px] opacity-60 mt-0.5">
+                {next ? `${t('начало в')} ${time(next.startsAt)}` : t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду')}
+              </p>
+            </div>
+          )}
+
           <div className="flex gap-2.5 mt-4">
-            <button onClick={() => setDelay(d => d + 15)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold" style={{ background: '#C9A96A', color: '#141210' }}>{t('+15 мин задержка')}</button>
-            {/* Адрес чата дня X знает только сервер: он один на свадьбу и
-                создаётся вместе с ней. Прежний `ch5` был выдуман. */}
+            {/* Сдвиг уходит на сервер и рассылается команде и гостям. Раньше
+                он копился в браузере пары и не доходил ни до кого. */}
+            <button disabled={busy === 'shift' || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50" style={{ background: '#C9A96A', color: '#141210' }}>
+              {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
+            </button>
             <button onClick={() => void (async () => nav(await dayChatRoute()))()} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[#4a443c]">{t('Чат дня X')}</button>
           </div>
-          <button onClick={() => setSos(s2 => !s2)} className="press w-full mt-2.5 h-[44px] rounded-full text-[12px] font-bold" style={{ background: '#C4705A', color: '#fff' }}>🆘 {t('SOS — координатор дня')}</button>
-          {sos && (
-            <div className="rounded-[20px] p-4 mt-2.5 fade-up" style={{ background: '#38312A' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-[16px]" style={{ background: '#C9A96A' }}>👩‍💼</div>
-                <div className="flex-1">
-                  <b className="text-[13px]">{t('Алсу · онлайн')}</b>
-                  <p className="text-[10px] opacity-60">{t('отвечает за ~2 мин · знает весь тайминг')}</p>
-                </div>
-                <span className="w-2 h-2 rounded-full" style={{ background: '#8FB08A' }} />
-              </div>
-              <div className="flex gap-2 mt-3">
-                {/* Координатор дня — участник команды свадьбы, отдельного чата
-                    с ним контракт не знает. Ведём в командный чат, где он и
-                    читает: прежний `ch2` не существовал вовсе. */}
-                <button onClick={() => void (async () => nav(await teamChatRoute()))()} className="press flex-1 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c]">{t('Написать')}</button>
-                <a href="tel:+70000000000" className="press flex-1 h-[38px] rounded-full text-[11px] font-bold flex items-center justify-center" style={{ background: '#C9A96A', color: '#141210' }}>{t('Позвонить')}</a>
-              </div>
+        </div>
+
+        {err && <p role="alert" className="text-[12px] mt-3" style={{ color: '#E5A3A3' }}>{err}</p>}
+
+        <div className="mt-4 relative pl-6">
+          <AsyncState q={q} />
+          <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px]" style={{ background: 'linear-gradient(rgba(201,169,106,.7),rgba(201,169,106,.1))' }} />
+          {events.map(e => (
+            <div key={e.id} className="relative mb-4">
+              <span className="absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full" style={{ background: e.id === current?.id ? '#C4705A' : '#C9A96A', boxShadow: '0 0 12px rgba(201,169,106,.8)' }} />
+              <span className="text-[9.5px] tracking-[.15em] font-bold" style={{ color: '#C9A96A' }}>{time(e.startsAt)}</span>
+              <b className="font-serif-d text-[15px] block">{e.name}</b>
+              {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
+          ))}
+          {!events.length && ready(q) && (
+            <p className="text-[11.5px] opacity-60">{t('Тайминг ещё не собран. Его можно собрать на экране «Тайминг дня».')}</p>
           )}
         </div>
 
-        <div className="mt-4 relative pl-6">
-          <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px]" style={{ background: 'linear-gradient(rgba(201,169,106,.7),rgba(201,169,106,.1))' }} />
-          {timeline.map((e, k) => (
-            <div key={e.id} className="relative mb-4">
-              <span className="absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full" style={{ background: k === 3 ? '#C4705A' : '#C9A96A', boxShadow: '0 0 12px rgba(201,169,106,.8)' }} />
-              <span className="text-[9.5px] tracking-[.15em] font-bold" style={{ color: '#C9A96A' }}>{e.time}</span>
-              <b className="font-serif-d text-[15px] block">{e.name}</b>
-              <p className="text-[10.5px] opacity-50">{e.loc}</p>
-            </div>
-          ))}
+        {/* Раньше здесь стояли четыре подрядчика со статусами «на месте» и
+            «едет · 20 мин» и телефоны +7 000 000-00-00. Ни статусов, ни
+            телефонов такого рода сервер не знает: показываем свою команду и
+            путь к разговору с ней. */}
+        <div className="mt-5">
+          <b className="text-[13px]">{t('Ваша команда')}</b>
+          {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
+          <div className="flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
+            {team.map(s => (
+              <button key={s.id} onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ background: '#2A2520' }}>
+                <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
+                {s.vendor} · {t(s.label)}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-4 gap-2">
-          {[
-            ['📸', t('Елена'), t('на месте')],
-            ['🎤', t('Артём'), t('едет · 20 мин')],
-            ['🌸', t('Пион'), t('на месте')],
-            ['🎂', t('Марципан'), t('доставлен')],
-          ].map(([ic, n, st]) => (
-            <div key={n} className="rounded-2xl p-3 text-center" style={{ background: '#2A2520' }}>
-              <span className="text-[18px]">{ic}</span>
-              <b className="text-[10px] block mt-1">{n}</b>
-              <span className="text-[8px] font-bold" style={{ color: st === t('едет · 20 мин') ? '#C9A96A' : '#7E9A74' }}>{st}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar">
-          {[
-            [t('Координатор'), t('Мария')],
-            [t('Фотограф'), t('Елена')],
-            [t('Ведущий'), t('Артём')],
-            [t('Усадьба'), t('Рустам')],
-          ].map(([r, n]) => (
-            <a key={n} href="tel:+70000000000" className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ background: '#2A2520' }}>
-              <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{n[0]}</span>
-              {n} · {r}
-            </a>
-          ))}
-        </div>
-
-        <div className="rounded-[26px] p-5 mt-4" style={{ background: planB ? '#3A2E22' : '#2A2520', border: planB ? '1px solid #C9A96A' : '1px solid transparent' }}>
+        <div className="rounded-[26px] p-5 mt-4" style={{ background: '#2A2520' }}>
           <div className="flex items-center gap-3">
             <CloudRain size={20} style={{ color: '#C9A96A' }} />
             <div className="flex-1">
               <b className="text-[13.5px]">{t('План Б: дождь')}</b>
-              <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония → шатёр. Пересоберёт тайминг и уведомит всех.')}</p>
+              <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония переносится под крышу, тайминг пересобирается, команда и гости получают новую точку сбора.')}</p>
             </div>
-            <button onClick={() => setPlanB(!planB)} className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold', planB ? 'grad text-[var(--on-grad)]' : 'border border-[#4a443c]')}>
-              {planB ? t('Активирован ✓') : t('Активировать')}
+            {/* Необратимое действие: рассылка уходит всей команде и всем
+                гостям сразу. Поэтому подтверждение в два нажатия, как у отмены
+                сделки, — комментарий обещал это и раньше, а кнопка срабатывала
+                с первого касания. */}
+            <button
+              disabled={busy === 'planb'}
+              onClick={() => (confirmPlanB ? act('planb', () => activatePlanB(weddingId!)) : setConfirmPlanB(true))}
+              className="press px-4 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c] disabled:opacity-50"
+              style={confirmPlanB ? { background: '#C4705A', borderColor: '#C4705A' } : undefined}
+            >
+              {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}
             </button>
           </div>
         </div>
 
-        <a href="tel:+70000000000" className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2" style={{ background: '#C4705A' }}>
-          <Zap size={16} /> {t('SOS · Координатору')}
-        </a>
+        {/* SOS-координатора в контракте нет: отдельного пути «позвать
+            координатора» не существует, а телефон +7 000 000-00-00 был
+            выдуман. Пишем в командный чат — там координатор и сидит. */}
+        <button onClick={() => void (async () => nav(await teamChatRoute()))()} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2" style={{ background: '#C4705A', color: '#fff' }}>
+          <Zap size={16} /> {t('Написать всей команде')}
+        </button>
       </div>
     </div>
   )
@@ -486,7 +520,10 @@ function CoupleReviewRow({ vendorId, name, done }: { vendorId: string; name: str
 const planBRisks = [
   {
     icon: '🎤', title: t('Подрядчик не приехал или отменил в последний день'),
-    how: t('«Горячая замена»: каталог показывает только свободных на вашу дату, средний отклик — 15 минут. Аванс защищён эскроу и вернётся автоматически, а отменивший подрядчик получает штраф рейтинга.'),
+    /* Про эскроу и автоматический возврат аванса здесь было написано зря:
+       платёжного провайдера нет, деньги идут напрямую подрядчику по договору,
+       и возвращает их он. Штрафа рейтинга за отмену в коде тоже нет. */
+    how: t('«Горячая замена»: каталог показывает только свободных на вашу дату. Аванс возвращает подрядчик по договору — потому договор и нужен; шаблон есть в разделе «Документы».'),
     action: 'search',
   },
   {
@@ -533,22 +570,55 @@ export function PlanB() {
   const nav = useNavigate()
   const { weddingId } = useStore()
   const [open, setOpen] = useState<number | null>(null)
-  const [rain, setRain] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
 
   /*
    * Чек-лист накануне ведёт сервер: он один на всю команду, и координатор
    * должен видеть те же галочки, что и пара. Локальный `tt_planb` держал их
-   * в одном браузере — второй человек видел пустой список.
+   * в одном браузере — второй человек видел пустой список, а после смены
+   * телефона отметки пропадали совсем.
+   *
+   * Пункты плана Б — обычные задачи вида `planb`, поэтому и отмечаются через
+   * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
   const q = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId])
   const checklist = q.data?.checklist ?? []
-  /* Отметки уедут на сервер этапом 6; пока лежат поверх серверного списка,
-     чтобы галочка не перестала ставиться на этапе чтения. */
-  const [doneLocal, setDoneLocal] = usePersist<string[]>('tt_planb', [])
-  const isDone = (id: string, serverDone: boolean) => doneLocal.includes(id) || serverDone
+  /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
+     обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
+  const [pending, setPending] = useState<Record<string, boolean>>({})
+  const isDone = (id: string, serverDone: boolean) => pending[id] ?? serverDone
+
+  const toggle = (id: string, next: boolean) => {
+    if (!weddingId || !id) return
+    setPending(m => ({ ...m, [id]: next }))
+    setErr(null)
+    void setTaskDone(weddingId, id, next)
+      .then(() => q.reload())
+      .catch(e => {
+        setPending(m => { const rest = { ...m }; delete rest[id]; return rest })
+        setErr(explainError(e))
+      })
+  }
+
   const doneCount = checklist.filter(c => isDone(c.id ?? '', !!c.done)).length
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
   const activated = !!q.data?.activatedAt
+
+  /* Активация — необратимая рассылка всей команде и гостям, поэтому в два
+     нажатия. Раньше кнопка называлась «Активировать план «дождь» (демо)» и
+     переключала переменную на экране: пара видела «Уведомления ушли: площадка,
+     декоратор, фотограф, координатор», а не уходило ничего. */
+  const [confirmRain, setConfirmRain] = useState(false)
+  const activate = () => {
+    if (!weddingId || busy) return
+    setBusy(true)
+    setErr(null)
+    void activatePlanB(weddingId, 'rain')
+      .then(() => { setConfirmRain(false); q.reload() })
+      .catch(e => setErr(explainError(e)))
+      .finally(() => setBusy(false))
+  }
   return (
     <div className="pb-28">
       <TopBar back title={t('План Б')} sub={t('Готовы ко всему, что может пойти не так')} />
@@ -562,7 +632,7 @@ export function PlanB() {
               const id = c.id ?? ''
               const checked = isDone(id, !!c.done)
               return (
-                <button key={id} onClick={() => setDoneLocal(d => d.includes(id) ? d.filter(x => x !== id) : [...d, id])} className="press w-full flex items-center gap-3 text-left">
+                <button key={id} onClick={() => toggle(id, !checked)} className="press w-full flex items-center gap-3 text-left">
                   <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0', checked ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{checked ? '✓' : ''}</span>
                   <span className={cn('text-[12px] leading-snug', checked && 'line-through text-[var(--soft2)]')}>{c.title}</span>
                 </button>
@@ -571,10 +641,15 @@ export function PlanB() {
           </div>
         </div>
 
-        {(rain || activated) && (
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] px-1">{err}</p>}
+
+        {/* Плашка стоит на ответе сервера, а не на локальном тумблере: до
+            этого она загоралась от нажатия и утверждала, что уведомления
+            ушли, когда не уходило ничего. */}
+        {activated && (
           <div className="card p-4 fade-up" style={{ border: '1.5px solid #7E9A74' }}>
             <b className="text-[13px]">🌧 {t('План «дождь» активирован')}</b>
-            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Церемония переносится в зал. Уведомления ушли: площадка, декоратор, фотограф, координатор. Гостям отправлена новая точка сбора.')}</p>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Команда и гости получили новую точку сбора, тайминг пересобран.')}</p>
           </div>
         )}
 
@@ -592,10 +667,13 @@ export function PlanB() {
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {r.action === 'rain' && (
-                    <button onClick={() => setRain(v => !v)} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold', rain ? 'bg-[var(--track)] text-[var(--ink)]' : 'grad text-[var(--on-grad)]')}>
-                      {rain ? t('Отменить план «дождь»') : t('Активировать план «дождь» (демо)')}
+                  {r.action === 'rain' && !activated && (
+                    <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[#C4705A] text-white' : 'grad text-[var(--on-grad)]')}>
+                      {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команда и гости получат новую точку сбора') : t('Активировать план «дождь»')}
                     </button>
+                  )}
+                  {r.action === 'rain' && activated && (
+                    <p className="text-[11px] text-[var(--sage-deep)] mt-3 font-semibold">{t('План «дождь» уже активирован')}</p>
                   )}
                 </div>
               )}
@@ -603,7 +681,10 @@ export function PlanB() {
           ))}
         </div>
 
-        <AiTip text={t('Самый частый совет профессионалов: не решайте проблемы сами в день X. У вас есть координатор и SOS-кнопка — ваша задача только наслаждаться днём.')} />
+        {/* Раньше здесь обещалась «SOS-кнопка», которой в приложении нет:
+            отдельного пути «позвать координатора» контракт не знает. Зато
+            есть командный чат — там и координатор, и подрядчики. */}
+        <AiTip text={t('Самый частый совет профессионалов: не решайте проблемы сами в день X. Для этого есть командный чат — ваша задача только наслаждаться днём.')} />
       </div>
     </div>
   )

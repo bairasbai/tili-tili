@@ -6847,7 +6847,13 @@ export interface components {
             body?: string;
             /** @enum {string} */
             kind?: "deal" | "chat" | "task" | "guest" | "system";
-            /** @example /deal */
+            /**
+             * @description Место, а не маршрут приложения: `/deal/{dealId}`, `/chats/{chatId}`,
+             *     `/guests`, `/checklist`, `/dayx`, `/vendor-app`. У пары и у
+             *     подрядчика одно и то же место лежит по разным адресам, поэтому
+             *     перевод в маршрут делает клиент. Незнакомое место никуда не ведёт.
+             * @example /deal/01a06eac-4983-7b5e-8d67-36d1a8e05cc9
+             */
             link?: string | null;
             read?: boolean;
             /** Format: date-time */

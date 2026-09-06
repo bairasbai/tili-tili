@@ -7,7 +7,7 @@ import {
   bookHotelRoom, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
   joinShuttle, saveGuestToken, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
-import { dressPalettes } from '@/lib/data'
+import { dressPalettes } from '@/lib/dressPalettes'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { cn, plural } from '@/lib/utils'

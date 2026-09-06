@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Heart, Plus, Trash2, Wine, Users } from 'lucide-react'
-import { fmt } from '@/lib/data'
+import { fmt } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getCategories, getFavorites } from '@/lib/api/catalog'
 import { useApi } from '@/lib/api/useApi'

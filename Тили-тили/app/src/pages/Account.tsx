@@ -2,13 +2,31 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
+import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { useStore } from '@/lib/store'
 import { usePersist } from '@/lib/usePersist'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { t, reloadToRoot } from '@/lib/i18n'
+import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { api, ApiError, saveTokens, url } from '@/lib/api/client'
+import { explainError, useApi } from '@/lib/api/useApi'
+import { endSession, getMe, getSessions, patchMe } from '@/lib/api/auth'
+import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import type { components } from '@/lib/api/schema'
+
+/** Профиль пользователя — как его отдаёт и принимает сервер. */
+type Profile = components['schemas']['UserProfile']
+/** Часть профиля: пропущенное поле сервер оставляет как было. */
+type ProfilePatch = Parameters<typeof patchMe>[0]
+
+/** «Вход 12 мая» у чужого устройства: точнее «2 дня назад» и не врёт. */
+const sessionSince = (iso?: string): string => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+  return `${t('вход')} ${d.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}`
+}
 
 /* Вход: телефон → OTP → роль */
 export function Auth() {
@@ -188,45 +206,101 @@ export function Auth() {
   )
 }
 
-/* Центр уведомлений */
+/*
+ * Центр уведомлений.
+ *
+ * Экран был витриной из пяти выдуманных строк: «Артём Краснов получил
+ * 30 000 ₽», «Ольга и Денис Соколовы подтвердили приезд с +1», «Студия «Пион»:
+ * мягкая бронь истекает через 12 часов». Ни этих людей, ни этих событий не
+ * существовало, а «прочитано» копилось в `tt_notif_read` номерами строк: на
+ * другом устройстве всё снова горело непрочитанным, а после перестановки строк
+ * прочитанным оказывалось не то.
+ *
+ * Теперь список ведёт сервер. Отметка о прочтении уходит туда же, поэтому
+ * второе устройство её видит.
+ */
+const NOTIF_LOOK: Record<string, { icon: string; tile: string }> = {
+  deal: { icon: '💰', tile: 'bg-[var(--honey)]' },
+  chat: { icon: '💬', tile: 'bg-[var(--rose-soft)]' },
+  task: { icon: '⏳', tile: 'bg-[var(--sage-soft)]' },
+  guest: { icon: '💌', tile: 'bg-[var(--lav)]' },
+  system: { icon: '🔔', tile: 'bg-[var(--blue)]' },
+}
+
 export function Notifications() {
   const nav = useNavigate()
-  const [readIds, setReadIds] = usePersist<number[]>('tt_notif_read', [])
-  const items = [
-    /* Список уведомлений пока выдуман — он придёт с сервера отдельным этапом.
-       Адрес сделки здесь вести некуда: экран сделки открывается по её
-       идентификатору, а у выдуманного уведомления его нет. Ведём в мозаику. */
-    { icon: '💰', tile: 'bg-[var(--honey)]', title: t('Аванс подтверждён'), text: t('Артём Краснов получил 30 000 ₽. Дата 14.06 закрыта для других пар.'), time: '14:20', unread: true, today: true, to: '/wedding' },
-    { icon: '✦', tile: 'bg-[var(--rose-soft)]', title: t('Тиль'), text: t('Свободных фотографов на вашу дату осталось 6 — бронируйте в этом месяце.'), time: '11:05', unread: true, today: true, to: '/assistant' },
-    { icon: '💌', tile: 'bg-[var(--lav)]', title: 'RSVP', text: t('Ольга и Денис Соколовы подтвердили приезд с +1.'), time: t('вчера'), unread: false, today: false, to: '/wedding/guests' },
-    { icon: '📄', tile: 'bg-[var(--blue)]', title: t('Договор готов'), text: t('Договор с фотографом сгенерирован — скачайте и подпишите.'), time: t('вчера'), unread: false, today: false, to: '/wedding/documents' },
-    { icon: '⏳', tile: 'bg-[var(--sage-soft)]', title: t('Hold истекает'), text: t('Студия «Пион»: мягкая бронь истекает через 12 часов.'), time: t('пн'), unread: false, today: false, to: '/wedding' },
+  const q = useApi(() => getNotifications(), [])
+  const items = q.data ?? []
+  /* Отметка уже ушла на сервер, но список перечитывается не мгновенно.
+     Держим её здесь, чтобы точка гасла под пальцем, а не через круг. */
+  const [readNow, setReadNow] = useState<string[]>([])
+  const isRead = (n: { id?: string; read?: boolean }) => !!n.read || readNow.includes(n.id ?? '')
+
+  const markRead = (id?: string) => {
+    if (!id || readNow.includes(id)) return
+    setReadNow(r => [...r, id])
+    void markNotificationRead(id).catch(() => setReadNow(r => r.filter(x => x !== id)))
+  }
+
+  /* Массовой отметки в контракте нет — идём по непрочитанным поштучно.
+     На двух десятках уведомлений это допустимо; путь `read-all` отмечен
+     в плане миграции как незакрытая дыра. */
+  const markAll = () => {
+    const rest = items.filter(n => !isRead(n)).map(n => n.id).filter((x): x is string => !!x)
+    if (!rest.length) return
+    setReadNow(r => [...r, ...rest])
+    void Promise.all(rest.map(id => markNotificationRead(id).catch(() => undefined))).then(() => q.reload())
+  }
+
+  const today = new Date().toDateString()
+  const isToday = (iso?: string) => !!iso && new Date(iso).toDateString() === today
+  const when = (iso?: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+    return isToday(iso)
+      ? d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
+  }
+
+  const groups: [string, typeof items][] = [
+    [t('Сегодня'), items.filter(n => isToday(n.createdAt))],
+    [t('Ранее'), items.filter(n => !isToday(n.createdAt))],
   ]
-  const groups: [string, typeof items][] = [[t('Сегодня'), items.filter(n => n.today)], [t('Ранее'), items.filter(n => !n.today)]]
+  const unread = items.filter(n => !isRead(n)).length
   return (
     <div className="pb-28">
-      <TopBar back title={t('Уведомления')} sub={t('Тихие часы 22:00–09:00')} right={
-        <button onClick={() => setReadIds(items.map((_, k) => k))} className="press text-[11px] font-bold text-[var(--rose-deep)]">{t('Прочитать все')}</button>
-      } />
-      {groups.map(([label, list]) => (
+      <TopBar back title={t('Уведомления')} right={unread > 0 ? (
+        <button onClick={markAll} className="press text-[11px] font-bold text-[var(--rose-deep)]">{t('Прочитать все')}</button>
+      ) : undefined} />
+      <AsyncState q={q} />
+      {ready(q) && !items.length && (
+        <p className="text-[12px] text-[var(--soft)] text-center py-10 px-8 leading-relaxed">{t('Пока тихо. Здесь появятся новости по сделкам, задачам и гостям.')}</p>
+      )}
+      {groups.filter(([, list]) => list.length > 0).map(([label, list]) => (
         <div key={label}>
           <div className="px-5 mt-3">
             <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold px-1">{label}</span>
           </div>
           <div className="px-5 mt-2 space-y-2.5 stagger">
-            {list.map((n) => {
-              const k = items.indexOf(n)
+            {list.map(n => {
+              const look = NOTIF_LOOK[n.kind ?? 'system'] ?? NOTIF_LOOK.system!
+              /* Сервер называет место смыслом (`/guests`, `/deal/{id}`), а
+                 не маршрутом приложения — переводим. Незнакомое место никуда
+                 не ведёт: уведомление просто отмечается прочитанным. */
+              const to = notificationRoute(n.link)
               return (
-              <button key={k} onClick={() => { setReadIds(r => [...r, k]); nav(n.to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
-                {n.unread && !readIds.includes(k) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
-                <Tile icon={n.icon} tile={n.tile} size={42} />
-                <div className="min-w-0">
-                  <b className="text-[13px]">{n.title}</b>
-                  <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-0.5 pr-4">{n.text}</p>
-                  <span className="text-[10px] text-[var(--soft2)]">{n.time}</span>
-                </div>
-              </button>
-            )})}
+                <button key={n.id} onClick={() => { markRead(n.id); if (to) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
+                  {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
+                  <Tile icon={look.icon} tile={look.tile} size={42} />
+                  <div className="min-w-0">
+                    <b className="text-[13px]">{n.title}</b>
+                    <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-0.5 pr-4">{n.body}</p>
+                    <span className="text-[10px] text-[var(--soft2)]">{when(n.createdAt)}</span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
       ))}
@@ -248,25 +322,71 @@ function Row({ label, value, onChange }: { label: string; value: boolean; onChan
   )
 }
 
-/* Настройки */
+/*
+ * Настройки.
+ *
+ * Экран был устройством в себе: имя «Алина Валеева», телефон
+ * «+7 917 ···-45-67», два устройства «iPhone · Safari» и «Android · Chrome ·
+ * 2 дня назад», а тумблеры push и тихих часов копились в `tt_settings`. Push
+ * рассылает сервер по СВОИМ настройкам — выключенный на телефоне канал
+ * продолжал звонить, а «Завершить» у чужого устройства просто убирало строку
+ * с экрана.
+ *
+ * Теперь всё это профиль (`/users/me`) и сессии (`/users/me/sessions`).
+ * Устройство помнит только тему и язык интерфейса — это и правда его дело.
+ */
 export function Settings() {
   const nav = useNavigate()
-  /* Настройки хранятся на устройстве: выключенный push не должен включаться сам.
-     Имя лежит отдельным полем и падает в дефолт, только пока его не меняли —
-     иначе русский дефолт застрял бы в EN-интерфейсе. */
-  const [prefs, setPrefs] = usePersist('tt_settings', {
-    quiet: true,
-    push: { tasks: true, chats: true, deals: true, tips: false },
-    name: null as string | null,
-  })
-  const quiet = prefs.quiet
-  const setQuiet = (v: boolean) => setPrefs(p => ({ ...p, quiet: v }))
-  const push = prefs.push
-  const setPush = (fn: (p: typeof prefs.push) => typeof prefs.push) => setPrefs(p => ({ ...p, push: fn(p.push) }))
-  const name = prefs.name ?? t('Алина Валеева')
-  const setName = (v: string) => setPrefs(p => ({ ...p, name: v }))
-  const [editName, setEditName] = useState(false)
-  const [androidGone, setAndroidGone] = useState(false)
+  const me = useApi(() => getMe(), [])
+  const sessions = useApi(() => getSessions(), [])
+  /* Тумблер отзывается сразу, запрос уходит следом: ждать круга до сервера,
+     чтобы переключатель сдвинулся, — это не отзывчиво. Отказ возвращает
+     прежнее значение и называет причину. */
+  const [draft, setDraft] = useState<Profile | null>(null)
+  const prof = draft ?? me.data ?? null
+  const [saveErr, setSaveErr] = useState<string | null>(null)
+
+  const save = (patch: ProfilePatch, optimistic: (p: Profile) => Profile) => {
+    if (!prof) return
+    const before = prof
+    setDraft(optimistic(prof))
+    setSaveErr(null)
+    void patchMe(patch)
+      .then(fresh => { if (fresh) setDraft(fresh) })
+      .catch(e => { setDraft(before); setSaveErr(explainError(e)) })
+  }
+
+  /* Сервер отдаёт каналы по отдельности и может не прислать ни одного —
+     до первой правки строки в `notification_prefs` нет. Умолчание там
+     `true`, и здесь оно должно совпадать, иначе тумблер покажет
+     выключенным то, что на сервере включено. */
+  const push = {
+    tasks: prof?.push?.tasks ?? true,
+    chats: prof?.push?.chats ?? true,
+    deals: prof?.push?.deals ?? true,
+    tips: prof?.push?.tips ?? true,
+  }
+  const setPush = (key: 'tasks' | 'chats' | 'deals' | 'tips', v: boolean) =>
+    save({ push: { [key]: v } }, p => ({ ...p, push: { ...p.push, [key]: v } }))
+
+  /* Тихие часы выключаются пустым окном: сервер считает `22:00–22:00`
+     отсутствием тишины (`deliverAfter`). Отдельного «выключено» в контракте
+     нет, и придумывать его на клиенте нельзя. */
+  const quiet = (prof?.quietHours?.from ?? '22:00') !== (prof?.quietHours?.to ?? '09:00')
+  const setQuiet = (v: boolean) => {
+    const hours = v ? { from: '22:00', to: '09:00' } : { from: '22:00', to: '22:00' }
+    save({ quietHours: hours }, p => ({ ...p, quietHours: hours }))
+  }
+
+  const name = prof?.name ?? ''
+  const [nameDraft, setNameDraft] = useState<string | null>(null)
+  const editName = nameDraft !== null
+  const commitName = () => {
+    const v = (nameDraft ?? '').trim()
+    setNameDraft(null)
+    if (!v || v === name) return
+    save({ name: v }, p => ({ ...p, name: v }))
+  }
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   /*
@@ -340,21 +460,25 @@ export function Settings() {
           </div>
         </div>
         <div className="card px-4 py-1.5">
+          <AsyncState q={me} />
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
-            <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? t('А')}</div>
-            <div className="flex-1">
+            <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? '·'}</div>
+            <div className="flex-1 min-w-0">
               {editName ? (
-                <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && setEditName(false)} autoFocus
+                <input value={nameDraft ?? ''} onChange={e => setNameDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && commitName()} autoFocus
                   className="w-full bg-[var(--bg)] rounded-lg px-3 py-2 text-[13px] outline-none" />
-              ) : <b className="text-[13px]">{name}</b>}
-              <p className="text-[10px] text-[var(--soft)]">+7 917 ···-45-67</p>
+              ) : <b className="text-[13px]">{name || t('Имя не указано')}</b>}
+              {/* Телефон — тот, по которому вошли. Раньше здесь у любого
+                  человека стояло «+7 917 ···-45-67». */}
+              <p className="text-[10px] text-[var(--soft)]">{prof?.phone ?? ''}</p>
             </div>
-            <button onClick={() => setEditName(!editName)} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{editName ? t('Готово') : t('Изменить')}</button>
+            <button onClick={() => (editName ? commitName() : setNameDraft(name))} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{editName ? t('Готово') : t('Изменить')}</button>
           </div>
-          <Row label={t('Push: дедлайны задач')} value={push.tasks} onChange={v => setPush(p => ({ ...p, tasks: v }))} />
-          <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush(p => ({ ...p, chats: v }))} />
-          <Row label={t('Push: сделки и оплаты')} value={push.deals} onChange={v => setPush(p => ({ ...p, deals: v }))} />
-          <Row label={t('Советы ИИ-координатора')} value={push.tips} onChange={v => setPush(p => ({ ...p, tips: v }))} />
+          {saveErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{saveErr}</p>}
+          <Row label={t('Push: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />
+          <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
+          <Row label={t('Push: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
+          <Row label={t('Советы ИИ-координатора')} value={push.tips} onChange={v => setPush('tips', v)} />
           <button onClick={() => setCityPick(true)} className="press w-full flex items-center justify-between py-3.5 border-b border-[var(--track)] last:border-none text-left">
             <span className="text-[13px] font-medium">{t('Город свадьбы')}</span>
             <span className="flex items-center gap-1.5 text-[12px] text-[var(--soft)]"><MapPin size={13} className="text-[var(--rose-deep)]" />{t(city)} · {t(cityRegion)}</span>
@@ -368,20 +492,31 @@ export function Settings() {
               <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', quiet ? 'left-[22px]' : 'left-[3px]')} />
             </button>
           </div>
-          <p className="text-[10.5px] text-[var(--soft)] py-3">{t('22:00–09:00 — только критичные уведомления. В день X тихие часы отключены автоматически.')}</p>
+          <p className="text-[10.5px] text-[var(--soft)] py-3">
+            {quiet
+              ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
+              : t('Тихих часов нет: уведомления приходят в любое время суток.')}
+          </p>
         </div>
         <div className="card px-4 py-1.5">
-          <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
-            <MonitorSmartphone size={16} className="text-[var(--ink2)]" />
-            <div className="flex-1"><b className="text-[13px]">iPhone · Safari</b><p className="text-[10px] text-[var(--sage-deep)]">{t('● текущая сессия')}</p></div>
-          </div>
-          {!androidGone && (
-            <div className="flex items-center gap-3 py-3.5">
+          <AsyncState q={sessions} />
+          {/* Раньше здесь всегда стояли «iPhone · Safari» и «Android · Chrome ·
+              2 дня назад», а «Завершить» убирало строку с экрана и ничего не
+              делало с сессией. Теперь список настоящий, и кнопка гасит доступ. */}
+          {(sessions.data ?? []).map(d => (
+            <div key={d.id} className="flex items-center gap-3 py-3.5 border-b border-[var(--track)] last:border-none">
               <MonitorSmartphone size={16} className="text-[var(--ink2)]" />
-              <div className="flex-1"><b className="text-[13px]">Android · Chrome</b><p className="text-[10px] text-[var(--soft)]">{t('2 дня назад')}</p></div>
-              <button onClick={() => setAndroidGone(true)} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{t('Завершить')}</button>
+              <div className="flex-1 min-w-0">
+                <b className="text-[13px]">{d.device ?? t('Неизвестное устройство')}</b>
+                <p className={cn('text-[10px]', d.current ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>
+                  {d.current ? t('● текущая сессия') : sessionSince(d.createdAt)}
+                </p>
+              </div>
+              {!d.current && (
+                <button onClick={() => void endSession(d.id ?? '').then(() => sessions.reload())} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{t('Завершить')}</button>
+              )}
             </div>
-          )}
+          ))}
         </div>
         <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
         {confirmDelete ? (
@@ -396,29 +531,32 @@ export function Settings() {
   )
 }
 
-/* Поддержка: FAQ + тикет */
+/*
+ * Поддержка: FAQ и связь с людьми.
+ *
+ * Тикетов здесь больше нет. Форма «Написать в поддержку» складывала обращение
+ * в состояние экрана и рисовала «Тикет #1043 · Принят · ответим до 24 ч» — до
+ * поддержки не доходило ничего, а человек уходил ждать ответа. Сверху при этом
+ * висел «Тикет #1042 · оплата вне платформы · Отвечен» у любого, кто открыл
+ * экран впервые.
+ *
+ * Пути обращений в контракте нет вовсе (дыра §2.6 плана миграции), поэтому
+ * экран честно ведёт туда, где живые люди: почта и Telegram.
+ */
 export function Support() {
   const [open, setOpen] = useState<number | null>(0)
-  const [writing, setWriting] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [tickets, setTickets] = useState([
-    { id: '#1042', topic: t('оплата вне платформы'), status: t('Отвечен · ждём вашу оценку'), ok: true },
-  ])
-  const send = () => {
-    if (!msg.trim()) return
-    setTickets(tk => [{ id: `#${1043 + tk.length}`, topic: msg.trim(), status: t('Принят · ответим до 24 ч'), ok: false }, ...tk])
-    setMsg(''); setWriting(false)
-  }
   const faq = [
     [t('Как работает бронирование даты?'), t('Мягкая бронь (hold) держит дату 72 часа. После подтверждения подрядчиком и отметки об авансе дата закрывается для других пар.')],
     [t('Платформа берёт комиссию?'), t('Нет. Сейчас «Тили-тили» полностью бесплатна и для пар, и для подрядчиков.')],
     [t('Деньги проходят через приложение?'), t('Нет, оплата — напрямую подрядчику по договору. Мы агрегатор и не являемся стороной сделки.')],
-    [t('Что если подрядчик отменит бронь?'), t('Слот станет «пожарным», ИИ сразу предложит трёх свободных на вашу дату замен, а задача появится в чек-листе.')],
+    /* Ни «пожарного» слота, ни автоматической задачи, ни подбора замен ИИ в
+       коде нет: слот просто освобождается. Отвечаем тем, что правда. */
+    [t('Что если подрядчик отменит бронь?'), t('Слот снова станет пустым, а дата — свободной. В каталоге сразу видно, кто свободен на ваш день: замену можно искать в тот же час.')],
     [t('Как гость отвечает на приглашение?'), t('По именной ссылке или QR — без установки приложения. RSVP занимает около минуты.')],
   ]
   return (
     <div className="pb-28">
-      <TopBar back title={t('Поддержка')} sub={t('Отвечаем до 24 ч · в день X — до 2 ч')} />
+      <TopBar back title={t('Поддержка')} sub={t('Ответы на частые вопросы и связь с нами')} />
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {faq.map(([q, a], k) => (
           <button key={k} onClick={() => setOpen(open === k ? null : k)} className="press w-full card-s p-4 text-left fade-up">
@@ -429,28 +567,14 @@ export function Support() {
             {open === k && <p className="text-[12px] text-[var(--soft)] leading-relaxed mt-2.5 fade-in">{a}</p>}
           </button>
         ))}
-        {tickets.map(tk => (
-          <div key={tk.id} className="card-s p-4 flex items-center gap-3 fade-up">
-            <Tile icon="💬" tile={tk.ok ? 'bg-[var(--sage-soft)]' : 'bg-[var(--honey)]'} size={42} />
-            <div className="flex-1">
-              <b className="text-[12.5px] block truncate">{t('Тикет')} {tk.id} · {tk.topic}</b>
-              <p className={cn('text-[10px] mt-0.5', tk.ok ? 'text-[var(--sage-deep)]' : 'text-[var(--honey-deep)]')}>● {tk.status}</p>
-            </div>
-          </div>
-        ))}
-        {writing ? (
-          <div className="card p-4 fade-up">
-            <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={3} autoFocus placeholder={t('Опишите вопрос…')} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none resize-none placeholder:text-[var(--soft2)]" />
-            <div className="flex gap-2.5 mt-3">
-              <button onClick={() => setWriting(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button onClick={send} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Отправить тикет')}</button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => setWriting(true)} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-            {t('Написать в поддержку')}
-          </button>
-        )}
+        {/* Ссылки, а не форма: письмо уходит из почтового клиента человека и
+            доходит до нас, а форма отправляла обращение в память вкладки. */}
+        <a href="mailto:hello@tili-tili.ru" className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2 flex items-center justify-center" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          {t('Написать на почту')}
+        </a>
+        <a href="https://t.me/tilitili_help" target="_blank" rel="noreferrer" className="press w-full h-[48px] rounded-full card-s font-semibold text-[13px] flex items-center justify-center">
+          {t('Написать в Telegram')}
+        </a>
         <p className="text-center text-[10px] text-[var(--soft2)]">hello@tili-tili.ru · Telegram @tilitili_help</p>
       </div>
     </div>

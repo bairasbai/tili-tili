@@ -887,7 +887,8 @@ export const CONTRACT_SCHEMAS = {
                   "type": [
                       "string",
                       "null"
-                  ]
+                  ],
+                  "description": "Место, а не маршрут приложения: `/deal/{dealId}`, `/chats/{chatId}`,\n`/guests`, `/checklist`, `/dayx`, `/vendor-app`. У пары и у\nподрядчика одно и то же место лежит по разным адресам, поэтому\nперевод в маршрут делает клиент. Незнакомое место никуда не ведёт.\n"
               },
               "read": {
                   "type": "boolean"

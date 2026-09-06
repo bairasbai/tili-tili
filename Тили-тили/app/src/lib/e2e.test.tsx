@@ -5,7 +5,8 @@ import { MemoryRouter } from 'react-router'
 import { StoreProvider } from './store'
 import { searchCities } from './cities'
 import { inviteThemes } from './inviteThemes'
-import { initialSlots, budgetItems } from './data'
+import { committedTotal } from './budget'
+import type { Slot } from './types'
 import { rub } from '@/lib/money'
 import { CityPicker } from '@/components/CityPicker'
 
@@ -18,19 +19,24 @@ describe('E2E smoke: ключевые сценарии', () => {
     expect(screen.getByText('Сибай')).toBeTruthy()
   })
 
-  it('Бизнес-логика бюджета: сумма забронированных слотов считается верно', () => {
-    const booked = initialSlots.filter(s => (s.state === 'booked' || s.state === 'hold') && s.price)
-    const sum = booked.reduce((a, s) => a + (s.price ?? 0), 0)
+  it('Обязательства считаются по броням и мягким броням, а не по всем слотам', () => {
+    /* Раньше проверка гоняла мок-мозаику из `lib/data.ts`. Мока больше нет, а
+       правило осталось: в обязательства идут `booked` и `hold` с ценой. */
+    const slots: Slot[] = [
+      { id: 's1', categoryId: 'venue', label: 'Площадка', icon: '', tile: '', state: 'booked', price: rub(250000) },
+      { id: 's2', categoryId: 'photo', label: 'Фотограф', icon: '', tile: '', state: 'hold', price: rub(85000) },
+      { id: 's3', categoryId: 'dj', label: 'DJ', icon: '', tile: '', state: 'candidate', price: rub(60000) },
+      { id: 's4', categoryId: 'cake', label: 'Кондитер', icon: '', tile: '', state: 'booked' },
+      { id: 's5', categoryId: 'decor', label: 'Декор', icon: '', tile: '', state: 'empty' },
+    ]
     // суммы хранятся в копейках — решение владельца 2026-09-02
-    expect(sum).toBe(rub(250000 + 85000 + 120000 + 60000 + 45000))
+    expect(committedTotal(slots)).toBe(rub(250000 + 85000))
   })
 
-  it('Бюджетные категории покрывают все категории слотов', () => {
-    const catOf: Record<string, string> = { venue: 'Площадка и кейтеринг', photo: 'Фото и видео', video: 'Фото и видео', dress: 'Одежда и красота', stylist: 'Одежда и красота', rings: 'Одежда и красота', host: 'Развлечения и декор', dj: 'Развлечения и декор', florist: 'Развлечения и декор', decor: 'Развлечения и декор', cake: 'Развлечения и декор', transport: 'Прочее' }
-    for (const s of initialSlots) expect(catOf[s.categoryId]).toBeDefined()
-    const names = new Set(budgetItems.map(b => b.name))
-    for (const cat of Object.values(catOf)) expect(names.has(cat)).toBe(true)
-  })
+  /* Проверка «бюджетные категории покрывают категории слотов» снята: карту
+     категорий держит сервер (`BUDGET_BY_VENDOR_CATEGORY`), и сверяет её его
+     же тест. Клиентская копия карты снесена вместе с моками — сверять было
+     бы нечего. */
 
   it('Все 10 сценариев приглашений валидны', () => {
     expect(inviteThemes).toHaveLength(10)

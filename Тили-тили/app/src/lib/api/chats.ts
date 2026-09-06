@@ -141,6 +141,17 @@ export async function dayChatRoute(): Promise<string> {
   return day?.id ? `/us/chats/${day.id}` : '/us/chats'
 }
 
+/**
+ * Чат с Тиль. Заводится вместе со свадьбой, поэтому создавать его не надо —
+ * достаточно найти. Ответов от модели пока нет, и сервер об этом говорит
+ * прямо: вопрос сохраняется, ответ придёт, когда помощник заработает.
+ */
+export async function tillyChatRoute(): Promise<string> {
+  const chats = await getChats()
+  const tilly = (chats ?? []).find(c => c.kind === 'tilly')
+  return tilly?.id ? `/us/chats/${tilly.id}` : '/us/chats'
+}
+
 /** Командный чат свадьбы: пара, помощники и забронированные подрядчики. */
 export async function teamChatRoute(): Promise<string> {
   const chats = await getChats()

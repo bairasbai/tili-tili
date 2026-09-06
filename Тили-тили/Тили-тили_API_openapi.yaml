@@ -3717,7 +3717,15 @@ components:
         title: { type: string }
         body: { type: string }
         kind: { type: string, enum: [deal, chat, task, guest, system] }
-        link: { type: string, nullable: true, example: /deal }
+        link:
+          type: string
+          nullable: true
+          example: /deal/01a06eac-4983-7b5e-8d67-36d1a8e05cc9
+          description: |
+            Место, а не маршрут приложения: `/deal/{dealId}`, `/chats/{chatId}`,
+            `/guests`, `/checklist`, `/dayx`, `/vendor-app`. У пары и у
+            подрядчика одно и то же место лежит по разным адресам, поэтому
+            перевод в маршрут делает клиент. Незнакомое место никуда не ведёт.
         read: { type: boolean }
         createdAt: { type: string, format: date-time }
 

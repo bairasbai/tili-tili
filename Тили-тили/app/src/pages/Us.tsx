@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
-import { couple } from '@/lib/data'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
@@ -9,13 +8,18 @@ import { cn, copyText, goBack } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '@/lib/api/chats'
+import { getWedding } from '@/lib/api/weddingData'
 import { getMe } from '@/lib/api/auth'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* «Мы» — профиль пары */
 export function Us() {
-  const { lang, setLang, weddingDate, setWeddingDate } = useStore()
+  const { lang, setLang, weddingDate, setWeddingDate, weddingId } = useStore()
+  /* Своя свадьба, а не «Алина Козлова & Тимур Волков» из моков: имя, город и
+     площадка хранятся у неё. Экран профиля показывал чужую пару каждому. */
+  const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const wedding = wq.data
   const [dateErr, setDateErr] = useState<string | null>(null)
   const nav = useNavigate()
   const [copied, setCopied] = useState(false)
@@ -32,13 +36,18 @@ export function Us() {
       <TopBar title={t('Мы')} sub={t('Профиль пары и настройки')} />
       <div className="px-5 mt-3">
         <div className="card p-5 text-center fade-up">
+          {/* Буквы — из названия своей свадьбы. «А» и «Т» стояли константами
+              и не менялись ни у кого. */}
           <div className="flex justify-center -space-x-3.5">
-            <div className="w-16 h-16 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('А')}</div>
-            <div className="w-16 h-16 rounded-full bg-[#A9BCA0] text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white">{t('Т')}</div>
+            {(wedding?.title ?? '').split(/[&♥+]/).slice(0, 2).map((part, i) => (
+              <div key={i} className={cn('w-16 h-16 rounded-full text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white', i === 0 ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]')}>
+                {part.trim()[0] ?? '·'}
+              </div>
+            ))}
           </div>
-          <b className="font-serif-d text-[20px] block mt-3">{couple.full}</b>
+          <b className="font-serif-d text-[20px] block mt-3">{wedding?.title ?? t('Ваша свадьба')}</b>
           <button onClick={() => setDatePicker(true)} className="press text-[11.5px] text-[var(--soft)] mt-1 underline decoration-dotted underline-offset-4">
-            {weddingDate ? formatWeddingDate(weddingDate) : t('Выбрать дату свадьбы')} · {couple.city} · {couple.venue}
+            {[weddingDate ? formatWeddingDate(weddingDate) : t('Выбрать дату свадьбы'), wedding?.city?.name].filter(Boolean).join(' · ')}
           </button>
           <button onClick={() => nav('/us/team')} className="press mt-4 px-5 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--rose-deep)]">
             {t('+ Пригласить в команду (партнёр, помощники, подрядчики)')}

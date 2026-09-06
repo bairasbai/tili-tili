@@ -81,3 +81,18 @@ export function getAvailability(vendorId: string, month: string) {
   const path = url('/catalog/vendors/{vendorId}/availability', { vendorId })
   return api.get(`${path}?month=${encodeURIComponent(month)}` as typeof path)
 }
+
+/*
+ * Отметки историй вдохновения.
+ *
+ * Сами истории живут во фронте — контракт говорит это прямо; на сервере
+ * только идентификаторы отмеченных. Раньше отметки лежали в
+ * `tt_inspo_likes`: на втором устройстве сердечки были пустые.
+ */
+export const getInspoLikes = () => api.get('/inspiration/likes')
+
+export const likeStory = (storyId: string) =>
+  api.put(url('/inspiration/likes/{storyId}', { storyId }), {})
+
+export const unlikeStory = (storyId: string) =>
+  api.delete(url('/inspiration/likes/{storyId}', { storyId }))

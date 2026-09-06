@@ -11,8 +11,17 @@
  * можно переписать, число обязано остаться равным длине каталога.
  */
 import { describe, it, expect } from 'vitest'
-import { categories } from './data'
 import { projectFile } from '@/test/projectFiles'
+
+/*
+ * Источник правды — справочник бэкенда, а не мок фронта.
+ *
+ * Категории приходят с сервера (`GET /catalog/categories`), а в репозитории
+ * лежат в `backend/migrations/data/categories.json` — оттуда их и берёт база.
+ * Мок `lib/data.ts` снесён на этапе 11; сверять обещание онбординга с ним было
+ * бы сверкой двух своих выдумок.
+ */
+const categories = JSON.parse(projectFile('../backend/migrations/data/categories.json')) as { id: string }[]
 
 /* Русское «N категорий» и английское «N categories» — обе формы обещания. */
 const RU_PROMISE = /(\d+)\s+категори[йя]/

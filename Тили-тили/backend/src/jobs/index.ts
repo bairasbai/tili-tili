@@ -130,7 +130,9 @@ export async function remindExpiringHolds(app: FastifyInstance): Promise<number>
       kind: 'deal',
       title: 'Бронь скоро истечёт',
       body: 'Осталось меньше 12 часов — подтвердите или отпустите дату',
-      link: '/deal',
+      /* Со сделкой, а не «куда-то в сделки»: экран открывается по её
+         идентификатору, и без него нажатие уводило бы в общий список. */
+      link: `/deal/${deal.id}`,
       // Деньги и дата: ждать утра нельзя, к утру дату займут.
       critical: true,
     })
@@ -205,6 +207,7 @@ const STATE_TITLE: Record<string, string> = {
 export async function announceDealEvents(app: FastifyInstance, limit = 200): Promise<number> {
   const db = app.db!
   const { rows } = await db.query<{
+    deal_id: string
     wedding_id: string
     vendor_user_id: string | null
     to_state: string
@@ -218,7 +221,8 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
          where notified_at is null and at > now() - interval '2 days'
          order by at limit $1
       )
-      returning (select d.wedding_id from deals d where d.id = e.deal_id) as wedding_id,
+      returning e.deal_id,
+                (select d.wedding_id from deals d where d.id = e.deal_id) as wedding_id,
                 (select v.user_id from deals d join vendors v on v.id = d.vendor_id
                   where d.id = e.deal_id) as vendor_user_id,
                 e.to_state, e.kind, e.actor_id, e.note`,
@@ -233,7 +237,8 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
        * различает эти два события. */
       title: event.kind === 'price' ? 'Изменилась сумма сделки' : (STATE_TITLE[event.to_state] ?? 'Статус сделки изменился'),
       body: event.note ?? 'Загляните в карточку сделки',
-      link: '/deal',
+      // Та самая сделка, а не список: экран открывается по идентификатору.
+      link: `/deal/${event.deal_id}`,
       // Деньги и дата: §18.6 относит сделки к неотключаемым.
       critical: true,
     }

@@ -31,8 +31,68 @@ vi.mock('@/lib/api/guest', async (orig) => ({
   getGuestHotels: async () => [],
 }))
 
+/*
+ * Профиль, сессии, уведомления и день X — всё это теперь серверное.
+ * Мок держит ответы в памяти и записывает то, что ушло: тест проверяет не
+ * «экран изменился», а «на сервер ушло именно это».
+ */
+const { profile, profilePatches, endedSessions, notifications, readNotifications, shifts, planbActivations } = vi.hoisted(() => ({
+  profile: {
+    id: 'u1',
+    name: 'Тимур Волков',
+    phone: '+79170009009',
+    lang: 'ru',
+    push: { tasks: true, chats: true, deals: true, tips: false },
+    quietHours: { from: '22:00', to: '09:00' },
+  } as Record<string, unknown>,
+  profilePatches: [] as unknown[],
+  endedSessions: [] as string[],
+  notifications: [] as Record<string, unknown>[],
+  readNotifications: [] as string[],
+  shifts: [] as { weddingId: string; minutes: number }[],
+  planbActivations: [] as string[],
+}))
+
+vi.mock('@/lib/api/auth', () => ({
+  getMe: async () => ({ ...profile }),
+  patchMe: async (patch: Record<string, unknown>) => {
+    profilePatches.push(patch)
+    Object.assign(profile, patch)
+    return { ...profile }
+  },
+  getSessions: async () => [
+    { id: 'this-one', device: 'Windows \u00b7 Chrome', current: true, createdAt: '2026-09-01T10:00:00Z' },
+    { id: 'other-1', device: 'Android \u00b7 Chrome', current: false, createdAt: '2026-08-30T10:00:00Z' },
+  ].filter(x => !endedSessions.includes(x.id)),
+  endSession: async (id: string) => { endedSessions.push(id) },
+}))
+
+vi.mock('@/lib/api/notifications', async (orig) => ({
+  ...await orig<object>(),
+  getNotifications: async () => notifications.map(n => ({ ...n })),
+  markNotificationRead: async (id: string) => {
+    readNotifications.push(id)
+    const n = notifications.find(x => x.id === id)
+    if (n) n.read = true
+  },
+}))
+
+vi.mock('@/lib/api/weddingWrite', async (orig) => ({
+  ...await orig<object>(),
+  shiftTimeline: async (weddingId: string, minutes: number) => { shifts.push({ weddingId, minutes }) },
+  activatePlanB: async (_w: string, scenario = 'rain') => { planbActivations.push(scenario) },
+}))
+
 /* Мозаика приходит с сервера — общий набор ответов: src/test/slotsMock.ts. */
-vi.mock('@/lib/api/weddingData', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsRead }))
+vi.mock('@/lib/api/weddingData', async (orig) => ({
+  ...await orig<object>(),
+  ...(await import('@/test/slotsMock')).slotsRead,
+  getWedding: async () => ({ id: 'w1', title: 'Алина & Тимур', date: '2027-06-14', city: { name: 'Уфа' } }),
+  getTimeline: async () => [
+    { id: 'e1', name: 'Сбор гостей', startsAt: '2027-06-14T12:00:00Z', location: 'Усадьба' },
+    { id: 'e2', name: 'Церемония', startsAt: '2027-06-14T15:00:00Z', location: 'Сад' },
+  ],
+}))
 vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
 import { authorize, invitesRevoked, resetSlots } from '@/test/slotsMock'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
@@ -48,7 +108,24 @@ const wrap = (node: React.ReactNode, route = '/') =>
 /** Перезагрузка страницы: размонтировать всё и собрать заново из localStorage. */
 const reload = (node: React.ReactNode, route = '/') => { cleanup(); return wrap(node, route) }
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  profilePatches.length = 0
+  endedSessions.length = 0
+  readNotifications.length = 0
+  shifts.length = 0
+  planbActivations.length = 0
+  Object.assign(profile, {
+    name: 'Тимур Волков',
+    push: { tasks: true, chats: true, deals: true, tips: false },
+    quietHours: { from: '22:00', to: '09:00' },
+  })
+  notifications.length = 0
+  notifications.push(
+    { id: 'n1', kind: 'deal', title: 'Аванс подтверждён', body: 'Дата закрыта для других пар', link: '/wedding', read: false, createdAt: new Date().toISOString() },
+    { id: 'n2', kind: 'guest', title: 'RSVP', body: 'Гость подтвердил приезд', link: null, read: true, createdAt: '2026-09-01T10:00:00Z' },
+  )
+})
 afterEach(cleanup)
 
 function SlotProbe() {
@@ -143,48 +220,98 @@ describe('мозаика команды живёт на сервере, а не 
   })
 })
 
-describe('настройки переживают перезагрузку', () => {
-  it('выключенный push сохраняется', () => {
+/*
+ * Настройки, уведомления и день X больше ничего не «переживают»: они не
+ * хранятся на устройстве вовсе.
+ *
+ * Push рассылает сервер по СВОИМ настройкам, поэтому выключенный на телефоне
+ * канал, лежащий в `tt_settings`, продолжал звонить. «Прочитано» из
+ * `tt_notif_read` знал только этот браузер. Сдвиг дня X копился в `tt_dayx` и
+ * не доходил ни до команды, ни до гостей.
+ *
+ * Проверяем ровно это: действие уходит на сервер и НИЧЕГО не оседает локально.
+ */
+describe('настройки: тумблеры уходят на сервер, а не в браузер', () => {
+  it('выключенный push уходит запросом и не оседает локально', async () => {
     wrap(<Settings />)
+    await waitFor(() => expect(screen.getByText('Тимур Волков')).toBeTruthy())
+
     fireEvent.click(screen.getByLabelText('Push: дедлайны задач'))
-    expect(JSON.parse(localStorage.getItem('tt_settings')!).push.tasks).toBe(false)
+    await waitFor(() => expect(profilePatches).toContainEqual({ push: { tasks: false } }))
+    expect(localStorage.getItem('tt_settings')).toBeNull()
   })
 
-  it('выключенный push читается обратно и тумблер остаётся выключенным', () => {
-    localStorage.setItem('tt_settings', JSON.stringify({
-      quiet: false,
-      push: { tasks: false, chats: true, deals: true, tips: false },
-      name: 'Алина Петрова',
-    }))
+  it('состояние тумблеров читается из профиля, а не из устройства', async () => {
+    profile.push = { tasks: false, chats: true, deals: true, tips: false }
+    profile.quietHours = { from: '22:00', to: '22:00' }
     wrap(<Settings />)
+
+    await waitFor(() => expect(screen.getByLabelText('Push: сообщения').className).toContain('grad'))
     expect(screen.getByLabelText('Push: дедлайны задач').className).not.toContain('grad')
-    expect(screen.getByLabelText('Push: сообщения').className).toContain('grad')
+    /* Пустое окно `22:00–22:00` сервер считает отсутствием тишины — тумблер
+       обязан показывать выключенным именно его, а не отсутствие поля. */
     expect(screen.getByLabelText('Тихие часы').className).not.toContain('grad')
-    expect(screen.getByText('Алина Петрова')).toBeTruthy()
+    expect(screen.getByText('Тимур Волков')).toBeTruthy()
+  })
+
+  it('устройства в списке — настоящие сессии, и «Завершить» гасит чужую', async () => {
+    wrap(<Settings />)
+    await waitFor(() => expect(screen.getByText('Android \u00b7 Chrome')).toBeTruthy())
+    /* У текущей сессии кнопки «Завершить» нет: выход из неё — это выход из
+       аккаунта, отдельная кнопка ниже. */
+    expect(screen.getAllByText('Завершить')).toHaveLength(1)
+
+    fireEvent.click(screen.getByText('Завершить'))
+    await waitFor(() => expect(endedSessions).toContain('other-1'))
   })
 })
 
-describe('уведомления: «прочитано» переживает перезагрузку', () => {
-  it('«Прочитать все» сохраняется и точки не возвращаются', () => {
+describe('уведомления: «прочитано» уходит на сервер', () => {
+  it('точка гаснет, отметка уходит запросом, в браузере ничего не остаётся', async () => {
     const { container } = wrap(<Notifications />)
-    expect(container.innerHTML).toContain('top-4 right-4')
-    fireEvent.click(screen.getByText('Прочитать все'))
-    expect(JSON.parse(localStorage.getItem('tt_notif_read')!).length).toBeGreaterThan(0)
+    await waitFor(() => expect(container.innerHTML).toContain('top-4 right-4'))
 
+    fireEvent.click(screen.getByText('Прочитать все'))
+    await waitFor(() => expect(readNotifications).toEqual(['n1']))
+    expect(localStorage.getItem('tt_notif_read')).toBeNull()
+
+    /* Второе устройство увидит то же самое: сервер отдаёт `read: true`, и
+       точка не возвращается. Раньше она возвращалась у всех, кроме того
+       браузера, где нажали. */
     const after = reload(<Notifications />)
+    await waitFor(() => expect(after.container.innerHTML).toContain('Аванс подтверждён'))
     expect(after.container.innerHTML).not.toContain('top-4 right-4')
   })
 })
 
-describe('день X: задержка и план Б переживают перезагрузку', () => {
-  it('накопленная задержка сохраняется', () => {
-    wrap(<DayX />)
-    fireEvent.click(screen.getByText('+15 мин задержка'))
-    expect(screen.getByText(/МИН К ПЛАНУ/).textContent).toContain('+15')
-    expect(JSON.parse(localStorage.getItem('tt_dayx')!).delay).toBe(15)
+describe('день X: сдвиг программы уходит команде, а не в браузер пары', () => {
+  const shiftButton = () => screen.getByText('+15 мин всей программе').closest('button')!
 
-    reload(<DayX />)
-    expect(screen.getByText(/МИН К ПЛАНУ/).textContent).toContain('+15')
+  it('«+15 мин всей программе» уходит запросом и не оседает локально', async () => {
+    authorize()
+    wrap(<DayX />)
+    /* Кнопка выключена, пока тайминга нет: двигать нечего. Её включение и
+       есть признак, что данные с сервера дошли. */
+    await waitFor(() => expect(shiftButton().disabled).toBe(false))
+
+    fireEvent.click(shiftButton())
+    await waitFor(() => expect(shifts).toEqual([{ weddingId: 'w1', minutes: 15 }]))
+    /* Ключа `tt_dayx` больше нет: пара видела в нём накопленную задержку,
+       а команда и гости о ней не знали. */
+    expect(localStorage.getItem('tt_dayx')).toBeNull()
+  })
+
+  it('план Б включается только после подтверждения', async () => {
+    authorize()
+    wrap(<DayX />)
+    await waitFor(() => expect(shiftButton().disabled).toBe(false))
+
+    /* Рассылка уходит всей команде и всем гостям — одного касания мало. */
+    fireEvent.click(screen.getByText('Активировать'))
+    expect(planbActivations).toEqual([])
+
+    fireEvent.click(screen.getByText('Подтвердить'))
+    await waitFor(() => expect(planbActivations).toEqual(['rain']))
   })
 })
 

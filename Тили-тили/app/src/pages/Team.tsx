@@ -149,7 +149,10 @@ export function Team() {
             </div>
           ))}
         </div>
-        <p className="text-[10.5px] text-[var(--soft)] px-1 leading-relaxed">{t('💡 Все правки синхронизируются мгновенно: Тимур добавит расход — вы увидите его в бюджете сразу.')}</p>
+        {/* Раньше в примере стоял «Тимур» — имя из моков, а не из этой
+            команды. Правило то же, что и на карточке пары: чужого имени на
+            своём экране быть не должно. */}
+        <p className="text-[10.5px] text-[var(--soft)] px-1 leading-relaxed">{t('💡 Все правки синхронизируются мгновенно: любой из команды добавит расход — вы увидите его в бюджете сразу.')}</p>
 
         {/* Пригласить */}
         <div className="flex justify-between items-baseline px-1 mt-2">
@@ -290,7 +293,12 @@ export function Join() {
       <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Heart size={36} fill="#fff" /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Вы в команде!')}</h1>
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
-        {isPartner ? 'Теперь у вас с Алиной одна общая свадьба: бюджет, команда, гости — всё синхронизировано.' : t('Алина и Тимур добавили вас в пространство свадьбы. Организуем вместе!')}
+        {/* Имя приглашающего и название свадьбы приходят с сервера вместе с
+            превью приглашения. Раньше здесь у всех стояли «Алина» и «Алина и
+            Тимур» — и строка партнёра вдобавок не переводилась. */}
+        {isPartner
+          ? t('Теперь свадьба у вас общая: бюджет, команда, гости — всё синхронизировано.')
+          : `${preview?.inviterName ?? t('Пара')} ${t('добавил(а) вас в пространство свадьбы. Организуем вместе!')}`}
       </p>
       <button onClick={() => { finishOnboarding(); nav('/home') }} className="press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-8" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Открыть нашу свадьбу ✨')}</button>
     </div>
