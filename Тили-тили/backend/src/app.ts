@@ -211,7 +211,7 @@ export async function buildApp(
   })
 
   /**
-   * NUL-байт (` `) — единственный символ, который PostgreSQL не принимает
+   * NUL-байт (`\u0000`) — единственный символ, который PostgreSQL не принимает
    * ни в одной текстовой колонке: драйвер отвечает «invalid byte sequence»,
    * обработчик переводит это в 500 и пишет в лог как о падении сервера.
    * Прилететь он может откуда угодно — телом, строкой запроса, сегментом
@@ -221,7 +221,7 @@ export async function buildApp(
    */
   app.addHook('preValidation', async (request) => {
     const hasNul = (value: unknown): boolean => {
-      if (typeof value === 'string') return value.includes(' ')
+      if (typeof value === 'string') return value.includes('\u0000')
       if (Array.isArray(value)) return value.some(hasNul)
       if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasNul)
       return false

@@ -170,7 +170,7 @@ const TEST_CONFIG = { env: 'test' as const, databaseUrl: null, redisUrl: null, c
 
 describe('NUL-байт в запросе — 422, а не 500 (R-111)', () => {
   /*
-   * PostgreSQL не принимает ` ` ни в одной текстовой колонке. До фикса
+   * PostgreSQL не принимает `\u0000` ни в одной текстовой колонке. До фикса
    * строка с ним доходила до базы, драйвер отвечал «invalid byte sequence»,
    * и любой гость одним адресом `/rsvp/a%00b` писал в лог аварию. Проверено
    * живым прогоном: 500 давали имя гостя, имя партнёра, поиск города,
@@ -186,7 +186,7 @@ describe('NUL-байт в запросе — 422, а не 500 (R-111)', () => {
   })
 
   it('в теле запроса', async () => {
-    const res = await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone: '+7917 000001' } })
+    const res = await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone: '+7917\u0000000001' } })
     expect(res.statusCode).toBe(422)
     expect(res.json().error.code).toBe('invalid_character')
   })
@@ -208,7 +208,7 @@ describe('NUL-байт в запросе — 422, а не 500 (R-111)', () => {
       method: 'POST',
       url: '/weddings',
       headers: { authorization: 'Bearer x' },
-      payload: { partnerName: 'Тимур', city: { name: 'Уфа ', region: 'Башкортостан' } },
+      payload: { partnerName: 'Тимур', city: { name: 'Уфа\u0000', region: 'Башкортостан' } },
     })
     expect(res.statusCode).toBe(422)
     expect(res.json().error.code).toBe('invalid_character')

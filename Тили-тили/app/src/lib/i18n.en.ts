@@ -530,7 +530,6 @@ export const EN: Record<string, string> = {
   'гостям': 'for guests',
   'готово': 'done',
   'действуют': 'active',
-  'демо': 'demo',
   'дней до': 'days until',
   'до 100 тыс ₽': 'under 100k ₽',
   'до 16:30 · парк у усадьбы': 'by 4:30 pm · park by the estate',
@@ -792,7 +791,6 @@ Object.assign(EN, {
   'Забыли кольца или паспорта': 'Rings or passports forgotten',
   'Чек-лист ниже отдаёт кольца и паспорта свидетелям ещё накануне — проверено поколениями свадеб.': 'The checklist hands rings and passports to the witnesses the day before — proven by generations of weddings.',
   'Найти горячую замену →': 'Find a hot replacement →',
-  'Активировать план «дождь» (демо)': 'Activate the rain plan (demo)',
   'Защита сделки': 'Deal protection',
   'Отмена:': 'Cancellation:',
   'Спор:': 'Dispute:',
@@ -1376,4 +1374,6 @@ Object.assign(EN, {
   'Опрос по меню →': 'Menu poll →',
   'Трансфер и отели →': 'Transfer and hotels →',
   '» собран с вашими данными. Скачайте и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.': '» is assembled with your details. Download and sign it with the vendor — scan uploads will arrive with the file storage.',
+  /* Аудит, блок 6. */
+  'Истории собраны редакцией как примеры: имена и суммы — иллюстрация, а не реальные свадьбы.': 'The stories are editorial examples: names and amounts are an illustration, not real weddings.',
 })
