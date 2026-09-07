@@ -99,11 +99,16 @@ const couple = () => {
   localStorage.setItem('tt_onboarded', '1')
   localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
   localStorage.setItem('tt_wedding_id', JSON.stringify('w1'))
+  /* Кэш даты — тот, по которому главная считает «дней до». Живёт ровно
+     столько же, сколько идентификатор: после отмены он обязан уйти. */
+  localStorage.setItem('tt_wedding_date', JSON.stringify('2027-11-06'))
 }
 
 /** Что помнит устройство: `null` и «ключа нет» для нас одно и то же. */
 const rememberedWedding = (): string | null =>
   JSON.parse(localStorage.getItem('tt_wedding_id') ?? 'null') as string | null
+const rememberedDate = (): string | null =>
+  JSON.parse(localStorage.getItem('tt_wedding_date') ?? 'null') as string | null
 
 const ME = { id: 'u1', name: 'Аня', phone: '+79990000000', push: {}, quietHours: null }
 
@@ -216,6 +221,9 @@ describe('отмена исполнена: устройство забывает
     expect(await screen.findByText('Свадьба отменена')).toBeTruthy()
     /* Иначе каждый экран до следующего запуска получит «не найдено». */
     await waitFor(() => expect(rememberedWedding()).toBeNull())
+    /* И кэш даты — вместе с идентификатором: живая проверка показала главную
+       с «424 дня до» свадьбы, которой больше нет. */
+    await waitFor(() => expect(rememberedDate()).toBeNull())
 
     fireEvent.click(screen.getByText('Начать новую свадьбу'))
     expect(await screen.findByText('Когда ваша свадьба?')).toBeTruthy()
@@ -285,6 +293,9 @@ describe('запуск приложения: помнимая свадьба с�
     mountStore()
     await waitFor(() => expect(screen.getByTestId('wid').textContent).toBe('—'))
     expect(rememberedWedding()).toBeNull()
+    /* Отмена с другого устройства: этот телефон узнаёт о ней сверкой при
+       запуске — и кэш даты уходит вместе с идентификатором. */
+    await waitFor(() => expect(rememberedDate()).toBeNull())
   })
 
   it('помнимая свадьба в списке есть — идентификатор не трогается', async () => {
@@ -297,6 +308,8 @@ describe('запуск приложения: помнимая свадьба с�
     })
     mountStore()
     await staysAt('w1')
+    /* Свадьба жива — дата на устройстве остаётся (её обновит сервер, а не сотрёт сверка). */
+    expect(rememberedDate()).not.toBeNull()
   })
 
   it('сервер недоступен — свадьба остаётся, а не «пропадает»', async () => {

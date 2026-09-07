@@ -159,8 +159,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * Локальная копия остаётся: она нужна до ответа сервера и гостю без входа.
    * Но источник правды — сервер, и при расхождении выигрывает он.
    */
+  /* Была ли свадьба на устройстве: кэш даты живёт ровно столько же, сколько
+     идентификатор. Черновик даты из квиза сюда не попадает — у него
+     идентификатора не было и раньше. */
+  const hadWedding = useRef(Boolean(weddingId))
   useEffect(() => {
-    if (!weddingId || !isAuthorized()) return
+    if (!weddingId) {
+      /* Идентификатор пропал — отмена свадьбы или сверка при запуске нашла,
+         что её больше нет. Дата уходит вместе с ним: иначе главная считала бы
+         дни до свадьбы, которой нет (живая проверка фичи 003). Микрозадача —
+         чтобы не ставить состояние синхронно в теле эффекта. */
+      if (hadWedding.current) {
+        hadWedding.current = false
+        void Promise.resolve().then(() => setWeddingDateState(null))
+      }
+      return
+    }
+    hadWedding.current = true
+    if (!isAuthorized()) return
     let alive = true
     void getWedding(weddingId)
       .then(w => { if (alive && w?.date !== undefined) setWeddingDateState(w.date ?? null) })
