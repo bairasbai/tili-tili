@@ -320,7 +320,8 @@ export function Catering() {
         {pending > 0 && (
           <div className="card-s px-4 py-3 flex items-center gap-3">
             <span className="w-9 h-9 rounded-full bg-[var(--peach)] flex items-center justify-center shrink-0"><Users size={15} className="text-[var(--ink2)]" /></span>
-            <p className="text-[11.5px] flex-1"><b>{pending}</b> {plural(pending, t('гость'), t('гостя'), t('гостей'))} {t('ещё не выбрали блюдо')}</p>
+            {/* Глагол согласуется с числом вместе с существительным: «1 гость ещё не выбрали» — ошибка. */}
+            <p className="text-[11.5px] flex-1"><b>{pending}</b> {plural(pending, t('гость ещё не выбрал блюдо'), t('гостя ещё не выбрали блюдо'), t('гостей ещё не выбрали блюдо'))}</p>
             {/* «Напомнили» обещало доставку, которой ещё не было: рассылка уходит
                 очередью, и сервер отвечает «принято». Говорим то же самое. */}
             <button disabled={busy} onClick={remind} className="press text-[11px] font-bold text-[var(--rose-deep)] shrink-0 disabled:opacity-50">{reminded ? t('В очереди ✓') : t('Напомнить')}</button>

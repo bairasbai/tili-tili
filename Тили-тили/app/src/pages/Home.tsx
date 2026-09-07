@@ -161,7 +161,7 @@ export default function Home() {
         <button className="press w-full text-left card p-5 mt-4" onClick={() => nav('/wedding/budget')}>
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{tr('Бюджет')}</span>
-            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{num(bq, `${budgetPct}%`)}</span>
+            <span className="text-[12px] font-bold text-[var(--rose-deep)]">{num(bq, budgetTotal ? `${budgetPct}%` : '—')}</span>
           </div>
           {/* Суммы — только когда бюджет пришёл. «0 ₽ из 0 ₽» при отказе
               сервера пара читает как «мы ничего не потратили и ничего не
@@ -170,9 +170,10 @@ export default function Home() {
             <>
               <div className="flex justify-between items-baseline mt-1.5">
                 <b className="font-serif-d text-[22px] tabular">{fmt(spent)}</b>
-                <span className="text-[11px] text-[var(--soft)]">{tr('из')} {fmt(budgetTotal)}</span>
+                {/* «из 0 ₽» — не бюджет, а его отсутствие: сумма ещё не задана. */}
+                <span className="text-[11px] text-[var(--soft)]">{budgetTotal ? `${tr('из')} ${fmt(budgetTotal)}` : tr('итог не задан')}</span>
               </div>
-              <div className="mt-3"><Bar pct={budgetPct} /></div>
+              {budgetTotal ? <div className="mt-3"><Bar pct={budgetPct} /></div> : null}
             </>
           ) : (
             <p className="text-[11px] text-[var(--soft)] mt-1.5">{tr('Бюджет не загрузился')}</p>

@@ -536,7 +536,10 @@ export function Settings() {
           <Row label={t('Push: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />
           <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
           <Row label={t('Push: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
-          <Row label={t('Советы ИИ-координатора')} value={push.tips} onChange={v => setPush('tips', v)} />
+          {/* Тумблер «Советы ИИ-координатора» убран: таких уведомлений никто не
+              шлёт (ни одной задачи с видом «совет» в бэкенде), а переключатель
+              для того, чего нет, — обещание (R-174). Поле `push.tips` в
+              контракте остаётся — вернётся вместе с советами. */}
           </>}
           <button onClick={() => setCityPick(true)} className="press w-full flex items-center justify-between py-3.5 border-b border-[var(--track)] last:border-none text-left">
             <span className="text-[13px] font-medium">{t('Город свадьбы')}</span>

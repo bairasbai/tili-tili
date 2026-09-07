@@ -65,7 +65,10 @@ export function Us() {
         <div className="card p-5 mt-4 relative overflow-hidden">
           <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-[var(--rose-soft)] opacity-70" />
           <span className="text-[10px] tracking-[.18em] uppercase text-[var(--rose-deep)] font-semibold relative">{t('Реферальная программа')}</span>
-          <p className="text-[12px] text-[var(--ink2)] mt-2 leading-relaxed relative">{t('Пригласите пару — оба получите')} <b>3 000 ₽</b> {t('на премиум-функции после её первой сделки.')}</p>
+          {/* «3 000 ₽ на премиум-функции» обещало начисление, которого нет
+              (`/referral/{code}/apply` только записывает, кто кого привёл), и
+              функции, которых нет: приложение бесплатно целиком. */}
+          <p className="text-[12px] text-[var(--ink2)] mt-2 leading-relaxed relative">{t('Пригласите пару по своему коду — мы увидим, что она пришла от вас. Бонусы за приглашения пока не начисляются: сейчас всё бесплатно.')}</p>
           {ready(ref) && ref.data?.code ? (
             <div className="flex items-center gap-2.5 mt-3.5 relative">
               <div className="flex-1 card-s px-4 py-3 flex items-center justify-between">

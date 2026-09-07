@@ -200,15 +200,8 @@ export function OfflineBanner() {
   )
 }
 
-/* Плашка живой синхронизации с подрядчиком */
-export function SyncNote({ to }: { to: string }) {
-  return (
-    <div className="card-s px-4 py-3 flex items-center gap-2.5">
-      <span className="relative flex w-2.5 h-2.5 shrink-0">
-        <span className="absolute inline-flex w-full h-full rounded-full bg-[#7E9A74] opacity-60 animate-ping" />
-        <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-[#7E9A74]" />
-      </span>
-      <p className="text-[11px] text-[var(--soft)] leading-snug">{t('Изменения мгновенно видны:')} <b className="text-[var(--ink)]">{to}</b> {t('— подрядчик получает обновление и подтверждает ✓')}</p>
-    </div>
-  )
-}
+/* Плашка «Изменения мгновенно видны: … — подрядчик получает обновление и
+   подтверждает ✓» убрана вместе с последним местом, где стояла (рассадка,
+   ERR-0157): мгновенного канала к подрядчику нет — обновления он читает в
+   кабинете, а «подтверждает» было нарисовано. Компонент оставался
+   экспортом без единого вызова. */

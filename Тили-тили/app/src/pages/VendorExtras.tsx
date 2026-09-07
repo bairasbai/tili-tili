@@ -7,8 +7,11 @@ import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorLeads, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
 import { cn, pct, plural } from '@/lib/utils'
 import { fmt } from '@/lib/money'
-import { t } from '@/lib/i18n'
+import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
+
+/** Локаль дат — по языку интерфейса, а не «ru-RU» навсегда (R-07). */
+const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
 
 /*
  * Заявка подрядчика.
@@ -74,7 +77,7 @@ export function VendorLead() {
           {/* Срок — ваш собственный: сервер держит его у заявки и ничего не
               бронирует. Бронь появляется только со сделкой. */}
           {lead.holdUntil && (
-            <p className="text-[10.5px] text-[var(--honey-deep)] mt-2.5">{t('Держите до')} {new Date(lead.holdUntil).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>
+            <p className="text-[10.5px] text-[var(--honey-deep)] mt-2.5">{t('Держите до')} {new Date(lead.holdUntil).toLocaleString(dateLocale(), { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>
           )}
         </div>
 
@@ -192,7 +195,7 @@ export function VendorReviews() {
                 <div className="w-9 h-9 rounded-full bg-[var(--rose-soft)] flex items-center justify-center text-[13px] font-serif-d text-[var(--rose-ink)]">{(r.authorName ?? '?')[0]}</div>
                 <div className="flex-1 min-w-0">
                   <b className="text-[12.5px]">{r.authorName}</b>
-                  <p className="text-[9.5px] text-[var(--soft)]">{r.createdAt ? new Date(r.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</p>
+                  <p className="text-[9.5px] text-[var(--soft)]">{r.createdAt ? new Date(r.createdAt).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</p>
                 </div>
                 {/* Гость и пара весят в рейтинге по-разному — значок об этом
                     честно предупреждает (§15). */}

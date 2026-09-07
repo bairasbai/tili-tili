@@ -183,7 +183,10 @@ function DealView({ s }: { s: Slot }) {
           </div>
           <button onClick={() => nav('/support')} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Написать в поддержку')}</button>
         </div>
-        <p className="text-[10px] text-[var(--soft2)] text-center leading-relaxed">{t('Отмена менее чем за 30 дней до даты блокирует отзывы обеим сторонам до решения модерации.')}</p>
+        {/* Правила «30 дней» и «блокировки до решения модерации» в коде нет:
+            отзыв о сделке принимается только по завершённой, отменённую не
+            оценить ни одной из сторон — это и говорим. */}
+        <p className="text-[10px] text-[var(--soft2)] text-center leading-relaxed">{t('Отзыв о сделке возможен только по завершённой: после отмены его не оставит ни одна из сторон.')}</p>
       </div>
     </div>
   )

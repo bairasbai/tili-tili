@@ -795,8 +795,6 @@ Object.assign(EN, {
   'Отмена:': 'Cancellation:',
   'Спор:': 'Dispute:',
   'Проводим…': 'Processing…',
-  'Изменения мгновенно видны:': 'Changes are instantly visible to:',
-  '— подрядчик получает обновление и подтверждает ✓': '— the vendor gets the update and confirms ✓',
   'Обновления от пар': 'Updates from couples',
   'вчера': 'yesterday',
 })
@@ -1376,4 +1374,22 @@ Object.assign(EN, {
   '» собран с вашими данными. Скачайте и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.': '» is assembled with your details. Download and sign it with the vendor — scan uploads will arrive with the file storage.',
   /* Аудит, блок 6. */
   'Истории собраны редакцией как примеры: имена и суммы — иллюстрация, а не реальные свадьбы.': 'The stories are editorial examples: names and amounts are an illustration, not real weddings.',
+  /* Аудит, блок 7: обещания только за код, согласование числительных. */
+  'Тайминг, план Б на дождь и live-режим: «+15 минут задержка» — и вся команда узнаёт сразу.': 'Timeline, a rain plan B and live mode: “+15 minutes delay” — and the whole team knows at once.',
+  'Договоры из шаблонов, бюджет с лимитами и чек-лист, который помнит сроки за вас.': 'Contracts from templates, a budget with limits and a checklist that remembers the deadlines for you.',
+  '💡 Данные общие: расход, добавленный любым из команды, виден всем при следующем открытии бюджета.': '💡 The data is shared: an expense added by anyone on the team is visible to everyone the next time the budget is opened.',
+  'каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — ссылка перестанет открываться.': 'each link is one-time and lives for 7 days. Revoke it in one tap — the link will stop opening.',
+  'гость ещё не выбрал блюдо': 'guest has not chosen a dish yet',
+  'гостя ещё не выбрали блюдо': 'guests have not chosen a dish yet',
+  'гостей ещё не выбрали блюдо': 'guests have not chosen a dish yet',
+  'гость ещё не ответил': 'guest has not replied yet',
+  'гостя ещё не ответили': 'guests have not replied yet',
+  'гостей ещё не ответили': 'guests have not replied yet',
+  'итог не задан': 'total not set',
+  'закладывайте +10% запаса. Для усадьбы уточните пробковый сбор — иногда выгоднее закупаться самим. Берите с чеком: невскрытое часто принимают обратно.': 'allow a +10% reserve. For an estate, check the corkage fee — sometimes buying yourself is cheaper. Keep the receipt: unopened bottles are often taken back.',
+  'Отзыв о сделке возможен только по завершённой: после отмены его не оставит ни одна из сторон.': 'A review is possible only for a completed deal: after a cancellation neither side can leave one.',
+  'Пригласите пару по своему коду — мы увидим, что она пришла от вас. Бонусы за приглашения пока не начисляются: сейчас всё бесплатно.': 'Invite a couple with your code — we will see they came from you. Referral bonuses are not credited yet: everything is free for now.',
+  '💡 В каталоге — подрядчики города свадьбы. Город можно поменять в настройках в любой момент.': '💡 The catalogue shows vendors of the wedding city. You can change the city in the settings at any time.',
+  'Попросите кейтеринг и площадку держать запас +2 места и порции: в сводке для кейтеринга стоит точное число по ответам гостей, запас добавьте сами. Координатор добавляет стулья без вашего участия.': 'Ask the caterer and the venue to keep a reserve of +2 seats and portions: the catering summary shows the exact number from guest replies, add the reserve yourself. The coordinator adds chairs without you.',
+  'В режиме дня X тайминг сдвигается одним тапом, и вся команда получает обновление. Запас в каждый блок закладывайте при сборке тайминга — тогда гости не заметят.': 'In day X mode the timeline shifts in one tap and the whole team gets the update. Build a reserve into every block when assembling the timeline — then the guests will not notice.',
 })

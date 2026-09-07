@@ -234,7 +234,10 @@ export default function Quiz() {
                 style={{ boxShadow: 'var(--shadow)' }}>{n}</button>
             ))}
           </div>
-          <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">{t('💡 Подрядчики из соседних городов (Магнитогорск, Орск, Уфа) автоматически попадут в выдачу с отметкой «выезд».')}</p>
+          {/* Каталог ищет по городу свадьбы: радиус и отметка «выезд» были
+              обещанием, которого в выдаче нет (сервер умеет радиус, экран его
+              не запрашивает — решение владельца, RELEASE-BLOCKERS). */}
+          <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">{t('💡 В каталоге — подрядчики города свадьбы. Город можно поменять в настройках в любой момент.')}</p>
         </div>
       ) : (
       <div key={i} className="flex-1 px-6 pt-8 fade-up">

@@ -313,7 +313,9 @@ export function VendorDetail() {
           <div>
             <h1 className="font-serif-d text-[26px]">{v.name}</h1>
             <p className="text-[12px] text-[var(--soft)] mt-1 flex items-center gap-1.5">
-              <MapPin size={12} /> {t(city)}{t(' + 100 км')}
+              {/* Город — из анкеты; «+ 100 км» стояло константой у всех: радиуса
+                  выезда сервер не знает, а каталог ищет по точному городу. */}
+              <MapPin size={12} /> {v.city ?? t(city)}
               {(v.reviewsCount ?? 0) > 0 ? <span>· ★ {v.rating} · {v.reviewsCount} {t('отзывов')}</span> : <span>{t('· Новый на платформе')}</span>}
             </p>
           </div>
