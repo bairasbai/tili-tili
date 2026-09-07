@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.24.0
+  version: 0.25.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -972,6 +972,13 @@ paths:
                   guestName: { type: string }
                   wedding: { $ref: '#/components/schemas/WeddingPublic' }
                   status: { type: string, enum: [yes, no, pending] }
+                  # Свой ответ целиком: гость видит, что уже сказал (v0.25 —
+                  # аудит, блок 5). Без этого форма после «приду» не могла
+                  # показать ни +1, ни еду, ни трансфер, которые он выбрал.
+                  plusOne: { type: boolean }
+                  diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other] }
+                  dietNote: { type: string, nullable: true }
+                  transfer: { type: string, nullable: true, enum: [null, need, own] }
     post:
       tags: [guests]
       summary: Ответ гостя (RSVP)

@@ -894,10 +894,15 @@ interface GuestRow {
   status: 'yes' | 'no' | 'pending'
   plus: boolean
   tableId?: string | null
+  /** Телефон вводит пара — по нему уходит SMS-напоминание молчащим. */
+  phone?: string | null
   diet?: string | null
   dietNote?: string | null
   transfer?: string | null
 }
+
+/** Ровно десять цифр после +7 — так контракт описывает телефон. */
+const PHONE_DIGITS = 10
 
 /** Подписи ограничений по еде: ключ словаря — русская строка (R-07). */
 const DIET_LABEL: Record<string, string> = {
@@ -926,6 +931,7 @@ export function Guests() {
       status: g.status === 'yes' ? 'yes' : g.status === 'no' ? 'no' : 'pending',
       plus: !!g.plusOne,
       tableId: g.tableId,
+      phone: g.phone,
       diet: g.diet,
       dietNote: g.dietNote,
       transfer: g.transfer,
@@ -939,6 +945,12 @@ export function Guests() {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [plus, setPlus] = useState(false)
+  /* Телефон гостя — десять цифр после +7. Раньше ввести его было негде, и
+     «Напомнить не ответившим» не находила ни одного адресата: сервер честно
+     отвечал «без телефона» на каждого. */
+  const [phone, setPhone] = useState('')
+  const [phoneEdit, setPhoneEdit] = useState<string | null>(null)
+  const [phoneDraft, setPhoneDraft] = useState('')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [reminded, setReminded] = useState<string | null>(null)
 
@@ -952,8 +964,13 @@ export function Guests() {
   }
   const add = () => void write('new', async () => {
     if (!name.trim()) return
-    await addGuest(weddingId!, { name: name.trim(), plusOne: plus })
-    setName(''); setPlus(false); setAdding(false)
+    await addGuest(weddingId!, { name: name.trim(), plusOne: plus, ...(phone.length === PHONE_DIGITS ? { phone: `+7${phone}` } : {}) })
+    setName(''); setPlus(false); setPhone(''); setAdding(false)
+  })
+  /* Пустое поле стирает номер (`null`): контракт различает «не трогать» и «убрать». */
+  const savePhone = (g: GuestRow) => void write(g.id, async () => {
+    await patchGuest(weddingId!, g.id, { phone: phoneDraft.length === PHONE_DIGITS ? `+7${phoneDraft}` : null })
+    setPhoneEdit(null)
   })
   const cycle = (g: GuestRow) => void write(g.id, () => patchGuest(weddingId!, g.id, { status: RSVP_NEXT[g.status] }))
   const remove = (g: GuestRow) => void write(g.id, async () => {
@@ -984,6 +1001,10 @@ export function Guests() {
         <div className="px-5 mt-3 fade-up">
           <div className="card p-4 space-y-2.5">
             <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder={t('Имя гостя или семьи')} className="w-full h-11 px-4 rounded-full bg-[var(--bg)] text-[13px] outline-none" />
+            <div className="flex items-center gap-2 h-11 px-4 rounded-full bg-[var(--bg)]">
+              <span className="text-[13px] text-[var(--soft)] tabular">+7</span>
+              <input value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, PHONE_DIGITS))} onKeyDown={e => e.key === 'Enter' && add()} inputMode="tel" placeholder={t('Телефон — для SMS-напоминания (необязательно)')} className="flex-1 bg-transparent text-[13px] outline-none tabular" />
+            </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setPlus(!plus)} className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', plus ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t('с +1')}</button>
               <div className="flex-1" />
@@ -1020,9 +1041,23 @@ export function Guests() {
               </div>
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{g.name}</b>
-                <span className="text-[10px] text-[var(--soft)]">{g.plus ? 'с +1' : t('один/одна')}</span>
-                {/* Еда и трансфер — ответы самого гостя в его форме RSVP.
-                    Пара их не правит: PATCH гостя таких полей не принимает. */}
+                <span className="text-[10px] text-[var(--soft)]">{g.plus ? t('с +1') : t('один/одна')}</span>
+                {/* Телефон — единственное, что пара вводит за гостя: по нему
+                    уходит напоминание. Пустое поле стирает номер. */}
+                {phoneEdit === g.id ? (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[10px] text-[var(--soft)] tabular">+7</span>
+                    <input autoFocus value={phoneDraft} onChange={e => setPhoneDraft(e.target.value.replace(/\D/g, '').slice(0, PHONE_DIGITS))} onKeyDown={e => e.key === 'Enter' && savePhone(g)} inputMode="tel" aria-label={t('Телефон гостя')} className="w-[118px] h-7 px-2 rounded-lg bg-[var(--bg)] text-[11px] outline-none tabular" />
+                    <button disabled={busyId === g.id || (phoneDraft.length !== 0 && phoneDraft.length !== PHONE_DIGITS)} onClick={() => savePhone(g)} className="press text-[10px] font-bold text-[var(--sage-deep)] disabled:opacity-50">{t('Сохранить')}</button>
+                    <button onClick={() => setPhoneEdit(null)} className="press text-[10px] text-[var(--soft)]">{t('Отмена')}</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setPhoneEdit(g.id); setPhoneDraft((g.phone ?? '').replace(/^\+7/, '')) }} className="press block text-[10px] mt-0.5 text-[var(--sage-deep)] tabular">
+                    {g.phone ?? t('+ телефон для напоминания')}
+                  </button>
+                )}
+                {/* Еда и трансфер — ответы самого гостя в его форме RSVP:
+                    пара их видит, но не правит за него. */}
                 {(g.diet || g.dietNote || g.transfer === 'need') && (
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">
                     {(g.diet || g.dietNote) && (

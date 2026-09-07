@@ -1760,6 +1760,12 @@ export interface paths {
                             wedding?: components["schemas"]["WeddingPublic"];
                             /** @enum {string} */
                             status?: "yes" | "no" | "pending";
+                            plusOne?: boolean;
+                            /** @enum {string|null} */
+                            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                            dietNote?: string | null;
+                            /** @enum {string|null} */
+                            transfer?: null | "need" | "own";
                         };
                     };
                 };

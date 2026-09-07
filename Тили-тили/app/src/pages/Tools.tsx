@@ -322,7 +322,9 @@ export function ContractWizard() {
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
       <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Check size={38} strokeWidth={2.5} /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Договор готов')}</h1>
-      <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">«{ctpl.name}{t('» сгенерирован с вашими данными. Скачайте, подпишите с подрядчиком и загрузите скан в сделку.')}</p>
+      {/* «Загрузите скан в сделку» обещало загрузку, которой нет: путь для
+          файлов появится вместе с хранилищем (хвост владельца). */}
+      <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">«{ctpl.name}{t('» собран с вашими данными. Скачайте и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}</p>
       <div className="flex gap-2.5 mt-8 w-full">
         <button onClick={() => downloadPdf(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
         <button onClick={() => downloadDocx(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
@@ -515,7 +517,6 @@ export function InviteEditor() {
   const nav = useNavigate()
   const { inviteTpl, setInviteTpl, inviteText, setInviteText, weddingDate, weddingId } = useStore()
   const theme = inviteTpl
-  const [questions, setQuestions] = useState({ plus: true, meal: true, transfer: true })
   /* Дресс-код хранится у свадьбы: его видит гость. Пока он лежал в
      `tt_dress` браузера пары, гость получал палитру по умолчанию и принимал
      её за выбор пары. */
@@ -563,14 +564,6 @@ export function InviteEditor() {
     copyText(url)
     setCopied(url); setTimeout(() => setCopied(null), 1600)
   }
-  const qRow = (key: keyof typeof questions, label: string) => (
-    <div className="flex items-center justify-between py-3 border-b border-[var(--track)] last:border-none">
-      <span className="text-[12.5px] font-medium">{label}</span>
-      <button onClick={() => setQuestions(q => ({ ...q, [key]: !q[key] }))} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative', questions[key] ? 'grad' : 'bg-[var(--track)]')} aria-label={label}>
-        <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', questions[key] ? 'left-[22px]' : 'left-[3px]')} />
-      </button>
-    </div>
-  )
   return (
     <div className="pb-28">
       <TopBar back title={t('Приглашения')} sub={t('10 сценариев · ссылка · RSVP')} />
@@ -640,12 +633,20 @@ export function InviteEditor() {
           <p className="text-[9.5px] text-[var(--soft2)] mt-1.5">{t('Имя гостя подставляется автоматически в начало')}</p>
         </div>
 
-        {/* Вопросы гостям */}
-        <div className="card px-4 py-1.5 mt-4">
-          <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold block pt-3 pb-1">{t('Вопросы в RSVP')}</span>
-          {qRow('plus', t('Придёте с +1?'))}
-          {qRow('meal', t('Предпочтения по еде'))}
-          {qRow('transfer', t('Нужен ли трансфер'))}
+        {/* Что спросит гостя приглашение, решает не тумблер, а содержимое
+            свадьбы. Три переключателя «Придёте с +1? · Предпочтения по еде ·
+            Нужен ли трансфер» жили в состоянии экрана и никуда не уходили:
+            форма гостя их не читала, а пара думала, что настроила опрос
+            (аудит 2026-09-07, блок 5). */}
+        <div className="card p-4 mt-4">
+          <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Что спросит приглашение')}</span>
+          <p className="text-[11.5px] text-[var(--ink2)] mt-2 leading-relaxed">
+            {t('Придёт ли гость, с +1 ли, ограничения по еде и нужен ли трансфер — всегда. Выбор блюда — если составлен опрос, автобус и отель — если добавлены маршруты и блоки.')}
+          </p>
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => nav('/wedding/catering')} className="press flex-1 card-s py-2.5 text-[11.5px] font-semibold">{t('Опрос по меню →')}</button>
+            <button onClick={() => nav('/wedding/logistics')} className="press flex-1 card-s py-2.5 text-[11.5px] font-semibold">{t('Трансфер и отели →')}</button>
+          </div>
         </div>
 
         {/* Сохранение оформления: текст и тему видит гость, значит они на сервере */}

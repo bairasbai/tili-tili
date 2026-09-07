@@ -51,12 +51,22 @@ export async function redeemInvite(shareCode: string): Promise<{ guestName?: str
 export const getRsvp = (token: string) =>
   api.get(url('/rsvp/{guestToken}', { guestToken: token }))
 
-/** Ответ гостя. `plusOne` — приедет ли он с парой. */
-export const sendRsvp = (token: string, status: 'yes' | 'no', plusOne?: boolean, comment?: string) =>
+/** Еда и трансфер гостя — то, что он сам сообщает в RSVP (контракт v0.24). */
+export interface RsvpExtra {
+  diet?: string | null
+  dietNote?: string
+  transfer?: 'need' | 'own'
+}
+
+/** Ответ гостя. `plusOne` — приедет ли он с парой; `extra` — еда и трансфер. */
+export const sendRsvp = (token: string, status: 'yes' | 'no', plusOne?: boolean, comment?: string, extra: RsvpExtra = {}) =>
   api.post(url('/rsvp/{guestToken}', { guestToken: token }), {
     status,
     ...(plusOne !== undefined ? { plusOne } : {}),
     ...(comment ? { comment } : {}),
+    ...(extra.diet !== undefined ? { diet: extra.diet } : {}),
+    ...(extra.dietNote ? { dietNote: extra.dietNote } : {}),
+    ...(extra.transfer ? { transfer: extra.transfer } : {}),
   })
 
 /** Отельные блоки, доступные гостю. */

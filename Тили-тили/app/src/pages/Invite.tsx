@@ -116,9 +116,22 @@ export default function Invite() {
   return <InviteView page={page} token={token} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} />
 }
 
+/* Ограничения по еде — те же значения, что в контракте (`Guest.diet`).
+   Ключ словаря — русская подпись (R-07). */
+const DIETS: [string | null, string][] = [
+  [null, 'Без ограничений'], ['vegetarian', 'Вегетарианское'], ['vegan', 'Веганское'], ['halal', 'Халяль'],
+  ['kosher', 'Кошер'], ['gluten_free', 'Без глютена'], ['other', 'Другое'],
+]
+
 interface RsvpPage {
   guestName?: string
   status?: string
+  /* Свой ответ целиком (контракт v0.25): без него после «приду» гость не
+     видел, что выбрал, и менял ответ вслепую. */
+  plusOne?: boolean
+  diet?: string | null
+  dietNote?: string | null
+  transfer?: string | null
   wedding?: {
     title?: string
     date?: string | null
@@ -151,21 +164,37 @@ function InviteView({
   const shadow = '0 18px 44px -18px rgba(46,42,38,.22)'
   const place = [w.venue, w.city?.name].filter(Boolean).join(', ')
 
-  const [plus, setPlus] = useState<boolean | null>(null)
+  /* Форма начинается с того, что гость уже ответил: правка — поверх своего
+     ответа, а не с чистого листа. */
+  const [plus, setPlus] = useState<boolean | null>(page.plusOne ?? null)
+  const [diet, setDiet] = useState<string | null>(page.diet ?? null)
+  const [dietNote, setDietNote] = useState(page.dietNote ?? '')
+  const [transfer, setTransfer] = useState<'need' | 'own' | null>(page.transfer === 'need' || page.transfer === 'own' ? page.transfer : null)
+  const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /* Ответ уже есть на сервере: `pending` значит «ещё не отвечал». Локальной
      копии нет намеренно — гость мог ответить с другого устройства. */
-  const answered = page.status === 'yes' || page.status === 'no'
+  const answered = (page.status === 'yes' || page.status === 'no') && !editing
 
+  /* Еда и трансфер уходят вместе с «приду»: раньше контракт их принимал, а
+     форма не спрашивала — пара видела пустые поля у каждого гостя, а
+     кейтеринг не узнавал об аллергиях никогда. */
   const answer = (status: 'yes' | 'no') => void (async () => {
     setBusy(true)
     setErr(null)
     try {
-      await sendRsvp(token, status, status === 'yes' ? (plus ?? false) : undefined)
+      await sendRsvp(token, status, status === 'yes' ? (plus ?? false) : undefined, undefined,
+        status === 'yes'
+          ? { diet, ...(diet === 'other' && dietNote.trim() ? { dietNote: dietNote.trim() } : {}), ...(transfer ? { transfer } : {}) }
+          : {})
+      setEditing(false)
       onAnswered()
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
+
+  const dietLabel = (id: string | null | undefined, note: string | null | undefined) =>
+    id === 'other' && note ? note : t(DIETS.find(d => d[0] === (id ?? null))?.[1] ?? 'Без ограничений')
 
   return (
     <div ref={rootRef} className="min-h-dvh relative overflow-x-hidden" style={{ background: T.bg, color: T.ink }}>
@@ -277,6 +306,30 @@ function InviteView({
                     ))}
                   </div>
                 </div>
+                {/* Еда и трансфер — то, что просит кейтеринг и логистика; поля
+                    контракта v0.24, до сих пор без формы. */}
+                <div className="mt-4">
+                  <p className="text-[11px] font-semibold flex items-center gap-1.5"><UtensilsCrossed size={12} style={{ color: T.accent }} />{t('Ограничения по еде')}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {DIETS.map(([id, label]) => (
+                      <button key={id ?? 'none'} onClick={() => setDiet(id)} className="press px-3.5 h-[36px] rounded-full text-[11.5px] font-medium"
+                        style={diet === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{t(label)}</button>
+                    ))}
+                  </div>
+                  {diet === 'other' && (
+                    <input value={dietNote} onChange={e => setDietNote(e.target.value.slice(0, 300))} placeholder={t('Например: аллергия на орехи')}
+                      className="w-full mt-2 h-[40px] px-4 rounded-full text-[12px] outline-none" style={{ background: T.bg, color: T.ink }} />
+                  )}
+                </div>
+                <div className="mt-4">
+                  <p className="text-[11px] font-semibold flex items-center gap-1.5"><Bus size={12} style={{ color: T.accent }} />{t('Как доберётесь?')}</p>
+                  <div className="flex gap-2 mt-2">
+                    {([['need', t('Нужен трансфер')], ['own', t('Доберусь сам(а)')]] as const).map(([id, label]) => (
+                      <button key={id} onClick={() => setTransfer(id)} className="press flex-1 h-[42px] rounded-full text-[12px] font-medium"
+                        style={transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{label}</button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex gap-2.5 mt-5">
                   <button disabled={busy} onClick={() => answer('yes')} className="press flex-1 h-[50px] rounded-full text-[13px] font-semibold transition-all disabled:opacity-50"
                     style={{ background: T.accentGrad, color: '#FFF7F0' }}>{busy ? t('Отправляем…') : t('Приду с радостью')}</button>
@@ -292,6 +345,16 @@ function InviteView({
                 <p className="text-[11.5px] mt-2" style={{ color: T.soft }}>
                   {page.status === 'yes' ? t('Ваш ответ уже виден паре в списке гостей.') : t('Пара получила ваш ответ. ♥')}
                 </p>
+                {/* Что именно сказал гость — с сервера, а не из памяти вкладки:
+                    ответ с другого устройства здесь тот же. */}
+                {page.status === 'yes' && (
+                  <p className="text-[11.5px] mt-2 font-medium">
+                    {[page.plusOne ? t('С +1') : t('Один/одна'), dietLabel(page.diet, page.dietNote), page.transfer === 'need' ? t('Нужен трансфер') : page.transfer === 'own' ? t('Доберусь сам(а)') : null].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {page.status === 'yes' && (
+                  <button onClick={() => setEditing(true)} className="press mt-3 text-[11.5px] font-semibold underline" style={{ color: T.soft }}>{t('Изменить ответ')}</button>
+                )}
                 {/* Планы меняются, и сервер принимает новый ответ поверх
                     старого. Экран, который этого не позволял, заставлял бы
                     гостя звонить паре, чтобы его переписали руками. */}

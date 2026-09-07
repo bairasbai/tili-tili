@@ -435,6 +435,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     const guest = await guestByToken(db(), guestToken)
     const { rows } = await db().query<{
       rsvp: string
+      plus_one: boolean
+      diet: string | null
+      diet_note: string | null
+      transfer: string | null
       title: string
       date: string | null
       city: string | null
@@ -445,7 +449,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       dress_code: string | null
       dress_note: string | null
     }>(
-      `select g.rsvp, w.title, w.date::text as date, c.name as city, c.region,
+      `select g.rsvp, g.plus_one, g.diet, g.diet_note, g.transfer,
+              w.title, w.date::text as date, c.name as city, c.region,
               w.invite_text, w.invite_theme_id, w.venue, w.dress_code, w.dress_note
          from guests g join weddings w on w.id = g.wedding_id
          left join cities c on c.id = w.city_id
@@ -456,6 +461,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     return {
       guestName: guest.name,
       status: r.rsvp,
+      /* Свой ответ целиком (v0.25): гость видит, что уже выбрал, и может
+         поправить, а не отвечать вслепую поверх старого. */
+      plusOne: r.plus_one,
+      diet: r.diet,
+      dietNote: r.diet_note,
+      transfer: r.transfer,
       wedding: {
         title: r.title,
         date: r.date,
@@ -501,21 +512,27 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       /* Ответ и освобождение мест — одна транзакция (R-122): «не приду»
        * с сиденьем, оставшимся за гостем, — состояние, которого не бывает
        * в норме, а до 2026-09-06 сбой между запросами его давал. */
+      /* Еда: присланный `null` — это «без ограничений», а не «не трогать».
+       * Через `coalesce` гость, однажды выбравший «веган», не мог вернуться к
+       * обычному меню: контракт разрешает null, обработчик его глотал. */
+      const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key)
       await db().tx(async (client) => {
         await client.query(
           `update guests set rsvp = $2, rsvp_at = now(),
                   plus_one = coalesce($3, plus_one),
                   comment = coalesce($4, comment),
-                  diet = coalesce($5, diet),
-                  diet_note = coalesce($6, diet_note),
-                  transfer = coalesce($7, transfer)
+                  diet = case when $5 then $6 else diet end,
+                  diet_note = case when $7 then $8 else diet_note end,
+                  transfer = coalesce($9, transfer)
             where id = $1`,
           [
             guest.guestId,
             body.status,
             (body.plusOne as boolean) ?? null,
             (body.comment as string) ?? null,
+            has('diet'),
             (body.diet as string) ?? null,
+            has('diet') || has('dietNote'),
             (body.dietNote as string) ?? null,
             (body.transfer as string) ?? null,
           ],

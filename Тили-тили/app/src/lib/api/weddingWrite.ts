@@ -30,6 +30,8 @@ export interface GuestDraft {
   name: string
   plusOne?: boolean
   group?: string
+  /** E.164 (`+7…`) — для SMS-напоминаний; вводит пара. */
+  phone?: string
 }
 
 export const addGuest = (weddingId: string, draft: GuestDraft) =>
@@ -37,6 +39,9 @@ export const addGuest = (weddingId: string, draft: GuestDraft) =>
     name: draft.name,
     ...(draft.plusOne !== undefined ? { plusOne: draft.plusOne } : {}),
     ...(draft.group ? { group: draft.group } : {}),
+    /* Телефон — для SMS-напоминания молчащим (`POST …/guests/remind`):
+       без него у кнопки «Напомнить» не было ни одного адресата. */
+    ...(draft.phone ? { phone: draft.phone } : {}),
   })
 
 /**
@@ -48,7 +53,7 @@ export const addGuest = (weddingId: string, draft: GuestDraft) =>
 export const patchGuest = (
   weddingId: string,
   guestId: string,
-  patch: { name?: string; plusOne?: boolean; status?: 'yes' | 'no' | 'pending'; tableId?: string | null },
+  patch: { name?: string; plusOne?: boolean; status?: 'yes' | 'no' | 'pending'; tableId?: string | null; phone?: string | null },
 ) => api.patch(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }), patch)
 
 export const deleteGuest = (weddingId: string, guestId: string) =>
