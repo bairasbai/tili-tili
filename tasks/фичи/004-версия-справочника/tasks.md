@@ -22,11 +22,11 @@
       версии → 200; правка напрямую в базе меняет версию `GET`; сохранение без изменений содержимого возвращает ту же версию.
       Красные без фикса. Плюс правка `backend/test/audit23.test.ts:331` и `:658` — строгие `toEqual` ответа `PUT` под новое поле
       `version` (сверка K02).
-- [ ] T004 [US1] `app/src/lib/api/admin.ts`: `putAdminCategories(body)` принимает `version`.
-- [ ] T005 [US1] `app/src/pages/Admin.tsx` → `AdminCategories`: версия из ответа `GET` в черновике; тело `PUT` с версией; после успеха —
+- [x] T004 [US1] `app/src/lib/api/admin.ts`: `putAdminCategories(body)` принимает `version`.
+- [x] T005 [US1] `app/src/pages/Admin.tsx` → `AdminCategories`: версия из ответа `GET` в черновике; тело `PUT` с версией; после успеха —
       `q.reload()` (свежий справочник и новая версия, FR-004); 409 с кодом `categories_stale` → текст сервера + кнопка
       «Перечитать — несохранённые правки заменятся» → `q.reload()`; диалог подтверждения без изменений.
-- [ ] T006 [US1] `app/src/lib/audit26.test.tsx`: тело `PUT` содержит `version` из `GET`; 409 `categories_stale` → текст и кнопка
+- [x] T006 [US1] `app/src/lib/audit26.test.tsx`: тело `PUT` содержит `version` из `GET`; 409 `categories_stale` → текст и кнопка
       «Перечитать», второго `PUT` нет; клик → повторный `GET`, черновик = ответ сервера.
 
 ## Фаза 3 — полировка

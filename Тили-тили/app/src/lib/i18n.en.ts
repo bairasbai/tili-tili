@@ -1550,3 +1550,22 @@ Object.assign(EN, {
   'Причина — в уведомлениях.': 'The reason is in your notifications.',
   'Открыть уведомления': 'Open notifications',
 })
+
+/* Фича 004 — версия справочника категорий: отказ по чужой правке лечится
+   только перечитыванием, и цена перечитывания названа на самой кнопке. */
+Object.assign(EN, {
+  'Перечитать — несохранённые правки заменятся': 'Reload — unsaved edits will be replaced',
+})
+
+/* Фича 003 — отмена свадьбы: блок на экране настроек. Отменяет только пара,
+   двумя нажатиями одной кнопки, и второе может оказаться исполнением чужого
+   запроса, а не своим подтверждением. */
+Object.assign(EN, {
+  'Отменить свадьбу': 'Cancel the wedding',
+  'Подтвердить отмену — брони снимутся, даты уйдут подрядчикам': 'Confirm the cancellation — bookings will be dropped and the dates released to the vendors',
+  'Партнёр уже запросил отмену — ваше нажатие исполнит её: брони снимутся, даты уйдут подрядчикам': 'Your partner has already asked to cancel — your tap carries it out: bookings will be dropped and the dates released to the vendors',
+  'Ждём подтверждения партнёра — запрос действует 72 часа': 'Waiting for your partner to confirm — the request is valid for 72 hours',
+  'Свадьба отменена': 'The wedding is cancelled',
+  'Брони сняты, подрядчики узнают об этом.': 'The bookings are dropped and the vendors are being told.',
+  'Начать новую свадьбу': 'Start a new wedding',
+})

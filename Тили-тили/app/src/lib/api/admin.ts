@@ -1,5 +1,5 @@
 import { api, url } from './client'
-import type { components } from './schema'
+import type { components, paths } from './schema'
 
 /*
  * Панель сотрудника платформы (План §19.10).
@@ -21,6 +21,16 @@ export type Complaint = components['schemas']['Complaint']
 export type AdminCategory = components['schemas']['AdminCategory']
 export type AdminCategories = components['schemas']['AdminCategories']
 export type WeddingSupportCard = components['schemas']['WeddingSupportCard']
+
+/**
+ * Тело сохранения справочника — из контракта, а не своё.
+ *
+ * У тела `PUT` схемы в `components` нет, поэтому тип берётся прямо из пути.
+ * Своя копия («categories, synonyms, и, кажется, версия») разошлась бы с
+ * сервером молча: поле с опечаткой ушло бы в запрос, сервер отбросил бы его
+ * как лишнее, а проверка версии тихо не состоялась бы.
+ */
+export type AdminCategoriesBody = paths['/admin/categories']['put']['requestBody']['content']['application/json']
 
 /**
  * Строка запроса страницы.
@@ -118,9 +128,13 @@ export const getAdminCategories = () => api.get('/admin/categories')
  *
  * Словарь заменяется ЦЕЛИКОМ: чего не прислали, того больше нет. Поэтому тело
  * собирается от прочитанного, а не от того, что человек успел изменить.
+ *
+ * `version` — та версия, с которой начата правка (её отдаёт `GET`). Не
+ * совпала с текущей — 409 `categories_stale`, и на сервере не меняется
+ * ничего: иначе сохранение затёрло бы чужую правку строками, которых
+ * сотрудник не видел. Без поля сервер сохраняет без проверки.
  */
-export const putAdminCategories = (body: { categories?: AdminCategory[]; synonyms?: Record<string, string> }) =>
-  api.put('/admin/categories', body)
+export const putAdminCategories = (body: AdminCategoriesBody) => api.put('/admin/categories', body)
 
 /* ── карточка свадьбы по обращению ── */
 

@@ -812,7 +812,16 @@ export function AdminComplaints() {
  * соседним значением — курсор стоит в поле, а слово в нём другое.
  */
 type SynRow = { key: number; word: string; categoryId: string }
-type CategoriesDraft = { categories: AdminCategory[]; synonyms: SynRow[] }
+/**
+ * Черновик справочника.
+ *
+ * `version` лежит здесь, а не отдельным состоянием: это отпечаток того
+ * содержимого, с которого начата правка, и меняться он обязан ровно вместе с
+ * ним. Разъедься они — сохранение уходило бы с версией от прошлого ответа и
+ * либо получало отказ на ровном месте, либо (что хуже) проходило поверх чужой
+ * правки. Поля нет — сервер сохраняет без проверки (FR-006).
+ */
+type CategoriesDraft = { categories: AdminCategory[]; synonyms: SynRow[]; version?: string }
 
 /** Идентификатор новой категории: латиница, цифры, дефис, подчёркивание. */
 const CATEGORY_ID = /^[a-z0-9_-]{1,40}$/
@@ -850,17 +859,24 @@ export function AdminCategories() {
   /* Сервер называет виноватое слово (`synonyms.<слово>` в `error.fields`):
      подпись встаёт под той строкой, а не в общий текст внизу экрана. */
   const [rowErr, setRowErr] = useState<Record<string, string>>({})
+  /* Справочник изменили, пока его правили (409 `categories_stale`). Отдельный
+     признак, а не разбор текста ошибки: перечитывать предлагается только там,
+     где это и правда лечит, — на 422 и на лежащей сети перечитывание лишь
+     выбросит правки. */
+  const [stale, setStale] = useState(false)
   /* Счётчик тождеств строк словаря. Растёт при загрузке и при добавлении —
      в эффекте и в обработчике, но не в теле компонента (R-04). */
   const nextKey = useRef(0)
 
   /* Копия снимается с ответа: пришёл новый ответ (в том числе после
-     сохранения) — на экране снова то, что лежит на сервере. */
+     сохранения и после «Перечитать») — на экране снова то, что лежит на
+     сервере, вместе с его версией. */
   useEffect(() => {
     if (!q.data) return
     setDraft({
       categories: (q.data.categories ?? []).map(c => ({ ...c })),
       synonyms: Object.entries(q.data.synonyms ?? {}).map(([word, categoryId]) => ({ key: nextKey.current++, word, categoryId })),
+      version: q.data.version,
     })
   }, [q.data])
 
@@ -916,8 +932,13 @@ export function AdminCategories() {
     setBusy(true)
     setErr(null)
     setRowErr({})
+    setStale(false)
     try {
       await putAdminCategories({
+        /* Версия — от ответа, с которого начата правка. Ответ без неё
+           (сохранение не из панели, старый сервер) уходит без поля: правило
+           не должно ломать тех, кто о нём не знает (FR-006). */
+        ...(draft.version ? { version: draft.version } : {}),
         categories: draft.categories.map(c => ({
           id: c.id.trim(),
           title: c.title.trim(),
@@ -941,9 +962,27 @@ export function AdminCategories() {
           if (key.startsWith('synonyms.')) bad[key.slice('synonyms.'.length)] = text
         }
         setRowErr(bad)
+        /* Справочник изменили, пока сотрудник его правил: на сервере не
+           изменилось ничего, и починить это можно только перечитыванием —
+           повтор того же тела получит тот же отказ. */
+        setStale(e.status === 409 && e.code === 'categories_stale')
       }
     } finally { setBusy(false) }
   })()
+
+  /*
+   * Перечитать справочник поверх своих правок.
+   *
+   * Ответ заменит черновик через тот же эффект, что и при первой загрузке, —
+   * вместе с версией. Несохранённые правки при этом пропадают, поэтому так и
+   * написано на кнопке: слияния правок двух сотрудников тут нет.
+   */
+  const reread = () => {
+    setErr(null)
+    setRowErr({})
+    setStale(false)
+    q.reload()
+  }
 
   return (
     <div className="pb-10">
@@ -1059,6 +1098,15 @@ export function AdminCategories() {
               {t('Сохранить')}
             </button>
             {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+            {/* Кнопка появляется только под отказом по версии: она выбрасывает
+                несохранённые правки, и предлагать её после 422 или упавшей
+                сети значило бы предлагать потерять их зря. Что правки
+                заменятся — сказано на самой кнопке, до нажатия (FR-003). */}
+            {stale && (
+              <button onClick={reread} className="press w-full h-[46px] rounded-full card-s text-[12.5px] font-semibold">
+                {t('Перечитать — несохранённые правки заменятся')}
+              </button>
+            )}
           </>
         )}
       </div>

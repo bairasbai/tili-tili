@@ -226,6 +226,15 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     )
     expect(states).toEqual({ finished: 'done', booked: 'cancelled' })
 
+    /* Журнал сделки — откуда и куда. `returning state` после `update` отдаёт
+     * уже новое состояние, и в базе лежали события `cancelled → cancelled`
+     * (ERR-0206); исходное читается до записи. */
+    const event = await one<{ from_state: string; to_state: string }>(
+      `select from_state, to_state from deal_events where deal_id = $1 order by at desc, id desc limit 1`,
+      [booked.dealId],
+    )
+    expect(event).toEqual({ from_state: 'booked', to_state: 'cancelled' })
+
     /* Выполненная работа — состоявшийся день, а не бронь. Снятие занятости
      * отдавало этот день другой паре, а подрядчик получал «Сделка отменена»
      * по съёмке, которую уже провёл. */

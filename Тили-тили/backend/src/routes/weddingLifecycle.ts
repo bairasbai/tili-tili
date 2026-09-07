@@ -126,9 +126,18 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       }
 
       const { rows: cancelled } = await client.query<{ id: string; state: string }>(
-        `update deals set state = 'cancelled', cancelled_at = now(), cancel_reason = 'cancelled_by_couple'
-          where wedding_id = $1 and state = any($2) returning id, state`,
+        /* `returning state` после `update` отдал бы уже НОВОЕ состояние — и в
+         * журнале сделки у каждой отменённой вместе со свадьбой стояло бы
+         * `cancelled → cancelled` (так и было: 77 таких строк в базе против
+         * `booked → cancelled` у отмены через PATCH /deals). Исходное
+         * состояние читается ДО записи, под блокировкой строк. */
+        `select id, state from deals where wedding_id = $1 and state = any($2) for update`,
         [weddingId, CANCELLED_WITH_WEDDING],
+      )
+      await client.query(
+        `update deals set state = 'cancelled', cancelled_at = now(), cancel_reason = 'cancelled_by_couple'
+          where id = any($1)`,
+        [cancelled.map((deal) => deal.id)],
       )
       for (const deal of cancelled) {
         await client.query(

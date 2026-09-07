@@ -1,11 +1,11 @@
 /* eslint-disable react-refresh/only-export-components -- провайдер контекста и хук
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode, useEffect } from 'react'
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
 import type { Slot, SlotState } from './types'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized } from './api/client'
-import { findMyWedding, setWeddingDateOnServer } from './api/wedding'
+import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
 import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, type ServerSlot } from './api/slots'
 import { CATEGORY_TILE, DEFAULT_TILE } from './categoryTiles'
@@ -106,23 +106,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [onboarded, setOnboarded] = useState(() => safeGet('tt_onboarded') === '1')
   const [weddingId, setWeddingIdState] = usePersist<string | null>('tt_wedding_id', null)
   /*
-   * Восстановление свадьбы после переустановки.
+   * Сверка свадьбы с сервером при запуске — один запрос на оба вопроса.
    *
-   * Идентификатор лежит на устройстве, и с чистым хранилищем взять его больше
-   * неоткуда — новый телефон, приватный режим, очищенный кэш. Спрашиваем
-   * сервер один раз при запуске, если человек вошёл, а идентификатора нет.
-   * Молча: не нашлось — значит свадьбы ещё нет, это нормальное состояние
-   * до квиза, и пугать сообщением тут нечем.
+   * Первый: идентификатора нет вовсе. Он лежит на устройстве, и с чистым
+   * хранилищем взять его больше неоткуда — новый телефон, приватный режим,
+   * очищенный кэш.
+   *
+   * Второй: идентификатор есть, а свадьбы у человека уже нет. Её отменил
+   * партнёр с другого устройства, и телефон помнит проект, которого не
+   * существует: `GET /weddings` отдаёт только живые (`archived_at is null`),
+   * а все экраны свадьбы получают «не найдено» — без выхода из этого
+   * состояния (SC-002).
+   *
+   * Молча: не нашлось — значит свадьбы нет, это нормальное состояние до
+   * квиза. Сервер недоступен — оставляем как есть до следующего запуска.
    */
-
+  /* Что помнил телефон в момент запуска. Сверяем именно это значение:
+     свадьбу, созданную квизом уже после отправки запроса, устаревший список
+     не видит, и сравнение с ним стёрло бы её сразу после создания. */
+  const remembered = useRef(weddingId)
+  /* Запрос — один за запуск: держим сам промис, а не флаг «уже спрашивали».
+     Под StrictMode эффект вызывается дважды подряд, и флаг отменил бы первый
+     запрос, не сделав второго, — свадьба не восстановилась бы вовсе. */
+  const myWeddings = useRef<Promise<MyWedding[]> | null>(null)
   useEffect(() => {
-    if (weddingId || !isAuthorized()) return
+    if (!isAuthorized()) return
+    myWeddings.current ??= listMyWeddings()
     let alive = true
-    void findMyWedding()
-      .then(id => { if (alive && id) setWeddingIdState(id) })
+    void myWeddings.current
+      .then(list => {
+        if (!alive) return
+        setWeddingIdState(prev => {
+          if (prev !== remembered.current) return prev
+          if (prev && list.some(w => w.id === prev)) return prev
+          return pickMyWedding(list)
+        })
+      })
       .catch(() => { /* сервер недоступен — попробуем при следующем запуске */ })
     return () => { alive = false }
-  }, [weddingId, setWeddingIdState])
+  }, [setWeddingIdState])
   /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
    * Объект Date в localStorage превращается в строку с часовым поясом, и
    * свадьба «14 июня» у человека восточнее Москвы читалась бы как 13-е. */

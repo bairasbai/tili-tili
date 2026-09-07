@@ -15,7 +15,7 @@
 
 - [x] T002 `backend/src/config.ts` + `backend/.env.example`: `WEDDING_ARCHIVE_DAYS` (`envNumber`, по умолчанию 365; нижняя граница
       30 и округление — `Math.max(30, Math.round(n))`, мусор → предупреждение в лог и 365), поле `weddingArchiveDays`.
-- [ ] T003 [P] `app/src/lib/api/wedding.ts`: `cancelWedding(weddingId)` → `POST /weddings/{weddingId}/cancel`; `listMyWeddings()` →
+- [x] T003 [P] `app/src/lib/api/wedding.ts`: `cancelWedding(weddingId)` → `POST /weddings/{weddingId}/cancel`; `listMyWeddings()` →
       `GET /weddings` целиком; `findMyWedding()` — поверх `listMyWeddings()` (поведение прежнее).
 
 ## Фаза 3 — US1 Пара отменяет свадьбу (P1) 🎯 MVP
@@ -25,12 +25,12 @@
 - [x] T005 [US1] `backend/test/audit26.test.ts`: свадьба с `done`-сделкой и `booked`-сделкой → после отмены `done` без изменений,
       его `vendor_busy_dates` и слот на месте; `booked` → `cancelled`, его дата и слот освобождены; помощнику — 403; ответ
       соответствует `CancelResult`. Красный без правки T004 (даты `done` снимались).
-- [ ] T006 [US1] `app/src/pages/Account.tsx` (`/settings`): блок «Отменить свадьбу» только при роли `couple` (по `members` из
+- [x] T006 [US1] `app/src/pages/Account.tsx` (`/settings`): блок «Отменить свадьбу» только при роли `couple` (по `members` из
       `GET /weddings/{id}` и `id` из `GET /users/me`); два шага на одной кнопке (как удаление аккаунта); при `cancelRequestedBy`
       партнёра — текст «Партнёр уже запросил отмену — ваше нажатие исполнит её: брони снимутся, даты уйдут подрядчикам»;
       ответ `confirmation_required` → «Ждём подтверждения партнёра, запрос действует 72 часа»; `cancelled` → `setWeddingId(null)`,
       состояние «Свадьба отменена» + «Начать новую свадьбу» → `/quiz`; `busy`/`err`.
-- [ ] T007 [US1] `app/src/lib/audit25.test.tsx` (образец `serve`/`open`): помощнику кнопки нет; паре — два шага, до второго
+- [x] T007 [US1] `app/src/lib/audit25.test.tsx` (образец `serve`/`open`): помощнику кнопки нет; паре — два шага, до второго
       запроса нет; `confirmation_required` → текст ожидания, свадьба на месте; предупреждение при чужом `cancelRequestedBy`;
       `cancelled` → `tt_wedding_id` пуст, текст «Свадьба отменена», кнопка ведёт в квиз.
 
@@ -38,9 +38,9 @@
 
 ## Фаза 4 — US2 Приложение не застревает (P1)
 
-- [ ] T008 [US2] `app/src/lib/store.tsx`: при запуске с `tt_wedding_id` и входом — `GET /weddings`; идентификатора нет в списке →
+- [x] T008 [US2] `app/src/lib/store.tsx`: при запуске с `tt_wedding_id` и входом — `GET /weddings`; идентификатора нет в списке →
       заменить на свою/первую или `null`; ошибка сети — оставить как есть; один запрос за запуск.
-- [ ] T009 [US2] `app/src/lib/audit25.test.tsx`: помнимая свадьба отсутствует в `GET /weddings` → `tt_wedding_id` заменён/сброшен;
+- [x] T009 [US2] `app/src/lib/audit25.test.tsx`: помнимая свадьба отсутствует в `GET /weddings` → `tt_wedding_id` заменён/сброшен;
       присутствует → не тронут; сеть недоступна → не тронут.
 
 ## Фаза 5 — US3 Уборка архива (P2)

@@ -1,4 +1,5 @@
 import { api, isAuthorized, newIdempotencyKey, url } from './client'
+import type { paths } from './schema'
 
 /*
  * Свадьба на сервере: создание из квиза и восстановление после переустановки.
@@ -66,6 +67,25 @@ export async function createWedding(draft: WeddingDraft): Promise<string> {
   return id
 }
 
+/** Свадьба из списка «мои»: та же схема плюс роль человека в ней. */
+export type MyWedding = NonNullable<
+  paths['/weddings']['get']['responses'][200]['content']['application/json']
+>[number]
+
+/**
+ * Все свадьбы человека вместе с его ролью в каждой.
+ *
+ * Отдельно от `findMyWedding()`, потому что вопросов к этому списку два, а не
+ * один: «какая свадьба моя, если идентификатор потерян» и «жива ли ещё та,
+ * которую помнит телефон». Второй появился вместе с отменой: свадьбу мог
+ * отменить партнёр с другого устройства, и тогда сохранённый идентификатор
+ * указывает в пустоту, а каждый экран получает «не найдено».
+ */
+export async function listMyWeddings(): Promise<MyWedding[]> {
+  if (!isAuthorized()) return []
+  return (await api.get('/weddings')) ?? []
+}
+
 /**
  * Найти свою свадьбу, когда идентификатор на устройстве потерян.
  *
@@ -74,12 +94,26 @@ export async function createWedding(draft: WeddingDraft): Promise<string> {
  * чтобы приглашённый координатор тоже попал внутрь.
  */
 export async function findMyWedding(): Promise<string | null> {
-  if (!isAuthorized()) return null
-  const list = await api.get('/weddings')
-  if (!list?.length) return null
+  return pickMyWedding(await listMyWeddings())
+}
+
+/** Та же выборка «своя, иначе первая» для уже полученного списка. */
+export function pickMyWedding(list: MyWedding[]): string | null {
+  if (!list.length) return null
   const own = list.find(w => w.role === 'couple')
   return (own ?? list[0])?.id ?? null
 }
+
+/**
+ * Отменить свадьбу.
+ *
+ * Двухшаговая на сервере, а не здесь: первый вызов создаёт запрос
+ * (`confirmation_required`), второй — от второго партнёра — исполняет отмену
+ * (`cancelled`). Клиент не решает, какой из двух случаев наступил, — он
+ * показывает то, что ответил сервер.
+ */
+export const cancelWedding = (weddingId: string) =>
+  api.post(url('/weddings/{weddingId}/cancel', { weddingId }), {})
 
 /**
  * Перенос свадьбы на другую дату.

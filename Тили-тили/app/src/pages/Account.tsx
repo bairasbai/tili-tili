@@ -15,6 +15,8 @@ import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, getMe, getSessions, patchMe } from '@/lib/api/auth'
 import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import { cancelWedding } from '@/lib/api/wedding'
+import { getWedding } from '@/lib/api/weddingData'
 import { devicePushState, disableDevicePush, enableDevicePush, type DevicePushState } from '@/lib/push'
 import type { components } from '@/lib/api/schema'
 
@@ -549,7 +551,59 @@ export function Settings() {
     nav('/')
   }
   const [cityPick, setCityPick] = useState(false)
-  const { city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
+  const { weddingId, setWeddingId, city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
+
+  /*
+   * Отмена свадьбы (фича 003).
+   *
+   * Кнопка только у пары. Роль берём из `members` свадьбы, а не из наличия
+   * идентификатора: он есть и у помощника, которого позвали в проект, а
+   * отменять чужую свадьбу ему нечем. Пока роль не пришла, блока нет вовсе:
+   * показать «Отменить свадьбу» до ответа сервера значит предложить действие,
+   * права на которое ещё не известны.
+   *
+   * Два шага на одной кнопке — как у удаления аккаунта ниже: второе нажатие
+   * называет цену вслух. Но второй шаг не всегда подтверждение: если отмену
+   * уже запросил партнёр, сервер ИСПОЛНИТ её сразу, и человек должен знать
+   * это до нажатия (FR-002).
+   */
+  const wedding = useApi(() => (weddingId ? getWedding(weddingId) : Promise.resolve(null)), [weddingId])
+  const iAmCouple = !!prof?.id && wedding.data?.members?.some(m => m.user?.id === prof.id && m.role === 'couple')
+  const requestedBy = wedding.data?.cancelRequestedBy ?? null
+  /* Свой же запрос предупреждением не считается: человек и так помнит, что
+     нажимал. Предупреждение — только про партнёра. */
+  const partnerAsked = !!requestedBy && !!prof?.id && requestedBy !== prof.id
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelErr, setCancelErr] = useState<string | null>(null)
+  /* Чем кончился запрос: ждём второго партнёра или свадьбы больше нет. */
+  const [cancelDone, setCancelDone] = useState<'waiting' | 'cancelled' | null>(null)
+
+  const cancelOurWedding = async () => {
+    if (!weddingId || cancelBusy) return
+    setCancelBusy(true)
+    setCancelErr(null)
+    try {
+      const res = await cancelWedding(weddingId)
+      if (res?.state === 'cancelled') {
+        /* Свадьбы больше нет — телефон забывает её сразу. Иначе каждый экран
+           до следующего запуска получает «не найдено» по идентификатору,
+           которого на сервере уже нет (FR-004). */
+        setWeddingId(null)
+        setCancelDone('cancelled')
+      } else {
+        /* `confirmation_required`: свадьба на месте, ждём второго. */
+        setCancelDone('waiting')
+        setConfirmCancel(false)
+      }
+    } catch (e) {
+      /* Отказ сервера — его словами: 403 «не пара» и лежащий сервер читаются
+         по-разному, а свадьба в обоих случаях остаётся. */
+      setCancelErr(explainError(e))
+    } finally {
+      setCancelBusy(false)
+    }
+  }
   return (
     <div className="pb-28">
       <TopBar back title={t('Настройки')} />
@@ -646,6 +700,37 @@ export function Settings() {
           ))}
         </div>
         <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
+        {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
+        {cancelDone === 'cancelled' ? (
+          <div className="card px-4 py-5 text-center">
+            <b className="text-[13px]">{t('Свадьба отменена')}</b>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Брони сняты, подрядчики узнают об этом.')}</p>
+            <button onClick={() => nav('/quiz')} className="press mt-4 w-full h-[46px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]">
+              {t('Начать новую свадьбу')}
+            </button>
+          </div>
+        ) : iAmCouple ? (
+          <div className="card px-4 py-4">
+            {partnerAsked && (
+              <p className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mb-3">
+                {t('Партнёр уже запросил отмену — ваше нажатие исполнит её: брони снимутся, даты уйдут подрядчикам')}
+              </p>
+            )}
+            {confirmCancel ? (
+              <button disabled={cancelBusy} onClick={() => void cancelOurWedding()} className="press w-full py-2 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+                {t('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')}
+              </button>
+            ) : (
+              <button disabled={cancelBusy} onClick={() => setConfirmCancel(true)} className="press w-full py-2 text-[12px] font-semibold text-[var(--soft2)] disabled:opacity-50">
+                {t('Отменить свадьбу')}
+              </button>
+            )}
+            {cancelBusy && <p className="text-[11px] text-center text-[var(--soft)] mt-2">{t('Загружаем…')}</p>}
+            {/* Запрос создан: свадьба на месте, дальше слово за вторым. */}
+            {cancelDone === 'waiting' && <p className="text-[11.5px] text-center text-[var(--soft)] mt-2 leading-relaxed">{t('Ждём подтверждения партнёра — запрос действует 72 часа')}</p>}
+            {cancelErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-ink)] mt-2">{cancelErr}</p>}
+          </div>
+        ) : null}
         {confirmDelete ? (
           <button onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
         ) : (
