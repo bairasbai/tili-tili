@@ -586,3 +586,58 @@ v0.25: `gen-contract` (117 путей, 152 операции), `gen-schemas` (40 
 (+8); бэкенд не менялся — `55 passed · 591 | 9 skipped` (блок 6). `persist.test.tsx` обновлён под новые подписи
 тумблеров («Уведомления: …»).
 Коммит блока: см. `git log` — «Аудит, блок 8».
+
+---
+
+## Блок 9. Готовность к продакшену
+
+- [x] НАЙДЕНО И ЗАКРЫТО — **Сборка с предупреждениями (ERR-0193, R-206).** Tailwind на каждой сборке: «The class
+  `duration-[…ms]` is ambiguous» ×2 из занавеса приглашения (`Invite.tsx`) — класс не собирался. Длительность ушла в
+  `style.transitionDuration`; попутно выяснилось, что сканер Tailwind читает и комментарии, и тесты (`src/**/*.ts`) — тот же
+  класс в комментарии `audit21.test.ts` снова поднимал предупреждение; переписано словами. Vite: «Some chunks are larger than
+  500 kB» — главный чанк 508,91 кБ; React и роутер вынесены в `manualChunks` → `index` 436,38 кБ (gzip 139,97),
+  `react` 50,23 кБ (gzip 17,81), дальше `Wedding` 49,47, `Tools` 27,98, `VendorApp` 26,95, `Smart` 26,76. Плагин инспектора
+  `kimi-plugin-inspect-react` — только в `mode === 'development'` (в `dist` его атрибутов и раньше не было, но включён он
+  был безусловно). `vitest.config.ts` вызывает функцию конфигурации с режимом `test`. Итог: **`vite build` — 0 предупреждений,
+  ✓ built in 5.13s**. Предупреждения Node 25 в тестах (`--localstorage-file`) — версии Node, не проекта (`RELEASE-BLOCKERS.md`
+  №20).
+- [x] ПРОВЕРЕНО, ЧИСТО — **Консоль по экранам (живьём, сервер поднят).** Пара (`+79972874000`): `/home`, `/wedding`,
+  `/wedding/guests`, `/search`, `/vendor/:id`, `/us/chats`, `/settings`, `/notifications`, `/dayx`, `/after`, `/wedding/budget`,
+  `/wedding/timeline`, `/wedding/invites`, `/us/team`, `/wedding/planb`; подрядчик (`+79170007777`): `/vendor-app`, `/deals`,
+  `/reviews`, `/analytics`, `/profile`, `/notifications`. Счётчик ошибок консоли по ходу обхода не изменился (124 → 124:
+  все накопленные — 401 от истёкшей пары токенов прошлого сеанса до обновления и HMR-ошибки vite во время правок). Новых —
+  **0** на 21 маршруте.
+- [x] ПРОВЕРЕНО, ЧИСТО — **PWA.** `manifest.webmanifest`: имя, `start_url`/`scope` относительные (`./`), `standalone`,
+  иконки SVG `any` + PNG 512 `any maskable`; `theme-color`, `apple-mobile-web-app-*`; регистрация воркера только в prod
+  (`main.tsx`); воркер: app-shell кэш `tilitili-v3`, навигация network-first с офлайн-оболочкой, статика cache-first с защитой
+  от подмены HTML под адресом манифеста, `push` и `notificationclick` (блок 8).
+- [x] НАЙДЕНО И ЗАКРЫТО — **`apple-touch-icon` — SVG (ERR-0192).** iOS формат не понимает: на «экране Домой» стоял бы серый
+  квадрат. Теперь `./icon-512.png`. Тест `audit21.test.ts`.
+- [x] ПРОВЕРЕНО, ЧИСТО — **Deep-links.** Сборка с `base: './'`; шим в `index.html` уводит прямой заход на корень и
+  восстанавливает адрес из `sessionStorage`; список сегментов сверяется с `App.tsx` тестом `deeplink.test.ts`. Хостинг обязан
+  отдавать `index.html` на пути приложения — проверка после выкладки за владельцем (`RELEASE-BLOCKERS.md` №19).
+- [x] НАЙДЕНО И ЗАКРЫТО — **`.env.example` бэкенда не знал двух переменных.** `config.ts` читает `CONTRIBUTIONS_MAX_PER_GUEST`
+  (20) и `COLD_OUTREACH_PER_DAY` (5) — в шаблоне их не было; добавлены с описанием. Обратная сверка: в шаблоне нет ничего,
+  чего не читает `config.ts`. `app/.env.example`: `VITE_API_URL`, с блока 8 — `VITE_VAPID_PUBLIC_KEY`.
+- [x] НАЙДЕНО И ЗАКРЫТО — **`app/.env` не игнорировался (ERR-0191).** `backend/.gitignore` — да, `app/.gitignore` — нет;
+  `git check-ignore app/.env` молчал. Добавлено `.env`, `.env.*`, `!.env.example`; тест держит.
+- [x] ПРОВЕРЕНО, ЧИСТО — **Секреты.** В репозитории только `*.env.example` (`git ls-files`); по шаблонам ключей (`AKIA…`,
+  `PRIVATE KEY`, `sk_live`, `ghp_`, `xox…`) совпадений нет; `backend/.env` вне репозитория и не читался аудитом (только
+  `audit-login.mjs` читает его локально ради подбора кода, как `dev-token.sh`).
+- [x] ПРОВЕРЕНО, ЧИСТО — **Health и логи.** `GET /health` → `{status:'ok', uptime}`; `GET /health/ready` → `not_ready` при
+  `redis: down` (сейчас так: Redis не поднят). Логи: pino, `info` в production / `debug` в dev; адреса с `token`/`code` в
+  параметрах маскируются (`redact.ts`, `maskUrl`, ERR-0050); тела запросов не логируются; Sentry без DSN молчит и говорит об
+  этом в логе.
+- [x] ПРОВЕРЕНО, ЧИСТО — **Зависимости.** `pnpm audit --prod` бэкенда — уязвимостей нет. `npm audit --omit=dev` фронта — 1 high:
+  `lodash ≤4.17.23` через `recharts@2.15.4`; `recharts` импортирует только вендорный `components/ui/chart.tsx`, который никто
+  не импортирует — в `dist` строки `recharts` нет. Правка `package-lock.json` — решение владельца (`RELEASE-BLOCKERS.md` №21).
+- [ ] НЕ ЗАКРЫВАЕТСЯ КОДОМ — **Миграции на пустой базе.** Локально невозможно: у роли `tili` нет `CREATEDB`
+  (`rolcreatedb = f`), пароля `postgres` в окружении нет, `.pgpass` нет — попытка `create database tili_audit_clean`
+  отвергнута («нет прав»). На живой базе применены все 22 миграции (`pgmigrations` = 22 = файлов; блок 0). Прогон
+  `npm run migrate up` на пустой базе — обязательный шаг перед выпуском за владельцем (`RELEASE-BLOCKERS.md` №22).
+- [ ] НЕ ЗАКРЫВАЕТСЯ КОДОМ — Node 22 LTS, SPA-fallback хостинга, `lodash`/`recharts`, ключи и службы блоков 6–8 —
+  `RELEASE-BLOCKERS.md`.
+
+**Прогон после блока 9:** фронт `Test Files 30 passed · Tests 353 passed (353) · ✓ built in 5.13s · 0 предупреждений ·
+eslint EXIT=0` (+4); бэкенд не менялся — `55 passed · 591 | 9 skipped` (блок 6).
+Коммит блока: см. `git log` — «Аудит, блок 9».

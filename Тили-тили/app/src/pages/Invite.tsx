@@ -208,15 +208,18 @@ function InviteView({
       <div className={cn('fixed inset-0 z-50 transition-opacity duration-700', opened && 'opacity-0 pointer-events-none')}>
         {(T.opening === 'curtains' || T.opening === 'doors') && (
           <>
-            <div className={cn('absolute inset-y-0 left-0 w-1/2 transition-transform duration-[1500ms]', opened && '-translate-x-full')}
-              style={{ background: T.overlay, transitionTimingFunction: 'cubic-bezier(.22,1,.36,1)', boxShadow: 'inset -40px 0 80px -40px rgba(0,0,0,.55)' }} />
-            <div className={cn('absolute inset-y-0 right-0 w-1/2 transition-transform duration-[1500ms]', opened && 'translate-x-full')}
-              style={{ background: T.overlay, transitionTimingFunction: 'cubic-bezier(.22,1,.36,1)', boxShadow: 'inset 40px 0 80px -40px rgba(0,0,0,.55)' }} />
+            {/* Длительность — стилем, а не классом с миллисекундами в скобках:
+                Tailwind такой класс считал неоднозначным, не собирал и
+                предупреждал на каждой сборке — даже встретив его в комментарии. */}
+            <div className={cn('absolute inset-y-0 left-0 w-1/2 transition-transform', opened && '-translate-x-full')}
+              style={{ background: T.overlay, transitionDuration: '1500ms', transitionTimingFunction: 'cubic-bezier(.22,1,.36,1)', boxShadow: 'inset -40px 0 80px -40px rgba(0,0,0,.55)' }} />
+            <div className={cn('absolute inset-y-0 right-0 w-1/2 transition-transform', opened && 'translate-x-full')}
+              style={{ background: T.overlay, transitionDuration: '1500ms', transitionTimingFunction: 'cubic-bezier(.22,1,.36,1)', boxShadow: 'inset 40px 0 80px -40px rgba(0,0,0,.55)' }} />
           </>
         )}
         {T.opening === 'lift' && (
-          <div className={cn('absolute inset-0 transition-transform duration-[1300ms]', opened && '-translate-y-full')}
-            style={{ background: T.overlay, transitionTimingFunction: 'cubic-bezier(.22,1,.36,1)' }} />
+          <div className={cn('absolute inset-0 transition-transform', opened && '-translate-y-full')}
+            style={{ background: T.overlay, transitionDuration: '1300ms', transitionTimingFunction: 'cubic-bezier(.22,1,.36,1)' }} />
         )}
         {T.opening === 'fade' && (
           <div className={cn('absolute inset-0 transition-opacity duration-1000', opened && 'opacity-0')} style={{ background: T.overlay }} />

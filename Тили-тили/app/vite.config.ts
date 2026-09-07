@@ -4,9 +4,22 @@ import { defineConfig } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
-  plugins: [inspectAttr(), react()],
+  /* Плагин инспектора — только в разработке: в боевой сборке его атрибуты на
+     каждом элементе — лишний вес и лишние сведения о структуре кода
+     (аудит 2026-09-07, блок 9). */
+  plugins: [mode === 'development' && inspectAttr(), react()].filter(Boolean),
+  build: {
+    rollupOptions: {
+      output: {
+        /* React и роутер — отдельным чанком: он не меняется от выкладки к
+           выкладке и остаётся в кэше, а главный чанк уходит из-под предела
+           в 500 кБ, о котором Vite предупреждал на каждой сборке. */
+        manualChunks: { react: ['react', 'react-dom', 'react-router'] },
+      },
+    },
+  },
   server: {
     port: 3000,
     /* Запросы фронта идут на /api и уезжают на бэкенд. Через прокси, а не
@@ -30,4 +43,4 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-});
+}));
