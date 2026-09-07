@@ -66,6 +66,10 @@ self.addEventListener('notificationclick', (e) => {
 self.addEventListener('fetch', (e) => {
   const { request } = e
   if (request.method !== 'GET') return
+  // API — только сеть. Ответы `/api/*` живут секунды: cache-first отдавал бы
+  // вчерашнюю свадьбу и вчерашние очереди панели до следующей версии кэша,
+  // а `Cache-Control: no-store` сервера Cache API не читает (ERR-0204).
+  if (new URL(request.url).pathname.startsWith('/api/')) return
   // Навигация: network-first, офлайн — оболочка приложения (SPA)
   if (request.mode === 'navigate') {
     e.respondWith(fetch(request).catch(() => caches.match(OFFLINE_PAGE)))
