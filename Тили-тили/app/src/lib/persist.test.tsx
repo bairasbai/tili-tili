@@ -92,6 +92,10 @@ vi.mock('@/lib/api/weddingData', async (orig) => ({
     { id: 'e1', name: 'Сбор гостей', startsAt: '2027-06-14T12:00:00Z', location: 'Усадьба' },
     { id: 'e2', name: 'Церемония', startsAt: '2027-06-14T15:00:00Z', location: 'Сад' },
   ],
+  /* Состояние плана Б экран дня X спрашивает отдельно, и «Активировать»
+     закрыта, пока оно не пришло (аудит, блок 4): без ответа кнопка
+     предлагала бы включить уже включённый план — повторная рассылка. */
+  getPlanB: async () => ({ checklist: [], activatedAt: null }),
 }))
 vi.mock('@/lib/api/slots', async (orig) => ({ ...await orig<object>(), ...(await import('@/test/slotsMock')).slotsWrite }))
 import { authorize, invitesRevoked, resetSlots } from '@/test/slotsMock'

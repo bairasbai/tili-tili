@@ -57,13 +57,19 @@ export function Favorites() {
 }
 
 /* Заметки и идеи (боль: «референсы в трёх мессенджерах») */
+/*
+ * Заметки живут в браузере: пути для них в контракте нет (хвост владельца —
+ * нужны путь и миграция). Пока так, экран честен хотя бы в одном: он
+ * начинается пустым. Раньше первое открытие показывало три готовые записи
+ * — «Букет: пионы + эвкалипт…», «песню «Perfect»» — как будто их оставил
+ * сам человек.
+ */
 export function Notes() {
   const [notes, setNotes] = useState<{ id: string; icon: string; tile: string; text: string }[]>(() => {
-    try { return JSON.parse(localStorage.getItem('tt_notes') ?? 'null') ?? [
-      { id: 'n1', icon: '💐', tile: 'bg-[var(--rose-soft)]', text: t('Букет: пионы + эвкалипт, показать флористу референс из Pinterest') },
-      { id: 'n2', icon: '🎵', tile: 'bg-[var(--lav)]', text: t('Первый танец — обсудить с DJ песню «Perfect»') },
-      { id: 'n3', icon: '📸', tile: 'bg-[var(--sage-soft)]', text: t('Спросить у фотографа про съёмку утра невесты') },
-    ] } catch { return [] }
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem('tt_notes') ?? '[]')
+      return Array.isArray(parsed) ? parsed : []
+    } catch { return [] }
   })
   const save = (n: typeof notes) => { setNotes(n); localStorage.setItem('tt_notes', JSON.stringify(n)) }
   const [text, setText] = useState('')
@@ -89,7 +95,10 @@ export function Notes() {
               <button onClick={() => save(notes.filter(y => y.id !== n.id))} className="press text-[var(--soft2)]" aria-label={t('Удалить')}><Trash2 size={15} /></button>
             </div>
           ))}
-          {notes.length === 0 && <p className="text-center text-[12px] text-[var(--soft2)] py-10">{t('Все заметки разобраны ✨')}</p>}
+          {/* Заметки хранятся только на этом устройстве — это надо сказать до
+              того, как человек начнёт на них полагаться со второго телефона. */}
+          {notes.length === 0 && <p className="text-center text-[12px] text-[var(--soft2)] py-10">{t('Заметок пока нет — запишите первую идею')}</p>}
+          <p className="text-center text-[10px] text-[var(--soft2)] pt-4">{t('Заметки хранятся только на этом устройстве')}</p>
         </div>
       </div>
     </div>

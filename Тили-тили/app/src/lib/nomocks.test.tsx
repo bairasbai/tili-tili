@@ -19,21 +19,24 @@ import { render, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import App from '@/App'
+import { projectFile } from '@/test/projectFiles'
 
-/* Маршруты пары, подрядчика и гостя. `/inspiration` не входит: истории там —
+/* ВСЕ маршруты приложения (App.tsx), кроме `/inspiration`: истории там —
    редакционный контент, и контракт прямо говорит, что они живут во фронте
-   (сервер хранит только отметки «нравится»). */
+   (сервер хранит только отметки «нравится»). Список сверяется с App.tsx
+   ниже: новый маршрут без проверки здесь — красный тест. */
 const ROUTES = [
-  '/home', '/notifications', '/settings', '/support',
+  '/', '/quiz', '/auth', '/invite', '/i/c1', '/join/c1',
+  '/home', '/notifications', '/settings', '/support', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',
-  '/wedding/timeline', '/wedding/guests', '/wedding/documents',
+  '/wedding/timeline', '/wedding/guests', '/wedding/documents', '/wedding/documents/new',
   '/wedding/invites', '/wedding/seating', '/wedding/wishlist', '/gifts', '/wedding/album',
   '/wedding/logistics', '/wedding/catering', '/wedding/planb',
-  '/us', '/us/chats', '/us/team',
+  '/us', '/us/chats', '/us/chats/c1', '/us/team',
   '/deal/d1', '/assistant', '/compare', '/dayx', '/after',
-  '/favorites', '/venues',
-  '/vendor-app', '/vendor-app/profile', '/vendor-app/deals',
+  '/favorites', '/venues', '/notes', '/tools/alcohol',
+  '/vendor-app', '/vendor-app/profile', '/vendor-app/deals', '/vendor-app/verification',
   '/vendor-app/leads/l1', '/vendor-app/reviews', '/vendor-app/analytics',
 ]
 
@@ -50,6 +53,8 @@ const MOCK_TRACES = [
   'iPhone · Safari', 'Android · Chrome',
   'Тикет #', 'демо',
   '+15 мин задержка', 'МИН К ПЛАНУ',
+  /* Три «заметки», которые экран показывал при первом открытии как свои. */
+  'пионы + эвкалипт', '«Perfect»',
 ]
 
 /*
@@ -64,21 +69,50 @@ const MOCK_TRACES = [
  * Здесь перечислено то, чего на экране без сервера быть не должно.
  */
 const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
-  '/home': ['0%', '0/0'],
-  '/wedding': ['0 забронировано'],
+  '/home': ['0%', '0/0', ' подтвердили', 'ждут ответа', 'Добавьте гостей', 'Все задачи закрыты', 'Чек-лист пуст', 'Пока никто не забронирован'],
+  '/wedding': ['0 забронировано', '0 из 0'],
   '/wedding/budget': ['запланировано'],
-  '/wedding/guests': ['0 в списке'],
+  '/wedding/checklist': ['Всё сделано', '0 из 0', 'Чек-лист пуст'],
+  '/wedding/timeline': ['Тайминг пуст'],
+  '/wedding/guests': ['0 в списке', 'Список пуст', '0 персон'],
+  '/wedding/catering': ['Опрос ещё не составлен', '0 из 0'],
+  '/wedding/seating': ['Столов пока нет', 'гостей пока нет'],
+  '/wedding/planb': ['0%'],
+  '/wedding/logistics': ['Маршрутов пока нет', 'Отельных блоков пока нет', '0/0 мест'],
+  '/wedding/wishlist': ['Пока пусто'],
   '/wedding/album': ['0 кадров'],
   '/search': ['0 категорий'],
   '/search/photo': ['0 рядом'],
+  '/vendor/v1': ['Свободен на вашу дату', 'верифицирован', '1:40', '5 фото'],
   '/favorites': ['0 отложено'],
-  '/us/team': ['Пока только вы'],
+  '/dayx': ['Тайминг пуст', 'Забронированных подрядчиков пока нет'],
+  /* Плитки итогов: число и подпись стоят вплотную. */
+  '/after': ['0подрядчиков', '0гостей', '0кадров', '0отзывов'],
+  '/us/team': ['Пока только вы', 'Активных ссылок нет', '0 действуют'],
+  '/settings': ['Имя не указано', '22:00', 'Тихих часов нет'],
+  '/notes': ['Все заметки разобраны'],
   '/vendor-app/deals': ['ожидается по сделкам', 'активных сделок'],
   '/vendor-app/analytics': ['Доход', 'Воронка анкеты'],
+  '/vendor-app/verification': ['Загрузка документов пока не подключена', 'Кто вы'],
   /* «Загружаем…» навсегда — тоже неправда: экран обещает то, чего не будет. */
   '/wedding/slot/s1': ['Загружаем…'],
   '/deal/d1': ['Загружаем…'],
 }
+
+describe('список маршрутов проверки полный', () => {
+  /* Аудит, блок 4: тринадцать маршрутов (в том числе /notes с тремя чужими
+     заметками) не входили в перебор — экран без сервера никто не проверял. */
+  it('каждый path из App.tsx, кроме /inspiration, есть в ROUTES', () => {
+    const src = projectFile('src/App.tsx')
+    const paths = [...src.matchAll(/path="([^"]+)"/g)].map(m => m[1]!).filter(p => p !== '*' && p !== '/inspiration')
+    expect(paths.length).toBeGreaterThan(40)
+    const missing = paths.filter(p => {
+      const re = new RegExp(`^${p.replace(/:[^/]+/g, '[^/]+')}$`)
+      return !ROUTES.some(r => re.test(r))
+    })
+    expect(missing).toEqual([])
+  })
+})
 
 describe('сервер выключен: ни один экран не показывает выдумку', () => {
   beforeEach(() => {

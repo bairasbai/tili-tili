@@ -77,6 +77,9 @@ export function Inspiration() {
         ))}
       </div>
       <p className="px-6 mt-3 text-[10.5px] text-[var(--soft2)]">{t('Найдено историй:')}{shown.length}</p>
+      {/* Отметки — с сервера; отказ на них раньше выглядел как «ничего не
+          отмечено». */}
+      {likes.error && <p role="alert" className="px-6 mt-1 text-[10.5px] text-[var(--rose-ink)]">{t('Отметки «нравится» не загрузились:')} {likes.error}</p>}
       <div className="px-5 mt-2 space-y-4 stagger">
         {shown.map(s => (
           <div key={s.id} className="card overflow-hidden fade-up !p-0">

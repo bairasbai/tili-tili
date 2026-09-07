@@ -515,6 +515,10 @@ export function Settings() {
         </div>
         <div className="card px-4 py-1.5">
           <AsyncState q={me} />
+          {/* Профиль и тумблеры — только по ответу сервера. До него «Имя не
+              указано» и включённые push — утверждения о профиле, которого
+              экран не видел; тумблер при этом ещё и отправлял бы правку. */}
+          {ready(me) && <>
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
             <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? '·'}</div>
             <div className="flex-1 min-w-0">
@@ -533,6 +537,7 @@ export function Settings() {
           <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
           <Row label={t('Push: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
           <Row label={t('Советы ИИ-координатора')} value={push.tips} onChange={v => setPush('tips', v)} />
+          </>}
           <button onClick={() => setCityPick(true)} className="press w-full flex items-center justify-between py-3.5 border-b border-[var(--track)] last:border-none text-left">
             <span className="text-[13px] font-medium">{t('Город свадьбы')}</span>
             <span className="flex items-center gap-1.5 text-[12px] text-[var(--soft)]"><MapPin size={13} className="text-[var(--rose-deep)]" />{t(city)} · {t(cityRegion)}</span>
@@ -542,14 +547,20 @@ export function Settings() {
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
             <Moon size={16} className="text-[var(--ink2)]" />
             <span className="flex-1 text-[13px] font-medium">{t('Тихие часы')}</span>
-            <button onClick={() => setQuiet(!quiet)} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative', quiet ? 'grad' : 'bg-[var(--track)]')} aria-label={t('Тихие часы')}>
-              <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', quiet ? 'left-[22px]' : 'left-[3px]')} />
-            </button>
+            {/* Тумблер — тоже утверждение: «22:00–09:00» из значений по
+                умолчанию при лежащем сервере выдавалось за настройку человека. */}
+            {ready(me) && (
+              <button onClick={() => setQuiet(!quiet)} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative', quiet ? 'grad' : 'bg-[var(--track)]')} aria-label={t('Тихие часы')}>
+                <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', quiet ? 'left-[22px]' : 'left-[3px]')} />
+              </button>
+            )}
           </div>
           <p className="text-[10.5px] text-[var(--soft)] py-3">
-            {quiet
-              ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
-              : t('Тихих часов нет: уведомления приходят в любое время суток.')}
+            {!ready(me)
+              ? (me.loading ? t('Загружаем…') : t('Настройки не загрузились'))
+              : quiet
+                ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
+                : t('Тихих часов нет: уведомления приходят в любое время суток.')}
           </p>
         </div>
         <div className="card px-4 py-1.5">

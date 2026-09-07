@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
-import { AsyncState, ready } from '@/components/AsyncState'
+import { AsyncState, num, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { ApiError } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -107,11 +107,13 @@ export function VendorDashboard() {
           </p>
         </div>
 
+        {/* Плитки — по своим запросам: анкета пришла, а заявки или календарь
+            могли и не прийти. «0 новых заявок» при их отказе — не факт. */}
         <div className="grid grid-cols-3 gap-2.5 mt-3.5 stagger">
           {([
-            [String(newLeads), t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
+            [num(leads, newLeads), t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
             [stars === null ? '—' : String(stars), t('средняя оценка'), Star, 'bg-[var(--honey)]'],
-            [String(days.filter(d => d.status === 'busy' || d.status === 'hold').length), t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
+            [num(calendar, days.filter(d => d.status === 'busy' || d.status === 'hold').length), t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
           ] as const).map(([v, l, Icon, tile]) => (
             <div key={l} className="card-s p-3.5 text-center fade-up">
               <div className={cn('w-9 h-9 rounded-[12px] mx-auto flex items-center justify-center', tile)}><Icon size={16} className="text-[var(--ink2)]" /></div>
@@ -154,9 +156,13 @@ export function VendorDashboard() {
           <div className="flex-1">
             <b className="text-[13px]">{t('Отзывы')}</b>
             <p className="text-[10.5px] text-[var(--soft)]">
-              {reviewList.length
-                ? `${reviewList.length} ${plural(reviewList.length, t('отзыв'), t('отзыва'), t('отзывов'))} · ${t('без ответа')} ${reviewList.filter(r => !r.reply).length}`
-                : t('пока ни одного')}
+              {/* «пока ни одного» — утверждение об отзывах, и без списка его
+                  нет: при отказе сервера оно стояло у подрядчика с сотней. */}
+              {!ready(reviews)
+                ? (reviews.loading ? t('Загружаем…') : t('Отзывы не загрузились'))
+                : reviewList.length
+                  ? `${reviewList.length} ${plural(reviewList.length, t('отзыв'), t('отзыва'), t('отзывов'))} · ${t('без ответа')} ${reviewList.filter(r => !r.reply).length}`
+                  : t('пока ни одного')}
             </p>
           </div>
           <span className="text-[9px] font-bold text-[var(--sage-deep)] shrink-0">→</span>
@@ -191,6 +197,9 @@ export function VendorDashboard() {
           <div className="grid grid-cols-7 gap-1 text-center text-[9px] text-[var(--soft)] font-semibold mb-1">
             {[t('Пн'), t('Вт'), t('Ср'), t('Чт'), t('Пт'), t('Сб'), t('Вс')].map(d => <span key={d}>{d}</span>)}
           </div>
+          {/* Сетка — только с пришедшим месяцем: без ответа каждый день
+              выглядит свободным, и тап по нему «закрывал» бы дату вслепую. */}
+          {!ready(calendar) ? <AsyncState q={calendar} /> : (
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: monthGrid(month).blanks }).map((_, k) => <span key={`b${k}`} />)}
             {Array.from({ length: monthGrid(month).days }).map((_, k) => {
@@ -213,6 +222,7 @@ export function VendorDashboard() {
               )
             })}
           </div>
+          )}
           {busyErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{busyErr}</p>}
           {/* День под сделкой закрыт сервером: открыть его значило бы увести у
               пары дату, о которой договорились. */}
@@ -635,7 +645,9 @@ export function VendorVerification() {
     <div className="pb-28">
       <TopBar back title={t('Верификация')} sub={verified ? t('пройдена') : t('галочка «Проверен» в каталоге')} />
       <AsyncState q={q} />
-      <div className="px-5 mt-3 space-y-3">
+      {/* Пока анкета не пришла, «пройти верификацию» не предлагаем: без ответа
+          «не проверен» — догадка. */}
+      {ready(q) && <div className="px-5 mt-3 space-y-3">
         {verified ? (
           <div className="card p-5 text-center">
             <span className="text-[28px]">✓</span>
@@ -673,7 +685,7 @@ export function VendorVerification() {
             </div>
           </>
         )}
-      </div>
+      </div>}
     </div>
   )
 }

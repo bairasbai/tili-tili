@@ -10,7 +10,7 @@ import { TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getVendorReviews } from '@/lib/api/reviews'
 import { useStore } from '@/lib/store'
-import { cn, copyText } from '@/lib/utils'
+import { cn, copyText, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { t } from '@/lib/i18n'
 
@@ -65,6 +65,10 @@ export function SearchCategories() {
           )
         })}
       </div>
+      {/* Поиск по имени — отдельный запрос со своими состояниями: раньше отказ
+          на нём выглядел как «никого не нашлось». */}
+      {search.length >= 2 && found.loading && <p className="px-5 mt-4 text-[12px] text-[var(--soft)]">{t('Ищем подрядчиков…')}</p>}
+      {found.error && <p role="alert" className="px-5 mt-4 text-[12px] text-[var(--rose-ink)] leading-relaxed">{found.error}</p>}
       {foundVendors.length > 0 && (
         <div className="px-5 mt-5">
           <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Подрядчики')}</span>
@@ -195,7 +199,11 @@ export function VendorDetail() {
   /* Длина месяца и его первый день недели: тридцать клеток подряд врали в
      феврале и в месяцах на 31 день. */
   const grid = monthGrid(month)
-  const freeOnDate = !!weddingDate && !busyDates.includes(weddingDate)
+  /* «Свободен на вашу дату» — только когда занятость пришла. Пустой список
+     занятых дней при отказе сервера превращался в зелёный значок и «дата
+     свободна» — по нему бронируют. */
+  const availKnown = ready(avail)
+  const freeOnDate = availKnown && !!weddingDate && !busyDates.includes(weddingDate)
   /* Отзывы — публичная лента этого подрядчика, а не общая заготовка. */
   const reviews = useApi(() => id ? getVendorReviews(id) : Promise.resolve(null), [id])
   const reviewItems = reviews.data?.items ?? []
@@ -283,13 +291,21 @@ export function VendorDetail() {
             <div key={k} className={cn('relative w-[200px] h-[250px] rounded-[22px] shrink-0', CATEGORY_TILE[v.categoryId ?? ''] ?? DEFAULT_TILE)} style={{ boxShadow: 'var(--shadow)' }}>
               <div className="absolute inset-0 rounded-[22px]" style={{ background: `radial-gradient(circle at ${30 + k * 15}% ${25 + k * 10}%, rgba(255,255,255,.7), transparent 60%)` }} />
               <span className="absolute inset-0 flex items-center justify-center text-[44px]">{cat?.icon}</span>
+              {/* Длительность ролика сервер не отдаёт — «1:40» стояло у всех
+                  одинаковым. Значок говорит только то, что известно: видео есть. */}
               {k === 0 && v.hasVideo && (
-                <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-black/50 text-white"><Play size={10} /> 1:40</span>
+                <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-black/50 text-white"><Play size={10} /> {t('видео')}</span>
               )}
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-[var(--soft)] mt-2 text-center">{t('5 фото · видео до 3 минут')}</p>
+        {/* Подпись считает настоящие кадры. «5 фото · видео до 3 минут» стояло
+            константой и у анкеты без единого файла. */}
+        <p className="text-[10px] text-[var(--soft)] mt-2 text-center">
+          {v.gallery?.length
+            ? `${v.gallery.length} ${plural(v.gallery.length, t('фото'), t('фото'), t('фото'))}${v.hasVideo ? t(' · видео') : ''}`
+            : t('Фото появятся, когда подрядчик их загрузит')}
+        </p>
       </div>
 
       <div className="px-5 mt-3">
@@ -324,8 +340,13 @@ export function VendorDetail() {
         </div>
       </div>
 
-      {/* Проверка подрядчика */}
+      {/* Проверка подрядчика.
+          Карточка «Проверен · ✓ верифицирован» стояла у КАЖДОЙ анкеты, а
+          признак `verified` сервер ставит только после сверки документов
+          модератором. Галочка без документов — та же выдумка, что чужой
+          отзыв: по ней доверяют деньги. */}
       <div className="px-5 mt-4">
+        {v.verified ? (
         <div className="card p-4" style={{ border: '1.5px solid rgba(126,154,116,.4)' }}>
           <div className="flex items-center gap-2.5">
             <span className="w-8 h-8 rounded-full bg-[var(--sage-soft)] flex items-center justify-center text-[14px]">🛡</span>
@@ -350,6 +371,9 @@ export function VendorDetail() {
             <p>✓ {t('Отменил в последний момент — каталог сразу покажет свободных на вашу дату')}</p>
           </div>
         </div>
+        ) : (
+          <p className="text-[11px] text-[var(--soft)] px-1 leading-relaxed">{t('Документы этого подрядчика модератор ещё не сверял — договор и переписка остаются в приложении.')}</p>
+        )}
       </div>
 
       {/* Пакеты */}
@@ -381,6 +405,9 @@ export function VendorDetail() {
           <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-[var(--soft)] font-semibold mb-1">
             {[t('Пн'),t('Вт'),t('Ср'),t('Чт'),t('Пт'),t('Сб'),t('Вс')].map(d => <span key={d}>{d}</span>)}
           </div>
+          {/* Сетка — только с пришедшей занятостью: без неё каждый день
+              выглядит свободным, а это и есть решение, которое здесь принимают. */}
+          {!availKnown && month ? <AsyncState q={avail} /> : (
           <div className="grid grid-cols-7 gap-1">
             {/* Занятость приходит с сервера. Раньше «занятые» дни считались
                 формулой от идентификатора: календарь выглядел настоящим и
@@ -403,7 +430,8 @@ export function VendorDetail() {
               )
             })}
           </div>
-          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни месяца') : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
+          )}
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни месяца') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
         </div>
       </div>
 
@@ -448,6 +476,12 @@ export function VendorDetail() {
       {/* Похожие */}
       <div className="px-5 mt-5">
         <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Похожие специалисты')}</h2>
+        {/* Пустая полоса без объяснения одинаково выглядела при отказе сервера
+            и при единственном подрядчике в городе. */}
+        {similar.error && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] px-1 leading-relaxed">{similar.error}</p>}
+        {ready(similar) && !(similar.data?.items ?? []).some(x => x.id !== v.id) && (
+          <p className="text-[11.5px] text-[var(--soft)] px-1 leading-relaxed">{t('Похожих в вашем городе пока нет')}</p>
+        )}
         <div className="flex gap-2.5 overflow-x-auto no-scrollbar">
           {/* Похожие — из той же категории и города, с сервера. */}
           {(similar.data?.items ?? []).filter(x => x.id !== v.id).slice(0, 4).map(x => (

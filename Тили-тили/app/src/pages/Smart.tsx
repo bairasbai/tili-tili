@@ -5,7 +5,7 @@ import { ChevronLeft, CloudRain, Zap, Heart } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { AsyncState, ready } from '@/components/AsyncState'
+import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getGuests, getPlanB, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
@@ -216,7 +216,7 @@ export function Compare() {
  */
 export function DayX() {
   const nav = useNavigate()
-  const { weddingId, slots } = useStore()
+  const { weddingId, slots, slotsState } = useStore()
   const [tick, setTick] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -281,9 +281,11 @@ export function DayX() {
               <span className="text-[9px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{next ? t('ДАЛЬШЕ') : t('ТАЙМИНГ')}</span>
               {/* До первого блока и после последнего честнее сказать это
                   словами, чем показывать «идёт фотосессия». */}
-              <b className="font-serif-d text-[21px] block mt-1">{next ? next.name : t('Тайминг пуст')}</b>
+              {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
+                  экран дня X говорил координатору, что программы нет. */}
+              <b className="font-serif-d text-[21px] block mt-1">{next ? next.name : ready(q) ? t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
               <p className="text-[11px] opacity-60 mt-0.5">
-                {next ? `${t('начало в')} ${time(next.startsAt)}` : t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду')}
+                {next ? `${t('начало в')} ${time(next.startsAt)}` : ready(q) ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? '')}
               </p>
             </div>
           )}
@@ -322,7 +324,8 @@ export function DayX() {
             путь к разговору с ней. */}
         <div className="mt-5">
           <b className="text-[13px]">{t('Ваша команда')}</b>
-          {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
+          {/* Состав команды известен только вместе с мозаикой. */}
+          {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{slotsState === 'ready' ? t('Забронированных подрядчиков пока нет') : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : t('Загружаем…')}</p>}
           <div className="flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
             {team.map(s => (
               <button key={s.id} onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ background: '#2A2520' }}>
@@ -347,8 +350,11 @@ export function DayX() {
             {planBOn ? (
               <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0" style={{ background: '#7E9A74', color: '#fff' }}>{t('Включён')}</span>
             ) : (
+              /* Пока состояние плана Б не пришло, кнопка закрыта: без ответа
+                 «не включён» — догадка, и по ней ушла бы повторная рассылка. */
               <button
-                disabled={busy === 'planb'}
+                disabled={busy === 'planb' || !ready(pb)}
+                title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
                 onClick={() => (confirmPlanB ? act('planb', () => activatePlanB(weddingId!)) : setConfirmPlanB(true))}
                 className="press px-4 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c] disabled:opacity-50"
                 style={confirmPlanB ? { background: '#C4705A', borderColor: '#C4705A' } : undefined}
@@ -392,7 +398,7 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
  * Теперь всё считается по своей свадьбе, а отзывы ходят на сервер обе стороны.
  */
 export function After() {
-  const { weddingId, slots } = useStore()
+  const { weddingId, slots, slotsState } = useStore()
   const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const guests = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const album = useApi(() => weddingId ? getAlbum(weddingId) : Promise.resolve([]), [weddingId])
@@ -405,12 +411,16 @@ export function After() {
   /* Команда — те, с кем есть сделка. Свой подрядчик (§11) сюда не попадает:
      он не из каталога, и отзыв о нём публиковать негде. */
   const team = slots.filter(s => s.vendorId && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
-  const stats: [number, string][] = [
-    [team.length, plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
-    [guests.data?.length ?? 0, plural(guests.data?.length ?? 0, t('гость'), t('гостя'), t('гостей'))],
-    [photos.length, plural(photos.length, t('кадр от гостей'), t('кадра от гостей'), t('кадров от гостей'))],
-    [guestReviews.length, plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))],
+  /* Итоги — только по пришедшим ответам: «0 гостей · 0 кадров» после свадьбы
+     при лежащем сервере читается как «никто не пришёл и не снимал». */
+  const guestCount = guests.data?.length ?? 0
+  const stats: [string, string][] = [
+    [slotsState === 'ready' ? String(team.length) : '—', plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
+    [num(guests, guestCount), plural(guestCount, t('гость'), t('гостя'), t('гостей'))],
+    [num(album, photos.length), plural(photos.length, t('кадр от гостей'), t('кадра от гостей'), t('кадров от гостей'))],
+    [num(reviews, guestReviews.length), plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))],
   ]
+  const statsError = guests.error ?? album.error
   const icons = ['🤝', '🥂', '📸', '★']
 
   return (
@@ -437,6 +447,7 @@ export function After() {
             </div>
           ))}
         </div>
+        {statsError && ready(w) && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2 px-1 leading-relaxed">{statsError}</p>}
 
         {/* Кнопка «Скачать общий альбом (ZIP)» убрана: она рисовала прогресс
             интервалом и заканчивалась словами «ссылка отправлена», хотя ни
@@ -635,8 +646,9 @@ export function PlanB() {
       <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
         <div className="card p-4">
-          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{pct}%</b></div>
-          <Bar pct={pct} />
+          {/* «0%» без ответа сервера — не готовность, а её отсутствие. */}
+          <div className="flex justify-between text-[12px] mb-2"><span className="font-semibold">{t('Чек-лист накануне')}</span><b className="tabular">{num(q, `${pct}%`)}</b></div>
+          {ready(q) && <Bar pct={pct} />}
           <div className="mt-3 space-y-2">
             {checklist.map(c => {
               const id = c.id ?? ''

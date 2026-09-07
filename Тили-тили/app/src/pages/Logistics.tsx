@@ -152,6 +152,8 @@ export function Logistics() {
       {/* ОТЕЛЬНЫЙ БЛОК */}
       <SectionHead title={t('Отельный блок')} sub={t('для иногородних гостей')} />
       <div className="px-5 mt-2 space-y-2.5 stagger">
+        {/* Отели — свой запрос: отказ на нём раньше не показывался вовсе. */}
+        <AsyncState q={hotelsQ} />
         <div className="card-s px-4 py-3 text-[11px] text-[var(--soft)] leading-relaxed">
           {t('Договоритесь с отелем о блоке номеров со скидкой и внесите его сюда — гости займут номера прямо в приглашении, а вы увидите, сколько осталось.')}
         </div>
@@ -284,8 +286,10 @@ export function Catering() {
         <div className="flex items-center gap-3">
           <span className="w-10 h-10 rounded-2xl bg-[var(--honey)] flex items-center justify-center shrink-0"><UtensilsCrossed size={18} className="text-[var(--ink2)]" /></span>
           <div className="flex-1">
-            <b className="text-[13.5px]">{poll?.question || t('Опрос ещё не составлен')}</b>
-            <p className="text-[11px] text-[var(--soft)] mt-0.5">{answered} {t('из')} {attending} {t('ответили · опрос в приглашении')}</p>
+            {/* «Опрос ещё не составлен» и «0 из 0 ответили» — утверждения об
+                опросе, а без ответа сервера об опросе неизвестно ничего. */}
+            <b className="text-[13.5px]">{ready(q) ? (poll?.question || t('Опрос ещё не составлен')) : t('Опрос гостей')}</b>
+            <p className="text-[11px] text-[var(--soft)] mt-0.5">{ready(q) && ready(gq) ? `${answered} ${t('из')} ${attending} ${t('ответили · опрос в приглашении')}` : '—'}</p>
           </div>
         </div>
         <div className="mt-4 space-y-2.5">

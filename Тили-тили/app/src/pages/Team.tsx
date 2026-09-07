@@ -142,6 +142,9 @@ export function Team() {
           {/* Утверждение о составе команды — только когда состав известен.
               При отказе сервера «Пока только вы» врало бы о том, что
               помощников нет. */}
+          {!loaded && !err && weddingId && (
+            <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Загружаем…')}</p>
+          )}
           {loaded && members.length === 0 && (
             <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Пока только вы. Пригласите тех, кто планирует вместе с вами.')}</p>
           )}
@@ -181,10 +184,12 @@ export function Team() {
         {/* Активные приглашения */}
         <div className="flex justify-between items-baseline px-1 mt-2">
           <h2 className="font-serif-d text-[18px]">{t('Активные ссылки')}</h2>
-          <span className="text-[10px] text-[var(--soft)]">{invites.filter(x => !x.used).length} {t('действуют')}</span>
+          {/* Число и «ссылок нет» — только по пришедшему списку: то же
+              правило, что для состава команды выше. */}
+          <span className="text-[10px] text-[var(--soft)]">{loaded ? `${invites.filter(x => !x.used).length} ${t('действуют')}` : '—'}</span>
         </div>
         <div className="card px-4 py-1.5">
-          {invites.length === 0 && (
+          {loaded && invites.length === 0 && (
             <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Активных ссылок нет.')}</p>
           )}
           {invites.map((iv, k) => (

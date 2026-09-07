@@ -6,7 +6,7 @@ import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
-import { AsyncState, ready } from '@/components/AsyncState'
+import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, remindGuests, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
@@ -123,11 +123,15 @@ export function WeddingTeam() {
 
       <div className="px-5">
         <SectionHead title={t('Сводка')} />
+        {/* Сводка — только по пришедшей мозаике. «0 из 0» и «0 ₽» при лежащем
+            сервере читаются как «команды нет и денег не отложено». Полоса
+            бюджета ждёт ещё и бюджет: без него «0%» — тоже выдумка. */}
         <div className="card p-5 mt-2">
-          <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[var(--soft)]">{t('Команда собрана')}</span><b>{booked} из {slots.length}</b></div>
-          <Bar pct={pct(booked, slots.length)} />
-          <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{fmt(committedTotal(slots))}</b></div>
-          <Bar pct={pct(committedTotal(slots), budgetTotal)} />
+          <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[var(--soft)]">{t('Команда собрана')}</span><b>{slotsState === 'ready' ? `${booked} ${t('из')} ${slots.length}` : '—'}</b></div>
+          {slotsState === 'ready' && <Bar pct={pct(booked, slots.length)} />}
+          <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{slotsState === 'ready' ? fmt(committedTotal(slots)) : '—'}</b></div>
+          {slotsState === 'ready' && ready(budget) && <Bar pct={pct(committedTotal(slots), budgetTotal)} />}
+          {budget.error && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{budget.error}</p>}
         </div>
       </div>
     </div>
@@ -600,17 +604,22 @@ export function Checklist() {
                 <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.title}</p>
               </button>
             )}
-            {!nextTask && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{t('Всё сделано — вы полностью готовы ✓')}</p>}
+            {/* «Всё сделано» — утверждение о списке, и без списка его нет:
+                при отказе сервера оно поздравляло с готовностью, которой не
+                видело. */}
+            {!nextTask && ready(q) && <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-2">{allTasks.length ? t('Всё сделано — вы полностью готовы ✓') : t('Чек-лист пуст — добавьте первую задачу')}</p>}
           </div>
         </div>
-        <div className="card-s px-4 py-3 flex items-center gap-3">
-          {/* Пустой список — это 0 из 0: деление на ноль рисовало «NaN%». */}
-          <b className="text-[12px] whitespace-nowrap">{done.length} из {allTasks.length}</b>
-          <div className="flex-1 h-1.5 rounded-full bg-[var(--track)] overflow-hidden">
-            <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${pct(done.length, allTasks.length)}%` }} />
+        {ready(q) && (
+          <div className="card-s px-4 py-3 flex items-center gap-3">
+            {/* Пустой список — это 0 из 0: деление на ноль рисовало «NaN%». */}
+            <b className="text-[12px] whitespace-nowrap">{done.length} {t('из')} {allTasks.length}</b>
+            <div className="flex-1 h-1.5 rounded-full bg-[var(--track)] overflow-hidden">
+              <div className="h-full grad rounded-full transition-all duration-500" style={{ width: `${pct(done.length, allTasks.length)}%` }} />
+            </div>
+            <span className="text-[10px] font-bold text-[var(--sage-deep)] tabular">{pct(done.length, allTasks.length)}%</span>
           </div>
-          <span className="text-[10px] font-bold text-[var(--sage-deep)] tabular">{pct(done.length, allTasks.length)}%</span>
-        </div>
+        )}
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
         {[['9', t('За 9 мес')], ['6', t('За 6 мес')], ['3', t('За 3 мес')], ['1', t('За 1 мес')]].map(([id, l]) => (
@@ -808,6 +817,11 @@ export function Timeline() {
           </div>
         )}
         {err && <p className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {/* Пустой тайминг — состояние, а не пустое место: без этой строки экран
+            без событий и экран без ответа сервера выглядели одинаково. */}
+        {!events.length && ready(q) && (
+          <p className="text-[12px] text-[var(--soft)] text-center py-4">{t('Тайминг пуст — добавьте событие или соберите автоплан по команде')}</p>
+        )}
         {events.map(e => (
           <div key={e.id} className="card-s p-4 flex gap-3 fade-up items-start">
             <Tile icon={e.icon} tile={e.tile} size={42} />
@@ -980,7 +994,9 @@ export function Guests() {
         </div>
       )}
       <div className="px-5 mt-3 grid grid-cols-3 gap-2.5">
-        {[[String(persons('yes')), t('придут'), 'text-[var(--sage-deep)]'], [String(persons('pending')), t('ждём ответ'), 'text-[var(--honey-deep)]'], [String(persons('no')), t('не смогут'), 'text-[var(--rose-deep)]']].map(([v, l, c]) => (
+        {/* Прочерк, пока список не пришёл: «0 придут · 0 ждём · 0 не смогут»
+            при отказе сервера — три выдуманных нуля подряд. */}
+        {[[num(q, persons('yes')), t('придут'), 'text-[var(--sage-deep)]'], [num(q, persons('pending')), t('ждём ответ'), 'text-[var(--honey-deep)]'], [num(q, persons('no')), t('не смогут'), 'text-[var(--rose-deep)]']].map(([v, l, c]) => (
           <div key={l} className="card-s p-3.5 text-center">
             <b className={cn('text-[20px] tabular', c)}>{v}</b>
             <span className="text-[9.5px] text-[var(--soft)] block mt-0.5">{l}</span>
@@ -995,7 +1011,7 @@ export function Guests() {
       <div className="px-5 mt-4">
         {err && <p className="text-[12px] text-[var(--rose-ink)] mb-2.5">{err}</p>}
         <div className="card px-4 py-1.5">
-          {!shown.length && <p className="py-4 text-[12px] text-[var(--soft)] text-center">{list.length ? t('В этом фильтре пусто') : t('Список пуст — добавьте первого гостя')}</p>}
+          {!shown.length && ready(q) && <p className="py-4 text-[12px] text-[var(--soft)] text-center">{list.length ? t('В этом фильтре пусто') : t('Список пуст — добавьте первого гостя')}</p>}
           {shown.map((g, i) => (
             <div key={g.id} className={cn('flex items-center gap-3 py-3', i !== shown.length - 1 && 'border-b border-[var(--track)]')}>
               <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-serif-d text-white shrink-0',
@@ -1045,7 +1061,9 @@ export function Guests() {
             a.click()
           }} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Список CSV')}</button>
         </div>
-        <div className="mt-3.5">
+        {/* Сводка для кейтеринга — только по пришедшему списку: «0 персон · 0
+            особое меню» без сервера площадка прочла бы как заказ. */}
+        {ready(q) && <div className="mt-3.5">
           {(() => {
             const yesGuests = list.filter(g => g.status === 'yes')
             const special = yesGuests.filter(g => g.diet || g.dietNote).length
@@ -1064,7 +1082,7 @@ export function Guests() {
               </div>
             )
           })()}
-        </div>
+        </div>}
         {waiting > 0 && (
           <div className="mt-3.5 space-y-2">
             {/* Число — из списка, а не «8» константой. */}

@@ -162,16 +162,45 @@ export async function announceOpenedDayChats(app: FastifyInstance): Promise<numb
       returning id, wedding_id`,
   )
   for (const chat of rows) {
-    await notifyWedding(db, chat.wedding_id, null, {
-      kind: 'system',
-      title: 'Чат дня X открыт',
-      body: 'Гости и команда теперь на связи — можно писать',
-      link: `/chats/${chat.id}`,
-      // День X критичен: тихие часы его не держат.
-      critical: true,
-    })
+    await isolated(app, { chatId: chat.id }, 'не удалось объявить открытие чата дня X', () =>
+      notifyWedding(db, chat.wedding_id, null, {
+        kind: 'system',
+        title: 'Чат дня X открыт',
+        body: 'Гости и команда теперь на связи — можно писать',
+        link: `/chats/${chat.id}`,
+        // День X критичен: тихие часы его не держат.
+        critical: true,
+      }),
+    )
   }
   return rows.length
+}
+
+/**
+ * Одна строка списка — одна попытка.
+ *
+ * Все задачи ниже устроены одинаково: сначала пометить строки как
+ * обработанные (`returning`), потом пройти по ним и разослать. Без изоляции
+ * первый же сбой — стёртый между выборкой и записью пользователь, упавшая
+ * вставка уведомления — выбрасывал исключение из цикла, а помеченные строки
+ * после него не получали ничего и уже никогда: повтор задачи их не видит.
+ * Найдено аудитом 2026-09-07: `weeklyDigest` падал на внешнем ключе
+ * `digest_sent`, когда `eraseDeletedUsers` стирал аккаунт параллельно.
+ * Сбой уходит в лог со своим ключом, остальные строки идут дальше.
+ */
+async function isolated(
+  app: FastifyInstance,
+  context: Record<string, string>,
+  message: string,
+  fn: () => Promise<unknown>,
+): Promise<boolean> {
+  try {
+    await fn()
+    return true
+  } catch (err) {
+    app.log.error({ err, ...context }, message)
+    return false
+  }
 }
 
 /**
@@ -190,16 +219,18 @@ export async function remindExpiringHolds(app: FastifyInstance): Promise<number>
       returning id, wedding_id`,
   )
   for (const deal of rows) {
-    await notifyWedding(db, deal.wedding_id, null, {
-      kind: 'deal',
-      title: 'Бронь скоро истечёт',
-      body: 'Осталось меньше 12 часов — подтвердите или отпустите дату',
-      /* Со сделкой, а не «куда-то в сделки»: экран открывается по её
-         идентификатору, и без него нажатие уводило бы в общий список. */
-      link: `/deal/${deal.id}`,
-      // Деньги и дата: ждать утра нельзя, к утру дату займут.
-      critical: true,
-    })
+    await isolated(app, { dealId: deal.id }, 'не удалось напомнить об истечении брони', () =>
+      notifyWedding(db, deal.wedding_id, null, {
+        kind: 'deal',
+        title: 'Бронь скоро истечёт',
+        body: 'Осталось меньше 12 часов — подтвердите или отпустите дату',
+        /* Со сделкой, а не «куда-то в сделки»: экран открывается по её
+           идентификатору, и без него нажатие уводило бы в общий список. */
+        link: `/deal/${deal.id}`,
+        // Деньги и дата: ждать утра нельзя, к утру дату займут.
+        critical: true,
+      }),
+    )
   }
   return rows.length
 }
@@ -212,6 +243,9 @@ export async function remindExpiringHolds(app: FastifyInstance): Promise<number>
  */
 export async function weeklyDigest(app: FastifyInstance): Promise<number> {
   const db = app.db!
+  /* Уже получившие дайджест этой недели и удалённые аккаунты отсекаются в
+   * выборке: иначе каждый повтор задачи перебирал бы всех подряд и ставил
+   * `on conflict do nothing` на каждого — на тысячах строк это минуты. */
   const { rows } = await db.query<{ user_id: string; week: string; tasks: string }>(
     `select m.user_id,
             to_char(now(), 'IYYY-IW') as week,
@@ -219,28 +253,34 @@ export async function weeklyDigest(app: FastifyInstance): Promise<number> {
        from tasks t
        join wedding_members m on m.wedding_id = t.wedding_id
        join weddings w on w.id = t.wedding_id
+       join users u on u.id = m.user_id and u.deleted_at is null
       where t.done_at is null and t.due is not null
         and t.due between current_date and current_date + 7
         and w.archived_at is null and w.cancelled_at is null
+        and not exists (select 1 from digest_sent d
+                         where d.user_id = m.user_id and d.week = to_char(now(), 'IYYY-IW'))
       group by m.user_id`,
   )
   let sent = 0
   for (const row of rows) {
-    // Ключ по неделе делает повтор задачи пустым: вторая строка не встанет,
-    // и второго дайджеста не будет, сколько раз задачу ни перезапусти.
-    const claimed = await db.query(
-      'insert into digest_sent (user_id, week) values ($1,$2) on conflict do nothing',
-      [row.user_id, row.week],
-    )
-    if (claimed.rowCount === 0) continue
-    await notify(db, {
-      userId: row.user_id,
-      kind: 'task',
-      title: 'Задачи недели',
-      body: `На этой неделе ${row.tasks} — загляните в чек-лист`,
-      link: '/checklist',
+    const ok = await isolated(app, { userId: row.user_id }, 'не удалось отправить дайджест недели', async () => {
+      // Ключ по неделе делает повтор задачи пустым: вторая строка не встанет,
+      // и второго дайджеста не будет, сколько раз задачу ни перезапусти.
+      const claimed = await db.query(
+        'insert into digest_sent (user_id, week) values ($1,$2) on conflict do nothing',
+        [row.user_id, row.week],
+      )
+      if (claimed.rowCount === 0) return false
+      await notify(db, {
+        userId: row.user_id,
+        kind: 'task',
+        title: 'Задачи недели',
+        body: `На этой неделе ${row.tasks} — загляните в чек-лист`,
+        link: '/checklist',
+      })
+      return true
     })
-    sent += 1
+    if (ok) sent += 1
   }
   return sent
 }
@@ -306,15 +346,17 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
       // Деньги и дата: §18.6 относит сделки к неотключаемым.
       critical: true,
     }
-    // Тому, кто сам нажал кнопку, сообщать нечего.
-    await notifyWedding(db, event.wedding_id, event.actor_id, item)
-    /* Подрядчик ЭТОЙ сделки, а не «все забронированные на свадьбе».
-     * Снятая мягкая бронь — новость того, чью дату держали, и состояние
-     * сделки к этому моменту уже не `booked`: фильтр по забронированным
-     * отсёк бы ровно тот случай, ради которого уведомление и нужно. */
-    if (event.vendor_user_id && event.vendor_user_id !== event.actor_id) {
-      await notify(db, { ...item, userId: event.vendor_user_id })
-    }
+    await isolated(app, { dealId: event.deal_id }, 'не удалось разослать событие сделки', async () => {
+      // Тому, кто сам нажал кнопку, сообщать нечего.
+      await notifyWedding(db, event.wedding_id!, event.actor_id, item)
+      /* Подрядчик ЭТОЙ сделки, а не «все забронированные на свадьбе».
+       * Снятая мягкая бронь — новость того, чью дату держали, и состояние
+       * сделки к этому моменту уже не `booked`: фильтр по забронированным
+       * отсёк бы ровно тот случай, ради которого уведомление и нужно. */
+      if (event.vendor_user_id && event.vendor_user_id !== event.actor_id) {
+        await notify(db, { ...item, userId: event.vendor_user_id })
+      }
+    })
   }
   return rows.length
 }
@@ -338,12 +380,14 @@ export async function rsvpDigest(app: FastifyInstance): Promise<number> {
       group by w.id`,
   )
   for (const row of rows) {
-    await notifyWedding(db, row.wedding_id, null, {
-      kind: 'guest',
-      title: 'Ответы гостей за сутки',
-      body: `Придут: ${row.yes}. Не смогут: ${row.no}.`,
-      link: '/guests',
-    })
+    await isolated(app, { weddingId: row.wedding_id }, 'не удалось отправить сводку ответов гостей', () =>
+      notifyWedding(db, row.wedding_id, null, {
+        kind: 'guest',
+        title: 'Ответы гостей за сутки',
+        body: `Придут: ${row.yes}. Не смогут: ${row.no}.`,
+        link: '/guests',
+      }),
+    )
   }
   return rows.length
 }

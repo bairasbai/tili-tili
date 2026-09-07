@@ -349,12 +349,32 @@ function InviteView({
 
 type Theme = (typeof inviteThemes)[number]
 
+/*
+ * Блок гостя не дошёл с сервера.
+ *
+ * Раньше меню, трансфер и отель при отказе просто исчезали: гость не узнавал,
+ * что автобус вообще был, и ехал сам. Пустой блок и блок с ошибкой — разные
+ * вещи, и второй должен быть виден.
+ */
+function GuestBlockError({ title, error, onRetry, T, shadow }: { title: string; error: string; onRetry: () => void; T: Theme; shadow: string }) {
+  return (
+    <div className="px-6 mt-6 relative z-10 rv">
+      <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+        <p className="text-[11px] font-semibold">{title}</p>
+        <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{error}</p>
+        <button onClick={onRetry} className="press mt-3 px-4 h-[36px] rounded-full text-[11.5px] font-semibold" style={{ background: T.bg, color: T.ink }}>{t('Повторить')}</button>
+      </div>
+    </div>
+  )
+}
+
 /** Опрос по горячему. Варианты задаёт пара — гость их видит, а не угадывает. */
 function GuestMenu({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
   const q = useApi(() => getGuestMenu(token), [token])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const options = q.data?.options ?? []
+  if (q.error) return <GuestBlockError title={t('Что на горячее?')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!options.length) return null
 
   const pick = (optionId: string) => void (async () => {
@@ -385,6 +405,7 @@ function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: s
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const routes = q.data?.routes ?? []
+  if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!routes.length) return null
 
   const join = (busId: string) => void (async () => {
@@ -427,6 +448,7 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const blocks = q.data ?? []
+  if (q.error) return <GuestBlockError title={t('Где остановиться')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!blocks.length) return null
 
   const book = (hotelId: string) => void (async () => {

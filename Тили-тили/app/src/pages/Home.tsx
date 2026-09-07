@@ -6,7 +6,7 @@ import { getBudget, getGuests, getTasks, getWedding } from '@/lib/api/weddingDat
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
-import { ready, num } from '@/components/AsyncState'
+import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
 import { t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
@@ -63,7 +63,9 @@ export default function Home() {
     ? tr('Выберите дату свадьбы — от неё считаются сроки в чек-листе и занятость подрядчиков.')
     : totalTasks && doneCount === 0
       ? tr('Чек-лист готов. Начните с первого пункта — остальные подтянутся по срокам.')
-      : serverGuests.length === 0
+      /* «Добавьте гостей» — только когда список пришёл и он пуст. Пустой
+         массив до ответа и после отказа — это «неизвестно», а не «никого». */
+      : ready(gq) && serverGuests.length === 0
         ? tr('Добавьте гостей — от их числа зависят площадка, кейтеринг и рассадка.')
         : tr('Спросите Тиля, если не знаете, с чего продолжить.')
   /* Ни имени, ни города не выдумываем: пустая свадьба выглядит пустой, а не
@@ -209,6 +211,12 @@ export default function Home() {
       <div className="px-5 fade-up" style={{ animationDelay: '.22s' }}>
         <SectionHead title={tr('Ближайшие дедлайны')} link={tr('Чек-лист →')} onLink={() => nav('/wedding/checklist')} />
         <div className="card px-4 py-1.5 mt-2">
+          {/* Пустая карточка молчала и при отказе сервера, и при пустом
+              чек-листе — человек не отличал «всё сделано» от «не загрузилось». */}
+          <AsyncState q={tq} forbiddenText={tr('Чек-лист ведёт пара — у вашей роли к нему доступа нет.')} />
+          {ready(tq) && !serverTasks.some(x => !x.done) && (
+            <p className="py-4 text-[12px] text-[var(--soft)] text-center">{totalTasks ? tr('Все задачи закрыты ✓') : tr('Чек-лист пуст — добавьте первую задачу')}</p>
+          )}
           {serverTasks.filter(x => !x.done).slice(0, 3).map((t, i, arr) => (
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
               {/* Признака срочности в контракте нет — цветной точки, которая
@@ -227,7 +235,13 @@ export default function Home() {
           <Tile icon="💌" tile="bg-[var(--lav)]" size={44} />
           <div className="flex-1">
             <b className="text-[13px]">{tr('Приглашения')}</b>
-            <p className="text-[11px] text-[var(--soft)] mt-0.5">{persons('yes')}{tr(' подтвердили')} · {persons('pending')} {tr('ждут ответа')}</p>
+            {/* «0 подтвердили · 0 ждут ответа» без ответа сервера — не факт о
+                гостях, а его отсутствие. Числа только вместе со списком. */}
+            <p className="text-[11px] text-[var(--soft)] mt-0.5">
+              {ready(gq)
+                ? `${persons('yes')}${tr(' подтвердили')} · ${persons('pending')} ${tr('ждут ответа')}`
+                : gq.loading ? tr('Загружаем…') : gq.forbidden ? tr('Гостей ведёт пара — у вашей роли к ним доступа нет.') : tr('Ответы гостей не загрузились')}
+            </p>
           </div>
           <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] shrink-0">RSVP →</span>
         </button>
@@ -237,6 +251,13 @@ export default function Home() {
       <div className="px-5">
         <SectionHead title={tr('Моя команда')} sub={tr('Уже забронировано')} link={tr('Все →')} onLink={() => nav('/wedding')} />
         <div className="space-y-2.5 mt-2 stagger">
+          {/* Мозаика приходит через хранилище, у неё свои четыре состояния:
+              без них раздел без сервера выглядел просто пустым. */}
+          {slotsState === 'loading' && <p className="text-[12px] text-[var(--soft)] py-3 text-center">{tr('Загружаем…')}</p>}
+          {slotsState === 'error' && <p role="alert" className="text-[12px] text-[var(--rose-ink)] py-3 text-center">{tr('Сервер недоступен — команда не загрузилась')}</p>}
+          {slotsState === 'ready' && !booked.length && (
+            <p className="text-[12px] text-[var(--soft)] py-3 text-center">{tr('Пока никто не забронирован — начните с площадки и фотографа')}</p>
+          )}
           {booked.map(s => (
             <button key={s.id} onClick={() => nav('/wedding')} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
               <Tile icon={s.icon} tile={s.tile} cat={s.categoryId} />

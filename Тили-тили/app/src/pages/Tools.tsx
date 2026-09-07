@@ -334,6 +334,9 @@ export function ContractWizard() {
   return (
     <div className="min-h-dvh flex flex-col pb-10">
       <TopBar back title={t('Новый договор')} sub={`${t('Шаг ')}${step + 1}${t(' из 2')}`} />
+      {/* Заказчик и город берутся из свадьбы: если она не пришла, «уточняется»
+          в договоре должно сопровождаться причиной, а не молчанием. */}
+      {wq.error && <p role="alert" className="px-5 mt-2 text-[12px] text-[var(--rose-ink)] leading-relaxed">{wq.error}</p>}
       {step === 0 ? (
         <div className="px-5 mt-3 space-y-2.5 stagger">
           {contractTemplates.map((c, k) => (
@@ -455,13 +458,17 @@ export function Seating() {
     <div className="pb-28">
       <TopBar back title={t('Рассадка')} sub={selectedName ? `${t('Сажаем: ')}${selectedName}${t(' — выберите стол')}` : t('Выберите гостя, затем стол')} />
       <AsyncState q={guestsQ} />
+      {/* Столы — второй запрос со своими состояниями: раньше его отказ
+          выглядел как «столов пока нет». */}
+      {ready(guestsQ) && <AsyncState q={tablesQ} />}
       <div className="px-5 mt-3">
         <div className="card-s px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0">{t('Без стола:')}</span>
           {unseated.map(g => (
             <button key={g.id} onClick={() => setSelected(s => s === g.id ? null : g.id)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)]')}>{g.name}</button>
           ))}
-          {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
+          {/* «все рассажены» и «гостей пока нет» — только по пришедшему списку. */}
+          {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{!ready(guestsQ) ? '—' : attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
         </div>
       </div>
       {err && <p className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
@@ -482,7 +489,7 @@ export function Seating() {
             </div>
           </div>
         ))}
-        {!tables.length && <p className="col-span-2 text-[12px] text-[var(--soft)] text-center py-4">{t('Столов пока нет — добавьте первый')}</p>}
+        {!tables.length && ready(tablesQ) && <p className="col-span-2 text-[12px] text-[var(--soft)] text-center py-4">{t('Столов пока нет — добавьте первый')}</p>}
       </div>
       <div className="px-5 mt-4 space-y-3">
         <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
@@ -515,7 +522,10 @@ export function InviteEditor() {
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const [dress, setDress] = useState<string | null>(null)
   const [dressNote, setDressNote] = useState<string | null>(null)
-  const dressId = dress ?? wq.data?.dressCode ?? 'd1'
+  /* Палитра по умолчанию подставляется, только когда свадьба пришла и палитры
+     у неё нет. До ответа галочка на «d1» выдавала бы за выбор пары то, чего
+     сервер не говорил. */
+  const dressId = dress ?? (ready(wq) ? (wq.data?.dressCode ?? 'd1') : null)
   const dressText = dressNote ?? wq.data?.dressNote ?? ''
   const [saved, setSaved] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -537,7 +547,7 @@ export function InviteEditor() {
   /* Текст и тему сохраняем на сервере: гость открывает приглашение со своего
      устройства, и в localStorage пары заглянуть не может. */
   const saveDesign = () => void run('design', async () => {
-    await saveInviteDesign(weddingId!, inviteText, theme, dressId, dressText)
+    await saveInviteDesign(weddingId!, inviteText, theme, dressId ?? 'd1', dressText)
     wq.reload()
     setSaved(true)
   })
@@ -564,6 +574,9 @@ export function InviteEditor() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Приглашения')} sub={t('10 сценариев · ссылка · RSVP')} />
+      {/* Свадьба — свой запрос: название, город и дресс-код в превью
+          приходят из него, и отказ на нём надо показать, а не молчать. */}
+      <AsyncState q={wq} />
       <div className="px-5 mt-3">
         {/* Превью сценария */}
         <div className="card p-6 text-center relative overflow-hidden">

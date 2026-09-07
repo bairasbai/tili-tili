@@ -48,6 +48,9 @@ export function Us() {
             ))}
           </div>
           <b className="font-serif-d text-[20px] block mt-3">{wedding?.title ?? t('Ваша свадьба')}</b>
+          {/* Отказ на своей свадьбе раньше не показывался: карточка молча
+              стояла с «Ваша свадьба» вместо названия. */}
+          {wq.error && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-1 leading-relaxed">{wq.error}</p>}
           <button onClick={() => setDatePicker(true)} className="press text-[11.5px] text-[var(--soft)] mt-1 underline decoration-dotted underline-offset-4">
             {[weddingDate ? formatWeddingDate(weddingDate) : t('Выбрать дату свадьбы'), wedding?.city?.name].filter(Boolean).join(' · ')}
           </button>
