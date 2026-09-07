@@ -13,6 +13,7 @@ import {
   getVendorProfile,
   getVendorReviews,
   getVendorUpdates,
+  getVerificationStatus,
   publishVendorProfile,
   getVendorDeals,
   saveVendorProfile,
@@ -628,6 +629,26 @@ const DEAL_ICON: Record<string, string> = {
   cancelled: '×',
 }
 
+/**
+ * Нет анкеты — нет и заявки.
+ *
+ * `GET /vendor/verification` отвечает 403 подрядчику без анкеты, как и все
+ * пути кабинета. Для экрана это «заявок не подавали», а не поломка: 404 —
+ * то же самое. Остальные ошибки летят дальше и показываются как ошибки.
+ */
+const noRequest = (e: unknown) => {
+  if (e instanceof ApiError && (e.status === 403 || e.status === 404)) return null
+  throw e
+}
+
+/** Дата с сервера словами. Пусто — значит сервер её не прислал, и выдумывать нечего. */
+function fmtRequestDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(d)
+}
+
 /*
  * Верификация.
  *
@@ -635,20 +656,32 @@ const DEAL_ICON: Record<string, string> = {
  * документов нельзя. Сами файлы кладутся в объектное хранилище, которого пока
  * нет: сервер отвечает `storage_not_configured`. Экран говорит это словами и
  * показывает, что именно понадобится, — вместо кнопки, которая молча падает.
+ *
+ * Подавший документы раньше видел ровно то же, что и не подававший: галочки
+ * нет — и гадай, дошло ли. Теперь состояние заявки приходит с сервера и
+ * называется словами. Пока ответа нет, никакого статуса на экране не
+ * появляется: «заявок нет» без ответа — такая же выдумка, как ноль (R-178).
  */
 export function VendorVerification() {
+  const nav = useNavigate()
   const q = useApi(() => getVendorProfile().catch(noProfile), [])
+  const st = useApi(() => getVerificationStatus().catch(noRequest), [])
   const [kind, setKind] = useState<'passport' | 'ip' | 'company'>('passport')
-  const verified = q.data?.verified
+  /* Статус читаем только из ответа: пока его нет, `status` — undefined, и ни
+     одна из веток ниже не срабатывает. */
+  const status = st.data?.status
+  /* Галочка и одобренная заявка — одно и то же состояние с двух сторон:
+     галочку могли поставить и решением по анкете, без заявки. */
+  const proven = q.data?.verified === true || status === 'approved'
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Верификация')} sub={verified ? t('пройдена') : t('галочка «Проверен» в каталоге')} />
+      <TopBar back title={t('Верификация')} sub={proven ? t('пройдена') : t('галочка «Проверен» в каталоге')} />
       <AsyncState q={q} />
       {/* Пока анкета не пришла, «пройти верификацию» не предлагаем: без ответа
           «не проверен» — догадка. */}
       {ready(q) && <div className="px-5 mt-3 space-y-3">
-        {verified ? (
+        {proven ? (
           <div className="card p-5 text-center">
             <span className="text-[28px]">✓</span>
             <p className="text-[13.5px] font-semibold mt-2">{t('Вы проверены')}</p>
@@ -656,33 +689,54 @@ export function VendorVerification() {
           </div>
         ) : (
           <>
+            {/* Отказ — первым: подрядчик пришёл узнать, что с документами, а
+                не читать, зачем нужна галочка. Причина живёт в уведомлении:
+                у заявки своего поля причины нет. */}
+            {status === 'rejected' && (
+              <div className="card p-4">
+                <p className="text-[13px] font-semibold text-[var(--rose-ink)]">{t('Документы не подтверждены')} {fmtRequestDate(st.data?.checkedAt)}</p>
+                <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-1.5">{t('Причина — в уведомлениях.')}</p>
+                <button onClick={() => nav('/notifications')} className="press w-full h-[44px] rounded-full card-s text-[12.5px] font-semibold mt-3">{t('Открыть уведомления')}</button>
+              </div>
+            )}
             <div className="card p-4">
               <p className="text-[12px] text-[var(--soft)] leading-relaxed">
                 {t('Проверенные подрядчики получают больше заявок: пара видит, что за анкетой стоит живой человек с документами. Документы уходят только модератору и не публикуются никогда.')}
               </p>
             </div>
-            <div className="card p-4">
-              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Кто вы')}</span>
-              <div className="flex gap-2 mt-2">
-                {([['passport', t('Физлицо')], ['ip', t('ИП')], ['company', t('Компания')]] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => setKind(id)} className={cn('press flex-1 h-10 rounded-full text-[12px] font-semibold', kind === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{label}</button>
-                ))}
+            {status === 'pending' ? (
+              /* Заявка уже в очереди: выбирать вид документа и читать, что
+                 понадобится, поздно — понадобилось и ушло. */
+              <div className="card p-4">
+                <p className="text-[13px] font-semibold">{t('Заявка на проверке с')} {fmtRequestDate(st.data?.submittedAt)}</p>
+                <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-1.5">{t('Решение придёт уведомлением. Документы уходят только модератору и не публикуются никогда.')}</p>
               </div>
+            ) : (
+              <>
+                <div className="card p-4">
+                  <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Кто вы')}</span>
+                  <div className="flex gap-2 mt-2">
+                    {([['passport', t('Физлицо')], ['ip', t('ИП')], ['company', t('Компания')]] as const).map(([id, label]) => (
+                      <button key={id} onClick={() => setKind(id)} className={cn('press flex-1 h-10 rounded-full text-[12px] font-semibold', kind === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{label}</button>
+                    ))}
+                  </div>
 
-            </div>
-            <div className="card p-4">
-              <p className="text-[13px] font-semibold">{t('Загрузка документов пока не подключена')}</p>
-              <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
-                {kind === 'passport'
-                  ? t('Понадобится разворот паспорта. Файл уйдёт в защищённое хранилище, как только оно будет подключено.')
-                  : t('Понадобится выписка из ЕГРЮЛ или ЕГРИП. Файл уйдёт в защищённое хранилище, как только оно будет подключено.')}
-              </p>
-              {/* Кнопки отправки здесь нет намеренно. Без файла запрос отвечает
-                  «не прошёл проверку» — это правда про формат, но ложь про
-                  причину: документ отправить некуда, пока нет хранилища.
-                  Кнопка, у которой один исход — ошибка, хуже её отсутствия. */}
-              <p className="text-[11px] text-[var(--soft2)] mt-3">{t('Отправка появится вместе с хранилищем — тогда же, когда заработает загрузка портфолио.')}</p>
-            </div>
+                </div>
+                <div className="card p-4">
+                  <p className="text-[13px] font-semibold">{t('Загрузка документов пока не подключена')}</p>
+                  <p className="text-[11px] text-[var(--soft)] leading-relaxed mt-1">
+                    {kind === 'passport'
+                      ? t('Понадобится разворот паспорта. Файл уйдёт в защищённое хранилище, как только оно будет подключено.')
+                      : t('Понадобится выписка из ЕГРЮЛ или ЕГРИП. Файл уйдёт в защищённое хранилище, как только оно будет подключено.')}
+                  </p>
+                  {/* Кнопки отправки здесь нет намеренно. Без файла запрос отвечает
+                      «не прошёл проверку» — это правда про формат, но ложь про
+                      причину: документ отправить некуда, пока нет хранилища.
+                      Кнопка, у которой один исход — ошибка, хуже её отсутствия. */}
+                  <p className="text-[11px] text-[var(--soft2)] mt-3">{t('Отправка появится вместе с хранилищем — тогда же, когда заработает загрузка портфолио.')}</p>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>}

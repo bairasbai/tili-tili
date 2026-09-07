@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.26.0).
- * Операций: 153. Путей: 117. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.27.0).
+ * Операций: 157. Путей: 119. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -22,6 +22,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/metrics","url":"/admin/metrics","operationId":null,"summary":"Дашборд платформы","tag":"admin"},
   {"method":"GET","openapi":"/admin/moderation/vendors","url":"/admin/moderation/vendors","operationId":null,"summary":"Очередь пост-модерации анкет","tag":"admin"},
   {"method":"POST","openapi":"/admin/moderation/vendors/{vendorId}","url":"/admin/moderation/vendors/:vendorId","operationId":null,"summary":"Решение по анкете","tag":"admin"},
+  {"method":"GET","openapi":"/admin/verifications","url":"/admin/verifications","operationId":null,"summary":"Очередь заявок на верификацию","tag":"admin"},
+  {"method":"GET","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Карточка заявки на верификацию","tag":"admin"},
+  {"method":"POST","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Решение по заявке на верификацию","tag":"admin"},
   {"method":"GET","openapi":"/admin/weddings/{weddingId}","url":"/admin/weddings/:weddingId","operationId":null,"summary":"Просмотр проекта поддержкой","tag":"admin"},
   {"method":"GET","openapi":"/auth/oauth/{provider}","url":"/auth/oauth/:provider","operationId":null,"summary":"OAuth-вход (VK, Yandex, Google, Telegram)","tag":"auth"},
   {"method":"POST","openapi":"/auth/otp","url":"/auth/otp","operationId":null,"summary":"Запросить код из SMS","tag":"auth"},
@@ -105,6 +108,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/vendor/reviews/{reviewId}/reply","url":"/vendor/reviews/:reviewId/reply","operationId":null,"summary":"Ответить на отзыв","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/updates","url":"/vendor/updates","operationId":null,"summary":"Обновления от пар","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/updates/{updateId}/ack","url":"/vendor/updates/:updateId/ack","operationId":null,"summary":"Подтвердить получение обновления","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Состояние моей заявки на верификацию","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Подать документы на верификацию","tag":"vendor"},
   {"method":"GET","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Мои свадьбы","tag":"weddings"},
   {"method":"POST","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Создать свадьбу (после квиза)","tag":"weddings"},

@@ -7,17 +7,17 @@
 
 ## Фаза 1 — подготовка (контракт)
 
-- [ ] T001 Контракт v0.27.0 — **сделано в T001/T002 фичи 002** (одна правка и один прогон генераторов на три фичи, сверка X01):
+- [x] T001 Контракт v0.27.0 — **сделано в T001/T002 фичи 002** (одна правка и один прогон генераторов на три фичи, сверка X01):
       `AdminCategories.version`, `version?` в теле `PUT /admin/categories`, `CategoriesUpdated.version`, `409 Conflict` у `PUT`.
       Начинать эту фичу — после коммита фазы 1 фичи 002.
 
 ## Фаза 2 — US1 Сохранение поверх чужой правки отклоняется (P1) 🎯 MVP
 
-- [ ] T002 [US1] `backend/src/routes/admin.ts`: `categoriesVersion(client)` (sha256 каноничного JSON, 16 hex; порядок по `id`/`word`);
+- [x] T002 [US1] `backend/src/routes/admin.ts`: `categoriesVersion(client)` (sha256 каноничного JSON, 16 hex; порядок по `id`/`word`);
       `GET` отдаёт `version` из той же транзакции; `PUT`: `version: { type: 'string', maxLength: 64 }` в схему тела обработчика
       (`additionalProperties: false` — без этого 422; сверка K01), `select pg_advisory_xact_lock(4210001)` первым запросом
       транзакции, сравнение с `body.version` при наличии → 409 `categories_stale`, ничего не меняется; ответ с новой `version`.
-- [ ] T003 [US1] `backend/test/audit27.test.ts`: `GET` даёт версию; `PUT` с той же версией → 200 и новая версия ≠ старой (если
+- [x] T003 [US1] `backend/test/audit27.test.ts`: `GET` даёт версию; `PUT` с той же версией → 200 и новая версия ≠ старой (если
       содержимое изменилось); `PUT` с устаревшей → 409 `categories_stale`, содержимое и `audit_log` без изменений; `PUT` без
       версии → 200; правка напрямую в базе меняет версию `GET`; сохранение без изменений содержимого возвращает ту же версию.
       Красные без фикса. Плюс правка `backend/test/audit23.test.ts:331` и `:658` — строгие `toEqual` ответа `PUT` под новое поле

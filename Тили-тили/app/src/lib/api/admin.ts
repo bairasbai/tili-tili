@@ -4,7 +4,7 @@ import type { components } from './schema'
 /*
  * Панель сотрудника платформы (План §19.10).
  *
- * Восемь операций контракта и ни одного локального типа: всё, что здесь
+ * Одиннадцать операций контракта и ни одного локального типа: всё, что здесь
  * описано, выведено из `schema.ts`. Своя копия схемы разъезжается с сервером
  * молча — экран продолжает собираться, а поля в ответе уже другие.
  *
@@ -13,6 +13,8 @@ import type { components } from './schema'
  */
 
 export type AdminMetrics = components['schemas']['AdminMetrics']
+export type VerificationItem = components['schemas']['VerificationItem']
+export type VerificationRequest = components['schemas']['VerificationRequest']
 export type ModerationVendor = components['schemas']['ModerationVendor']
 export type ModerationVendorPage = components['schemas']['ModerationVendorPage']
 export type Complaint = components['schemas']['Complaint']
@@ -51,6 +53,39 @@ export const getModerationQueue = (cursor?: string | null) =>
  */
 export const decideVendor = (vendorId: string, action: 'approve' | 'reject' | 'verify', reason?: string) =>
   api.post(url('/admin/moderation/vendors/{vendorId}', { vendorId }), {
+    action,
+    ...(reason ? { reason } : {}),
+  })
+
+/* ── очередь заявок на верификацию ── */
+
+/**
+ * Заявки на проверку документов, старейшие сверху.
+ *
+ * Ни ссылки на документ, ни ИНН в списке нет — их отдаёт только карточка, и
+ * только с записью в журнал. Список знает лишь `hasFile`: есть ли что открывать.
+ */
+export const getVerifications = (cursor?: string | null) =>
+  api.get(`/admin/verifications?${pageQuery(cursor)}` as '/admin/verifications')
+
+/**
+ * Карточка заявки.
+ *
+ * Каждый такой запрос сервер пишет в журнал действий (`verification.view`):
+ * открытие документов должно быть проверяемым, а не просто возможным.
+ */
+export const getVerification = (requestId: string) =>
+  api.get(url('/admin/verifications/{requestId}', { requestId }))
+
+/**
+ * Решение по заявке.
+ *
+ * `approve` здесь — «документы сверены», а не «анкета проверена»: это разные
+ * решения и разные пути. `reject` без непустой причины сервер не принимает
+ * (422): отказ без объяснения подрядчику нечем исправить.
+ */
+export const decideVerification = (requestId: string, action: 'approve' | 'reject', reason?: string) =>
+  api.post(url('/admin/verifications/{requestId}', { requestId }), {
     action,
     ...(reason ? { reason } : {}),
   })

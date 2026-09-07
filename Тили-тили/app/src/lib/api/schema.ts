@@ -5972,9 +5972,18 @@ export interface paths {
         /**
          * Отменить свадьбу
          * @description Требует подтверждения ОБОИХ партнёров: первый вызов создаёт запрос,
-         *     второй — исполняет. Всем сделкам в booked и paid_deposit ставится
-         *     cancelled_by_couple, подрядчики уведомляются, проект уходит в архив на
-         *     12 месяцев (План §19.1).
+         *     второй — исполняет (План §19.1).
+         *
+         *     Отменяются сделки в состояниях `booked` и `paid_deposit`: им ставится
+         *     `cancelled_by_couple`, и подрядчики уведомляются. Сделки `done`
+         *     остаются как были — работа уже сделана, и отменять в ней нечего.
+         *     Даты подрядчиков и слоты свадьбы освобождаются только по отменённым
+         *     сделкам: занятость по `done` — это состоявшийся день, а не бронь.
+         *
+         *     Проект уходит в архив на `WEDDING_ARCHIVE_DAYS` дней (по умолчанию
+         *     365, меньше 30 не бывает), после чего уборка удаляет его со всем
+         *     содержимым. Отзывы, оставленные подрядчикам, остаются: они про
+         *     подрядчика, а не про свадьбу.
          */
         post: {
             parameters: {
@@ -5992,8 +6001,12 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["CancelResult"];
+                    };
                 };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
             };
         };
         delete?: never;
@@ -6105,7 +6118,41 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Состояние моей заявки на верификацию
+         * @description Последняя заявка подрядчика: подана ли, разобрана ли и когда. Без
+         *     этого пути подрядчик видит только наличие или отсутствие галочки и
+         *     гадает, дошли ли документы (План §18.2).
+         *
+         *     Ни ссылки на документ, ни ИНН в ответе нет — они свои, но экрану не
+         *     нужны, а на устройстве им не место. Причина отказа приходит
+         *     уведомлением: у заявки своего поля причины нет.
+         *
+         *     Заявок не было — `status: none`. Анкеты нет вовсе — 403, как и на
+         *     остальных путях кабинета: кабинет открыт подрядчику с анкетой.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VerificationStatus"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         put?: never;
         /**
          * Подать документы на верификацию
@@ -6210,6 +6257,12 @@ export interface paths {
          *     `verify` — документы сверены вне приложения, в каталоге появляется галочка «Проверен».
          *     О решении подрядчик узнаёт уведомлением, причина уходит ему вместе с ним.
          *
+         *     Заявку на верификацию закрывает только `verify`: он переводит незакрытые
+         *     заявки подрядчика в `approved`. `reject` анкету снимает с публикации, а
+         *     заявку НЕ трогает — документы и публикация разные решения, и снятая
+         *     анкета не повод потерять заявку из очереди верификации. Решение по
+         *     документам принимается в `POST /admin/verifications/{requestId}`.
+         *
          *     Решение принимается только по живой анкете — опубликованной и не заблокированной
          *     по жалобе. Иначе 409 `vendor_not_live`: у снятой анкеты одобрять нечего, а
          *     заблокированную модерация не возвращает — это решение принимают в разделе жалоб.
@@ -6243,6 +6296,164 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["VendorDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Очередь заявок на верификацию
+         * @description Заявки на проверку документов, старейшие сверху: срок разбора считается
+         *     от подачи. Только неразобранные (`pending`) и только от живых
+         *     пользователей — заявка ушедшего разбору не подлежит.
+         *
+         *     Ни ссылки на документ, ни ИНН в списке нет: документы уходят одному
+         *     сотруднику в карточке заявки, а не раздаются страницами. В списке
+         *     только `hasFile` — есть ли что открывать.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    cursor?: components["parameters"]["Cursor"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VerificationPage"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/verifications/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Карточка заявки на верификацию
+         * @description Вид документа, ИНН и ссылка на сам документ — единственное место, где
+         *     они выходят наружу, и только сотруднику. Ссылка ведёт в хранилище и
+         *     открывается отдельно от приложения.
+         *
+         *     Каждое чтение пишется в журнал действий (`verification.view`): кто,
+         *     когда и какую заявку открыл. Запись делается ДО ответа — просмотр,
+         *     оборвавшийся на отдаче, иначе остался бы незамеченным.
+         *
+         *     `vendorPublished` говорит, есть ли анкета в каталоге сейчас. На решение
+         *     по документам это не влияет: галочка появится вместе с анкетой.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VerificationRequest"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Решение по заявке на верификацию
+         * @description `approve` — «документы сверены»: заявка закрывается, и в каталоге
+         *     появляется галочка «Проверен». Это НЕ то же, что `approve` анкеты в
+         *     модерации: там решение «анкета проверена и остаётся в каталоге», здесь —
+         *     про документы. Галочка ставится сразу, в том числе по неопубликованной
+         *     анкете: документы от публикации не зависят, а в каталоге галочка
+         *     покажется вместе с анкетой.
+         *
+         *     `reject` — «документы не подтверждены»: заявка закрывается без галочки,
+         *     а анкета остаётся ровно такой, какой была. Снятие с публикации — другое
+         *     решение и другой путь. Причина обязательна: без непустой `reason`
+         *     сервер отвечает 422 с полем `reason` — отказ без объяснения подрядчику
+         *     нечем исправить. Причина уходит ему уведомлением и остаётся в журнале.
+         *
+         *     Заявка уже разобрана — 409 `verification_not_pending`: второй сотрудник
+         *     должен увидеть, что опоздал, а подрядчик не должен получить вторую
+         *     новость об одном и том же.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        action: "approve" | "reject";
+                        /** @description Причина решения. Обязательна при `reject`: подрядчик читает её в уведомлении. */
+                        reason?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VerificationDecision"];
                     };
                 };
                 401: components["responses"]["Unauthorized"];
@@ -6411,6 +6622,11 @@ export interface paths {
          *     `null` или пропущенный оставляет прежний значок. Словарь `synonyms` заменяется ЦЕЛИКОМ —
          *     чего не прислали, того больше нет. Слово, ведущее на неизвестную категорию, —
          *     422 с полем `synonyms.<слово>`, и не меняется ничего.
+         *
+         *     `version` — та версия справочника, с которой сотрудник начал правку.
+         *     Не совпала с текущей — 409 `categories_stale`, и не меняется НИЧЕГО:
+         *     словарь заменяется целиком, и сохранение поверх чужой правки стёрло бы
+         *     строки, которых сотрудник не видел. Поля нет — проверки нет.
          */
         put: {
             parameters: {
@@ -6427,6 +6643,12 @@ export interface paths {
                         synonyms?: {
                             [key: string]: string;
                         };
+                        /**
+                         * @description Версия справочника, с которой начата правка (из `GET /admin/categories`).
+                         *     Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
+                         *     идёт без проверки.
+                         */
+                        version?: string;
                     };
                 };
             };
@@ -6442,6 +6664,7 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
             };
         };
@@ -6652,6 +6875,22 @@ export interface components {
             /** @description идентификатор палитры — гость видит её в приглашении */
             dressCode?: string | null;
             dressNote?: string | null;
+        };
+        /**
+         * @description Чем кончился вызов отмены. Отмена свадьбы — решение обоих партнёров,
+         *     поэтому первый вызов только просит подтверждения, и ответ обязан
+         *     различать эти два случая: экран показывает разное.
+         */
+        CancelResult: {
+            /**
+             * @description `confirmation_required` — ждём второго партнёра; `cancelled` — свадьба отменена
+             * @enum {string}
+             */
+            state?: "confirmation_required" | "cancelled";
+            /** @description кто попросил отмену — есть при `confirmation_required` */
+            requestedBy?: string;
+            /** @description сколько сделок отменено — есть при `cancelled`; `done` в это число не входят */
+            cancelledDeals?: number;
         };
         /** @description Член свадьбы — тот, у кого есть аккаунт и доступ в приложение. Гость (guest) и свой подрядчик (guest-vendor) членами НЕ являются: они опознаются токеном по ссылке, аккаунта не имеют и в members не попадают. Матрица доступа (§4 плана) описывает все шесть ролей, эта схема — только четыре с аккаунтом. */
         Member: {
@@ -7286,11 +7525,21 @@ export interface components {
             synonyms?: {
                 [key: string]: string;
             };
+            /**
+             * @description Отпечаток содержимого справочника — шестнадцать шестнадцатеричных знаков.
+             *     Меняется от ЛЮБОЙ правки категорий или словаря, в том числе сделанной
+             *     мимо панели: он считается по самим строкам, а не по времени сохранения.
+             *     Возвращается в теле PUT, чтобы сохранение не затёрло чужую правку.
+             * @example 9f2c1ab340de77b5
+             */
+            version?: string;
         };
         /** @description Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру. */
         CategoriesUpdated: {
             categories?: number;
             synonyms?: number;
+            /** @description Версия справочника после сохранения — с ней продолжают правку, не перечитывая. */
+            version?: string;
         };
         ModerationVendor: components["schemas"]["Vendor"] & {
             /**
@@ -7323,6 +7572,87 @@ export interface components {
             action?: "dismiss" | "warn" | "downrank" | "block";
         };
         /**
+         * @description Заявка в очереди. Ни ссылки на документ, ни ИНН здесь нет — только
+         *     признак `hasFile`: документы отдаются в карточке одному сотруднику
+         *     и с записью в журнал, а не страницами всем подряд.
+         */
+        VerificationItem: {
+            id?: string;
+            vendorId?: string;
+            vendorName?: string;
+            /**
+             * @description что прислали: паспорт, документы ИП или документы компании
+             * @enum {string}
+             */
+            kind?: "passport" | "ip" | "company";
+            /** @description приложена ли ссылка на документ */
+            hasFile?: boolean;
+            /**
+             * Format: date-time
+             * @description когда подана
+             */
+            createdAt?: string;
+        };
+        VerificationPage: {
+            items?: components["schemas"]["VerificationItem"][];
+            nextCursor?: string | null;
+        };
+        /**
+         * @description Карточка заявки: то, по чему принимается решение. Единственный ответ,
+         *     где ссылка на документ и ИНН выходят наружу, — и только сотруднику.
+         */
+        VerificationRequest: {
+            id?: string;
+            vendorId?: string;
+            vendorName?: string;
+            /**
+             * @description Есть ли анкета в каталоге сейчас (опубликована и не заблокирована).
+             *     Решение по документам этим не задерживается — признак нужен, чтобы
+             *     карточка не вела на анкету, которой в каталоге нет.
+             */
+            vendorPublished?: boolean;
+            /** @enum {string} */
+            kind?: "passport" | "ip" | "company";
+            /** @description Ссылка на документ во внешнем хранилище. Пусто — документ не приложен. */
+            fileUrl?: string | null;
+            inn?: string | null;
+            /** @enum {string} */
+            status?: "pending" | "approved" | "rejected";
+            /** Format: date-time */
+            createdAt?: string;
+            /**
+             * Format: date-time
+             * @description когда разобрана
+             */
+            checkedAt?: string | null;
+        };
+        /** @description Что записано по заявке. Ответ подтверждает решение, а не состояние подрядчика целиком. */
+        VerificationDecision: {
+            requestId?: string;
+            /** @enum {string} */
+            action?: "approve" | "reject";
+        };
+        /**
+         * @description Состояние последней заявки подрядчика. `none` — заявок не было.
+         *     Причины отказа здесь нет: она приходит уведомлением.
+         */
+        VerificationStatus: {
+            /** @enum {string} */
+            status?: "none" | "pending" | "approved" | "rejected";
+            /** @enum {string|null} */
+            kind?: "passport" | "ip" | "company" | null;
+            /**
+             * Format: date-time
+             * @description когда подана
+             */
+            submittedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description когда разобрана
+             */
+            checkedAt?: string | null;
+        };
+        /**
          * @description Показатели платформы на сейчас. Каждое число считается сервером —
          *     клиент их не складывает и не досчитывает, иначе на двух экранах
          *     получились бы два разных ответа.
@@ -7336,6 +7666,12 @@ export interface components {
             vendorsPublished?: number;
             /** @description анкеты, ждущие проверки */
             moderationQueue?: number;
+            /**
+             * @description Заявки на верификацию, ждущие решения. Считается тем же условием,
+             *     что и очередь `GET /admin/verifications`: число на дашборде и длина
+             *     очереди — одно и то же, иначе панель обещает работу, которой нет.
+             */
+            verificationQueue?: number;
             /** @description нерассмотренные жалобы */
             complaintsOpen?: number;
             /**

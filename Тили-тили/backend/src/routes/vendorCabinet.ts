@@ -384,6 +384,42 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── верификация ──────────────────────────────────────────────────── */
+  /**
+   * Что стало с моими документами.
+   *
+   * Без этого пути подрядчик видит только наличие или отсутствие галочки:
+   * «дошло ли» и «отклонили ли» неотличимы от «ещё не смотрели» (FR-007).
+   *
+   * Ни `file_url`, ни `inn` не выбираются: они свои, но экрану не нужны,
+   * а лишний ответ с документом — это документ, осевший в кэше устройства.
+   * Причина отказа приходит уведомлением: своего поля у заявки нет (A3).
+   */
+  app.get('/vendor/verification', { preHandler: app.requireConsent }, async (request) => {
+    const vendorId = await myVendorId(request.caller!.userId)
+    // Последняя заявка, а не первая незакрытая: экран показывает состояние
+    // дел на сейчас, а после отказа подрядчик подаёт документы заново.
+    const { rows } = await db().query<{
+      kind: string
+      status: string
+      created_at: Date
+      checked_at: Date | null
+    }>(
+      `select kind, status, created_at, checked_at from vendor_verifications
+        where vendor_id = $1 order by created_at desc, id desc limit 1`,
+      [vendorId],
+    )
+    const last = rows[0]
+    // Заявок не было — это `none`, а не пустой объект: экран различает
+    // «не подавал» и «подал, ждём».
+    if (!last) return { status: 'none', kind: null, submittedAt: null, checkedAt: null }
+    return {
+      status: last.status,
+      kind: last.kind,
+      submittedAt: last.created_at.toISOString(),
+      checkedAt: last.checked_at?.toISOString() ?? null,
+    }
+  })
+
   app.post(
     '/vendor/verification',
     {

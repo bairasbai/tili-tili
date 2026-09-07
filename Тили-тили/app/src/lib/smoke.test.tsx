@@ -16,7 +16,9 @@ const ROUTES = [
   '/favorites', '/notes', '/inspiration', '/venues',
   '/vendor-app', '/vendor-app/profile', '/vendor-app/deals',
   '/vendor-app/leads/l1', '/vendor-app/reviews', '/vendor-app/analytics',
-  '/admin', '/admin/moderation', '/admin/moderation/v1', '/admin/complaints', '/admin/categories', '/admin/wedding',
+  '/admin', '/admin/moderation', '/admin/moderation/v1',
+  '/admin/verifications', '/admin/verifications/r1',
+  '/admin/complaints', '/admin/categories', '/admin/wedding',
   '/totally-unknown-route',
 ]
 

@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 49. */
+ * Схем: 55. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -25,6 +25,11 @@ export const CONTRACT_SCHEMAS = {
                   "additionalProperties": {
                       "type": "string"
                   }
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Отпечаток содержимого справочника — шестнадцать шестнадцатеричных знаков.\nМеняется от ЛЮБОЙ правки категорий или словаря, в том числе сделанной\nмимо панели: он считается по самим строкам, а не по времени сохранения.\nВозвращается в теле PUT, чтобы сохранение не затёрло чужую правку.\n"
               }
           }
       },
@@ -79,6 +84,10 @@ export const CONTRACT_SCHEMAS = {
               "moderationQueue": {
                   "type": "integer",
                   "description": "анкеты, ждущие проверки"
+              },
+              "verificationQueue": {
+                  "type": "integer",
+                  "description": "Заявки на верификацию, ждущие решения. Считается тем же условием,\nчто и очередь `GET /admin/verifications`: число на дашборде и длина\nочереди — одно и то же, иначе панель обещает работу, которой нет.\n"
               },
               "complaintsOpen": {
                   "type": "integer",
@@ -259,6 +268,28 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "CancelResult": {
+          "type": "object",
+          "description": "Чем кончился вызов отмены. Отмена свадьбы — решение обоих партнёров,\nпоэтому первый вызов только просит подтверждения, и ответ обязан\nразличать эти два случая: экран показывает разное.\n",
+          "properties": {
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "confirmation_required",
+                      "cancelled"
+                  ],
+                  "description": "`confirmation_required` — ждём второго партнёра; `cancelled` — свадьба отменена"
+              },
+              "requestedBy": {
+                  "type": "string",
+                  "description": "кто попросил отмену — есть при `confirmation_required`"
+              },
+              "cancelledDeals": {
+                  "type": "integer",
+                  "description": "сколько сделок отменено — есть при `cancelled`; `done` в это число не входят"
+              }
+          }
+      },
       "CategoriesUpdated": {
           "type": "object",
           "description": "Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру.",
@@ -268,6 +299,11 @@ export const CONTRACT_SCHEMAS = {
               },
               "synonyms": {
                   "type": "integer"
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Версия справочника после сохранения — с ней продолжают правку, не перечитывая."
               }
           }
       },
@@ -1693,6 +1729,174 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VerificationDecision": {
+          "type": "object",
+          "description": "Что записано по заявке. Ответ подтверждает решение, а не состояние подрядчика целиком.",
+          "properties": {
+              "requestId": {
+                  "type": "string"
+              },
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "approve",
+                      "reject"
+                  ]
+              }
+          }
+      },
+      "VerificationItem": {
+          "type": "object",
+          "description": "Заявка в очереди. Ни ссылки на документ, ни ИНН здесь нет — только\nпризнак `hasFile`: документы отдаются в карточке одному сотруднику\nи с записью в журнал, а не страницами всем подряд.\n",
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "vendorId": {
+                  "type": "string"
+              },
+              "vendorName": {
+                  "type": "string"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "passport",
+                      "ip",
+                      "company"
+                  ],
+                  "description": "что прислали: паспорт, документы ИП или документы компании"
+              },
+              "hasFile": {
+                  "type": "boolean",
+                  "description": "приложена ли ссылка на документ"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "когда подана"
+              }
+          }
+      },
+      "VerificationPage": {
+          "type": "object",
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/VerificationItem"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "VerificationRequest": {
+          "type": "object",
+          "description": "Карточка заявки: то, по чему принимается решение. Единственный ответ,\nгде ссылка на документ и ИНН выходят наружу, — и только сотруднику.\n",
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "vendorId": {
+                  "type": "string"
+              },
+              "vendorName": {
+                  "type": "string"
+              },
+              "vendorPublished": {
+                  "type": "boolean",
+                  "description": "Есть ли анкета в каталоге сейчас (опубликована и не заблокирована).\nРешение по документам этим не задерживается — признак нужен, чтобы\nкарточка не вела на анкету, которой в каталоге нет.\n"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "passport",
+                      "ip",
+                      "company"
+                  ]
+              },
+              "fileUrl": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Ссылка на документ во внешнем хранилище. Пусто — документ не приложен."
+              },
+              "inn": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "approved",
+                      "rejected"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "checkedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "когда разобрана"
+              }
+          }
+      },
+      "VerificationStatus": {
+          "type": "object",
+          "description": "Состояние последней заявки подрядчика. `none` — заявок не было.\nПричины отказа здесь нет: она приходит уведомлением.\n",
+          "properties": {
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "none",
+                      "pending",
+                      "approved",
+                      "rejected"
+                  ]
+              },
+              "kind": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "passport",
+                      "ip",
+                      "company"
+                  ]
+              },
+              "submittedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "когда подана"
+              },
+              "checkedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "когда разобрана"
+              }
+          }
+      },
       "Wedding": {
           "type": "object",
           "properties": {
@@ -1863,6 +2067,7 @@ export type ContractSchemaName =
   | "Budget"
   | "BudgetItem"
   | "BusRoute"
+  | "CancelResult"
   | "CategoriesUpdated"
   | "Category"
   | "Chat"
@@ -1901,6 +2106,11 @@ export type ContractSchemaName =
   | "VendorDetail"
   | "VendorPage"
   | "VendorUpsert"
+  | "VerificationDecision"
+  | "VerificationItem"
+  | "VerificationPage"
+  | "VerificationRequest"
+  | "VerificationStatus"
   | "Wedding"
   | "WeddingPublic"
   | "WeddingSupportCard"

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
@@ -41,6 +42,22 @@ const MODERATION_QUEUE_FROM = `from vendors v
         where v.moderated_at is null and v.published_at is not null and v.blocked_at is null`
 
 /**
+ * Очередь заявок на верификацию — ОДНО условие на список и на счётчик.
+ *
+ * Та же причина, что и у очереди анкет (R-212): два одинаковых на вид
+ * условия расходятся при первой же правке, и дашборд начинает обещать
+ * работу, которой в очереди нет.
+ *
+ * Публикация анкеты в условие не входит намеренно: документы сверяются
+ * независимо от того, в каталоге анкета или снята. Живой пользователь —
+ * входит: заявку ушедшего разбирать некому и незачем.
+ */
+const VERIFICATION_QUEUE_FROM = `from vendor_verifications r
+         join vendors v on v.id = r.vendor_id
+         join users u on u.id = v.user_id and u.deleted_at is null
+        where r.status = 'pending'`
+
+/**
  * Почему по этой анкете решения нет.
  *
  * Формулировка по случаю: заблокированную по жалобе модерация не возвращает
@@ -81,6 +98,54 @@ const SANCTION_TEXT = {
     body: 'Анкета убрана из каталога.',
   },
 } as const
+
+/**
+ * Ключ advisory-блокировки справочника категорий.
+ *
+ * Константа, а не `hashtext` от строки: ключ такой блокировки глобален на
+ * весь кластер, а кластер здесь один — его делят тесты, dev-сервер и прод.
+ * Вычисляемый ключ пришлось бы искать по логам, чтобы понять, кто с кем
+ * столкнулся; названный — виден и здесь, и в плане фичи 004.
+ *
+ * Advisory-блокировок в проекте до этого не было: инварианты данных держат
+ * `PK`/`UNIQUE`/`CHECK` (§5.11). Здесь блокируется не строка, а решение
+ * «сравнить отпечаток и записать» целиком — иначе два сохранения с одной
+ * версией оба увидели бы её текущей и оба прошли бы.
+ */
+const CATEGORIES_LOCK = 4_210_001
+
+/**
+ * Отпечаток содержимого справочника — версия из FR-001.
+ *
+ * Считается по самим строкам, поэтому меняется от ЛЮБОЙ правки, в том числе
+ * сделанной мимо панели: `updated_at` или счётчик сохранений такую правку
+ * не заметили бы, а сотрудник затёр бы её, не узнав об этом.
+ *
+ * Порядок — по `id` и `word`, а не как в `GET` (`sort, name`): отпечатку
+ * нужна детерминированность, а не порядок показа. Перестановка плиток меняет
+ * `sort`, а значит и отпечаток, — это правка, и её видно.
+ *
+ * Клиент передаётся снаружи: `GET` считает версию тем же клиентом, что читает
+ * данные, а `PUT` — под блокировкой в своей транзакции. Иначе версия была бы
+ * из другого момента, чем то, к чему она относится.
+ */
+async function categoriesVersion(client: Queryable): Promise<string> {
+  const { rows: categories } = await client.query<{
+    id: string
+    name: string
+    icon: string | null
+    sort: number
+  }>('select id, name, icon, sort from categories order by id')
+  const { rows: synonyms } = await client.query<{ word: string; category_id: string }>(
+    'select word, category_id from category_synonyms order by word',
+  )
+  const canonical = JSON.stringify([
+    categories.map((c) => [c.id, c.name, c.icon, c.sort]),
+    synonyms.map((s) => [s.word, s.category_id]),
+  ])
+  // Шестнадцать знаков из шестидесяти четырёх: столько объявляет контракт.
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+}
 
 /**
  * Админка платформы.
@@ -224,15 +289,17 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         const res = await client.query(`update vendors set ${sets} where id = $1`, [vendorId])
         if (res.rowCount === 0) throw notFound('Анкета не найдена')
 
+        /* Заявку на верификацию закрывает только `verify`: документы сверены,
+         * заявке больше нечего ждать.
+         *
+         * `reject` анкеты её НЕ трогает. Раньше трогал — и очередь верификации
+         * теряла заявку при каждом снятии анкеты с публикации: документы никто
+         * не смотрел, а подрядчик получал «отклонено» за фотографии в анкете.
+         * Документы и публикация — разные решения, и принимаются они на разных
+         * путях (фича 002, FR-009). */
         if (body.action === 'verify') {
           await client.query(
             "update vendor_verifications set status = 'approved', checked_at = now() where vendor_id = $1 and status = 'pending'",
-            [vendorId],
-          )
-        }
-        if (body.action === 'reject') {
-          await client.query(
-            "update vendor_verifications set status = 'rejected', checked_at = now() where vendor_id = $1 and status = 'pending'",
             [vendorId],
           )
         }
@@ -265,6 +332,210 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         }
       }
       return { vendorId, action: body.action }
+    },
+  )
+
+  /* ── очередь заявок на верификацию ────────────────────────────────── */
+  app.get('/admin/verifications', { preHandler: app.requireConsent }, async (request) => {
+    await requireStaff(request)
+    const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+    /* Старейшие сверху: срок разбора считается от подачи, как и у жалоб.
+     *
+     * Ни `file_url`, ни `inn` здесь не выбираются. Не «не отдаются в ответе»,
+     * а не выбираются вовсе: список раздавал бы документы страницами, и
+     * обещание «документы уходят только модератору» держалось бы на том,
+     * что кто-то не забыл убрать поле из `map`. */
+    const { rows } = await db().query<{
+      id: string
+      vendor_id: string
+      vendor_name: string
+      kind: string
+      has_file: boolean
+      created_at: Date
+    }>(
+      `select r.id, r.vendor_id, v.name as vendor_name, r.kind, r.created_at,
+              (r.file_url is not null and r.file_url <> '') as has_file
+         ${VERIFICATION_QUEUE_FROM}
+          and ($1::text is null or (r.created_at, r.id) > ($1::timestamptz, $2::uuid))
+        order by r.created_at asc, r.id asc
+        limit $3`,
+      [page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+    )
+    return buildPage(
+      rows.map((r) => ({
+        id: r.id,
+        vendorId: r.vendor_id,
+        vendorName: r.vendor_name,
+        kind: r.kind,
+        hasFile: r.has_file,
+        createdAt: r.created_at.toISOString(),
+      })),
+      page.limit,
+      (v) => encodeCursor(v.createdAt, v.id),
+    )
+  })
+
+  app.get('/admin/verifications/:requestId', { preHandler: app.requireConsent }, async (request) => {
+    const staffId = await requireStaff(request)
+    const { requestId } = request.params as { requestId: string }
+    if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw notFound('Заявка не найдена')
+
+    /* Та же выборка, что у очереди, но по одной заявке и без условия на
+     * состояние: карточка показывает и разобранную — с датой решения.
+     *
+     * `vendorPublished` считается здесь, а не выводится из чего-то на экране:
+     * карточка не должна вести на анкету, которой в каталоге нет. Решение по
+     * документам это не задерживает — галочка покажется вместе с анкетой. */
+    const { rows } = await db().query<{
+      id: string
+      vendor_id: string
+      vendor_name: string
+      vendor_published: boolean
+      kind: string
+      file_url: string | null
+      inn: string | null
+      status: string
+      created_at: Date
+      checked_at: Date | null
+    }>(
+      `select r.id, r.vendor_id, v.name as vendor_name, r.kind, r.file_url, r.inn,
+              r.status, r.created_at, r.checked_at,
+              (v.published_at is not null and v.blocked_at is null) as vendor_published
+         from vendor_verifications r
+         join vendors v on v.id = r.vendor_id
+         join users u on u.id = v.user_id and u.deleted_at is null
+        where r.id = $1`,
+      [requestId],
+    )
+    if (rows.length === 0) throw notFound('Заявка не найдена')
+
+    // Запись в журнал ДО ответа — как у просмотра проекта поддержкой:
+    // просмотр, оборвавшийся на отдаче, иначе остался бы незамеченным.
+    // Документы наружу выходят только здесь, и «кто смотрел» должно
+    // оставаться проверяемым (FR-003).
+    await audit(staffId, 'verification.view', 'verification', requestId, {})
+
+    const r = rows[0]!
+    return {
+      id: r.id,
+      vendorId: r.vendor_id,
+      vendorName: r.vendor_name,
+      vendorPublished: r.vendor_published,
+      kind: r.kind,
+      fileUrl: r.file_url,
+      inn: r.inn,
+      status: r.status,
+      createdAt: r.created_at.toISOString(),
+      checkedAt: r.checked_at?.toISOString() ?? null,
+    }
+  })
+
+  app.post(
+    '/admin/verifications/:requestId',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['action'],
+          additionalProperties: false,
+          properties: {
+            action: { type: 'string', enum: ['approve', 'reject'] },
+            reason: { type: 'string', maxLength: 1000 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const staffId = await requireStaff(request)
+      const { requestId } = request.params as { requestId: string }
+      if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw notFound('Заявка не найдена')
+      const body = request.body as { action: 'approve' | 'reject'; reason?: string }
+
+      /* Отказ без причины подрядчику нечем исправить: в уведомление ушло бы
+       * «Документы не подтверждены» и больше ничего. Схемой это не выразить —
+       * причина обязательна только при `reject`, — а форма ответа та же, что
+       * у отказа схемы: поле `reason` она подсветит сама. */
+      if (body.action === 'reject' && (body.reason ?? '').trim() === '') {
+        throw validationFailed({ reason: 'обязательна при action=reject' })
+      }
+
+      /* Решение, галочка и запись в журнал — одна транзакция (R-122):
+       * закрытая заявка без галочки оставила бы подрядчика проверенным
+       * только на словах. */
+      const decided = await db().tx(async (client) => {
+        // Подрядчик у заявки не меняется никогда, поэтому его можно узнать
+        // до блокировок — а блокировки взять в том же порядке, что и решение
+        // по анкете: сперва анкета, потом заявка. Обратный порядок дал бы
+        // взаимную блокировку с `verify` из очереди модерации.
+        const { rows: found } = await client.query<{ vendor_id: string }>(
+          'select vendor_id from vendor_verifications where id = $1',
+          [requestId],
+        )
+        if (found.length === 0) throw notFound('Заявка не найдена')
+        const vendorId = found[0]!.vendor_id
+
+        const { rows: vendor } = await client.query<{ user_id: string; verified_at: Date | null }>(
+          'select user_id, verified_at from vendors where id = $1 for update',
+          [vendorId],
+        )
+        const owner = vendor[0]!
+
+        /* Состояние заявки — ПОД БЛОКИРОВКОЙ строки и в той же транзакции,
+         * что решение: двое сотрудников, нажавших одновременно, иначе оба
+         * увидели бы `pending`, и подрядчик получил бы две новости об одном. */
+        const { rows: state } = await client.query<{ status: string }>(
+          'select status from vendor_verifications where id = $1 for update',
+          [requestId],
+        )
+        if (state[0]!.status !== 'pending') {
+          throw conflict('verification_not_pending', 'Заявка уже разобрана')
+        }
+
+        await client.query('update vendor_verifications set status = $2, checked_at = now() where id = $1', [
+          requestId,
+          body.action === 'approve' ? 'approved' : 'rejected',
+        ])
+
+        /* Галочка ставится и по неопубликованной анкете: документы от
+         * публикации не зависят. `coalesce` — чтобы дата первой проверки
+         * не переписывалась второй заявкой. */
+        if (body.action === 'approve') {
+          await client.query('update vendors set verified_at = coalesce(verified_at, now()) where id = $1', [vendorId])
+        }
+
+        await audit(staffId, `verification.${body.action}`, 'verification', requestId, {
+          vendorId,
+          reason: body.reason ?? null,
+        }, client)
+
+        return { userId: owner.user_id, wasVerified: owner.verified_at !== null }
+      })
+
+      /* Новость — следствие решения, а не его часть: решение уже записано и
+       * откату не подлежит. 500 из-за упавшего уведомления сказал бы
+       * сотруднику «не принято», и он решил бы второй раз — а заявка к тому
+       * моменту закрыта, и он получил бы 409 на собственное решение (A-14). */
+      const already = body.action === 'approve' && decided.wasVerified
+      if (!already) {
+        try {
+          await notify(db(), {
+            userId: decided.userId,
+            kind: 'system',
+            title: body.action === 'approve' ? 'Вы проверены' : 'Документы не подтверждены',
+            body:
+              body.action === 'approve'
+                ? 'Галочка «Проверен» видна парам в каталоге'
+                : (body.reason ?? 'Документы не подтверждены'),
+            link: '/vendor-app/verification',
+            // Ни то, ни другое не срочно: тихие часы соблюдаются (A6).
+            critical: false,
+          })
+        } catch (err) {
+          request.log.warn({ err, requestId, action: body.action }, 'решение по заявке принято, уведомление не ушло')
+        }
+      }
+      return { requestId, action: body.action }
     },
   )
 
@@ -430,20 +701,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/admin/categories', { preHandler: app.requireConsent }, async (request) => {
     await requireStaff(request)
-    const { rows: categories } = await db().query<{
-      id: string
-      name: string
-      icon: string | null
-      sort: number
-    }>('select id, name, icon, sort from categories order by sort, name')
-    const { rows: synonyms } = await db().query<{ word: string; category_id: string }>(
-      'select word, category_id from category_synonyms order by word',
-    )
-    return {
-      // `name` в базе, `title` в контракте — как в каталоге.
-      categories: categories.map((c) => ({ id: c.id, title: c.name, icon: c.icon, sort: c.sort })),
-      synonyms: Object.fromEntries(synonyms.map((s) => [s.word, s.category_id])),
-    }
+    /* Одна транзакция на данные и версию: справочник и его отпечаток должны
+     * быть из одного момента. Разными запросами из пула панель получила бы
+     * версию от состояния, которого не видела, — и первое же сохранение
+     * упиралось бы в 409 без всякой чужой правки. */
+    return db().tx(async (client) => {
+      const { rows: categories } = await client.query<{
+        id: string
+        name: string
+        icon: string | null
+        sort: number
+      }>('select id, name, icon, sort from categories order by sort, name')
+      const { rows: synonyms } = await client.query<{ word: string; category_id: string }>(
+        'select word, category_id from category_synonyms order by word',
+      )
+      return {
+        // `name` в базе, `title` в контракте — как в каталоге.
+        categories: categories.map((c) => ({ id: c.id, title: c.name, icon: c.icon, sort: c.sort })),
+        synonyms: Object.fromEntries(synonyms.map((s) => [s.word, s.category_id])),
+        version: await categoriesVersion(client),
+      }
+    })
   })
 
   app.put(
@@ -463,6 +741,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
              * видел не NULL — и значок молча СТИРАЛСЯ. */
             categories: { type: 'array', maxItems: 100, items: ref('AdminCategory') },
             synonyms: { type: 'object', additionalProperties: { type: 'string' } },
+            /* Без этого поля в схеме панель получала бы 422 на собственную
+             * версию: `additionalProperties: false` отвергает всё, чего в
+             * схеме нет, — и защита от затирания не доехала бы до кода. */
+            version: { type: 'string', maxLength: 64 },
           },
         },
       },
@@ -472,9 +754,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as {
         categories?: { id: string; title: string; icon?: string | null; sort?: number }[]
         synonyms?: Record<string, string>
+        version?: string
       }
 
-      await db().tx(async (client) => {
+      const version = await db().tx(async (client) => {
+        /* Первым запросом транзакции — блокировка (FR-002).
+         * Два сохранения с одной версией без неё оба прочитали бы её как
+         * текущую и оба записали бы: проверка отпечатка сама по себе гонку
+         * не закрывает, она лишь читает состояние. */
+        await client.query('select pg_advisory_xact_lock($1::bigint)', [CATEGORIES_LOCK])
+
+        /* Версии нет — проверки нет (FR-006): сохранение не из панели о
+         * правиле не знает, и ломать его нечестно. Панель шлёт версию всегда. */
+        if (body.version !== undefined && (await categoriesVersion(client)) !== body.version) {
+          throw conflict(
+            'categories_stale',
+            'Справочник изменили, пока вы его правили — перечитайте и повторите',
+          )
+        }
+
         for (const c of body.categories ?? []) {
           /* Категории правятся, но не удаляются: на них ссылаются анкеты
            * и слоты. Исчезнувшая категория — это осиротевшая мозаика. */
@@ -551,8 +849,17 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           categories: body.categories?.length ?? 0,
           synonyms: Object.keys(body.synonyms ?? {}).length,
         }, client)
+
+        /* Новая версия — тем же клиентом и под той же блокировкой: с ней
+         * панель продолжает правку, не перечитывая справочник (FR-004).
+         * Посчитанная после `commit` она была бы уже чужой. */
+        return categoriesVersion(client)
       })
-      return { categories: body.categories?.length ?? 0, synonyms: Object.keys(body.synonyms ?? {}).length }
+      return {
+        categories: body.categories?.length ?? 0,
+        synonyms: Object.keys(body.synonyms ?? {}).length,
+        version,
+      }
     },
   )
 
@@ -566,6 +873,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
          (select count(*) from vendors v join users u on u.id = v.user_id and u.deleted_at is null
            where v.published_at is not null and v.blocked_at is null)::text as vendors_published,
          (select count(*) ${MODERATION_QUEUE_FROM})::text as moderation_queue,
+         (select count(*) ${VERIFICATION_QUEUE_FROM})::text as verification_queue,
          (select count(*) from complaints where status = 'new')::text as complaints_open,
          (select count(*) from complaints
            where status = 'new' and created_at < now() - interval '24 hours')::text as complaints_overdue,
@@ -589,6 +897,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       weddings: Number(m.weddings),
       vendorsPublished: Number(m.vendors_published),
       moderationQueue: Number(m.moderation_queue),
+      // Тем же условием, что и сама очередь: показатель на дашборде и длина
+      // списка обязаны совпадать, иначе панель обещает работу, которой нет.
+      verificationQueue: Number(m.verification_queue),
       complaintsOpen: Number(m.complaints_open),
       // SLA модерации — 24 часа (§18.2). Без счётчика просроченных срок
       // существует только на бумаге: нарушение ничем не видно.

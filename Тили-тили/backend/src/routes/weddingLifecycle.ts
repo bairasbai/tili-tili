@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { COMMITTED } from '../deals/state.js'
+import type { DealState } from '../deals/state.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 
@@ -14,6 +14,17 @@ import { rescheduleWedding } from '../wedding/reschedule.js'
  * протухает, и следующее нажатие снова просит подтверждения, а не отменяет.
  */
 export const CANCEL_CONFIRM_HOURS = 72
+
+/**
+ * Что отменяется вместе со свадьбой.
+ *
+ * Не `COMMITTED`: в нём есть `done`, и отмена свадьбы отменяла уже выполненную
+ * работу — подрядчик получал «Сделка отменена» по съёмке, которую провёл
+ * полгода назад, а его занятость на тот день снималась, и календарь задним
+ * числом показывал день свободным. Контракт обещает ровно две брони: `booked`
+ * и `paid_deposit` — их и отменяем, `done` остаётся как было.
+ */
+export const CANCELLED_WITH_WEDDING: DealState[] = ['booked', 'paid_deposit']
 
 /**
  * Жив ли запрос на отмену. Чистая функция — чтобы срок проверялся тестом,
@@ -117,7 +128,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       const { rows: cancelled } = await client.query<{ id: string; state: string }>(
         `update deals set state = 'cancelled', cancelled_at = now(), cancel_reason = 'cancelled_by_couple'
           where wedding_id = $1 and state = any($2) returning id, state`,
-        [weddingId, COMMITTED],
+        [weddingId, CANCELLED_WITH_WEDDING],
       )
       for (const deal of cancelled) {
         await client.query(
@@ -126,12 +137,15 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
           [uuidv7(), deal.id, deal.state, userId],
         )
       }
-      await client.query(
-        `delete from vendor_busy_dates
-          where source = 'deal' and deal_id in (select id from deals where wedding_id = $1)`,
-        [weddingId],
-      )
-      await client.query('update slots set deal_id = null where wedding_id = $1', [weddingId])
+      /* Даты и слоты освобождаются ТОЛЬКО по отменённым сделкам.
+       *
+       * Условия по `wedding_id` снимали занятость и у `done`: день, в который
+       * подрядчик отработал, снова выглядел свободным, и на него можно было
+       * взять новую пару. Слот `done` при этом терял ссылку на сделку, и
+       * мозаика после отмены показывала выполненную работу пустой плиткой. */
+      const ids = cancelled.map((deal) => deal.id)
+      await client.query(`delete from vendor_busy_dates where source = 'deal' and deal_id = any($1)`, [ids])
+      await client.query('update slots set deal_id = null where deal_id = any($1)', [ids])
       // Архив на 12 месяцев, а не удаление: пара возвращается чаще, чем кажется
       // (План §19.1).
       await client.query('update weddings set cancelled_at = now(), archived_at = now() where id = $1', [weddingId])

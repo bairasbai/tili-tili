@@ -323,12 +323,17 @@ describe.skipIf(!live)('админка: основа панели сотрудн
         payload,
       })
       expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
-      return res.json() as { categories: number; synonyms: number }
+      return res.json() as { categories: number; synonyms: number; version: string }
     }
 
     try {
       const written = await put({ categories: [{ id: CAT, title: `Выкуп ${RUN}`, icon: '🧪', sort: before.sort + 7 }] })
-      expect(written).toEqual({ categories: 1, synonyms: 0 })
+      /* Ответ несёт ещё и новую версию справочника (фича 004): счётчики
+       * строк сверяются по-прежнему строго, версия — отдельно, потому что
+       * её значение зависит от содержимого базы. Что она означает и когда
+       * меняется, проверяет audit27. */
+      expect({ categories: written.categories, synonyms: written.synonyms }).toEqual({ categories: 1, synonyms: 0 })
+      expect(written.version).toMatch(/^[0-9a-f]{16}$/)
       const saved = await pick()
       expect(saved.title).toBe(`Выкуп ${RUN}`)
       expect(saved.icon).toBe('🧪')
@@ -655,7 +660,10 @@ describe.skipIf(!live)('админка: основа панели сотрудн
        * значок стирался молча — правка названия съедала картинку. */
       const saved = await put({ categories: [{ id: CAT2, title: `Медовый ${RUN}`, icon: null, sort: before.sort }] })
       expect(saved.statusCode, saved.body.slice(0, 200)).toBe(200)
-      expect(saved.json()).toEqual({ categories: 1, synonyms: 0 })
+      const written = saved.json() as { categories: number; synonyms: number; version: string }
+      // Версия — новое поле ответа (фича 004); её смысл проверяет audit27.
+      expect({ categories: written.categories, synonyms: written.synonyms }).toEqual({ categories: 1, synonyms: 0 })
+      expect(written.version).toMatch(/^[0-9a-f]{16}$/)
 
       const now = (await readCategories(staff.token)).categories.find((c) => c.id === CAT2)!
       expect(now.title).toBe(`Медовый ${RUN}`)

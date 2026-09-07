@@ -1518,3 +1518,35 @@ Object.assign(EN, {
   'повторяется': 'repeats',
   'порядок — целое число': 'the order must be a whole number',
 })
+
+/* Фича 002 — очередь заявок на верификацию: два экрана панели, статус заявки
+   в кабинете подрядчика и показатель на дашборде. */
+Object.assign(EN, {
+  'Заявок на верификацию': 'Verification requests',
+  'Заявки на проверку документов: подтвердить или отклонить с причиной': 'Document checks: confirm or decline with a reason',
+  'Заявки на проверку документов, старейшие сверху': 'Document checks, oldest first',
+  'Заявок нет': 'No requests',
+  /* Вид документа строчными: слово стоит в строке очереди после имени. */
+  'физлицо': 'individual',
+  'компания': 'company',
+  'документ не приложен': 'no document attached',
+  'Заявка на верификацию': 'Verification request',
+  'Заявка на верификацию не найдена': 'Verification request not found',
+  'Решение по документам': 'Decision on the documents',
+  'Заявка уже разобрана': 'This request has already been handled',
+  'ИНН не указан': 'No tax ID given',
+  'Открыть документ ↗': 'Open the document ↗',
+  'Открыть документ в новой вкладке': 'Open the document in a new tab',
+  'Документ не приложен': 'No document attached',
+  'Анкета не опубликована — решение по документам это не задерживает': 'The profile is not published — this does not hold up the decision on the documents',
+  'Подтвердить документы': 'Confirm the documents',
+  'Отклонить документы': 'Decline the documents',
+  'Причина отказа по документам': 'Reason for declining the documents',
+  'Причина отказа — уйдёт подрядчику в уведомлении': 'Reason for declining — the vendor gets it in a notification',
+  'Отказ по документам анкету не трогает: снятие с публикации — другое решение и другой экран.': 'Declining the documents does not touch the profile: unpublishing is a different decision on a different screen.',
+  'Заявка на проверке с': 'Request under review since',
+  'Решение придёт уведомлением. Документы уходят только модератору и не публикуются никогда.': 'The decision arrives as a notification. Documents go to the moderator only and are never published.',
+  'Документы не подтверждены': 'Documents not confirmed',
+  'Причина — в уведомлениях.': 'The reason is in your notifications.',
+  'Открыть уведомления': 'Open notifications',
+})

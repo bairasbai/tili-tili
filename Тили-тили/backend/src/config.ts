@@ -33,6 +33,8 @@ export interface Config {
   rateLimitPerSecond: number
   /** Сколько новых переписок в день начинает НЕпроверенный подрядчик (§18.2). */
   coldOutreachPerDay: number
+  /** Сколько дней отменённая свадьба лежит в архиве, прежде чем уборка сотрёт её. */
+  weddingArchiveDays: number
   /** Куда слать неожиданные ошибки. Пусто — не слать никуда и сказать об этом. */
   sentryDsn: string | null
   /** Ключи Web Push. Пока их нет, подписка отвечает 501 — см. routes/notifications. */
@@ -104,6 +106,26 @@ function envText(raw: string | undefined): string | null {
   return raw === undefined || raw.trim() === '' ? null : raw
 }
 
+/**
+ * Срок хранения отменённой свадьбы в днях (План §19.1 — 12 месяцев).
+ *
+ * Число отсюда уходит в `make_interval(days => …)` уборки архива, и уборка
+ * по нему УДАЛЯЕТ свадьбы со всем содержимым. Поэтому граница снизу и
+ * округление — не украшение:
+ *   `WEDDING_ARCHIVE_DAYS=0` стёрло бы всё отменённое в первый же час;
+ *   `-1` стёрло бы вообще всё отменённое, включая отменённое завтра;
+ *   `0.5` уронил бы `make_interval`, а с ним и всю остальную уборку — она
+ *   идёт одним списком, как когда-то падало стирание аккаунтов.
+ *
+ * Мусор и пустая строка дают значение по умолчанию (`envNumber`).
+ * Предупреждения в лог тут нет намеренно: конфигурация читается до того,
+ * как появляется логгер Fastify, а `console.warn` в проде уходит мимо
+ * структурированного лога и не находится по requestId.
+ */
+function parseArchiveDays(raw: string | undefined): number {
+  return Math.max(30, Math.round(envNumber(raw, 365)))
+}
+
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   const rawEnv = source.NODE_ENV ?? 'development'
   // Опечатка вроде NODE_ENV=prod тихо переводит сервер в режим разработки:
@@ -152,6 +174,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     contributionsMaxPerGuest: envNumber(source.CONTRIBUTIONS_MAX_PER_GUEST, 20),
     rateLimitPerSecond: envNumber(source.RATE_LIMIT_PER_SECOND, 10),
     coldOutreachPerDay: envNumber(source.COLD_OUTREACH_PER_DAY, 5),
+    weddingArchiveDays: parseArchiveDays(source.WEDDING_ARCHIVE_DAYS),
     sentryDsn: envText(source.SENTRY_DSN),
     vapidPublicKey: envText(source.VAPID_PUBLIC_KEY),
     vapidPrivateKey: envText(source.VAPID_PRIVATE_KEY),

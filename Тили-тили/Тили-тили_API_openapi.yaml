@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.26.0
+  version: 0.27.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -3023,13 +3023,28 @@ paths:
       summary: Отменить свадьбу
       description: |
         Требует подтверждения ОБОИХ партнёров: первый вызов создаёт запрос,
-        второй — исполняет. Всем сделкам в booked и paid_deposit ставится
-        cancelled_by_couple, подрядчики уведомляются, проект уходит в архив на
-        12 месяцев (План §19.1).
+        второй — исполняет (План §19.1).
+
+        Отменяются сделки в состояниях `booked` и `paid_deposit`: им ставится
+        `cancelled_by_couple`, и подрядчики уведомляются. Сделки `done`
+        остаются как были — работа уже сделана, и отменять в ней нечего.
+        Даты подрядчиков и слоты свадьбы освобождаются только по отменённым
+        сделкам: занятость по `done` — это состоявшийся день, а не бронь.
+
+        Проект уходит в архив на `WEDDING_ARCHIVE_DAYS` дней (по умолчанию
+        365, меньше 30 не бывает), после чего уборка удаляет его со всем
+        содержимым. Отзывы, оставленные подрядчикам, остаются: они про
+        подрядчика, а не про свадьбу.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       responses:
-        '200': { description: 'Запрос создан либо отмена исполнена — см. поле state' }
+        '200':
+          description: 'Запрос создан либо отмена исполнена — см. поле state'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CancelResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /catalog/concierge:
     post:
       tags: [catalog]
@@ -3072,6 +3087,29 @@ paths:
       responses:
         '201': { description: Создано }
   /vendor/verification:
+    get:
+      tags: [vendor]
+      summary: Состояние моей заявки на верификацию
+      description: |
+        Последняя заявка подрядчика: подана ли, разобрана ли и когда. Без
+        этого пути подрядчик видит только наличие или отсутствие галочки и
+        гадает, дошли ли документы (План §18.2).
+
+        Ни ссылки на документ, ни ИНН в ответе нет — они свои, но экрану не
+        нужны, а на устройстве им не место. Причина отказа приходит
+        уведомлением: у заявки своего поля причины нет.
+
+        Заявок не было — `status: none`. Анкеты нет вовсе — 403, как и на
+        остальных путях кабинета: кабинет открыт подрядчику с анкетой.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [vendor]
       summary: Подать документы на верификацию
@@ -3125,6 +3163,12 @@ paths:
         `verify` — документы сверены вне приложения, в каталоге появляется галочка «Проверен».
         О решении подрядчик узнаёт уведомлением, причина уходит ему вместе с ним.
 
+        Заявку на верификацию закрывает только `verify`: он переводит незакрытые
+        заявки подрядчика в `approved`. `reject` анкету снимает с публикации, а
+        заявку НЕ трогает — документы и публикация разные решения, и снятая
+        анкета не повод потерять заявку из очереди верификации. Решение по
+        документам принимается в `POST /admin/verifications/{requestId}`.
+
         Решение принимается только по живой анкете — опубликованной и не заблокированной
         по жалобе. Иначе 409 `vendor_not_live`: у снятой анкеты одобрять нечего, а
         заблокированную модерация не возвращает — это решение принимают в разделе жалоб.
@@ -3151,6 +3195,101 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VendorDecision' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /admin/verifications:
+    get:
+      tags: [admin]
+      summary: Очередь заявок на верификацию
+      description: |
+        Заявки на проверку документов, старейшие сверху: срок разбора считается
+        от подачи. Только неразобранные (`pending`) и только от живых
+        пользователей — заявка ушедшего разбору не подлежит.
+
+        Ни ссылки на документ, ни ИНН в списке нет: документы уходят одному
+        сотруднику в карточке заявки, а не раздаются страницами. В списке
+        только `hasFile` — есть ли что открывать.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /admin/verifications/{requestId}:
+    get:
+      tags: [admin]
+      summary: Карточка заявки на верификацию
+      description: |
+        Вид документа, ИНН и ссылка на сам документ — единственное место, где
+        они выходят наружу, и только сотруднику. Ссылка ведёт в хранилище и
+        открывается отдельно от приложения.
+
+        Каждое чтение пишется в журнал действий (`verification.view`): кто,
+        когда и какую заявку открыл. Запись делается ДО ответа — просмотр,
+        оборвавшийся на отдаче, иначе остался бы незамеченным.
+
+        `vendorPublished` говорит, есть ли анкета в каталоге сейчас. На решение
+        по документам это не влияет: галочка появится вместе с анкетой.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [admin]
+      summary: Решение по заявке на верификацию
+      description: |
+        `approve` — «документы сверены»: заявка закрывается, и в каталоге
+        появляется галочка «Проверен». Это НЕ то же, что `approve` анкеты в
+        модерации: там решение «анкета проверена и остаётся в каталоге», здесь —
+        про документы. Галочка ставится сразу, в том числе по неопубликованной
+        анкете: документы от публикации не зависят, а в каталоге галочка
+        покажется вместе с анкетой.
+
+        `reject` — «документы не подтверждены»: заявка закрывается без галочки,
+        а анкета остаётся ровно такой, какой была. Снятие с публикации — другое
+        решение и другой путь. Причина обязательна: без непустой `reason`
+        сервер отвечает 422 с полем `reason` — отказ без объяснения подрядчику
+        нечем исправить. Причина уходит ему уведомлением и остаётся в журнале.
+
+        Заявка уже разобрана — 409 `verification_not_pending`: второй сотрудник
+        должен увидеть, что опоздал, а подрядчик не должен получить вторую
+        новость об одном и том же.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [approve, reject] }
+                reason:
+                  type: string
+                  maxLength: 1000
+                  description: 'Причина решения. Обязательна при `reject`: подрядчик читает её в уведомлении.'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationDecision' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -3242,6 +3381,11 @@ paths:
         `null` или пропущенный оставляет прежний значок. Словарь `synonyms` заменяется ЦЕЛИКОМ —
         чего не прислали, того больше нет. Слово, ведущее на неизвестную категорию, —
         422 с полем `synonyms.<слово>`, и не меняется ничего.
+
+        `version` — та версия справочника, с которой сотрудник начал правку.
+        Не совпала с текущей — 409 `categories_stale`, и не меняется НИЧЕГО:
+        словарь заменяется целиком, и сохранение поверх чужой правки стёрло бы
+        строки, которых сотрудник не видел. Поля нет — проверки нет.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3258,6 +3402,13 @@ paths:
                   type: object
                   description: 'слово → идентификатор категории; слово хранится в нижнем регистре'
                   additionalProperties: { type: string }
+                version:
+                  type: string
+                  maxLength: 16
+                  description: |
+                    Версия справочника, с которой начата правка (из `GET /admin/categories`).
+                    Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
+                    идёт без проверки.
       responses:
         '200':
           description: OK
@@ -3266,6 +3417,7 @@ paths:
               schema: { $ref: '#/components/schemas/CategoriesUpdated' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Validation' }
   /admin/metrics:
     get:
@@ -3520,6 +3672,23 @@ components:
         venue: { type: string, nullable: true }
         dressCode: { type: string, nullable: true, description: 'идентификатор палитры — гость видит её в приглашении' }
         dressNote: { type: string, nullable: true }
+    CancelResult:
+      type: object
+      description: |
+        Чем кончился вызов отмены. Отмена свадьбы — решение обоих партнёров,
+        поэтому первый вызов только просит подтверждения, и ответ обязан
+        различать эти два случая: экран показывает разное.
+      properties:
+        state:
+          type: string
+          enum: [confirmation_required, cancelled]
+          description: '`confirmation_required` — ждём второго партнёра; `cancelled` — свадьба отменена'
+        requestedBy:
+          type: string
+          description: 'кто попросил отмену — есть при `confirmation_required`'
+        cancelledDeals:
+          type: integer
+          description: 'сколько сделок отменено — есть при `cancelled`; `done` в это число не входят'
     Member:
       type: object
       description: >
@@ -4205,12 +4374,25 @@ components:
           type: object
           description: 'слово → идентификатор категории'
           additionalProperties: { type: string }
+        version:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+          example: 9f2c1ab340de77b5
+          description: |
+            Отпечаток содержимого справочника — шестнадцать шестнадцатеричных знаков.
+            Меняется от ЛЮБОЙ правки категорий или словаря, в том числе сделанной
+            мимо панели: он считается по самим строкам, а не по времени сохранения.
+            Возвращается в теле PUT, чтобы сохранение не затёрло чужую правку.
     CategoriesUpdated:
       type: object
       description: 'Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру.'
       properties:
         categories: { type: integer }
         synonyms: { type: integer }
+        version:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+          description: 'Версия справочника после сохранения — с ней продолжают правку, не перечитывая.'
     ModerationVendor:
       allOf:
         - $ref: '#/components/schemas/Vendor'
@@ -4242,6 +4424,67 @@ components:
       properties:
         complaintId: { type: string }
         action: { type: string, enum: [dismiss, warn, downrank, block] }
+    VerificationItem:
+      type: object
+      description: |
+        Заявка в очереди. Ни ссылки на документ, ни ИНН здесь нет — только
+        признак `hasFile`: документы отдаются в карточке одному сотруднику
+        и с записью в журнал, а не страницами всем подряд.
+      properties:
+        id: { type: string }
+        vendorId: { type: string }
+        vendorName: { type: string }
+        kind:
+          type: string
+          enum: [passport, ip, company]
+          description: 'что прислали: паспорт, документы ИП или документы компании'
+        hasFile: { type: boolean, description: 'приложена ли ссылка на документ' }
+        createdAt: { type: string, format: date-time, description: 'когда подана' }
+    VerificationPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/VerificationItem' } }
+        nextCursor: { type: string, nullable: true }
+    VerificationRequest:
+      type: object
+      description: |
+        Карточка заявки: то, по чему принимается решение. Единственный ответ,
+        где ссылка на документ и ИНН выходят наружу, — и только сотруднику.
+      properties:
+        id: { type: string }
+        vendorId: { type: string }
+        vendorName: { type: string }
+        vendorPublished:
+          type: boolean
+          description: |
+            Есть ли анкета в каталоге сейчас (опубликована и не заблокирована).
+            Решение по документам этим не задерживается — признак нужен, чтобы
+            карточка не вела на анкету, которой в каталоге нет.
+        kind: { type: string, enum: [passport, ip, company] }
+        fileUrl:
+          type: string
+          nullable: true
+          description: 'Ссылка на документ во внешнем хранилище. Пусто — документ не приложен.'
+        inn: { type: string, nullable: true }
+        status: { type: string, enum: [pending, approved, rejected] }
+        createdAt: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time, nullable: true, description: 'когда разобрана' }
+    VerificationDecision:
+      type: object
+      description: 'Что записано по заявке. Ответ подтверждает решение, а не состояние подрядчика целиком.'
+      properties:
+        requestId: { type: string }
+        action: { type: string, enum: [approve, reject] }
+    VerificationStatus:
+      type: object
+      description: |
+        Состояние последней заявки подрядчика. `none` — заявок не было.
+        Причины отказа здесь нет: она приходит уведомлением.
+      properties:
+        status: { type: string, enum: [none, pending, approved, rejected] }
+        kind: { type: string, enum: [passport, ip, company], nullable: true }
+        submittedAt: { type: string, format: date-time, nullable: true, description: 'когда подана' }
+        checkedAt: { type: string, format: date-time, nullable: true, description: 'когда разобрана' }
     AdminMetrics:
       type: object
       description: |
@@ -4253,6 +4496,12 @@ components:
         weddings: { type: integer, description: 'неархивные свадьбы' }
         vendorsPublished: { type: integer, description: 'опубликованные и не заблокированные анкеты' }
         moderationQueue: { type: integer, description: 'анкеты, ждущие проверки' }
+        verificationQueue:
+          type: integer
+          description: |
+            Заявки на верификацию, ждущие решения. Считается тем же условием,
+            что и очередь `GET /admin/verifications`: число на дашборде и длина
+            очереди — одно и то же, иначе панель обещает работу, которой нет.
         complaintsOpen: { type: integer, description: 'нерассмотренные жалобы' }
         complaintsOverdue:
           type: integer

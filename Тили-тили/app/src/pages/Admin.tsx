@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
-import { ChevronRight, ClipboardCheck, Flag, Plus, Search, Tags, Trash2 } from 'lucide-react'
+import { useLocation, useNavigate, useParams } from 'react-router'
+import { ChevronRight, ClipboardCheck, Flag, Plus, Search, ShieldCheck, Tags, Trash2 } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -14,10 +14,13 @@ import { getMe } from '@/lib/api/auth'
 import {
   decideComplaint,
   decideVendor,
+  decideVerification,
   getAdminCategories,
   getAdminMetrics,
   getComplaints,
   getModerationQueue,
+  getVerification,
+  getVerifications,
   getWeddingForSupport,
   putAdminCategories,
   type AdminCategory,
@@ -91,6 +94,8 @@ export function AdminHome() {
       <div className="px-5 mt-3">
         <AsyncState q={q} forbiddenText={denied()} />
 
+        {/* Платформа: сколько всего людей и анкет. Три плитки — ровно один
+            ряд, без хвоста из одной клетки. */}
         <div className="card p-4 grid grid-cols-3 gap-2 text-center fade-up">
           {[
             /* `?? '—'` не «ноль по умолчанию»: если сервер поля не прислал,
@@ -98,12 +103,25 @@ export function AdminHome() {
             { label: t('Аккаунтов'), value: num(q, m?.users ?? '—') },
             { label: t('Свадеб'), value: num(q, m?.weddings ?? '—') },
             { label: t('Анкет в каталоге'), value: num(q, m?.vendorsPublished ?? '—') },
+          ].map(it => (
+            <div key={it.label}>
+              <b className="font-serif-d text-[22px] block tabular">{it.value}</b>
+              <span className="text-[9.5px] text-[var(--soft)] leading-tight block mt-0.5">{it.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Очереди: то, что ждёт разбора прямо сейчас. Четыре плитки 2×2 — в
+            ряду по три четвёртая висела бы одна. */}
+        <div className="card p-4 grid grid-cols-2 gap-2 text-center mt-2.5">
+          {[
             { label: t('Анкет в очереди'), value: num(q, m?.moderationQueue ?? '—') },
+            { label: t('Заявок на верификацию'), value: num(q, m?.verificationQueue ?? '—') },
             { label: t('Жалоб открыто'), value: num(q, m?.complaintsOpen ?? '—') },
             { label: t('Просрочено'), value: num(q, m?.complaintsOverdue ?? '—') },
           ].map(it => (
             <div key={it.label}>
-              <b className="font-serif-d text-[22px] block tabular">{it.value}</b>
+              <b className="font-serif-d text-[20px] block tabular">{it.value}</b>
               <span className="text-[9.5px] text-[var(--soft)] leading-tight block mt-0.5">{it.label}</span>
             </div>
           ))}
@@ -154,6 +172,7 @@ export function AdminHome() {
         <div className="card px-4 py-1.5 mt-3.5">
           {[
             { icon: ClipboardCheck, tile: 'bg-[var(--sage-soft)]', to: '/admin/moderation', label: t('Модерация анкет'), sub: t('Новые анкеты: одобрить, снять с публикации, отметить проверенным') },
+            { icon: ShieldCheck, tile: 'bg-[var(--honey)]', to: '/admin/verifications', label: t('Верификация'), sub: t('Заявки на проверку документов: подтвердить или отклонить с причиной') },
             { icon: Flag, tile: 'bg-[var(--rose-soft)]', to: '/admin/complaints', label: t('Жалобы'), sub: t('Нерассмотренные жалобы и санкции') },
             { icon: Tags, tile: 'bg-[var(--lav)]', to: '/admin/categories', label: t('Категории и синонимы'), sub: t('Названия, значки, порядок и словарь поиска') },
             { icon: Search, tile: 'bg-[var(--blue)]', to: '/admin/wedding', label: t('Карточка свадьбы'), sub: t('Просмотр по обращению пары — записывается в журнал') },
@@ -396,6 +415,228 @@ export function AdminVendorDecision() {
                 (R-174). Сотрудник подтверждает то, что сверил вне приложения. */}
             <p className="text-[10.5px] text-[var(--soft)] leading-relaxed">
               {t('Документы сверяются вне приложения — загрузка ещё не подключена. Галочка появится в каталоге сразу.')}
+            </p>
+            {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── 64б. Очередь заявок на верификацию ───────────────────────────────── */
+/*
+ * Заявки на проверку документов (фича 002).
+ *
+ * Очередь и очередь модерации — разные списки: анкета уходит из модерации
+ * после решения по публикации, а документы ждут своей сверки и после этого.
+ * Раньше заявка терялась вместе с анкетой, и подрядчик оставался без галочки
+ * навсегда (`RELEASE-BLOCKERS.md` №25).
+ *
+ * Ни ссылки на документ, ни ИНН в списке нет: их отдаёт только карточка, и
+ * каждое её открытие пишется в журнал. Список знает лишь `hasFile` — есть ли
+ * что открывать.
+ */
+
+/** Вид документа словами: `ip` на экране читается как поломка, а не как «ИП». */
+const kindLabel = (kind: string | undefined) =>
+  kind === 'passport' ? t('физлицо')
+  : kind === 'ip' ? t('ИП')
+  : kind === 'company' ? t('компания')
+  : ''
+
+type VerificationPage = Awaited<ReturnType<typeof getVerifications>>
+
+export function AdminVerifications() {
+  const nav = useNavigate()
+  const loc = useLocation()
+  const q = useApi(() => getVerifications(), [])
+  const [pages, setPages] = useState<VerificationPage[]>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const items = [...(q.data?.items ?? []), ...pages.flatMap(p => p.items ?? [])]
+  const next = pages.length ? (pages[pages.length - 1]?.nextCursor ?? null) : (q.data?.nextCursor ?? null)
+  /* Карточка ушла из-под сотрудника: заявку разобрал кто-то другой. Признак
+     переносится маршрутом, а текст собирается здесь — в состоянии живёт
+     русский ключ, а не перевод (R-07). */
+  const conflict = (loc.state as { conflict?: unknown } | null)?.conflict === true
+
+  const more = () => void (async () => {
+    if (!next) return
+    setBusy(true)
+    setErr(null)
+    try {
+      const page = await getVerifications(next)
+      setPages(p => [...p, page])
+    }
+    catch (e) { setErr(explainError(e)) }
+    finally { setBusy(false) }
+  })()
+
+  return (
+    <div className="pb-10">
+      <TopBar back fallback="/admin" title={t('Верификация')} sub={t('Заявки на проверку документов, старейшие сверху')} />
+      <div className="px-5 mt-3 space-y-2.5">
+        <AsyncState q={q} forbiddenText={denied()} />
+        {conflict && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Заявка уже разобрана')}</p>}
+        {/* Пусто — только после ответа: «Заявок нет» рядом с лежащим сервером
+            читается как «разбирать нечего», и документы стоят непроверенными. */}
+        {ready(q) && items.length === 0 && (
+          <p className="text-[12.5px] text-[var(--soft)] py-6 text-center">{t('Заявок нет')}</p>
+        )}
+        {ready(q) && items.map(r => (
+          <button key={r.id} onClick={() => nav(`/admin/verifications/${r.id ?? ''}`)} className="press w-full card p-4 text-left flex items-center gap-3">
+            <span className="flex-1 min-w-0">
+              <b className="font-serif-d text-[15px] block truncate">{r.vendorName}</b>
+              <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
+                {[kindLabel(r.kind), fmtDate(r.createdAt)].filter(Boolean).join(' · ')}
+              </span>
+              {/* Пустая заявка видна из очереди: её открывают, чтобы отклонить,
+                  а не чтобы искать документ, которого нет. */}
+              {r.hasFile === false && (
+                <span className="inline-block text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] mt-1.5">{t('документ не приложен')}</span>
+              )}
+            </span>
+            <ChevronRight size={16} className="text-[var(--soft2)] shrink-0" />
+          </button>
+        ))}
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {ready(q) && next && (
+          <div className="text-center pt-1">
+            <button disabled={busy} onClick={more} className="press px-5 h-[40px] rounded-full card-s text-[12px] font-semibold disabled:opacity-50">
+              {busy ? t('Загружаем…') : t('Показать ещё')}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── 64в. Заявка на верификацию: решение по документам ────────────────── */
+/*
+ * Карточка — единственное место, где ссылка на документ и ИНН выходят наружу,
+ * и каждое её открытие сервер пишет в журнал.
+ *
+ * Слова на кнопках — «Подтвердить документы» и «Отклонить документы», а не
+ * «Одобрить» и «Снять с публикации»: это решение про документы, а не про
+ * анкету. Отклонение документов анкету не трогает.
+ */
+export function AdminVerification() {
+  const nav = useNavigate()
+  const { requestId } = useParams()
+  const q = useApi(async () => {
+    if (!requestId) return null
+    try { return await getVerification(requestId) }
+    /* 404 — не поломка: заявки с таким адресом нет. */
+    catch (e) { if (e instanceof ApiError && e.status === 404) return null; throw e }
+  }, [requestId])
+  const r = q.data
+  const missing = ready(q) && !r
+  /* Заявку уже разобрали — сервер ответит 409 на любое решение. Кнопки в этом
+     состоянии обещали бы то, чего не будет (R-176). Статуса нет — состояние
+     неизвестно, и решения остаются. */
+  const decided = !!r && r.status != null && r.status !== 'pending'
+
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const decide = (action: 'approve' | 'reject') => void (async () => {
+    if (!requestId) return
+    setBusy(true)
+    setErr(null)
+    try {
+      await decideVerification(requestId, action, action === 'reject' ? reason.trim() : undefined)
+      nav('/admin/verifications')
+    } catch (e) {
+      /* Двое сотрудников открыли одну заявку: второй должен увидеть, что
+         опоздал. Карточки уже нет — сообщение уезжает вместе с ним в очередь,
+         иначе он вернулся бы туда молча и решил, что нажатие не сработало. */
+      if (e instanceof ApiError && e.status === 409) nav('/admin/verifications', { state: { conflict: true } })
+      /* 422 называет поле: текст сервера про причину точнее общего отказа. */
+      else setErr((e instanceof ApiError && e.field('reason')) || explainError(e))
+    } finally { setBusy(false) }
+  })()
+
+  return (
+    <div className="pb-10">
+      <TopBar back fallback="/admin/verifications" title={r?.vendorName ?? t('Заявка на верификацию')} sub={t('Решение по документам')} />
+      <div className="px-5 mt-3 space-y-3">
+        <AsyncState q={q} forbiddenText={denied()} />
+        {missing && (
+          <p className="text-[12.5px] text-[var(--soft)] py-4 text-center leading-relaxed">{t('Заявка на верификацию не найдена')}</p>
+        )}
+        {ready(q) && r && (
+          <div className="card p-4 space-y-2.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[12.5px] text-[var(--ink2)]">{kindLabel(r.kind)}</span>
+              <span className="text-[10.5px] text-[var(--soft)] shrink-0">{fmtDate(r.createdAt)}</span>
+            </div>
+            <p className="text-[12.5px] text-[var(--ink2)]">
+              {r.inn ? `${t('ИНН')} ${r.inn}` : t('ИНН не указан')}
+            </p>
+            {/* Ссылка ведёт в хранилище и открывается отдельно от приложения:
+                документ — чужой файл, а не экран панели. */}
+            {r.fileUrl ? (
+              <a
+                href={r.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t('Открыть документ в новой вкладке')}
+                className="press inline-block text-[12px] font-bold text-[var(--sage-deep)]"
+              >
+                {t('Открыть документ ↗')}
+              </a>
+            ) : (
+              <p className="text-[12px] text-[var(--rose-ink)]">{t('Документ не приложен')}</p>
+            )}
+          </div>
+        )}
+
+        {ready(q) && r && (
+          <div className="card p-4">
+            {r.vendorPublished && r.vendorId ? (
+              <button onClick={() => nav(`/admin/moderation/${r.vendorId ?? ''}`)} className="press text-[12px] font-bold text-[var(--sage-deep)]">{t('Открыть анкету →')}</button>
+            ) : (
+              <p className="text-[11.5px] text-[var(--soft)] leading-relaxed">{t('Анкета не опубликована — решение по документам это не задерживает')}</p>
+            )}
+          </div>
+        )}
+
+        {ready(q) && r && decided && (
+          <p role="alert" className="text-[12.5px] text-[var(--soft)] py-2 text-center leading-relaxed">{t('Заявка уже разобрана')}</p>
+        )}
+
+        {ready(q) && r && !decided && (
+          <div className="card p-4 space-y-2.5">
+            <button
+              disabled={busy}
+              onClick={() => decide('approve')}
+              className="press w-full h-[46px] rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] text-[13px] font-semibold disabled:opacity-50"
+            >
+              {t('Подтвердить документы')}
+            </button>
+
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              aria-label={t('Причина отказа по документам')}
+              placeholder={t('Причина отказа — уйдёт подрядчику в уведомлении')}
+              className="w-full px-4 py-3 rounded-[18px] bg-[var(--bg)] text-[12.5px] outline-none resize-none placeholder:text-[var(--soft2)]"
+            />
+            <button
+              disabled={busy || !reason.trim()}
+              onClick={() => decide('reject')}
+              className="press w-full h-[46px] rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] text-[13px] font-semibold disabled:opacity-50"
+            >
+              {t('Отклонить документы')}
+            </button>
+            <p className="text-[10.5px] text-[var(--soft)] leading-relaxed">
+              {t('Отказ по документам анкету не трогает: снятие с публикации — другое решение и другой экран.')}
             </p>
             {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
           </div>

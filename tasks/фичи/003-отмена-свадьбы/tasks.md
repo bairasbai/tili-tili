@@ -1,28 +1,28 @@
 # Задачи: Отмена свадьбы и архив
 
 **Спека:** ./spec.md · **План:** ./plan.md
-**Формат:** `- [ ] T001 [P] [US1] описание в путь/к/файлу`
+**Формат:** `- [x] T001 [P] [US1] описание в путь/к/файлу`
 
 Пути — от `Тили-тили/`, кроме документов корня. Прогоны и коммит — как в фиче 002.
 
 ## Фаза 1 — подготовка (контракт)
 
-- [ ] T001 Контракт v0.27.0 — **сделано в T001/T002 фичи 002** (одна правка файла и один прогон генераторов на три фичи,
+- [x] T001 Контракт v0.27.0 — **сделано в T001/T002 фичи 002** (одна правка файла и один прогон генераторов на три фичи,
       сверка X01): `CancelResult`, ответы 403/404 у `POST /weddings/{weddingId}/cancel`, описание про `done` и срок архива.
       Начинать эту фичу — только после коммита фазы 1 фичи 002.
 
 ## Фаза 2 — основа
 
-- [ ] T002 `backend/src/config.ts` + `backend/.env.example`: `WEDDING_ARCHIVE_DAYS` (`envNumber`, по умолчанию 365; нижняя граница
+- [x] T002 `backend/src/config.ts` + `backend/.env.example`: `WEDDING_ARCHIVE_DAYS` (`envNumber`, по умолчанию 365; нижняя граница
       30 и округление — `Math.max(30, Math.round(n))`, мусор → предупреждение в лог и 365), поле `weddingArchiveDays`.
 - [ ] T003 [P] `app/src/lib/api/wedding.ts`: `cancelWedding(weddingId)` → `POST /weddings/{weddingId}/cancel`; `listMyWeddings()` →
       `GET /weddings` целиком; `findMyWedding()` — поверх `listMyWeddings()` (поведение прежнее).
 
 ## Фаза 3 — US1 Пара отменяет свадьбу (P1) 🎯 MVP
 
-- [ ] T004 [US1] `backend/src/routes/weddingLifecycle.ts`: отменяются только `booked` и `paid_deposit` (`done` остаётся); занятость
+- [x] T004 [US1] `backend/src/routes/weddingLifecycle.ts`: отменяются только `booked` и `paid_deposit` (`done` остаётся); занятость
       подрядчиков и слоты освобождаются только по отменённым сделкам (`deal_id = any($ids)`), а не по всей свадьбе.
-- [ ] T005 [US1] `backend/test/audit26.test.ts`: свадьба с `done`-сделкой и `booked`-сделкой → после отмены `done` без изменений,
+- [x] T005 [US1] `backend/test/audit26.test.ts`: свадьба с `done`-сделкой и `booked`-сделкой → после отмены `done` без изменений,
       его `vendor_busy_dates` и слот на месте; `booked` → `cancelled`, его дата и слот освобождены; помощнику — 403; ответ
       соответствует `CancelResult`. Красный без правки T004 (даты `done` снимались).
 - [ ] T006 [US1] `app/src/pages/Account.tsx` (`/settings`): блок «Отменить свадьбу» только при роли `couple` (по `members` из
@@ -45,11 +45,11 @@
 
 ## Фаза 5 — US3 Уборка архива (P2)
 
-- [ ] T010 [US3] `backend/src/jobs/index.ts` → `cleanup()` (в транзакции, партия `limit 100`): выбрать отменённые свадьбы с `archived_at`
+- [x] T010 [US3] `backend/src/jobs/index.ts` → `cleanup()` (в транзакции, партия `limit 100`): выбрать отменённые свадьбы с `archived_at`
       старше `weddingArchiveDays`; снять `vendor_busy_dates` по их сделкам; `audit_log` `wedding.purged` (`actor_id` null) на
       каждую; `delete from weddings where id = any($ids)`; число в лог. Сбой этой части не должен глушить остальную уборку
       (образец — `isolated()` в том же файле).
-- [ ] T011 [US3] `backend/test/audit26.test.ts`: три свадьбы — отменённая с `archived_at` 400 дней назад (у её `done`-сделки дата в
+- [x] T011 [US3] `backend/test/audit26.test.ts`: три свадьбы — отменённая с `archived_at` 400 дней назад (у её `done`-сделки дата в
       `vendor_busy_dates`), отменённая вчера, и синтетическая «неотменённая с `archived_at` 400 дней назад» (продукт такой не
       создаёт — фикстура проверяет, что уборка смотрит на `cancelled_at`) → после `cleanup()` удалена только первая со всем
       содержимым (участники, сделки), её дата у подрядчика свободна, остальные на месте; `audit_log` со строкой `wedding.purged`;

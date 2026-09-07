@@ -38,7 +38,9 @@ const ROUTES = [
   '/favorites', '/venues', '/notes', '/tools/alcohol',
   '/vendor-app', '/vendor-app/profile', '/vendor-app/deals', '/vendor-app/verification',
   '/vendor-app/leads/l1', '/vendor-app/reviews', '/vendor-app/analytics',
-  '/admin', '/admin/moderation', '/admin/moderation/v1', '/admin/complaints', '/admin/categories', '/admin/wedding',
+  '/admin', '/admin/moderation', '/admin/moderation/v1',
+  '/admin/verifications', '/admin/verifications/r1',
+  '/admin/complaints', '/admin/categories', '/admin/wedding',
 ]
 
 /*
@@ -102,10 +104,16 @@ const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
      что платформы нет ни в одном городе. */
   '/admin': [
     '0Аккаунтов', '0Свадеб', '0Анкет в каталоге', '0Анкет в очереди',
-    '0Жалоб открыто', '0Просрочено', '0Сделок', '0 ₽',
+    '0Заявок на верификацию', '0Жалоб открыто', '0Просрочено', '0Сделок', '0 ₽',
     'Городов с анкетами пока нет', 'готов к запуску',
   ],
   '/admin/moderation': ['Очередь пуста — все анкеты проверены'],
+  /* Очередь заявок: «Заявок нет» без ответа сервера читается как «разбирать
+     нечего», и документы лежат непроверенными. */
+  '/admin/verifications': ['Заявок нет'],
+  /* Карточка заявки: вид документа, ИНН и слова про документ — утверждения о
+     заявке, которой с сервера не пришло. */
+  '/admin/verifications/r1': ['Документ не приложен', 'ИНН не указан', 'Анкета не опубликована'],
   '/admin/complaints': ['Нерассмотренных жалоб нет', 'просрочено'],
   '/admin/categories': ['Словарь пуст — поиск ищет только по названиям'],
   /* «Загружаем…» навсегда — тоже неправда: экран обещает то, чего не будет. */

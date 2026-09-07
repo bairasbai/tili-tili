@@ -48,7 +48,77 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
     'notifications',
     "delete from notifications where read_at is not null and read_at < now() - interval '90 days'",
   )
+  /* Архив отменённых свадеб — отдельным изолированным шагом.
+   *
+   * Остальная уборка выше — это `delete` по времени жизни, безобидные сами по
+   * себе. Здесь удаляется проект целиком, запросов несколько, и любой из них
+   * может упасть на чужой блокировке. Без изоляции такое падение унесло бы с
+   * собой и уборку кодов, и ключи идемпотентности: они идут одним списком.
+   */
+  out['weddings_purged'] = 0
+  await isolated(app, {}, 'не удалось убрать отменённые свадьбы из архива', async () => {
+    const purged = await purgeArchivedWeddings(app)
+    out['weddings_purged'] = purged
+    // Число за проход — в лог: без него удаление сотен проектов не оставляет
+    // следа нигде, кроме самих строк, которых уже нет (FR-008).
+    if (purged > 0) app.log.info({ purged }, 'уборка архива: отменённые свадьбы удалены')
+  })
   return out
+}
+
+/**
+ * Отменённая свадьба хранится ограниченный срок, потом удаляется насовсем.
+ *
+ * План §19.1 обещает 12 месяцев, а лежала она бессрочно
+ * (`RELEASE-BLOCKERS.md` №10): персональные данные полутора сотен гостей —
+ * телефоны, имена, диеты — оставались в базе навсегда после свадьбы, которой
+ * не было. Срок — `WEDDING_ARCHIVE_DAYS`, не меньше 30 дней.
+ *
+ * Убираются ТОЛЬКО отменённые: `archived_at` сам по себе ничего не решает —
+ * состоявшийся проект хранится бессрочно (План §18.5 п. 4).
+ *
+ * Партия — сотня за проход, как у `eraseDeletedUsers`: один `delete` на
+ * тысячи свадеб держал бы блокировки на половине таблиц минутами.
+ *
+ * Занятость подрядчика снимается ЯВНО, до удаления: `vendor_busy_dates.deal_id`
+ * стоит `ON DELETE SET NULL`, и каскад оставил бы дату занятой навсегда —
+ * с обнулённой ссылкой её не нашёл бы уже никто, включая самого подрядчика.
+ *
+ * Отзывы (`reviews.wedding_id`/`deal_id` — `SET NULL`) переживают уборку:
+ * это история подрядчика, а не свадьбы.
+ */
+export async function purgeArchivedWeddings(app: FastifyInstance): Promise<number> {
+  const days = app.appConfig.weddingArchiveDays
+  /* Одна транзакция на партию: между записью в журнал и удалением не должно
+   * быть состояния «свадьбы нет, а следа не осталось» — и наоборот. */
+  return app.db!.tx(async (client) => {
+    const { rows } = await client.query<{ id: string; cancelled_at: Date; archived_at: Date }>(
+      `select id, cancelled_at, archived_at from weddings
+        where cancelled_at is not null and archived_at < now() - make_interval(days => $1)
+        order by archived_at limit 100`,
+      [days],
+    )
+    if (rows.length === 0) return 0
+    const ids = rows.map((row) => row.id)
+    await client.query(
+      `delete from vendor_busy_dates
+        where source = 'deal' and deal_id in (select id from deals where wedding_id = any($1))`,
+      [ids],
+    )
+    for (const row of rows) {
+      /* `actor_id` пустой: уборку делает платформа, а не человек, и записать
+       * сюда чьё-то имя значило бы соврать в журнале. Колонка это допускает. */
+      await client.query(
+        `insert into audit_log (actor_id, action, entity, entity_id, diff)
+         values (null, 'wedding.purged', 'wedding', $1, $2)`,
+        [row.id, JSON.stringify({ cancelledAt: row.cancelled_at, archivedAt: row.archived_at })],
+      )
+    }
+    // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
+    // чаты, задачи — все двадцать три таблицы свадьбы.
+    await client.query('delete from weddings where id = any($1)', [ids])
+    return rows.length
+  })
 }
 
 /**
