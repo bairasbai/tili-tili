@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.25.0).
- * Операций: 152. Путей: 117. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.26.0).
+ * Операций: 153. Путей: 117. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -15,7 +15,8 @@ export interface ContractOperation {
 }
 
 export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
-  {"method":"PUT","openapi":"/admin/categories","url":"/admin/categories","operationId":null,"summary":"Категории и словарь синонимов","tag":"admin"},
+  {"method":"GET","openapi":"/admin/categories","url":"/admin/categories","operationId":null,"summary":"Категории и словарь синонимов","tag":"admin"},
+  {"method":"PUT","openapi":"/admin/categories","url":"/admin/categories","operationId":null,"summary":"Изменить категории и словарь синонимов","tag":"admin"},
   {"method":"GET","openapi":"/admin/complaints","url":"/admin/complaints","operationId":null,"summary":"Очередь жалоб","tag":"admin"},
   {"method":"POST","openapi":"/admin/complaints/{complaintId}","url":"/admin/complaints/:complaintId","operationId":null,"summary":"Решение по жалобе","tag":"admin"},
   {"method":"GET","openapi":"/admin/metrics","url":"/admin/metrics","operationId":null,"summary":"Дашборд платформы","tag":"admin"},

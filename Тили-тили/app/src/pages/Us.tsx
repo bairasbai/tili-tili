@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, Send, Settings, Globe, Bell, Shield, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
+import { ChevronLeft, Send, Settings, Globe, Bell, Shield, ShieldCheck, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
@@ -26,6 +26,10 @@ export function Us() {
   const [datePicker, setDatePicker] = useState(false)
   /* Реферальный код — свой, а не написанный в разметке. */
   const ref = useApi(() => getReferral(), [])
+  /* Признак сотрудника приходит в своём профиле. Пробный запрос в саму панель
+     сюда не годится: код `forbidden` не отличает «не сотрудник» от «нет
+     согласия», и меню ходило бы в админку при каждом открытии экрана. */
+  const me = useApi(() => getMe(), [])
   // Время в теле компонента запрещено (R-04) — снимаем один раз.
   const [today] = useState(() => new Date())
   const copy = (text: string, cb: () => void) => {
@@ -122,6 +126,12 @@ export function Us() {
                «Анкеты ещё нет» и предложение её завести — это вторая роль, а
                не витрина. */
             { icon: Store, label: t('Кабинет подрядчика'), tile: 'bg-[var(--sage-soft)]', to: '/vendor-app' },
+            /* Панель платформы — только сотруднику и только по ответу сервера.
+               Пока ответа нет, пункта нет вовсе: показывать его всем и ловить
+               403 на входе значит обещать раздел, которого у человека не будет. */
+            ...(me.data?.isStaff === true
+              ? [{ icon: ShieldCheck, label: t('Админка'), tile: 'bg-[var(--blue)]', to: '/admin' }]
+              : []),
           ].map(it => (
             <button key={it.label} onClick={() => nav(it.to)} className="press w-full flex items-center gap-3 py-3.5 text-left border-b border-[var(--track)] last:border-none">
               <Tile icon="" tile={it.tile} size={38} />

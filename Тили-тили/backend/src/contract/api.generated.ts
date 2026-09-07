@@ -6156,6 +6156,8 @@ export interface paths {
         /**
          * Очередь пост-модерации анкет
          * @description Анкеты публикуются сразу; модератор проверяет новые за ≤24 ч, жалобы — вне очереди.
+         *     В очереди только опубликованные и ещё не проверенные анкеты. Заблокированных
+         *     по жалобе здесь нет: решение по ним уже принято, и второй раз его не принимают.
          */
         get: {
             parameters: {
@@ -6175,9 +6177,12 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["VendorPage"];
+                        "application/json": components["schemas"]["ModerationVendorPage"];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -6197,7 +6202,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Решение по анкете */
+        /**
+         * Решение по анкете
+         * @description `approve` — анкета проверена модератором и остаётся в каталоге;
+         *     `reject` — снята с публикации, и тогда `reason` обязательна: без непустой
+         *     причины сервер отвечает 422 с полем `reason`;
+         *     `verify` — документы сверены вне приложения, в каталоге появляется галочка «Проверен».
+         *     О решении подрядчик узнаёт уведомлением, причина уходит ему вместе с ним.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -6212,6 +6224,7 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         action: "approve" | "reject" | "verify";
+                        /** @description Причина решения. Обязательна при `reject`: снятие с публикации без объяснения подрядчику нечем исправить. */
                         reason?: string;
                     };
                 };
@@ -6222,8 +6235,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["VendorDecision"];
+                    };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6239,7 +6258,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Очередь жалоб */
+        /**
+         * Очередь жалоб
+         * @description Только нерассмотренные (`new`), старейшие сверху: срок разбора считается от подачи.
+         */
         get: {
             parameters: {
                 query?: {
@@ -6264,6 +6286,9 @@ export interface paths {
                         };
                     };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -6286,6 +6311,14 @@ export interface paths {
         /**
          * Решение по жалобе
          * @description Санкции по возрастанию: предупреждение → понижение в выдаче → блокировка (План §18.2).
+         *     Набор зависит от цели жалобы: `vendor` — все четыре; `review` — `dismiss`, `warn`
+         *     и `block` (скрыть отзыв: он уходит и из показа, и из рейтинга); `message` и `deal` —
+         *     только `dismiss` и `warn`, иных санкций к ним сервер не применяет. Неприменимая
+         *     санкция — 422 с полем `action`, и жалоба остаётся нерассмотренной.
+         *     При `warn`, `downrank` и `block` по цели `vendor` подрядчик получает уведомление;
+         *     заметка модератора остаётся в журнале и наружу не уходит.
+         *     Повторное решение по уже разобранной жалобе — 404: второй модератор должен
+         *     увидеть, что опоздал.
          */
         post: {
             parameters: {
@@ -6301,6 +6334,7 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         action: "dismiss" | "warn" | "downrank" | "block";
+                        /** @description Заметка модератора для журнала. Нарушителю не уходит. */
                         note?: string;
                     };
                 };
@@ -6311,8 +6345,14 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["ComplaintDecision"];
+                    };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6328,10 +6368,42 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
         /**
          * Категории и словарь синонимов
+         * @description Читает то, что заменяет PUT. Словарь заменяется целиком, поэтому вслепую
+         *     его править нельзя: экран сперва показывает текущий, иначе сохранение
+         *     стирает строки, которых никто не видел.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminCategories"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        /**
+         * Изменить категории и словарь синонимов
          * @description «тамада» = «ведущий», «сладкий стол» = «кондитер» (План §19.2).
+         *     Категории добавляются и правятся, но не удаляются: на них ссылаются анкеты
+         *     и слоты, и исчезнувшая категория — это осиротевшая мозаика. Пропущенный
+         *     `icon` оставляет прежний значок. Словарь `synonyms` заменяется ЦЕЛИКОМ —
+         *     чего не прислали, того больше нет. Слово, ведущее на неизвестную категорию, —
+         *     422 с полем `synonyms.<слово>`, и не меняется ничего.
          */
         put: {
             parameters: {
@@ -6343,8 +6415,11 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        categories?: components["schemas"]["Category"][];
-                        synonyms?: Record<string, never>;
+                        categories?: components["schemas"]["AdminCategory"][];
+                        /** @description слово → идентификатор категории; слово хранится в нижнем регистре */
+                        synonyms?: {
+                            [key: string]: string;
+                        };
                     };
                 };
             };
@@ -6354,8 +6429,13 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["CategoriesUpdated"];
+                    };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
             };
         };
         post?: never;
@@ -6374,7 +6454,10 @@ export interface paths {
         };
         /**
          * Дашборд платформы
-         * @description Регистрации, заполненность анкет, сделки, стоимость LLM, готовность города к запуску (≥50 анкет).
+         * @description Регистрации, свадьбы, опубликованные анкеты, размер очередей, просроченные
+         *     жалобы, сделки, оборот и готовность города к запуску (≥50 анкет).
+         *     Стоимости LLM и заполненности анкет здесь нет: сервер их не считает,
+         *     а ноль вместо «не знаем» — обещание за код (R-174).
          */
         get: {
             parameters: {
@@ -6391,9 +6474,11 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": components["schemas"]["AdminMetrics"];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
             };
         };
         put?: never;
@@ -6419,6 +6504,10 @@ export interface paths {
         get: {
             parameters: {
                 query: {
+                    /**
+                     * @description Зачем смотрим: номер обращения или его суть. Уходит в журнал вместе
+                     *     с именем сотрудника, поэтому пустая строка не принимается.
+                     */
                     reason: string;
                 };
                 header?: never;
@@ -6435,19 +6524,13 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            id?: string;
-                            title?: string;
-                            /** Format: date */
-                            date?: string | null;
-                            city?: string | null;
-                            style?: string | null;
-                            guestsPlanned?: number | null;
-                            /** Format: date-time */
-                            createdAt?: string;
-                        };
+                        "application/json": components["schemas"]["WeddingSupportCard"];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -6574,7 +6657,7 @@ export interface components {
             expiresAt?: string;
             used?: boolean;
         };
-        /** @description Справочник категорий подрядчиков. Список фиксированный — 35 записей, сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится намеренно: добавление категории не должно требовать выката новой версии контракта. Изменять список может только админ через POST /admin/categories. */
+        /** @description Справочник категорий подрядчиков. Список фиксированный — 35 записей, сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится намеренно: добавление категории не должно требовать выката новой версии контракта. Изменять список может только админ через PUT /admin/categories. */
         Category: {
             /** @example photo */
             id?: string;
@@ -7060,6 +7143,15 @@ export interface components {
              *     Правка появится вместе с отправителем и подтверждением адреса.
              */
             readonly email?: string | null;
+            /**
+             * @description Сотрудник платформы: по этому признаку в меню «Мы» появляется
+             *     «Админка». Только чтение и только про себя: списка сотрудников
+             *     наружу нет, а признак ставится руками в базе при найме.
+             *     PATCH /users/me берёт тело по этой же схеме — без readOnly контракт
+             *     объявил бы права настраиваемыми, то есть «сделай меня админом»
+             *     в один запрос.
+             */
+            readonly isStaff?: boolean;
             /** @enum {string} */
             lang?: "ru" | "en";
             /**
@@ -7153,6 +7245,116 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
         };
+        /**
+         * @description Категория глазами сотрудника: то же, что в каталоге, плюс порядок в мозаике.
+         *     Отдельная схема, а не Category, потому что `sort` наружу не выходит —
+         *     паре он не нужен, а панель без него не может переставлять плитки.
+         */
+        AdminCategory: {
+            /** @example photo */
+            id: string;
+            /** @example Фотограф */
+            title: string;
+            /**
+             * @description Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».
+             *     В теле PUT поле опускают, чтобы оставить прежний значок.
+             */
+            icon?: string | null;
+            /** @description порядок в мозаике: меньше — выше */
+            sort?: number;
+        };
+        /** @description Текущее состояние справочника: то, что заменит следующий PUT. */
+        AdminCategories: {
+            categories?: components["schemas"]["AdminCategory"][];
+            /** @description слово → идентификатор категории */
+            synonyms?: {
+                [key: string]: string;
+            };
+        };
+        /** @description Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру. */
+        CategoriesUpdated: {
+            categories?: number;
+            synonyms?: number;
+        };
+        ModerationVendor: components["schemas"]["Vendor"] & {
+            /**
+             * Format: date-time
+             * @description когда анкета заведена
+             */
+            createdAt?: string;
+            /**
+             * Format: date-time
+             * @description Когда анкета опубликована. Именно от этой даты считается срок
+             *     проверки, и именно её показывает очередь: дата заведения
+             *     у анкеты, пролежавшей месяц в черновике, ответила бы не на тот вопрос.
+             */
+            publishedAt?: string | null;
+        };
+        ModerationVendorPage: {
+            items?: components["schemas"]["ModerationVendor"][];
+            nextCursor?: string | null;
+        };
+        /** @description Что записано по анкете. Ответ подтверждает решение, а не состояние анкеты целиком. */
+        VendorDecision: {
+            vendorId?: string;
+            /** @enum {string} */
+            action?: "approve" | "reject" | "verify";
+        };
+        /** @description Что записано по жалобе. */
+        ComplaintDecision: {
+            complaintId?: string;
+            /** @enum {string} */
+            action?: "dismiss" | "warn" | "downrank" | "block";
+        };
+        /**
+         * @description Показатели платформы на сейчас. Каждое число считается сервером —
+         *     клиент их не складывает и не досчитывает, иначе на двух экранах
+         *     получились бы два разных ответа.
+         */
+        AdminMetrics: {
+            /** @description живые аккаунты */
+            users?: number;
+            /** @description неархивные свадьбы */
+            weddings?: number;
+            /** @description опубликованные и не заблокированные анкеты */
+            vendorsPublished?: number;
+            /** @description анкеты, ждущие проверки */
+            moderationQueue?: number;
+            /** @description нерассмотренные жалобы */
+            complaintsOpen?: number;
+            /**
+             * @description Из них старше суток. Срок разбора — 24 часа (§18.2); без отдельного
+             *     счётчика он существует только на бумаге.
+             */
+            complaintsOverdue?: number;
+            /** @description сделки в состояниях booked, paid_deposit, done */
+            deals?: number;
+            /** @description оборот по тем же сделкам */
+            gmv?: components["schemas"]["Money"];
+            /** @description до двадцати городов по числу анкет */
+            cities?: {
+                city?: string;
+                vendors?: number;
+                /** @description город готов к запуску — анкет 50 и больше */
+                launchReady?: boolean;
+            }[];
+        };
+        /**
+         * @description Карточка, а не свадьба целиком: ни гостей, ни переписки, ни сумм.
+         *     Для разбора обращения этого достаточно, а лишнее здесь — чужая свадьба
+         *     на экране поддержки.
+         */
+        WeddingSupportCard: {
+            id?: string;
+            title?: string;
+            /** Format: date */
+            date?: string | null;
+            city?: string | null;
+            style?: string | null;
+            guestsPlanned?: number | null;
+            /** Format: date-time */
+            createdAt?: string;
+        };
     };
     responses: {
         /** @description Не авторизован */
@@ -7187,6 +7389,21 @@ export interface components {
         };
         /** @description Конфликт (уже существует) */
         Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description Запрос не прошёл проверку (`validation_failed`). Так отвечает сервер
+         *     на любое нарушение схемы и на правила, которых схемой не выразить:
+         *     снятие анкеты с публикации без причины, санкция, неприменимая к цели
+         *     жалобы, синоним на несуществующую категорию. В описании операции
+         *     сказано, какое поле сервер называет виноватым.
+         */
+        Validation: {
             headers: {
                 [name: string]: unknown;
             };

@@ -38,6 +38,7 @@ const ROUTES = [
   '/favorites', '/venues', '/notes', '/tools/alcohol',
   '/vendor-app', '/vendor-app/profile', '/vendor-app/deals', '/vendor-app/verification',
   '/vendor-app/leads/l1', '/vendor-app/reviews', '/vendor-app/analytics',
+  '/admin', '/admin/moderation', '/admin/moderation/v1', '/admin/complaints', '/admin/categories', '/admin/wedding',
 ]
 
 /*

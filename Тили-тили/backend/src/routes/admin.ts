@@ -244,6 +244,32 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /* ── категории и синонимы ─────────────────────────────────────────── */
+  /*
+   * Чтение того, что заменяет PUT.
+   *
+   * Словарь синонимов заменяется целиком, а прочитать его было неоткуда:
+   * `GET /catalog/categories` его не отдаёт и не должен — паре он не нужен.
+   * Панель без этого пути правила бы словарь вслепую и стирала бы строки,
+   * которых сотрудник ни разу не видел.
+   */
+  app.get('/admin/categories', { preHandler: app.requireConsent }, async (request) => {
+    await requireStaff(request)
+    const { rows: categories } = await db().query<{
+      id: string
+      name: string
+      icon: string | null
+      sort: number
+    }>('select id, name, icon, sort from categories order by sort, name')
+    const { rows: synonyms } = await db().query<{ word: string; category_id: string }>(
+      'select word, category_id from category_synonyms order by word',
+    )
+    return {
+      // `name` в базе, `title` в контракте — как в каталоге.
+      categories: categories.map((c) => ({ id: c.id, title: c.name, icon: c.icon, sort: c.sort })),
+      synonyms: Object.fromEntries(synonyms.map((s) => [s.word, s.category_id])),
+    }
+  })
+
   app.put(
     '/admin/categories',
     {

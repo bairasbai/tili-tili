@@ -8,6 +8,7 @@ interface ProfileRow {
   name: string | null
   phone: string
   email: string | null
+  is_staff: boolean
   lang: string
   tz: string | null
   tasks: boolean
@@ -27,6 +28,10 @@ function toProfile(r: ProfileRow) {
     name: r.name ?? '',
     phone: r.phone,
     email: r.email,
+    /* Признак сотрудника — про себя и только про себя: по нему в меню «Мы»
+     * появляется «Админка». Списка сотрудников наружу нет, и настраиваемым
+     * признак не сделан: в схеме он readOnly, а в теле PATCH его нет вовсе. */
+    isStaff: r.is_staff,
     lang: r.lang.trim(),
     tz: r.tz ?? '',
     push: { tasks: r.tasks, chats: r.chats, deals: r.deals, tips: r.tips },
@@ -42,7 +47,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   const loadProfile = async (userId: string) => {
     const { rows } = await db().query<ProfileRow>(
-      `select u.id, u.name, u.phone, u.email, u.lang, u.tz,
+      `select u.id, u.name, u.phone, u.email, u.is_staff, u.lang, u.tz,
               coalesce(p.tasks, true) as tasks, coalesce(p.chats, true) as chats,
               coalesce(p.deals, true) as deals, coalesce(p.tips, true) as tips,
               coalesce(p.quiet_from, '22:00')::text as quiet_from,

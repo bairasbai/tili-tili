@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 40. */
+ * Схем: 49. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -9,6 +9,117 @@ export const CONTRACT_SCHEMA_ID = "contract"
 export const CONTRACT_SCHEMAS = {
   $id: "contract",
   definitions: {
+      "AdminCategories": {
+          "type": "object",
+          "description": "Текущее состояние справочника: то, что заменит следующий PUT.",
+          "properties": {
+              "categories": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/AdminCategory"
+                  }
+              },
+              "synonyms": {
+                  "type": "object",
+                  "description": "слово → идентификатор категории",
+                  "additionalProperties": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "AdminCategory": {
+          "type": "object",
+          "description": "Категория глазами сотрудника: то же, что в каталоге, плюс порядок в мозаике.\nОтдельная схема, а не Category, потому что `sort` наружу не выходит —\nпаре он не нужен, а панель без него не может переставлять плитки.\n",
+          "required": [
+              "id",
+              "title"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "maxLength": 40
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+              },
+              "icon": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 16,
+                  "description": "Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».\nВ теле PUT поле опускают, чтобы оставить прежний значок.\n"
+              },
+              "sort": {
+                  "type": "integer",
+                  "description": "порядок в мозаике: меньше — выше"
+              }
+          }
+      },
+      "AdminMetrics": {
+          "type": "object",
+          "description": "Показатели платформы на сейчас. Каждое число считается сервером —\nклиент их не складывает и не досчитывает, иначе на двух экранах\nполучились бы два разных ответа.\n",
+          "properties": {
+              "users": {
+                  "type": "integer",
+                  "description": "живые аккаунты"
+              },
+              "weddings": {
+                  "type": "integer",
+                  "description": "неархивные свадьбы"
+              },
+              "vendorsPublished": {
+                  "type": "integer",
+                  "description": "опубликованные и не заблокированные анкеты"
+              },
+              "moderationQueue": {
+                  "type": "integer",
+                  "description": "анкеты, ждущие проверки"
+              },
+              "complaintsOpen": {
+                  "type": "integer",
+                  "description": "нерассмотренные жалобы"
+              },
+              "complaintsOverdue": {
+                  "type": "integer",
+                  "description": "Из них старше суток. Срок разбора — 24 часа (§18.2); без отдельного\nсчётчика он существует только на бумаге.\n"
+              },
+              "deals": {
+                  "type": "integer",
+                  "description": "сделки в состояниях booked, paid_deposit, done"
+              },
+              "gmv": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "оборот по тем же сделкам"
+              },
+              "cities": {
+                  "type": "array",
+                  "description": "до двадцати городов по числу анкет",
+                  "items": {
+                      "type": "object",
+                      "properties": {
+                          "city": {
+                              "type": "string"
+                          },
+                          "vendors": {
+                              "type": "integer"
+                          },
+                          "launchReady": {
+                              "type": "boolean",
+                              "description": "город готов к запуску — анкет 50 и больше"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "AlbumPhoto": {
           "type": "object",
           "properties": {
@@ -147,9 +258,21 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "CategoriesUpdated": {
+          "type": "object",
+          "description": "Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру.",
+          "properties": {
+              "categories": {
+                  "type": "integer"
+              },
+              "synonyms": {
+                  "type": "integer"
+              }
+          }
+      },
       "Category": {
           "type": "object",
-          "description": "Справочник категорий подрядчиков. Список фиксированный — 35 записей, сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится намеренно: добавление категории не должно требовать выката новой версии контракта. Изменять список может только админ через POST /admin/categories.\n",
+          "description": "Справочник категорий подрядчиков. Список фиксированный — 35 записей, сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится намеренно: добавление категории не должно требовать выката новой версии контракта. Изменять список может только админ через PUT /admin/categories.\n",
           "properties": {
               "id": {
                   "type": "string"
@@ -296,6 +419,24 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              }
+          }
+      },
+      "ComplaintDecision": {
+          "type": "object",
+          "description": "Что записано по жалобе.",
+          "properties": {
+              "complaintId": {
+                  "type": "string"
+              },
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "dismiss",
+                      "warn",
+                      "downrank",
+                      "block"
+                  ]
               }
           }
       },
@@ -854,6 +995,48 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ModerationVendor": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/Vendor"
+              },
+              {
+                  "type": "object",
+                  "properties": {
+                      "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "когда анкета заведена"
+                      },
+                      "publishedAt": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date-time",
+                          "description": "Когда анкета опубликована. Именно от этой даты считается срок\nпроверки, и именно её показывает очередь: дата заведения\nу анкеты, пролежавшей месяц в черновике, ответила бы не на тот вопрос.\n"
+                      }
+                  }
+              }
+          ]
+      },
+      "ModerationVendorPage": {
+          "type": "object",
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ModerationVendor"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
       "Money": {
           "type": "object",
           "description": "Денежная сумма. Решение владельца 2026-09-02: минорные единицы плюс код\nвалюты у КАЖДОЙ суммы, а не одна валюта на свадьбу — план §19.7 описывает\nсвадьбу за границей, где сделка в евро, а бюджет в рублях.\nВ MVP принимается только RUB; enum расширяется вместе с поддержкой курсов.\n",
@@ -1171,6 +1354,11 @@ export const CONTRACT_SCHEMAS = {
                   "readOnly": true,
                   "description": "Пока только читается: отправителя писем нет (хвост владельца), и\nпринимать адрес, на который ничего не уйдёт, — обещать доставку.\nПравка появится вместе с отправителем и подтверждением адреса.\n"
               },
+              "isStaff": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "Сотрудник платформы: по этому признаку в меню «Мы» появляется\n«Админка». Только чтение и только про себя: списка сотрудников\nнаружу нет, а признак ставится руками в базе при найме.\nPATCH /users/me берёт тело по этой же схеме — без readOnly контракт\nобъявил бы права настраиваемыми, то есть «сделай меня админом»\nв один запрос.\n"
+              },
               "lang": {
                   "type": "string",
                   "enum": [
@@ -1265,6 +1453,23 @@ export const CONTRACT_SCHEMAS = {
               },
               "hasVideo": {
                   "type": "boolean"
+              }
+          }
+      },
+      "VendorDecision": {
+          "type": "object",
+          "description": "Что записано по анкете. Ответ подтверждает решение, а не состояние анкеты целиком.",
+          "properties": {
+              "vendorId": {
+                  "type": "string"
+              },
+              "action": {
+                  "type": "string",
+                  "enum": [
+                      "approve",
+                      "reject",
+                      "verify"
+                  ]
               }
           }
       },
@@ -1591,6 +1796,47 @@ export const CONTRACT_SCHEMAS = {
                   ]
               }
           }
+      },
+      "WeddingSupportCard": {
+          "type": "object",
+          "description": "Карточка, а не свадьба целиком: ни гостей, ни переписки, ни сумм.\nДля разбора обращения этого достаточно, а лишнее здесь — чужая свадьба\nна экране поддержки.\n",
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "city": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "style": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "guestsPlanned": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
       }
   },
 } as const
@@ -1601,16 +1847,21 @@ export function ref(name: ContractSchemaName): { $ref: string } {
 }
 
 export type ContractSchemaName =
+  | "AdminCategories"
+  | "AdminCategory"
+  | "AdminMetrics"
   | "AlbumPhoto"
   | "AuthTokens"
   | "Budget"
   | "BudgetItem"
   | "BusRoute"
+  | "CategoriesUpdated"
   | "Category"
   | "Chat"
   | "City"
   | "CityRef"
   | "Complaint"
+  | "ComplaintDecision"
   | "Deal"
   | "DealState"
   | "Document"
@@ -1624,6 +1875,8 @@ export type ContractSchemaName =
   | "Member"
   | "MenuPoll"
   | "Message"
+  | "ModerationVendor"
+  | "ModerationVendorPage"
   | "Money"
   | "Notification"
   | "Readiness"
@@ -1636,8 +1889,10 @@ export type ContractSchemaName =
   | "User"
   | "UserProfile"
   | "Vendor"
+  | "VendorDecision"
   | "VendorDetail"
   | "VendorPage"
   | "VendorUpsert"
   | "Wedding"
   | "WeddingPublic"
+  | "WeddingSupportCard"

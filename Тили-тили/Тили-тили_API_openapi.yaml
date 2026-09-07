@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.25.0
+  version: 0.26.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -3099,7 +3099,10 @@ paths:
     get:
       tags: [admin]
       summary: Очередь пост-модерации анкет
-      description: 'Анкеты публикуются сразу; модератор проверяет новые за ≤24 ч, жалобы — вне очереди.'
+      description: |
+        Анкеты публикуются сразу; модератор проверяет новые за ≤24 ч, жалобы — вне очереди.
+        В очереди только опубликованные и ещё не проверенные анкеты. Заблокированных
+        по жалобе здесь нет: решение по ним уже принято, и второй раз его не принимают.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
       responses:
@@ -3107,11 +3110,20 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/VendorPage' }
+              schema: { $ref: '#/components/schemas/ModerationVendorPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
   /admin/moderation/vendors/{vendorId}:
     post:
       tags: [admin]
       summary: Решение по анкете
+      description: |
+        `approve` — анкета проверена модератором и остаётся в каталоге;
+        `reject` — снята с публикации, и тогда `reason` обязательна: без непустой
+        причины сервер отвечает 422 с полем `reason`;
+        `verify` — документы сверены вне приложения, в каталоге появляется галочка «Проверен».
+        О решении подрядчик узнаёт уведомлением, причина уходит ему вместе с ним.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: vendorId, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -3123,13 +3135,25 @@ paths:
               required: [action]
               properties:
                 action: { type: string, enum: [approve, reject, verify] }
-                reason: { type: string }
+                reason:
+                  type: string
+                  maxLength: 1000
+                  description: 'Причина решения. Обязательна при `reject`: снятие с публикации без объяснения подрядчику нечем исправить.'
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VendorDecision' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
   /admin/complaints:
     get:
       tags: [admin]
       summary: Очередь жалоб
+      description: 'Только нерассмотренные (`new`), старейшие сверху: срок разбора считается от подачи.'
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
       responses:
@@ -3142,11 +3166,23 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/Complaint' } }
                   nextCursor: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
   /admin/complaints/{complaintId}:
     post:
       tags: [admin]
       summary: Решение по жалобе
-      description: 'Санкции по возрастанию: предупреждение → понижение в выдаче → блокировка (План §18.2).'
+      description: |
+        Санкции по возрастанию: предупреждение → понижение в выдаче → блокировка (План §18.2).
+        Набор зависит от цели жалобы: `vendor` — все четыре; `review` — `dismiss`, `warn`
+        и `block` (скрыть отзыв: он уходит и из показа, и из рейтинга); `message` и `deal` —
+        только `dismiss` и `warn`, иных санкций к ним сервер не применяет. Неприменимая
+        санкция — 422 с полем `action`, и жалоба остаётся нерассмотренной.
+        При `warn`, `downrank` и `block` по цели `vendor` подрядчик получает уведомление;
+        заметка модератора остаётся в журнале и наружу не уходит.
+        Повторное решение по уже разобранной жалобе — 404: второй модератор должен
+        увидеть, что опоздал.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: complaintId, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -3158,14 +3194,47 @@ paths:
               required: [action]
               properties:
                 action: { type: string, enum: [dismiss, warn, downrank, block] }
-                note: { type: string }
+                note:
+                  type: string
+                  maxLength: 2000
+                  description: 'Заметка модератора для журнала. Нарушителю не уходит.'
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComplaintDecision' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
   /admin/categories:
-    put:
+    get:
       tags: [admin]
       summary: Категории и словарь синонимов
-      description: '«тамада» = «ведущий», «сладкий стол» = «кондитер» (План §19.2).'
+      description: |
+        Читает то, что заменяет PUT. Словарь заменяется целиком, поэтому вслепую
+        его править нельзя: экран сперва показывает текущий, иначе сохранение
+        стирает строки, которых никто не видел.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCategories' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [admin]
+      summary: Изменить категории и словарь синонимов
+      description: |
+        «тамада» = «ведущий», «сладкий стол» = «кондитер» (План §19.2).
+        Категории добавляются и правятся, но не удаляются: на них ссылаются анкеты
+        и слоты, и исчезнувшая категория — это осиротевшая мозаика. Пропущенный
+        `icon` оставляет прежний значок. Словарь `synonyms` заменяется ЦЕЛИКОМ —
+        чего не прислали, того больше нет. Слово, ведущее на неизвестную категорию, —
+        422 с полем `synonyms.<слово>`, и не меняется ничего.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3174,22 +3243,41 @@ paths:
             schema:
               type: object
               properties:
-                categories: { type: array, items: { $ref: '#/components/schemas/Category' } }
-                synonyms: { type: object }
+                categories:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/AdminCategory' }
+                synonyms:
+                  type: object
+                  description: 'слово → идентификатор категории; слово хранится в нижнем регистре'
+                  additionalProperties: { type: string }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoriesUpdated' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
   /admin/metrics:
     get:
       tags: [admin]
       summary: Дашборд платформы
-      description: 'Регистрации, заполненность анкет, сделки, стоимость LLM, готовность города к запуску (≥50 анкет).'
+      description: |
+        Регистрации, свадьбы, опубликованные анкеты, размер очередей, просроченные
+        жалобы, сделки, оборот и готовность города к запуску (≥50 анкет).
+        Стоимости LLM и заполненности анкет здесь нет: сервер их не считает,
+        а ноль вместо «не знаем» — обещание за код (R-174).
       security: [{ bearerAuth: [] }]
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema: { type: object }
+              schema: { $ref: '#/components/schemas/AdminMetrics' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /admin/weddings/{weddingId}:
     get:
       tags: [admin]
@@ -3200,26 +3288,23 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
-        - { name: reason, in: query, required: true, schema: { type: string } }
+        - name: reason
+          in: query
+          required: true
+          description: |
+            Зачем смотрим: номер обращения или его суть. Уходит в журнал вместе
+            с именем сотрудника, поэтому пустая строка не принимается.
+          schema: { type: string, minLength: 5, maxLength: 500 }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: object
-                description: |
-                  Карточка, а не свадьба целиком: ни гостей, ни переписки,
-                  ни сумм. Для разбора обращения этого достаточно, а лишнее
-                  здесь — чужая свадьба на экране поддержки.
-                properties:
-                  id: { type: string }
-                  title: { type: string }
-                  date: { type: string, format: date, nullable: true }
-                  city: { type: string, nullable: true }
-                  style: { type: string, nullable: true }
-                  guestsPlanned: { type: integer, nullable: true }
-                  createdAt: { type: string, format: date-time }
+              schema: { $ref: '#/components/schemas/WeddingSupportCard' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
 
 components:
   securitySchemes:
@@ -3284,6 +3369,16 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     Conflict:
       description: Конфликт (уже существует)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validation:
+      description: |
+        Запрос не прошёл проверку (`validation_failed`). Так отвечает сервер
+        на любое нарушение схемы и на правила, которых схемой не выразить:
+        снятие анкеты с публикации без причины, санкция, неприменимая к цели
+        жалобы, синоним на несуществующую категорию. В описании операции
+        сказано, какое поле сервер называет виноватым.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -3437,7 +3532,7 @@ components:
         сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES
         во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится
         намеренно: добавление категории не должно требовать выката новой версии
-        контракта. Изменять список может только админ через POST /admin/categories.
+        контракта. Изменять список может только админ через PUT /admin/categories.
       properties:
         id: { type: string, example: photo }
         title: { type: string, example: Фотограф }
@@ -3970,6 +4065,16 @@ components:
             Пока только читается: отправителя писем нет (хвост владельца), и
             принимать адрес, на который ничего не уйдёт, — обещать доставку.
             Правка появится вместе с отправителем и подтверждением адреса.
+        isStaff:
+          type: boolean
+          readOnly: true
+          description: |
+            Сотрудник платформы: по этому признаку в меню «Мы» появляется
+            «Админка». Только чтение и только про себя: списка сотрудников
+            наружу нет, а признак ставится руками в базе при найме.
+            PATCH /users/me берёт тело по этой же схеме — без readOnly контракт
+            объявил бы права настраиваемыми, то есть «сделай меня админом»
+            в один запрос.
         lang: { type: string, enum: [ru, en] }
         tz: { type: string, example: Asia/Yekaterinburg, description: 'нужна для открытия чата дня X в 09:00 по местному' }
         push:
@@ -4048,6 +4153,116 @@ components:
         category: { type: string, enum: [fraud, content, no_show, spam] }
         text: { type: string }
         status: { type: string, enum: [new, resolved] }
+        createdAt: { type: string, format: date-time }
+
+    # ─── Админка (План §19.10) ───
+    AdminCategory:
+      type: object
+      description: |
+        Категория глазами сотрудника: то же, что в каталоге, плюс порядок в мозаике.
+        Отдельная схема, а не Category, потому что `sort` наружу не выходит —
+        паре он не нужен, а панель без него не может переставлять плитки.
+      required: [id, title]
+      properties:
+        id: { type: string, maxLength: 40, example: photo }
+        title: { type: string, minLength: 1, maxLength: 100, example: Фотограф }
+        icon:
+          type: string
+          maxLength: 16
+          nullable: true
+          description: |
+            Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».
+            В теле PUT поле опускают, чтобы оставить прежний значок.
+        sort: { type: integer, description: 'порядок в мозаике: меньше — выше' }
+    AdminCategories:
+      type: object
+      description: 'Текущее состояние справочника: то, что заменит следующий PUT.'
+      properties:
+        categories: { type: array, items: { $ref: '#/components/schemas/AdminCategory' } }
+        synonyms:
+          type: object
+          description: 'слово → идентификатор категории'
+          additionalProperties: { type: string }
+    CategoriesUpdated:
+      type: object
+      description: 'Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру.'
+      properties:
+        categories: { type: integer }
+        synonyms: { type: integer }
+    ModerationVendor:
+      allOf:
+        - $ref: '#/components/schemas/Vendor'
+        - type: object
+          properties:
+            createdAt: { type: string, format: date-time, description: 'когда анкета заведена' }
+            publishedAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: |
+                Когда анкета опубликована. Именно от этой даты считается срок
+                проверки, и именно её показывает очередь: дата заведения
+                у анкеты, пролежавшей месяц в черновике, ответила бы не на тот вопрос.
+    ModerationVendorPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ModerationVendor' } }
+        nextCursor: { type: string, nullable: true }
+    VendorDecision:
+      type: object
+      description: 'Что записано по анкете. Ответ подтверждает решение, а не состояние анкеты целиком.'
+      properties:
+        vendorId: { type: string }
+        action: { type: string, enum: [approve, reject, verify] }
+    ComplaintDecision:
+      type: object
+      description: 'Что записано по жалобе.'
+      properties:
+        complaintId: { type: string }
+        action: { type: string, enum: [dismiss, warn, downrank, block] }
+    AdminMetrics:
+      type: object
+      description: |
+        Показатели платформы на сейчас. Каждое число считается сервером —
+        клиент их не складывает и не досчитывает, иначе на двух экранах
+        получились бы два разных ответа.
+      properties:
+        users: { type: integer, description: 'живые аккаунты' }
+        weddings: { type: integer, description: 'неархивные свадьбы' }
+        vendorsPublished: { type: integer, description: 'опубликованные и не заблокированные анкеты' }
+        moderationQueue: { type: integer, description: 'анкеты, ждущие проверки' }
+        complaintsOpen: { type: integer, description: 'нерассмотренные жалобы' }
+        complaintsOverdue:
+          type: integer
+          description: |
+            Из них старше суток. Срок разбора — 24 часа (§18.2); без отдельного
+            счётчика он существует только на бумаге.
+        deals: { type: integer, description: 'сделки в состояниях booked, paid_deposit, done' }
+        gmv:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: 'оборот по тем же сделкам'
+        cities:
+          type: array
+          description: 'до двадцати городов по числу анкет'
+          items:
+            type: object
+            properties:
+              city: { type: string }
+              vendors: { type: integer }
+              launchReady: { type: boolean, description: 'город готов к запуску — анкет 50 и больше' }
+    WeddingSupportCard:
+      type: object
+      description: |
+        Карточка, а не свадьба целиком: ни гостей, ни переписки, ни сумм.
+        Для разбора обращения этого достаточно, а лишнее здесь — чужая свадьба
+        на экране поддержки.
+      properties:
+        id: { type: string }
+        title: { type: string }
+        date: { type: string, format: date, nullable: true }
+        city: { type: string, nullable: true }
+        style: { type: string, nullable: true }
+        guestsPlanned: { type: integer, nullable: true }
         createdAt: { type: string, format: date-time }
 
 security:

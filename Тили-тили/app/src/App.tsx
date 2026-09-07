@@ -33,6 +33,7 @@ const load = {
   legal: () => import('@/pages/Legal'),
   wishlist: () => import('@/pages/Wishlist'),
   logistics: () => import('@/pages/Logistics'),
+  admin: () => import('@/pages/Admin'),
 }
 
 const SearchCategories = lazy(() => load.search().then(m => ({ default: m.SearchCategories })))
@@ -93,6 +94,15 @@ const GiftPick = lazy(() => load.wishlist().then(m => ({ default: m.GiftPick }))
 const Logistics = lazy(() => load.logistics().then(m => ({ default: m.Logistics })))
 const Catering = lazy(() => load.logistics().then(m => ({ default: m.Catering })))
 
+/* Панель платформы — один чанк на весь раздел: сотрудников единицы, и качать
+   его паре, которая туда никогда не зайдёт, незачем. */
+const AdminHome = lazy(() => load.admin().then(m => ({ default: m.AdminHome })))
+const AdminModeration = lazy(() => load.admin().then(m => ({ default: m.AdminModeration })))
+const AdminVendorDecision = lazy(() => load.admin().then(m => ({ default: m.AdminVendorDecision })))
+const AdminComplaints = lazy(() => load.admin().then(m => ({ default: m.AdminComplaints })))
+const AdminCategories = lazy(() => load.admin().then(m => ({ default: m.AdminCategories })))
+const AdminWedding = lazy(() => load.admin().then(m => ({ default: m.AdminWedding })))
+
 /* Заглушка на время загрузки чанка. Нарочно пустая: мигать скелетоном на
    переходе, который занимает десятки миллисекунд, хуже, чем не мигать. */
 function RouteLoading() {
@@ -125,7 +135,10 @@ function Shell() {
     p.startsWith('/i/') ||
     p.startsWith('/join') ||
     p.startsWith('/us/chats/') ||
-    p.startsWith('/vendor-app')
+    p.startsWith('/vendor-app') ||
+    /* Панель платформы — не раздел пары: нижняя навигация здесь предлагала бы
+       уйти в «Свадьбу» и «Чаты» посреди разбора чужой жалобы. */
+    p.startsWith('/admin')
   return (
     <div className={`app-shell${noTab ? ' no-tab' : ''}`} key={lang}>
       <OfflineBanner />
@@ -185,6 +198,12 @@ function Shell() {
           <Route path="/venues" element={<VenuesMap />} />
           <Route path="/us/chats" element={<Chats />} />
           <Route path="/us/chats/:id" element={<Chat />} />
+          <Route path="/admin" element={<AdminHome />} />
+          <Route path="/admin/moderation" element={<AdminModeration />} />
+          <Route path="/admin/moderation/:vendorId" element={<AdminVendorDecision />} />
+          <Route path="/admin/complaints" element={<AdminComplaints />} />
+          <Route path="/admin/categories" element={<AdminCategories />} />
+          <Route path="/admin/wedding" element={<AdminWedding />} />
           <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />
         </Routes>
       </Suspense>

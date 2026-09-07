@@ -11,9 +11,14 @@ import { cn, goBack } from '@/lib/utils'
 import { catIcon } from '@/lib/icons'
 
 /* Верхняя шапка страницы */
-export function TopBar({ title, sub, back, right }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode }) {
+/*
+ * `fallback` — куда вести «назад», когда истории нет (прямой заход по ссылке).
+ * По умолчанию это главная, но внутри раздела она уводит вон из него: с детали
+ * анкеты в панели человек ждёт возврата в очередь, а не выхода на «Главную».
+ */
+export function TopBar({ title, sub, back, right, fallback }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; fallback?: string }) {
   const nav = useNavigate()
-  const back2 = () => goBack(n => nav(n), (to, o) => nav(to, o))
+  const back2 = () => goBack(n => nav(n), (to, o) => nav(to, o), fallback)
   return (
     <div className="px-5 pt-6 pb-2 flex items-start justify-between gap-3 fade-in">
       <div className="flex items-center gap-3 min-w-0">

@@ -15,7 +15,7 @@
        * это закреплено тестом src/lib/deeplink.test.ts, иначе он молча разъедется.
        */
       (function () {
-        var SEGMENTS = ['quiz', 'invite', 'i', 'auth', 'join', 'home', 'notifications', 'settings', 'support', 'search', 'legal', 'vendor-app', 'vendor', 'compare', 'favorites', 'notes', 'tools', 'wedding', 'gifts', 'deal', 'assistant', 'dayx', 'after', 'us', 'inspiration', 'venues']
+        var SEGMENTS = ['quiz', 'invite', 'i', 'auth', 'join', 'home', 'notifications', 'settings', 'support', 'search', 'legal', 'vendor-app', 'vendor', 'compare', 'favorites', 'notes', 'tools', 'wedding', 'gifts', 'deal', 'assistant', 'dayx', 'after', 'us', 'inspiration', 'venues', 'admin']
         var p = window.location.pathname
         if (p === '/' || /\/$/.test(p) || p === '/index.html' || /\.[a-z0-9]+$/i.test(p)) return
         try { sessionStorage.setItem('tt_redirect', p + window.location.search + window.location.hash) } catch (e) { /* приватный режим */ }
