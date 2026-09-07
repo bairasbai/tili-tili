@@ -57,7 +57,9 @@ function serve(routes: Routes): Call[] {
     try { body = init?.body ? JSON.parse(String(init.body)) : null } catch { body = init?.body }
     calls.push({ method: init?.method ?? 'GET', path, url: full, body })
     if (!(path in routes)) return Promise.resolve(json({ error: { code: 'not_found', message: `нет ответа для ${path}` } }, 404))
-    const reply = routes[path]
+    const stored = routes[path]
+    /* Ответ может зависеть от метода: GET и PUT одного пути — один ключ таблицы. */
+    const reply = typeof stored === 'function' ? (stored as (c: Call) => unknown)(calls[calls.length - 1]!) : stored
     if (reply === DOWN) return Promise.reject(new TypeError('Failed to fetch'))
     if (reply === PENDING) return new Promise<Response>(() => {})
     if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status))
@@ -400,6 +402,31 @@ describe('справочник категорий: словарь заменяе
          с какой буквы его записал сотрудник. */
       synonyms: { тамада: 'host' },
     })
+  })
+
+  it('422 с полем: текст сервера встаёт под виноватым словом, а не только внизу', async () => {
+    /* Контракт v0.26.0: `error.fields` называет поле — `synonyms.<слово>`.
+       GET отдаёт справочник, PUT отказывает; путь один, поэтому ответ по методу. */
+    const rejected = {
+      __status: 422,
+      body: {
+        error: {
+          code: 'validation_failed',
+          message: 'Запрос не прошёл проверку',
+          fields: { 'synonyms.тамада': 'неизвестная категория: hostx' },
+        },
+      },
+    }
+    serve({ '/admin/categories': (c: Call) => (c.method === 'PUT' ? rejected : ADMIN_CATEGORIES) })
+    await open('/admin/categories', 'Словарь синонимов')
+    fireEvent.click(screen.getByText('Сохранить'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Сохранить'))
+
+    const alerts = async () => screen.getAllByRole('alert').map(a => a.textContent ?? '').join(' | ')
+    await waitFor(async () => expect(await alerts()).toContain('неизвестная категория: hostx'))
+    /* Общий текст остаётся: его человек читает первым, подпись у строки — вторым. */
+    expect(await alerts()).toContain('Запрос не прошёл проверку')
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
 

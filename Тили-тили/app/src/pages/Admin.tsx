@@ -282,7 +282,10 @@ export function AdminVendorDecision() {
     try {
       await decideVendor(vendorId, action, action === 'reject' ? reason.trim() : undefined)
       nav('/admin/moderation')
-    } catch (e) { setErr(explainError(e)) }
+    } catch (e) {
+      /* 422 называет поле: текст сервера про причину точнее общего «не прошёл проверку». */
+      setErr((e instanceof ApiError && e.field('reason')) || explainError(e))
+    }
     finally { setBusy(false) }
   })()
 
@@ -563,6 +566,9 @@ export function AdminCategories() {
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /* Сервер называет виноватое слово (`synonyms.<слово>` в `error.fields`):
+     подпись встаёт под той строкой, а не в общий текст внизу экрана. */
+  const [rowErr, setRowErr] = useState<Record<string, string>>({})
 
   /* Копия снимается с ответа: пришёл новый ответ (в том числе после
      сохранения) — на экране снова то, что лежит на сервере. */
@@ -605,6 +611,7 @@ export function AdminCategories() {
     if (!draft) return
     setBusy(true)
     setErr(null)
+    setRowErr({})
     try {
       await putAdminCategories({
         categories: draft.categories.map(c => ({
@@ -624,6 +631,13 @@ export function AdminCategories() {
          текст и показываем: «ошибка проверки» без слова не чинится. */
       setConfirm(false)
       setErr(explainError(e))
+      if (e instanceof ApiError) {
+        const bad: Record<string, string> = {}
+        for (const [key, text] of Object.entries(e.fields)) {
+          if (key.startsWith('synonyms.')) bad[key.slice('synonyms.'.length)] = text
+        }
+        setRowErr(bad)
+      }
     } finally { setBusy(false) }
   })()
 
@@ -688,7 +702,7 @@ export function AdminCategories() {
                 <p className="text-[12.5px] text-[var(--soft)] py-3">{t('Словарь пуст — поиск ищет только по названиям')}</p>
               )}
               {synonyms.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 py-2.5 border-b border-[var(--track)] last:border-none">
+                <div key={i} className="flex flex-wrap items-center gap-2 py-2.5 border-b border-[var(--track)] last:border-none">
                   <input
                     value={s.word}
                     onChange={e => editSynonym(i, { word: e.target.value })}
@@ -708,6 +722,9 @@ export function AdminCategories() {
                   <button onClick={() => dropSynonym(i)} aria-label={t('Удалить слово')} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0">
                     <Trash2 size={14} className="text-[var(--soft)]" />
                   </button>
+                  {rowErr[s.word.trim().toLowerCase()] && (
+                    <p role="alert" className="basis-full text-[11px] text-[var(--rose-ink)] pl-3 -mt-1">{rowErr[s.word.trim().toLowerCase()]}</p>
+                  )}
                 </div>
               ))}
             </div>

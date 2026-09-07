@@ -1,3 +1,8 @@
+/* eslint-disable react-refresh/only-export-components -- рядом с компонентом
+   живут `ready()` и `num()`: это одно правило «ничего не утверждать до ответа
+   сервера» (R-178) в трёх формах, и разносить их по файлам значило бы
+   разносить правило. Само правило линта — про скорость hot-reload, не про
+   поведение приложения (тот же случай, что `lib/store.tsx`). */
 import { t } from '@/lib/i18n'
 import type { AsyncData } from '@/lib/api/useApi'
 

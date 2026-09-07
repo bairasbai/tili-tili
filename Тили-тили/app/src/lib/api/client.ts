@@ -75,13 +75,31 @@ export class ApiError extends Error {
   readonly kind: 'network' | 'timeout' | 'http'
   readonly status: number
   readonly code: string
+  /**
+   * Какие поля не прошли проверку (только у 422): имя поля → что с ним не так.
+   * Контракт отдаёт `error.fields` с v0.26.0; форма подсвечивает поле, а
+   * человеку по-прежнему показывается `message`.
+   */
+  readonly fields: Readonly<Record<string, string>>
 
-  constructor(kind: 'network' | 'timeout' | 'http', status: number, code: string, message: string) {
+  constructor(
+    kind: 'network' | 'timeout' | 'http',
+    status: number,
+    code: string,
+    message: string,
+    fields: Readonly<Record<string, string>> = {},
+  ) {
     super(message)
     this.name = 'ApiError'
     this.kind = kind
     this.status = status
     this.code = code
+    this.fields = fields
+  }
+
+  /** Текст сервера про конкретное поле или `null`, если сервер поле не назвал. */
+  field(name: string): string | null {
+    return this.fields[name] ?? null
   }
 
   /**
@@ -200,12 +218,21 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
   if (!res.ok) {
     let code = String(res.status)
     let message = `Сервер ответил ${res.status}`
+    let fields: Record<string, string> = {}
     try {
-      const j = (await res.json()) as { error?: { code?: string; message?: string } }
+      const j = (await res.json()) as { error?: { code?: string; message?: string; fields?: unknown } }
       if (j.error?.code) code = j.error.code
       if (j.error?.message) message = j.error.message
+      /* Берём только строки: чужое тело с `fields: [1, 2]` не должно
+         превращаться в подпись под полем. */
+      const f = j.error?.fields
+      if (f && typeof f === 'object' && !Array.isArray(f)) {
+        fields = Object.fromEntries(
+          Object.entries(f as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
+        )
+      }
     } catch { /* тело не JSON — оставляем сообщение по статусу */ }
-    throw new ApiError('http', res.status, code, message)
+    throw new ApiError('http', res.status, code, message, fields)
   }
 
   /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
