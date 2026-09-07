@@ -95,6 +95,16 @@ const iso = (ms: number) => new Date(ms).toISOString()
 
 const CATEGORIES = [{ id: 'photo', title: 'Фотограф', icon: '📷' }, { id: 'host', title: 'Ведущий', icon: '🎤' }]
 
+/*
+ * Профиль сотрудника.
+ *
+ * Экран решения по анкете спрашивает право сам: карточку ему отдаёт публичный
+ * `GET /catalog/vendors/{id}`, 403 на нём не наступает, и без этого запроса
+ * посторонний видел бы три модераторские кнопки.
+ */
+const ME_STAFF = { id: 'u1', name: 'Аня', isStaff: true }
+const ME_GUEST = { id: 'u2', name: 'Боря', isStaff: false }
+
 const QUEUE = {
   items: [{
     id: 'v1', name: 'Фотостудия Свет', categoryId: 'photo', city: 'Уфа',
@@ -179,6 +189,7 @@ describe('решение по анкете уходит на сервер цел
       '/admin/moderation/vendors/v1': { vendorId: 'v1', action: 'reject' },
       '/admin/moderation/vendors': QUEUE,
       '/catalog/categories': CATEGORIES,
+      '/users/me': ME_STAFF,
     })
     const { container } = await open('/admin/moderation/v1', 'Снять с публикации')
     /* Карточка каталога: то, что модератор и проверяет. */
@@ -201,14 +212,35 @@ describe('решение по анкете уходит на сервер цел
       .toEqual({ action: 'reject', reason: 'Чужие фотографии в портфолио' })
   })
 
-  it('анкеты нет в каталоге — экран говорит это словами, а решения остаются', async () => {
-    serve({ '/admin/moderation/vendors': QUEUE, '/catalog/categories': CATEGORIES })
-    const { container } = await open('/admin/moderation/v1', 'Анкета недоступна в каталоге')
+  it('анкеты нет в каталоге — решений на экране нет', async () => {
+    /* Условие живой анкеты у сервера то же, что у карточки каталога:
+       опубликована и не заблокирована. 404 здесь значит, что решение сервер
+       всё равно отклонит (409), а кнопка, за которой заведомо отказ, — ложь на
+       кнопке (R-176). */
+    serve({ '/admin/moderation/vendors': QUEUE, '/catalog/categories': CATEGORIES, '/users/me': ME_STAFF })
+    const { container } = await open('/admin/moderation/v1', 'Анкета вне каталога')
+    expect(container.textContent ?? '').toContain('Решения по ней не принимаются')
+    expect(screen.queryByText('Одобрить')).toBeNull()
+    expect(screen.queryByText('Снять с публикации')).toBeNull()
+    expect(screen.queryByText('Отметить верифицированным')).toBeNull()
+  })
+
+  it('не сотруднику экран решения закрыт целиком: ни карточки, ни кнопок', async () => {
+    /* Этот адрес — единственный в панели, куда посторонний доходит без 403:
+       карточку отдаёт публичный каталог, и право экран спрашивает сам. */
+    serve({
+      '/catalog/vendors/v1': VENDOR,
+      '/users/me': ME_GUEST,
+      '/admin/moderation/vendors': QUEUE,
+      '/catalog/categories': CATEGORIES,
+    })
+    const { container } = await open('/admin/moderation/v1', DENIED)
     const text = container.textContent ?? ''
-    expect(text).toContain('Одобрить')
-    expect(text).toContain('Отметить верифицированным')
-    /* Загрузки документов нет — и экран об этом говорит, а не молчит (R-174). */
-    expect(text).toContain('Документы сверяются вне приложения')
+    expect(screen.queryByText('Одобрить')).toBeNull()
+    expect(screen.queryByText('Снять с публикации')).toBeNull()
+    /* Ни карточки: описание, медиа и цены анкеты — такие же данные. */
+    expect(text).not.toContain('Снимаем свадьбы')
+    expect(digits(text), 'на закрытом экране остались числа анкеты').toBe('')
   })
 })
 
@@ -302,11 +334,63 @@ describe('жалобы: экран предлагает только то, чт�
   })
 
   it('второй модератор видит «уже разобрана», а не ошибку сервера', async () => {
-    /* Решение по этой жалобе сервер уже принял: POST отвечает 404. */
-    serve({ '/admin/complaints': { items: [complaint({})], nextCursor: null } })
+    /* Решение по этой жалобе сервер уже принял: POST отвечает 404. Ответ задан
+       явно: на заглушке «незнакомый адрес» тест проходил бы и в том случае,
+       если бы решение ушло не по адресу жалобы. */
+    const calls = serve({
+      '/admin/complaints': { items: [complaint({})], nextCursor: null },
+      '/admin/complaints/c1': (c: Call) => (c.method === 'POST'
+        ? withStatus(404, 'not_found', 'Жалоба не найдена или уже разобрана')
+        : complaint({})),
+    })
     const { container } = await open('/admin/complaints', 'Взял аванс и пропал')
     fireEvent.click(screen.getByText('Отклонить'))
     await waitFor(() => expect(container.textContent ?? '').toContain('Жалоба уже разобрана'))
+    expect(
+      calls.some(c => c.method === 'POST' && c.path === '/admin/complaints/c1'),
+      'решение ушло не по адресу жалобы',
+    ).toBe(true)
+  })
+})
+
+/* ── US2а. «Показать ещё»: страницы копятся, а не сменяют друг друга ────── */
+
+describe('вторая страница ложится под первой, а не вместо неё', () => {
+  beforeEach(staff)
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  it('очередь модерации: запрос уходит с курсором, на экране обе анкеты, кнопки больше нет', async () => {
+    const page1 = { items: [QUEUE.items[0]!], nextCursor: 'c2' }
+    const page2 = { items: [{ ...QUEUE.items[0]!, id: 'v2', name: 'Ведущий Марат', categoryId: 'host' }], nextCursor: null }
+    const calls = serve({
+      '/admin/moderation/vendors': (c: Call) => (c.url.includes('cursor=c2') ? page2 : page1),
+      '/catalog/categories': CATEGORIES,
+    })
+    const { container } = await open('/admin/moderation', 'Фотостудия Свет')
+    expect(container.textContent ?? '').not.toContain('Ведущий Марат')
+
+    fireEvent.click(screen.getByText('Показать ещё'))
+    await waitFor(() => expect(container.textContent ?? '').toContain('Ведущий Марат'))
+    /* Просмотренное глазами остаётся на экране: страницы копятся. */
+    expect(container.textContent ?? '').toContain('Фотостудия Свет')
+    expect(screen.queryByText('Показать ещё'), 'сервер сказал, что больше нет, а кнопка осталась').toBeNull()
+    expect(
+      calls.some(c => c.path === '/admin/moderation/vendors' && c.url.includes('cursor=c2')),
+      'вторая страница запрошена без курсора — это снова первая',
+    ).toBe(true)
+  })
+
+  it('жалобы: то же самое', async () => {
+    const page1 = { items: [complaint({})], nextCursor: 'c2' }
+    const page2 = { items: [complaint({ id: 'c9', text: 'Прислал чужие фотографии' })], nextCursor: null }
+    const calls = serve({ '/admin/complaints': (c: Call) => (c.url.includes('cursor=c2') ? page2 : page1) })
+    const { container } = await open('/admin/complaints', 'Взял аванс и пропал')
+
+    fireEvent.click(screen.getByText('Показать ещё'))
+    await waitFor(() => expect(container.textContent ?? '').toContain('Прислал чужие фотографии'))
+    expect(container.textContent ?? '').toContain('Взял аванс и пропал')
+    expect(screen.queryByText('Показать ещё')).toBeNull()
+    expect(calls.some(c => c.path === '/admin/complaints' && c.url.includes('cursor=c2'))).toBe(true)
   })
 })
 
@@ -402,6 +486,84 @@ describe('справочник категорий: словарь заменяе
          с какой буквы его записал сотрудник. */
       synonyms: { тамада: 'host' },
     })
+  })
+
+  it('два слова, различающиеся регистром, — сохранение закрыто, а не молчаливая потеря', async () => {
+    /* Ключ словаря на сервере — слово в нижнем регистре: «Тамада» и «тамада»
+       схлопнутся в одну строку, и вторая исчезнет, ничего об этом не сказав. */
+    serve({ '/admin/categories': ADMIN_CATEGORIES })
+    await open('/admin/categories', 'Словарь синонимов')
+    const save = screen.getByText('Сохранить') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+
+    fireEvent.click(screen.getByText('Добавить слово'))
+    const words = () => screen.getAllByLabelText('Слово поиска') as HTMLInputElement[]
+    fireEvent.change(words()[1]!, { target: { value: 'Тамада' } })
+    expect(save.disabled, 'повтор слова уходит на сервер и молча съедает строку').toBe(true)
+    expect(screen.getAllByText('повторяется').length).toBe(2)
+
+    fireEvent.change(words()[1]!, { target: { value: 'ведущий' } })
+    expect(save.disabled).toBe(false)
+    expect(screen.queryByText('повторяется')).toBeNull()
+  })
+
+  it('новая категория получает свободный номер, а не занятый', async () => {
+    /* Номер считался от длины списка: в справочнике с пропусками новая
+       категория садилась на чужое место в мозаике. */
+    serve({
+      '/admin/categories': {
+        ...ADMIN_CATEGORIES,
+        categories: [
+          { id: 'photo', title: 'Фотограф', icon: '📷', sort: 1 },
+          { id: 'host', title: 'Ведущий', icon: '🎤', sort: 5 },
+        ],
+      },
+    })
+    await open('/admin/categories', 'Словарь синонимов')
+    fireEvent.click(screen.getByText('Добавить категорию'))
+    const order = screen.getAllByLabelText('Порядок в мозаике') as HTMLInputElement[]
+    expect(order.map(i => i.value), 'новая категория встала на занятый номер').toEqual(['1', '5', '6'])
+  })
+
+  it('дробный порядок не уходит на сервер: подпись под строкой и «Сохранить» закрыта', async () => {
+    /* Поле принимало дробь, сервер отвечал 422 без указания поля — и человек
+       читал «Запрос не прошёл проверку», не зная, что именно чинить. */
+    serve({ '/admin/categories': ADMIN_CATEGORIES })
+    await open('/admin/categories', 'Словарь синонимов')
+    const save = screen.getByText('Сохранить') as HTMLButtonElement
+    const order = () => screen.getAllByLabelText('Порядок в мозаике') as HTMLInputElement[]
+    expect(order()[0]!.getAttribute('step'), 'поле разрешает дробный шаг').toBe('1')
+
+    fireEvent.change(order()[0]!, { target: { value: '1.5' } })
+    expect(save.disabled, 'дробный порядок уходит на сервер').toBe(true)
+    expect(screen.getByText('порядок — целое число')).toBeTruthy()
+
+    fireEvent.change(order()[0]!, { target: { value: '2' } })
+    expect(save.disabled).toBe(false)
+    expect(screen.queryByText('порядок — целое число')).toBeNull()
+  })
+
+  it('удаление строки из середины не подменяет значение в соседнем поле', async () => {
+    /* Строки различались номером в списке: после удаления первой React
+       оставлял тот же узел под соседним значением — курсор стоит в поле, а
+       слово в нём другое. */
+    serve({
+      '/admin/categories': {
+        ...ADMIN_CATEGORIES,
+        synonyms: { тамада: 'host', ведущий: 'host', оператор: 'photo' },
+      },
+    })
+    await open('/admin/categories', 'Словарь синонимов')
+    const words = () => screen.getAllByLabelText('Слово поиска') as HTMLInputElement[]
+    expect(words().map(i => i.value)).toEqual(['тамада', 'ведущий', 'оператор'])
+
+    words()[1]!.focus()
+    const focused = document.activeElement as HTMLInputElement
+    fireEvent.click(screen.getAllByLabelText('Удалить слово')[0]!)
+
+    expect(words().map(i => i.value)).toEqual(['ведущий', 'оператор'])
+    expect(focused.value, 'поле под курсором сменило слово на соседнее').toBe('ведущий')
+    expect(document.activeElement).toBe(focused)
   })
 
   it('422 с полем: текст сервера встаёт под виноватым словом, а не только внизу', async () => {

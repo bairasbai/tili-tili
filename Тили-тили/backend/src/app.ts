@@ -223,7 +223,14 @@ export async function buildApp(
     const hasNul = (value: unknown): boolean => {
       if (typeof value === 'string') return value.includes('\u0000')
       if (Array.isArray(value)) return value.some(hasNul)
-      if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasNul)
+      /* Ключи обходятся наравне со значениями: там, где объект — это словарь,
+       * слово стоит именно КЛЮЧОМ (`synonyms` в справочнике категорий), и такое
+       * тело доходило до `insert` и падало 500-й в обход этого сторожа. */
+      if (value && typeof value === 'object') {
+        return Object.entries(value as Record<string, unknown>).some(
+          ([key, item]) => key.includes('\u0000') || hasNul(item),
+        )
+      }
       return false
     }
     if (hasNul(request.params) || hasNul(request.query) || hasNul(request.body)) {

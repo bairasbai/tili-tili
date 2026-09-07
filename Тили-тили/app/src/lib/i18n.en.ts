@@ -1423,7 +1423,6 @@ Object.assign(EN, {
   'Опубликованные и ещё не проверенные': 'Published and not yet reviewed',
   'Очередь пуста — все анкеты проверены': 'The queue is empty — every profile has been reviewed',
   'Решение модератора': 'Moderator decision',
-  'Анкета недоступна в каталоге': 'The profile is not available in the catalogue',
   'Жалобы': 'Complaints',
   'Нерассмотренные жалобы и санкции': 'Unresolved complaints and sanctions',
   'Нерассмотренные, старейшие сверху': 'Unresolved, oldest first',
@@ -1510,4 +1509,12 @@ Object.assign(EN, {
   'Гостей по плану:': 'Guests planned:',
   'Заведена:': 'Created:',
   'Бюджет, список гостей и переписка поддержке не показываются.': 'The budget, the guest list and the chats are not shown to support.',
+})
+
+/* Админка после ревью: анкета вне каталога, право на экране решения, проверки
+   справочника (повтор слова и дробный порядок). */
+Object.assign(EN, {
+  'Анкета вне каталога — снята или заблокирована. Решения по ней не принимаются.': 'The profile is outside the catalogue — unpublished or blocked. No decisions are taken on it.',
+  'повторяется': 'repeats',
+  'порядок — целое число': 'the order must be a whole number',
 })

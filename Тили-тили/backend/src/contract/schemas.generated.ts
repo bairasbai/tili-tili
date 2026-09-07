@@ -38,7 +38,8 @@ export const CONTRACT_SCHEMAS = {
           "properties": {
               "id": {
                   "type": "string",
-                  "maxLength": 40
+                  "maxLength": 40,
+                  "pattern": "^[a-z0-9_-]{1,40}$"
               },
               "title": {
                   "type": "string",

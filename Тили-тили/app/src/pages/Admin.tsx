@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { ChevronRight, ClipboardCheck, Flag, Plus, Search, Tags, Trash2 } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
@@ -10,6 +10,7 @@ import { fmt } from '@/lib/money'
 import { plural } from '@/lib/utils'
 import { useEscape } from '@/lib/useEscape'
 import { getCategories, getVendor } from '@/lib/api/catalog'
+import { getMe } from '@/lib/api/auth'
 import {
   decideComplaint,
   decideVendor,
@@ -30,10 +31,13 @@ import {
  * подрядчика: сотрудников на платформе единицы, и качать этот код паре,
  * которая сюда никогда не зайдёт, незачем.
  *
- * Права проверяет сервер: на любой адрес панели посторонний получает 403, и
+ * Права проверяет сервер: на любой адрес `/admin/*` посторонний получает 403, и
  * экран показывает один и тот же отказ без единой цифры. Различать «не
  * сотрудник» и «нет согласия» здесь не нужно: без согласия человек не вошёл бы
  * в приложение вовсе (R-182).
+ *
+ * Исключение — решение по анкете: её карточку отдаёт публичный каталог, и 403
+ * там не наступает. Этот экран спрашивает право сам, отдельным запросом.
  */
 
 /** Один и тот же отказ на всех адресах панели. Внутри функции — чтобы язык менялся. */
@@ -250,13 +254,22 @@ export function AdminModeration() {
 /* ── 64а. Анкета в очереди: решение ───────────────────────────────────── */
 /*
  * Карточка читается из каталога: очередь отдаёт короткую запись без описания
- * и медиа, а модератор проверяет именно их. Заблокированной и снятой анкеты в
- * каталоге нет — экран говорит это словами, но три решения остаются: их
- * принимает сервер по самой анкете, а не по её карточке в выдаче.
+ * и медиа, а модератор проверяет именно их.
+ *
+ * Условие живой анкеты у сервера и у каталога одно и то же: опубликована и не
+ * заблокирована. Поэтому 404 у карточки — это не «карточка не пришла», а
+ * «решать нечего»: тот же запрос сервер отклонит с 409. Три кнопки в этом
+ * состоянии обещали бы решение, которого не будет (R-176), — их и нет.
  */
 export function AdminVendorDecision() {
   const nav = useNavigate()
   const { vendorId } = useParams()
+  /* Право здесь спрашивает экран, а не сервер: карточку отдаёт публичный
+     `GET /catalog/vendors/{id}`, 403 на нём не наступает, и посторонний по
+     прямой ссылке видел бы три модераторские кнопки. Остальные адреса панели
+     ходят в `/admin/*` и получают отказ сами. */
+  const me = useApi(() => getMe(), [])
+  const isStaff = me.data?.isStaff === true
   const q = useApi(async () => {
     if (!vendorId) return null
     try { return await getVendor(vendorId) }
@@ -270,6 +283,10 @@ export function AdminVendorDecision() {
   const photos = media ? media.filter(x => x.kind === 'photo').length : null
   const videos = media ? media.filter(x => x.kind === 'video').length : null
   const packages = v?.packages ?? []
+  /* Анкета вне каталога — то же условие, по которому сервер отвечает 409.
+     Пока карточка грузится или не дошла, состояние неизвестно, и решения
+     остаются: сеть упала — это про сеть, а не про анкету. */
+  const gone = ready(q) && !v
 
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -289,6 +306,20 @@ export function AdminVendorDecision() {
     finally { setBusy(false) }
   })()
 
+  /* Пока право не подтверждено — ни карточки, ни решений, ни имени анкеты:
+     тот же пустой экран с отказом, что и на прочих адресах панели. */
+  if (!ready(me) || !isStaff) return (
+    <div className="pb-10">
+      <TopBar back fallback="/admin/moderation" title={t('Анкета')} sub={t('Решение модератора')} />
+      <div className="px-5 mt-3">
+        <AsyncState q={me} forbiddenText={denied()} />
+        {ready(me) && (
+          <p className="text-[12px] text-[var(--soft)] py-6 text-center leading-relaxed px-6">{denied()}</p>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className="pb-10">
       {/* «Назад» ведёт в очередь, а не на главную панели: при прямом заходе по
@@ -296,8 +327,10 @@ export function AdminVendorDecision() {
       <TopBar back fallback="/admin/moderation" title={v?.name ?? t('Анкета')} sub={t('Решение модератора')} />
       <div className="px-5 mt-3 space-y-3">
         <AsyncState q={q} forbiddenText={denied()} />
-        {ready(q) && !v && (
-          <p className="text-[12.5px] text-[var(--soft)] py-4 text-center leading-relaxed">{t('Анкета недоступна в каталоге')}</p>
+        {gone && (
+          <p className="text-[12.5px] text-[var(--soft)] py-4 text-center leading-relaxed">
+            {t('Анкета вне каталога — снята или заблокирована. Решения по ней не принимаются.')}
+          </p>
         )}
         {ready(q) && v && (
           <div className="card p-4">
@@ -323,9 +356,9 @@ export function AdminVendorDecision() {
           </div>
         )}
 
-        {/* Решение принимается и по анкете, которой в каталоге уже нет:
-            сервер пишет его в саму анкету и в журнал действий. */}
-        {!q.loading && !q.forbidden && (
+        {/* Гонка остаётся: карточка была, а решение не прошло — сервер
+            ответит 409, и его текст встанет под кнопками. */}
+        {!q.loading && !q.forbidden && !gone && (
           <div className="card p-4 space-y-2.5">
             <button
               disabled={busy}
@@ -530,7 +563,14 @@ export function AdminComplaints() {
  * прочитанного, а не от того, что человек успел тронуть, — и поэтому перед
  * отправкой экран называет число строк, которое уйдёт.
  */
-type SynRow = { word: string; categoryId: string }
+/**
+ * Строка словаря.
+ *
+ * `key` — не данные, а тождество строки на экране: строки различались номером
+ * в списке, и после удаления строки из середины React оставлял тот же узел под
+ * соседним значением — курсор стоит в поле, а слово в нём другое.
+ */
+type SynRow = { key: number; word: string; categoryId: string }
 type CategoriesDraft = { categories: AdminCategory[]; synonyms: SynRow[] }
 
 /** Идентификатор новой категории: латиница, цифры, дефис, подчёркивание. */
@@ -569,6 +609,9 @@ export function AdminCategories() {
   /* Сервер называет виноватое слово (`synonyms.<слово>` в `error.fields`):
      подпись встаёт под той строкой, а не в общий текст внизу экрана. */
   const [rowErr, setRowErr] = useState<Record<string, string>>({})
+  /* Счётчик тождеств строк словаря. Растёт при загрузке и при добавлении —
+     в эффекте и в обработчике, но не в теле компонента (R-04). */
+  const nextKey = useRef(0)
 
   /* Копия снимается с ответа: пришёл новый ответ (в том числе после
      сохранения) — на экране снова то, что лежит на сервере. */
@@ -576,7 +619,7 @@ export function AdminCategories() {
     if (!q.data) return
     setDraft({
       categories: (q.data.categories ?? []).map(c => ({ ...c })),
-      synonyms: Object.entries(q.data.synonyms ?? {}).map(([word, categoryId]) => ({ word, categoryId })),
+      synonyms: Object.entries(q.data.synonyms ?? {}).map(([word, categoryId]) => ({ key: nextKey.current++, word, categoryId })),
     })
   }, [q.data])
 
@@ -586,6 +629,17 @@ export function AdminCategories() {
      на который ссылаются анкеты и слоты. */
   const known = new Set((q.data?.categories ?? []).map(c => c.id))
 
+  /*
+   * Ключ словаря на сервере — слово в нижнем регистре. «Тамада» и «тамада» —
+   * одна строка: вторая молча съедала первую, а диалог перед этим обещал
+   * отправить обе. Считаем повторы по тому же ключу, каким собирается тело.
+   */
+  const synKey = (word: string) => word.trim().toLowerCase()
+  const synBody = Object.fromEntries(synonyms.map(s => [synKey(s.word), s.categoryId]))
+  const repeats = new Set(
+    synonyms.map(s => synKey(s.word)).filter((k, i, all) => k !== '' && all.indexOf(k) !== i),
+  )
+
   const editCategory = (i: number, patch: Partial<AdminCategory>) =>
     setDraft(d => d && { ...d, categories: d.categories.map((c, j) => (j === i ? { ...c, ...patch } : c)) })
   const editSynonym = (i: number, patch: Partial<SynRow>) =>
@@ -594,18 +648,27 @@ export function AdminCategories() {
   const addCategory = () =>
     setDraft(d => d && {
       ...d,
-      categories: [...d.categories, { id: '', title: '', icon: '', sort: d.categories.length + 1 }],
+      /* Номер — следующий за самым большим, а не длина списка: в справочнике
+         с пропусками новая категория садилась на занятое место в мозаике. */
+      categories: [...d.categories, { id: '', title: '', icon: '', sort: d.categories.reduce((max, c) => Math.max(max, c.sort ?? 0), 0) + 1 }],
     })
-  const addSynonym = () =>
-    setDraft(d => d && { ...d, synonyms: [...d.synonyms, { word: '', categoryId: d.categories[0]?.id ?? '' }] })
+  const addSynonym = () => {
+    /* Номер берём до обновления состояния: обновляющая функция может быть
+       вызвана дважды, и два вызова дали бы строке два разных тождества. */
+    const key = nextKey.current++
+    setDraft(d => d && { ...d, synonyms: [...d.synonyms, { key, word: '', categoryId: d.categories[0]?.id ?? '' }] })
+  }
   const dropSynonym = (i: number) =>
     setDraft(d => d && { ...d, synonyms: d.synonyms.filter((_, j) => j !== i) })
 
   const badId = categories.some(c => !known.has(c.id) && !CATEGORY_ID.test(c.id))
   const duplicateId = new Set(categories.map(c => c.id)).size !== categories.length
   const badTitle = categories.some(c => !c.title.trim())
+  /* Порядок в мозаике — целое: дробь поле пропускало, а сервер отвечал 422
+     без указания поля, и человек не знал, что именно чинить. */
+  const badSort = categories.some(c => c.sort != null && !Number.isInteger(c.sort))
   const badWord = synonyms.some(s => !s.word.trim() || !s.categoryId)
-  const invalid = badId || duplicateId || badTitle || badWord
+  const invalid = badId || duplicateId || badTitle || badSort || badWord || repeats.size > 0
 
   const save = () => void (async () => {
     if (!draft) return
@@ -622,7 +685,7 @@ export function AdminCategories() {
              `null` значит стереть его молча. */
           ...(c.icon ? { icon: c.icon } : {}),
         })),
-        synonyms: Object.fromEntries(draft.synonyms.map(s => [s.word.trim().toLowerCase(), s.categoryId])),
+        synonyms: synBody,
       })
       setConfirm(false)
       q.reload()
@@ -650,7 +713,7 @@ export function AdminCategories() {
           <>
             <div className="card px-4 py-1.5">
               {categories.map((c, i) => (
-                <div key={known.has(c.id) ? c.id : `new-${i}`} className="flex items-center gap-2 py-2.5 border-b border-[var(--track)] last:border-none">
+                <div key={known.has(c.id) ? c.id : `new-${i}`} className="flex flex-wrap items-center gap-2 py-2.5 border-b border-[var(--track)] last:border-none">
                   <input
                     value={c.icon ?? ''}
                     onChange={e => editCategory(i, { icon: e.target.value })}
@@ -682,11 +745,15 @@ export function AdminCategories() {
                   </span>
                   <input
                     type="number"
+                    step={1}
                     value={c.sort ?? ''}
                     onChange={e => editCategory(i, { sort: e.target.value === '' ? undefined : Number(e.target.value) })}
                     aria-label={t('Порядок в мозаике')}
                     className="w-12 h-9 text-center rounded-full bg-[var(--bg)] text-[12px] outline-none shrink-0"
                   />
+                  {c.sort != null && !Number.isInteger(c.sort) && (
+                    <p className="basis-full text-[11px] text-[var(--rose-ink)] pl-3 -mt-1">{t('порядок — целое число')}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -702,7 +769,7 @@ export function AdminCategories() {
                 <p className="text-[12.5px] text-[var(--soft)] py-3">{t('Словарь пуст — поиск ищет только по названиям')}</p>
               )}
               {synonyms.map((s, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-2 py-2.5 border-b border-[var(--track)] last:border-none">
+                <div key={s.key} className="flex flex-wrap items-center gap-2 py-2.5 border-b border-[var(--track)] last:border-none">
                   <input
                     value={s.word}
                     onChange={e => editSynonym(i, { word: e.target.value })}
@@ -722,8 +789,11 @@ export function AdminCategories() {
                   <button onClick={() => dropSynonym(i)} aria-label={t('Удалить слово')} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0">
                     <Trash2 size={14} className="text-[var(--soft)]" />
                   </button>
-                  {rowErr[s.word.trim().toLowerCase()] && (
-                    <p role="alert" className="basis-full text-[11px] text-[var(--rose-ink)] pl-3 -mt-1">{rowErr[s.word.trim().toLowerCase()]}</p>
+                  {repeats.has(synKey(s.word)) && (
+                    <p className="basis-full text-[11px] text-[var(--rose-ink)] pl-3 -mt-1">{t('повторяется')}</p>
+                  )}
+                  {rowErr[synKey(s.word)] && (
+                    <p role="alert" className="basis-full text-[11px] text-[var(--rose-ink)] pl-3 -mt-1">{rowErr[synKey(s.word)]}</p>
                   )}
                 </div>
               ))}
@@ -732,7 +802,10 @@ export function AdminCategories() {
               <Plus size={14} /> {t('Добавить слово')}
             </button>
 
-            {invalid && (
+            {/* Общий текст — только про то, что в нём названо: у повтора слова
+                и дробного порядка своя подпись под строкой, и объяснять их
+                чужими словами значит послать чинить не то. */}
+            {(badId || duplicateId || badTitle || badWord) && (
               <p className="text-[11.5px] text-[var(--soft)] leading-relaxed px-1">
                 {t('Проверьте поля: у категории нужны название и идентификатор латиницей (до 40 знаков), в словаре — слово и категория.')}
               </p>
@@ -748,8 +821,10 @@ export function AdminCategories() {
           </>
         )}
       </div>
+      {/* Число в диалоге — размер собранного тела, а не длина черновика:
+          обещать надо ровно то, что уйдёт на сервер. */}
       {confirm && (
-        <ConfirmSave words={synonyms.length} busy={busy} onCancel={() => setConfirm(false)} onConfirm={save} />
+        <ConfirmSave words={Object.keys(synBody).length} busy={busy} onCancel={() => setConfirm(false)} onConfirm={save} />
       )}
     </div>
   )

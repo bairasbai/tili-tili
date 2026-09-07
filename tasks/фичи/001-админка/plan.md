@@ -70,7 +70,13 @@
 - очередь модерации: `published_at is not null and moderated_at is null and blocked_at is null`,
   в выборке — `published_at` для `publishedAt`;
 - решение по анкете: `reject` без непустой `reason` → `422 validation_failed`, поле `reason`;
-  повтор решения по уже проверенной анкете сервер принимает как сейчас (очередь её уже не показывает);
+  решение принимается только по живой анкете — `published_at is not null and blocked_at is null` (то же условие,
+  что у карточки каталога), проверка `select … for update` внутри транзакции, иначе `409 vendor_not_live` с
+  сообщением по случаю; `approve` по уже проверенной живой анкете идемпотентен (ревью A-02);
+- счётчик очереди на дашборде и сама очередь — одна SQL-константа `MODERATION_QUEUE_FROM` (ревью A-01);
+  просмотр карточки каталога сотрудником не считается в `vendors.views` (A-08); сторож NUL проверяет и ключи
+  объектов тела (A-06); дубли слов словаря после приведения к нижнему регистру — 422 (A-05);
+  падение `notify` после фиксации решения — предупреждение в лог, ответ 200 (A-14);
 - `synonyms`: перед вставкой — `select id from categories where id = any($1)`, неизвестные → `422 validation_failed`
   с полем `synonyms.<слово>`; всё в одной транзакции с записью аудита;
 - санкция по жалобе: `vendor` → `dismiss|warn|downrank|block`; `review` → `dismiss|warn|block`

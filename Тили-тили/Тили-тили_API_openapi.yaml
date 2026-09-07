@@ -3124,6 +3124,12 @@ paths:
         причины сервер отвечает 422 с полем `reason`;
         `verify` — документы сверены вне приложения, в каталоге появляется галочка «Проверен».
         О решении подрядчик узнаёт уведомлением, причина уходит ему вместе с ним.
+
+        Решение принимается только по живой анкете — опубликованной и не заблокированной
+        по жалобе. Иначе 409 `vendor_not_live`: у снятой анкеты одобрять нечего, а
+        заблокированную модерация не возвращает — это решение принимают в разделе жалоб.
+        Второй модератор с тем же решением тоже получает 409, а подрядчик — не вторую
+        новость об одном и том же. Одобрение уже проверенной живой анкеты остаётся 200.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: vendorId, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -3148,6 +3154,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Validation' }
   /admin/complaints:
     get:
@@ -4172,7 +4179,14 @@ components:
         паре он не нужен, а панель без него не может переставлять плитки.
       required: [id, title]
       properties:
-        id: { type: string, maxLength: 40, example: photo }
+        id:
+          type: string
+          maxLength: 40
+          # Идентификатор попадает в адреса и в ссылки анкет, а категории не
+          # удаляются: `PHOTO` рядом с `photo` — это вторая мозаика навсегда,
+          # а пустой идентификатор — строка, которую нечем выбрать.
+          pattern: '^[a-z0-9_-]{1,40}$'
+          example: photo
         title: { type: string, minLength: 1, maxLength: 100, example: Фотограф }
         icon:
           type: string

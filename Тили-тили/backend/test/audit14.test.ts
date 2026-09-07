@@ -214,6 +214,22 @@ describe('NUL-байт в запросе — 422, а не 500 (R-111)', () => {
     expect(res.json().error.code).toBe('invalid_character')
   })
 
+  it('в ключе объекта тела', async () => {
+    /* Словарь синонимов — объект «слово → категория», и слово стоит КЛЮЧОМ.
+     * Сторож обходил только значения, поэтому такое тело доходило до
+     * `insert into category_synonyms` и падало там 500-й.
+     * 422 приходит раньше входа: проверка тела идёт до preHandler, а токен
+     * здесь заведомо негодный — значит, ответ дал именно сторож. */
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/admin/categories',
+      headers: { authorization: 'Bearer x' },
+      payload: { synonyms: { ['а\u0000б']: 'photo' } },
+    })
+    expect(res.statusCode).toBe(422)
+    expect(res.json().error.code).toBe('invalid_character')
+  })
+
   it('обычные строки проходят дальше хука', async () => {
     // Без базы гео отвечает 503 из обработчика — значит, хук его пропустил.
     const res = await app.inject({ method: 'GET', url: '/geo/cities?q=%D0%A3%D1%84%D0%B0' })

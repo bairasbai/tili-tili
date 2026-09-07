@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { AppError, forbidden, notFound, validationFailed } from '../errors.js'
+import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { VENDOR_COLUMNS, toVendor, type VendorRow } from '../catalog/vendors.js'
 import { recomputeRating } from '../reviews/rating.js'
@@ -22,6 +22,35 @@ const APPLICABLE_ACTIONS: Record<string, readonly string[]> = {
   // такую кнопку было бы ложью на кнопке (R-176).
   message: ['dismiss', 'warn'],
   deal: ['dismiss', 'warn'],
+}
+
+/**
+ * Очередь пост-модерации — ОДНО условие на список и на счётчик дашборда.
+ *
+ * Оно жило в двух местах и разошлось: очередь показывала непроверенные
+ * анкеты живых пользователей, а счётчик считал ещё и заблокированных по
+ * жалобе, и анкеты ушедших. Дашборд обещал модератору работу, которой
+ * в очереди нет, — и объяснить расхождение было нечем.
+ *
+ * `left join cities` здесь же: список берёт из него название города,
+ * счётчику он безразличен, а условие от этого не меняется.
+ */
+const MODERATION_QUEUE_FROM = `from vendors v
+         join users u on u.id = v.user_id and u.deleted_at is null
+         left join cities c on c.id = v.city_id
+        where v.moderated_at is null and v.published_at is not null and v.blocked_at is null`
+
+/**
+ * Почему по этой анкете решения нет.
+ *
+ * Формулировка по случаю: заблокированную по жалобе модерация не возвращает
+ * (решение уже принято, и принимают его в разделе жалоб); у снятой анкеты
+ * одобрять нечего — в каталоге её нет; повторное снятие означает, что
+ * второй модератор опоздал.
+ */
+function notLiveMessage(action: 'approve' | 'reject' | 'verify', blocked: boolean): string {
+  if (blocked) return 'Анкета заблокирована по жалобе — решения по ней не принимаются'
+  return action === 'reject' ? 'Анкета уже снята с публикации' : 'Анкета не опубликована — одобрять нечего'
 }
 
 /** Повод жалобы словами: он уходит подрядчику в уведомлении. */
@@ -108,9 +137,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
      * месяц в черновике, это разные дни, и срок проверки идёт от первой. */
     const { rows } = await db().query<VendorRow & { created_at: Date; published_at: Date }>(
       `select ${VENDOR_COLUMNS}, v.published_at
-         from vendors v join users u on u.id = v.user_id and u.deleted_at is null
-         left join cities c on c.id = v.city_id
-        where v.moderated_at is null and v.published_at is not null and v.blocked_at is null
+         ${MODERATION_QUEUE_FROM}
           and ($1::text is null or (v.created_at, v.id) > ($1::timestamptz, $2::uuid))
         order by v.created_at asc, v.id asc
         limit $3`,
@@ -170,6 +197,30 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
        * одна транзакция (R-122): галочка «проверен» без закрытой заявки
        * оставляла бы её «на проверке» в кабинете навсегда. */
       await db().tx(async (client) => {
+        /* Решение принимается только по ЖИВОЙ анкете — той, что сейчас
+         * в каталоге: `published_at is not null and blocked_at is null`,
+         * ровно условие `VENDOR_LIVE_JOIN`.
+         *
+         * Без этого `approve` по снятой анкете писал «проверена», публикацию
+         * не возвращал и слал подрядчику новость об успешной проверке анкеты,
+         * которой в каталоге нет; второй `reject` подряд слал вторую новость
+         * о том же снятии. Проверка ПОД БЛОКИРОВКОЙ строки и в той же
+         * транзакции, что решение: двое модераторов, нажавших одновременно,
+         * иначе оба увидели бы живую анкету и оба отправили бы новость.
+         *
+         * `moderated_at` в условие не входит: одобрить уже проверенную живую
+         * анкету — то же самое решение, и второй модератор вправе его
+         * подтвердить. */
+        const { rows: state } = await client.query<{ published_at: Date | null; blocked_at: Date | null }>(
+          'select published_at, blocked_at from vendors where id = $1 for update',
+          [vendorId],
+        )
+        if (state.length === 0) throw notFound('Анкета не найдена')
+        const current = state[0]!
+        if (current.blocked_at !== null || current.published_at === null) {
+          throw conflict('vendor_not_live', notLiveMessage(body.action, current.blocked_at !== null))
+        }
+
         const res = await client.query(`update vendors set ${sets} where id = $1`, [vendorId])
         if (res.rowCount === 0) throw notFound('Анкета не найдена')
 
@@ -193,17 +244,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         vendorId,
       ])
       if (owner[0]) {
-        await notify(db(), {
-          userId: owner[0].user_id,
-          kind: 'system',
-          title: { approve: 'Анкета проверена', reject: 'Анкета снята с публикации', verify: 'Вы проверены' }[
-            body.action
-          ],
-          body: body.reason ?? 'Решение модератора',
-          link: '/vendor-app',
-          // Снятие с публикации — потеря дохода: ждать утра тут нельзя.
-          critical: body.action === 'reject',
-        })
+        /* Новость — следствие решения, а не его часть: решение уже записано
+         * и откату не подлежит. 500 из-за упавшего уведомления сказал бы
+         * модератору «не принято», и он принял бы то же решение второй раз —
+         * теперь уже по анкете, состояние которой изменилось. */
+        try {
+          await notify(db(), {
+            userId: owner[0].user_id,
+            kind: 'system',
+            title: { approve: 'Анкета проверена', reject: 'Анкета снята с публикации', verify: 'Вы проверены' }[
+              body.action
+            ],
+            body: body.reason ?? 'Решение модератора',
+            link: '/vendor-app',
+            // Снятие с публикации — потеря дохода: ждать утра тут нельзя.
+            critical: body.action === 'reject',
+          })
+        } catch (err) {
+          request.log.warn({ err, vendorId, action: body.action }, 'решение по анкете принято, уведомление не ушло')
+        }
       }
       return { vendorId, action: body.action }
     },
@@ -334,15 +393,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         ])
         if (owner[0]) {
           const text = SANCTION_TEXT[body.action]
-          await notify(db(), {
-            userId: owner[0].user_id,
-            kind: 'system',
-            title: text.title,
-            body: `Повод жалобы: ${COMPLAINT_REASON[target.category] ?? 'нарушение правил'}. ${text.body}`,
-            link: '/vendor-app',
-            // Блокировка — потеря дохода: ждать утра тут нельзя.
-            critical: body.action === 'block',
-          })
+          /* Санкция уже наложена и жалоба уже разобрана: падение на новости
+           * не отменяет ни того, ни другого. 500 отправил бы модератора
+           * накладывать её второй раз, а жалоба к тому моменту закрыта —
+           * и он получил бы 404 на собственное решение. */
+          try {
+            await notify(db(), {
+              userId: owner[0].user_id,
+              kind: 'system',
+              title: text.title,
+              body: `Повод жалобы: ${COMPLAINT_REASON[target.category] ?? 'нарушение правил'}. ${text.body}`,
+              link: '/vendor-app',
+              // Блокировка — потеря дохода: ждать утра тут нельзя.
+              critical: body.action === 'block',
+            })
+          } catch (err) {
+            request.log.warn(
+              { err, complaintId, action: body.action },
+              'санкция наложена, уведомление не ушло',
+            )
+          }
         }
       }
       return { complaintId, action: body.action }
@@ -424,6 +494,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           )
         }
         if (body.synonyms) {
+          /* Слово хранится в нижнем регистре, поэтому «Тамада» и «тамада» —
+           * одна строка словаря, а в теле их две. Раньше вторая вставка
+           * падала на первичном ключе: 500 «внутренняя ошибка» вместо ошибки
+           * проверки, и словарь к этому моменту уже стёрт целиком — спасал
+           * только откат транзакции.
+           *
+           * Считается ДО `delete`, как и проверка категорий, и называет ОБА
+           * слова: форма подсветит обе строки, а какая из них лишняя —
+           * решает сотрудник, а не сервер. */
+          const byLowercase = new Map<string, string[]>()
+          for (const word of Object.keys(body.synonyms)) {
+            const key = word.toLowerCase()
+            byLowercase.set(key, [...(byLowercase.get(key) ?? []), word])
+          }
+          const repeated: Record<string, string> = {}
+          for (const words of byLowercase.values()) {
+            if (words.length > 1) for (const word of words) repeated[`synonyms.${word}`] = 'повторяется'
+          }
+          if (Object.keys(repeated).length > 0) throw validationFailed(repeated)
+
           /* Слово, ведущее на несуществующую категорию, — это поиск, который
            * молча ничего не находит. Раньше сюда доходил `insert` и падал
            * на внешнем ключе: 500 вместо ошибки проверки, и словарь к этому
@@ -475,7 +565,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
          (select count(*) from weddings where archived_at is null)::text as weddings,
          (select count(*) from vendors v join users u on u.id = v.user_id and u.deleted_at is null
            where v.published_at is not null and v.blocked_at is null)::text as vendors_published,
-         (select count(*) from vendors where moderated_at is null and published_at is not null)::text as moderation_queue,
+         (select count(*) ${MODERATION_QUEUE_FROM})::text as moderation_queue,
          (select count(*) from complaints where status = 'new')::text as complaints_open,
          (select count(*) from complaints
            where status = 'new' and created_at < now() - interval '24 hours')::text as complaints_overdue,

@@ -736,8 +736,20 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       headers: auth(staff.token),
     })
     expect(seen.statusCode).toBe(200)
-    // Ни гостей, ни переписки, ни сумм: для разбора обращения хватает карточки.
-    expect(seen.json().budgetTotal).toBeUndefined()
+    /* Ни гостей, ни переписки, ни сумм: для разбора обращения хватает карточки.
+     * Проверка белым списком, а не отсутствием одного поля: `budgetTotal`
+     * в этом ответе не было НИКОГДА, и такая проверка проходила бы, даже
+     * если бы поддержке отдавали свадьбу целиком. Появилось новое поле —
+     * список расходится, и его придётся объяснить (`WeddingSupportCard`). */
+    expect(Object.keys(seen.json()).sort()).toEqual([
+      'city',
+      'createdAt',
+      'date',
+      'guestsPlanned',
+      'id',
+      'style',
+      'title',
+    ])
 
     const { rows } = await app.db!.query<{ action: string; diff: { reason: string } }>(
       "select action, diff from audit_log where entity_id = $1 and action = 'wedding.view'",

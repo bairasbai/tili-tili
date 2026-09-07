@@ -253,8 +253,17 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     if (!rows[0]) throw notFound('Анкета не найдена')
     /* Счётчик просмотров — первая ступень воронки в кабинете подрядчика.
      * Считаем открытие карточки, а не показ в списке: в списке анкету
-     * пролистывают, а сюда заходят осознанно. */
-    await db().query('update vendors set views = views + 1 where id = $1', [vendorId])
+     * пролистывают, а сюда заходят осознанно.
+     *
+     * Сотрудник платформы в воронку не идёт: модератор открывает карточку
+     * по жалобе, а подрядчик читает эту цифру как интерес пары. Условие —
+     * тем же запросом, а не отдельным чтением: два запроса ради счётчика
+     * на каждое открытие карточки. */
+    await db().query(
+      `update vendors set views = views + 1
+        where id = $1 and not exists (select 1 from users where id = $2 and is_staff)`,
+      [vendorId, request.caller!.userId],
+    )
     // Телефон уходит только тому, кто этого подрядчика уже забронировал.
     return loadDetail(db(), vendorId, rows[0], request.caller!.userId)
   })
