@@ -53,6 +53,17 @@ export class TooManyRequests extends AppError {
 
 export const quotaExceeded = (code: string, message: string) => new AppError(429, code, message)
 
+/**
+ * 422 с полями — ровно та же форма, что у отказа схемы в `app.ts`.
+ *
+ * Проверки, которые схемой не выразить (причина обязательна только при
+ * `reject`, набор санкций зависит от цели жалобы, слово словаря ведёт на
+ * существующую категорию), обязаны отвечать так же, как AJV: иначе форма
+ * разбирает два разных 422 и подсвечивает поле только в одном из них.
+ */
+export const validationFailed = (fields: Record<string, string>, message = 'Запрос не прошёл проверку') =>
+  new AppError(422, 'validation_failed', message, fields)
+
 export const notImplemented = (operation: string) =>
   new AppError(501, 'not_implemented', `Эндпоинт описан в контракте, но ещё не реализован: ${operation}`)
 

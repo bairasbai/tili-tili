@@ -49,19 +49,19 @@
 
 ## Фаза 3 — US1 Очередь модерации анкет (P1) 🎯 MVP
 
-- [ ] T011 [US1] `backend/src/routes/admin.ts`: очередь без заблокированных (`blocked_at is null`) и с `publishedAt`;
+- [x] T011 [US1] `backend/src/routes/admin.ts`: очередь без заблокированных (`blocked_at is null`) и с `publishedAt`;
       `reject` без непустой `reason` → `422 validation_failed`, поле `reason`.
-- [ ] T012 [US1] `backend/test/audit23.test.ts`: заблокированный не в очереди; у элемента очереди есть `publishedAt`;
+- [x] T012 [US1] `backend/test/audit23.test.ts`: заблокированный не в очереди; у элемента очереди есть `publishedAt`;
       `reject` без причины → 422, анкета осталась опубликованной; `approve` → `moderated_at`, уведомление `system`
       владельцу анкеты, строка `audit_log` `vendor.approve`; `reject` с причиной → `published_at null`, уведомление
       `critical`, строка `audit_log` с причиной в `diff`.
-- [ ] T013 [US1] `app/src/pages/Admin.tsx` → `AdminModeration`: список (имя, категория, город, дата публикации,
+- [x] T013 [US1] `app/src/pages/Admin.tsx` → `AdminModeration`: список (имя, категория, город, дата публикации,
       «Верифицирован» при `verified`), «Показать ещё» по `nextCursor`, переход на деталь; пусто — только при `ready`.
-- [ ] T014 [US1] `app/src/pages/Admin.tsx` → `AdminVendorDecision`: `GET /catalog/vendors/{vendorId}` (описание, число
+- [x] T014 [US1] `app/src/pages/Admin.tsx` → `AdminVendorDecision`: `GET /catalog/vendors/{vendorId}` (описание, число
       фото/видео, пакеты); 404 → «анкета недоступна в каталоге» словами; три действия: «Одобрить», «Снять с публикации»
       (поле причины, кнопка неактивна при пустой, ≤ 1000), «Отметить верифицированным» (подпись: документы сверены вне
       приложения); `busy`/`err` под кнопками, после успеха — назад в очередь.
-- [ ] T015 [US1] `app/src/lib/audit23.test.tsx` по образцу `serve`/`open` из `audit17.test.tsx` (ждать исчезновения
+- [x] T015 [US1] `app/src/lib/audit23.test.tsx` по образцу `serve`/`open` из `audit17.test.tsx` (ждать исчезновения
       `route-loading`, потом слово из ответа): `/admin` и `/admin/moderation` при 403 — текст отказа, ни одного числа;
       при `DOWN` — «Сервер недоступен»; решение шлёт `{action:'reject', reason}`; кнопка снятия неактивна без причины;
       «Админка» в `/us` есть только при `isStaff:true`.
@@ -70,53 +70,53 @@
 
 ## Фаза 4 — US2 Очередь жалоб и санкции (P1)
 
-- [ ] T016 [US2] `backend/src/routes/admin.ts`: применимость санкции к цели (`422 validation_failed`, поле `action`):
+- [x] T016 [US2] `backend/src/routes/admin.ts`: применимость санкции к цели (`422 validation_failed`, поле `action`):
       `vendor` — все четыре; `review` — `dismiss|warn|block`; `message|deal` — `dismiss|warn`; уведомление владельцу
       анкеты при `warn`/`downrank`/`block` по цели `vendor` (`system`, `critical` при `block`, текст заметки не уходит).
-- [ ] T017 [US2] `backend/test/audit23.test.ts`: `block` на `message` → 422 и жалоба остаётся `new`; `warn` на `vendor` →
+- [x] T017 [US2] `backend/test/audit23.test.ts`: `block` на `message` → 422 и жалоба остаётся `new`; `warn` на `vendor` →
       уведомление без текста заметки; `block` → `critical`; `downrank` на `review` → 422; `block` на `review` → `hidden_at`;
       строка `audit_log` `complaint.<action>` с `complaintId` в `diff`.
-- [ ] T018 [US2] `app/src/pages/Admin.tsx` → `AdminComplaints`: карточка жалобы (повод, тип цели, текст, дата, «просрочено»
+- [x] T018 [US2] `app/src/pages/Admin.tsx` → `AdminComplaints`: карточка жалобы (повод, тип цели, текст, дата, «просрочено»
       при возрасте > 24 ч от `useState(() => Date.now())`), ссылка на карточку подрядчика для цели `vendor`, заметка ≤ 2000,
       набор кнопок по цели (см. план), после решения — `reload()`; 404 при повторе — «уже разобрана».
-- [ ] T019 [US2] `app/src/lib/audit23.test.tsx`: набор кнопок по типу цели; тело `{action:'block', note}`; «просрочено» у
+- [x] T019 [US2] `app/src/lib/audit23.test.tsx`: набор кнопок по типу цели; тело `{action:'block', note}`; «просрочено» у
       жалобы старше суток и его отсутствие у свежей; 404 → текст «уже разобрана».
 
 **Проверка фазы:** живой сценарий: жалоба пары на подрядчика → блокировка → подрядчик 404 в каталоге, уведомление, `audit_log`.
 
 ## Фаза 5 — US3 Дашборд (P2)
 
-- [ ] T020 [US3] `app/src/pages/Admin.tsx` → дашборд в `AdminHome`: девять показателей через `num(q, …)`, деньги через
+- [x] T020 [US3] `app/src/pages/Admin.tsx` → дашборд в `AdminHome`: девять показателей через `num(q, …)`, деньги через
       `num(q, fmt(gmv))`, города списком с пометкой «готов к запуску».
-- [ ] T021 [US3] `app/src/lib/audit23.test.tsx`: до ответа — прочерки, «0 ₽» не появляется; после — числа сервера, ноль как
+- [x] T021 [US3] `app/src/lib/audit23.test.tsx`: до ответа — прочерки, «0 ₽» не появляется; после — числа сервера, ноль как
       ноль; `FORBIDDEN_WHEN_DOWN['/admin']` в `nomocks.test.tsx`.
 
 ## Фаза 6 — US4 Категории и синонимы (P2)
 
-- [ ] T022 [US4] `backend/src/routes/admin.ts`: `PUT /admin/categories` — проверка `synonyms` по справочнику → 422 без
+- [x] T022 [US4] `backend/src/routes/admin.ts`: `PUT /admin/categories` — проверка `synonyms` по справочнику → 422 без
       изменений; запись аудита внутри транзакции.
-- [ ] T023 [US4] `backend/test/audit23.test.ts`: неизвестная категория в `synonyms` → 422, словарь не тронут; после успешного
+- [x] T023 [US4] `backend/test/audit23.test.ts`: неизвестная категория в `synonyms` → 422, словарь не тронут; после успешного
       `PUT` есть строка `audit_log` `categories.update`.
-- [ ] T024 [US4] `app/src/pages/Admin.tsx` → `AdminCategories`: список категорий с полями название/значок/порядок и «Добавить
+- [x] T024 [US4] `app/src/pages/Admin.tsx` → `AdminCategories`: список категорий с полями название/значок/порядок и «Добавить
       категорию» (`id` латиницей ≤ 40); словарь строками «слово → категория» (`select` по категориям), добавление и удаление
       строки; «Сохранить» → свой оверлей `role="dialog"` с `useEscape` и числом строк словаря → `PUT` полным телом
       (`icon` опускается, если пуст); ошибка сервера под кнопкой; `Tile` в `chrome.tsx` переживает пустую плитку.
-- [ ] T025 [US4] `app/src/lib/audit23.test.tsx`: экран показывает данные `GET`; сохранение шлёт полное тело; до подтверждения
+- [x] T025 [US4] `app/src/lib/audit23.test.tsx`: экран показывает данные `GET`; сохранение шлёт полное тело; до подтверждения
       запроса нет; Escape закрывает подтверждение без запроса.
 
 ## Фаза 7 — US5 Карточка свадьбы по запросу поддержки (P3)
 
-- [ ] T026 [US5] `app/src/pages/Admin.tsx` → `AdminWedding`: поле идентификатора, поле причины (5–500, счётчик), подпись
+- [x] T026 [US5] `app/src/pages/Admin.tsx` → `AdminWedding`: поле идентификатора, поле причины (5–500, счётчик), подпись
       «просмотр записывается: кто, когда, зачем», кнопка неактивна пока не валидно; результат — карточка полей ответа;
       404 — «свадьба не найдена».
-- [ ] T027 [US5] `app/src/lib/audit23.test.tsx`: кнопка неактивна при причине короче 5; запрос уходит с `reason` в строке
+- [x] T027 [US5] `app/src/lib/audit23.test.tsx`: кнопка неактивна при причине короче 5; запрос уходит с `reason` в строке
       запроса; карточка показывает поля.
 
 ## Фаза 8 — полировка
 
-- [ ] T028 `app/src/lib/i18n.en.ts`: блок `Object.assign(EN, {...})` со всеми новыми строками; `dictionary.test.ts` зелёный.
-- [ ] T029 `ROUTES` в `app/src/lib/nomocks.test.tsx`, `smoke.test.tsx`, `clickstorm.test.tsx` — шесть новых маршрутов.
-- [ ] T030 Карты: разделы шести маршрутов в `Тили-тили_Карта_кнопок.md` (класс, обработчик, запрос, сервер, тесты) и строки в
+- [x] T028 `app/src/lib/i18n.en.ts`: блок `Object.assign(EN, {...})` со всеми новыми строками; `dictionary.test.ts` зелёный.
+- [x] T029 `ROUTES` в `app/src/lib/nomocks.test.tsx`, `smoke.test.tsx`, `clickstorm.test.tsx` — шесть новых маршрутов.
+- [x] T030 Карты: разделы шести маршрутов в `Тили-тили_Карта_кнопок.md` (класс, обработчик, запрос, сервер, тесты) и строки в
       `Тили-тили_Карта_экранов.md` (чтения, состояния, число элементов); §0.1 — TabBar скрыт на `/admin*`; журналы обоих файлов (R-MAP/R-BTN).
 - [ ] T031 Документы: `RELEASE-BLOCKERS.md` — №18 (инструменты теперь с экраном), новые пункты владельца (LLM-стоимость и
       заполненность на дашборде; просмотр сделки поддержкой; очередь верификации после одобрения); `tasks/todo.md` — хвост
@@ -128,7 +128,7 @@
       через psql; протокол — в записи `JOURNAL.md` по фиче.
 - [ ] T033 Тёмная тема (R-06): шесть экранов панели под `prefers-color-scheme: dark` в браузере — читаемость, ни одного
       светлого пятна; правки — только токенами в `app/src/pages/Admin.tsx`.
-- [ ] T034 Доступность (R-13): кнопки-значки с `aria-label`, оверлей подтверждения `role="dialog"` + `aria-modal`, фокус на
+- [x] T034 Доступность (R-13): кнопки-значки с `aria-label`, оверлей подтверждения `role="dialog"` + `aria-modal`, фокус на
       первом поле, обход с клавиатуры всех шести экранов — `app/src/pages/Admin.tsx`.
 
 ## Зависимости

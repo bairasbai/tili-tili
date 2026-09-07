@@ -51,7 +51,7 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "maxLength": 16,
-                  "description": "Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».\nВ теле PUT поле опускают, чтобы оставить прежний значок.\n"
+                  "description": "Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».\nВ теле PUT `null` или пропуск — прежний значок.\n"
               },
               "sort": {
                   "type": "integer",
@@ -600,6 +600,13 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "message": {
                           "type": "string"
+                      },
+                      "fields": {
+                          "type": "object",
+                          "additionalProperties": {
+                              "type": "string"
+                          },
+                          "description": "Только у 422: какие именно поля не прошли проверку.\nКлюч — имя поля (`reason`, `action`, `synonyms.тамада`),\nзначение — что с ним не так. Человеку показывается `message`,\nполя подсвечивает форма.\n"
                       }
                   }
               }
