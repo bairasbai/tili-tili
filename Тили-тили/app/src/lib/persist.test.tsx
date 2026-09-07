@@ -240,7 +240,7 @@ describe('настройки: тумблеры уходят на сервер, �
     wrap(<Settings />)
     await waitFor(() => expect(screen.getByText('Тимур Волков')).toBeTruthy())
 
-    fireEvent.click(screen.getByLabelText('Push: дедлайны задач'))
+    fireEvent.click(screen.getByLabelText('Уведомления: дедлайны задач'))
     await waitFor(() => expect(profilePatches).toContainEqual({ push: { tasks: false } }))
     expect(localStorage.getItem('tt_settings')).toBeNull()
   })
@@ -250,8 +250,8 @@ describe('настройки: тумблеры уходят на сервер, �
     profile.quietHours = { from: '22:00', to: '22:00' }
     wrap(<Settings />)
 
-    await waitFor(() => expect(screen.getByLabelText('Push: сообщения').className).toContain('grad'))
-    expect(screen.getByLabelText('Push: дедлайны задач').className).not.toContain('grad')
+    await waitFor(() => expect(screen.getByLabelText('Уведомления: сообщения').className).toContain('grad'))
+    expect(screen.getByLabelText('Уведомления: дедлайны задач').className).not.toContain('grad')
     /* Пустое окно `22:00–22:00` сервер считает отсутствием тишины — тумблер
        обязан показывать выключенным именно его, а не отсутствие поля. */
     expect(screen.getByLabelText('Тихие часы').className).not.toContain('grad')

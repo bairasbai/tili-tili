@@ -1392,4 +1392,17 @@ Object.assign(EN, {
   '💡 В каталоге — подрядчики города свадьбы. Город можно поменять в настройках в любой момент.': '💡 The catalogue shows vendors of the wedding city. You can change the city in the settings at any time.',
   'Попросите кейтеринг и площадку держать запас +2 места и порции: в сводке для кейтеринга стоит точное число по ответам гостей, запас добавьте сами. Координатор добавляет стулья без вашего участия.': 'Ask the caterer and the venue to keep a reserve of +2 seats and portions: the catering summary shows the exact number from guest replies, add the reserve yourself. The coordinator adds chairs without you.',
   'В режиме дня X тайминг сдвигается одним тапом, и вся команда получает обновление. Запас в каждый блок закладывайте при сборке тайминга — тогда гости не заметят.': 'In day X mode the timeline shifts in one tap and the whole team gets the update. Build a reserve into every block when assembling the timeline — then the guests will not notice.',
+  /* Аудит, блок 8: push на устройстве, виды уведомлений. */
+  'Уведомления: дедлайны задач': 'Notifications: task deadlines',
+  'Уведомления: сообщения': 'Notifications: messages',
+  'Уведомления: сделки и оплаты': 'Notifications: deals and payments',
+  'Push на этом устройстве': 'Push on this device',
+  'Этот браузер не умеет push — уведомления остаются в приложении': 'This browser does not support push — notifications stay in the app',
+  'Push появится, когда будут подключены ключи Web Push — уведомления пока в приложении': 'Push will arrive once the Web Push keys are connected — notifications stay in the app for now',
+  'Уведомления запрещены в настройках браузера': 'Notifications are blocked in the browser settings',
+  'Push включён на этом устройстве': 'Push is on for this device',
+  'Push на этом устройстве выключен': 'Push is off for this device',
+  'Этот браузер не умеет push': 'This browser does not support push',
+  'Ключ Web Push не задан в сборке': 'The Web Push key is not set in this build',
+  'Разрешение на уведомления не дано': 'Notification permission was not granted',
 })

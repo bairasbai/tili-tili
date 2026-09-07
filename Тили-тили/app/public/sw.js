@@ -31,6 +31,38 @@ function looksLikeHtmlSwap(request, response) {
   return isHtml && !wantsHtml
 }
 
+/*
+ * Web Push. Сервер шлёт { title, body, data: { link } } (backend notify/push.ts).
+ * До аудита 2026-09-07 (блок 8) обработчиков не было: ключи VAPID ничего бы
+ * не включили — уведомление доходило до воркера и молча пропадало.
+ */
+self.addEventListener('push', (e) => {
+  let payload = {}
+  try { payload = e.data ? e.data.json() : {} } catch { payload = { body: e.data ? e.data.text() : '' } }
+  const title = payload.title || 'Тили-тили'
+  e.waitUntil(self.registration.showNotification(title, {
+    body: payload.body || '',
+    icon: './icon.svg',
+    badge: './icon.svg',
+    data: payload.data || {},
+  }))
+})
+
+/*
+ * Тап по уведомлению открывает центр уведомлений: там ссылка сервера
+ * переводится в маршрут с учётом роли (lib/api/notifications.ts) — воркер
+ * роли не знает, и вести подрядчика на экран сделки пары нельзя.
+ */
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  const target = new URL('./notifications', self.registration.scope).toString()
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const own = list.find((c) => c.url.startsWith(self.registration.scope))
+    if (own) return (own.navigate ? own.navigate(target) : Promise.resolve(own)).then((c) => (c || own).focus()).catch(() => own.focus())
+    return self.clients.openWindow(target)
+  }))
+})
+
 self.addEventListener('fetch', (e) => {
   const { request } = e
   if (request.method !== 'GET') return

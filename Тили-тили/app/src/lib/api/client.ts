@@ -84,9 +84,16 @@ export class ApiError extends Error {
     this.code = code
   }
 
-  /** Сервер недоступен целиком: сеть, таймаут или 5xx. Экраны показывают одно и то же. */
+  /**
+   * Сервер недоступен целиком: сеть, таймаут или 5xx. Экраны показывают одно и то же.
+   *
+   * 501 — исключение: это не поломка, а честный ответ «этого сервер пока не
+   * умеет» со своим текстом (`push_not_configured`, `storage_not_configured`,
+   * `oauth_not_configured`). Показывать вместо него «Сервер недоступен»
+   * значит прятать причину (аудит 2026-09-07, блок 8).
+   */
   get isDown(): boolean {
-    return this.kind !== 'http' || this.status >= 500
+    return this.kind !== 'http' || (this.status >= 500 && this.status !== 501)
   }
 }
 

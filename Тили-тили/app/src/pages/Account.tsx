@@ -15,6 +15,7 @@ import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
 import { endSession, getMe, getSessions, patchMe } from '@/lib/api/auth'
 import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import { devicePushState, disableDevicePush, enableDevicePush, type DevicePushState } from '@/lib/push'
 import type { components } from '@/lib/api/schema'
 
 /** Профиль пользователя — как его отдаёт и принимает сервер. */
@@ -274,6 +275,9 @@ const NOTIF_LOOK: Record<string, { icon: string; tile: string }> = {
 
 export function Notifications() {
   const nav = useNavigate()
+  /* Без своей свадьбы человек в приложении — подрядчик: ссылки уведомлений
+     переводятся в маршруты его кабинета, а не в экраны пары. */
+  const { weddingId } = useStore()
   const q = useApi(() => getNotifications(), [])
   const items = q.data ?? []
   /* Отметка уже ушла на сервер, но список перечитывается не мгновенно.
@@ -333,7 +337,7 @@ export function Notifications() {
               /* Сервер называет место смыслом (`/guests`, `/deal/{id}`), а
                  не маршрутом приложения — переводим. Незнакомое место никуда
                  не ведёт: уведомление просто отмечается прочитанным. */
-              const to = notificationRoute(n.link)
+              const to = notificationRoute(n.link, { vendor: !weddingId })
               return (
                 <button key={n.id} onClick={() => { markRead(n.id); if (to) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
                   {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
@@ -380,6 +384,57 @@ function Row({ label, value, onChange }: { label: string; value: boolean; onChan
  * Теперь всё это профиль (`/users/me`) и сессии (`/users/me/sessions`).
  * Устройство помнит только тему и язык интерфейса — это и правда его дело.
  */
+/*
+ * Push на это устройство.
+ *
+ * Отдельно от видов уведомлений: те — про сервер (какие новости писать),
+ * это — про браузер (разрешение и подписка). Состояние берётся у самого
+ * браузера, а не хранится: подписка могла исчезнуть с очисткой данных сайта.
+ */
+function DevicePushRow() {
+  const [state, setState] = useState<DevicePushState | 'loading'>('loading')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    void devicePushState().then(s => { if (alive) setState(s) }).catch(() => { if (alive) setState('unsupported') })
+    return () => { alive = false }
+  }, [])
+  const toggle = () => void (async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      if (state === 'on') { await disableDevicePush(); setState('off') } else { await enableDevicePush(); setState('on') }
+    } catch (e) {
+      /* Сервер без ключей отвечает 501 своим текстом — его и показываем;
+         отказ браузера приходит словами из `lib/push.ts`. */
+      setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так'))
+    } finally { setBusy(false) }
+  })()
+  const text = state === 'loading' ? t('Загружаем…')
+    : state === 'unsupported' ? t('Этот браузер не умеет push — уведомления остаются в приложении')
+    : state === 'no-key' ? t('Push появится, когда будут подключены ключи Web Push — уведомления пока в приложении')
+    : state === 'denied' ? t('Уведомления запрещены в настройках браузера')
+    : state === 'on' ? t('Push включён на этом устройстве')
+    : t('Push на этом устройстве выключен')
+  const canToggle = state === 'on' || state === 'off'
+  return (
+    <div className="py-3.5 border-t border-[var(--track)]">
+      <div className="flex items-center gap-3">
+        <Smartphone size={16} className="text-[var(--ink2)]" />
+        <span className="flex-1 text-[13px] font-medium">{t('Push на этом устройстве')}</span>
+        {canToggle && (
+          <button disabled={busy} onClick={toggle} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative disabled:opacity-50', state === 'on' ? 'grad' : 'bg-[var(--track)]')} aria-label={t('Push на этом устройстве')}>
+            <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', state === 'on' ? 'left-[22px]' : 'left-[3px]')} />
+          </button>
+        )}
+      </div>
+      <p className="text-[10.5px] text-[var(--soft)] mt-1">{text}</p>
+      {err && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-1">{err}</p>}
+    </div>
+  )
+}
+
 export function Settings() {
   const nav = useNavigate()
   const me = useApi(() => getMe(), [])
@@ -533,9 +588,12 @@ export function Settings() {
             <button onClick={() => (editName ? commitName() : setNameDraft(name))} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{editName ? t('Готово') : t('Изменить')}</button>
           </div>
           {saveErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{saveErr}</p>}
-          <Row label={t('Push: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />
-          <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
-          <Row label={t('Push: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
+          {/* Это виды уведомлений в приложении (и push, когда он включён на
+              устройстве ниже). Подпись «Push: …» обещала push, которого
+              клиент до блока 8 аудита не умел вовсе. */}
+          <Row label={t('Уведомления: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />
+          <Row label={t('Уведомления: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
+          <Row label={t('Уведомления: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
           {/* Тумблер «Советы ИИ-координатора» убран: таких уведомлений никто не
               шлёт (ни одной задачи с видом «совет» в бэкенде), а переключатель
               для того, чего нет, — обещание (R-174). Поле `push.tips` в
@@ -565,6 +623,7 @@ export function Settings() {
                 ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
                 : t('Тихих часов нет: уведомления приходят в любое время суток.')}
           </p>
+          <DevicePushRow />
         </div>
         <div className="card px-4 py-1.5">
           <AsyncState q={sessions} />

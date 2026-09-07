@@ -29,17 +29,25 @@ export const markNotificationRead = (id: string) =>
  * прочитанным». Пускать человека по адресу, которого в приложении нет, хуже,
  * чем не пускать никуда: он попадёт на «страница не найдена».
  */
-export function notificationRoute(link?: string | null): string | null {
+export function notificationRoute(link?: string | null, opts: { vendor?: boolean } = {}): string | null {
   if (!link) return null
+  const vendor = !!opts.vendor
   const chat = /^\/chats\/([\w-]+)$/.exec(link)
   if (chat) return `/us/chats/${chat[1]}`
+  /* У подрядчика экрана одной сделки нет — его сделки списком в кабинете.
+     Раньше подрядчика вели на `/deal/{id}` пары, где ему показывалось
+     «сделка не найдена» (аудит 2026-09-07, блок 8). */
   const deal = /^\/deal\/([\w-]+)$/.exec(link)
-  if (deal) return `/deal/${deal[1]}`
-  if (link === '/guests') return '/wedding/guests'
-  if (link === '/checklist') return '/wedding/checklist'
-  if (link === '/dayx') return '/dayx'
+  if (deal) return vendor ? '/vendor-app/deals' : `/deal/${deal[1]}`
+  if (link === '/guests') return vendor ? null : '/wedding/guests'
+  if (link === '/checklist') return vendor ? null : '/wedding/checklist'
+  if (link === '/dayx') return vendor ? '/vendor-app' : '/dayx'
+  /* Перенос даты (`/wedding`) и обновления кабинета (`/vendor-app`) сервер
+     шлёт с блока 2 — без перевода уведомление некуда было вести. */
+  if (link === '/wedding') return vendor ? '/vendor-app' : '/wedding'
+  if (link === '/vendor-app') return '/vendor-app'
   /* `/deal` без идентификатора приходит от старых записей: конкретную сделку
      по нему не открыть, поэтому ведём в мозаику — там все сделки видны. */
-  if (link === '/deal') return '/wedding'
+  if (link === '/deal') return vendor ? '/vendor-app/deals' : '/wedding'
   return null
 }
