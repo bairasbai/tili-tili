@@ -238,10 +238,11 @@ describe.skipIf(!live)('фоновые задачи', () => {
   /* ── уборка ───────────────────────────────────────────────────────── */
   it('уборка сносит просроченное и не трогает живое', async () => {
     const user = await newUser()
+    const expiredOtpId = uuidv7()
     await app.db!.query(
       `insert into otp_codes (id, phone, code_hash, expires_at, attempts)
        values ($1, $2, 'x', now() - interval '1 hour', 0)`,
-      [uuidv7(), nextPhone()],
+      [expiredOtpId, nextPhone()],
     )
     const freshPhone = nextPhone()
     await app.db!.query(
@@ -249,22 +250,29 @@ describe.skipIf(!live)('фоновые задачи', () => {
        values ($1, $2, 'x', now() + interval '1 hour', 0)`,
       [uuidv7(), freshPhone],
     )
+    const oldKey = `old-${uuidv7()}`
     await app.db!.query(
       `insert into idempotency_keys (key, user_id, route, request_hash, created_at)
        values ($1, $2, 'test', 'h', now() - interval '3 days')`,
-      [`old-${uuidv7()}`, user.userId],
+      [oldKey, user.userId],
     )
 
+    /* Счётчики из ответа не утверждаем на «не меньше одного»: базу делит
+     * `audit26`, чья уборка идёт в соседнем процессе и могла снести эти
+     * строки первой — тогда здесь честно вернётся 0 (R-177). Доказательство —
+     * состояние базы: просроченное исчезло, живое осталось. */
     const removed = await cleanup(app)
-    expect(removed.otp_codes).toBeGreaterThanOrEqual(1)
-    expect(removed.idempotency_keys).toBeGreaterThanOrEqual(1)
+    expect(removed.otp_codes).toBeTypeOf('number')
+    expect(removed.idempotency_keys).toBeTypeOf('number')
 
-    const { rows } = await app.db!.query<{ n: string }>(
-      'select count(*)::text as n from otp_codes where phone = $1',
-      [freshPhone],
-    )
+    const n = async (sql: string, params: unknown[]) => {
+      const { rows } = await app.db!.query<{ n: string }>(sql, params)
+      return Number(rows[0]!.n)
+    }
+    expect(await n('select count(*)::text as n from otp_codes where id = $1', [expiredOtpId])).toBe(0)
+    expect(await n('select count(*)::text as n from idempotency_keys where key = $1', [oldKey])).toBe(0)
     // Живой код удалять нельзя: человек как раз вводит его в форму.
-    expect(Number(rows[0]!.n)).toBe(1)
+    expect(await n('select count(*)::text as n from otp_codes where phone = $1', [freshPhone])).toBe(1)
   })
 
   /* ── страховка на бронь ───────────────────────────────────────────── */

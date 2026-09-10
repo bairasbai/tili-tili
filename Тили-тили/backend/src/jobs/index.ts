@@ -2,7 +2,7 @@ import { Queue, Worker, type Job } from 'bullmq'
 import type { FastifyInstance } from 'fastify'
 import { sendDuePushes } from '../notify/push.js'
 import { notify, notifyWedding } from '../notify/notify.js'
-import { recomputeAllRatings } from '../reviews/rating.js'
+import { recomputeAllRatings, recomputeRating } from '../reviews/rating.js'
 import { reportJobFailure } from '../plugins/sentry.js'
 import { uuidv7 } from '../ids.js'
 
@@ -80,45 +80,78 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
  * Партия — сотня за проход, как у `eraseDeletedUsers`: один `delete` на
  * тысячи свадеб держал бы блокировки на половине таблиц минутами.
  *
+ * Транзакция — на КАЖДУЮ свадьбу, а не на партию, и тоже как у
+ * `eraseDeletedUsers`. Общая транзакция означала «одна плохая свадьба —
+ * и уборки нет вовсе»: сбой откатывал всю партию, `isolated()` глотал
+ * ошибку, а первая по `archived_at` свадьба возвращалась в выборку
+ * следующего прохода и блокировала архив навсегда.
+ *
  * Занятость подрядчика снимается ЯВНО, до удаления: `vendor_busy_dates.deal_id`
  * стоит `ON DELETE SET NULL`, и каскад оставил бы дату занятой навсегда —
  * с обнулённой ссылкой её не нашёл бы уже никто, включая самого подрядчика.
  *
- * Отзывы (`reviews.wedding_id`/`deal_id` — `SET NULL`) переживают уборку:
- * это история подрядчика, а не свадьбы.
+ * Отзыв ПАРЫ уходит вместе со свадьбой, и это вынужденно: сделки уносит
+ * каскад, а `reviews.deal_id` стоит `ON DELETE SET NULL` — и обнулённая
+ * ссылка тут же ломает `CHECK reviews_key_matches_source`, который требует
+ * у отзыва пары сделку. Именно на этом падала вся партия. Рейтинг
+ * подрядчика после удаления пересчитывается, иначе `reviews_count`
+ * считал бы отзывы, которых уже нет.
+ *
+ * Отзыв ГОСТЯ уборку переживает: у него свой ключ (`guest_token`), а
+ * `reviews.wedding_id` обнуляется каскадом без нарушения проверки. Это
+ * история подрядчика, а не свадьбы.
  */
 export async function purgeArchivedWeddings(app: FastifyInstance): Promise<number> {
+  const db = app.db!
   const days = app.appConfig.weddingArchiveDays
-  /* Одна транзакция на партию: между записью в журнал и удалением не должно
-   * быть состояния «свадьбы нет, а следа не осталось» — и наоборот. */
-  return app.db!.tx(async (client) => {
-    const { rows } = await client.query<{ id: string; cancelled_at: Date; archived_at: Date }>(
-      `select id, cancelled_at, archived_at from weddings
-        where cancelled_at is not null and archived_at < now() - make_interval(days => $1)
-        order by archived_at limit 100`,
-      [days],
-    )
-    if (rows.length === 0) return 0
-    const ids = rows.map((row) => row.id)
-    await client.query(
-      `delete from vendor_busy_dates
-        where source = 'deal' and deal_id in (select id from deals where wedding_id = any($1))`,
-      [ids],
-    )
-    for (const row of rows) {
-      /* `actor_id` пустой: уборку делает платформа, а не человек, и записать
-       * сюда чьё-то имя значило бы соврать в журнале. Колонка это допускает. */
-      await client.query(
-        `insert into audit_log (actor_id, action, entity, entity_id, diff)
-         values (null, 'wedding.purged', 'wedding', $1, $2)`,
-        [row.id, JSON.stringify({ cancelledAt: row.cancelled_at, archivedAt: row.archived_at })],
-      )
+  const { rows } = await db.query<{ id: string; cancelled_at: Date; archived_at: Date }>(
+    `select id, cancelled_at, archived_at from weddings
+      where cancelled_at is not null and archived_at < now() - make_interval(days => $1)
+      order by archived_at limit 100`,
+    [days],
+  )
+  let purged = 0
+  for (const row of rows) {
+    try {
+      /* Транзакция на свадьбу: между записью в журнал и удалением не должно
+       * быть состояния «свадьбы нет, а следа не осталось» — и наоборот. */
+      await db.tx(async (client) => {
+        await client.query(
+          `delete from vendor_busy_dates
+            where source = 'deal' and deal_id in (select id from deals where wedding_id = $1)`,
+          [row.id],
+        )
+        /* Отзывы пары — ДО удаления свадьбы: каскад по сделкам обнулил бы
+         * им `deal_id` и упёрся бы в `CHECK`. Подрядчики запоминаются, их
+         * рейтинг пересчитывается после — как при скрытии отзыва в админке. */
+        const { rows: coupleReviews } = await client.query<{ vendor_id: string }>(
+          `delete from reviews
+            where source = 'couple' and deal_id in (select id from deals where wedding_id = $1)
+            returning vendor_id`,
+          [row.id],
+        )
+        /* `actor_id` пустой: уборку делает платформа, а не человек, и записать
+         * сюда чьё-то имя значило бы соврать в журнале. Колонка это допускает. */
+        await client.query(
+          `insert into audit_log (actor_id, action, entity, entity_id, diff)
+           values (null, 'wedding.purged', 'wedding', $1, $2)`,
+          [row.id, JSON.stringify({ cancelledAt: row.cancelled_at, archivedAt: row.archived_at })],
+        )
+        // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
+        // чаты, задачи — все двадцать три таблицы свадьбы.
+        await client.query('delete from weddings where id = $1', [row.id])
+        for (const vendorId of new Set(coupleReviews.map((r) => r.vendor_id))) {
+          await recomputeRating(client, vendorId)
+        }
+      })
+      purged += 1
+    } catch (err) {
+      // Сбой на одной свадьбе не останавливает остальные: ошибка в лог с
+      // идентификатором — иначе искать её было бы негде.
+      app.log.error({ err, weddingId: row.id }, 'не удалось убрать отменённую свадьбу из архива')
     }
-    // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
-    // чаты, задачи — все двадцать три таблицы свадьбы.
-    await client.query('delete from weddings where id = any($1)', [ids])
-    return rows.length
-  })
+  }
+  return purged
 }
 
 /**

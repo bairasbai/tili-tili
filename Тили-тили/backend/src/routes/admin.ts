@@ -468,8 +468,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         // до блокировок — а блокировки взять в том же порядке, что и решение
         // по анкете: сперва анкета, потом заявка. Обратный порядок дал бы
         // взаимную блокировку с `verify` из очереди модерации.
+        /* Ушедший владелец отсекается ЗДЕСЬ же, а не только в очереди и
+         * карточке: без этого условия заявка, пропавшая из очереди вместе с
+         * мягко удалённым аккаунтом, всё равно разбиралась по прямой ссылке
+         * — сотрудник ставил галочку человеку, которого на платформе больше
+         * нет. Условие одно на все три пути, слово в слово. */
         const { rows: found } = await client.query<{ vendor_id: string }>(
-          'select vendor_id from vendor_verifications where id = $1',
+          `select r.vendor_id from vendor_verifications r
+             join vendors v on v.id = r.vendor_id
+             join users u on u.id = v.user_id and u.deleted_at is null
+            where r.id = $1`,
           [requestId],
         )
         if (found.length === 0) throw notFound('Заявка не найдена')
@@ -706,6 +714,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
      * версию от состояния, которого не видела, — и первое же сохранение
      * упиралось бы в 409 без всякой чужой правки. */
     return db().tx(async (client) => {
+      /* Та же блокировка, что у `PUT`, и тоже первым запросом транзакции.
+       * Уровень изоляции здесь READ COMMITTED: каждый запрос видит свой
+       * снимок, и чужое сохранение, успевшее между чтением строк и подсчётом
+       * отпечатка, отдавало панели данные ДО правки вместе с версией ПОСЛЕ
+       * неё. Сохранение с такой версией проверку проходило — и молча
+       * затирало чужую работу, ради чего фича 004 и заведена. */
+      await client.query('select pg_advisory_xact_lock($1::bigint)', [CATEGORIES_LOCK])
       const { rows: categories } = await client.query<{
         id: string
         name: string
@@ -740,11 +755,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
              * с `coerceTypes` превращал `null` в пустую строку, `coalesce`
              * видел не NULL — и значок молча СТИРАЛСЯ. */
             categories: { type: 'array', maxItems: 100, items: ref('AdminCategory') },
-            synonyms: { type: 'object', additionalProperties: { type: 'string' } },
+            /* Пределы словаря — те же, что в контракте. Без них тело было
+             * ограничено только общим потолком размера запроса: словарь на
+             * сто тысяч слов принимался, вставлялся по строке в цикле и
+             * держал блокировку справочника всё это время. `propertyNames`
+             * ограничивает само слово: категория «фотограф» — это слово, а
+             * не абзац. */
+            synonyms: {
+              type: 'object',
+              maxProperties: 2000,
+              propertyNames: { maxLength: 40 },
+              additionalProperties: { type: 'string' },
+            },
             /* Без этого поля в схеме панель получала бы 422 на собственную
              * версию: `additionalProperties: false` отвергает всё, чего в
-             * схеме нет, — и защита от затирания не доехала бы до кода. */
-            version: { type: 'string', maxLength: 64 },
+             * схеме нет, — и защита от затирания не доехала бы до кода.
+             *
+             * Ограничение — из контракта: шестнадцать шестнадцатеричных
+             * знаков. Копия объявляла `maxLength: 64`, и версия, которой
+             * сервер не выдавал никогда, доезжала до сравнения отпечатков и
+             * получала 409 «справочник изменили» вместо честного отказа
+             * проверки. */
+            version: { type: 'string', maxLength: 16, pattern: '^[0-9a-f]{16}$' },
           },
         },
       },

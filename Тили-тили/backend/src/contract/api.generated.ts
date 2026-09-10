@@ -6158,6 +6158,9 @@ export interface paths {
          * Подать документы на верификацию
          * @description Паспорт или реквизиты ИП для сверки с ФНС. Документы не публикуются
          *     никогда — публична только галочка «Проверен» (План §18.2, §8.2).
+         *
+         *     Заявка при неразобранной первой — 409 `verification_pending`: это не
+         *     второй документ, а второе нажатие.
          */
         post: {
             parameters: {
@@ -6171,7 +6174,13 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         kind: "passport" | "ip" | "company";
+                        /**
+                         * @description Ссылка на скан. Только `https` — сотрудник открывает её в новой
+                         *     вкладке из карточки заявки, и `http`, `javascript:` или `file:`
+                         *     здесь были бы не документом, а тем, что сотруднику подсунули.
+                         */
                         fileUrl: string;
+                        /** @description ИНН: 10 знаков у организации, 12 у ИП и физлица. */
                         inn?: string;
                     };
                 };
@@ -6184,7 +6193,10 @@ export interface paths {
                     };
                     content?: never;
                 };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6639,14 +6651,20 @@ export interface paths {
                 content: {
                     "application/json": {
                         categories?: components["schemas"]["AdminCategory"][];
-                        /** @description слово → идентификатор категории; слово хранится в нижнем регистре */
+                        /**
+                         * @description слово → идентификатор категории; слово хранится в нижнем регистре.
+                         *     Не больше 2000 слов, длина слова — до 40 знаков: словарь
+                         *     заменяется целиком и вставляется построчно под блокировкой
+                         *     справочника, а «фотограф» — это слово, а не абзац.
+                         */
                         synonyms?: {
                             [key: string]: string;
                         };
                         /**
                          * @description Версия справочника, с которой начата правка (из `GET /admin/categories`).
                          *     Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
-                         *     идёт без проверки.
+                         *     идёт без проверки. Шестнадцать шестнадцатеричных знаков — всё
+                         *     остальное 422, а не 409: такой версии сервер не выдавал никогда.
                          */
                         version?: string;
                     };

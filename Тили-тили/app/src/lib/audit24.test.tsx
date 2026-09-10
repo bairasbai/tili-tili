@@ -214,6 +214,34 @@ describe('карточка заявки: документ открывается
     expect(container.textContent ?? '').toContain('ИНН не указан')
   })
 
+  /*
+   * Адрес документа приходит из заявки, а заявку заполняет подрядчик.
+   *
+   * Схему выбирает он же: `javascript:` в `href` — это чужой код, который
+   * выполнится по нажатию сотрудника, уже вошедшего в панель. Проверка стоит
+   * на экране, потому что карточка — последнее место, через которое этот
+   * адрес попадает в браузер панели; серверная проверка формата её не
+   * заменяет (старые заявки лежат в базе с прежних правил).
+   */
+  const NOT_HTTPS = 'Ссылка на документ недопустима — не https'
+
+  it('схема не https — ссылки нет, причина названа словами', async () => {
+    serve({ '/admin/verifications/r1': card({ fileUrl: 'javascript:alert(1)' }) })
+    const { container } = await open('/admin/verifications/r1', NOT_HTTPS)
+    expect(screen.queryByLabelText('Открыть документ в новой вкладке')).toBeNull()
+    expect(container.querySelector('a[href^="javascript"]'), 'адрес подрядчика дошёл до href').toBeNull()
+    expect(container.textContent ?? '').toContain(NOT_HTTPS)
+    /* Это не «документа нет»: документ есть, к нему нельзя вести ссылкой. */
+    expect(container.textContent ?? '').not.toContain('Документ не приложен')
+  })
+
+  it('http без буквы s — тоже отказ: панель работает только по https', async () => {
+    serve({ '/admin/verifications/r1': card({ fileUrl: 'http://storage.example/doc.pdf' }) })
+    const { container } = await open('/admin/verifications/r1', NOT_HTTPS)
+    expect(screen.queryByLabelText('Открыть документ в новой вкладке')).toBeNull()
+    expect(container.textContent ?? '').toContain(NOT_HTTPS)
+  })
+
   it('404 — «заявка не найдена» и ни одной кнопки решения', async () => {
     serve({ '/admin/verifications/r1': withStatus(404, 'not_found', 'Заявки нет') })
     const { container } = await open('/admin/verifications/r1', 'не найдена')
@@ -300,6 +328,55 @@ describe('решение по документам уходит на серве�
   })
 })
 
+/*
+ * Извещение «уже разобрана» одноразовое.
+ *
+ * Признак едет в очередь маршрутом и остаётся в записи истории. Пока его не
+ * снять, он всплывает снова при каждом возврате на этот адрес: сотрудник
+ * открыл следующую заявку, вернулся «назад» — и читает про опоздание, которого
+ * во второй раз не было. Это утверждение о состоянии без события (R-180),
+ * ровно как «горит всегда».
+ */
+describe('извещение об опоздании показывается один раз', () => {
+  beforeEach(() => {
+    staff()
+    /* «Назад» у TopBar смотрит на индекс НАСТОЯЩЕЙ истории (`goBack`): при
+       нулевом индексе кнопка уходит на fallback-адрес и стирает состояние
+       записи сама — в браузере этого не происходит, и дефект спрятался бы за
+       поведением теста. Ставим индекс, чтобы кнопка честно делала шаг назад. */
+    window.history.pushState({ idx: 1 }, '')
+  })
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState({ idx: 0 }, '') })
+
+  it('после возврата из соседней заявки извещения нет', async () => {
+    const calls = serve({
+      '/admin/verifications/r1': (c: Call) => (c.method === 'POST'
+        ? withStatus(409, 'verification_not_pending', 'состояние заявки не pending')
+        : card()),
+      '/admin/verifications': { items: [item()], nextCursor: null },
+    })
+    const { container } = await open('/admin/verifications/r1', 'Подтвердить документы')
+    fireEvent.click(screen.getByText('Подтвердить документы'))
+
+    /* Первый раз извещение обязано быть: сотрудник должен узнать, что опоздал. */
+    await waitFor(() => expect(container.textContent ?? '').toContain('Заявка уже разобрана'))
+    await waitFor(() => expect(container.textContent ?? '').toContain('Фотостудия Свет'))
+
+    /* Открываем заявку из очереди и возвращаемся кнопкой «Назад». */
+    fireEvent.click(screen.getByText('Фотостудия Свет'))
+    await waitFor(() => expect(screen.queryByText('Подтвердить документы')).not.toBeNull())
+    fireEvent.click(screen.getByLabelText('Назад'))
+
+    await waitFor(() => expect(container.textContent ?? '').toContain('Заявки на проверку документов, старейшие сверху'))
+    expect(
+      container.textContent ?? '',
+      'извещение об опоздании залипло в записи истории и показано снова',
+    ).not.toContain('Заявка уже разобрана')
+    /* Второго решения не отправляли — извещение и правда старое. */
+    expect(calls.filter(c => c.method === 'POST').length).toBe(1)
+  })
+})
+
 describe('анкета и документы — разные решения', () => {
   beforeEach(staff)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -358,13 +435,51 @@ describe('кабинет подрядчика: статус заявки при�
     expect(container.textContent ?? '').not.toContain('Кто вы')
   })
 
-  it('без ответа о заявке — ни одного статуса на экране', async () => {
+  /*
+   * Форма подачи — тоже утверждение.
+   *
+   * «Кто вы» и «Загрузка документов пока не подключена» показываются только
+   * тому, у кого заявки нет, и это состояние называет сервер. Без ответа —
+   * ни статуса, ни формы: экран, который в обоих случаях зовёт подавать
+   * заново, врёт подавшему ровно так же, как «0 гостей» рядом с лежащим
+   * сервером (R-178, R-180).
+   */
+  const SUBMIT_FORM = 'Загрузка документов пока не подключена'
+
+  it('без ответа о заявке — ни одного статуса и ни формы подачи', async () => {
     serve(vendorRoutes(PENDING))
-    const { container } = await open('/vendor-app/verification', 'Кто вы')
+    const { container } = await open('/vendor-app/verification', 'Загружаем…')
     const text = container.textContent ?? ''
     expect(text, 'статус заявки показан до ответа сервера').not.toContain('Заявка на проверке с')
     expect(text).not.toContain('Документы не подтверждены')
     expect(text).not.toContain('Вы проверены')
+    expect(text, 'форма подачи показана до ответа сервера').not.toContain('Кто вы')
+    expect(text).not.toContain(SUBMIT_FORM)
+  })
+
+  it('запрос статуса упал — «Сервер недоступен» и «Повторить», а не форма подачи', async () => {
+    serve(vendorRoutes(DOWN))
+    const { container } = await open('/vendor-app/verification', SERVER_DOWN)
+    const text = container.textContent ?? ''
+    expect(text).toContain(SERVER_DOWN)
+    expect(text, 'форма подачи показана без ответа сервера').not.toContain('Кто вы')
+    expect(text, 'форма подачи показана без ответа сервера').not.toContain(SUBMIT_FORM)
+    /* Повторить есть что: запрос упал, а не был отвергнут по правам. */
+    expect(screen.getByText('Повторить')).toBeTruthy()
+  })
+
+  it('403 и 404 — это ответ сервера «заявки нет», и форма подачи на месте', async () => {
+    /* Сервер отвечает так, пока подрядчик ничего не подавал. Это не сбой, и
+       прятать за ним экран подачи значило бы не пускать к верификации вовсе. */
+    for (const reply of [
+      withStatus(403, 'forbidden', 'нет заявки'),
+      withStatus(404, 'not_found', 'нет заявки'),
+    ]) {
+      serve(vendorRoutes(reply))
+      const { container } = await open('/vendor-app/verification', 'Кто вы')
+      expect(container.textContent ?? '').toContain(SUBMIT_FORM)
+      cleanup()
+    }
   })
 
   it('заявок не подавали — текущий экран без статусов', async () => {

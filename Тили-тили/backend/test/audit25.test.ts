@@ -554,6 +554,54 @@ describe.skipIf(!live)('верификация: очередь, решения �
     expect(res.json().error.code).toBe('not_found')
   })
 
+  it('решение по заявке ушедшего подрядчика — 404, и заявка остаётся неразобранной', async () => {
+    const staff = await newStaff()
+    const vendor = await newVendor('Ушедший до решения')
+    const requestId = await submit(vendor)
+
+    /* Из очереди и из карточки такая заявка пропадает, а решение по прямой
+     * ссылке проходило: сотрудник ставил галочку человеку, которого на
+     * платформе больше нет, и заявка закрывалась задним числом. Условие
+     * должно быть одно на все три пути. */
+    await app.db!.query('update users set deleted_at = now() where id = $1', [vendor.userId])
+
+    const res = await decide(staff.token, requestId, { action: 'approve' })
+    expect(res.statusCode, res.body.slice(0, 200)).toBe(404)
+    expect(res.json().error.code).toBe('not_found')
+
+    const row = await requestRow(requestId)
+    expect(row.status).toBe('pending')
+    expect(row.checked_at).toBeNull()
+    expect((await vendorRow(vendor.vendorId)).verified_at).toBeNull()
+  })
+
+  /* ── V-10: ограничения тела заявки живут в контракте ──────────────── */
+  it('ссылка на документ не по https не принимается', async () => {
+    const vendor = await newVendor('Со ссылкой не по https')
+
+    for (const fileUrl of ['http://cdn.tili-tili.ru/doc.pdf', 'javascript:alert(1)', 'file:///c:/scan.pdf']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/vendor/verification',
+        headers: auth(vendor.token),
+        payload: { kind: 'ip', fileUrl },
+      })
+      /* Ссылку открывает сотрудник в новой вкладке из карточки заявки:
+       * `javascript:` там — не документ, а то, что ему подсунули. Требование
+       * жило только в схеме обработчика, и клиент, писавший по контракту,
+       * узнавал о нём из 422. */
+      expect({ fileUrl, code: res.statusCode }).toEqual({ fileUrl, code: 422 })
+      expect(res.json().error.code).toBe('validation_failed')
+    }
+
+    // Заявки от этих попыток не осталось: отказ схемы — до обработчика.
+    const { rows } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from vendor_verifications where vendor_id = $1',
+      [vendor.vendorId],
+    )
+    expect(Number(rows[0]!.n)).toBe(0)
+  })
+
   /* ── FR-009: снятие анкеты заявку не закрывает ────────────────────── */
   it('снятие анкеты с публикации заявку на верификацию не трогает', async () => {
     const staff = await newStaff()

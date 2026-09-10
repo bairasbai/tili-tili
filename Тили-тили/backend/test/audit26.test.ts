@@ -5,6 +5,7 @@ import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { hashCode } from '../src/auth/otp.js'
 import { cleanup } from '../src/jobs/index.js'
+import { recomputeRating } from '../src/reviews/rating.js'
 
 /**
  * Фича 003 «Отмена свадьбы и архив», бэкенд.
@@ -285,8 +286,13 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
       [kept.weddingId],
     )
 
+    /* Счётчик из ответа не проверяем на «не меньше одной»: базу делит
+     * `jobs.test`, чья уборка идёт в соседнем процессе и могла забрать эту
+     * свадьбу первой — тогда здесь честно вернётся 0. Доказательство —
+     * состояние базы и след в журнале ниже, они не зависят от того, чей
+     * проход успел (R-177). */
     const removed = await cleanup(app)
-    expect(removed.weddings_purged).toBeGreaterThanOrEqual(1)
+    expect(removed.weddings_purged).toBeTypeOf('number')
 
     const alive = async (id: string) => count('select count(*)::text as n from weddings where id = $1', [id])
     expect(await alive(old.weddingId)).toBe(0)
@@ -314,5 +320,222 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     expect(trace!.actor_id).toBeNull()
     expect(trace!.diff.cancelledAt).toBeTruthy()
     expect(trace!.diff.archivedAt).toBeTruthy()
+  })
+
+  /* ── V-01: отзыв пары не должен блокировать уборку ────────────────── */
+
+  /** Рейтинг подрядчика ровно в том виде, в каком его считает `recomputeRating`. */
+  const ratingOf = (vendorId: string) =>
+    one<{ rating: string | null; reviews_count: number }>(
+      'select rating::text as rating, reviews_count from vendors where id = $1',
+      [vendorId],
+    )
+
+  /**
+   * Свадьба, отменённая и просроченная в архиве, с отзывом ПАРЫ по
+   * выполненной сделке.
+   *
+   * Отзыв пары оставляется тем же путём, каким его оставляет пара: право на
+   * него — завершённая сделка, а не строка в базе.
+   */
+  async function cancelledWithCoupleReview(archivedDays: number) {
+    const w = await newWedding()
+    const deal = await book(w, 'photo', 5_000_000)
+    const done = await app.inject({
+      method: 'PATCH',
+      url: `/deals/${deal.dealId}`,
+      headers: idem(w.token),
+      payload: { state: 'done' },
+    })
+    expect(done.statusCode, done.body.slice(0, 200)).toBe(200)
+
+    const review = await app.inject({
+      method: 'POST',
+      url: `/catalog/vendors/${deal.vendor.vendorId}/reviews`,
+      headers: auth(w.token),
+      payload: { rating: 5, text: `Отлично отработал ${RUN}` },
+    })
+    expect(review.statusCode, review.body.slice(0, 200)).toBe(201)
+
+    await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/cancel`, headers: auth(w.token) })
+    await app.db!.query('update weddings set archived_at = now() - make_interval(days => $2) where id = $1', [
+      w.weddingId,
+      archivedDays,
+    ])
+    return { ...w, deal }
+  }
+
+  it('уборка уносит отзыв пары вместе со свадьбой, пересчитывает рейтинг и не трогает отзыв гостя', async () => {
+    const w = await cancelledWithCoupleReview(900)
+    const vendorId = w.deal.vendor.vendorId
+
+    /* Отзыв гостя — прямо в базу: продуктовый путь потребовал бы ссылки
+     * гостя и прошедшей даты свадьбы, а проверяется здесь не он, а каскад.
+     * У отзыва гостя свой ключ (`guest_token`), сделки у него нет. */
+    const guestToken = `guest-${RUN}-${++counter}`
+    const guestReviewId = randomUUID()
+    await app.db!.query(
+      `insert into reviews (id, vendor_id, wedding_id, source, guest_token, stars, text)
+       values ($1,$2,$3,'guest',$4,4,'Было вкусно')`,
+      [guestReviewId, vendorId, w.weddingId, guestToken],
+    )
+    /* Тот же пересчёт, что делает обработчик отзыва гостя: строку мы вставили
+     * мимо него, а без пересчёта в `reviews_count` остался бы один отзыв
+     * пары — и «стало меньше» после уборки ничего не доказывало бы. */
+    await recomputeRating(app.db!, vendorId)
+    expect((await ratingOf(vendorId))!.reviews_count).toBe(2)
+
+    // Счётчик не утверждаем — соседний прогон мог убрать свадьбу первым (см. выше, R-177).
+    const removed = await cleanup(app)
+    expect(removed.weddings_purged).toBeTypeOf('number')
+
+    /* Главное: свадьба удалена. Каскад по сделкам обнуляет `reviews.deal_id`,
+     * а `CHECK reviews_key_matches_source` требует его у отзыва пары —
+     * `delete from weddings` падал на этой проверке, откатывал всю партию,
+     * `isolated()` глотал ошибку, и первая по `archived_at` свадьба
+     * возвращалась в выборку следующего прохода уже навсегда. */
+    expect(await count('select count(*)::text as n from weddings where id = $1', [w.weddingId])).toBe(0)
+    // Чей бы проход ни успел — след в журнале ровно один (FR-008).
+    expect(
+      await count(
+        `select count(*)::text as n from audit_log
+          where action = 'wedding.purged' and entity = 'wedding' and entity_id = $1`,
+        [w.weddingId],
+      ),
+    ).toBe(1)
+
+    // Отзыв пары уходит вместе со сделкой: оставить его база не даёт.
+    expect(
+      await count('select count(*)::text as n from reviews where wedding_id = $1 and source = $2', [
+        w.weddingId,
+        'couple',
+      ]),
+    ).toBe(0)
+
+    /* Отзыв гостя остаётся историей подрядчика, `wedding_id` обнуляется
+     * каскадом — проверку это не нарушает, ключ у него свой. */
+    const guest = await one<{ wedding_id: string | null; vendor_id: string; deal_id: string | null }>(
+      'select wedding_id, vendor_id, deal_id from reviews where id = $1',
+      [guestReviewId],
+    )
+    expect(guest, 'отзыв гостя переживает уборку').not.toBeNull()
+    expect(guest!.wedding_id).toBeNull()
+    expect(guest!.vendor_id).toBe(vendorId)
+
+    /* Рейтинг пересчитан: `reviews_count` считал бы отзывы, которых уже
+     * нет, а в каталоге у подрядчика стояло бы число из воздуха (R-178). */
+    const rating = await ratingOf(vendorId)
+    expect(rating!.reviews_count).toBe(1)
+    expect(Number(rating!.rating)).toBe(4)
+  })
+
+  it('одна свадьба с отзывом не блокирует уборку остальных', async () => {
+    /* Партия шла одной транзакцией: сбой на первой уносил всю. Свадьба
+     * с отзывом стоит в выборке ПЕРВОЙ (`order by archived_at`), поэтому
+     * без транзакции на свадьбу не убиралось вообще ничего. */
+    const poisoned = await cancelledWithCoupleReview(1000)
+
+    const plain = await newWedding()
+    await app.inject({ method: 'POST', url: `/weddings/${plain.weddingId}/cancel`, headers: auth(plain.token) })
+    await app.db!.query("update weddings set archived_at = now() - interval '999 days' where id = $1", [
+      plain.weddingId,
+    ])
+
+    await cleanup(app)
+
+    const alive = async (id: string) => count('select count(*)::text as n from weddings where id = $1', [id])
+    expect(await alive(poisoned.weddingId)).toBe(0)
+    expect(await alive(plain.weddingId), 'соседняя свадьба не должна ждать плохую').toBe(0)
+  })
+
+  /* ── V-05: ушедший партнёр не запирает отмену ─────────────────────── */
+
+  /** Второй партнёр в паре — приглашением с ролью «couple», как в продукте. */
+  async function addPartner(w: { token: string; weddingId: string }) {
+    const invite = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/invites`,
+      headers: auth(w.token),
+      payload: { role: 'couple' },
+    })
+    expect(invite.statusCode, invite.body.slice(0, 200)).toBe(201)
+    const partner = await newUser()
+    const accepted = await app.inject({
+      method: 'POST',
+      url: `/invites/${invite.json().code as string}/accept`,
+      headers: auth(partner.token),
+    })
+    expect(accepted.statusCode, accepted.body.slice(0, 200)).toBe(200)
+    return partner
+  }
+
+  it('после ухода партнёра отмена проходит с первого нажатия', async () => {
+    const w = await newWedding()
+    const partner = await addPartner(w)
+
+    // Партнёр удалил аккаунт: строка в `wedding_members` остаётся, человека
+    // нет. Подтверждать отмену стало некому.
+    await app.db!.query('update users set deleted_at = now() where id = $1', [partner.id])
+
+    /* Участники считались без `users.deleted_at is null`, поэтому оставшийся
+     * видел `confirmation_required` на КАЖДОЕ нажатие: свадьбу нельзя было
+     * ни отменить, ни оставить — она висела вечно. */
+    const res = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/cancel`,
+      headers: auth(w.token),
+    })
+    expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+    expect(res.json().state).toBe('cancelled')
+    expect(await count('select count(*)::text as n from weddings where id = $1 and cancelled_at is not null', [
+      w.weddingId,
+    ])).toBe(1)
+  })
+
+  /* ── V-07: две отмены сразу дают одну запись ──────────────────────── */
+  it('два одновременных подтверждения отменяют свадьбу один раз', async () => {
+    const w = await newWedding()
+    const partner = await addPartner(w)
+
+    // Первый партнёр запросил отмену — свадьба ещё жива, идёт срок в 72 часа.
+    const asked = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/cancel`,
+      headers: auth(w.token),
+    })
+    expect(asked.json().state).toBe('confirmation_required')
+
+    /* Второй нажимает несколько раз сразу — двойной клик, повтор сети, два
+     * устройства. Без `for update` все транзакции читали строку до отмены и
+     * все доходили до записи: в журнале появлялась вторая `wedding.cancelled`,
+     * а `archived_at` сдвигался — срок хранения архива начинался заново.
+     * Четыре запроса, а не два: одному достаточно опоздать на миллисекунду,
+     * чтобы упереться в 404 от хука доступа и гонку не показать. */
+    const shots = await Promise.all(
+      [1, 2, 3, 4].map(() =>
+        app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/cancel`, headers: auth(partner.token) }),
+      ),
+    )
+    // Опоздавший либо видит уже отменённую свадьбу, либо не видит её вовсе:
+    // архивную свадьбу хук доступа не отдаёт (404).
+    for (const res of shots) expect([200, 404]).toContain(res.statusCode)
+    expect(shots.some((r) => r.statusCode === 200)).toBe(true)
+
+    const cancelRecords = () =>
+      count(
+        `select count(*)::text as n from audit_log
+          where action = 'wedding.cancelled' and entity = 'wedding' and entity_id = $1`,
+        [w.weddingId],
+      )
+    expect(await cancelRecords(), 'отмена записывается в журнал ровно один раз').toBe(1)
+
+    // И последовательный повтор ничего не добавляет: свадьба уже в архиве.
+    const again = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/cancel`,
+      headers: auth(partner.token),
+    })
+    expect(again.statusCode).toBe(404)
+    expect(await cancelRecords()).toBe(1)
   })
 })

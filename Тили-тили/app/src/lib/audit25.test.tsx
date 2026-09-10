@@ -255,6 +255,42 @@ describe('отмена исполнена: устройство забывает
     expect(rememberedWedding(), 'свадьба забыта после неудавшейся отмены').toBe('w1')
     expect(screen.queryByText('Свадьба отменена')).toBeNull()
   })
+
+  /*
+   * Неудача возвращает кнопку в исходное состояние.
+   *
+   * Взведённое «Подтвердить отмену» рядом с сообщением об отказе — это
+   * необратимое действие, оставленное под пальцем: человек читает ошибку,
+   * нажимает туда же «ещё раз» — и при следующем удачном ответе свадьбы нет,
+   * а второго предупреждения он не видел. Шаг подтверждения одноразовый:
+   * не сработало — начинаем с начала.
+   */
+  const rearmed = () => screen.queryByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам')
+
+  it('сервер недоступен — кнопка снова «Отменить свадьбу», а не взведённая', async () => {
+    serve({ ...settingsRoutes(wedding()), '/weddings/w1/cancel': DOWN })
+    await open('/settings', 'Отменить свадьбу')
+    fireEvent.click(screen.getByText('Отменить свадьбу'))
+    fireEvent.click(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам'))
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent ?? '').toContain(SERVER_DOWN))
+    expect(rearmed(), 'подтверждение осталось взведённым после неудачи').toBeNull()
+    expect(screen.getByText('Отменить свадьбу')).toBeTruthy()
+  })
+
+  it('403 — кнопка тоже разряжается, отказ остаётся на экране', async () => {
+    serve({
+      ...settingsRoutes(wedding()),
+      '/weddings/w1/cancel': withStatus(403, 'forbidden', 'Отменить свадьбу может только пара'),
+    })
+    await open('/settings', 'Отменить свадьбу')
+    fireEvent.click(screen.getByText('Отменить свадьбу'))
+    fireEvent.click(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам'))
+
+    expect(await screen.findByText('Отменить свадьбу может только пара')).toBeTruthy()
+    expect(rearmed(), 'подтверждение осталось взведённым после отказа').toBeNull()
+    expect(screen.getByText('Отменить свадьбу')).toBeTruthy()
+  })
 })
 
 /* ── US2. Помнимая свадьба сверяется с сервером при запуске ────────────── */

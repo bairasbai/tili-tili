@@ -309,6 +309,107 @@ describe.skipIf(!live)('админка: версия справочника ка
     expect(saved.version).toBe(before.version)
   })
 
+  /* ── V-09: версия проверяется схемой, а не только сравнением ──────── */
+  it('версия не той длины — 422, а не 409', async () => {
+    const staff = await newStaff()
+    const cat = await pick(staff.token)
+
+    /* Схема обработчика объявляла `maxLength: 64` против шестнадцати в
+     * контракте, и версия, которой сервер не выдавал никогда, доезжала до
+     * сравнения отпечатков. Ответ приходил «справочник изменили, перечитайте
+     * и повторите» — про чужую правку, которой не было: перечитывать и
+     * повторять бессмысленно, потому что дело в самом запросе. */
+    for (const version of ['0'.repeat(64), 'ЗАГОЛОВОК', 'ffffffffffffffffff', 'FFFFFFFFFFFFFFFF']) {
+      const res = await put(staff.token, {
+        categories: [{ id: CAT, title: cat.title, sort: cat.sort }],
+        version,
+      })
+      expect({ version, code: res.statusCode }).toEqual({ version, code: 422 })
+      expect(res.json().error.code).toBe('validation_failed')
+    }
+
+    // Правильная по форме, но чужая версия — по-прежнему 409: это другая беда.
+    const stale = await put(staff.token, {
+      categories: [{ id: CAT, title: cat.title, sort: cat.sort }],
+      version: '0'.repeat(16),
+    })
+    expect(stale.statusCode, stale.body.slice(0, 200)).toBe(409)
+    expect(stale.json().error.code).toBe('categories_stale')
+  })
+
+  /* ── V-12: у словаря есть пределы ─────────────────────────────────── */
+  it('слово длиннее сорока знаков не принимается', async () => {
+    const staff = await newStaff()
+    // Слово этого прогона: чужая строка из соседнего набора не должна
+    // выдавать себя за принятую здесь.
+    const long = `с${'и'.repeat(40)}${RUN}`
+
+    try {
+      /* Словарь заменяется целиком и вставляется построчно под блокировкой
+       * справочника: без пределов тело ограничивал только общий потолок
+       * размера запроса, и «синоним» на абзац принимался наравне со словом. */
+      const res = await put(staff.token, { synonyms: { [long]: 'photo' } })
+      expect(res.statusCode, res.body.slice(0, 200)).toBe(422)
+      expect(res.json().error.code).toBe('validation_failed')
+
+      // Словарь при этом не тронут: отказ схемы случается до обработчика,
+      // а обработчик стирает словарь целиком перед вставкой.
+      const { rows } = await app.db!.query<{ n: string }>(
+        'select count(*)::text as n from category_synonyms where word = $1',
+        [long.toLowerCase()],
+      )
+      expect(Number(rows[0]!.n)).toBe(0)
+    } finally {
+      // Строка этого прогона — своя же, и убирается независимо от исхода:
+      // иначе упавшая проверка оставляла бы её словарю навсегда.
+      await app.db!.query('delete from category_synonyms where word = $1', [long.toLowerCase()])
+    }
+  })
+
+  /* ── V-02: чтение берёт ту же блокировку, что и сохранение ────────── */
+  it('чтение справочника ждёт чужую правку, а не читает половину', async () => {
+    const staff = await newStaff()
+
+    /* Уровень изоляции здесь READ COMMITTED: четыре запроса `GET` — это
+     * четыре снимка. Чужое сохранение, успевшее между чтением строк и
+     * подсчётом отпечатка, отдавало панели данные ДО правки вместе с
+     * версией ПОСЛЕ неё — и следующее сохранение проверку проходило,
+     * молча затирая чужую работу. Ловится это не гонкой, а тем, что
+     * `GET` обязан взять ту же advisory-блокировку, что и `PUT`.
+     *
+     * Блокировку держит отдельная транзакция; `idle_in_transaction_session_timeout`
+     * у пула — 10 с, поэтому держим доли секунды. */
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const holding = app.db!.tx(async (client) => {
+      await client.query('select pg_advisory_xact_lock($1::bigint)', [4_210_001])
+      await held
+    })
+
+    const request = app.inject({ method: 'GET', url: '/admin/categories', headers: auth(staff.token) })
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const raced = await Promise.race([
+        Promise.resolve(request).then(() => 'ответил' as const),
+        new Promise<'ждёт'>((resolve) => {
+          timer = setTimeout(() => resolve('ждёт'), 500)
+        }),
+      ])
+      expect(raced, 'GET обязан ждать блокировку справочника, как и PUT').toBe('ждёт')
+    } finally {
+      if (timer) clearTimeout(timer)
+      release()
+      await holding
+    }
+
+    // Дождавшись чужой транзакции, чтение отвечает как обычно.
+    const res = await request
+    expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+    expect((res.json() as Catalog).version).toMatch(VERSION)
+  })
+
   /* ── пограничный случай спеки: два сохранения с одной версией ─────── */
   it('два сохранения подряд с одной версией — второе получает отказ', async () => {
     const staff = await newStaff()

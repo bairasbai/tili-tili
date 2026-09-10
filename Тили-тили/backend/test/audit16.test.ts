@@ -193,8 +193,9 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [owner.userId])
 
     // Уборка целиком: раньше сбой на пользователях останавливал и всё после них.
+    // Счётчик не утверждаем: уборку на общей базе мог сделать соседний прогон (R-177). Ниже — состояние базы.
     const report = await cleanup(app)
-    expect(report['users']).toBeGreaterThanOrEqual(1)
+    expect(report['users']).toBeTypeOf('number')
 
     const { rows: users } = await app.db!.query('select 1 from users where id = $1', [owner.userId])
     expect(users).toHaveLength(0)

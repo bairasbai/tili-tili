@@ -224,8 +224,9 @@ describe.skipIf(!live)('второй проход по этапу 7', () => {
       [unread, user.userId],
     )
 
+    // Счётчик не утверждаем: уборку на общей базе мог сделать соседний прогон (R-177). Ниже — состояние базы.
     const removed = await cleanup(app)
-    expect(removed.notifications).toBeGreaterThanOrEqual(1)
+    expect(removed.notifications).toBeTypeOf('number')
 
     const { rows } = await app.db!.query<{ id: string }>('select id from notifications where id = any($1)', [
       [old, unread],

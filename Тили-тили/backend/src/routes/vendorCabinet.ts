@@ -425,6 +425,14 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     {
       preHandler: app.requireConsent,
       schema: {
+        /* Слово в слово с контрактом (`POST /vendor/verification`), включая
+         * `https`: ссылка открывается сотрудником в новой вкладке из карточки
+         * заявки, и `http`, `javascript:` или `file:` были бы не документом, а
+         * тем, что подсунули сотруднику. Раньше это требование жило ТОЛЬКО
+         * здесь: контракт объявлял `fileUrl` голой строкой, и клиент, писавший
+         * по контракту, узнавал о правиле из 422. `ref()` тут не поставить —
+         * генератор переносит только `components.schemas`, а тело этого пути
+         * объявлено в самом пути. */
         body: {
           type: 'object',
           required: ['kind', 'fileUrl'],

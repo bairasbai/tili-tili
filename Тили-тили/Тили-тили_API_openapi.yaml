@@ -3116,6 +3116,9 @@ paths:
       description: |
         Паспорт или реквизиты ИП для сверки с ФНС. Документы не публикуются
         никогда — публична только галочка «Проверен» (План §18.2, §8.2).
+
+        Заявка при неразобранной первой — 409 `verification_pending`: это не
+        второй документ, а второе нажатие.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3126,11 +3129,24 @@ paths:
               required: [kind, fileUrl]
               properties:
                 kind: { type: string, enum: [passport, ip, company] }
-                fileUrl: { type: string }
-                inn: { type: string }
+                fileUrl:
+                  type: string
+                  maxLength: 2000
+                  pattern: '^https://[^ ]+$'
+                  description: |
+                    Ссылка на скан. Только `https` — сотрудник открывает её в новой
+                    вкладке из карточки заявки, и `http`, `javascript:` или `file:`
+                    здесь были бы не документом, а тем, что сотруднику подсунули.
+                inn:
+                  type: string
+                  pattern: '^[0-9]{10}$|^[0-9]{12}$'
+                  description: 'ИНН: 10 знаков у организации, 12 у ИП и физлица.'
       responses:
         '201': { description: Отправлено на проверку }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   # ───────────────────────── АДМИНКА (План §19.10) ─────────────────────────
   /admin/moderation/vendors:
@@ -3400,15 +3416,23 @@ paths:
                   items: { $ref: '#/components/schemas/AdminCategory' }
                 synonyms:
                   type: object
-                  description: 'слово → идентификатор категории; слово хранится в нижнем регистре'
+                  maxProperties: 2000
+                  propertyNames: { maxLength: 40 }
+                  description: |
+                    слово → идентификатор категории; слово хранится в нижнем регистре.
+                    Не больше 2000 слов, длина слова — до 40 знаков: словарь
+                    заменяется целиком и вставляется построчно под блокировкой
+                    справочника, а «фотограф» — это слово, а не абзац.
                   additionalProperties: { type: string }
                 version:
                   type: string
                   maxLength: 16
+                  pattern: '^[0-9a-f]{16}$'
                   description: |
                     Версия справочника, с которой начата правка (из `GET /admin/categories`).
                     Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
-                    идёт без проверки.
+                    идёт без проверки. Шестнадцать шестнадцатеричных знаков — всё
+                    остальное 422, а не 409: такой версии сервер не выдавал никогда.
       responses:
         '200':
           description: OK

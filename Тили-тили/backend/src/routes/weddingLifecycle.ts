@@ -84,13 +84,30 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         cancelled_at: Date | null
         couples: string
       }>(
+        /* `for update of w` — на строку свадьбы, а не на всю выборку: двое
+         * партнёров, нажавших «Отменить» одновременно, оба читали её в
+         * READ COMMITTED и оба доходили до записи. В журнале появлялась
+         * вторая строка `wedding.cancelled`, а `archived_at` сдвигался —
+         * то есть срок хранения архива начинался заново. Второй теперь
+         * ждёт первого и выходит по `cancelled_at`.
+         *
+         * Живые участники считаются отдельным подзапросом: партнёр, мягко
+         * удаливший аккаунт, продолжал числиться в `wedding_members`, и
+         * оставшийся не мог отменить свадьбу вовсе — каждое нажатие давало
+         * `confirmation_required`, а подтвердить было некому. */
         `select w.cancel_requested_by, w.cancel_requested_at, w.cancelled_at,
                 (select count(*)::text from wedding_members m
+                   join users u on u.id = m.user_id and u.deleted_at is null
                   where m.wedding_id = w.id and m.role = 'couple') as couples
-           from weddings w where w.id = $1`,
+           from weddings w where w.id = $1 for update of w`,
         [weddingId],
       )
       const w = rows[0]!
+      /* Страховка, а не рабочий путь: отменённая свадьба уходит в архив, а
+       * хук доступа (`memberRole`) архивную не отдаёт вовсе — второй вызов
+       * получает 404 раньше, чем доходит сюда. Ветка остаётся на случай
+       * изменения матрицы доступа: отмена отменённой не должна отменять
+       * сделки по второму разу. */
       if (w.cancelled_at) return { state: 'cancelled' as const }
 
       /* Запрос на отмену протухает.

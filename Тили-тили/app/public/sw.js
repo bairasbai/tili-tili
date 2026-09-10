@@ -5,7 +5,9 @@
  * может лежать в подпапке статического хостинга, и абсолютный '/' указывал бы
  * на чужой корень: кэш не наполнялся, офлайн не работал.
  */
-const CACHE = 'tilitili-v3'
+/* Версия поднята вместе с правилом кэширования (ниже): в кэше v3 лежат записи,
+   положенные туда прежним «всё, кроме /api/», — их вычищает `activate`. */
+const CACHE = 'tilitili-v4'
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
 const OFFLINE_PAGE = new URL('./index.html', self.registration.scope).toString()
 
@@ -29,6 +31,31 @@ function looksLikeHtmlSwap(request, response) {
   const path = new URL(request.url).pathname
   const wantsHtml = path.endsWith('/') || path.endsWith('.html')
   return isHtml && !wantsHtml
+}
+
+/*
+ * Что попадает в кэш: белый список, а не чёрный.
+ *
+ * Правило «всё, кроме /api/» защищает ровно один путь. База API задаётся
+ * VITE_API_URL и на том же origin может лежать где угодно — '/v1/',
+ * '/backend/', '/gw/'. При такой базе ответы сервера снова ложились бы в
+ * cache-first, и панель отдавала бы вчерашние очереди до следующей версии
+ * кэша (Cache-Control: no-store Cache API не читает, ERR-0204).
+ *
+ * Поэтому наоборот: кэшируем только то, что названо статикой приложения —
+ * по типу запроса и по расширению, — а всё остальное, любой JSON по любому
+ * адресу, уходит в сеть без кэша. Документ в список не входит: страницу
+ * отдаёт ветка навигации, у неё своё правило и своя офлайн-оболочка.
+ */
+const STATIC_DEST = new Set(['script', 'style', 'image', 'font', 'manifest'])
+const STATIC_EXT = /\.(?:js|mjs|css|png|jpe?g|webp|gif|svg|ico|webmanifest|woff2?|ttf|otf)$/i
+
+function isStaticAsset(request) {
+  const url = new URL(request.url)
+  /* Чужой origin в кэш не кладём: он живёт своей жизнью, и версия нашего
+     кэша ему не указ. */
+  if (url.origin !== location.origin) return false
+  return STATIC_DEST.has(request.destination) || STATIC_EXT.test(url.pathname)
 }
 
 /*
@@ -75,11 +102,13 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(request).catch(() => caches.match(OFFLINE_PAGE)))
     return
   }
+  // Не статика — сеть без кэша, и воркер в это даже не вмешивается. Сюда
+  // попадает API по любому адресу, а не только по `/api/` (см. isStaticAsset).
+  if (!isStaticAsset(request)) return
   // Статика: cache-first, затем сеть с докэшированием
   e.respondWith(
     caches.match(request).then(hit => hit || fetch(request).then(res => {
-      const sameOrigin = new URL(request.url).origin === location.origin
-      if (res.ok && sameOrigin && !looksLikeHtmlSwap(request, res)) {
+      if (res.ok && !looksLikeHtmlSwap(request, res)) {
         const copy = res.clone()
         caches.open(CACHE).then(c => c.put(request, copy))
       }

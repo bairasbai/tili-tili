@@ -1569,3 +1569,9 @@ Object.assign(EN, {
   'Брони сняты, подрядчики узнают об этом.': 'The bookings are dropped and the vendors are being told.',
   'Начать новую свадьбу': 'Start a new wedding',
 })
+
+/* Ревью фич 002–004: карточка заявки не ведёт ссылкой по чужой схеме —
+   адрес документа приходит из заявки подрядчика. */
+Object.assign(EN, {
+  'Ссылка на документ недопустима — не https': 'The document link is not allowed — it is not https',
+})
