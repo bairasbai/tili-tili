@@ -42,6 +42,15 @@ interface Store {
    */
   weddingId: string | null
   setWeddingId: (id: string | null) => void
+  /**
+   * Чем кончилась сверка списка свадеб при запуске.
+   *
+   * `weddingId === null` означает три разных вещи: список ещё едет, сервер
+   * не ответил, свадеб у человека нет. Главная без этого различия рисовала
+   * «0% готово · 0 гостей» во всех трёх — ноль вместо «неизвестно» (R-178).
+   * `idle` — без входа сверки не было и не будет.
+   */
+  weddingsState: 'idle' | 'loading' | 'ready' | 'error'
   /** Дата свадьбы, `YYYY-MM-DD`. Null — ещё не выбрана, и это нормально. */
   weddingDate: string | null
   /** Перенос даты. Уходит на сервер: он проверяет занятость команды и пересчитывает сроки. */
@@ -129,10 +138,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      Под StrictMode эффект вызывается дважды подряд, и флаг отменил бы первый
      запрос, не сделав второго, — свадьба не восстановилась бы вовсе. */
   const myWeddings = useRef<Promise<MyWedding[]> | null>(null)
+  const [weddingsState, setWeddingsState] = useState<Store['weddingsState']>('idle')
   useEffect(() => {
     if (!isAuthorized()) return
     myWeddings.current ??= listMyWeddings()
     let alive = true
+    setWeddingsState(prev => prev === 'idle' ? 'loading' : prev)
     void myWeddings.current
       .then(list => {
         if (!alive) return
@@ -141,8 +152,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (prev && list.some(w => w.id === prev)) return prev
           return pickMyWedding(list)
         })
+        setWeddingsState('ready')
       })
-      .catch(() => { /* сервер недоступен — попробуем при следующем запуске */ })
+      .catch(() => {
+        /* сервер недоступен — попробуем при следующем запуске; экран об этом
+           узнаёт по состоянию, а не по пустому идентификатору */
+        if (alive) setWeddingsState('error')
+      })
     return () => { alive = false }
   }, [setWeddingIdState])
   /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
@@ -304,6 +320,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     onboarded,
     weddingId,
     setWeddingId: setWeddingIdState,
+    weddingsState,
     finishOnboarding: (answers?: QuizAnswers) => {
       // Ответы квиза — это план свадьбы, ради которого его и проходят.
       // Раньше они терялись между последним «Далее» и главным экраном.
@@ -415,7 +432,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [onboarded, weddingId, setWeddingIdState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
+  }), [onboarded, weddingId, setWeddingIdState, weddingsState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

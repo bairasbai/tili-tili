@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
+import { isAuthorized } from '@/lib/api/client'
 import { getBudget, getGuests, getTasks, getWedding } from '@/lib/api/weddingData'
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
@@ -14,13 +15,22 @@ import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/l
 
 export default function Home() {
   const nav = useNavigate()
-  const { slots, slotsState, weddingDate, weddingId } = useStore()
+  const { slots, slotsState, weddingDate, weddingId, weddingsState } = useStore()
   /* «Сейчас» снимается один раз за монтирование: время в теле компонента
    * запрещено (R-04), а отсчёт до свадьбы не обязан тикать посекундно —
    * до неё месяцы. */
   const [now] = useState(() => new Date())
   const left = countdownTo(weddingDate, now)
   const booked = slots.filter(s => s.state === 'booked')
+  /*
+   * Без свадьбы главная говорит словами, что именно не так, а не рисует нули:
+   * «0% готово · 0 гостей» после отмены или на новом телефоне пара читает как
+   * «всё пропало» (R-178). Четыре положения — по сверке списка при запуске.
+   */
+  const signedOut = !weddingId && !isAuthorized()
+  const noWedding = !weddingId && !signedOut && weddingsState === 'ready'
+  const listDown = !weddingId && !signedOut && weddingsState === 'error'
+  const listPending = !weddingId && !signedOut && !noWedding && !listDown
 
   /*
    * Главная берёт те же числа, что и разделы, — с сервера.
@@ -112,10 +122,13 @@ export default function Home() {
               читает не как «мы не знаем», а как «всё пропало»: чек-лист пуст,
               никто не ответил, подрядчиков нет. */}
           <div className="grid grid-cols-4 gap-2 mt-5 relative">
+            {/* Без свадьбы запросы не уходят и отвечают «пусто» сами себе —
+                прочерк здесь ставится по факту отсутствия свадьбы, а не по
+                ответу, которого не было. */}
             {[
               [weddingDate ? daysUntil(weddingDate, now) : '—', tr('дней до')],
-              [ready(tq) ? `${donePct}%` : '—', tr('готово')],
-              [num(gq, persons('yes')), tr('гостей')],
+              [weddingId && ready(tq) ? `${donePct}%` : '—', tr('готово')],
+              [weddingId ? num(gq, persons('yes')) : '—', tr('гостей')],
               [slotsState === 'ready' ? `${booked.length}/${slots.length}` : '—', tr('команда')],
             ].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--card)]/25 rounded-2xl py-3 text-center backdrop-blur-sm">
@@ -146,9 +159,10 @@ export default function Home() {
             {[cityName ? `📍 ${cityName}` : null, style ? `🎨 ${style}` : null, guestsPlanned ? `🥂 ${guestsPlanned} ${tr('гостей')}` : null].filter(Boolean).join(' · ') || tr('Город пока не выбран')}
           </p>
           <div className="grid grid-cols-4 gap-2 mt-4">
+            {/* «00 МЕС · 00 ДН» без даты — не отсчёт, а его отсутствие. */}
             {[[left.m, tr('МЕС')], [left.d, tr('ДН')], [left.h, tr('ЧАС')], [left.min, tr('МИН')]].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--bg)] rounded-2xl py-3">
-                <b className="text-[19px] block tabular">{String(v).padStart(2, '0')}</b>
+                <b className="text-[19px] block tabular">{weddingDate ? String(v).padStart(2, '0') : '—'}</b>
                 <span className="text-[8px] tracking-[.14em] text-[var(--soft)]">{l}</span>
               </div>
             ))}
@@ -156,8 +170,38 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Без свадьбы: причина словами и одно действие, которое её меняет. Нули
+          в бюджете, RSVP и команде тут не факты, поэтому этих блоков нет. */}
+      {!weddingId && (
+        <div className="px-5 fade-up" style={{ animationDelay: '.15s' }}>
+          <div className="card px-4 py-5 mt-4 text-center">
+            {signedOut && (
+              <>
+                <b className="text-[13px]">{tr('Войдите, чтобы увидеть свою свадьбу')}</b>
+                <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{tr('Свадьба хранится на сервере — на этом устройстве её нет.')}</p>
+                <button onClick={() => nav('/auth')} className="press mt-4 w-full h-[46px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]">{tr('Войти')}</button>
+              </>
+            )}
+            {noWedding && (
+              <>
+                <b className="text-[13px]">{tr('Свадьбы пока нет')}</b>
+                <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{tr('Начните с квиза — пять вопросов, и появится план.')}</p>
+                <button onClick={() => nav('/quiz')} className="press mt-4 w-full h-[46px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]">{tr('Начать свадьбу')}</button>
+              </>
+            )}
+            {listDown && (
+              <>
+                <b role="alert" className="text-[13px] text-[var(--rose-ink)] block">{tr('Сервер недоступен — свадьба не загрузилась')}</b>
+                <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{tr('Проверьте связь и откройте приложение снова.')}</p>
+              </>
+            )}
+            {listPending && <p className="text-[12px] text-[var(--soft)]">{tr('Загружаем…')}</p>}
+          </div>
+        </div>
+      )}
+
       {/* Бюджет */}
-      <div className="px-5 fade-up" style={{ animationDelay: '.15s' }}>
+      {weddingId && <div className="px-5 fade-up" style={{ animationDelay: '.15s' }}>
         <button className="press w-full text-left card p-5 mt-4" onClick={() => nav('/wedding/budget')}>
           <div className="flex justify-between items-baseline">
             <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{tr('Бюджет')}</span>
@@ -179,17 +223,17 @@ export default function Home() {
             <p className="text-[11px] text-[var(--soft)] mt-1.5">{tr('Бюджет не загрузился')}</p>
           )}
         </button>
-      </div>
+      </div>}
 
       {/* Совет ИИ */}
-      <div className="px-5 fade-up" style={{ animationDelay: '.2s' }}>
+      {weddingId && <div className="px-5 fade-up" style={{ animationDelay: '.2s' }}>
         {/* Подсказка строится из состояния свадьбы, а не выбирается из
             заготовленного списка. Здесь стояло «Топ-фотографы Уфы на июнь
             разбираются за 8 месяцев. Свободных на 14.06 осталось 6» — цифры
             и дата ни с чем не связаны, а «осталось 6» выглядит как результат
             запроса к каталогу, которого не было. */}
         <div className="mt-4"><AiTip text={homeTip} onPress={() => nav('/assistant')} /></div>
-      </div>
+      </div>}
 
       {/* Быстрые действия */}
       <div className="px-5 mt-4 grid grid-cols-3 md:grid-cols-6 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
@@ -209,7 +253,7 @@ export default function Home() {
       </div>
 
       {/* Ближайшие дедлайны */}
-      <div className="px-5 fade-up" style={{ animationDelay: '.22s' }}>
+      {weddingId && <div className="px-5 fade-up" style={{ animationDelay: '.22s' }}>
         <SectionHead title={tr('Ближайшие дедлайны')} link={tr('Чек-лист →')} onLink={() => nav('/wedding/checklist')} />
         <div className="card px-4 py-1.5 mt-2">
           {/* Пустая карточка молчала и при отказе сервера, и при пустом
@@ -228,10 +272,10 @@ export default function Home() {
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* RSVP сводка */}
-      <div className="px-5 fade-up" style={{ animationDelay: '.26s' }}>
+      {weddingId && <div className="px-5 fade-up" style={{ animationDelay: '.26s' }}>
         <button onClick={() => nav('/wedding/guests')} className="press w-full card p-4 mt-3.5 flex items-center gap-3 text-left">
           <Tile icon="💌" tile="bg-[var(--lav)]" size={44} />
           <div className="flex-1">
@@ -246,10 +290,10 @@ export default function Home() {
           </div>
           <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] shrink-0">RSVP →</span>
         </button>
-      </div>
+      </div>}
 
       {/* Команда */}
-      <div className="px-5">
+      {weddingId && <div className="px-5">
         <SectionHead title={tr('Моя команда')} sub={tr('Уже забронировано')} link={tr('Все →')} onLink={() => nav('/wedding')} />
         <div className="space-y-2.5 mt-2 stagger">
           {/* Мозаика приходит через хранилище, у неё свои четыре состояния:
@@ -271,7 +315,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

@@ -1575,3 +1575,14 @@ Object.assign(EN, {
 Object.assign(EN, {
   'Ссылка на документ недопустима — не https': 'The document link is not allowed — it is not https',
 })
+
+/* Главная без свадьбы: слова вместо нулей — по сверке списка при запуске (R-178). */
+Object.assign(EN, {
+  'Войдите, чтобы увидеть свою свадьбу': 'Sign in to see your wedding',
+  'Свадьба хранится на сервере — на этом устройстве её нет.': 'The wedding lives on the server — this device does not have it.',
+  'Свадьбы пока нет': 'No wedding yet',
+  'Начните с квиза — пять вопросов, и появится план.': 'Start with the quiz — five questions and the plan appears.',
+  'Начать свадьбу': 'Start a wedding',
+  'Сервер недоступен — свадьба не загрузилась': 'Server unavailable — the wedding did not load',
+  'Проверьте связь и откройте приложение снова.': 'Check your connection and open the app again.',
+})

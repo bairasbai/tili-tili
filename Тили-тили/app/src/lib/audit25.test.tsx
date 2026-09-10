@@ -368,3 +368,64 @@ describe('запуск приложения: помнимая свадьба с�
     expect(calls.filter(c => c.path === '/weddings').length).toBe(1)
   })
 })
+
+/* ── Главная без свадьбы: слова, а не нули ─────────────────────────────── */
+
+/*
+ * «0% готово · 0 гостей · 00 МЕС» на устройстве без свадьбы — не факты о
+ * свадьбе, а её отсутствие (R-178). Пара после отмены и человек с новым
+ * телефоном читают нули как «всё пропало». Экран обязан различать три
+ * состояния: список свадеб ещё в пути, список не пришёл, список пришёл пустым.
+ */
+describe('главная без свадьбы: «свадьбы нет» словами, а не нулями', () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  /** Вошли, онбординг пройден, свадьбы на устройстве нет. */
+  const noWeddingDevice = () => {
+    localStorage.clear()
+    localStorage.setItem('tt_onboarded', '1')
+    localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
+  }
+  const NO_WEDDING = 'Свадьбы пока нет'
+  const zeros = (text: string) => {
+    expect(text).not.toContain('0%')
+    expect(text).not.toMatch(/(^|\D)0\s*гостей/)
+    expect(text).not.toMatch(/00\s*МЕС/)
+  }
+
+  it('список пришёл пустым — «Свадьбы пока нет», кнопка ведёт в квиз, нулей нет', async () => {
+    noWeddingDevice()
+    serve({ '/weddings': [], '/me/favorites': [], '/notifications': [] })
+    const r = await open('/home', NO_WEDDING)
+    zeros(r.container.textContent ?? '')
+    fireEvent.click(screen.getByText('Начать свадьбу'))
+    await waitFor(() => expect(r.container.textContent ?? '').toContain('Когда ваша свадьба?'))
+  })
+
+  it('список ещё в пути — прочерки: ни нулей, ни «свадьбы нет»', async () => {
+    noWeddingDevice()
+    serve({ '/weddings': PENDING, '/me/favorites': [], '/notifications': [] })
+    const r = await open('/home', 'Ваша свадьба')
+    zeros(r.container.textContent ?? '')
+    await neverShows(NO_WEDDING)
+  })
+
+  it('список не загрузился — «Сервер недоступен», а не «свадьбы нет» и не нули', async () => {
+    noWeddingDevice()
+    serve({ '/weddings': DOWN, '/me/favorites': [], '/notifications': [] })
+    const r = await open('/home', SERVER_DOWN)
+    zeros(r.container.textContent ?? '')
+    await neverShows(NO_WEDDING)
+  })
+
+  it('без входа — «Войдите», кнопка ведёт на экран входа, нулей нет', async () => {
+    localStorage.clear()
+    localStorage.setItem('tt_onboarded', '1')
+    serve({})
+    const r = await open('/home', 'Войдите')
+    zeros(r.container.textContent ?? '')
+    await neverShows(NO_WEDDING)
+    fireEvent.click(screen.getByText('Войти'))
+    await waitFor(() => expect(r.container.textContent ?? '').toContain('С возвращением'))
+  })
+})
