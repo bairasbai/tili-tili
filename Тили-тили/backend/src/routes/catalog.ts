@@ -27,8 +27,15 @@ const MONEY_MAX = Number.MAX_SAFE_INTEGER
  * `coalesce` нужен, чтобы пустое значение участвовало в сравнении наравне
  * с остальными: строка с `null` иначе выпадает из условия и теряется.
  */
+/* Рейтинг, который показан: до трёх отзывов числа на экране нет (План
+ * §18.2), и ранжировать по нему нельзя — иначе одна пятёрка от знакомого
+ * ставит анкету на первое место «по рейтингу», притом без цифры рядом.
+ * Столбец `vendors.rating` заполнен уже при первом отзыве; наружу его
+ * прячет `publicRating`, здесь — то же условие (ERR-0216). */
+const SHOWN_RATING = `case when v.reviews_count >= ${MIN_REVIEWS_TO_SHOW} then v.rating end`
+
 const SORTS = {
-  rating: { expr: 'coalesce(v.rating, -1)', dir: 'desc', cast: '::numeric' },
+  rating: { expr: `coalesce(${SHOWN_RATING}, -1)`, dir: 'desc', cast: '::numeric' },
   price_asc: { expr: 'coalesce(v.price_from, 9223372036854775807)', dir: 'asc', cast: '::bigint' },
   price_desc: { expr: 'coalesce(v.price_from, -1)', dir: 'desc', cast: '::bigint' },
   popular: { expr: 'v.reviews_count', dir: 'desc', cast: '::int' },

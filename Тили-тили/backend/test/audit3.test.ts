@@ -267,9 +267,10 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     const ids: string[] = []
     for (let i = 0; i < 7; i++) ids.push((await newVendor({ categoryId: category })).vendorId)
     // Разные рейтинги: при сортировке по рейтингу курсор обязан учитывать
-    // именно его, а не только идентификатор.
+    // именно его, а не только идентификатор. Число участвует в сортировке
+    // только от трёх отзывов (ERR-0216) — без `reviews_count` ключи слиплись бы.
     for (let i = 0; i < ids.length; i++) {
-      await app.db!.query('update vendors set rating = $2 where id = $1', [ids[i], 3 + (i % 3) * 0.5])
+      await app.db!.query('update vendors set rating = $2, reviews_count = 3 where id = $1', [ids[i], 3 + (i % 3) * 0.5])
     }
     const reader = (await newUser()).token
 

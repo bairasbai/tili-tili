@@ -350,6 +350,37 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     expect(withNumber.rating).toBeGreaterThan(4)
   })
 
+  it('«по рейтингу» ранжирует по показанному числу: одна пятёрка без цифры не обгоняет три четвёрки', async () => {
+    const category = 'decor'
+    // Общий уникальный префикс: `q=` вернёт обе анкеты и только их (R-227).
+    const prefix = `Ранжир ${RUN}`
+    const loud = await newVendor(`${prefix} один отзыв`, category)
+    const steady = await newVendor(`${prefix} три отзыва`, category)
+    const reader = await newWedding('2027-05-09')
+
+    await leaveCoupleReview(loud.vendorId, '2027-09-01', 5)
+    for (const day of ['2027-09-02', '2027-09-03', '2027-09-04']) await leaveCoupleReview(steady.vendorId, day, 4)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/catalog/vendors?categoryId=${category}&q=${encodeURIComponent(prefix)}&sort=rating`,
+      headers: auth(reader.token),
+    })
+    expect(res.statusCode).toBe(200)
+    const items = res.json().items as { id: string; rating: number | null; reviewsCount: number }[]
+    const ids = items.map((v) => v.id)
+    expect(ids).toContain(loud.vendorId)
+    expect(ids).toContain(steady.vendorId)
+
+    /* До трёх отзывов числа на экране нет (План §18.2) — значит, его нет и
+     * в сортировке: иначе одна пятёрка от знакомого ставит анкету на первое
+     * место «по рейтингу», притом без цифры рядом. Столбец `vendors.rating`
+     * заполнен уже при одном отзыве, наружу его прячет `publicRating`. */
+    expect(items.find((v) => v.id === loud.vendorId)!.rating).toBeNull()
+    expect(items.find((v) => v.id === steady.vendorId)!.rating).toBe(4)
+    expect(ids.indexOf(steady.vendorId)).toBeLessThan(ids.indexOf(loud.vendorId))
+  })
+
   /* ── защиты переписки (§18.2, §19.4) ──────────────────────────────── */
   it('первое сообщение пары становится текстом заявки', async () => {
     const vendor = await newVendor('Внимательный')
