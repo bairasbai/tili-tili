@@ -116,12 +116,13 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
 
   async function newVendor(name = 'Подрядчик', categoryId = 'photo') {
     const user = await newUser()
+    const vendorName = `${name} ${RUN}-${counter}`
     const created = await app.inject({
       method: 'PUT',
       url: '/vendor/profile',
       headers: auth(user.token),
       payload: {
-        name: `${name} ${RUN}-${counter}`,
+        name: vendorName,
         categoryId,
         city: { name: 'Казань', region: 'Татарстан' },
         priceFrom: { amount: 5_000_000, currency: 'RUB' },
@@ -129,7 +130,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     })
     expect(created.statusCode).toBe(200)
     await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(user.token) })
-    return { ...user, vendorId: created.json().id as string }
+    return { ...user, vendorId: created.json().id as string, vendorName }
   }
 
   async function book(w: { token: string; weddingId: string }, vendorId: string) {
@@ -319,12 +320,18 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     const vendor = await newVendor('Оцениваемый', category)
     const reader = await newWedding('2027-05-08')
 
+    /* Выдача сужается поиском по имени, а не первой сотней категории: база
+     * общая, в `decor` уже две тысячи анкет, и каждый прогон оставляет ещё
+     * одну с рейтингом. Сортировка идёт по столбцу `rating` — он заполнен и
+     * при двух отзывах, хотя наружу не показывается, — так что место анкеты
+     * в первой сотне зависело от того, сколько раз этот тест уже гоняли и
+     * что соседние наборы создали в ту же минуту (ERR-0215). */
     const inList = async () =>
       (
         (
           await app.inject({
             method: 'GET',
-            url: `/catalog/vendors?categoryId=${category}&limit=100`,
+            url: `/catalog/vendors?categoryId=${category}&q=${encodeURIComponent(vendor.vendorName)}&limit=100`,
             headers: auth(reader.token),
           })
         ).json().items as { id: string; rating: number | null; reviewsCount: number }[]
