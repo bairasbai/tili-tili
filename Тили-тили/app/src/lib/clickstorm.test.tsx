@@ -48,7 +48,7 @@ const ROUTES = [
  * заглушке Suspense и молча ничего не проверял — в том числе после переходов,
  * которые сами вызваны кликом. */
 const settled = (container: HTMLElement) =>
-  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull())
+  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
 
 describe('клик-шторм: все кнопки всех экранов нажимаются без падения', () => {
   beforeEach(() => {

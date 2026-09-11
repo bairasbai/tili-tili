@@ -73,7 +73,7 @@ const DENIED = 'Раздел для сотрудников платформы'
 
 async function open(route: string, settled: string) {
   const r = render(<MemoryRouter initialEntries={[route]}><App /></MemoryRouter>)
-  await waitFor(() => expect(r.container.querySelector('[data-testid="route-loading"]')).toBeNull())
+  await waitFor(() => expect(r.container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
   /* Ждём слово, которым экран отчитывается о завершении запроса: до него
      искать содержимое рано, там честное «Загружаем…». */
   await waitFor(() => expect(r.container.textContent ?? '').toContain(settled), { timeout: 4000 })

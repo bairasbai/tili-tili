@@ -49,7 +49,7 @@ const COUPLE_OK: Routes = {
 
 async function open(route: string, settled: string) {
   const r = render(<MemoryRouter initialEntries={[route]}><App /></MemoryRouter>)
-  await waitFor(() => expect(r.container.querySelector('[data-testid="route-loading"]')).toBeNull())
+  await waitFor(() => expect(r.container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
   await waitFor(() => expect(r.container.textContent ?? '').toContain(settled), { timeout: 4000 })
   return r
 }

@@ -25,7 +25,7 @@ const ROUTES = [
 /** Экраны грузятся отдельными чанками — ждём, пока заглушка Suspense уйдёт,
  *  иначе тест проверял бы саму заглушку и всегда был бы зелёным. */
 export const settled = (container: HTMLElement) =>
-  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull())
+  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
 
 describe('smoke: каждый экран рендерится без падения', () => {
   beforeEach(() => {

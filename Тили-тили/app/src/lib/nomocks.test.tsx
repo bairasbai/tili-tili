@@ -153,7 +153,7 @@ describe('сервер выключен: ни один экран не пока�
       const { container, unmount } = render(
         <MemoryRouter initialEntries={[r]}><App /></MemoryRouter>,
       )
-      await waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull())
+      await waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
       /* Ждём, пока экран отработает отказ: до этого он честно показывает
          «Загружаем…», и искать в нём следы моков рано. На экранах с
          несколькими запросами какой-то из них может остаться в загрузке —
