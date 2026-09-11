@@ -59,7 +59,15 @@ export interface paths {
                         };
                     };
                 };
+                422: components["responses"]["Validation"];
                 429: components["responses"]["TooManyRequests"];
+                /** @description SMS-провайдер не ответил или отказал — код не отправлен (sms_failed) */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         delete?: never;
@@ -111,6 +119,7 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["Unauthorized"];
+                422: components["responses"]["Validation"];
                 429: components["responses"]["TooManyRequests"];
             };
         };
@@ -159,6 +168,7 @@ export interface paths {
                         "application/json": components["schemas"]["AuthTokens"];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         delete?: never;
@@ -366,10 +376,10 @@ export interface paths {
                          *     устройства, и тема должна приехать к нему вместе с текстом.
                          */
                         inviteThemeId?: number;
-                        /** @description идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема */
-                        dressCode?: string;
-                        /** @description пожелание словами: «дамы — без белого» */
-                        dressNote?: string;
+                        /** @description идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема; null — снять дресс-код */
+                        dressCode?: string | null;
+                        /** @description пожелание словами: «дамы — без белого»; null — убрать пожелание */
+                        dressNote?: string | null;
                     };
                 };
             };
@@ -4905,10 +4915,15 @@ export interface paths {
                 501: components["responses"]["NotConfigured"];
             };
         };
-        /** Отписаться от push */
+        /**
+         * Отписаться от push
+         * @description С параметром endpoint — только подписка этого устройства (её адрес знает только оно); без параметра — все подписки человека.
+         */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    endpoint?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -5449,7 +5464,7 @@ export interface paths {
         put?: never;
         /**
          * Активировать план Б
-         * @description Пересобирает тайминг под запасной сценарий и рассылает команде и гостям новую точку сбора (§13.1).
+         * @description Фиксирует запасной сценарий и время его активации и уведомляет команду в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не пересобирается, гостям ничего не рассылается: канала доставки гостям пока нет.
          */
         post: {
             parameters: {
@@ -6828,7 +6843,10 @@ export interface components {
         };
         User: {
             id?: string;
-            name?: string;
+            /** @description null, пока человек не назвал себя */
+            name?: string | null;
+            /** @description E.164 — тот, что подтверждён кодом */
+            readonly phone?: string;
             /** Format: email */
             email?: string;
             avatarUrl?: string | null;
@@ -7059,6 +7077,8 @@ export interface components {
             /** @example s4 */
             id?: string;
             categoryId?: string;
+            /** @description подпись плитки в мозаике («Фотограф», «Площадка») — из шаблона слотов сервера */
+            readonly label?: string;
             /** @description null = слот пуст */
             deal?: components["schemas"]["Deal"] | null;
             /**

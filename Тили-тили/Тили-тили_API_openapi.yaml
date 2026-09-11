@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.27.0
+  version: 0.28.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -89,7 +89,9 @@ paths:
                 properties:
                   expiresIn: { type: integer, example: 300, description: сколько секунд код действителен }
                   resendAfter: { type: integer, example: 60, description: через сколько секунд можно запросить повторно }
+        '422': { $ref: '#/components/responses/Validation' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+        '502': { description: 'SMS-провайдер не ответил или отказал — код не отправлен (sms_failed)' }
   /auth/otp/verify:
     post:
       tags: [auth]
@@ -113,6 +115,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AuthTokens' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Validation' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /auth/refresh:
     post:
@@ -137,6 +140,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /auth/oauth/{provider}:
     get:
       tags: [auth]
@@ -253,9 +257,10 @@ paths:
                     устройства, и тема должна приехать к нему вместе с текстом.
                 dressCode:
                   type: string
+                  nullable: true
                   maxLength: 32
-                  description: 'идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема'
-                dressNote: { type: string, maxLength: 300, description: 'пожелание словами: «дамы — без белого»' }
+                  description: 'идентификатор палитры дресс-кода (План ч. 295) — по той же причине, что и тема; null — снять дресс-код'
+                dressNote: { type: string, nullable: true, maxLength: 300, description: 'пожелание словами: «дамы — без белого»; null — убрать пожелание' }
       responses:
         '200':
           description: OK
@@ -2498,7 +2503,10 @@ paths:
     delete:
       tags: [notifications]
       summary: Отписаться от push
+      description: 'С параметром endpoint — только подписка этого устройства (её адрес знает только оно); без параметра — все подписки человека.'
       security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: endpoint, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
         '204': { description: OK }
   /users/me/referral:
@@ -2761,7 +2769,7 @@ paths:
     post:
       tags: [timeline]
       summary: Активировать план Б
-      description: 'Пересобирает тайминг под запасной сценарий и рассылает команде и гостям новую точку сбора (§13.1).'
+      description: 'Фиксирует запасной сценарий и время его активации и уведомляет команду в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не пересобирается, гостям ничего не рассылается: канала доставки гостям пока нет.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -3632,7 +3640,8 @@ components:
       type: object
       properties:
         id: { type: string }
-        name: { type: string }
+        name: { type: string, nullable: true, description: 'null, пока человек не назвал себя' }
+        phone: { type: string, readOnly: true, description: 'E.164 — тот, что подтверждён кодом' }
         email: { type: string, format: email }
         avatarUrl: { type: string, nullable: true }
     City:
@@ -3901,6 +3910,7 @@ components:
       properties:
         id: { type: string, example: s4 }
         categoryId: { type: string }
+        label: { type: string, readOnly: true, description: 'подпись плитки в мозаике («Фотограф», «Площадка») — из шаблона слотов сервера' }
         deal:
           allOf: [{ $ref: '#/components/schemas/Deal' }]
           nullable: true

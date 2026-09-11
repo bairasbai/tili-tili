@@ -35,7 +35,7 @@ const ROLES = [
  */
 const SERVER_ROLE = { partner: 'couple', helper: 'helper', coordinator: 'coordinator', vendor: 'vendor' } as const
 
-type Member = { user?: { id?: string; name?: string }; role?: string }
+type Member = { user?: { id?: string; name?: string | null }; role?: string }
 type Invite = { code?: string; url?: string; role?: string; label?: string | null; expiresAt?: string; used?: boolean }
 
 const ROLE_NAME: Record<string, string> = {

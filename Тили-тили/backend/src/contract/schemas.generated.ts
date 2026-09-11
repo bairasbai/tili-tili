@@ -1242,6 +1242,11 @@ export const CONTRACT_SCHEMAS = {
               "categoryId": {
                   "type": "string"
               },
+              "label": {
+                  "type": "string",
+                  "readOnly": true,
+                  "description": "подпись плитки в мозаике («Фотограф», «Площадка») — из шаблона слотов сервера"
+              },
               "deal": {
                   "allOf": [
                       {
@@ -1362,7 +1367,16 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string"
               },
               "name": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "null, пока человек не назвал себя"
+              },
+              "phone": {
+                  "type": "string",
+                  "readOnly": true,
+                  "description": "E.164 — тот, что подтверждён кодом"
               },
               "email": {
                   "type": "string",
