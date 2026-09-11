@@ -1309,6 +1309,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
+        '409':
+          description: '`chat_closed` — чат своего подрядчика закрыт: сделка отменена, писать некому (переписка остаётся паре для чтения)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '423': { $ref: '#/components/responses/Locked' }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
   /chats/{chatId}/ws:

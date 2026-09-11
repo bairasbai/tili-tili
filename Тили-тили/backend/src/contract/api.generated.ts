@@ -2343,6 +2343,15 @@ export interface paths {
                         "application/json": components["schemas"]["Message"];
                     };
                 };
+                /** @description `chat_closed` — чат своего подрядчика закрыт: сделка отменена, писать некому (переписка остаётся паре для чтения) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 423: components["responses"]["Locked"];
                 429: components["responses"]["QuotaExceeded"];
             };
