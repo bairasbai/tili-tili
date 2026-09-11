@@ -19,6 +19,8 @@ export interface VendorRow {
   currency: string
   rating: string | null
   reviews_count: number
+  /** Отзывы пар — по ним открывается число рейтинга (фича 005, В4). */
+  couple_reviews_count: number
   photo_url: string | null
   verified_at: Date | null
   has_video: boolean
@@ -72,7 +74,7 @@ export function escapeLike(s: string): string {
 
 export const VENDOR_COLUMNS = `
   v.id, v.name, v.category_id, c.name as city, v.price_from::text as price_from, v.currency,
-  v.rating::text as rating, v.reviews_count, v.photo_url, v.verified_at, v.created_at, v.phone,
+  v.rating::text as rating, v.reviews_count, v.couple_reviews_count, v.photo_url, v.verified_at, v.created_at, v.phone,
   exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video') as has_video`
 
 export function toVendor(r: VendorRow) {
@@ -82,10 +84,12 @@ export function toVendor(r: VendorRow) {
     categoryId: r.category_id,
     city: r.city,
     priceFrom: r.price_from === null ? null : { amount: Number(r.price_from), currency: r.currency },
-    /* До трёх отзывов числа нет — в выдаче стоит «Новый на платформе»
-     * (План §18.2). Один отзыв от знакомого это 5,0 и первое место, и
-     * прятать цифру надо здесь, в одном месте на все ответы каталога. */
-    rating: publicRating(r.rating === null ? null : Number(r.rating), r.reviews_count),
+    /* До трёх отзывов ПАР числа нет — в выдаче стоит «Новый на платформе»
+     * (План §18.2; фича 005, В4). Один отзыв от знакомого это 5,0 и первое
+     * место, три гостя одной свадьбы — тоже; прятать цифру надо здесь, в
+     * одном месте на все ответы каталога. `reviewsCount` — все отзывы,
+     * включая гостевые: они в среднем есть, число открыть не могут. */
+    rating: publicRating(r.rating === null ? null : Number(r.rating), r.couple_reviews_count),
     reviewsCount: r.reviews_count,
     photoUrl: r.photo_url,
     verified: r.verified_at !== null,

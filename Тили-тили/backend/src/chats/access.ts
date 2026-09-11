@@ -52,8 +52,15 @@ export interface ChatRow {
   wedding_id: string
   kind: ChatKind
   vendor_id: string | null
-  /** Заполнен только у чата со своим подрядчиком: он привязан к слоту. */
+  /** Заполнен только у чата со своим подрядчиком: по нему список чатов находит слот. */
   slot_id: string | null
+  /**
+   * Только у чата со своим подрядчиком: переписка принадлежит СДЕЛКЕ, не
+   * слоту. Слот переживает подрядчика — пара убрала А и позвала Б в тот же
+   * слот, и чат по слоту отдавал Б реплики А (ERR-0219). Ключ по сделке
+   * держит уникальный индекс `chats(deal_id) where kind='external'`.
+   */
+  deal_id: string | null
   opens_at: Date | null
 }
 
@@ -63,7 +70,7 @@ export interface ChatCaller {
   as: Role
 }
 
-export const CHAT_COLUMNS = 'c.id, c.wedding_id, c.kind, c.vendor_id, c.slot_id, c.opens_at'
+export const CHAT_COLUMNS = 'c.id, c.wedding_id, c.kind, c.vendor_id, c.slot_id, c.deal_id, c.opens_at'
 
 /**
  * Достаёт чат и проверяет право читать его.
@@ -100,6 +107,7 @@ export async function chatForUser(db: Queryable, chatId: string, userId: string)
     kind: row.kind,
     vendor_id: row.vendor_id,
     slot_id: row.slot_id,
+    deal_id: row.deal_id,
     opens_at: row.opens_at,
   }
 

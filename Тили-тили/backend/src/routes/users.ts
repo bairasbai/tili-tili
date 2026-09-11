@@ -22,6 +22,19 @@ interface ProfileRow {
 /** `22:00:00` из PostgreSQL → `22:00`, как в контракте. */
 const hhmm = (t: string) => t.slice(0, 5)
 
+/**
+ * Хост push-службы из адреса подписки. Адрес проверен схемой при записи
+ * (`https://…`), но строка в базе могла появиться и мимо API — тогда хоста
+ * нет, и это честнее, чем 500 на весь список.
+ */
+function endpointHost(endpoint: string): string {
+  try {
+    return new URL(endpoint).host
+  } catch {
+    return ''
+  }
+}
+
 function toProfile(r: ProfileRow) {
   return {
     id: r.id,
@@ -318,6 +331,41 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /* ── push-подписки: на каких устройствах включён push ─────────────── */
+  app.get(
+    '/users/me/push-subscriptions',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { endpoint: { type: 'string', minLength: 1, maxLength: 2048 } },
+        },
+      },
+    },
+    async (request) => {
+      /* Адрес подписки — секрет устройства: push-служба принимает по нему
+       * сообщения для этого браузера, и кто его знает, тот и шлёт. Наружу
+       * уходит только хост службы (fcm.googleapis.com, web.push.apple.com…),
+       * а «своя» подписка узнаётся сверкой с адресом, который прислало само
+       * устройство, — как у `DELETE …?endpoint=` (R-232). Снять подписку
+       * (свою или все) — тем же `DELETE` в `notifications.ts`; здесь только
+       * список для экрана «Настройки» (контракт v0.29.0). */
+      const { endpoint } = request.query as { endpoint?: string }
+      const { rows } = await db().query<{ id: string; endpoint: string; created_at: Date }>(
+        'select id, endpoint, created_at from push_subscriptions where user_id = $1 order by created_at',
+        [request.caller!.userId],
+      )
+      return rows.map((r) => ({
+        id: r.id,
+        endpointHost: endpointHost(r.endpoint),
+        createdAt: r.created_at.toISOString(),
+        mine: endpoint !== undefined && r.endpoint === endpoint,
+      }))
+    },
+  )
+
   /* ── экспорт данных (152-ФЗ) ──────────────────────────────────────── */
   app.get('/users/me/export', { preHandler: app.requireConsent }, async (request) => {
     const userId = request.caller!.userId
@@ -498,7 +546,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const { rows: vendor } = await db().query<{ id: string }>(
       `select v.id, v.name, v.about, v.category_id, c.name as city, c.region, v.phone, v.photo_url,
               v.price_from::text as price_from, v.currency, v.years,
-              v.published_at, v.verified_at, v.rating::text as rating, v.reviews_count, v.created_at
+              v.published_at, v.verified_at, v.rating::text as rating, v.reviews_count, v.couple_reviews_count,
+              v.created_at
          from vendors v left join cities c on c.id = v.city_id where v.user_id = $1`,
       [userId],
     )

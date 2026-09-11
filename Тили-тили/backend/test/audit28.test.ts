@@ -363,8 +363,11 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
     const s = await signIn(phone)
     await consent(s.accessToken)
     expect((await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(s.accessToken) })).statusCode).toBe(204)
+    /* Фича 005 (В2): вход в 30-дневном окне ВОССТАНАВЛИВАЕТ аккаунт, и refresh
+     * после него — 200 (`audit34`). Здесь окно уже прошло: строка ждёт уборки,
+     * вход по-прежнему выдаёт токены, и обмен обязан отвечать 401. */
+    await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [s.user.id])
     await pretendMinutePassed(phone)
-    // Сегодня вход удалённому выдаёт токены (восстановление или отказ до SMS — решение владельца).
     const again = await signIn(phone)
     const res = await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: again.refreshToken } })
     expect(res.statusCode).toBe(401)

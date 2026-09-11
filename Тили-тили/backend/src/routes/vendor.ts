@@ -62,10 +62,11 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
     // Своя анкета видна владельцу и до публикации — иначе мастер не покажет,
     // что уже заполнено.
     const detail = await loadDetail(db(), vendorId, rows[0]!)
-    const { rows: state } = await db().query<{ published_at: Date | null; moderated_at: Date | null }>(
-      'select published_at, moderated_at from vendors where id = $1',
-      [vendorId],
-    )
+    const { rows: state } = await db().query<{
+      published_at: Date | null
+      moderated_at: Date | null
+      blocked_at: Date | null
+    }>('select published_at, moderated_at, blocked_at from vendors where id = $1', [vendorId])
     return {
       ...detail,
       /* Регион отдаём владельцу: город в ответе — одна строка, и без региона
@@ -73,6 +74,11 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       cityRegion: rows[0]!.city_region,
       published: state[0]!.published_at !== null,
       moderated: state[0]!.moderated_at !== null,
+      /* Блокировка по жалобе (`block`, §18.2) — только владельцу: в каталоге
+         анкеты нет, публикация отвечает 409, и кабинет обязан сказать почему,
+         а не показывать «не опубликована» с кнопкой, которая не сработает
+         (D5-23, фича 005). Чужому читателю вопрос не стоит — он её не видит. */
+      blocked: state[0]!.blocked_at !== null,
     }
   }
 

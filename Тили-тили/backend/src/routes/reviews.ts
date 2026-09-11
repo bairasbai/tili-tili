@@ -216,14 +216,19 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
       if (worked.length === 0) throw notFound('Этот подрядчик на вашей свадьбе не работал')
 
       /* Повторная отправка — правка своего же отзыва, а не второй отзыв
-       * (так написано в контракте). Уникальный индекс по паре «токен +
-       * подрядчик» превращает вставку в обновление. */
+       * (так написано в контракте). Ключ — ГОСТЬ, а не его ссылка: уникальный
+       * индекс `(guest_id, vendor_id)` превращает вставку в обновление, и
+       * перевыпуск ссылки (новый токен) второго голоса в рейтинг не даёт
+       * (фича 005; до неё ключом был токен, а перенос токена в отзывах при
+       * перевыпуске держал правило в обработчике — ERR-0234). `guest_token`
+       * пишется ради `CHECK reviews_key_matches_source` и совместимости
+       * чтения, в уникальности не участвует. */
       await db().query(
-        `insert into reviews (id, vendor_id, wedding_id, source, guest_token, stars, text)
-         values ($1,$2,$3,'guest',$4,$5,$6)
-         on conflict (guest_token, vendor_id) where guest_token is not null
+        `insert into reviews (id, vendor_id, wedding_id, source, guest_id, guest_token, stars, text)
+         values ($1,$2,$3,'guest',$4,$5,$6,$7)
+         on conflict (guest_id, vendor_id) where guest_id is not null
          do update set stars = excluded.stars, text = excluded.text`,
-        [uuidv7(), body.vendorId, weddingId, guestToken, body.stars, body.text ?? null],
+        [uuidv7(), body.vendorId, weddingId, guest.guestId, guestToken, body.stars, body.text ?? null],
       )
       await recomputeRating(db(), body.vendorId)
       return reply.code(201).send({ vendorId: body.vendorId, stars: body.stars })

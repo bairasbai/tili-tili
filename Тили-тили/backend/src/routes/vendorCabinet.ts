@@ -4,6 +4,7 @@ import { uuidv7, isUuid } from '../ids.js'
 import { notify } from '../notify/notify.js'
 import { rolesSeeing } from '../chats/access.js'
 import { PAID_SUM } from '../deals/repo.js'
+import { isUniqueViolation } from '../plugins/db.js'
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
@@ -275,12 +276,19 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
      * с минусом, отменённые не считаются). Раньше складывалась цена целиком,
      * и сделка 100 000 ₽ с внесённым авансом 50 000 ₽ показывала «ожидается
      * 100 000 ₽» (D5-08). Закрытые и отменённые в ожидание не входят. */
-    const expected = rows
-      .filter((r) => r.state === 'booked' || r.state === 'paid_deposit')
-      .reduce((sum, r) => sum + Math.max(0, Number(r.price ?? 0) - Number(r.paid)), 0)
+    const owed = (r: { price: string | null; paid: string }) => Math.max(0, Number(r.price ?? 0) - Number(r.paid))
+    const expected = rows.filter((r) => r.state === 'booked' || r.state === 'paid_deposit').reduce((sum, r) => sum + owed(r), 0)
+
+    /* «Недоплата» — остаток по ЗАВЕРШЁННЫМ: работа сдана, а цена платежами
+     * не закрыта. В «ожидается» она не входит — это предмет спора, а не
+     * ожидания (решение владельца, В7, фича 005); переход в `done` оплат не
+     * проверяет, и раньше такой остаток просто исчезал с экрана. Отменённые
+     * не считаются: там и работы не было. */
+    const shortfall = rows.filter((r) => r.state === 'done').reduce((sum, r) => sum + owed(r), 0)
 
     return {
       expected: { amount: expected, currency: 'RUB' },
+      shortfall: { amount: shortfall, currency: 'RUB' },
       items: rows.map((r) => ({
         id: r.id,
         coupleName: r.couple_name,
@@ -495,10 +503,18 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       // а второе нажатие: очередь модератора от этого только растёт.
       if (pending.length > 0) throw conflict('verification_pending', 'Заявка уже на проверке')
 
-      await db().query(
-        'insert into vendor_verifications (id, vendor_id, kind, file_url, inn) values ($1,$2,$3,$4,$5)',
-        [uuidv7(), vendorId, body.kind, body.fileUrl, body.inn ?? null],
-      )
+      try {
+        await db().query(
+          'insert into vendor_verifications (id, vendor_id, kind, file_url, inn) values ($1,$2,$3,$4,$5)',
+          [uuidv7(), vendorId, body.kind, body.fileUrl, body.inn ?? null],
+        )
+      } catch (error) {
+        /* Два нажатия одновременно проходят проверку выше оба; «одна заявка
+         * на проверке» держит частичный уникальный индекс (фича 005), и
+         * второму приходит тот же 409, а не 500. */
+        if (isUniqueViolation(error)) throw conflict('verification_pending', 'Заявка уже на проверке')
+        throw error
+      }
       // Документ наружу не выходит никогда — в ответе только факт подачи.
       return reply.code(201).send({ status: 'pending' })
     },

@@ -5,7 +5,7 @@ import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { allowedRoles } from '../src/wedding/access.js'
 import { inviteCode, referralCode } from '../src/wedding/codes.js'
-import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../src/wedding/templates.generated.js'
+import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../src/wedding/templates.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -137,6 +137,18 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
     expect(Number(counts.rows[0]!.slots)).toBe(SLOT_TEMPLATE.length)
     expect(Number(counts.rows[0]!.tasks)).toBe(TASK_TEMPLATE.length)
     expect(Number(counts.rows[0]!.events)).toBe(TIMELINE_TEMPLATE.length)
+  })
+
+  /* Шаблон слотов с фичи 005 правится руками (генератор из мок-модели
+   * снесён): единственное, что держит его в согласии со справочником, —
+   * этот тест. Слот с категорией, которой нет в базе, у новой пары
+   * оказался бы мозаикой без каталога за ней. */
+  it('категории шаблона слотов есть в справочнике', async () => {
+    const { rows } = await app.db!.query<{ id: string }>('select id from categories')
+    const known = new Set(rows.map((r) => r.id))
+    const missing = SLOT_TEMPLATE.map((s) => s.categoryId).filter((id) => !known.has(id))
+    expect(missing).toEqual([])
+    expect(new Set(SLOT_TEMPLATE.map((s) => s.categoryId)).size).toBe(SLOT_TEMPLATE.length)
   })
 
   it('новой паре достаётся пустая мозаика, а не чужие брони', async () => {

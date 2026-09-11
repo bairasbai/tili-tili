@@ -6,7 +6,7 @@ import { readKeyHeader } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
 import { expireHolds } from '../deals/repo.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
-import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_FALLBACK } from '../wedding/templates.generated.js'
+import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_FALLBACK } from '../wedding/templates.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })

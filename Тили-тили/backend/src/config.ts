@@ -4,6 +4,20 @@ import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
 
+/**
+ * Лимиты выдачи кода на номер (фича 005, В3; спека FR-008).
+ *
+ * Прежний «5 в час на номер» считал всех вместе: посторонний, знающий чужой
+ * номер, пятью запросами с одного адреса закрывал жертве вход на час.
+ * Теперь рабочий ограничитель — пара «номер + адрес»: три кода в час, и
+ * упирается в него тот, кто их запросил. Потолки по номеру — от рассылки
+ * с многих адресов: десять в час и тридцать в сутки на один номер хватает
+ * любому живому человеку, а счёт за SMS они держат.
+ */
+export const MAX_SENDS_PER_PHONE_IP_HOUR = 3
+export const MAX_SENDS_PER_PHONE_HOUR = 10
+export const MAX_SENDS_PER_PHONE_DAY = 30
+
 export interface Config {
   env: Env
   port: number
@@ -19,6 +33,15 @@ export interface Config {
   otpMaxPerIpHour: number
   /** Потолок на ВСЕ отправки кода в час — защита счёта за SMS. */
   otpMaxPerHourTotal: number
+  /**
+   * Лимиты выдачи кода на НОМЕР (фича 005, В3). Пара «номер + адрес» —
+   * рабочий ограничитель: посторонний с одного адреса упирается в него, а
+   * владелец номера с другого адреса код получает. Потолки по номеру за час
+   * и за сутки — от рассылки с многих адресов за наши деньги.
+   */
+  otpMaxPerPhoneIpHour: number
+  otpMaxPerPhoneHour: number
+  otpMaxPerPhoneDay: number
   /**
    * Доверять ли заголовку X-Forwarded-For. `false` — адрес берётся из сокета;
    * число — сколько прокси стоит впереди. Значение по умолчанию false, потому
@@ -169,6 +192,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     policyVersion: source.POLICY_VERSION ?? '2026-09-02',
     otpMaxPerIpHour: envNumber(source.OTP_MAX_PER_IP_HOUR, MAX_SENDS_PER_HOUR_PER_IP),
     otpMaxPerHourTotal: envNumber(source.OTP_MAX_PER_HOUR_TOTAL, MAX_SENDS_PER_HOUR_TOTAL),
+    otpMaxPerPhoneIpHour: envNumber(source.OTP_MAX_PER_PHONE_IP_HOUR, MAX_SENDS_PER_PHONE_IP_HOUR),
+    otpMaxPerPhoneHour: envNumber(source.OTP_MAX_PER_PHONE_HOUR, MAX_SENDS_PER_PHONE_HOUR),
+    otpMaxPerPhoneDay: envNumber(source.OTP_MAX_PER_PHONE_DAY, MAX_SENDS_PER_PHONE_DAY),
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
     albumMaxPerGuest: envNumber(source.ALBUM_MAX_PER_GUEST, 50),
     contributionsMaxPerGuest: envNumber(source.CONTRIBUTIONS_MAX_PER_GUEST, 20),

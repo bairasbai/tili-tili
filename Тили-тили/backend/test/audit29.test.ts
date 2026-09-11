@@ -653,7 +653,8 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
       const mark = `Курсорный${RUN}${randomInt(1000, 9999)}`
       const a = await newVendor(mark, 'transport')
       const b = await newVendor(mark, 'transport')
-      await sql('update vendors set rating = 4.5, reviews_count = 3 where id = any($1::uuid[])', [[a.vendorId, b.vendorId]])
+      // Порог показа рейтинга — по отзывам ПАР (фича 005): без `couple_reviews_count` число скрыто и ключи слипаются.
+      await sql('update vendors set rating = 4.5, reviews_count = 3, couple_reviews_count = 3 where id = any($1::uuid[])', [[a.vendorId, b.vendorId]])
       const reader = await newUser()
       const list = (query: string) =>
         app.inject({ method: 'GET', url: `/catalog/vendors?q=${encodeURIComponent(mark)}&${query}`, headers: auth(reader.token) })
@@ -689,7 +690,8 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
       const mark = `Листание${RUN}${randomInt(1000, 9999)}`
       const make = async (rating: number, reviews: number, down: boolean) => {
         const v = await newVendor(mark, 'transport')
-        await sql('update vendors set rating = $2, reviews_count = $3, downranked_at = $4 where id = $1', [
+        // `couple_reviews_count` — порог показа числа с фичи 005; без него порядок совпадал бы с `v.id` случайно.
+        await sql('update vendors set rating = $2, reviews_count = $3, couple_reviews_count = $3, downranked_at = $4 where id = $1', [
           v.vendorId,
           rating,
           reviews,

@@ -7,7 +7,7 @@ import {
   BUDGET_BY_VENDOR_CATEGORY,
   BUDGET_CATEGORIES,
   BUDGET_FALLBACK,
-} from '../wedding/templates.generated.js'
+} from '../wedding/templates.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })

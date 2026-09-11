@@ -160,9 +160,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
           /* Пакет, если назван, обязан быть пакетом ЭТОГО подрядчика.
            * Раньше поле принималось и молча ничего не делало — класс
-           * ERR-0034 (D2-23). Колонки под пакет у сделки нет, поэтому
-           * здесь только проверка: чужой или несуществующий пакет — 422,
-           * а не бронь «как будто по пакету». */
+           * ERR-0034 (D2-23): чужой или несуществующий пакет — 422, а не
+           * бронь «как будто по пакету». Сделка его помнит (`package_id`,
+           * фича 005): кабинет и карточка показывают, что именно продано. */
           if (body.packageId !== undefined) {
             // Колонка uuid: строка не той формы роняет запрос драйвером (R-118).
             const { rows: pkg } = new RegExp(UUID_ID.pattern).test(body.packageId)
@@ -180,9 +180,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
           const dealId = uuidv7()
           await client.query(
-            `insert into deals (id, wedding_id, slot_id, vendor_id, state, price, currency, booked_at)
-             values ($1, $2, $3, $4, 'booked', $5, 'RUB', now())`,
-            [dealId, weddingId, slotId, body.vendorId, body.price.amount],
+            `insert into deals (id, wedding_id, slot_id, vendor_id, state, price, currency, booked_at, package_id)
+             values ($1, $2, $3, $4, 'booked', $5, 'RUB', now(), $6)`,
+            [dealId, weddingId, slotId, body.vendorId, body.price.amount, body.packageId ?? null],
           )
           // Захват слота условием в UPDATE, а не «прочитали и записали»:
           // два одновременных «Забронировать» иначе оба видят пустой слот,
@@ -365,12 +365,13 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         /* Чат заводится вместе с подрядчиком, а не при первом сообщении:
          * иначе пара открывает список чатов, не находит там своего фотографа
          * и пишет ему в мессенджер — то есть мимо приложения (§11).
-         * Слот мог уже иметь чат от прошлого подрядчика: переписка привязана
-         * к слоту, и второй чат на тот же слот запрещён индексом. */
+         * Чат принадлежит СДЕЛКЕ, не слоту: у прежнего подрядчика того же
+         * слота остаётся свой (закрытый) чат, у нового — свой, и историю
+         * прежнего он не видит (ERR-0219). Второй чат на ту же сделку
+         * запрещён индексом; сделка только что заведена — конфликта нет. */
         await client.query(
-          `insert into chats (id, wedding_id, kind, slot_id) values ($1,$2,'external',$3)
-           on conflict do nothing`,
-          [uuidv7(), weddingId, slotId],
+          `insert into chats (id, wedding_id, kind, slot_id, deal_id) values ($1,$2,'external',$3,$4)`,
+          [uuidv7(), weddingId, slotId, dealId],
         )
         return (await loadSlot(client, slotId, true))!
       })
@@ -432,14 +433,17 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   /* ── кабинет своего подрядчика ────────────────────────────────────── */
   app.get('/guest-vendor/:token', async (request) => {
     const { token } = request.params as { token: string }
-    const { rows } = await db().query<{ slot_id: string; wedding_id: string; date: string | null }>(
-      `select i.slot_id, i.wedding_id, w.date::text as date
-         from external_invites i join weddings w on w.id = i.wedding_id
+    const { rows } = await db().query<{ slot_id: string; wedding_id: string; deal_id: string | null; date: string | null }>(
+      `select i.slot_id, i.wedding_id, s.deal_id, w.date::text as date
+         from external_invites i
+         join weddings w on w.id = i.wedding_id
+         join slots s on s.id = i.slot_id
         where i.token = $1 and i.revoked_at is null and i.expires_at > now() and w.cancelled_at is null`,
       [token],
     )
     const invite = rows[0]
     if (!invite) throw new AppError(410, 'gone', 'Ссылка недействительна: истекла или отозвана')
+    const dealId = dealOfInvite(invite.deal_id)
 
     await db().query('update external_invites set accepted_at = coalesce(accepted_at, now()) where token = $1', [token])
 
@@ -461,7 +465,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     return {
       weddingDate: invite.date,
       slot: toSlot(slotRows[0]!, true),
-      chatId: await externalChatId(invite.wedding_id, invite.slot_id),
+      chatId: await externalChatId(invite.wedding_id, invite.slot_id, dealId),
       timeline: timeline.map((r) => toTimelineEvent(r as TimelineRow)),
       holdHours: HOLD_HOURS,
     }
@@ -471,25 +475,21 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   app.get('/guest-vendor/:token/messages', async (request) => {
     const { token } = request.params as { token: string }
     const invite = await inviteByToken(token)
-    const chatId = await externalChatId(invite.wedding_id, invite.slot_id)
-    /* Чат ключуется слотом, а не сделкой: история прежнего подрядчика (его
-     * реплики, телефон, цены — ПДн третьего лица) доставалась следующему в
-     * том же слоте (ERR-0219, D4-01). Без миграции: по токену видна переписка
-     * не старше текущей сделки слота; без сделки — ничего. */
-    const { rows: current } = await db().query<{ since: Date }>(
-      `select coalesce((select d.created_at from slots s join deals d on d.id = s.deal_id where s.id = $1), now()) as since`,
-      [invite.slot_id],
-    )
+    /* Чат — по сделке, история в нём своя целиком: реплики прежнего
+     * подрядчика того же слота лежат в его чате и сюда не попадают
+     * (ERR-0219). Фильтр «не старше текущей сделки», который держал это до
+     * миграции, снят — дата не ключ. */
+    const chatId = await externalChatId(invite.wedding_id, invite.slot_id, invite.deal_id)
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
     const { rows } = await db().query<MessageRow>(
       `select id, chat_id, sender_id, text, attachments, created_at
          from messages
-        where chat_id = $1 and created_at >= $5
+        where chat_id = $1
           and ($2::text is null or (created_at, id) < ($2::timestamptz, $3::uuid))
         order by created_at desc, id desc
         limit $4`,
-      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1, current[0]!.since],
+      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
     )
     return buildPage(rows.map(toMessage), page.limit, (m) => encodeCursor(m.sentAt, m.id))
   })
@@ -510,7 +510,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const { token } = request.params as { token: string }
       const { text } = request.body as { text: string }
       const invite = await inviteByToken(token)
-      const chatId = await externalChatId(invite.wedding_id, invite.slot_id)
+      const chatId = await externalChatId(invite.wedding_id, invite.slot_id, invite.deal_id)
 
       /* Отправитель пустой: аккаунта у своего подрядчика нет, а выдумывать
        * ему пользователя значило бы завести половину учётной записи —
@@ -529,6 +529,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         text,
         attachmentUrl: null,
         sentAt: rows[0]!.created_at.toISOString(),
+        system: false,
       }
       await app.realtime.publish({ chatId, type: 'message', actorId: 'external', payload: { message } })
 
@@ -562,29 +563,49 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   )
 
   /** Живая ссылка или 410 — общая проверка для всех путей кабинета. */
-  async function inviteByToken(token: string): Promise<{ wedding_id: string; slot_id: string; date: string | null }> {
-    const { rows } = await db().query<{ slot_id: string; wedding_id: string; date: string | null }>(
-      `select i.slot_id, i.wedding_id, w.date::text as date
-         from external_invites i join weddings w on w.id = i.wedding_id
+  async function inviteByToken(
+    token: string,
+  ): Promise<{ wedding_id: string; slot_id: string; deal_id: string; date: string | null }> {
+    const { rows } = await db().query<{ slot_id: string; wedding_id: string; deal_id: string | null; date: string | null }>(
+      `select i.slot_id, i.wedding_id, s.deal_id, w.date::text as date
+         from external_invites i
+         join weddings w on w.id = i.wedding_id
+         join slots s on s.id = i.slot_id
         where i.token = $1 and i.revoked_at is null and i.expires_at > now()
           and w.cancelled_at is null and w.archived_at is null`,
       [token],
     )
     if (!rows[0]) throw new AppError(410, 'gone', 'Ссылка недействительна: истекла или отозвана')
-    return rows[0]
+    return { ...rows[0], deal_id: dealOfInvite(rows[0].deal_id) }
   }
 
   /**
-   * Чат слота: заводится вместе с подрядчиком, но у приглашений, выданных
-   * до появления чатов, его может не быть. Создаём по требованию, чтобы
-   * старая ссылка не открывалась в кабинет без переписки.
+   * Сделка, к которой ведёт ссылка, — текущая сделка слота.
+   *
+   * Ссылка привязана к слоту, а переписка — к сделке (`chats.deal_id`):
+   * без текущей сделки подрядчика в слоте больше нет, и открывать по ссылке
+   * нечего. Каждая дверь отмены гасит ссылку сама (ERR-0242); здесь —
+   * страховка на случай, если сделка ушла из слота другим путём: 410,
+   * а не чат чужой сделки и не 500.
    */
-  async function externalChatId(weddingId: string, slotId: string): Promise<string> {
+  function dealOfInvite(dealId: string | null): string {
+    if (!dealId) throw new AppError(410, 'gone', 'Подрядчика в слоте больше нет — ссылка закрыта')
+    return dealId
+  }
+
+  /**
+   * Чат сделки со своим подрядчиком: заводится вместе с ней, но у сделок,
+   * заведённых до появления чатов, его может не быть. Создаём по требованию,
+   * чтобы старая ссылка не открывалась в кабинет без переписки. Ключ —
+   * сделка, не слот: второй чат на неё не заведётся, а чат прежнего
+   * подрядчика того же слота остаётся его (ERR-0219).
+   */
+  async function externalChatId(weddingId: string, slotId: string, dealId: string): Promise<string> {
     const { rows } = await db().query<{ id: string }>(
-      `insert into chats (id, wedding_id, kind, slot_id) values ($1,$2,'external',$3)
-       on conflict (wedding_id, slot_id) where kind = 'external' do update set kind = 'external'
+      `insert into chats (id, wedding_id, kind, slot_id, deal_id) values ($1,$2,'external',$3,$4)
+       on conflict (deal_id) where kind = 'external' do update set kind = 'external'
        returning id`,
-      [uuidv7(), weddingId, slotId],
+      [uuidv7(), weddingId, slotId, dealId],
     )
     return rows[0]!.id
   }
@@ -628,4 +649,7 @@ const toMessage = (r: MessageRow) => ({
   text: r.text,
   attachmentUrl: r.attachments?.url ?? null,
   sentAt: r.created_at.toISOString(),
+  // В чате со своим подрядчиком системных записей не бывает: пустой
+  // отправитель здесь — сам подрядчик (контракт, Message.senderId).
+  system: false,
 })

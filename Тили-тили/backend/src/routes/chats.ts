@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound, quotaExceeded } from '../errors.js'
+import { AppError, conflict, notFound, quotaExceeded } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { assertOpen, chatForUser, rolesSeeing, type ChatKind } from '../chats/access.js'
@@ -30,6 +30,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     /** Пара видит строку чата исполнителей, но не его содержимое. */
     peek: boolean
     external_name: string | null
+    /** Чат со своим подрядчиком, сделка которого отменена: читать можно, писать некому. */
+    closed: boolean
     vendor_name: string | null
     vendor_photo: string | null
     opens_at: Date | null
@@ -89,6 +91,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     lastMessage: r.peek ? 'Переписку ведёт координатор' : (r.last_text ?? ''),
     unread: r.peek ? 0 : Number(r.unread),
     kind: r.kind,
+    closed: r.closed,
     openFrom: r.opens_at?.toISOString() ?? null,
   })
 
@@ -99,24 +102,27 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
      * и там, где он подрядчик. Правила видимости повторяют список из
      * `chats/access.ts` — тест сверяет их между собой, чтобы они не разошлись. */
     const { rows } = await db().query<ListRow>(
-      /* Имя своего подрядчика берётся из сделки по слоту, а не из `slots`:
-       * когда пара его убирает, слот освобождается — а переписка остаётся,
-       * и «Свой подрядчик» без имени в списке ничего не говорит. */
+      /* Имя своего подрядчика — из его сделки (`c.deal_id`), а не из `slots`
+       * и не «последняя сделка слота»: когда пара его убирает, слот
+       * освобождается и достаётся следующему — а переписка остаётся у
+       * прежнего, и «Свой подрядчик» без имени в списке ничего не говорит.
+       * Отменённая сделка помечает чат закрытым: паре — история, писать
+       * некому (ERR-0219). */
       `select c.id, c.kind, v.name as vendor_name, v.photo_url as vendor_photo, c.opens_at,
               w.title as wedding_title,
               -- Кто смотрит: команда свадьбы или подрядчик со стороны.
               (mem.role is null) as outsider,
               (select count(*) from wedding_members mm join weddings ww on ww.id = mm.wedding_id
                 where mm.user_id = $1 and ww.archived_at is null and ww.cancelled_at is null) > 1 as many_weddings,
-              (select d.external_name from deals d
-                where d.slot_id = c.slot_id and d.external_name is not null
-                order by (d.state <> 'cancelled') desc, d.created_at desc limit 1) as external_name,
+              ext.external_name,
+              coalesce(ext.state = 'cancelled', false) as closed,
               (select m.text from messages m where m.chat_id = c.id order by m.created_at desc limit 1) as last_text,
               ${unreadSql('c.id', '$1')} as unread,
               (mem.role = 'couple' and c.kind = 'crew') as peek
          from chats c
          join weddings w on w.id = c.wedding_id
          left join vendors v on v.id = c.vendor_id
+         left join deals ext on ext.id = c.deal_id
          left join wedding_members mem on mem.wedding_id = c.wedding_id and mem.user_id = $1
         where w.archived_at is null and w.cancelled_at is null
           and (
@@ -176,6 +182,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       [chatId, request.caller!.userId],
     )
 
+    /* Системная запись — признак от сервера, а не догадка экрана по тексту
+     * (D4-15): пустой отправитель означает систему только там, где ей есть
+     * место. У Тиль пустой отправитель — её ответ, в чате со своим
+     * подрядчиком — сам подрядчик (аккаунта у него нет). */
+    const systemHere = chat.kind !== 'tilly' && chat.kind !== 'external'
     return buildPage(
       rows.map((r) => ({
         id: r.id,
@@ -184,6 +195,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         text: r.text,
         attachmentUrl: r.attachments?.url ?? null,
         sentAt: r.created_at.toISOString(),
+        system: systemHere && r.sender_id === null,
       })),
       page.limit,
       (m) => encodeCursor(m.sentAt, m.id),
@@ -213,6 +225,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const userId = request.caller!.userId
       const { chat } = await chatForUser(db(), chatId, userId)
       assertOpen(chat)
+      await assertNotClosed(chat)
 
       await assertNotColdOutreach(chatId, chat.kind, userId)
       /* Свой подрядчик работает мимо платформы по определению: пара нашла
@@ -236,6 +249,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         text: body.text,
         attachmentUrl: body.attachmentUrl ?? null,
         sentAt: rows[0]!.created_at.toISOString(),
+        system: false,
       }
       // Сначала живому каналу, потом уведомление: у кого чат открыт,
       // тот увидит сообщение, а не значок о нём.
@@ -263,6 +277,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               text: TILLY_STUB,
               attachmentUrl: null,
               sentAt: answered[0]!.created_at.toISOString(),
+              // Ответ Тиль — реплика помощника, не системная запись.
+              system: false,
             },
           },
         })
@@ -273,6 +289,23 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send(warning ? { ...message, warning } : message)
     },
   )
+
+  /**
+   * В закрытый чат своего подрядчика не пишут: его сделка отменена, ссылка
+   * погашена, и по ту сторону никого нет. Переписка остаётся паре для
+   * чтения (потому чат не удаляется вместе с подрядчиком), но сообщение
+   * в неё легло бы в никуда — 409, а не 201 с молчанием в ответ.
+   */
+  async function assertNotClosed(chat: { kind: ChatKind; deal_id: string | null }): Promise<void> {
+    if (chat.kind !== 'external' || !chat.deal_id) return
+    const { rows } = await db().query<{ cancelled: boolean }>(
+      `select (state = 'cancelled') as cancelled from deals where id = $1`,
+      [chat.deal_id],
+    )
+    if (rows[0]?.cancelled) {
+      throw conflict('chat_closed', 'Своего подрядчика в слоте больше нет — писать некому, переписка остаётся для чтения')
+    }
+  }
 
   /**
    * Первое сообщение в переписке решает две вещи сразу.
@@ -530,6 +563,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       lastMessage: state[0]!.text ?? '',
       unread: Number(state[0]!.unread),
       kind: 'vendor',
+      closed: false,
       openFrom: null,
     }
   })

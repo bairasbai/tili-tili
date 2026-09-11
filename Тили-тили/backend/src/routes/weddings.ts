@@ -7,7 +7,7 @@ import { rescheduleWedding } from '../wedding/reschedule.js'
 import { requireRole, type Role } from '../wedding/access.js'
 import { cancelRequestPending } from './weddingLifecycle.js'
 import { weddingCode } from '../wedding/codes.js'
-import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../wedding/templates.generated.js'
+import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../wedding/templates.js'
 
 interface WeddingRow {
   id: string
@@ -230,7 +230,24 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * вместо двенадцати, — и починить это человеку нечем: маршрута
        * «доложить недостающее» нет, а завести вторую свадьбу вместо кривой
        * он не догадается (ERR-0109). */
-      await db().tx(async (client) => {
+      const existing = await db().tx(async (client) => {
+        /* Одна живая свадьба на пару (фича 005, В6): вторая заводится после
+         * отмены или архива первой. Проверка и вставка — под блокировкой
+         * строки человека: два одновременных POST иначе оба видели «свадьбы
+         * нет» и заводили две. Ограничением базы «одна живая свадьба на
+         * couple» не выразить — участие лежит в `wedding_members`, живость в
+         * `weddings`, — поэтому очередь строит `for update` по `users`: второй
+         * дожидается первого и видит его свадьбу. */
+        await client.query('select id from users where id = $1 for update', [userId])
+        const { rows: live } = await client.query<{ id: string }>(
+          `select w.id from weddings w
+             join wedding_members m on m.wedding_id = w.id
+            where m.user_id = $1 and m.role = 'couple' and w.cancelled_at is null and w.archived_at is null
+            order by w.created_at desc limit 1`,
+          [userId],
+        )
+        if (live[0]) return live[0].id
+
         await client.query(
           `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
                                  budget_total, currency, invite_code, tz)
@@ -291,7 +308,22 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'wedding.created', 'wedding', $2)`,
           [userId, weddingId],
         )
+        return null
       })
+
+      if (existing) {
+        /* Тело — руками, а не `AppError`: контракт обещает в 409 `details`
+         * с идентификатором существующей свадьбы, чтобы клиент мог сразу
+         * увести человека к ней, а единый формат ошибки (`errors.ts`)
+         * поля `details` не знает. Форма остальных полей — та же. */
+        return reply.code(409).send({
+          error: {
+            code: 'wedding_exists',
+            message: 'У вас уже есть свадьба — вторую можно завести после её отмены или завершения.',
+            details: { weddingId: existing },
+          },
+        })
+      }
 
       return reply.code(201).send(await loadWedding(weddingId, 'couple'))
     },

@@ -270,7 +270,8 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     // именно его, а не только идентификатор. Число участвует в сортировке
     // только от трёх отзывов (ERR-0216) — без `reviews_count` ключи слиплись бы.
     for (let i = 0; i < ids.length; i++) {
-      await app.db!.query('update vendors set rating = $2, reviews_count = 3 where id = $1', [ids[i], 3 + (i % 3) * 0.5])
+      // Порог показа числа — по отзывам ПАР (фича 005): без `couple_reviews_count` ключи снова слиплись бы.
+      await app.db!.query('update vendors set rating = $2, reviews_count = 3, couple_reviews_count = 3 where id = $1', [ids[i], 3 + (i % 3) * 0.5])
     }
     const reader = (await newUser()).token
 

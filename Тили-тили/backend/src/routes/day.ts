@@ -754,8 +754,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
         /* Маршрут под блокировкой строки: два гостя, садящиеся на последнее
          * место одновременно, иначе оба проходят подсчёт персон ниже (R-49). */
-        const { rows: bus } = await client.query<{ seats: number }>(
-          'select seats from bus_routes where id = $1 and wedding_id = $2 for update',
+        const { rows: bus } = await client.query<{ seats: number; taken: number }>(
+          'select seats, taken from bus_routes where id = $1 and wedding_id = $2 for update',
           [busId, guest.weddingId],
         )
         if (bus.length === 0) throw notFound('Маршрут не найден')
@@ -770,25 +770,25 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         )
 
         /* Места считаются в персонах, а не в записях (R-29): гость «с +1»
-         * едет вдвоём. Счётчик `taken` в триггере по-прежнему считает строки
-         * — переполнение по людям ловится здесь, под блокировкой маршрута;
-         * триггер и `CHECK` остаются страховкой по записям (D3-16). */
-        const { rows: aboard } = await client.query<{ persons: string; plus_one: boolean | null; already: boolean }>(
-          `select coalesce((select sum(1 + g.plus_one::int) from bus_bookings b join guests g on g.id = b.guest_id
-                             where b.bus_id = $1 and b.guest_id <> $2), 0)::text as persons,
-                  (select g.plus_one from guests g where g.id = $2) as plus_one,
-                  exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already`,
+         * едет вдвоём, и `taken` маршрута — сумма персон по записям: её ведёт
+         * триггер (фича 005, миграция 17593…), обработчик персоны не
+         * пересчитывает. Ранний отказ здесь, под блокировкой маршрута, —
+         * потому что дешевле отката транзакции по `CHECK` ниже; правило
+         * держит база (D3-16). */
+        const { rows: aboard } = await client.query<{ plus_one: boolean; already: boolean }>(
+          `select g.plus_one,
+                  exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already
+             from guests g where g.id = $2`,
           [busId, guest.guestId],
         )
-        const persons = Number(aboard[0]!.persons) + (aboard[0]!.plus_one ? 2 : 1)
         // Кто уже едет этим автобусом, повтором записи места не отнимает.
-        if (!aboard[0]!.already && persons > bus[0]!.seats) {
+        if (!aboard[0]!.already && bus[0]!.taken + (aboard[0]!.plus_one ? 2 : 1) > bus[0]!.seats) {
           throw conflict('bus_full', 'Мест в этом автобусе не осталось')
         }
 
         // Счётчик ведёт триггер: строки исчезают и мимо обработчика —
-        // удаление гостя уносит запись каскадом. Переполнение ловит
-        // `CHECK taken <= seats`, и оно же откатывает транзакцию.
+        // удаление гостя уносит запись каскадом. Переполнение по персонам
+        // ловит `CHECK bus_taken_bounded`, и оно же откатывает транзакцию.
         let booked
         try {
           booked = await client.query(
@@ -933,27 +933,40 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       [guest.weddingId, COMMITTED],
     )
     /* Дата нужна форме отзыва: до свадьбы отзыв не принимается, и сказать об
-       этом надо до заполнения, а не отказом после отправки. */
-    const { rows: wedding } = await db().query<{ date: string | null }>(
-      "select to_char(date, 'YYYY-MM-DD') as date from weddings where id = $1",
+       этом надо до заполнения, а не отказом после отправки. Пояс — тот же,
+       по которому `reviews.ts` считает «день прошёл» (фича 005): без него
+       гость во Владивостоке видел «ещё не прошла» по своим часам и получал
+       отказ, или наоборот — форму до срока. Пустой пояс свадьбы там значит
+       Europe/Moscow, поэтому и здесь он же, а не `null`. */
+    const { rows: wedding } = await db().query<{ date: string | null; tz: string }>(
+      `select to_char(date, 'YYYY-MM-DD') as date, coalesce(tz, 'Europe/Moscow') as tz
+         from weddings where id = $1`,
       [guest.weddingId],
     )
     return {
       weddingId: guest.weddingId,
       weddingDate: wedding[0]?.date ?? null,
+      tz: wedding[0]?.tz ?? 'Europe/Moscow',
       vendors: rows.map((r) => ({ vendorId: r.vendor_id, name: r.name, categoryId: r.category_id })),
     }
   })
 
+  /* `mine` — где у гостя номер (фича 005): без признака он не видел своей
+     брони, и тап по другому блоку переносил её молча (D3-15). Считается по
+     `hotel_bookings` — той же таблице, из которой список пары берёт `hotelId`
+     гостя, расходиться нечему. Только здесь: паре в её списке этого поля
+     нет, оно про гостя, а не про блок. */
   app.get('/join/:guestToken/hotels', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)
-    const { rows } = await db().query(
-      `select id, name, rooms, booked, price::text as price, currency, deadline::text as deadline, promo
-         from hotel_blocks where wedding_id = $1 order by name`,
-      [guest.weddingId],
+    const { rows } = await db().query<{ mine: boolean }>(
+      `select h.id, h.name, h.rooms, h.booked, h.price::text as price, h.currency,
+              h.deadline::text as deadline, h.promo,
+              exists(select 1 from hotel_bookings b where b.hotel_id = h.id and b.guest_id = $2) as mine
+         from hotel_blocks h where h.wedding_id = $1 order by h.name`,
+      [guest.weddingId, guest.guestId],
     )
-    return rows.map((r) => toHotel(r as never))
+    return rows.map((r) => ({ ...toHotel(r as never), mine: r.mine }))
   })
 
   app.post(

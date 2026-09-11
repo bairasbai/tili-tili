@@ -3,9 +3,9 @@ import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
-import type { Queryable } from '../plugins/db.js'
+import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
-import type { Role } from '../wedding/access.js'
+import { requireRole, type Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -24,6 +24,7 @@ interface GuestRow {
   plus_one: boolean
   group_name: string | null
   phone: string | null
+  comment: string | null
   rsvp: string
   table_id: string | null
   diet: string | null
@@ -37,7 +38,7 @@ interface GuestRow {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.name, g.plus_one, g.group_name, g.phone, g.rsvp, g.table_id, g.diet, g.diet_note,
+  g.id, g.name, g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
@@ -62,17 +63,22 @@ const GUEST_COLUMNS = `
  *
  * `inviteUrlUsed` остаётся всем: «ссылка использована» — это состояние
  * приглашения, а не ключ, и команде оно нужно, чтобы вести список.
+ *
+ * Телефон и комментарий из RSVP — тоже только паре (фича 005, В6; 152-ФЗ,
+ * минимизация): напоминания шлёт пара, а помощнику и координатору сам
+ * номер не нужен — им приходит `hasPhone`, чтобы видеть, кому напоминание
+ * не уйдёт. Комментарий гость пишет паре, а не команде.
  */
-export function toGuest(r: GuestRow, seesInviteUrl: boolean) {
+export function toGuest(r: GuestRow, asCouple: boolean) {
   return {
     id: r.id,
     name: r.name,
     plusOne: r.plus_one,
     group: r.group_name,
-    /* Телефон вводит пара ради `POST …/guests/remind`; без него в ответе
-     * команда не видит, кому напоминание не уйдёт, и не может поправить
-     * опечатку. Гостевые пути (`/rsvp`, `/gifts`) этот объект не отдают. */
-    phone: r.phone,
+    /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
+     * (`/rsvp`, `/gifts`) этот объект не отдают. */
+    ...(asCouple ? { phone: r.phone, comment: r.comment } : {}),
+    hasPhone: Boolean(r.phone),
     status: r.rsvp,
     tableId: r.table_id,
     diet: r.diet,
@@ -81,15 +87,24 @@ export function toGuest(r: GuestRow, seesInviteUrl: boolean) {
     transfer: r.transfer,
     busId: r.bus_id,
     hotelId: r.hotel_id,
-    ...(seesInviteUrl
-      ? { inviteUrl: r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null }
-      : {}),
+    ...(asCouple ? { inviteUrl: r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null } : {}),
     inviteUrlUsed: r.invite_used === true,
   }
 }
 
-/** Ссылку показываем только паре — она и есть отправитель приглашения. */
+/** Ссылку, телефон и комментарий показываем только паре — она отправитель приглашения и адресат ответа. */
 export const seesInviteUrl = (role: Role): boolean => role === 'couple'
+
+/**
+ * «+1» у гостя, который уже сидит в полном автобусе.
+ *
+ * Места считает база: смена `plus_one` пересчитывает персоны его записи
+ * триггером, и переполнение приходит как `23514` от `bus_taken_bounded`
+ * (фича 005). Это сработавшее правило, а не поломка сервера — человеку
+ * нужен 409 с тем, что делать дальше, а не 500.
+ */
+const busFullForPlusOne = () =>
+  conflict('bus_full', 'в автобусе нет места для +1 — снимите бронь автобуса или выберите другой')
 
 /** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
 export function personCount(guests: { status: string; plusOne: boolean }[]): number {
@@ -197,6 +212,15 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,
        * которого не бывает в норме. */
       return db().tx(async (client) => {
+        /* Строка гостя — первой, до стола и до броней: тот же порядок замков,
+         * что у посадки в автобус (гость → маршрут, RF-BE-06). Заодно 404
+         * до любых проверок: чужого гостя дальше не пускаем. */
+        const { rows: locked } = await client.query('select 1 from guests where id = $1 and wedding_id = $2 for update', [
+          guestId,
+          weddingId,
+        ])
+        if (locked.length === 0) throw notFound('Гость не найден')
+
         if (body.tableId) {
           /* Стол обязан принадлежать этой же свадьбе: иначе гость садится
            * за чужой стол и портит чужую рассадку. Строка стола под
@@ -232,44 +256,14 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           }
         }
 
-        const res = await client.query(
-          `update guests set
-             name = coalesce($3, name),
-             plus_one = coalesce($4, plus_one),
-             rsvp = coalesce($5, rsvp),
-             group_name = case when $6 then $7 else group_name end,
-             table_id = case when $8 then $9::uuid else table_id end,
-             diet = case when $10 then $11 else diet end,
-             diet_note = case when $12 then $13 else diet_note end,
-             transfer = case when $14 then $15 else transfer end,
-             phone = case when $16 then $17 else phone end
-           where id = $1 and wedding_id = $2`,
-          [
-            guestId,
-            weddingId,
-            (body.name as string) ?? null,
-            (body.plusOne as boolean) ?? null,
-            (body.status as string) ?? null,
-            has('group'),
-            (body.group as string) ?? null,
-            has('tableId'),
-            (body.tableId as string) ?? null,
-            has('diet'),
-            (body.diet as string) ?? null,
-            has('dietNote'),
-            (body.dietNote as string) ?? null,
-            has('transfer'),
-            (body.transfer as string) ?? null,
-            has('phone'),
-            (body.phone as string) ?? null,
-          ],
-        )
-        if (res.rowCount === 0) throw notFound('Гость не найден')
-
         /* «Не придёт», поставленное рукой пары («бабушка без смартфона»,
          * План §19.5), освобождает автобус и номер так же, как ответ самого
          * гостя в `POST /rsvp/{t}`: иначе автобус выглядит полным при пустом
-         * сиденье (ERR-0040 другим путём). Счётчики поправит триггер. */
+         * сиденье (ERR-0040 другим путём). Счётчики поправит триггер.
+         *
+         * ДО записи самого ответа: с «+1» в том же теле у гостя, сидящего в
+         * полном автобусе, база иначе отказала бы тому, кто место как раз
+         * освобождает. */
         if (body.status === 'no') {
           await client.query(
             `delete from bus_bookings b using bus_routes r
@@ -282,6 +276,46 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             [guestId, weddingId],
           )
         }
+
+        let res
+        try {
+          res = await client.query(
+            `update guests set
+               name = coalesce($3, name),
+               plus_one = coalesce($4, plus_one),
+               rsvp = coalesce($5, rsvp),
+               group_name = case when $6 then $7 else group_name end,
+               table_id = case when $8 then $9::uuid else table_id end,
+               diet = case when $10 then $11 else diet end,
+               diet_note = case when $12 then $13 else diet_note end,
+               transfer = case when $14 then $15 else transfer end,
+               phone = case when $16 then $17 else phone end
+             where id = $1 and wedding_id = $2`,
+            [
+              guestId,
+              weddingId,
+              (body.name as string) ?? null,
+              (body.plusOne as boolean) ?? null,
+              (body.status as string) ?? null,
+              has('group'),
+              (body.group as string) ?? null,
+              has('tableId'),
+              (body.tableId as string) ?? null,
+              has('diet'),
+              (body.diet as string) ?? null,
+              has('dietNote'),
+              (body.dietNote as string) ?? null,
+              has('transfer'),
+              (body.transfer as string) ?? null,
+              has('phone'),
+              (body.phone as string) ?? null,
+            ],
+          )
+        } catch (error) {
+          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
+          throw error
+        }
+        if (res.rowCount === 0) throw notFound('Гость не найден')
 
         /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
          * Декоратор расставляет карточки по столам, кейтеринг считает порции —
@@ -326,8 +360,14 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
    * вместе с ним теряется всё, что он выбрал, — резерв подарка в том числе.
    * Поэтому гостю, чья ссылка уже открыта, отсюда не пишут: пара выдаёт ему
    * новую поштучно и осознанно.
+   *
+   * Только паре (фича 005, В6): рассылка тратит SMS-лимит свадьбы и уходит
+   * чужим людям от её имени — помощнику и координатору 403, как у выдачи
+   * ссылки. Общее правило матрицы по `guests` открыто всей команде, поэтому
+   * проверка здесь, как у приглашений в команду.
    */
   app.post('/weddings/:weddingId/guests/remind', async (request) => {
+    requireRole(request, 'couple')
     const weddingId = request.member!.weddingId
 
     /* Рассылка стоит денег и приходит чужим людям: не чаще раза в сутки.
@@ -428,20 +468,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        *
        * Со сменой токена такой обмен выдаёт пустую личность (резервы уходят
        * по триггеру), а у настоящего гостя ссылка перестаёт работать — он
-       * попросит новую, и подмена станет видна. */
-      const { rows: prev } = await client.query<{ rsvp_token: string }>(
-        'select rsvp_token from guests where id = $1 for update',
-        [guestId],
-      )
-      const fresh = newGuestToken()
-      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, fresh])
-      /* Отзыв гостя ключуется его токеном («один отзыв на подрядчика на
-       * гостя» — уникальный индекс по `(guest_token, vendor_id)`), и без
-       * переноса новый токен писал бы второй отзыв о том же подрядчике, а
-       * оба шли бы в рейтинг: пара, которая сама выпускает ссылки, множила
-       * бы гостевые голоса без предела (D3-09/D5-04). Отзыв едет за гостем,
-       * как ехали бы резервы, если бы их не снимал триггер. */
-      await client.query('update reviews set guest_token = $2 where guest_token = $1', [prev[0]!.rsvp_token, fresh])
+       * попросит новую, и подмена станет видна.
+       *
+       * Отзыв гостя ключуется самим гостем (`reviews.guest_id`, фича 005), а
+       * не токеном: переносить его за новой ссылкой больше не нужно — пара,
+       * выпускающая ссылки, гостевых голосов в рейтинг не множит (D3-09). */
+      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, newGuestToken()])
       let code = ''
       for (let attempt = 0; attempt < 3; attempt++) {
         code = newShareCode()
@@ -608,28 +640,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * обычному меню: контракт разрешает null, обработчик его глотал. */
       const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key)
       await db().tx(async (client) => {
-        await client.query(
-          `update guests set rsvp = $2, rsvp_at = now(),
-                  plus_one = coalesce($3, plus_one),
-                  comment = coalesce($4, comment),
-                  diet = case when $5 then $6 else diet end,
-                  diet_note = case when $7 then $8 else diet_note end,
-                  transfer = coalesce($9, transfer)
-            where id = $1`,
-          [
-            guest.guestId,
-            body.status,
-            (body.plusOne as boolean) ?? null,
-            (body.comment as string) ?? null,
-            has('diet'),
-            (body.diet as string) ?? null,
-            has('diet') || has('dietNote'),
-            (body.dietNote as string) ?? null,
-            (body.transfer as string) ?? null,
-          ],
-        )
-        // «Не приду» — значит держать под него сиденье и номер незачем.
-        // Счётчики поправит триггер: он считает по факту строк.
+        /* Строка гостя — первой: тот же порядок замков, что у посадки в
+         * автобус (гость → маршрут, RF-BE-06). «Не приду» — значит держать
+         * под него сиденье и номер незачем; освобождаются ДО записи ответа:
+         * с «+1» в том же теле у гостя из полного автобуса база иначе
+         * отказала бы тому, кто место как раз освобождает. Счётчики
+         * поправит триггер: он считает по факту строк. */
+        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
         if (body.status === 'no') {
           await client.query(
             `delete from bus_bookings b using bus_routes r
@@ -641,6 +658,31 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
             [guest.guestId, guest.weddingId],
           )
+        }
+        try {
+          await client.query(
+            `update guests set rsvp = $2, rsvp_at = now(),
+                    plus_one = coalesce($3, plus_one),
+                    comment = coalesce($4, comment),
+                    diet = case when $5 then $6 else diet end,
+                    diet_note = case when $7 then $8 else diet_note end,
+                    transfer = coalesce($9, transfer)
+              where id = $1`,
+            [
+              guest.guestId,
+              body.status,
+              (body.plusOne as boolean) ?? null,
+              (body.comment as string) ?? null,
+              has('diet'),
+              (body.diet as string) ?? null,
+              has('diet') || has('dietNote'),
+              (body.dietNote as string) ?? null,
+              (body.transfer as string) ?? null,
+            ],
+          )
+        } catch (error) {
+          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
+          throw error
         }
 
         /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
@@ -717,4 +759,100 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send({ ...rows[0]!, guestIds: [] })
     },
   )
+
+  /* Стол можно переименовать и ужать (фича 005, В6): до неё промах по
+   * «Добавить стол» оставался навсегда. Вместимость меньше уже сидящих —
+   * 409 `table_full`: считается в персонах, как при посадке выше. Строка
+   * стола под замком — посадка гостя за этот же стол идёт через тот же
+   * `for update`, и ужатие не проскочит между её проверкой и записью. */
+  app.patch(
+    '/weddings/:weddingId/tables/:tableId',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 60 },
+            capacity: { type: 'integer', minimum: 1, maximum: 50 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const weddingId = request.member!.weddingId
+      const { tableId } = request.params as { tableId: string }
+      const body = (request.body ?? {}) as { name?: string; capacity?: number }
+      if (!isUuid(tableId)) throw notFound('Стол не найден')
+
+      return db().tx(async (client) => {
+        const { rows: table } = await client.query<{ name: string }>(
+          'select name from tables where id = $1 and wedding_id = $2 for update',
+          [tableId, weddingId],
+        )
+        if (table.length === 0) throw notFound('Стол не найден')
+
+        if (body.capacity !== undefined) {
+          const { rows: seated } = await client.query<{ persons: string }>(
+            'select coalesce(sum(1 + plus_one::int), 0)::text as persons from guests where table_id = $1',
+            [tableId],
+          )
+          const persons = Number(seated[0]!.persons)
+          if (persons > body.capacity) {
+            throw conflict(
+              'table_full',
+              `За столом «${table[0]!.name}» уже ${persons} ${plural(persons, 'человек', 'человека', 'человек')} — вместимость меньше не поставить`,
+            )
+          }
+        }
+
+        const { rows } = await client.query<{ id: string; name: string; capacity: number }>(
+          `update tables set name = coalesce($3, name), capacity = coalesce($4, capacity)
+            where id = $1 and wedding_id = $2
+            returning id, name, capacity`,
+          [tableId, weddingId, body.name ?? null, body.capacity ?? null],
+        )
+        const { rows: guests } = await client.query<{ id: string }>(
+          'select id from guests where table_id = $1 order by created_at',
+          [tableId],
+        )
+        return { ...rows[0]!, guestIds: guests.map((g) => g.id) }
+      })
+    },
+  )
+
+  /* Гости удалённого стола остаются в списке «без стола»: `guests.table_id`
+   * стоит `ON DELETE SET NULL`, и снимает их база тем же оператором, что
+   * удаляет стол, — отдельного шага, который мог бы отстать, нет. */
+  app.delete('/weddings/:weddingId/tables/:tableId', async (request, reply) => {
+    const weddingId = request.member!.weddingId
+    const { tableId } = request.params as { tableId: string }
+    if (!isUuid(tableId)) throw notFound('Стол не найден')
+
+    await db().tx(async (client) => {
+      const { rows: seated } = await client.query<{ n: string }>(
+        'select count(*)::text as n from guests where table_id = $1 and wedding_id = $2',
+        [tableId, weddingId],
+      )
+      const res = await client.query('delete from tables where id = $1 and wedding_id = $2', [tableId, weddingId])
+      if (res.rowCount === 0) throw notFound('Стол не найден')
+
+      /* Сидевшие за столом лишились места — это правка рассадки, и
+       * подрядчик узнаёт о ней так же, как о пересадке (§13.2). */
+      if (Number(seated[0]!.n) > 0) {
+        const { rows: left } = await client.query<{ n: string }>(
+          'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
+          [weddingId],
+        )
+        const n = Number(left[0]!.n)
+        await noteVendorUpdate(
+          client,
+          weddingId,
+          'seating',
+          `Рассадка обновлена: за столами ${n} ${plural(n, 'гость', 'гостя', 'гостей')}`,
+        )
+      }
+    })
+    return reply.code(204).send()
+  })
 }

@@ -11,11 +11,14 @@ import type { Queryable } from '../plugins/db.js'
 const HALF_LIFE_DAYS = 365
 
 /**
- * Сколько отзывов нужно, чтобы показать число (План §18.2).
+ * Сколько отзывов ПАР нужно, чтобы показать число (План §18.2; фича 005, В4).
  *
  * Один отзыв от знакомого — это 5,0 и первое место в выдаче. До трёх
  * отзывов в каталоге стоит «Новый на платформе», а не цифра, которой
- * нельзя верить.
+ * нельзя верить. Считаются только отзывы пар: за парой подтверждённая
+ * сделка, а трёх гостей одной свадьбы хватало, чтобы открыть «5,0» без
+ * единого нарушенного правила. Гостевые отзывы остаются в среднем и в
+ * `reviewsCount` — открыть число они не могут.
  */
 export const MIN_REVIEWS_TO_SHOW = 3
 
@@ -51,6 +54,10 @@ export function weightedRating(reviews: { stars: number; ageDays: number; source
  * Скрытые модератором отзывы не считаются вовсе: скрыть оскорбление и
  * оставить его звёзды в рейтинге значило бы наказать подрядчика за то,
  * что уже признано недопустимым.
+ *
+ * Число отзывов пар ведётся той же строкой: по нему каталог решает, показывать
+ * ли рейтинг, и в сортировке с фильтром оно стоит на каждой строке выдачи —
+ * подзапросом там было бы дорого.
  */
 export async function recomputeRating(db: Queryable, vendorId: string): Promise<void> {
   const { rows } = await db.query<{ stars: number; age_days: string; source: ReviewSource }>(
@@ -61,10 +68,11 @@ export async function recomputeRating(db: Queryable, vendorId: string): Promise<
   const rating = weightedRating(
     rows.map((r) => ({ stars: r.stars, ageDays: Number(r.age_days), source: r.source })),
   )
-  await db.query('update vendors set rating = $2, reviews_count = $3 where id = $1', [
+  await db.query('update vendors set rating = $2, reviews_count = $3, couple_reviews_count = $4 where id = $1', [
     vendorId,
     rating,
     rows.length,
+    rows.filter((r) => r.source === 'couple').length,
   ])
 }
 
@@ -80,7 +88,7 @@ export async function recomputeAllRatings(db: Queryable): Promise<number> {
   return rows.length
 }
 
-/** Число, которое можно показать: до трёх отзывов его нет. */
-export function publicRating(rating: number | null, reviewsCount: number): number | null {
-  return reviewsCount >= MIN_REVIEWS_TO_SHOW ? rating : null
+/** Число, которое можно показать: до трёх отзывов ПАР его нет — гостевые число не открывают. */
+export function publicRating(rating: number | null, coupleReviewsCount: number): number | null {
+  return coupleReviewsCount >= MIN_REVIEWS_TO_SHOW ? rating : null
 }

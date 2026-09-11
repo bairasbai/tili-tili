@@ -4,7 +4,7 @@ import { OPEN_BOOKINGS } from '../deals/state.js'
 import { holdVendorDate } from '../deals/repo.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
-import { TIMELINE_TEMPLATE } from './templates.generated.js'
+import { TIMELINE_TEMPLATE } from './templates.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.

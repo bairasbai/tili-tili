@@ -100,9 +100,12 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
  * подрядчика после удаления пересчитывается, иначе `reviews_count`
  * считал бы отзывы, которых уже нет.
  *
- * Отзыв ГОСТЯ уборку переживает: у него свой ключ (`guest_token`), а
- * `reviews.wedding_id` обнуляется каскадом без нарушения проверки. Это
- * история подрядчика, а не свадьбы.
+ * Отзыв ГОСТЯ уборку переживает: `reviews.wedding_id` и `reviews.guest_id`
+ * (гость уходит каскадом вместе со свадьбой) стоят `ON DELETE SET NULL`, а
+ * `CHECK reviews_key_matches_source` требует у гостевого отзыва только
+ * `guest_token` — он остаётся. Это история подрядчика, а не свадьбы. То же
+ * при стирании аккаунта ниже: свадьба без наследника уносит гостей, отзывы
+ * их остаются без `guest_id`.
  */
 export async function purgeArchivedWeddings(app: FastifyInstance): Promise<number> {
   const db = app.db!

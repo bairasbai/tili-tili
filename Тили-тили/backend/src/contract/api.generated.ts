@@ -7036,6 +7036,13 @@ export interface components {
                 fields?: {
                     [key: string]: string;
                 };
+                /**
+                 * @description Машинные подробности отказа там, где экрану нужно больше кода:
+                 *     у 409 `wedding_exists` — `weddingId` живой свадьбы пары (фича 005).
+                 */
+                details?: {
+                    [key: string]: unknown;
+                };
             };
         };
         AuthTokens: {
@@ -7047,6 +7054,12 @@ export interface components {
              */
             expiresIn?: number;
             user?: components["schemas"]["User"];
+            /**
+             * @description Только у `POST /auth/otp/verify`: согласие нужно дать — аккаунт новый
+             *     или отозвал согласие при удалении и восстановлен входом (фича 005).
+             *     До `POST /users/me/consent` остальные пути отвечают 403 `consent_required`.
+             */
+            consentRequired?: boolean;
         };
         User: {
             id?: string;
@@ -7425,7 +7438,8 @@ export interface components {
             unread?: number;
             /**
              * @description `vendor` — пара с подрядчиком из каталога. `external` — со своим
-             *     подрядчиком, найденным парой (§11), привязан к слоту.
+             *     подрядчиком, найденным парой (§11), привязан к сделке
+             *     (`chats.deal_id`): у следующего подрядчика того же слота — свой чат.
              *     `team` — команда свадьбы: пара, помощники и ЗАБРОНИРОВАННЫЕ
              *     подрядчики (Бизнес-логика §3.11); в нём координатор командует
              *     всеми разом. `crew` — чат исполнителей: координатор и

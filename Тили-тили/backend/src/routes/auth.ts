@@ -4,7 +4,6 @@ import { uuidv7 } from '../ids.js'
 import {
   CODE_TTL_SECONDS,
   MAX_ATTEMPTS,
-  MAX_SENDS_PER_HOUR,
   RESEND_AFTER_SECONDS,
   generateCode,
   hashCode,
@@ -37,6 +36,22 @@ function clientIp(request: FastifyRequest): string | null {
  * хватает с запасом, а вору за это окно достаётся только 401.
  */
 export const REFRESH_GRACE_MS = 10_000
+
+/** Сколько дней после `DELETE /users/me` аккаунт можно вернуть входом (План §19.1; фича 005, В2). */
+export const RESTORE_WINDOW_DAYS = 30
+
+/**
+ * Через сколько секунд окно лимита освободится хотя бы на одну выдачу.
+ *
+ * `ages` — возраст выдач в окне в секундах, свежие первыми. Окно откроет
+ * выход самой старой из «лишних» строк: при пределе `max` это `max`-я по
+ * свежести. «Через час» наугад клиенту не годится: таймер на экране входа
+ * читает заголовок и показывает человеку именно это число.
+ */
+export function windowFreesIn(ages: number[], windowSeconds: number, max: number): number {
+  const blocking = ages[Math.max(0, Math.min(max, ages.length) - 1)] ?? 0
+  return Math.max(1, Math.ceil(windowSeconds - blocking))
+}
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -117,30 +132,70 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const phone = normalizePhone((request.body as { phone: string }).phone)
 
-      // Коды старше часа не нужны ни для проверки, ни для ограничения частоты,
-      // а номер телефона — персональные данные: хранить их дольше нельзя.
+      // Коды старше суток не нужны ни для проверки, ни для ограничения
+      // частоты (самое длинное окно — «номер за сутки»), а номер телефона —
+      // персональные данные: хранить их дольше нельзя.
       // Уборка здесь, а не в кроне: таблица растёт только от этого запроса.
-      await db().query("delete from otp_codes where created_at < now() - interval '1 hour'")
+      await db().query("delete from otp_codes where created_at < now() - interval '24 hours'")
 
-      const { rows: recent } = await db().query<{ sends: string; last_at: Date | null }>(
-        `select count(*)::text as sends, max(created_at) as last_at
+      const ip = clientIp(request)
+      /* Лимиты на номер (фича 005, В3): пара «номер + адрес» — 3 в час,
+       * номер — 10 в час и 30 в сутки. Прежний «5 в час на номер» считал
+       * всех вместе, и посторонний, знающий чужой номер, пятью запросами
+       * закрывал жертве вход на час. Теперь в лимит упирается тот, кто
+       * запрашивал: у владельца номера с другого адреса своя пара.
+       *
+       * Все окна — из одной выборки, возраст выдач считает база: `Retry-After`
+       * обязан назвать секунды до освобождения окна по `created_at`, а часы
+       * сервера с часами базы для этого лучше не смешивать. Строк на номер
+       * за сутки — не больше суточного потолка, выборка маленькая. */
+      const { rows: sends } = await db().query<{ age_s: string; same_ip: boolean | null }>(
+        `select extract(epoch from (now() - created_at))::text as age_s, (ip = $2::inet) as same_ip
            from otp_codes
-          where phone = $1 and created_at > now() - interval '1 hour'`,
-        [phone],
+          where phone = $1 and created_at > now() - interval '24 hours'
+          order by created_at desc`,
+        [phone, ip],
       )
-      const sends = Number(recent[0]?.sends ?? 0)
-      const lastAt = recent[0]?.last_at ?? null
+      const ages = sends.map((r) => ({ age: Number(r.age_s), sameIp: r.same_ip === true }))
 
-      if (lastAt) {
-        const passed = Math.floor((Date.now() - lastAt.getTime()) / 1000)
-        if (passed < RESEND_AFTER_SECONDS) {
-          throw new TooManyRequests(RESEND_AFTER_SECONDS - passed, 'Код уже отправлен. Подождите немного.')
-        }
+      const newest = ages[0]
+      if (newest && newest.age < RESEND_AFTER_SECONDS) {
+        throw new TooManyRequests(Math.ceil(RESEND_AFTER_SECONDS - newest.age), 'Код уже отправлен. Подождите немного.')
       }
-      if (sends >= MAX_SENDS_PER_HOUR) {
-        // Ограничение не столько от перебора, сколько от счёта за SMS:
-        // без него чужой номер можно заваливать сообщениями за наши деньги.
-        throw new TooManyRequests(3600, 'Слишком много запросов кода на этот номер. Попробуйте через час.')
+
+      const HOUR = 3600
+      const DAY = 24 * HOUR
+      const windows = [
+        {
+          seconds: HOUR,
+          max: app.appConfig.otpMaxPerPhoneIpHour,
+          ages: ages.filter((a) => a.sameIp && a.age < HOUR),
+          message: 'Слишком много запросов кода на этот номер с вашего адреса. Попробуйте позже.',
+        },
+        {
+          seconds: HOUR,
+          max: app.appConfig.otpMaxPerPhoneHour,
+          ages: ages.filter((a) => a.age < HOUR),
+          message: 'Слишком много запросов кода на этот номер. Попробуйте позже.',
+        },
+        {
+          seconds: DAY,
+          max: app.appConfig.otpMaxPerPhoneDay,
+          ages,
+          message: 'Слишком много запросов кода на этот номер за сутки. Попробуйте позже.',
+        },
+      ]
+      for (const w of windows) {
+        if (w.ages.length >= w.max) {
+          throw new TooManyRequests(
+            windowFreesIn(
+              w.ages.map((a) => a.age),
+              w.seconds,
+              w.max,
+            ),
+            w.message,
+          )
+        }
       }
 
       // Потолок на все отправки: лимиты на номер и на адрес обходятся списком
@@ -157,7 +212,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         throw new TooManyRequests(3600, 'Сервис временно не отправляет коды. Попробуйте позже.')
       }
 
-      const ip = clientIp(request)
       if (ip) {
         // Лимит на номер не мешает перебирать номера: по одному коду на тысячу
         // чужих телефонов. Платим мы, а сообщения получают незнакомые люди.
@@ -175,7 +229,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       await db().query(
         `insert into otp_codes (id, phone, code_hash, expires_at, ip)
          values ($1, $2, $3, now() + ($4 || ' seconds')::interval, $5)`,
-        [uuidv7(), phone, hashCode(otpSecret(), phone, code), String(CODE_TTL_SECONDS), clientIp(request)],
+        [uuidv7(), phone, hashCode(otpSecret(), phone, code), String(CODE_TTL_SECONDS), ip],
       )
 
       try {
@@ -256,13 +310,46 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         [uuidv7(), phone],
       )
       const userId = userRows[0]!.id
+
+      /* Мягко удалённый аккаунт возвращается входом (фича 005, В2).
+       *
+       * Строка живёт 30 дней после `DELETE /users/me` (План §19.1), и до
+       * 2026-09-11 вход в это окно выдавал токены, с которыми каждый запрос
+       * и refresh отвечали 401 «Аккаунт удалён»: SMS потрачена, а войти
+       * нельзя. Срок — условием самого `update`: строку старше окна вот-вот
+       * сотрёт уборка (`eraseDeletedUsers`), и воскрешать её значило бы
+       * обещать данные, которых через час не будет. Сессии, погашенные при
+       * удалении, не возвращаются — новая заводится ниже. Согласие тоже:
+       * его отзыв — отдельное решение человека, и после восстановления оно
+       * спрашивается заново (`consentRequired`). */
+      const restored = await db().query(
+        `update users set deleted_at = null
+          where id = $1 and deleted_at is not null and deleted_at > now() - make_interval(days => $2::int)`,
+        [userId, RESTORE_WINDOW_DAYS],
+      )
+      if (restored.rowCount) {
+        await db().query(
+          `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'user.restored', 'user', $1)`,
+          [userId],
+        )
+      }
+
       await db().query('insert into notification_prefs (user_id) values ($1) on conflict do nothing', [userId])
       await db().query(
         `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'auth.login', 'user', $1)`,
         [userId],
       )
 
-      return issueTokens(userId, body.device ?? request.headers['user-agent'] ?? null)
+      /* Есть ли живое согласие. У нового аккаунта его нет; у восстановленного
+       * после `DELETE /users/me/consent` — тоже (там ставится `withdrawn_at`).
+       * Признак в ответе — чтобы клиент показал согласие заново, а не узнал
+       * о нём по 403 на первом же экране. */
+      const { rows: consent } = await db().query(
+        'select 1 from consents where user_id = $1 and withdrawn_at is null limit 1',
+        [userId],
+      )
+      const tokens = await issueTokens(userId, body.device ?? request.headers['user-agent'] ?? null)
+      return { ...tokens, consentRequired: consent.length === 0 }
     },
   )
 
