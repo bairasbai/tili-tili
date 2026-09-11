@@ -19,6 +19,7 @@ import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
+import { isAuthorized } from '@/lib/api/client'
 import { t } from '@/lib/i18n'
 
 /* Навигация раздела «Свадьба» */
@@ -145,7 +146,7 @@ export function WeddingTeam() {
 
 /* Деталь слота */
 export function SlotDetail() {
-  const { slots, slotsState } = useStore()
+  const { slots, slotsState, weddingsState } = useStore()
   /* Идентификатор — из маршрута, а не разбором `location.pathname`: разбор
      руками ломается на первом же вложенном адресе. Подмены «не нашли — покажем
      первый слот» здесь нет: чужая ссылка должна открывать «не найдено», а не
@@ -164,13 +165,28 @@ export function SlotDetail() {
         {slotsState === 'error'
           ? t('Сервер недоступен. Попробуйте позже')
           : slotsState === 'ready' ? t('Слот не найден')
-          /* Без входа мозаика не запрашивается (`idle`) — обещать загрузку
-             нечего: сюда попадает «Назад» после выхода. */
-          : slotsState === 'idle' ? t('Войдите, чтобы увидеть свою свадьбу') : t('Загружаем…')}
+          : slotsState === 'idle' ? noWeddingText(weddingsState) : t('Загружаем…')}
       </p>
     </div>
   )
   return <SlotView s={s} />
+}
+
+/*
+ * Мозаика не запрашивается (`idle`), и это четыре разных положения, а не
+ * одно «без входа»: на новом устройстве свадьба не записана, пока список
+ * свадеб едет; список мог не прийти; у вошедшего свадьбы может не быть
+ * вовсе — партнёр отменил. Раньше все они читались как «Войдите» при живом
+ * входе (ревью R3-03). Сюда попадает и «Назад» после выхода — ему «Войдите».
+ * `idle` списка при живом входе — сверка ещё не началась, как на главной.
+ * Те же слова — у экрана сделки (`Tools.tsx`): страницы экспортируют только
+ * компоненты, общий модуль под пять строк не заводим.
+ */
+function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): string {
+  if (!isAuthorized()) return t('Войдите, чтобы увидеть свою свадьбу')
+  if (weddingsState === 'ready') return t('Свадьбы пока нет')
+  if (weddingsState === 'error') return t('Сервер недоступен. Попробуйте позже')
+  return t('Загружаем…')
 }
 
 /* Тело экрана вынесено отдельно: состояние слота нужно до первого хука, а
@@ -800,6 +816,16 @@ export function Timeline() {
   }))
 
   /*
+   * Последний список, который сервер принял, и ответ, который был на экране
+   * в тот момент. Пока свежий ответ не заменил его — или пропал вовсе, если
+   * перечитывание сорвалось, — следующий PUT строится отсюда, а не из
+   * показанного: список на экране в это окно прежний, и собранный из него
+   * PUT возвращал только что убранный блок или, при пустом экране, стирал
+   * весь тайминг (ревью R3-02).
+   */
+  const [sent, setSent] = useState<{ weddingId: string; list: TimelineDraft[]; shown: typeof q.data } | null>(null)
+
+  /*
    * Тайминг сохраняется списком целиком: отдельного пути «добавить блок»
    * контракт не знает. Значит, отправлять надо всё, что пришло, — пропущенный
    * блок сервер понял бы как удалённый.
@@ -810,18 +836,31 @@ export function Timeline() {
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return }
     setBusy(true)
     setErr(null)
-    try { await putTimeline(weddingId, next); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try {
+      await putTimeline(weddingId, next)
+      setSent({ weddingId, list: next, shown: q.data })
+      q.reload()
+    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
 
-  const asDraft = (): TimelineDraft[] => raw.map(e => ({
-    id: e.id,
-    name: e.name ?? '',
-    startsAt: e.startsAt ?? '',
-    ...(e.endsAt ? { endsAt: e.endsAt } : {}),
-    ...(e.who ? { who: e.who } : {}),
-    ...(e.location ? { location: e.location } : {}),
-    ...(e.icon ? { icon: e.icon } : {}),
-  }))
+  const accepted = sent && sent.weddingId === weddingId && (sent.shown === q.data || q.data === null) ? sent.list : null
+  const asDraft = (): TimelineDraft[] => {
+    if (accepted) return accepted
+    return raw.map(e => ({
+      id: e.id,
+      name: e.name ?? '',
+      startsAt: e.startsAt ?? '',
+      ...(e.endsAt ? { endsAt: e.endsAt } : {}),
+      ...(e.who ? { who: e.who } : {}),
+      ...(e.location ? { location: e.location } : {}),
+      ...(e.icon ? { icon: e.icon } : {}),
+    }))
+  }
+  /* Крестики и «Добавить» закрыты, пока список перечитывается: правка по
+     прежнему списку откатила бы предыдущую. Закрыты и когда списка нет
+     вовсе — первый GET упал и принятой копии нет: пустой экран здесь значит
+     «не знаю», а не «пусто» (инвариант 13), и PUT из него стёр бы тайминг. */
+  const locked = busy || q.refreshing || (q.data === null && !accepted)
 
   const addEvent = () => {
     if (!name.trim() || !weddingDate) return
@@ -891,7 +930,7 @@ export function Timeline() {
               <input value={till} onChange={e => setTill(e.target.value)} type="time" aria-label={t('Конец')} className="flex-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none tabular" />
             </div>
             {!weddingDate && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Сначала выберите дату свадьбы — без неё у события нет дня.')}</p>}
-            <button disabled={busy || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
+            <button disabled={locked || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
         )}
         {err && <p className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
@@ -910,7 +949,7 @@ export function Timeline() {
               <p className="text-[10px] text-[var(--sage-deep)] mt-0.5">{e.who}</p>
             </div>
             {editing && (
-              <button disabled={busy} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
+              <button disabled={locked} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
             )}
           </div>
         ))}

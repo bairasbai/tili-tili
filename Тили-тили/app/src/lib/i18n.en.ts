@@ -1715,3 +1715,8 @@ Object.assign(EN, {
 Object.assign(EN, {
   'Оформление и ссылки — у пары': 'Design and links are managed by the couple',
 })
+
+/* Ревью второго раунда (R3-04): воркер ещё ставится — push включится через несколько секунд, а не «не зарегистрирован». */
+Object.assign(EN, {
+  'Приложение ещё устанавливается — попробуйте через несколько секунд': 'The app is still installing — try again in a few seconds',
+})

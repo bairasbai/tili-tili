@@ -62,6 +62,13 @@ interface Store {
    * `idle` — без входа сверки не было и не будет.
    */
   weddingsState: 'idle' | 'loading' | 'ready' | 'error'
+  /**
+   * Сверка по списку, который принёс вход. Эффект сверки — один на запуск,
+   * а выход сбрасывает её в `idle`: без этого после повторного входа стор
+   * оставался в `idle` навсегда, и экраны без свадьбы обещали «Загружаем…»
+   * при запросе, которого нет. `null` — список не пришёл (`error`).
+   */
+  adoptWeddings: (list: MyWedding[] | null) => void
   /** Дата свадьбы, `YYYY-MM-DD`. Null — ещё не выбрана, и это нормально. */
   weddingDate: string | null
   /** Перенос даты. Уходит на сервер: он проверяет занятость команды и пересчитывает сроки. */
@@ -189,6 +196,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (alive) setWeddingsState('error')
       })
     return () => { alive = false }
+  }, [setWeddingIdState])
+  const adoptWeddings = useCallback((list: MyWedding[] | null) => {
+    if (!list) { setWeddingsState('error'); return }
+    myWeddings.current = Promise.resolve(list)
+    setWeddingIdState(prev => (prev && list.some(w => w.id === prev) ? prev : pickMyWedding(list)))
+    setWeddingsState('ready')
   }, [setWeddingIdState])
   /* Дата хранится строкой `YYYY-MM-DD` — тем же видом, что принимает сервер.
    * Объект Date в localStorage превращается в строку с часовым поясом, и
@@ -378,6 +391,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setInviteTplState(0)
     setInviteTextState(DEFAULT_INVITE_TEXT)
     setWeddingsState('idle')
+    /* Промис сверки — про прежний аккаунт: следующему входу он не годится. */
+    myWeddings.current = null
     setForgotten(n => n + 1)
   }, [setWeddingIdState, setWeddingDateState, setQuiz])
   /* Уже после того, как сеттеры `usePersist` отработали (они пишут в том же
@@ -394,6 +409,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     weddingId,
     setWeddingId: setWeddingIdState,
     weddingsState,
+    adoptWeddings,
     forgetSession,
     finishOnboarding: (answers?: QuizAnswers) => {
       // Ответы квиза — это план свадьбы, ради которого его и проходят.
@@ -506,7 +522,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [onboarded, weddingId, setWeddingIdState, weddingsState, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
+  }), [onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

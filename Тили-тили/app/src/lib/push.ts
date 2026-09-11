@@ -63,6 +63,37 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
   return reg?.active ? reg : null
 }
 
+/** Сколько ждать активации только что зарегистрированного воркера при включении push. */
+const SW_ACTIVATION_WAIT_MS = 3_000
+
+/**
+ * Регистрация для подписки: активный воркер или тот, что вот-вот станет им.
+ *
+ * Первый заход в установленное приложение: `register()` уже сделан, воркер
+ * ещё `installing`, а человек открыл настройки и включил push в первые
+ * секунды. Регистрация есть, `active` пока пуст — и ответ «service worker не
+ * зарегистрирован» был неправдой с неверной подсказкой (ревью R3-04): через
+ * секунды воркер активен и повтор проходит. Подписке нужен активный воркер,
+ * поэтому ждём `ready`, но недолго: если установка сорвалась, `ready` не
+ * ответит никогда, и ждать его вечно значило бы повесить тумблер (RF-07).
+ */
+async function swRegistrationForSubscribe(): Promise<ServiceWorkerRegistration | null> {
+  const sw = navigator.serviceWorker
+  if (typeof sw.getRegistration !== 'function') return sw.ready
+  const reg = await sw.getRegistration()
+  if (!reg) return null
+  if (reg.active) return reg
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), SW_ACTIVATION_WAIT_MS) })
+  try {
+    const activated = await Promise.race([sw.ready, timeout])
+    if (!activated) throw new Error(t('Приложение ещё устанавливается — попробуйте через несколько секунд'))
+    return activated
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function devicePushState(): Promise<DevicePushState> {
   if (!pushSupported()) return 'unsupported'
   if (!vapidPublicKey()) return 'no-key'
@@ -86,7 +117,7 @@ export async function enableDevicePush(): Promise<void> {
   if (!key) throw new Error(t('Ключ Web Push не задан в сборке'))
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') throw new Error(t('Разрешение на уведомления не дано'))
-  const reg = await swRegistration()
+  const reg = await swRegistrationForSubscribe()
   if (!reg) throw new Error(t('Push работает в установленном приложении — здесь service worker не зарегистрирован'))
   const sub = (await reg.pushManager.getSubscription())
     ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKeyBytes(key) }))

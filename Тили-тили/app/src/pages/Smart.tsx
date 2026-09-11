@@ -296,6 +296,15 @@ export function DayX() {
     setErr(null)
     try { await fn(); reloadTimeline(); reloadPlanB() } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
   })()
+  /*
+   * Сдвиг и план Б — неповторимые действия: каждый вызов двигает все будущие
+   * блоки и шлёт команде и подрядчикам критическое уведомление мимо тихих
+   * часов. После своего POST экран перечитывает тайминг и план Б, и до ответа
+   * на нём прежние часы и прежнее «не включён» — человек читает это как
+   * «не сработало» и жмёт снова (ревью R3-01). Пока свежий ответ в пути,
+   * обе кнопки закрыты.
+   */
+  const stale = q.refreshing || pb.refreshing
 
   /* Адрес чата знает только сервер, и он может отказать: 429 ограничителя,
      истёкшая сессия, обрыв сети. Раньше промис висел без `catch` — кнопка
@@ -353,7 +362,7 @@ export function DayX() {
           <div className="flex gap-2.5 mt-4">
             {/* Сдвиг уходит на сервер и рассылается команде и подрядчикам.
                 Раньше он копился в браузере пары и не доходил ни до кого. */}
-            <button disabled={busy === 'shift' || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--gold-soft)] text-[var(--on-grad)]">
+            <button disabled={!!busy || stale || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--gold-soft)] text-[var(--on-grad)]">
               {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
             </button>
             <button disabled={chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
@@ -417,11 +426,14 @@ export function DayX() {
               <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0 bg-[var(--sage-deep)] text-[var(--card)]">{t('Включён')}</span>
             ) : (
               /* Пока состояние плана Б не пришло, кнопка закрыта: без ответа
-                 «не включён» — догадка, и по ней ушла бы повторная рассылка. */
+                 «не включён» — догадка, и по ней ушла бы повторная рассылка.
+                 Подтверждение снимается сразу после принятого сервером
+                 запроса: иначе до свежего ответа кнопка стояла бы в
+                 «Подтвердить», и одно касание слало бы рассылку второй раз. */
               <button
-                disabled={busy === 'planb' || !ready(pb)}
+                disabled={!!busy || stale || !ready(pb)}
                 title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
-                onClick={() => (confirmPlanB ? act('planb', () => activatePlanB(weddingId!)) : setConfirmPlanB(true))}
+                onClick={() => (confirmPlanB ? act('planb', async () => { await activatePlanB(weddingId!); setConfirmPlanB(false) }) : setConfirmPlanB(true))}
                 className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold border disabled:opacity-50', confirmPlanB ? 'bg-[var(--rose-deep)] border-[var(--rose-deep)] text-[var(--card)]' : 'border-[var(--line)]')}
               >
                 {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}

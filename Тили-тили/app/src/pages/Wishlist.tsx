@@ -111,7 +111,9 @@ export function WishlistManage() {
       </div>
 
       <FundsManage weddingId={weddingId} funds={funds} busyId={busyId} write={write} />
-      <AntiManage weddingId={weddingId} anti={anti} busy={busyId === 'anti'} write={write} />
+      {/* Пока список перечитывается, анти-вишлист закрыт: PUT из прежнего
+          списка откатил бы только что принятую правку (ревью R3-02). */}
+      <AntiManage weddingId={weddingId} anti={anti} shown={q.data} busy={busyId === 'anti' || q.refreshing} write={write} />
 
       {/* Кнопка «Открыть глазами гостя» убрана: гостевой экран подарков
           открывается по личному токену, которого у пары нет, — переход
@@ -190,17 +192,35 @@ function FundsManage({ weddingId, funds, busyId, write }: {
 }
 
 /* Анти-вишлист — сторона пары */
-function AntiManage({ weddingId, anti, busy, write }: {
+function AntiManage({ weddingId, anti, shown, busy, write }: {
   weddingId: string | null
   anti: string[]
+  /** Ответ, из которого взят `anti`: по нему видно, сменился ли он с последней записи. */
+  shown: unknown
   busy: boolean
   write: WriteFn
 }) {
   const [val, setVal] = useState('')
+  /*
+   * Последний список, который сервер принял, и ответ, что был на экране в тот
+   * момент. Пока свежий ответ его не заменил — или пропал, если перечитывание
+   * сорвалось, — следующий PUT строится отсюда: список на экране в это окно
+   * прежний, и PUT из него стирал только что добавленное (ревью R3-02).
+   */
+  const [sent, setSent] = useState<{ weddingId: string; list: string[]; shown: unknown } | null>(null)
+  const accepted = sent && sent.weddingId === weddingId && (sent.shown === shown || shown === null) ? sent.list : null
+  const base = accepted ?? anti
+  /* Списка нет вовсе — первый GET упал, принятой копии нет: пустой экран
+     значит «не знаю», а не «пусто», и PUT из него стёр бы анти-вишлист. */
+  const locked = busy || (shown === null && !accepted)
   /* Список заменяется целиком: отдельного пути «добавить строку» контракт не
      знает, и отправлять надо всё, что было. */
-  const save = (items: string[]) => void write('anti', () => putAntiGifts(weddingId!, items))
-  const add = () => { if (val.trim()) { save([...anti, val.trim()]); setVal('') } }
+  const save = (items: string[]) => void write('anti', async () => {
+    await putAntiGifts(weddingId!, items)
+    setSent({ weddingId: weddingId!, list: items, shown })
+  })
+  /* Enter в поле — та же кнопка «Добавить»: закрыта она — закрыт и он. */
+  const add = () => { if (locked) return; if (val.trim()) { save([...base, val.trim()]); setVal('') } }
   return (
     <>
       <SectionHead title={t('Просим не дарить')} sub={t('анти-вишлист')} />
@@ -210,13 +230,13 @@ function AntiManage({ weddingId, anti, busy, write }: {
             {anti.map(a => (
               <span key={a} className="flex items-center gap-1.5 text-[11.5px] font-medium px-3 py-1.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">
                 {a}
-                <button disabled={busy} onClick={() => save(anti.filter(y => y !== a))} className="press disabled:opacity-50" aria-label={t('Удалить')}><X size={12} /></button>
+                <button disabled={locked} onClick={() => save(base.filter(y => y !== a))} className="press disabled:opacity-50" aria-label={t('Удалить')}><X size={12} /></button>
               </span>
             ))}
           </div>
           <div className="flex gap-2 mt-3">
             <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder={t('Например: сервизы')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-            <button disabled={busy} onClick={add} className="press px-4 py-2.5 rounded-[12px] card-s text-[12px] font-bold disabled:opacity-50">{t('Добавить')}</button>
+            <button disabled={locked} onClick={add} className="press px-4 py-2.5 rounded-[12px] card-s text-[12px] font-bold disabled:opacity-50">{t('Добавить')}</button>
           </div>
         </div>
       </div>

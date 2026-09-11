@@ -15,6 +15,14 @@ export interface AsyncData<T> {
   data: T | null
   /** Первая загрузка. Обновление уже показанных данных сюда не попадает. */
   loading: boolean
+  /**
+   * Перечитывание за спиной у показанного ответа: с `reload()` до прихода
+   * свежего. Данные на экране в это окно — прежние, и действие по ним ждёт
+   * свежих: сдвиг тайминга по старым часам уходил вторым POST, а список,
+   * собранный из старого ответа, откатывал только что принятую правку
+   * (ревью R3-01, R3-02). При первой загрузке здесь `false` — это `loading`.
+   */
+  refreshing: boolean
   /** Текст для человека, не код ошибки. Null — всё в порядке. */
   error: string | null
   /** Отказ по правам: раздел закрыт роли. Повторять бессмысленно. */
@@ -50,6 +58,11 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   /* Есть ли на экране ответ этого запроса. Ссылка, а не `data` в зависимостях
      эффекта: от смены данных перечитывать не надо. */
   const settled = useRef(false)
+  /* Чей ответ показан: запрос и его номер. `refreshing` выводится сравнением
+     с текущими, а не выставляется в эффекте: `reload()` и снятие «занято»
+     после действия приходят одним рендером, и флаг, поднятый эффектом, дал бы
+     кадр с открытой кнопкой между ними. */
+  const [shown, setShown] = useState<{ run: typeof run; tick: number } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -71,18 +84,20 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
       lastRun.current = run
       settled.current = false
       setData(null)
+      setShown(null)
     }
     if (!settled.current) setLoading(true)
     setError(null)
     setForbidden(false)
     run()
-      .then(v => { if (alive) { settled.current = true; setData(v); setLoading(false) } })
+      .then(v => { if (alive) { settled.current = true; setData(v); setShown({ run, tick }); setLoading(false) } })
       .catch(e => {
         if (!alive) return
         /* И при отказе тоже: показывать данные рядом с сообщением об ошибке
            значит утверждать, что они актуальны. */
         settled.current = false
         setData(null)
+        setShown(null)
         if (e instanceof ApiError && e.status === 403) setForbidden(true)
         else setError(explainError(e))
         setLoading(false)
@@ -91,5 +106,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   }, [run, tick])
 
   const reload = useCallback(() => setTick(n => n + 1), [])
-  return { data, loading, error, forbidden, reload }
+  /* Показан ответ, но не на этот запрос: свежий ещё в пути. */
+  const refreshing = shown !== null && (shown.run !== run || shown.tick !== tick)
+  return { data, loading, refreshing, error, forbidden, reload }
 }

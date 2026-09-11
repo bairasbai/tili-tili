@@ -54,7 +54,7 @@ function takeJoinCode(): string | null {
 /* Вход: телефон → OTP → роль */
 export function Auth() {
   const nav = useNavigate()
-  const { setWeddingId, finishOnboarding } = useStore()
+  const { adoptWeddings, finishOnboarding } = useStore()
   const [step, setStep] = useState<0 | 1 | 2>(0)
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState(['', '', '', ''])
@@ -143,9 +143,12 @@ export function Auth() {
     try {
       const joinCode = takeJoinCode()
       if (joinCode) { nav(`/join/${encodeURIComponent(joinCode)}`); return }
-      const mine = pickMyWedding(await listMyWeddings())
+      const list = await listMyWeddings()
+      /* Список отдаётся стору: он закрывает сверку и выбирает свадьбу, иначе
+         после выхода и повторного входа сверка висела бы в `idle` навсегда. */
+      adoptWeddings(list)
+      const mine = pickMyWedding(list)
       if (mine) {
-        setWeddingId(mine)
         finishOnboarding()
         nav('/home')
         return
@@ -153,7 +156,9 @@ export function Auth() {
       setStep(2)
     } catch (e) {
       /* Список не пришёл — не гадаем, есть ли свадьба: показываем причину и
-         «Продолжить». Код из SMS уже погашен, повторить можно только этот шаг. */
+         «Продолжить». Код из SMS уже погашен, повторить можно только этот шаг.
+         Стору — «не пришёл», а не «едет»: иначе экраны ждали бы сверку вечно. */
+      adoptWeddings(null)
       setErr(explain(e))
     } finally {
       setBusy(false)

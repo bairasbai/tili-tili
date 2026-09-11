@@ -9,7 +9,7 @@ import { rub } from '@/lib/money'
 import { useStore } from '@/lib/store'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { getBuses, getGuests, getHotels, getMenuPoll } from '@/lib/api/weddingData'
-import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, putMenuPoll, remindMenuPoll } from '@/lib/api/weddingWrite'
+import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, putMenuPoll, remindMenuPoll, type MenuOptionDraft } from '@/lib/api/weddingWrite'
 import { shortWeddingDate } from '@/lib/weddingDate'
 
 
@@ -289,16 +289,26 @@ export function Catering() {
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   }
 
+  /*
+   * Последний опрос, который сервер принял, и ответ, что был на экране в тот
+   * момент. Пока свежий ответ его не заменил — или пропал, если перечитывание
+   * сорвалось, — следующий PUT строится отсюда: опрос на экране в это окно
+   * прежний, и PUT из него удалял только что добавленный вариант, а из пустого
+   * экрана — все варианты вместе с голосами (ревью R3-02).
+   */
+  const [sent, setSent] = useState<{ weddingId: string; question: string; options: MenuOptionDraft[]; shown: typeof poll } | null>(null)
+  const accepted = sent && sent.weddingId === weddingId && (sent.shown === poll || poll === null) ? sent : null
+
   /* Опрос заменяется целиком: отдельного пути «добавить вариант» нет, и
      отправлять надо все прежние варианты — пропущенный сервер поймёт как
      удалённый вместе с голосами за него. */
   const addOption = () => void write(async () => {
     if (!optName.trim()) return
-    await putMenuPoll(
-      weddingId!,
-      poll?.question || t('Что приготовить на горячее?'),
-      [...options.map(o => ({ id: o.id, name: o.name ?? '' })), { name: optName.trim() }],
-    )
+    const question = accepted ? accepted.question : (poll?.question || t('Что приготовить на горячее?'))
+    const kept = accepted ? accepted.options : options.map(o => ({ id: o.id, name: o.name ?? '' }))
+    const next = [...kept, { name: optName.trim() }]
+    await putMenuPoll(weddingId!, question, next)
+    setSent({ weddingId: weddingId!, question, options: next, shown: poll })
     setOptName(''); setAdding(false)
   })
 
@@ -348,7 +358,11 @@ export function Catering() {
         {adding ? (
           <div className="mt-4 flex gap-2">
             <input value={optName} onChange={e => setOptName(e.target.value)} placeholder={t('Название блюда')} className="flex-1 h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
-            <button disabled={busy} onClick={addOption} className="press h-11 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Добавить')}</button>
+            {/* Закрыта и пока опрос перечитывается: PUT из прежнего опроса
+                удалил бы только что добавленный вариант. И когда опроса нет
+                вовсе (первый GET упал, принятой копии нет): PUT из пустого
+                экрана стёр бы варианты вместе с голосами. */}
+            <button disabled={busy || q.refreshing || (poll === null && !accepted)} onClick={addOption} className="press h-11 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Добавить')}</button>
           </div>
         ) : (
           <button onClick={() => setAdding(true)} className="press mt-4 w-full card-s py-3 text-[12px] font-semibold flex items-center justify-center gap-2"><Plus size={14} />{t('Добавить вариант блюда')}</button>

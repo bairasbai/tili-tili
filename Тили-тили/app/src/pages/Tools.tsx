@@ -15,6 +15,7 @@ import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
+import { isAuthorized } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
 import { getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
@@ -45,7 +46,7 @@ const DEAL_STEPS: ReadonlyArray<{ state: DealState; label: string }> = [
 ]
 
 export function Deal() {
-  const { slots, slotsState } = useStore()
+  const { slots, slotsState, weddingsState } = useStore()
   const { id } = useParams()
   const s = slots.find(x => x.dealId === id)
   if (!s) return (
@@ -57,11 +58,26 @@ export function Deal() {
         {slotsState === 'error'
           ? t('Сервер недоступен. Попробуйте позже')
           : slotsState === 'ready' ? t('Сделка не найдена')
-          : slotsState === 'idle' ? t('Войдите, чтобы увидеть свою свадьбу') : t('Загружаем…')}
+          : slotsState === 'idle' ? noWeddingText(weddingsState) : t('Загружаем…')}
       </p>
     </div>
   )
   return <DealView s={s} />
+}
+
+/*
+ * Мозаика не запрашивается (`idle`) — это не только «без входа»: на новом
+ * устройстве свадьба не записана, пока список свадеб едет; список мог не
+ * прийти; у вошедшего свадьбы может не быть вовсе. Раньше по адресу сделки
+ * из закладки вошедший читал «Войдите» (ревью R3-03). Те же слова у экрана
+ * слота (`Wedding.tsx`); `idle` списка при живом входе — сверка ещё не
+ * началась, как на главной.
+ */
+function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): string {
+  if (!isAuthorized()) return t('Войдите, чтобы увидеть свою свадьбу')
+  if (weddingsState === 'ready') return t('Свадьбы пока нет')
+  if (weddingsState === 'error') return t('Сервер недоступен. Попробуйте позже')
+  return t('Загружаем…')
 }
 
 /*
