@@ -10,6 +10,7 @@ import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, remindGuests, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { setBudgetTotal } from '@/lib/api/wedding'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -63,6 +64,8 @@ export function WeddingTeam() {
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
   const budget = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
+  /* Ноль здесь — «итог не задан», а не сумма: полоса «от нуля» была бы
+     процентом от неизвестного (R-178, ревью D2-09). */
   const budgetTotal = budget.data?.total?.amount ?? 0
 
   return (
@@ -78,14 +81,16 @@ export function WeddingTeam() {
       />
       <WeddingNav />
       <div className="px-5 mt-3.5">
-        <button onClick={() => nav('/dayx')} className="press w-full rounded-[22px] p-4 flex items-center gap-3 text-left text-white" style={{ background: 'linear-gradient(120deg,#3A322B,#1E1A16)', boxShadow: 'var(--shadow)' }}>
+        {/* Контрастная карточка токенами: в тёмной теме «чернила» светлеют,
+            а фон темнеет — читается в обеих (R-01). */}
+        <button onClick={() => nav('/dayx')} className="press w-full rounded-[22px] p-4 flex items-center gap-3 text-left bg-[var(--ink)] text-[var(--bg)]" style={{ boxShadow: 'var(--shadow)' }}>
           <span className="text-[22px]">🎬</span>
           <span className="flex-1">
             <b className="text-[13px] block">{t('Режим дня X')}</b>
             {/* Ни «демо», ни SOS здесь больше нет: экран дня X работает на
                 серверном тайминге, а отдельной кнопки «позвать координатора»
                 контракт не знает — вместо неё командный чат (R-163). */}
-            <span className="text-[10px] text-white/60">{t('Тайминг, сдвиг всей программы, план Б и чат команды')}</span>
+            <span className="text-[10px] opacity-70">{t('Тайминг, сдвиг всей программы, план Б и чат команды')}</span>
           </span>
         </button>
       </div>
@@ -97,7 +102,7 @@ export function WeddingTeam() {
               key={s.id}
               onClick={() => nav(`/wedding/slot/${s.id}`)}
               className={cn('press rounded-[18px] p-3 flex flex-col items-center justify-center gap-1.5 aspect-[0.85] md:aspect-auto md:py-5 fade-up',
-                s.state === 'empty' ? 'border-[1.5px] border-dashed border-[#D8B4AE] bg-[var(--rose-soft)]/30' : 'card-s')}
+                s.state === 'empty' ? 'border-[1.5px] border-dashed border-[var(--rose)] bg-[var(--rose-soft)]/30' : 'card-s')}
             >
               <span className={cn('w-9 h-9 rounded-[12px] flex items-center justify-center', s.state === 'empty' ? '' : s.tile)}>
                 {s.state === 'empty' ? <Plus size={20} className="text-[var(--rose-ink)]" /> : createElement(catIcon(s.categoryId), { size: 18, className: 'text-[var(--ink2)]' })}
@@ -130,7 +135,7 @@ export function WeddingTeam() {
           <div className="flex justify-between text-[12px] mb-1.5"><span className="text-[var(--soft)]">{t('Команда собрана')}</span><b>{slotsState === 'ready' ? `${booked} ${t('из')} ${slots.length}` : '—'}</b></div>
           {slotsState === 'ready' && <Bar pct={pct(booked, slots.length)} />}
           <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{slotsState === 'ready' ? fmt(committedTotal(slots)) : '—'}</b></div>
-          {slotsState === 'ready' && ready(budget) && <Bar pct={pct(committedTotal(slots), budgetTotal)} />}
+          {slotsState === 'ready' && ready(budget) && budgetTotal > 0 && <Bar pct={pct(committedTotal(slots), budgetTotal)} />}
           {budget.error && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{budget.error}</p>}
         </div>
       </div>
@@ -183,6 +188,9 @@ function SlotView({ s }: { s: Slot }) {
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [ownBusy, runOwn] = useBusy()
+  /* Деньги сделки видит только пара — и только она отменяет бронь. У
+     помощника и координатора в ответе нет ни `price`, ни `paid`. */
+  const canCancel = s.price !== undefined || s.paid !== undefined
 
   /* Любое действие здесь уходит на сервер и меняет чужой календарь. Ошибку
      показываем словами, а не глотаем: «сделали вид, что получилось» на
@@ -285,13 +293,22 @@ function SlotView({ s }: { s: Slot }) {
           <button onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t('Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
-          {confirmCancel ? (
+          {/*
+            * Отмена — только паре и только по незавершённой сделке. Помощнику
+            * и координатору сервер не отдаёт денег сделки (`price`/`paid`
+            * отсутствуют), и по этому же признаку видно, что отменять им
+            * нечем — сервер ответил бы 403 (ревью D2-21). Выполненную сделку
+            * не отменяют: работа сделана и оплачена (ревью D2-02).
+            */}
+          {s.dealState === 'done' ? (
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Работа выполнена')}</div>
+          ) : !canCancel ? null : confirmCancel ? (
             <button onClick={() => void guard(async () => {
               /* У своего подрядчика удаление, а не отмена: только оно гасит
                  выданную ему ссылку-приглашение. */
               await (s.external ? removeExternalVendor(s.id) : cancelBooking(s.id))
               nav('/wedding')
-            })} className="press card-s py-3.5 text-[13px] font-bold text-white" style={{ background: '#9B6A6A' }}>{t('Точно отменить?')}</button>
+            })} className="press card-s py-3.5 text-[13px] font-bold bg-[var(--rose-deep)] text-[var(--card)]">{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
@@ -370,25 +387,42 @@ export function Budget() {
    */
   const q = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
   const server = q.data
+  /*
+   * Общий бюджет может быть не задан: квиз с «пока не знаем» оставляет
+   * колонку пустой, а сервер отдаёт `total: {amount: 0}` — контракт не
+   * допускает `null`. Ноль здесь не сумма, а её отсутствие (R-178, ревью
+   * D2-09): показывать «из 0 ₽ запланировано · 0%» значило бы говорить
+   * паре, что денег нет. Вместо этого — «итог не задан» и поле ввода.
+   */
   const budgetTotal = server?.total?.amount ?? 0
+  const hasTotal = budgetTotal > 0
   /* Без ответа сервера показываем пусто, а не мок: подстановка мок-бюджета
      означала бы, что человек без свадьбы видит чужие 677 000 ₽ и верит им. */
-  const cats = (server?.categories ?? []).map(c => ({
-    id: c.id ?? '',
-    name: c.title ?? '',
-    amount: c.fromSlots ?? 0,
-    limit: c.planned?.amount ?? 0,
-    color: c.color ?? 'var(--lav)',
-    /* `live` в контракте — имена забронированной команды через разделитель,
-       а не флаг: экран показывает их подписью «из команды». */
-    live: c.live ?? undefined,
-    items: (c.items ?? []).map(it => ({
+  const cats = (server?.categories ?? []).map(c => {
+    const items = (c.items ?? []).map(it => ({
       id: it.id ?? '',
       title: it.title ?? '',
       amount: it.amount?.amount ?? 0,
       custom: !!it.custom,
-    })),
-  }))
+    }))
+    return {
+      id: c.id ?? '',
+      name: c.title ?? '',
+      /* Сумма категории — сделки плюс свои статьи, в одном месте (ревью
+         D2-04): полоса и подсказка считаются от неё же. Раньше в строке
+         стояли только сделки, и «Фейерверк» на 50 000 ₽ в «Прочем» давал
+         «0К / 79К» при живой статье под той же строкой — категории не
+         сходились с итогом на том же экране (ERR-0012, R-26). Сервер в
+         `spent` статьи считает — считаем и здесь. */
+      amount: (c.fromSlots ?? 0) + items.reduce((a, it) => a + it.amount, 0),
+      limit: c.planned?.amount ?? 0,
+      color: c.color ?? 'var(--lav)',
+      /* `live` в контракте — имена забронированной команды через разделитель,
+         а не флаг: экран показывает их подписью «из команды». */
+      live: c.live ?? undefined,
+      items,
+    }
+  })
   /* Потрачено берём у сервера целиком: свои статьи он уже учёл. Раньше к
      серверной сумме прибавлялся локальный список `tt_budget_custom`, и одна и
      та же статья считалась дважды, как только доезжала на сервер. */
@@ -397,6 +431,7 @@ export function Budget() {
   /* Резерв на непредвиденное считает сервер — 10% от общего бюджета (План
      ч. 283). Доля на клиенте разошлась бы с серверной на первой правке. */
   const reserve = server?.reserve?.amount ?? 0
+  const [totalDraft, setTotalDraft] = useState('')
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
@@ -406,6 +441,15 @@ export function Budget() {
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
   }
+  /* Итог задаётся здесь же: до этого `budgetTotal` уходил только из квиза,
+     и паре, ответившей «пока не знаем», задать его было негде. */
+  const saveTotal = () => void write('total', async () => {
+    const rubles = parseInt(totalDraft.replace(/\D/g, ''), 10)
+    if (!rubles) return
+    // поле «Общий бюджет, ₽» — рубли, на сервер уходят копейки
+    await setBudgetTotal(weddingId!, rub(rubles))
+    setTotalDraft('')
+  })
   const add = () => void write('new', async () => {
     const rubles = parseInt(amount.replace(/\D/g, ''), 10)
     const categoryId = cat || cats[0]?.id
@@ -428,10 +472,23 @@ export function Budget() {
         <div className="card p-5">
           <div className="flex justify-between items-end">
             <span className="text-[30px] font-extrabold tracking-tight tabular">{fmt(total)}</span>
-            <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>
+            {hasTotal && <span className="text-[var(--rose-deep)] font-bold">{spentPct}%</span>}
           </div>
-          <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
-          <div className="mt-3"><Bar pct={spentPct} /></div>
+          {hasTotal ? (
+            <>
+              <p className="text-[11.5px] text-[var(--soft)] mt-1">{t('из')} {fmt(budgetTotal)} {t('запланировано · осталось')} {fmt(Math.max(0, budgetTotal - total))}</p>
+              <div className="mt-3"><Bar pct={spentPct} /></div>
+            </>
+          ) : (
+            <div className="mt-1">
+              <p className="text-[11.5px] text-[var(--soft)]">{t('обязательств · итог не задан')}</p>
+              <div className="flex gap-2 mt-3">
+                <input value={totalDraft} onChange={e => setTotalDraft(e.target.value)} inputMode="numeric" placeholder={t('Общий бюджет, ₽')} className="flex-1 min-w-0 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] tabular" />
+                <button disabled={busyId === 'total'} onClick={saveTotal} className="press px-4 rounded-xl grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50 shrink-0">{busyId === 'total' ? t('Сохраняем…') : t('Задать бюджет')}</button>
+              </div>
+              <p className="text-[10px] text-[var(--soft2)] mt-2 leading-relaxed">{t('Лимиты категорий и резерв появятся, когда задан общий бюджет.')}</p>
+            </div>
+          )}
           {reserve > 0 && (
             /* Отдельной строкой, а не категорией: категории делят сто процентов
                между собой, и резерв внутри них означал бы, что часть сметы
@@ -449,11 +506,15 @@ export function Budget() {
               <div key={b.id}>
                 <div className="flex justify-between text-[12.5px] items-center">
                   <span className="flex items-center gap-2"><i className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: b.color }} />{b.name}{b.live && <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)]">{t('из команды')}</span>}</span>
-                  <b className="tabular">{thousands(b.amount)}{t('К')}<span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span></b>
+                  {/* Лимит категории — доля общего бюджета: без итога его нет,
+                      и «/ 0К» с пустой полосой выдавали бы ноль за лимит. */}
+                  <b className="tabular">{thousands(b.amount)}{t('К')}{hasTotal && <span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>}</b>
                 </div>
-                <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
-                  <div className="h-full rounded-full" style={{ width: `${pct(b.amount, b.limit)}%`, background: b.color }} />
-                </div>
+                {hasTotal && (
+                  <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pct(b.amount, b.limit)}%`, background: b.color }} />
+                  </div>
+                )}
                 {/* Свои статьи живут внутри своей категории: сервер помечает их
                     `custom`, и удалять можно только их. Прежний экран решал это
                     сравнением номера строки с длиной мок-списка — при другом
@@ -644,7 +705,7 @@ export function Checklist() {
               <div key={task.id} className={cn('flex items-center gap-1', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
                 <button disabled={busyId === task.id} onClick={() => toggle(task.id, isDone)} className="flex-1 flex items-center gap-3 py-3.5 text-left disabled:opacity-60">
                   <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
-                    isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[#E8DED4] text-[var(--rose-deep)] font-bold text-[11px]')}>
+                    isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[var(--line)] text-[var(--rose-deep)] font-bold text-[11px]')}>
                     {isDone ? '✓' : i + 1}
                   </span>
                   <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
@@ -656,7 +717,7 @@ export function Checklist() {
                     кнопка внутри кнопки невалидна и нажимается не везде. */}
                 {task.custom && (
                   confirmDel === task.id
-                    ? <button disabled={busyId === task.id} onClick={() => removeTask(task.id)} className="press text-[9px] font-bold px-2 py-1 rounded-full bg-[#A36666] text-white shrink-0 disabled:opacity-50">{t('Удалить?')}</button>
+                    ? <button disabled={busyId === task.id} onClick={() => removeTask(task.id)} className="press text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--rose-deep)] text-[var(--card)] shrink-0 disabled:opacity-50">{t('Удалить?')}</button>
                     : <button onClick={() => setConfirmDel(task.id)} className="press text-[var(--soft)] text-[13px] px-1.5 shrink-0" aria-label={t('Удалить задачу')}>×</button>
                 )}
               </div>
@@ -1036,7 +1097,7 @@ export function Guests() {
           {shown.map((g, i) => (
             <div key={g.id} className={cn('flex items-center gap-3 py-3', i !== shown.length - 1 && 'border-b border-[var(--track)]')}>
               <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-[13px] font-serif-d text-white shrink-0',
-                g.status === 'yes' ? 'bg-[#A9BCA0]' : g.status === 'no' ? 'bg-[#C98A8A]' : 'bg-[var(--gold-soft)]')}>
+                g.status === 'yes' ? 'bg-[var(--sage)]' : g.status === 'no' ? 'bg-[var(--rose)]' : 'bg-[var(--gold-soft)]')}>
                 {g.name[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -1072,7 +1133,7 @@ export function Guests() {
                 )}
               </div>
               {confirmDel === g.id ? (
-                <button disabled={busyId === g.id} onClick={() => remove(g)} className="press text-[9px] font-bold px-2.5 py-1 rounded-full bg-[#A36666] text-white disabled:opacity-50">{t('Удалить?')}</button>
+                <button disabled={busyId === g.id} onClick={() => remove(g)} className="press text-[9px] font-bold px-2.5 py-1 rounded-full bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{t('Удалить?')}</button>
               ) : (
                 <button onClick={() => setConfirmDel(g.id)} className="press text-[9px] font-bold px-2 py-1 rounded-full text-[var(--soft)]" aria-label={t('Удалить гостя')}>×</button>
               )}
@@ -1086,7 +1147,9 @@ export function Guests() {
         <div className="grid grid-cols-2 gap-2.5 mt-3.5">
           <button onClick={() => nav('/wedding/seating')} className="press card-s py-4 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Armchair size={15} />{t('Рассадка')}</button>
           <button onClick={() => {
-            const csv = 'Имя;Статус;+1\n' + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.plus ? 'да' : 'нет'}`).join('\n')
+            /* Заголовок и «да/нет» — через словарь, как и статусы: иначе в
+               английском интерфейсе файл выходил смешанным (R-07, ревью D3-21). */
+            const csv = `${t('Имя;Статус;+1')}\n` + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.plus ? t('да') : t('нет')}`).join('\n')
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }))
             /* Имя файла общее: пара в нём не названа, а прежнее «alina-timur»
@@ -1235,8 +1298,10 @@ export function Album() {
 export function Documents() {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  /* Список подписанных документов — с сервера; закрыт помощнику матрицей
-     доступа, поэтому 403 здесь штатный ответ. Шаблоны договоров остаются
+  /* Список договоров — с сервера; закрыт помощнику матрицей доступа,
+     поэтому 403 здесь штатный ответ. Сервер заводит их только черновиками —
+     пути подписи нет, и заголовок «Подписанные» над ними утверждал статус,
+     которого не бывает (ревью D2-14, R-174). Шаблоны договоров остаются
      локальными: это заготовки текста, а не данные свадьбы. */
   const q = useApi(() => weddingId ? getDocuments(weddingId) : Promise.resolve([]), [weddingId])
   return (
@@ -1245,7 +1310,7 @@ export function Documents() {
       <AsyncState q={q} forbiddenText={t('Документы ведёт пара — у вашей роли к ним доступа нет.')} />
       {ready(q) && (q.data ?? []).length > 0 && (
         <div className="px-5 mt-3">
-          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Подписанные')}</span>
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Черновики договоров')}</span>
           <div className="space-y-2 mt-2">
             {(q.data ?? []).map((d, k) => (
               <div key={d.id ?? k} className="card-s p-3.5 flex items-center gap-3">
@@ -1274,7 +1339,7 @@ export function Documents() {
           фотографом · подписан обеими сторонами · PDF» и «Аренда усадьбы
           «Липовый сад»». Нажатие скачивало .doc, в котором заказчиком значились
           «Алина Козлова и Тимур Волков» — чужие имена в документе, который
-          человек мог отнести подрядчику. Настоящий список подписанных стоит
+          человек мог отнести подрядчику. Настоящий список договоров (черновиков) стоит
           выше и приходит с сервера. */}
 
       <p className="px-6 mt-4 text-[10.5px] text-[var(--soft)] leading-relaxed text-center">

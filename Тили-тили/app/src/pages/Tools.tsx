@@ -12,7 +12,7 @@ import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { saveInviteDesign } from '@/lib/api/wedding'
-import { guestInviteLink } from '@/lib/api/weddingWrite'
+import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { ready } from '@/components/AsyncState'
@@ -63,6 +63,16 @@ export function Deal() {
   return <DealView s={s} />
 }
 
+/*
+ * Видит ли этот человек деньги сделки.
+ *
+ * Помощнику и координатору сервер не отдаёт ни `price`, ни `paid` (в ответе
+ * этих полей нет вовсе), паре `paid` приходит всегда — даже нулём. По этому
+ * признаку и различаем роли: рисовать помощнику «Оплачено 0 ₽» значит выдать
+ * скрытое за факт (R-178), а кнопки оплаты и отмены для его роли всегда 403.
+ */
+const seesMoney = (s: Slot): boolean => s.price !== undefined || s.paid !== undefined
+
 function DealView({ s }: { s: Slot }) {
   const nav = useNavigate()
   const { paySlot, cancelBooking, advanceDealTo } = useStore()
@@ -73,6 +83,10 @@ function DealView({ s }: { s: Slot }) {
   const at = DEAL_STEPS.findIndex(x => x.state === s.dealState)
   const next = at >= 0 ? DEAL_STEPS[at + 1] : undefined
   const cancelled = s.dealState === 'cancelled'
+  /* Выполненную сделку не отменяют: услуга оказана и оплачена, дата прошла.
+     Сервер отвечает на такой переход 409, и кнопки здесь быть не должно. */
+  const finished = s.dealState === 'done'
+  const money = seesMoney(s)
 
   /* Каждое действие здесь необратимо на той стороне: двигает сделку, освобождает
      дату в календаре подрядчика или фиксирует деньги. Ошибку показываем словами. */
@@ -107,7 +121,7 @@ function DealView({ s }: { s: Slot }) {
                     <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{done ? '✓' : k + 1}</span>
                     <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{t(step.label)}</span>
                   </div>
-                  {k < DEAL_STEPS.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', done ? 'bg-[#A9BCA0]' : 'bg-[var(--track)]')} />}
+                  {k < DEAL_STEPS.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', done ? 'bg-[var(--sage)]' : 'bg-[var(--track)]')} />}
                 </div>
               )
             })}
@@ -120,29 +134,37 @@ function DealView({ s }: { s: Slot }) {
             не связанными ни с какой сделкой. */}
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
-          {/* Сумму платежей считает сервер: до этого её в ответе не было, и
-              строка могла показать только факт оплаты, но не остаток долга. */}
-          <div className="flex justify-between items-center mt-3">
-            <span className="text-[12.5px]">{t('Оплачено')}</span>
-            <b className={cn('tabular text-[13px]', (s.paid ?? 0) > 0 ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>
-              {fmt(s.paid ?? 0)}{s.price != null && ` ${t('из')} ${fmt(s.price)}`}
-            </b>
-          </div>
-          {s.price != null && s.price > 0 && (
-            <div className="mt-2.5">
-              <Bar pct={pct(s.paid ?? 0, s.price)} />
-              <p className="text-[10.5px] text-[var(--soft)] mt-1.5">
-                {s.price - (s.paid ?? 0) > 0
-                  ? `${t('осталось')} ${fmt(s.price - (s.paid ?? 0))}`
-                  : t('оплачено полностью')}
-              </p>
-            </div>
+          {money ? (
+            <>
+              {/* Сумму платежей считает сервер: до этого её в ответе не было, и
+                  строка могла показать только факт оплаты, но не остаток долга. */}
+              <div className="flex justify-between items-center mt-3">
+                <span className="text-[12.5px]">{t('Оплачено')}</span>
+                <b className={cn('tabular text-[13px]', (s.paid ?? 0) > 0 ? 'text-[var(--sage-deep)]' : 'text-[var(--soft)]')}>
+                  {fmt(s.paid ?? 0)}{s.price != null && ` ${t('из')} ${fmt(s.price)}`}
+                </b>
+              </div>
+              {s.price != null && s.price > 0 && (
+                <div className="mt-2.5">
+                  <Bar pct={pct(s.paid ?? 0, s.price)} />
+                  <p className="text-[10.5px] text-[var(--soft)] mt-1.5">
+                    {s.price - (s.paid ?? 0) > 0
+                      ? `${t('осталось')} ${fmt(s.price - (s.paid ?? 0))}`
+                      : t('оплачено полностью')}
+                  </p>
+                </div>
+              )}
+              <div className="h-[1.5px] bg-[var(--track)] my-3" />
+              <div className="flex justify-between items-center">
+                <b className="text-[13px]">{t('Итого по договору')}</b>
+                <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{s.price != null ? fmt(s.price) : '—'}</b>
+              </div>
+            </>
+          ) : (
+            /* Сервер не отдал денег — их не показываем и не выдумываем нулём:
+               помощник и координатор сумм не видят по матрице доступа. */
+            <p className="text-[12px] text-[var(--soft)] mt-3 leading-relaxed">{t('Суммы и оплаты по сделке видит только пара.')}</p>
           )}
-          <div className="h-[1.5px] bg-[var(--track)] my-3" />
-          <div className="flex justify-between items-center">
-            <b className="text-[13px]">{t('Итого по договору')}</b>
-            <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{s.price != null ? fmt(s.price) : '—'}</b>
-          </div>
         </div>
 
         {/* `revision` — состояние и оплаченное: после действия на этом же
@@ -154,9 +176,13 @@ function DealView({ s }: { s: Slot }) {
           <button onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
           <button onClick={() => nav(`/wedding/documents/new?deal=${s.dealId ?? ''}`)} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
           {/* «Внести аванс» — отдельный путь контракта, остальные шаги двигает
-              PATCH сделки. Разные адреса, поэтому и кнопки разные. */}
+              PATCH сделки. Разные адреса, поэтому и кнопки разные. Двигать
+              сделку и отменять её может только пара: остальным ролям эти
+              кнопки не рисуем — сервер ответил бы им 403 (ревью D2-21). */}
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Сделка отменена')}</div>
+          ) : !money ? (
+            <div className="card-s col-span-2 py-3.5 text-[12.5px] font-semibold text-[var(--soft)] text-center">{t('Только просмотр — шаги, оплату и отмену делает пара')}</div>
           ) : s.dealState === 'booked' ? (
             <button disabled={busy} onClick={() => guard(() => paySlot(s.id))} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] disabled:opacity-50">{busy ? t('Проводим…') : t('✓ Отметить оплату')}</button>
           ) : next ? (
@@ -166,8 +192,12 @@ function DealView({ s }: { s: Slot }) {
           )}
           {cancelled ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Дата свободна')}</div>
+          ) : !money ? null : finished ? (
+            /* Выполненное не отменяется (ревью D2-02): работа сделана, деньги
+               внесены — сервер отвечает 409, и предлагать это нечестно. */
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Работа выполнена — отмена невозможна')}</div>
           ) : confirmCancel ? (
-            <button disabled={busy} onClick={() => guard(async () => { await cancelBooking(s.id); setConfirmCancel(false); nav('/wedding') })} className="press py-3.5 rounded-[18px] bg-[#A36666] text-white text-[13px] font-semibold disabled:opacity-50">{t('Точно отменить?')}</button>
+            <button disabled={busy} onClick={() => guard(async () => { await cancelBooking(s.id); setConfirmCancel(false); nav('/wedding') })} className="press py-3.5 rounded-[18px] bg-[var(--rose-deep)] text-[var(--card)] text-[13px] font-semibold disabled:opacity-50">{t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{t('Отменить сделку')}</button>
           )}
@@ -253,19 +283,26 @@ function DealJournal({ dealId, revision }: { dealId: string; revision: string })
 }
 
 /*
- * Генерация и скачивание договора: DOCX (Word-совместимый HTML) / PDF (окно печати).
+ * Договор из шаблона.
  *
- * Данные подставляются из свадьбы и сделки. Раньше в тексте стояли константы:
- * «г. Уфа», «Алина Козлова и Тимур Волков» и «торжество 14.06.2027» — документ
- * с чужим городом, чужими именами и чужой датой скачивался у каждой пары.
+ * Документ оформляет сервер: `POST /deals/{dealId}/contract` подставляет
+ * стороны, дату, сумму и город и кладёт запись в документы свадьбы —
+ * экран «Документы» показывает её черновиком. До ревью D2-03 кнопка
+ * «Сгенерировать договор» меняла только экран: запрос не уходил, поле
+ * паспортных данных было неуправляемым, и введённое исчезало, а список
+ * документов оставался пустым (R-176, R-174).
  *
- * Настоящее место для этого — `POST /deals/{dealId}/contract`: там подстановка
- * идёт на сервере и документ попадает в список документов свадьбы. Пока путь
- * не подключён (этап 8), собираем текст на клиенте — но из настоящих данных.
+ * Скачивание DOCX (Word-совместимый HTML) и PDF (окно печати) остаётся на
+ * клиенте: файлы на сервере появятся вместе с хранилищем (`pdfUrl` честно
+ * `null`). Текст собирается из тех же данных, что ушли на сервер, — в нём
+ * стоят ФИО из формы, а не название свадьбы. Раньше здесь были константы:
+ * «г. Уфа», «Алина Козлова и Тимур Волков» и «торжество 14.06.2027».
  */
 export interface ContractFacts {
   city: string
   customer: string
+  /** Паспортные данные заказчика — так, как введены в форме. */
+  passport: string
   vendor: string
   date: string
   amount: string
@@ -280,9 +317,23 @@ function contractHTML(name: string, f: ContractFacts) {
     t('3. Ответственность сторон и форс-мажор — по ГК РФ.'),
     t('4. Сформировано в приложении «Тили-тили» (tili-tili.ru).'),
   ]
+  const customer = f.passport ? `${f.customer}, ${f.passport}` : f.customer
   return `<h1>${name}</h1><p>${f.city}${new Date().toLocaleDateString('ru-RU')}</p>
-  <p><b>${cust}</b> ${f.customer}<br><b>${exec}</b> ${f.vendor}</p>
+  <p><b>${cust}</b> ${customer}<br><b>${exec}</b> ${f.vendor}</p>
   <p>${subject}${f.date}.</p><p>${price}${f.amount}.</p><p>${p3}</p><p>${p4}</p>`
+}
+
+/*
+ * Шаблон экрана → код шаблона сервера. У сервера пять шаблонов, у экрана
+ * шесть карточек: декоратор и кондитер идут универсальным договором.
+ */
+const TEMPLATE_CODE: Record<string, string> = {
+  c1: 'photographer',
+  c2: 'venue',
+  c3: 'host',
+  c4: 'universal',
+  c5: 'universal',
+  c6: 'universal',
 }
 function downloadDocx(name: string, f: ContractFacts) {
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body style="font-family:Georgia,serif">${contractHTML(name, f)}</body></html>`
@@ -298,43 +349,81 @@ function downloadPdf(name: string, f: ContractFacts) {
   w.document.close()
 }
 
-/* Мастер договора: шаблон → данные → готово */
+/* Мастер договора: шаблон → данные → запрос на сервер → готово */
 export function ContractWizard() {
   const nav = useNavigate()
   const { weddingDate, weddingId, slots } = useStore()
-  /* Договор всегда про конкретную сделку: имя исполнителя и сумма берутся из
-     неё. Без неё поля честно говорят «уточняется», а не подставляют чужие. */
+  /* Договор всегда про конкретную сделку: её идентификатор приходит из адреса
+     (`?deal=`), имя исполнителя и сумма берутся из мозаики. Без сделки
+     оформлять нечего — сервер принимает договор только по ней. */
   const [params] = useSearchParams()
-  const slot = slots.find(x => x.dealId === params.get('deal'))
+  const dealId = params.get('deal')
+  const slot = dealId ? slots.find(x => x.dealId === dealId) : undefined
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const [step, setStep] = useState(0)
+  const [tpl, setTpl] = useState(0)
+  /* Стороны договора — поля формы (сервер требует оба), паспортные данные
+     уходят вместе с ними в `fields`. Исполнитель подставляется из сделки,
+     но правится: в договоре стоит ФИО, а в каталоге — название студии. */
+  const [customerName, setCustomerName] = useState('')
+  const [performerDraft, setPerformerDraft] = useState<string | null>(null)
+  const [passport, setPassport] = useState('')
+  const [created, setCreated] = useState<{ version?: number } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const ctpl = contractTemplates[tpl]
+  const performerName = performerDraft ?? slot?.vendor ?? ''
+
   const facts: ContractFacts = {
     /* «г.» отдельным ключом переводить нечего — в английском такого сокращения
        нет, а пустой перевод неотличим от забытого. Пишем полной строкой. */
     city: wq.data?.city?.name ? `${t('Город: ')}${wq.data.city.name} · ` : '',
-    customer: wq.data?.title ?? t('уточняется'),
-    vendor: slot?.vendor ?? '______________________',
+    customer: customerName.trim() || t('уточняется'),
+    passport: passport.trim(),
+    vendor: performerName.trim() || '______________________',
     date: weddingDate ? formatWeddingDate(weddingDate) : t('уточняется'),
     amount: slot?.price != null ? fmt(slot.price) : t('уточняется'),
   }
-  const [step, setStep] = useState(0)
-  const [tpl, setTpl] = useState(0)
-  const [done, setDone] = useState(false)
-  const ctpl = contractTemplates[tpl]
 
-  if (done) return (
+  /* Пока запрос идёт, кнопка выключена: второе нажатие оформило бы вторую
+     версию того же договора. */
+  const generate = () => void (async () => {
+    if (!dealId || busy) return
+    setBusy(true)
+    setErr(null)
+    try {
+      const doc = await createContract(dealId, TEMPLATE_CODE[ctpl.id] ?? 'universal', {
+        customerFullName: customerName.trim(),
+        performerFullName: performerName.trim(),
+        ...(passport.trim() ? { customerPassport: passport.trim() } : {}),
+      })
+      setCreated({ version: doc?.version })
+    } catch (e) {
+      /* 409 `not_booked`, 422 `fields_missing`, 403 для команды — словами
+         сервера: он один знает, чего не хватило. */
+      setErr(explainError(e))
+    } finally { setBusy(false) }
+  })()
+
+  if (created) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center fade-up">
-      <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: '0 20px 44px -14px rgba(201,138,138,.6)' }}><Check size={38} strokeWidth={2.5} /></div>
+      <div className="w-[92px] h-[92px] rounded-full grad flex items-center justify-center text-[var(--on-grad)] pop" style={{ boxShadow: 'var(--shadow-lift)' }}><Check size={38} strokeWidth={2.5} /></div>
       <h1 className="font-serif-d text-[28px] mt-7">{t('Договор готов')}</h1>
-      {/* «Загрузите скан в сделку» обещало загрузку, которой нет: путь для
-          файлов появится вместе с хранилищем (хвост владельца). */}
-      <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">«{ctpl.name}{t('» собран с вашими данными. Скачайте и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}</p>
+      {/* Документ записан на сервере черновиком; файлы к нему появятся вместе
+          с хранилищем, а «загрузите скан в сделку» обещало загрузку, которой
+          нет. Скачать текст можно отсюда — он собран из тех же данных. */}
+      <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
+        «{ctpl.name}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик записан в документы свадьбы. Скачайте текст и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}
+      </p>
       <div className="flex gap-2.5 mt-8 w-full">
         <button onClick={() => downloadPdf(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
         <button onClick={() => downloadDocx(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
-      <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Готово')}</button>
+      <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть «Документы»')}</button>
     </div>
   )
+
+  const canGenerate = !!dealId && !busy
 
   return (
     <div className="min-h-dvh flex flex-col pb-10">
@@ -342,13 +431,20 @@ export function ContractWizard() {
       {/* Заказчик и город берутся из свадьбы: если она не пришла, «уточняется»
           в договоре должно сопровождаться причиной, а не молчанием. */}
       {wq.error && <p role="alert" className="px-5 mt-2 text-[12px] text-[var(--rose-ink)] leading-relaxed">{wq.error}</p>}
+      {/* Без сделки кнопка недоступна, и человек читает почему — а не жмёт
+          в пустоту. Мастер открывают из карточки сделки: там есть `?deal=`. */}
+      {!dealId && (
+        <p className="px-5 mt-2 text-[12px] text-[var(--rose-ink)] leading-relaxed">
+          {t('Договор оформляется по сделке — откройте мастер кнопкой «Договор» на экране сделки.')}
+        </p>
+      )}
       {step === 0 ? (
         <div className="px-5 mt-3 space-y-2.5 stagger">
           {contractTemplates.map((c, k) => (
-            <button key={c.id} onClick={() => setTpl(k)} className={cn('press w-full card-s p-4 flex items-center gap-3 text-left fade-up', tpl === k && 'ring-2 ring-[#C98A8A]')}>
+            <button key={c.id} onClick={() => setTpl(k)} className={cn('press w-full card-s p-4 flex items-center gap-3 text-left fade-up', tpl === k && 'ring-2 ring-[var(--rose)]')}>
               <Tile icon={c.icon} tile={c.tile} size={42} />
               <div className="flex-1"><b className="text-[13px]">{c.name}</b><p className="text-[10.5px] text-[var(--soft)]">{c.desc}</p></div>
-              <span className={cn('w-5 h-5 rounded-full border-2', tpl === k ? 'bg-[#C98A8A] border-[#C98A8A]' : 'border-[#EAD9CF]')} />
+              <span className={cn('w-5 h-5 rounded-full border-2', tpl === k ? 'bg-[var(--rose)] border-[var(--rose)]' : 'border-[var(--line)]')} />
             </button>
           ))}
         </div>
@@ -357,24 +453,37 @@ export function ContractWizard() {
           <div className="card p-5 space-y-3.5">
             {/* Аванс из списка убран: его размер брался константой 30 000 ₽ и
                 не был связан ни с какой сделкой. */}
-            {[[t('Заказчик'), facts.customer], [t('Исполнитель'), facts.vendor], [t('Дата оказания услуги'), facts.date], [t('Сумма'), facts.amount]].map(([l, v]) => (
+            <div>
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--rose-deep)] font-semibold">{t('Заказчик *')}</span>
+              <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder={t('ФИО заказчика — как в паспорте')} className="w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
+            </div>
+            <div>
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--rose-deep)] font-semibold">{t('Исполнитель *')}</span>
+              <input value={performerName} onChange={e => setPerformerDraft(e.target.value)} placeholder={t('ФИО или название исполнителя')} className="w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
+            </div>
+            {[[t('Дата оказания услуги'), facts.date], [t('Сумма'), facts.amount]].map(([l, v]) => (
               <div key={l}>
                 <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{l}</span>
                 <p className="text-[13.5px] font-medium mt-0.5">{v}</p>
               </div>
             ))}
             <div>
-              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--rose-deep)] font-semibold">{t('Паспортные данные *')}</span>
-              <input placeholder={t('Заполните перед подписанием')} className="w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
+              <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Паспортные данные заказчика')}</span>
+              <input value={passport} onChange={e => setPassport(e.target.value)} placeholder={t('Заполните перед подписанием')} className="w-full mt-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
             </div>
           </div>
           <p className="text-[10px] text-[var(--soft2)] mt-3 text-center">{t('Шаблон — информационный, не заменяет консультацию юриста')}</p>
+          {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-3 text-center leading-relaxed">{err}</p>}
         </div>
       )}
       <div className="px-5 mt-auto pt-6">
-        <button onClick={() => (step === 0 ? setStep(1) : setDone(true))} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {step === 0 ? t('Далее') : t('Сгенерировать договор ✨')}
-        </button>
+        {step === 0 ? (
+          <button onClick={() => setStep(1)} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Далее')}</button>
+        ) : (
+          <button disabled={!canGenerate} onClick={generate} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-50" style={{ boxShadow: 'var(--shadow-lift)' }}>
+            {busy ? t('Оформляем…') : t('Сгенерировать договор ✨')}
+          </button>
+        )}
       </div>
     </div>
   )
@@ -412,17 +521,28 @@ export function Seating() {
 
   // Рассаживать начинают до того, как ответят все, поэтому за столы попадают и
   // ждущие ответа. Исключаются только отказавшиеся.
+  //
+  // Считаем людей, а не записи (R-29): «Ольга и Денис» с +1 — двое за столом,
+  // как и в сводке для кейтеринга. До ревью D3-03 стол на восемь мест принимал
+  // восемь записей «с +1» — шестнадцать человек — и подписывался «8/8».
   const attending = (guestsQ.data ?? [])
     .filter(g => g.status !== 'no')
-    .map(g => ({ id: g.id ?? '', name: g.name ?? '', tableId: g.tableId ?? null, diet: g.diet ?? null }))
+    .map(g => ({ id: g.id ?? '', name: g.name ?? '', tableId: g.tableId ?? null, diet: g.diet ?? null, persons: 1 + (g.plusOne ? 1 : 0) }))
 
-  const tables = (tablesQ.data ?? []).map(tb => ({
-    id: tb.id ?? '',
-    name: tb.name ?? '',
-    capacity: tb.capacity ?? 8,
-    guests: attending.filter(g => g.tableId === tb.id),
-  }))
+  const tables = (tablesQ.data ?? []).map(tb => {
+    const guests = attending.filter(g => g.tableId === tb.id)
+    return {
+      id: tb.id ?? '',
+      name: tb.name ?? '',
+      capacity: tb.capacity ?? 8,
+      guests,
+      seated: guests.reduce((a, g) => a + g.persons, 0),
+    }
+  })
   const unseated = attending.filter(g => !g.tableId)
+  const selectedGuest = attending.find(g => g.id === selected)
+  /* Поместится ли выбранный гость (с его +1) за этот стол. */
+  const fits = (tb: { seated: number; capacity: number }) => !!selectedGuest && tb.seated + selectedGuest.persons <= tb.capacity
 
   const write = async (fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
@@ -434,8 +554,12 @@ export function Seating() {
   }
   const seat = (tableId: string) => {
     const tb = tables.find(x => x.id === tableId)
-    if (!selected || !tb || tb.guests.length >= tb.capacity) return
-    void write(async () => { await patchGuest(weddingId!, selected, { tableId }); setSelected(null) })
+    if (!selectedGuest || !tb) return
+    /* Полный стол — словами, а не молчанием: молчаливое «ничего не
+       произошло» на нажатии читается как поломка. Сервер держит ту же
+       границу (409 `table_full`) — на случай второго устройства. */
+    if (!fits(tb)) { setErr(t('Стол заполнен — выберите другой или добавьте стол')); return }
+    void write(async () => { await patchGuest(weddingId!, selectedGuest.id, { tableId }); setSelected(null) })
   }
   /* Снятие со стола шлёт именно `null`: пропущенное поле сервер читает как
      «не трогать», и гость остался бы сидеть там, откуда его убрали. */
@@ -443,21 +567,21 @@ export function Seating() {
 
   const addNewTable = () => void write(() => addTable(weddingId!, `${t('Стол №')}${tables.length + 1}`, 8))
 
-  /* Тиль раскидывает нерассаженных по свободным местам. Записей столько,
-     сколько гостей: отдельного пути «рассадить всех» контракт не знает. */
+  /* Тиль раскидывает нерассаженных по свободным местам — по людям, не по
+     записям: гость с +1 занимает два. Записей столько, сколько гостей:
+     отдельного пути «рассадить всех» контракт не знает. */
   const autoSeat = () => void write(async () => {
-    const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.guests.length }))
-    let ti = 0
+    const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.seated }))
     for (const g of unseated) {
-      while (ti < free.length && free[ti]!.left <= 0) ti++
-      if (ti >= free.length) break
-      await patchGuest(weddingId!, g.id, { tableId: free[ti]!.id })
-      free[ti]!.left--
+      const spot = free.find(f => f.left >= g.persons)
+      if (!spot) continue
+      await patchGuest(weddingId!, g.id, { tableId: spot.id })
+      spot.left -= g.persons
     }
     setSelected(null)
   })
 
-  const selectedName = attending.find(g => g.id === selected)?.name
+  const selectedName = selectedGuest?.name
 
   return (
     <div className="pb-28">
@@ -476,28 +600,34 @@ export function Seating() {
           {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{!ready(guestsQ) ? '—' : attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
         </div>
       </div>
-      {err && <p className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
+      {err && <p role="alert" className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
+      {/* Состав столов и «N/M» — только по пришедшему списку гостей (ревью
+          D3-12): пока он грузится или упал, «0/8» и «Пусто» под честным
+          «Сервер недоступен» читались как факт о рассадке. */}
+      {ready(guestsQ) && (
       <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
         {tables.map(tb => (
-          <div key={tb.id} onClick={() => seat(tb.id)} className={cn('card p-4 text-left fade-up transition-all', selected && tb.guests.length < tb.capacity && 'ring-2 ring-[#A9BCA0] cursor-pointer')}>
+          <div key={tb.id} onClick={() => seat(tb.id)} className={cn('card p-4 text-left fade-up transition-all', fits(tb) && 'ring-2 ring-[var(--sage)] cursor-pointer')}>
             <div className="flex items-center justify-between">
               <b className="font-serif-d text-[16px]">{tb.name}</b>
-              <span className="text-[9px] text-[var(--soft)] flex items-center gap-1"><Armchair size={10} /> {tb.guests.length}/{tb.capacity}</span>
+              <span className="text-[9px] text-[var(--soft)] flex items-center gap-1"><Armchair size={10} /> {tb.seated}/{tb.capacity}</span>
             </div>
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
                 <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5 disabled:opacity-50">
                   {g.diet && <span className="text-[10px] shrink-0">{DIET_ICON[g.diet] ?? '🍽'}</span>}
                   <span className="truncate">{g.name}</span>
+                  {g.persons > 1 && <span className="text-[9px] text-[var(--soft)] shrink-0">{t('+1')}</span>}
                 </button>
-              )) : <div className="text-[10.5px] text-[var(--soft2)] py-3 text-center border-[1.5px] border-dashed border-[#EAD9CF] rounded-xl">{t('Пусто')}</div>}
+              )) : <div className="text-[10.5px] text-[var(--soft2)] py-3 text-center border-[1.5px] border-dashed border-[var(--line)] rounded-xl">{t('Пусто')}</div>}
             </div>
           </div>
         ))}
         {!tables.length && ready(tablesQ) && <p className="col-span-2 text-[12px] text-[var(--soft)] text-center py-4">{t('Столов пока нет — добавьте первый')}</p>}
       </div>
+      )}
       <div className="px-5 mt-4 space-y-3">
-        <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>✨ {t('Рассадить автоматически')}</button>
+        <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: 'var(--shadow-lift)' }}>✨ {t('Рассадить автоматически')}</button>
         {/* Легенда описывает то, что гость сам указал в RSVP. Прежняя обещала
             «из опроса меню» три значка, которые выдавались хешем имени. */}
         <div className="card-s px-4 py-3 flex items-center gap-3 text-[10.5px] text-[var(--soft)]">
@@ -515,15 +645,30 @@ export function Seating() {
   )
 }
 
-/* Редактор приглашений: сценарий → текст → вопросы гостям → рассылка */
+/* Редактор приглашений: сценарий → текст → вопросы гостям → именные ссылки */
 export function InviteEditor() {
   const nav = useNavigate()
-  const { inviteTpl, setInviteTpl, inviteText, setInviteText, weddingDate, weddingId } = useStore()
-  const theme = inviteTpl
-  /* Дресс-код хранится у свадьбы: его видит гость. Пока он лежал в
-     `tt_dress` браузера пары, гость получал палитру по умолчанию и принимал
-     её за выбор пары. */
+  const { weddingDate, weddingId } = useStore()
+  /*
+   * Текст, тема и дресс-код хранятся у свадьбы: их видит гость. Редактор
+   * начинается с того, что лежит на сервере, — правка живёт в состоянии
+   * экрана до «Сохранить оформление». До ревью D3-04 текст и тема читались
+   * из `tt_invite_*` этого браузера: второй из пары видел умолчания, превью
+   * «то, что увидит гость» врало, а сохранение перезаписывало на сервере то,
+   * что гость уже видел. Пока `tt_dress` жил в браузере, гость точно так же
+   * получал палитру по умолчанию и принимал её за выбор пары.
+   */
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const [textDraft, setTextDraft] = useState<string | null>(null)
+  const [themeDraft, setThemeDraft] = useState<number | null>(null)
+  /* Текст по умолчанию — заготовка для свадьбы, где пара ещё ничего не
+     написала (сервер отдаёт пустое поле): она попадёт к гостю только после
+     «Сохранить оформление». */
+  const inviteText = textDraft ?? wq.data?.inviteText ?? t('Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
+  const theme = themeDraft ?? wq.data?.inviteThemeId ?? 0
+  /* Чужой номер темы — от старого сценария или испорченного ответа — не
+     роняет редактор в ErrorBoundary: берём первую, как и гостевая страница. */
+  const th = inviteThemes[theme] ?? inviteThemes[0]!
   const [dress, setDress] = useState<string | null>(null)
   const [dressNote, setDressNote] = useState<string | null>(null)
   /* Палитра по умолчанию подставляется, только когда свадьба пришла и палитры
@@ -534,8 +679,14 @@ export function InviteEditor() {
   const [saved, setSaved] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  /* Ссылки, выданные в этом сеансе: сервер отдаёт их и в списке гостей
+     (`inviteUrl`), но список перечитывается после ответа, а копировать
+     хочется сразу. */
   const [links, setLinks] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState<string | null>(null)
+  /* Перевыпуск открытой ссылки — необратимое действие: первое нажатие
+     только предупреждает, и предупреждение стоит у конкретного гостя. */
+  const [reissueFor, setReissueFor] = useState<string | null>(null)
 
   /* Гости — с сервера: ссылка именная, и выдаётся она конкретной записи. */
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
@@ -549,18 +700,27 @@ export function InviteEditor() {
   }
 
   /* Текст и тему сохраняем на сервере: гость открывает приглашение со своего
-     устройства, и в localStorage пары заглянуть не может. */
+     устройства, и в localStorage пары заглянуть не может. Уходит номер той
+     темы, что показана в превью, — чужой номер с сервера не возвращается ему же. */
   const saveDesign = () => void run('design', async () => {
-    await saveInviteDesign(weddingId!, inviteText, theme, dressId ?? 'd1', dressText)
+    await saveInviteDesign(weddingId!, inviteText, inviteThemes.indexOf(th), dressId ?? 'd1', dressText)
     wq.reload()
     setSaved(true)
   })
 
-  /* Ссылка одноразовая и именная. Повторный выпуск гасит прежнюю — так
-     работает контракт, и это правильно: ссылка, ушедшая не тому, отзывается. */
+  /*
+   * Ссылка одноразовая и именная. Повторный выпуск гасит прежнюю — и токен
+   * гостя вместе с ней: страница гостя перестаёт открываться, а триггер
+   * снимает его резерв подарка. Поэтому у гостя, который ссылку уже открыл,
+   * стоит не «Выдать ссылку», а «Перевыпустить» с подтверждением словами; у
+   * гостя с выданной, но не открытой ссылкой — «Копировать» без запроса
+   * (ревью D3-05).
+   */
   const issueLink = (guestId: string) => void run(guestId, async () => {
     const res = await guestInviteLink(weddingId!, guestId)
     if (res?.url) setLinks(m => ({ ...m, [guestId]: res.url! }))
+    setReissueFor(null)
+    gq.reload()
   })
 
   const copy = (url: string) => {
@@ -570,23 +730,27 @@ export function InviteEditor() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Приглашения')} sub={t('10 сценариев · ссылка · RSVP')} />
-      {/* Свадьба — свой запрос: название, город и дресс-код в превью
-          приходят из него, и отказ на нём надо показать, а не молчать. */}
+      {/* Свадьба — свой запрос: название, город, текст, тема и дресс-код
+          приходят из него. Пока он не ответил, редактора нет: редактировать
+          умолчания вместо серверного текста и есть та ошибка, которую здесь
+          чинили, — «Сохранить» стирало бы то, что гость уже видит. */}
       <AsyncState q={wq} />
       <div className="px-5 mt-3">
+        {ready(wq) && (
+        <>
         {/* Превью сценария */}
         <div className="card p-6 text-center relative overflow-hidden">
-          <div className="absolute inset-x-0 top-0 h-2" style={{ background: inviteThemes[theme].accentGrad }} />
+          <div className="absolute inset-x-0 top-0 h-2" style={{ background: th.accentGrad }} />
           {/*
             * Превью показывает то, что увидит гость, а не мок. Здесь стояли
             * «А♥Т», «Дорогая Марина Ивановна!», имена и город из `lib/data.ts`
             * — пара смотрела на чужую свадьбу. Имя гостя осталось подписью-
             * образцом и названо образцом: у каждого гостя оно своё.
             */}
-          <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: inviteThemes[theme].accentGrad }}>♥</div>
+          <div className="w-[52px] h-[52px] rounded-full mx-auto flex items-center justify-center text-white font-serif-d text-[16px]" style={{ background: th.accentGrad }}>♥</div>
           <p className="font-serif-d italic text-[14px] text-[var(--soft)] mt-4">{t('Имя гостя')}</p>
           <h2 className="font-serif-d text-[26px] mt-2">{wq.data?.title ?? t('Название свадьбы')}</h2>
-          <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5" style={{ color: '#B57171' }}>
+          <p className="text-[10px] tracking-[.24em] uppercase font-semibold mt-1.5 text-[var(--rose-deep)]">
             {[weddingDate ? formatWeddingDate(weddingDate) : t('дата уточняется'), wq.data?.city?.name].filter(Boolean).join(' · ')}
           </p>
           <p className="text-[11.5px] text-[var(--ink2)] font-light leading-relaxed mt-3">{inviteText}</p>
@@ -601,11 +765,11 @@ export function InviteEditor() {
           <span className="text-[10px] text-[var(--soft)]">{t('10 авторских')}</span>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          {inviteThemes.map((th, k) => (
-            <button key={th.id} onClick={() => setInviteTpl(k)} className={cn('press rounded-[20px] p-2 text-left bg-[var(--card)]', theme === k && 'ring-2 ring-[#C98A8A]')} style={{ boxShadow: 'var(--shadow)' }}>
-              <div className="h-[64px] rounded-[14px] flex items-center justify-center text-[22px]" style={{ background: th.overlay }}>{th.emoji}</div>
-              <b className="text-[11.5px] block mt-2 px-1">«{th.name}»</b>
-              <span className="text-[9px] text-[var(--soft)] block px-1 pb-1 leading-tight">{th.desc}</span>
+          {inviteThemes.map((x, k) => (
+            <button key={x.id} onClick={() => setThemeDraft(k)} className={cn('press rounded-[20px] p-2 text-left bg-[var(--card)]', th === x && 'ring-2 ring-[var(--rose)]')} style={{ boxShadow: 'var(--shadow)' }}>
+              <div className="h-[64px] rounded-[14px] flex items-center justify-center text-[22px]" style={{ background: x.overlay }}>{x.emoji}</div>
+              <b className="text-[11.5px] block mt-2 px-1">«{x.name}»</b>
+              <span className="text-[9px] text-[var(--soft)] block px-1 pb-1 leading-tight">{x.desc}</span>
             </button>
           ))}
         </div>
@@ -615,7 +779,7 @@ export function InviteEditor() {
           <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Дресс-код и палитра')}</span>
           <div className="space-y-2.5 mt-3">
             {dressPalettes.map(p => (
-              <button key={p.id} onClick={() => setDress(p.id)} className={cn('press w-full flex items-center gap-3 rounded-[14px] p-2 text-left', dressId === p.id && 'ring-2 ring-[#C98A8A] bg-[var(--track)]')}>
+              <button key={p.id} onClick={() => setDress(p.id)} className={cn('press w-full flex items-center gap-3 rounded-[14px] p-2 text-left', dressId === p.id && 'ring-2 ring-[var(--rose)] bg-[var(--track)]')}>
                 <span className="flex -space-x-1.5">
                   {p.colors.map(c => <span key={c} className="w-6 h-6 rounded-full border-2 border-[var(--card)]" style={{ background: c }} />)}
                 </span>
@@ -631,10 +795,12 @@ export function InviteEditor() {
         {/* Текст */}
         <div className="card p-4 mt-4">
           <span className="text-[10px] tracking-[.18em] uppercase text-[var(--soft)] font-semibold">{t('Текст приглашения')}</span>
-          <textarea value={inviteText} onChange={e => setInviteText(e.target.value)} rows={3}
+          <textarea value={inviteText} onChange={e => setTextDraft(e.target.value)} rows={3}
             className="w-full mt-2 bg-[var(--bg)] rounded-xl px-4 py-3 text-[12.5px] outline-none leading-relaxed resize-none" />
           <p className="text-[9.5px] text-[var(--soft2)] mt-1.5">{t('Имя гостя подставляется автоматически в начало')}</p>
         </div>
+        </>
+        )}
 
         {/* Что спросит гостя приглашение, решает не тумблер, а содержимое
             свадьбы. Три переключателя «Придёте с +1? · Предпочтения по еде ·
@@ -652,10 +818,14 @@ export function InviteEditor() {
           </div>
         </div>
 
-        {/* Сохранение оформления: текст и тему видит гость, значит они на сервере */}
-        <button disabled={busyId === 'design'} onClick={saveDesign} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2 disabled:opacity-50" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+        {/* Сохранение оформления: текст и тему видит гость, значит они на
+            сервере. Без ответа свадьбы кнопки нет — сохранять было бы нечего,
+            кроме умолчаний. */}
+        {ready(wq) && (
+        <button disabled={busyId === 'design'} onClick={saveDesign} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2 disabled:opacity-50" style={{ boxShadow: 'var(--shadow-lift)' }}>
           <Check size={15} /> {busyId === 'design' ? t('Сохраняем…') : saved ? t('Оформление сохранено ✓') : t('Сохранить оформление')}
         </button>
+        )}
 
         {/*
           * Именные ссылки вместо «разослать».
@@ -680,7 +850,11 @@ export function InviteEditor() {
               <p className="text-[12px] text-[var(--soft)] py-2">{t('Список гостей пуст — добавьте гостей, чтобы выдать ссылки')}</p>
             )}
             {guestList.map(g => {
-              const url = links[g.id ?? '']
+              const id = g.id ?? ''
+              /* Выданная и ещё не открытая ссылка приходит в списке гостей —
+                 её копируют, а не выпускают заново. */
+              const url = links[id] ?? g.inviteUrl ?? null
+              const busyHere = busyId === id
               return (
                 <div key={g.id} className="flex items-center gap-2">
                   <span className="flex-1 text-[12.5px] truncate">{g.name}</span>
@@ -688,9 +862,21 @@ export function InviteEditor() {
                     <button onClick={() => copy(url)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--bg)] flex items-center gap-1.5">
                       {copied === url ? <><Check size={12} className="text-[var(--sage-deep)]" />{t('Скопировано')}</> : <><Copy size={12} />{t('Копировать')}</>}
                     </button>
+                  ) : g.inviteUrlUsed ? (
+                    reissueFor === id ? (
+                      <button disabled={busyHere} onClick={() => issueLink(id)} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] text-left leading-tight disabled:opacity-50">
+                        {busyHere ? t('Выдаём…') : t('Точно перевыпустить? Гость потеряет ссылку и резерв подарка')}
+                      </button>
+                    ) : (
+                      <>
+                        <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold shrink-0">{t('Открыта ✓')}</span>
+                        <span className="text-[10.5px] text-[var(--soft2)]">·</span>
+                        <button onClick={() => setReissueFor(id)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--bg)] text-[var(--rose-deep)]">{t('Перевыпустить')}</button>
+                      </>
+                    )
                   ) : (
-                    <button disabled={busyId === g.id} onClick={() => issueLink(g.id ?? '')} className="press text-[11px] font-bold px-3 py-1.5 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">
-                      {busyId === g.id ? t('Выдаём…') : t('Выдать ссылку')}
+                    <button disabled={busyHere} onClick={() => issueLink(id)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full grad text-[var(--on-grad)] disabled:opacity-50">
+                      {busyHere ? t('Выдаём…') : t('Выдать ссылку')}
                     </button>
                   )}
                 </div>

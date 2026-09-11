@@ -17,23 +17,42 @@ export type ServerState = 'unknown' | 'up' | 'down'
 
 /** Как часто перепроверяем, когда сервер лежит. Чаще — бессмысленно долбим. */
 const RETRY_MS = 15_000
+/**
+ * Как часто перепроверяем живой сервер. Реже, чем лежащий: плашка нужна,
+ * когда он упал, а падение между двумя проверками покажет первый же обычный
+ * запрос экрана. До ревью D6-12 живой сервер опрашивался так же, как
+ * лежащий, — каждая открытая вкладка раз в 15 секунд.
+ */
+const UP_RECHECK_MS = 60_000
 
 export function useServerHealth(): ServerState {
   const [state, setState] = useState<ServerState>('unknown')
 
   useEffect(() => {
     let alive = true
+    /* Таймер один. Каждая проверка сначала снимает прежний, потом ставит свой:
+       иначе `online` (смена Wi-Fi↔LTE) добавлял параллельную цепочку опроса,
+       и на размонтировании отменялась только последняя (D6-12). */
     let timer: ReturnType<typeof setTimeout> | undefined
+    const schedule = (ms: number) => {
+      if (timer) clearTimeout(timer)
+      if (alive) timer = setTimeout(() => { void check() }, ms)
+    }
 
     const check = async () => {
+      if (timer) clearTimeout(timer)
+      timer = undefined
+      let next: ServerState
       try {
         await api.get('/health')
-        if (alive) setState('up')
+        next = 'up'
       } catch (e) {
         /* Сервер ответил ошибкой приложения — значит он жив, и плашка не нужна. */
-        if (alive) setState(e instanceof ApiError && !e.isDown ? 'up' : 'down')
+        next = e instanceof ApiError && !e.isDown ? 'up' : 'down'
       }
-      if (alive) timer = setTimeout(check, RETRY_MS)
+      if (!alive) return
+      setState(next)
+      schedule(next === 'up' ? UP_RECHECK_MS : RETRY_MS)
     }
 
     void check()

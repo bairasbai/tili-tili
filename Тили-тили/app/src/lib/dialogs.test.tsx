@@ -13,10 +13,11 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 vi.mock('@/lib/api/client', () => ({
   ApiError: class ApiError extends Error { kind = 'http'; status = 0; code = ''; get isDown() { return false } },
   saveTokens: () => {},
-  isAuthorized: () => false,
+  isAuthorized: () => true,
   url: (tpl: string, p: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => p[k]),
   api: {
-    get: async () => [],
+    /* Блок «Пригласить» есть только у пары — роль приходит из `GET /weddings` (D1-25). */
+    get: async (path: string) => (path === '/weddings' ? [{ id: '01a06c32-de69-7243-8ed8-066951a0e559', role: 'couple' }] : []),
     post: async () => ({ code: 'ТИЛИ-ДРУГ-1234', url: 'tili-tili.ru/join/ТИЛИ-ДРУГ-1234', role: 'helper' }),
     delete: async () => undefined,
     put: async () => undefined,
@@ -58,7 +59,8 @@ describe('шторка приглашения в команду', () => {
   it('появляется как диалог и закрывается по Escape', async () => {
     wrap(<Team />)
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(screen.getAllByText(/Помощник/)[0])
+    /* Кнопки ролей появляются после ответа `GET /weddings` — приглашает только пара (D1-25). */
+    fireEvent.click((await screen.findAllByText(/Помощник/))[0]!)
     /* Ждём ответа сервера: код выпускает он, и до ответа показывать нечего. */
     await waitFor(() => expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Пригласить в команду'))
     escape()

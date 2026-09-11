@@ -6,7 +6,9 @@ import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { api, ApiError, url } from '@/lib/api/client'
-import { findMyWedding } from '@/lib/api/wedding'
+import { getMe, JOIN_CODE_KEY } from '@/lib/api/auth'
+import { findMyWedding, listMyWeddings } from '@/lib/api/wedding'
+import { useApi } from '@/lib/api/useApi'
 import { useEscape } from '@/lib/useEscape'
 
 /* «Наша команда» — единое пространство свадьбы: роли и приглашения.
@@ -47,13 +49,20 @@ const ROLE_TILE: Record<string, string> = {
 }
 const ROLE_ICON: Record<string, string> = { couple: '💞', helper: '🤝', coordinator: '🎖', vendor: '📸' }
 
-/** «через 6 дней» из даты истечения: срок ссылки — семь дней (контракт). */
-function daysLeft(iso?: string): string {
+/**
+ * «через 6 дней» из даты истечения: срок ссылки — семь дней (контракт).
+ * «Сейчас» приходит параметром: `Date.now()` в функции, которую зовут из JSX,
+ * — то же нарушение чистоты рендера, что и в теле компонента (D1-17).
+ */
+function daysLeft(iso: string | undefined, now: number): string {
   if (!iso) return ''
-  const ms = Date.parse(iso) - Date.now()
+  const ms = Date.parse(iso) - now
   if (Number.isNaN(ms) || ms <= 0) return t('истекла')
   return `${Math.ceil(ms / 86_400_000)} ${t('дн.')}`
 }
+
+/** Роли, которые пара может назначить участнику (контракт `PATCH …/members/{userId}`). */
+const ASSIGNABLE_ROLES = ['couple', 'helper', 'coordinator'] as const
 
 export function Team() {
   const nav = useNavigate()
@@ -68,10 +77,31 @@ export function Team() {
   const [invites, setInvites] = useState<Invite[]>([])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /* Момент открытия экрана — от него считаются «дн.» у ссылок (D1-17). */
+  const [openedAt] = useState(() => Date.now())
   /* Закрыли до ответа — значит, открывать уже нечего (см. `openInvite`). */
   const cancelled = useRef(false)
   const closeInvite = () => { cancelled.current = true; setInvite(null) }
   useEscape(closeInvite, true)
+
+  /*
+   * Своя роль — из списка свадеб (D1-25). Помощнику и координатору
+   * приглашения запрещены (POST → 403), а список ссылок сервер отдаёт им без
+   * кодов: блок «Пригласить» и кнопки строк для них — кнопки без действия.
+   * Пока роль не пришла, блока нет: показать его значит обещать право,
+   * которого ещё не знаем.
+   */
+  const mine = useApi(() => listMyWeddings(), [])
+  const myRole = mine.data?.find(w => w.id === weddingId)?.role ?? null
+  const iAmCouple = myRole === 'couple'
+  /* Кто я в списке участников: над собой действий нет — «убрать себя» это
+     выход из свадьбы, отдельного экрана для него пока нет. */
+  const me = useApi(() => getMe(), [])
+  const myId = me.data?.id ?? null
+  /* Участник, над которым открыт выбор роли / подтверждение удаления. */
+  const [roleFor, setRoleFor] = useState<string | null>(null)
+  const [removeFor, setRemoveFor] = useState<string | null>(null)
+  const [memberBusy, setMemberBusy] = useState(false)
 
   const explain = (e: unknown) => e instanceof ApiError
     ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
@@ -91,6 +121,36 @@ export function Team() {
   }, [weddingId])
 
   useEffect(() => { void load() }, [load])
+
+  /*
+   * Смена роли и удаление участника (D1-14). Контракт и сервер умели это
+   * давно (`PATCH`/`DELETE /weddings/{id}/members/{userId}`), экран — нет:
+   * скомпрометированный помощник или ушедший координатор оставались в команде
+   * навсегда. 409 `last_couple` показывается словами сервера.
+   */
+  const changeRole = async (userId: string, role: typeof ASSIGNABLE_ROLES[number]) => {
+    if (!weddingId || memberBusy) return
+    setMemberBusy(true); setErr(null)
+    try {
+      await api.patch(url('/weddings/{weddingId}/members/{userId}', { weddingId, userId }), { role })
+      setRoleFor(null)
+      await load()
+    } catch (e) { setErr(explain(e)) } finally { setMemberBusy(false) }
+  }
+  const removeMember = async (userId: string) => {
+    if (!weddingId || memberBusy) return
+    setMemberBusy(true); setErr(null)
+    try {
+      await api.delete(url('/weddings/{weddingId}/members/{userId}', { weddingId, userId }))
+      setRemoveFor(null)
+      await load()
+    } catch (e) {
+      setErr(explain(e))
+      /* Подтверждение начинается заново: взведённая кнопка рядом с отказом —
+         необратимое действие под пальцем (тот же приём, что в отмене свадьбы). */
+      setRemoveFor(null)
+    } finally { setMemberBusy(false) }
+  }
 
   /*
    * Код выпускает сервер: шторка открывается уже с готовым кодом, а не с
@@ -148,16 +208,46 @@ export function Team() {
           {loaded && members.length === 0 && (
             <p className="text-[11.5px] text-[var(--soft)] py-4 text-center">{t('Пока только вы. Пригласите тех, кто планирует вместе с вами.')}</p>
           )}
-          {members.map((m, k) => (
-            <div key={m.user?.id ?? k} className={cn('flex items-center gap-3 py-3.5', k !== members.length - 1 && 'border-b border-[var(--track)]')}>
-              <Tile icon={ROLE_ICON[m.role ?? 'helper'] ?? '🤝'} tile={ROLE_TILE[m.role ?? 'helper'] ?? 'bg-[var(--sage-soft)]'} size={42} />
-              <div className="flex-1">
-                <b className="text-[13px]">{m.user?.name ?? t('Без имени')}</b>
-                <p className="text-[10px] text-[var(--soft)]">{ROLE_NAME[m.role ?? ''] ?? m.role}</p>
+          {members.map((m, k) => {
+            const uid = m.user?.id ?? ''
+            /* Действия над участником — только паре и не над собой (D1-14). */
+            const actions = iAmCouple && !!uid && !!myId && uid !== myId
+            return (
+              <div key={uid || k} data-member={uid || undefined} className={cn('py-3.5', k !== members.length - 1 && 'border-b border-[var(--track)]')}>
+                <div className="flex items-center gap-3">
+                  <Tile icon={ROLE_ICON[m.role ?? 'helper'] ?? '🤝'} tile={ROLE_TILE[m.role ?? 'helper'] ?? 'bg-[var(--sage-soft)]'} size={42} />
+                  <div className="flex-1 min-w-0">
+                    <b className="text-[13px]">{m.user?.name || t('Без имени')}</b>
+                    <p className="text-[10px] text-[var(--soft)]">{ROLE_NAME[m.role ?? ''] ?? m.role}</p>
+                  </div>
+                  {m.role === 'couple' && <Crown size={14} className="text-[var(--gold-soft)]" />}
+                  {actions && (
+                    <>
+                      <button onClick={() => { setRemoveFor(null); setRoleFor(roleFor === uid ? null : uid) }} disabled={memberBusy} className="press text-[10.5px] font-bold text-[var(--sage-deep)] disabled:opacity-50" aria-label={t('Сменить роль')}>{t('Роль')}</button>
+                      <button onClick={() => { setRoleFor(null); setRemoveFor(removeFor === uid ? null : uid) }} disabled={memberBusy} className="press text-[var(--soft)] disabled:opacity-50" aria-label={t('Убрать из команды')}><X size={14} /></button>
+                    </>
+                  )}
+                </div>
+                {actions && roleFor === uid && (
+                  <div className="flex flex-wrap gap-1.5 mt-2.5 pl-[54px]">
+                    {ASSIGNABLE_ROLES.filter(r => r !== m.role).map(r => (
+                      <button key={r} onClick={() => void changeRole(uid, r)} disabled={memberBusy} className="press text-[10.5px] font-semibold px-3 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] disabled:opacity-50" style={{ boxShadow: 'var(--shadow)' }}>
+                        {ROLE_NAME[r]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Первое нажатие — только вопрос; убрать из команды можно одним тапом,
+                    а вернуть — только новой ссылкой. */}
+                {actions && removeFor === uid && (
+                  <div className="flex items-center gap-3 mt-2.5 pl-[54px]">
+                    <span className="text-[11px] text-[var(--ink2)] flex-1">{t('Убрать из команды? Доступ к свадьбе пропадёт сразу.')}</span>
+                    <button onClick={() => void removeMember(uid)} disabled={memberBusy} className="press text-[11px] font-bold text-[var(--rose-deep)] disabled:opacity-50">{t('Да, убрать')}</button>
+                  </div>
+                )}
               </div>
-              {m.role === 'couple' && <Crown size={14} className="text-[var(--gold-soft)]" />}
-            </div>
-          ))}
+            )
+          })}
         </div>
         {/* Раньше в примере стоял «Тимур» — имя из моков, а не из этой
             команды. Правило то же, что и на карточке пары: чужого имени на
@@ -166,22 +256,26 @@ export function Team() {
             общие на сервере и перечитываются при открытии экрана. */}
         <p className="text-[10.5px] text-[var(--soft)] px-1 leading-relaxed">{t('💡 Данные общие: расход, добавленный любым из команды, виден всем при следующем открытии бюджета.')}</p>
 
-        {/* Пригласить */}
-        <div className="flex justify-between items-baseline px-1 mt-2">
-          <h2 className="font-serif-d text-[18px]">{t('Пригласить')}</h2>
-        </div>
-        <div className="space-y-2.5">
-          {ROLES.map(r => (
-            <button key={r.id} onClick={() => void openInvite(r)} disabled={!weddingId || busy} className={cn('press w-full card p-4 flex items-center gap-3.5 text-left', (!weddingId || busy) && 'opacity-40')}>
-              <Tile icon={r.icon} tile={r.tile} size={46} />
-              <div className="flex-1">
-                <b className="text-[14px]">{r.name}</b>
-                <p className="text-[10.5px] text-[var(--soft)] mt-0.5 leading-snug">{r.desc}</p>
-              </div>
-              <ChevronRight size={16} className="text-[var(--soft)]" />
-            </button>
-          ))}
-        </div>
+        {/* Пригласить — только паре (D1-25): помощнику и координатору сервер
+            отвечает 403, а кнопка, за которой заведомо отказ, — кнопка без
+            действия. Роль неизвестна — блока нет. */}
+        {iAmCouple && <>
+          <div className="flex justify-between items-baseline px-1 mt-2">
+            <h2 className="font-serif-d text-[18px]">{t('Пригласить')}</h2>
+          </div>
+          <div className="space-y-2.5">
+            {ROLES.map(r => (
+              <button key={r.id} onClick={() => void openInvite(r)} disabled={!weddingId || busy} className={cn('press w-full card p-4 flex items-center gap-3.5 text-left', (!weddingId || busy) && 'opacity-40')}>
+                <Tile icon={r.icon} tile={r.tile} size={46} />
+                <div className="flex-1">
+                  <b className="text-[14px]">{r.name}</b>
+                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5 leading-snug">{r.desc}</p>
+                </div>
+                <ChevronRight size={16} className="text-[var(--soft)]" />
+              </button>
+            ))}
+          </div>
+        </>}
 
         {/* Активные приглашения */}
         <div className="flex justify-between items-baseline px-1 mt-2">
@@ -198,20 +292,23 @@ export function Team() {
             <div key={iv.code ?? k} className={cn('flex items-center gap-3 py-3.5 fade-up', k !== invites.length - 1 && 'border-b border-[var(--track)]')}>
               <Link2 size={15} className="text-[var(--sage-deep)] shrink-0" />
               <div className="flex-1 min-w-0">
-                <b className="text-[12.5px] tabular">{iv.code}</b>
-                <p className="text-[10px] text-[var(--soft)]">{ROLE_NAME[iv.role ?? ''] ?? iv.role} · {daysLeft(iv.expiresAt)}</p>
+                {/* Код сервер отдаёт только паре; остальным — роль и срок. */}
+                <b className="text-[12.5px] tabular">{iv.code ?? (ROLE_NAME[iv.role ?? ''] ?? iv.role)}</b>
+                <p className="text-[10px] text-[var(--soft)]">{iv.code ? `${ROLE_NAME[iv.role ?? ''] ?? iv.role} · ` : ''}{daysLeft(iv.expiresAt, openedAt)}</p>
               </div>
-              <button onClick={() => copy(iv.url ?? inviteUrl(iv.code ?? ''))} className="press text-[10.5px] font-bold text-[var(--sage-deep)]">{copied ? '✓' : t('Копия')}</button>
-              <button onClick={() => void revoke(iv.code)} className="press text-[var(--soft)]" aria-label={t('Отозвать ссылку')}><X size={14} /></button>
+              {/* Копировать и отзывать может только тот, кому сервер отдал код. */}
+              {iAmCouple && !!iv.code && <>
+                <button onClick={() => copy(iv.url ?? inviteUrl(iv.code ?? ''))} className="press text-[10.5px] font-bold text-[var(--sage-deep)]">{copied ? '✓' : t('Копия')}</button>
+                <button onClick={() => void revoke(iv.code)} className="press text-[var(--soft)]" aria-label={t('Отозвать ссылку')}><X size={14} /></button>
+              </>}
             </div>
           ))}
         </div>
 
         <div className="card-s px-4 py-3 flex gap-2.5">
           <Shield size={15} className="text-[var(--sage-deep)] shrink-0 mt-0.5" />
-          {/* Отзыв гасит ссылку, а не участника: пути «убрать из команды» в
-              контракте нет (RELEASE-BLOCKERS), и обещать «потеряет доступ»
-              тому, кто уже вошёл, нельзя. */}
+          {/* Отзыв гасит ссылку, а не участника: того, кто уже вошёл, пара
+              убирает крестиком в строке участника (D1-14). */}
           <p className="text-[11px] text-[var(--ink2)] leading-relaxed"><b>{t('Безопасность:')}</b> {t('каждая ссылка одноразовая и живёт 7 дней. Отозвать можно в один тап — ссылка перестанет открываться.')}</p>
         </div>
       </div>
@@ -303,8 +400,16 @@ export function Join() {
       if (id) setWeddingId(id)
       setJoined(true)
     } catch (e) {
+      /* Без входа принять нельзя — ведём на вход, а код запоминаем (D1-21):
+         после согласия экран входа вернёт сюда. Раньше здесь был только
+         текст «Сначала войдите», без перехода и без памяти о коде. */
+      if (e instanceof ApiError && e.status === 401) {
+        try { sessionStorage.setItem(JOIN_CODE_KEY, code) } catch { /* приватный режим — вернётся по ссылке */ }
+        nav('/auth')
+        return
+      }
       setErr(e instanceof ApiError
-        ? (e.status === 401 ? t('Сначала войдите — код придёт по SMS') : e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
+        ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
         : t('Что-то пошло не так'))
     } finally { setBusy(false) }
   }

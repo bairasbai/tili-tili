@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
 
@@ -153,8 +153,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
               type: 'object',
               additionalProperties: false,
               properties: {
-                from: { type: 'string', pattern: '^[0-2][0-9]:[0-5][0-9]$' },
-                to: { type: 'string', pattern: '^[0-2][0-9]:[0-5][0-9]$' },
+                /* Часы 00–23, а не любые две цифры: «25:00» проходило схему и
+                 * падало уже в базе на приведении к `time` — 500 вместо 422
+                 * (R-111: формат проверяется до базы). */
+                from: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
+                to: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
               },
             },
           },
@@ -296,12 +299,19 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { sessionId } = request.params as { sessionId: string }
+      /* Свою текущую сессию этим путём не завершить: экран устройств
+       * обещает «свою нельзя», а кнопка «выйти» — отдельная. Иначе человек
+       * гасил бы сам себя со списка и получал 401 на следующем же запросе. */
+      if (sessionId === request.caller!.sessionId) {
+        throw conflict('current_session', 'Это текущее устройство — чтобы выйти с него, нажмите «Выйти»')
+      }
       // Условие по user_id обязательно: без него по чужому идентификатору
-      // сессии можно выкинуть постороннего человека.
-      const res = await db().query('update sessions set revoked_at = now() where id = $1 and user_id = $2', [
-        sessionId,
-        request.caller!.userId,
-      ])
+      // сессии можно выкинуть постороннего человека. Уже погашенная — 404,
+      // а не 204 с перезаписью `revoked_at`.
+      const res = await db().query(
+        'update sessions set revoked_at = now() where id = $1 and user_id = $2 and revoked_at is null',
+        [sessionId, request.caller!.userId],
+      )
       if (res.rowCount === 0) throw notFound('Сессия не найдена')
       return reply.code(204).send()
     },
@@ -325,58 +335,109 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
      * лично к нему. НЕ отдаём чужие персональные данные, которые он видит
      * по роли: гостевые токены, тексты чужих сообщений, отзывы других людей.
      * Право на свои данные — не право на данные всех, кто рядом.
+     *
+     * Архивные (отменённые) свадьбы — тоже данные человека: до уборки они
+     * лежат в базе со всем содержимым, и «всё, что принадлежит пользователю»
+     * без них было бы неправдой.
      */
-    const { rows: weddings } = await db().query(
+    const { rows: weddingRows } = await db().query<{ id: string; role: string; budget_total: string | null }>(
       `select w.id, w.title, w.date::text as date, w.tz, w.style, w.venue,
               w.guests_planned, w.budget_total::text as budget_total, w.currency,
+              w.archived_at, w.cancelled_at,
               m.role, m.joined_at, c.name as city, c.region
          from wedding_members m
          join weddings w on w.id = m.wedding_id
          left join cities c on c.id = w.city_id
-        where m.user_id = $1 and w.archived_at is null
+        where m.user_id = $1
         order by m.joined_at`,
       [userId],
     )
-    const weddingIds = weddings.map((w) => (w as { id: string }).id)
+    /* Деньги — только по свадьбам, где человек в роли «пара». Помощник и
+     * координатор не видят сумм НИГДЕ (§6, матрица доступа закрывает им
+     * бюджет, сделки и вишлист) — выгрузка не должна становиться обходом:
+     * до 2026-09-11 помощник получал цены всех сделок, платежи и статьи
+     * бюджета одним GET (тот же класс, что ERR-0026/ERR-0175). */
+    const weddings = weddingRows.map(({ budget_total, ...rest }) =>
+      rest.role === 'couple' ? { ...rest, budget_total } : rest,
+    )
+    const coupleIds = weddings.filter((w) => w.role === 'couple').map((w) => w.id)
+    const otherIds = weddings.filter((w) => w.role !== 'couple').map((w) => w.id)
 
     // Дальше — по свадьбам, где человек состоит. Пустой список свадеб
     // означает пустые выборки, а не выгрузку всей базы.
-    const byWeddings = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> => {
-      if (weddingIds.length === 0) return []
-      const { rows } = await db().query<T>(sql, [weddingIds])
+    const byWeddings = async <T extends Record<string, unknown>>(ids: string[], sql: string): Promise<T[]> => {
+      if (ids.length === 0) return []
+      const { rows } = await db().query<T>(sql, [ids])
       return rows
     }
+    const allIds = [...coupleIds, ...otherIds]
 
     const guests = await byWeddings(
+      allIds,
       `select wedding_id, name, phone, rsvp, plus_one, group_name, diet, diet_note,
               transfer, comment, created_at
          from guests where wedding_id = any($1) order by created_at`,
     )
-    const deals = await byWeddings(
-      `select d.wedding_id, s.label as slot, d.state, d.price::text as price, d.currency,
-              coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at
-         from deals d
-         join slots s on s.id = d.slot_id
-         left join vendors v on v.id = d.vendor_id
-        where d.wedding_id = any($1) order by d.created_at`,
-    )
+    const deals = [
+      ...(await byWeddings(
+        coupleIds,
+        `select d.wedding_id, s.label as slot, d.state, d.price::text as price, d.currency,
+                coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at
+           from deals d
+           join slots s on s.id = d.slot_id
+           left join vendors v on v.id = d.vendor_id
+          where d.wedding_id = any($1) order by d.created_at`,
+      )),
+      ...(await byWeddings(
+        otherIds,
+        `select d.wedding_id, s.label as slot, d.state,
+                coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at
+           from deals d
+           join slots s on s.id = d.slot_id
+           left join vendors v on v.id = d.vendor_id
+          where d.wedding_id = any($1) order by d.created_at`,
+      )),
+    ]
     const payments = await byWeddings(
+      coupleIds,
       `select p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.created_at
          from payments p join deals d on d.id = p.deal_id
         where d.wedding_id = any($1) order by p.created_at`,
     )
     const budget = await byWeddings(
+      coupleIds,
       `select wedding_id, title, category_id, amount::text as amount, currency, created_at
          from budget_items where wedding_id = any($1) order by created_at`,
     )
-    const gifts = await byWeddings(
-      `select wedding_id, name, descr, price::text as price, currency, is_group,
-              funded::text as funded, created_at
-         from gifts where wedding_id = any($1) order by created_at`,
-    )
+    const gifts = [
+      ...(await byWeddings(
+        coupleIds,
+        `select wedding_id, name, descr, price::text as price, currency, is_group,
+                funded::text as funded, created_at
+           from gifts where wedding_id = any($1) order by created_at`,
+      )),
+      ...(await byWeddings(
+        otherIds,
+        `select wedding_id, name, descr, is_group, created_at
+           from gifts where wedding_id = any($1) order by created_at`,
+      )),
+    ]
     const tasks = await byWeddings(
+      allIds,
       `select wedding_id, title, period, due::text as due, done_at, source
          from tasks where wedding_id = any($1) order by sort`,
+    )
+    // Приглашения в команду, которые выдал он сам. Кто принял — чужой идентификатор, его нет.
+    const { rows: invites } = await db().query(
+      `select code, wedding_id, role, label, created_at, expires_at, accepted_at, revoked_at
+         from invites where created_by = $1 order by created_at`,
+      [userId],
+    )
+    // Записи журнала сделок, где действовал он: смены статуса и суммы его рукой.
+    const { rows: dealEvents } = await db().query(
+      `select deal_id, from_state, to_state, kind, note, at
+         from deal_events where actor_id = $1 order by at`,
+      [userId],
     )
 
     // Личное, не зависящее от свадьбы.
@@ -390,11 +451,69 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       `select chat_id, text, created_at from messages where sender_id = $1 order by created_at`,
       [userId],
     )
-    const { rows: vendor } = await db().query(
-      `select v.name, v.about, v.category_id, v.price_from::text as price_from, v.currency,
-              v.years, v.published_at, v.verified_at, v.rating::text as rating, v.reviews_count
-         from vendors v where v.user_id = $1`,
+    const { rows: favorites } = await db().query(
+      'select vendor_id, created_at from favorites where user_id = $1 order by created_at',
       [userId],
+    )
+    const { rows: inspirationLikes } = await db().query(
+      'select story_id, created_at from inspiration_likes where user_id = $1 order by created_at',
+      [userId],
+    )
+    // Адрес подписки — его устройство; ключи шифрования канала — нет: это не сведения о человеке, а секрет доставки.
+    const { rows: pushSubscriptions } = await db().query(
+      'select endpoint from push_subscriptions where user_id = $1 order by created_at',
+      [userId],
+    )
+    const { rows: conciergeRequests } = await db().query(
+      `select r.category_id, c.name as city, r.budget::text as budget, r.currency, r.comment, r.status, r.created_at
+         from concierge_requests r left join cities c on c.id = r.city_id
+        where r.user_id = $1 order by r.created_at`,
+      [userId],
+    )
+    // Жалобы, которые подал он. Внутренняя пометка модератора — не его данные.
+    const { rows: complaints } = await db().query(
+      `select target_kind, target_id, category, text, status, resolution, created_at, resolved_at
+         from complaints where reporter_id = $1 order by created_at`,
+      [userId],
+    )
+    const { rows: referral } = await db().query(
+      'select code, created_at from referrals where owner_id = $1',
+      [userId],
+    )
+    // Чужой код, который применил он сам. Кто пришёл по ЕГО коду — чужие люди, их здесь нет.
+    const { rows: referralUses } = await db().query(
+      `select code, applied_at, earned::text as earned, currency
+         from referral_uses where invited_id = $1 order by applied_at`,
+      [userId],
+    )
+
+    /* Анкета подрядчика — целиком, включая контакты и фото: это он сам её
+     * заполнил. Документы верификации — без ссылки на файл: скан паспорта
+     * лежит в хранилище по служебному адресу, и выдавать адрес наружу
+     * значило бы раздать ключ от него. */
+    const { rows: vendor } = await db().query<{ id: string }>(
+      `select v.id, v.name, v.about, v.category_id, c.name as city, c.region, v.phone, v.photo_url,
+              v.price_from::text as price_from, v.currency, v.years,
+              v.published_at, v.verified_at, v.rating::text as rating, v.reviews_count, v.created_at
+         from vendors v left join cities c on c.id = v.city_id where v.user_id = $1`,
+      [userId],
+    )
+    const vendorId = vendor[0]?.id ?? null
+    const byVendor = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> => {
+      if (!vendorId) return []
+      const { rows } = await db().query<T>(sql, [vendorId])
+      return rows
+    }
+    const vendorVerifications = await byVendor(
+      'select kind, inn, status, checked_at, created_at from vendor_verifications where vendor_id = $1 order by created_at',
+    )
+    const vendorPackages = await byVendor(
+      'select name, price::text as price, currency, items from vendor_packages where vendor_id = $1 order by sort',
+    )
+    const vendorMedia = await byVendor('select kind, url, duration_s from vendor_media where vendor_id = $1 order by sort')
+    // Только отмеченные им самим дни: занятость по сделкам — производная от сделок пары.
+    const vendorBusyDates = await byVendor(
+      `select date::text as date from vendor_busy_dates where vendor_id = $1 and source <> 'deal' order by date`,
     )
     // Отзывы, написанные им как парой. Отзывы гостей о нём — чужие.
     const { rows: reviews } = await db().query(
@@ -418,9 +537,22 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       budget,
       gifts,
       tasks,
+      invites,
+      dealEvents,
       notifications,
       messages,
+      favorites,
+      inspirationLikes,
+      pushSubscriptions,
+      conciergeRequests,
+      complaints,
+      referral: referral[0] ?? null,
+      referralUses,
       vendorProfile: vendor[0] ?? null,
+      vendorVerifications,
+      vendorPackages,
+      vendorMedia,
+      vendorBusyDates,
       reviews,
     }
   })

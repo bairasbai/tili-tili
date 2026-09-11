@@ -458,8 +458,16 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     /* Ни сообщение, ни сделку сервер не блокирует и не понижает. Приняв
      * такое решение, он закрыл бы жалобу вообще без санкции: `resolution`
      * записан, а не сделано ничего. */
+    /* Жалоба заводится прямо в базе: с 2026-09-11 `POST /complaints` проверяет,
+     * что цель существует (D5-21), а этот тест — про решение модератора, не
+     * про подачу. */
     const messageId = uuidv7()
-    const onMessage = await complain(reporter, 'message', messageId, 'spam')
+    const onMessage = uuidv7()
+    await app.db!.query(
+      `insert into complaints (id, reporter_id, target_kind, target_id, category, text)
+       values ($1, $2, 'message', $3, 'spam', $4)`,
+      [onMessage, reporter.userId, messageId, `жалоба ${RUN}`],
+    )
     for (const action of ['block', 'downrank']) {
       const denied = await decideComplaint(staff.token, onMessage, { action })
       expect({ action, code: denied.statusCode }).toEqual({ action, code: 422 })

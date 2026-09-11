@@ -3,12 +3,13 @@ import { useNavigate, useParams } from 'react-router'
 import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
 import { fmt } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
-import { getAvailability, getCategories, getVendors, getVendor } from '@/lib/api/catalog'
+import { getAvailability, getCategories, getVendors, getVendor, reviewsPendingRating, type Vendor, type VendorFilters } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getVendorReviews } from '@/lib/api/reviews'
+import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
 import { cn, copyText, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
@@ -110,7 +111,7 @@ export function VendorList() {
    * страницу из тридцати записей значит показывать «топ» из случайной
    * тридцатки, а не из полутора тысяч.
    */
-  const list = useApi(() => getVendors({
+  const filters: VendorFilters = {
     categoryId: catId,
     city,
     date: filter === 'free' ? weddingDate : null,
@@ -119,13 +120,56 @@ export function VendorList() {
     priceMax: filter === 'budget' ? 10_000_000 : undefined,
     sort: filter === 'budget' ? 'price_asc' : 'rating',
     limit: 30,
-  }), [catId, city, weddingDate, filter])
+  }
+  const list = useApi(() => getVendors(filters), [catId, city, weddingDate, filter])
 
-  const shown = list.data?.items ?? []
+  /*
+   * Страницы после первой.
+   *
+   * Сервер отдаёт тридцать анкет и `nextCursor`; раньше курсор не читался, и
+   * категория из двух тысяч анкет заканчивалась на тридцатой без единого
+   * слова об этом (ревью D5-05). Дочитанные страницы привязаны к ключу
+   * запроса: сменился фильтр или город — первая страница едет заново, а
+   * хвост прошлого запроса к ней не пришивается.
+   */
+  const pageKey = [catId, city, weddingDate ?? '', filter].join('|')
+  const [more, setMore] = useState<{ key: string; items: Vendor[]; next: string | null }>({ key: '', items: [], next: null })
+  const [moreBusy, setMoreBusy] = useState(false)
+  const [moreErr, setMoreErr] = useState<string | null>(null)
+  const tail = more.key === pageKey ? more : null
+  const nextCursor = tail ? tail.next : (list.data?.nextCursor ?? null)
+  const shown = [...(list.data?.items ?? []), ...(tail?.items ?? [])]
+
+  const loadMore = async () => {
+    if (!nextCursor || moreBusy) return
+    setMoreBusy(true)
+    setMoreErr(null)
+    try {
+      const page = await getVendors({ ...filters, cursor: nextCursor })
+      setMore(m => ({
+        key: pageKey,
+        items: [...(m.key === pageKey ? m.items : []), ...(page?.items ?? [])],
+        next: page?.nextCursor ?? null,
+      }))
+    } catch (e) {
+      setMoreErr(explainError(e))
+    } finally {
+      setMoreBusy(false)
+    }
+  }
+
+  /* Подпись — по фактическому параметру запроса, а не «рекомендованные»:
+     уходит `sort=rating`, для чипа «до 100 тыс» — `price_asc`. Число «рядом»
+     называется только когда список дочитан до конца; пока есть курсор, это
+     размер страницы, а не число подрядчиков. */
+  const sortLabel = filter === 'budget' ? t('сначала дешевле') : t('по рейтингу')
+  const sub = ready(list)
+    ? `${nextCursor ? `${t('первые')} ${shown.length}` : `${shown.length} ${t('рядом')}`} · ${t('сортировка:')} ${sortLabel}`
+    : undefined
 
   return (
     <div className="pb-28">
-      <TopBar back title={cat?.title ?? t('Категория')} sub={ready(list) ? `${shown.length}${t(' рядом · сортировка: рекомендованные')}` : undefined} right={
+      <TopBar back title={cat?.title ?? t('Категория')} sub={sub} right={
         <button onClick={() => setShowFilters(s => !s)} className={cn('press w-10 h-10 rounded-full flex items-center justify-center', showFilters ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Фильтры')}>
           <SlidersHorizontal size={16} />
         </button>
@@ -163,6 +207,15 @@ export function VendorList() {
             freeOnDate={filter === 'free' && !!weddingDate}
             onOpen={() => nav(`/vendor/${v.id}`)} />
         ))}
+        {/* Кнопка стоит, пока сервер отдаёт курсор: без него список дочитан. */}
+        {ready(list) && nextCursor && (
+          <div className="text-center pt-1">
+            {moreErr && <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed mb-2">{moreErr}</p>}
+            <button disabled={moreBusy} onClick={() => void loadMore()} className="press px-6 h-[44px] rounded-full card-s text-[12.5px] font-semibold disabled:opacity-50">
+              {moreBusy ? t('Загружаем ещё…') : t('Показать ещё')}
+            </button>
+          </div>
+        )}
         {!list.loading && !list.error && !cats.error && shown.length === 0 && (
           <div className="text-center py-10 fade-up">
             <b className="text-[14px]">{t('Под фильтр никто не подходит')}</b>
@@ -182,6 +235,7 @@ export function VendorDetail() {
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [chatBusy, setChatBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const detail = useApi(() => id ? getVendor(id) : Promise.resolve(null), [id])
@@ -206,7 +260,36 @@ export function VendorDetail() {
   const freeOnDate = availKnown && !!weddingDate && !busyDates.includes(weddingDate)
   /* Отзывы — публичная лента этого подрядчика, а не общая заготовка. */
   const reviews = useApi(() => id ? getVendorReviews(id) : Promise.resolve(null), [id])
-  const reviewItems = reviews.data?.items ?? []
+  /*
+   * Страницы отзывов после первой. Лента отдаётся по десять с курсором;
+   * раньше курсор не читался, и «47 отзывов» в шапке кончались на десятом
+   * без кнопки «ещё» (ревью D5-26а). Хвост привязан к анкете: открыли другую
+   * — он не пришивается к её первой странице.
+   */
+  const [moreReviews, setMoreReviews] = useState<{ vendorId: string; items: components['schemas']['Review'][]; next: string | null }>({ vendorId: '', items: [], next: null })
+  const [reviewsBusy, setReviewsBusy] = useState(false)
+  const [reviewsErr, setReviewsErr] = useState<string | null>(null)
+  const reviewsTail = moreReviews.vendorId === id ? moreReviews : null
+  const reviewsCursor = reviewsTail ? reviewsTail.next : (reviews.data?.nextCursor ?? null)
+  const reviewItems = [...(reviews.data?.items ?? []), ...(reviewsTail?.items ?? [])]
+
+  const loadMoreReviews = async () => {
+    if (!id || !reviewsCursor || reviewsBusy) return
+    setReviewsBusy(true)
+    setReviewsErr(null)
+    try {
+      const page = await getVendorReviews(id, 10, reviewsCursor)
+      setMoreReviews(m => ({
+        vendorId: id,
+        items: [...(m.vendorId === id ? m.items : []), ...(page?.items ?? [])],
+        next: page?.nextCursor ?? null,
+      }))
+    } catch (e) {
+      setReviewsErr(explainError(e))
+    } finally {
+      setReviewsBusy(false)
+    }
+  }
 
   const similar = useApi(
     () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, limit: 6 }) : Promise.resolve({ items: [] }),
@@ -244,6 +327,19 @@ export function VendorDetail() {
       setErr(explainError(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const openChat = async () => {
+    if (!v?.id) return
+    setErr(null)
+    setChatBusy(true)
+    try {
+      nav(await chatRouteForVendor(v.id))
+    } catch (e) {
+      setErr(explainError(e))
+    } finally {
+      setChatBusy(false)
     }
   }
 
@@ -316,7 +412,14 @@ export function VendorDetail() {
               {/* Город — из анкеты; «+ 100 км» стояло константой у всех: радиуса
                   выезда сервер не знает, а каталог ищет по точному городу. */}
               <MapPin size={12} /> {v.city ?? t(city)}
-              {(v.reviewsCount ?? 0) > 0 ? <span>· ★ {v.rating} · {v.reviewsCount} {t('отзывов')}</span> : <span>{t('· Новый на платформе')}</span>}
+              {/* Ветка — по самой оценке: сервер прячет её до третьего отзыва,
+                  и у анкеты с двумя отзывами здесь стояла пустая звезда и
+                  «2 отзывов» (ревью D5-02). */}
+              {v.rating != null
+                ? <span>· ★ {v.rating}{v.reviewsCount != null ? ` · ${v.reviewsCount} ${plural(v.reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))}` : ''}</span>
+                : (v.reviewsCount ?? 0) > 0
+                  ? <span>· {reviewsPendingRating(v.reviewsCount ?? 0)}</span>
+                  : <span>{t('· Новый на платформе')}</span>}
             </p>
           </div>
           {freeOnDate && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] whitespace-nowrap">{t('● Свободен на вашу дату')}</span>}
@@ -368,7 +471,9 @@ export function VendorDetail() {
               этот экран.
             */}
             <p>✓ {t('Паспорт / ИП сверены модератором')}</p>
-            <p>✓ {t('Отзывы — только от пар после реальной сделки')}</p>
+            {/* Ниже на этом же экране сервер отдаёт отзывы с бейджем «Гость
+                свадьбы» (§15): «только от пар» было неправдой (ревью D5-18). */}
+            <p>✓ {t('Отзывы пар — только после сделки; отзывы гостей отмечены отдельно')}</p>
             <p>✓ {t('Договор из шаблона: предмет, сроки и стоимость письменно')}</p>
             <p>✓ {t('Отменил в последний момент — каталог сразу покажет свободных на вашу дату')}</p>
           </div>
@@ -473,6 +578,15 @@ export function VendorDetail() {
             </div>
           ))}
         </div>
+        {/* Пока сервер отдаёт курсор, лента не дочитана — кнопка стоит. */}
+        {ready(reviews) && reviewsCursor && (
+          <div className="text-center mt-3">
+            {reviewsErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mb-2">{reviewsErr}</p>}
+            <button disabled={reviewsBusy} onClick={() => void loadMoreReviews()} className="press px-5 h-[40px] rounded-full card-s text-[12px] font-semibold disabled:opacity-50">
+              {reviewsBusy ? t('Загружаем ещё…') : t('Показать ещё отзывы')}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Похожие */}
@@ -500,8 +614,10 @@ export function VendorDetail() {
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
         {/* Раньше кнопка вела на выдуманный чат `ch1` — один и тот же у всех
             подрядчиков. Теперь переписка создаётся на сервере и открывается
-            своя. */}
-        <button onClick={() => void (async () => nav(await chatRouteForVendor(v.id)))()} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px]" style={{ boxShadow: 'var(--shadow)' }}>{t('Написать')}</button>
+            своя. Создание — запрос (`POST /chats/vendor/{id}`), и отказ на
+            нём показывается словами: плавающий промис без catch молча не
+            делал ничего при 401/403/429 и обрыве сети (ревью D5-15). */}
+        <button disabled={chatBusy} onClick={openChat} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: 'var(--shadow)' }}>{chatBusy ? t('Открываем чат…') : t('Написать')}</button>
         <button onClick={add} disabled={busy || added} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
         </button>

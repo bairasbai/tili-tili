@@ -12,15 +12,32 @@
        *
        * Скрипт стоит первым в head: до него не должно быть ни одной загрузки.
        * Список сегментов обязан покрывать первые сегменты всех роутов App.tsx —
-       * это закреплено тестом src/lib/deeplink.test.ts, иначе он молча разъедется.
+       * это закреплено тестом src/lib/shell.test.tsx, иначе он молча разъедется.
+       *
+       * Редирект — только на свой origin (ревью D6-06). Путь `//evil.com/auth`
+       * давал корень `//evil.com/`, а это схема-относительный адрес: браузер
+       * уходил на https://evil.com/ — открытый редирект с домена приложения,
+       * готовый для фишинга «войдите заново, введите код из SMS». Поэтому
+       * ведущие слеши схлопываются до одного, путь с `//` внутри не трогается
+       * вовсе, а адрес собирается от `location.origin`. Сама логика — функция
+       * без побочных эффектов: тест src/lib/audit27.test.tsx выполняет её
+       * строкой из этого файла.
        */
       (function () {
         var SEGMENTS = ['quiz', 'invite', 'i', 'auth', 'join', 'home', 'notifications', 'settings', 'support', 'search', 'legal', 'vendor-app', 'vendor', 'compare', 'favorites', 'notes', 'tools', 'wedding', 'gifts', 'deal', 'assistant', 'dayx', 'after', 'us', 'inspiration', 'venues', 'admin']
+        /* Корень приложения для пути или null, если уводить не надо. */
+        function appRootFor(pathname) {
+          var p = pathname.replace(/^[\/\\]+/, '/')
+          if (p.indexOf('//') !== -1 || p.indexOf('\\') !== -1) return null
+          if (p === '/' || /\/$/.test(p) || p === '/index.html' || /\.[a-z0-9]+$/i.test(p)) return null
+          var m = p.match(new RegExp('^(.*?)\\/(' + SEGMENTS.join('|') + ')(\\/|$)'))
+          return m && m[1] ? m[1] + '/' : '/'
+        }
         var p = window.location.pathname
-        if (p === '/' || /\/$/.test(p) || p === '/index.html' || /\.[a-z0-9]+$/i.test(p)) return
+        var root = appRootFor(p)
+        if (root === null) return
         try { sessionStorage.setItem('tt_redirect', p + window.location.search + window.location.hash) } catch (e) { /* приватный режим */ }
-        var m = p.match(new RegExp('^(.*?)\\/(' + SEGMENTS.join('|') + ')(\\/|$)'))
-        window.location.replace(m && m[1] ? m[1] + '/' : '/')
+        window.location.replace(window.location.origin + root)
       })()
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />

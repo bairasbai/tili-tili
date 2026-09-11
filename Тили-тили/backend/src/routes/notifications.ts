@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { uuidv7, isUuid } from '../ids.js'
 
 export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -39,7 +39,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/notifications/:id/read', { preHandler: app.requireConsent }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound('Уведомление не найдено')
+    if (!isUuid(id)) throw notFound('Уведомление не найдено')
     // Повторная отметка не двигает время: «когда прочитал» — это первый раз.
     const res = await db().query(
       'update notifications set read_at = coalesce(read_at, now()) where id = $1 and user_id = $2',
@@ -100,10 +100,34 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  app.delete('/users/me/push-subscriptions', { preHandler: app.requireConsent }, async (request, reply) => {
-    // Отписка работает всегда, даже когда подписка невозможна: «выключить»
-    // не должно упираться в то, что «включить» пока нельзя.
-    await db().query('delete from push_subscriptions where user_id = $1', [request.caller!.userId])
-    return reply.code(204).send()
-  })
+  app.delete(
+    '/users/me/push-subscriptions',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { endpoint: { type: 'string', minLength: 1, maxLength: 2048 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      /* Отписка работает всегда, даже когда подписка невозможна: «выключить»
+       * не должно упираться в то, что «включить» пока нельзя.
+       *
+       * С `endpoint` снимается одна подписка — этого устройства: тумблер
+       * «Push на этом устройстве» иначе выключал push и на ноутбуке, а тумблер
+       * там продолжал гореть (D4-10, R-180). Адрес подписки знает только само
+       * устройство, поэтому чужую по нему не снять; условие по `user_id`
+       * остаётся — общий телефон мог перепривязать endpoint другому. Без
+       * параметра — все подписки человека, как при выходе отовсюду. */
+      const { endpoint } = request.query as { endpoint?: string }
+      await db().query(
+        'delete from push_subscriptions where user_id = $1 and ($2::text is null or endpoint = $2)',
+        [request.caller!.userId, endpoint ?? null],
+      )
+      return reply.code(204).send()
+    },
+  )
 }

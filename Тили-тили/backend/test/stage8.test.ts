@@ -769,12 +769,28 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       headers: auth(w.token),
     })
     await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
-    await book(w, vendor.vendorId)
+    const dealId = await book(w, vendor.vendorId)
+
+    /* «Доход» — поступившие платежи, а не цены броней: бронь без рубля доходом
+     * не была (D5-08, ERR-0222). До 2026-09-11 тест закреплял 50 000 ₽ по
+     * сделке без единого платежа. */
+    const before = await app.inject({ method: 'GET', url: '/vendor/analytics', headers: auth(vendor.token) })
+    expect(before.statusCode).toBe(200)
+    expect(before.json().revenue).toEqual({ amount: 0, currency: 'RUB' })
+
+    const { rows: slot } = await app.db!.query<{ slot_id: string }>('select slot_id from deals where id = $1', [dealId])
+    const paid = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/slots/${slot[0]!.slot_id}/pay`,
+      headers: { ...auth(w.token), ...key() },
+      payload: { amount: { amount: 2_000_000, currency: 'RUB' } },
+    })
+    expect(paid.statusCode).toBe(200)
 
     const stats = await app.inject({ method: 'GET', url: '/vendor/analytics', headers: auth(vendor.token) })
     expect(stats.statusCode).toBe(200)
     expect(stats.json().funnel).toMatchObject({ views: 1, contacts: 1, leads: 1, deals: 1 })
-    expect(stats.json().revenue).toEqual({ amount: 5_000_000, currency: 'RUB' })
+    expect(stats.json().revenue).toEqual({ amount: 2_000_000, currency: 'RUB' })
     // Прошлого периода не было — процент не определён, а не «плюс сто».
     expect(stats.json().revenueDeltaPct).toBeNull()
   })

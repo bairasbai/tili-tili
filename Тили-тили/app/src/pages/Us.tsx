@@ -7,9 +7,10 @@ import { useStore } from '@/lib/store'
 import { cn, copyText, goBack } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
 import { explainError, useApi } from '@/lib/api/useApi'
+import { api, ApiError, url } from '@/lib/api/client'
 import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '@/lib/api/chats'
 import { getWedding } from '@/lib/api/weddingData'
-import { getMe, getReferral } from '@/lib/api/auth'
+import { applyReferralCode, getMe, getReferral, signOutEverywhere } from '@/lib/api/auth'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -26,6 +27,35 @@ export function Us() {
   const [datePicker, setDatePicker] = useState(false)
   /* Реферальный код — свой, а не написанный в разметке. */
   const ref = useApi(() => getReferral(), [])
+  /*
+   * Чужой код (ревью D1-22). Экран показывал свой код и «приглашено: 0», а
+   * ввести код, по которому пришёл, было негде — `POST /referral/{code}/apply`
+   * не звал никто, и счётчик у всех навсегда оставался нулём.
+   */
+  const [refCode, setRefCode] = useState<string | null>(null)
+  const [refBusy, setRefBusy] = useState(false)
+  const [refDone, setRefDone] = useState(false)
+  const [refErr, setRefErr] = useState<string | null>(null)
+  const applyCode = async () => {
+    const code = (refCode ?? '').trim().toUpperCase()
+    if (!code || refBusy) return
+    setRefBusy(true); setRefErr(null)
+    try {
+      await applyReferralCode(code)
+      setRefDone(true)
+      setRefCode(null)
+      ref.reload()
+    } catch (e) { setRefErr(explainError(e)) } finally { setRefBusy(false) }
+  }
+  /* Выход — тот же, что «Выйти со всех устройств» в настройках (D1-20/D4-05):
+     кнопка была `nav('/auth')` без единого запроса и без очистки устройства. */
+  const [leaving, setLeaving] = useState(false)
+  const signOut = async () => {
+    if (leaving) return
+    setLeaving(true)
+    await signOutEverywhere()
+    nav('/auth')
+  }
   /* Признак сотрудника приходит в своём профиле. Пробный запрос в саму панель
      сюда не годится: код `forbidden` не отличает «не сотрудник» от «нет
      согласия», и меню ходило бы в админку при каждом открытии экрана. */
@@ -46,7 +76,7 @@ export function Us() {
               и не менялись ни у кого. */}
           <div className="flex justify-center -space-x-3.5">
             {(wedding?.title ?? '').split(/[&♥+]/).slice(0, 2).map((part, i) => (
-              <div key={i} className={cn('w-16 h-16 rounded-full text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white', i === 0 ? 'bg-[#C98A8A]' : 'bg-[#A9BCA0]')}>
+              <div key={i} className={cn('w-16 h-16 rounded-full text-[var(--on-grad)] font-serif-d text-[26px] flex items-center justify-center border-4 border-white', i === 0 ? 'bg-[var(--rose)]' : 'bg-[var(--sage)]')}>
                 {part.trim()[0] ?? '·'}
               </div>
             ))}
@@ -71,8 +101,9 @@ export function Us() {
           <span className="text-[10px] tracking-[.18em] uppercase text-[var(--rose-deep)] font-semibold relative">{t('Реферальная программа')}</span>
           {/* «3 000 ₽ на премиум-функции» обещало начисление, которого нет
               (`/referral/{code}/apply` только записывает, кто кого привёл), и
-              функции, которых нет: приложение бесплатно целиком. */}
-          <p className="text-[12px] text-[var(--ink2)] mt-2 leading-relaxed relative">{t('Пригласите пару по своему коду — мы увидим, что она пришла от вас. Бонусы за приглашения пока не начисляются: сейчас всё бесплатно.')}</p>
+              функции, которых нет: приложение бесплатно целиком. «Пока не
+              начисляются» тоже обещало — начисления в коде нет (R-174). */}
+          <p className="text-[12px] text-[var(--ink2)] mt-2 leading-relaxed relative">{t('Пригласите пару по своему коду: когда она введёт его здесь, счётчик вырастет. Бонусов за приглашения нет — приложение бесплатно.')}</p>
           {ready(ref) && ref.data?.code ? (
             <div className="flex items-center gap-2.5 mt-3.5 relative">
               <div className="flex-1 card-s px-4 py-3 flex items-center justify-between">
@@ -84,6 +115,19 @@ export function Us() {
           ) : (
             <p className="text-[11px] text-[var(--soft)] mt-3.5 relative">{t('Код появится, когда сервер его выдаст.')}</p>
           )}
+          {/* Чужой код: один раз на аккаунт, отказ — словами сервера (D1-22). */}
+          {refDone ? (
+            <p className="text-[11px] text-[var(--sage-deep)] mt-3 relative">{t('Код применён')}</p>
+          ) : refCode === null ? (
+            <button onClick={() => setRefCode('')} className="press text-[11.5px] font-semibold text-[var(--rose-deep)] mt-3 relative">{t('У меня есть код')}</button>
+          ) : (
+            <div className="flex items-center gap-2.5 mt-3 relative">
+              <input value={refCode} onChange={e => setRefCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && void applyCode()} autoFocus
+                placeholder="ТИЛИ-ИМЯ" className="flex-1 card-s px-4 py-3 text-[13px] tracking-[.12em] outline-none placeholder:text-[var(--soft2)]" />
+              <button onClick={() => void applyCode()} disabled={refBusy || !refCode.trim()} className="press h-[44px] px-5 rounded-full card-s text-[12px] font-semibold disabled:opacity-40">{refBusy ? t('Секунду…') : t('Применить')}</button>
+            </div>
+          )}
+          {refErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2 relative">{refErr}</p>}
         </div>
 
         <div className="card px-4 py-1.5 mt-4">
@@ -141,8 +185,8 @@ export function Us() {
           ))}
         </div>
 
-        <button onClick={() => nav('/auth')} className="press w-full card-s mt-4 py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2">
-          <LogOut size={15} /> {t('Выйти из аккаунта')}
+        <button onClick={() => void signOut()} disabled={leaving} className="press w-full card-s mt-4 py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50">
+          <LogOut size={15} /> {leaving ? t('Секунду…') : t('Выйти из аккаунта')}
         </button>
         <p className="text-center text-[10px] text-[var(--soft2)] mt-4">{t('Тили-тили v0.1 · MVP · сделано с любовью в Уфе')}</p>
       </div>
@@ -187,6 +231,10 @@ export function Chats() {
   }, [])
   const list = useApi(() => getChats(), [tick])
   const chats = list.data ?? []
+  /* «Сейчас» для сравнения со сроком открытия чата дня X — один раз при
+     монтировании, не в каждой отрисовке (D4-22). Список и так перечитывается
+     раз в полминуты, так что «откроется» сменится на реплику само. */
+  const [now] = useState(() => Date.now())
   const shown = chats.filter(c =>
     (c.title ?? '').toLowerCase().includes(q.toLowerCase()) ||
     (c.lastMessage ?? '').toLowerCase().includes(q.toLowerCase()))
@@ -214,7 +262,7 @@ export function Chats() {
               {/* Чат дня X до срока закрыт — вместо реплики говорим, когда он
                   откроется. Пустая строка читалась бы как «сообщений нет». */}
               <p className="text-[11.5px] text-[var(--soft)] truncate mt-0.5">
-                {c.kind === 'day' && c.openFrom && new Date(c.openFrom) > new Date()
+                {c.kind === 'day' && c.openFrom && new Date(c.openFrom).getTime() > now
                   ? `${t('Откроется')} ${new Date(c.openFrom).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}`
                   : c.lastMessage || t('Сообщений пока нет')}
               </p>
@@ -252,14 +300,42 @@ const CHAT_TILE: Record<string, string> = {
  * соединение, вкладка в фоне) — опрос раз в 30 секунд, штатный запасной путь
  * §13.4. Оба пути делают одно и то же: перечитывают хвост истории.
  */
+/**
+ * Предупреждение платформы о выводе сделки мимо договора — слово в слово как
+ * на сервере (`backend/src/chats/guard.ts`, PAYOUT_WARNING); совпадение
+ * закреплено тестом. Это единственная системная запись без автора: по тексту
+ * экран отличает её от реплики человека, чей аккаунт стёрт (ревью D4-15).
+ */
+export const PAYOUT_WARNING =
+  'Переводы вне договора не защищены: деньги идут мимо эскроу, и вернуть их при отмене нечем. ' +
+  'Договор формируется за две минуты в карточке сделки.'
+
+type MessagesPage = NonNullable<Awaited<ReturnType<typeof getMessages>>>
+type Message = NonNullable<MessagesPage['items']>[number]
+/** Страница старше курсора: та же выборка, что и хвост, но «до» указанной точки (D4-09). */
+const getMessagesBefore = (chatId: string, cursor: string) =>
+  api.get(`${url('/chats/{chatId}/messages', { chatId })}?cursor=${encodeURIComponent(cursor)}&limit=50` as '/chats/{chatId}/messages')
+
+/*
+ * Всё, что экран уже видел в этом чате, по идентификатору: хвост при каждом
+ * перечитывании и дочитанные страницы. Один общий склад, а не «хвост плюс
+ * старые страницы»: хвост — последние 50, и когда приходят новые реплики,
+ * прежние выпадают из него; без склада между хвостом и дочитанным появлялась
+ * бы дыра. `next`: `undefined` — ещё не листали, курсор берётся из хвоста;
+ * `null` — дочитано до начала. Привязано к чату, чтобы не пережить его смену.
+ */
+type History = { chatId: string; byId: Record<string, Message>; next: string | null | undefined }
+const NO_HISTORY: History = { chatId: '', byId: {}, next: undefined }
+
+/** Хронологический порядок: сервер отдаёт свежие первыми, в переписке последняя реплика внизу. */
+const bySentAt = (a: Message, b: Message) =>
+  (a.sentAt ?? '').localeCompare(b.sentAt ?? '') || (a.id ?? '').localeCompare(b.id ?? '')
+
 export function Chat() {
   const { id } = useParams()
   const nav = useNavigate()
   const chatId = id ?? ''
   const [tick, setTick] = useState(0)
-  /* Сколько последних сообщений показываем. Раньше история молча обрывалась
-     на пятидесяти: переписка длиннее выглядела так, будто началась с середины. */
-  const [limit, setLimit] = useState(50)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -271,13 +347,62 @@ export function Chat() {
      пустую переписку с работающим полем ввода. */
   const chat = (chats.data ?? []).find(c => c.id === chatId)
   const missing = !!chatId && ready(chats) && !chat
-  const q = useApi(() => chatId ? getMessages(chatId, limit) : Promise.resolve(null), [chatId, tick, limit])
-  /* Сервер отдаёт свежие первыми — так работает курсор «листать назад». В
-     переписке порядок обратный: последняя реплика внизу, как в любом чате. */
-  const messages = [...(q.data?.items ?? [])].reverse()
+  /*
+   * Хвост истории — последние 50. 423 здесь не отказ, а расписание: чат дня X
+   * до срока закрыт (D4-11). Раньше расписанием считалась ЛЮБАЯ ошибка
+   * истории у чата дня — и в день свадьбы при обрыве сети пара читала
+   * «откроется 13 июня 09:00» (прошедшую дату) вместо «нет связи».
+   */
+  const [historyState, setHistory] = useState<History>(NO_HISTORY)
+  const history = historyState.chatId === chatId ? historyState : NO_HISTORY
+  /** Положить страницу на склад; `next` меняется только у страниц, прочитанных курсором. */
+  const remember = (items: Message[], next?: string | null) => setHistory(prev => {
+    const base = prev.chatId === chatId ? prev : NO_HISTORY
+    const byId = { ...base.byId }
+    for (const m of items) if (m.id) byId[m.id] = m
+    return { chatId, byId, next: next === undefined ? base.next : next }
+  })
+  const q = useApi<MessagesPage | { locked: true } | null>(
+    () => chatId
+      ? getMessages(chatId)
+        .then(page => { remember(page?.items ?? []); return page })
+        .catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 423) return { locked: true as const }
+          throw e
+        })
+      : Promise.resolve(null),
+    [chatId, tick],
+  )
+  const tail = q.data && 'items' in q.data ? q.data : null
+  const locked = !!q.data && 'locked' in q.data
+  /*
+   * Старые страницы — курсором, а не ростом `limit` (D4-09): сервер режет
+   * `limit` до 100, и кнопка «раньше» после второго нажатия ничего не меняла,
+   * а сообщения старше сотого прочитать было нельзя. Дописываем сверху.
+   */
+  const [moreBusy, setMoreBusy] = useState(false)
+  const [moreErr, setMoreErr] = useState<string | null>(null)
+  const nextCursor = history.next === undefined ? (tail?.nextCursor ?? null) : history.next
+  const loadEarlier = async () => {
+    if (!nextCursor || moreBusy) return
+    setMoreBusy(true); setMoreErr(null)
+    try {
+      const page = await getMessagesBefore(chatId, nextCursor)
+      remember(page?.items ?? [], page?.nextCursor ?? null)
+    } catch (e) { setMoreErr(explainError(e)) } finally { setMoreBusy(false) }
+  }
+  /* Хвост добавляем и здесь: его ответ и запись на склад приходят одной
+     пачкой, но полагаться на порядок обновлений состояния незачем. */
+  const merged: Record<string, Message> = { ...history.byId }
+  for (const m of tail?.items ?? []) if (m.id) merged[m.id] = m
+  const messages = Object.values(merged).sort(bySentAt)
 
   const me = useApi(() => getMe(), [])
   const myId = me.data?.id
+  /* Для обработчика канала: он создаётся один раз на чат, а свой идентификатор
+     приходит позже. */
+  const myIdRef = useRef<string | undefined>(undefined)
+  myIdRef.current = myId
 
   /* Живой канал и опрос — один механизм: оба просто просят перечитать хвост.
      Опрос не выключается при живом канале нарочно: обрыв соединения проходит
@@ -288,7 +413,11 @@ export function Chat() {
       chatId,
       e => {
         if (e.type === 'message') setTick(n => n + 1)
-        if (e.type === 'typing') {
+        /* Хаб доставляет событие и его автору (D4-08): без сравнения три точки
+           «печатает» появлялись под собственным полем ввода при каждом
+           нажатии клавиши. Пока свой идентификатор неизвестен — не показываем:
+           утверждать «собеседник печатает», не зная, кто это, нельзя. */
+        if (e.type === 'typing' && myIdRef.current && e.actorId !== myIdRef.current) {
           setPeerTyping(true)
           window.setTimeout(() => setPeerTyping(false), 4000)
         }
@@ -339,11 +468,10 @@ export function Chat() {
   })()
 
   /* Два состояния, которые не являются поломкой и требуют своих слов.
-     Чат дня X до срока закрыт (423) — это расписание, а не отказ. Чат
-     исполнителей пара не читает вовсе (403): его ведёт координатор без неё
-     (решение владельца 2026-09-03), и общий текст «у вашей роли нет доступа»
-     здесь врёт — роль как раз её. */
-  const locked = q.error && chat?.kind === 'day'
+     Чат дня X до срока закрыт (423, см. `locked` выше) — это расписание, а не
+     отказ. Чат исполнителей пара не читает вовсе (403): его ведёт координатор
+     без неё (решение владельца 2026-09-03), и общий текст «у вашей роли нет
+     доступа» здесь врёт — роль как раз её. */
   const closedToMe = q.forbidden
 
   if (!chatId || missing) return (
@@ -386,14 +514,16 @@ export function Chat() {
           <>
             <AsyncState q={q} />
             {/* Сервер сказал, что есть ещё — значит история не начинается
-                здесь, и человек должен это видеть. */}
-            {q.data?.nextCursor && (
+                здесь, и человек должен это видеть. Следующая страница — по
+                курсору последней прочитанной (D4-09). */}
+            {nextCursor && (
               <div className="text-center">
-                <button onClick={() => setLimit(l => l + 50)} className="press text-[11px] font-semibold text-[var(--soft)] bg-[var(--card)] px-4 py-2 rounded-full" style={{ boxShadow: 'var(--shadow)' }}>
-                  {t('Показать сообщения раньше')}
+                <button onClick={() => void loadEarlier()} disabled={moreBusy} className="press text-[11px] font-semibold text-[var(--soft)] bg-[var(--card)] px-4 py-2 rounded-full disabled:opacity-50" style={{ boxShadow: 'var(--shadow)' }}>
+                  {moreBusy ? t('Загружаем…') : t('Показать сообщения раньше')}
                 </button>
               </div>
             )}
+            {moreErr && <p role="alert" className="text-center text-[11px] text-[var(--rose-ink)]">{moreErr}</p>}
             {!messages.length && ready(q) && (
               <p className="text-center text-[12px] text-[var(--soft)] py-6">{t('Сообщений пока нет — напишите первым')}</p>
             )}
@@ -401,10 +531,15 @@ export function Chat() {
               const mine = !!myId && m.senderId === myId
               /* Пустой отправитель значит разное в разных чатах (так написано
                  в контракте): у своего подрядчика — это он сам, аккаунта у
-                 него нет; у Тиль — сама Тиль; в остальных — система, то есть
-                 предупреждение платформы. Показывать предупреждение пузырём
-                 собеседника нельзя: пара прочтёт его как слова подрядчика. */
-              const system = m.senderId === null && chat?.kind !== 'external' && chat?.kind !== 'tilly'
+                 него нет; у Тиль — сама Тиль; в остальных — либо система
+                 (предупреждение платформы — узнаём по тексту), либо человек,
+                 чей аккаунт стёрт: `messages.sender_id` обнуляется при
+                 удалении пользователя (D4-15). «⚠ Заеду за тортом в 12»
+                 читалось как предупреждение платформы. Показывать
+                 предупреждение пузырём собеседника тоже нельзя: пара прочтёт
+                 его как слова подрядчика. */
+              const anonymous = m.senderId === null && chat?.kind !== 'external' && chat?.kind !== 'tilly'
+              const system = anonymous && m.text === PAYOUT_WARNING
               if (system) return (
                 <p key={m.id} className="text-center text-[11px] text-[var(--soft)] leading-relaxed px-6 py-2">
                   ⚠ {m.text}
@@ -415,6 +550,7 @@ export function Chat() {
                   <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',
                     mine ? 'grad text-[var(--on-grad)] rounded-br-[6px]' : 'card rounded-bl-[6px] text-[var(--ink)]')}
                     style={{ borderRadius: 18 }}>
+                    {anonymous && <span className="block text-[9.5px] text-[var(--soft)] mb-1">{t('Участник вышел')}</span>}
                     {/* Предупреждение о выводе сделки мимо платформы (§18.2)
                         приходит отдельным системным сообщением от сервера — его
                         видят обе стороны, и рисовать его на пузыре не нужно. */}
@@ -429,7 +565,7 @@ export function Chat() {
             {peerTyping && (
               <div className="flex justify-start fade-up">
                 <div className="card rounded-[18px] px-4 py-3 flex gap-1">
-                  {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[#C98A8A] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
+                  {[0, 1, 2].map(d => <span key={d} className="w-1.5 h-1.5 rounded-full bg-[var(--rose)] animate-bounce" style={{ animationDelay: `${d * 0.15}s` }} />)}
                 </div>
               </div>
             )}

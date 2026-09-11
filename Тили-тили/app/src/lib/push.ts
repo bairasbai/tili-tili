@@ -13,7 +13,14 @@ import { t } from './i18n'
  * `VAPID_PUBLIC_KEY` бэкенда). Пока её нет, экран честно говорит, что push
  * появится с ключами; сервер без своих ключей отвечает 501 `push_not_configured`.
  */
-export type DevicePushState = 'unsupported' | 'no-key' | 'denied' | 'on' | 'off'
+/*
+ * `unverified` — подписка в браузере есть, а знает ли о ней сервер и к чьему
+ * аккаунту она привязана, проверить нечем: пути «мои подписки» в контракте
+ * нет (ревью D4-06). Раньше это состояние выдавалось за `on`: на общем
+ * устройстве B видел «включён», а push уходили на аккаунт A. `on` теперь
+ * ставится только в момент, когда сервер сам принял подписку.
+ */
+export type DevicePushState = 'unsupported' | 'no-key' | 'denied' | 'on' | 'off' | 'unverified'
 
 /** Ключ читается при вызове, а не при загрузке модуля: тесты подставляют его через окружение. */
 export const vapidPublicKey = (): string | null =>
@@ -39,7 +46,9 @@ export async function devicePushState(): Promise<DevicePushState> {
   if (Notification.permission === 'denied') return 'denied'
   const reg = await navigator.serviceWorker.ready
   const sub = await reg.pushManager.getSubscription()
-  return sub ? 'on' : 'off'
+  /* Подписка браузера — не подтверждение сервера: «включён» говорим только
+     тогда, когда он её принял (см. `DevicePushState`). */
+  return sub ? 'unverified' : 'off'
 }
 
 /**
@@ -68,12 +77,26 @@ export async function enableDevicePush(): Promise<void> {
   }
 }
 
-/** Выключить: и в браузере, и на сервере — отписка работает даже там, где подписка невозможна. */
+/**
+ * Выключить push на ЭТОМ устройстве: снять подписку браузера и удалить на
+ * сервере ровно её — по `endpoint` (ревью D4-10).
+ *
+ * `DELETE /users/me/push-subscriptions` без параметра удаляет ВСЕ подписки
+ * человека: тумблер «на этом устройстве» на телефоне гасил push и на ноутбуке,
+ * а тумблер там продолжал показывать «включён». Адрес подписки знает только
+ * само устройство — поэтому и удалить одну может только оно.
+ *
+ * Подписки в браузере нет — на сервере от этого устройства удалять нечего,
+ * и чужие устройства не трогаем. Сначала браузер, потом сервер: отписка
+ * браузера и есть то, что закрывает доставку сюда; серверная запись без
+ * живого endpoint удалится сама по 404/410 от push-службы.
+ */
 export async function disableDevicePush(): Promise<void> {
-  if (pushSupported()) {
-    const reg = await navigator.serviceWorker.ready
-    const sub = await reg.pushManager.getSubscription()
-    await sub?.unsubscribe().catch(() => undefined)
-  }
-  await api.delete('/users/me/push-subscriptions')
+  if (!pushSupported()) return
+  const reg = await navigator.serviceWorker.ready
+  const sub = await reg.pushManager.getSubscription()
+  if (!sub) return
+  const endpoint = sub.endpoint
+  await sub.unsubscribe().catch(() => undefined)
+  await api.delete(`/users/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}` as '/users/me/push-subscriptions')
 }

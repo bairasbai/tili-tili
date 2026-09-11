@@ -1,4 +1,5 @@
-import type { Db } from '../plugins/db.js'
+import type { Db, Queryable } from '../plugins/db.js'
+import { notFound } from '../errors.js'
 import { publicRating } from '../reviews/rating.js'
 
 /**
@@ -39,6 +40,35 @@ export interface VendorRow {
  * а не «есть, но с пометкой». */
 export const VENDOR_LIVE_JOIN =
   'join users u on u.id = v.user_id and u.deleted_at is null and v.blocked_at is null'
+
+/**
+ * Анкета живая и опубликована — иначе 404.
+ *
+ * Одно условие на все пути анкеты: карточку, ленту отзывов и календарь
+ * занятости. Пока лента и календарь проверяли только форму идентификатора,
+ * отзывы и даты заблокированной, снятой или удалённой анкеты читались по
+ * прямой ссылке, а неизвестный id получал `200 []` (D5-20).
+ */
+export async function assertVendorLive(db: Queryable, vendorId: string): Promise<void> {
+  const { rows } = await db.query(
+    `select 1 from vendors v ${VENDOR_LIVE_JOIN} where v.id = $1 and v.published_at is not null`,
+    [vendorId],
+  )
+  if (rows.length === 0) throw notFound('Анкета не найдена')
+}
+
+/**
+ * `%`, `_` и `\` в поисковой строке — буквы, а не шаблон `LIKE`.
+ *
+ * Без экранирования `q=%` возвращал всю категорию (и весь справочник
+ * городов), а «Foto_Studio» находился по «FotoXStudio»: выдача по запросу,
+ * которого человек не задавал (D5-11). Запрос всё равно параметр — это не
+ * инъекция, — но смысл его был чужой. Экранированную строку ставить только
+ * в `like … escape '\'`.
+ */
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (ch) => `\\${ch}`)
+}
 
 export const VENDOR_COLUMNS = `
   v.id, v.name, v.category_id, c.name as city, v.price_from::text as price_from, v.currency,
@@ -84,6 +114,10 @@ export interface MediaRow {
  * подрядчика забронировала, — до брони разговор идёт в чате. Право даёт
  * не роль, а сделка: помощник и координатор той же свадьбы звонят по тому
  * же поводу, что и пара, и в день X контакты команды нужны всем троим.
+ *
+ * Троим — и только им. Участник с ролью `vendor` (другой подрядчик, принятый
+ * ПОДР-ссылкой) в решении не назван: без условия по роли он читал телефоны
+ * всех забронированных коллег по свадьбе (D5-25, D1-04).
  */
 async function mayCall(db: Db, vendorId: string, userId: string | null): Promise<boolean> {
   if (!userId) return false
@@ -92,6 +126,7 @@ async function mayCall(db: Db, vendorId: string, userId: string | null): Promise
        select 1 from deals d
          join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
         where d.vendor_id = $1 and d.state in ('booked','paid_deposit','done')
+          and m.role in ('couple','helper','coordinator')
      ) as ok`,
     [vendorId, userId],
   )

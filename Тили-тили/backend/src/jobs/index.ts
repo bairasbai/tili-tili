@@ -5,6 +5,7 @@ import { notify, notifyWedding } from '../notify/notify.js'
 import { recomputeAllRatings, recomputeRating } from '../reviews/rating.js'
 import { reportJobFailure } from '../plugins/sentry.js'
 import { uuidv7 } from '../ids.js'
+import { plural } from '../text/plural.js'
 
 /**
  * Фоновые задачи — BullMQ на том же Redis (раздел 5 плана).
@@ -56,13 +57,15 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
    * собой и уборку кодов, и ключи идемпотентности: они идут одним списком.
    */
   out['weddings_purged'] = 0
-  await isolated(app, {}, 'не удалось убрать отменённые свадьбы из архива', async () => {
+  const pass = startPass('cleanup')
+  await isolated(app, pass, {}, 'не удалось убрать отменённые свадьбы из архива', async () => {
     const purged = await purgeArchivedWeddings(app)
     out['weddings_purged'] = purged
     // Число за проход — в лог: без него удаление сотен проектов не оставляет
     // следа нигде, кроме самих строк, которых уже нет (FR-008).
     if (purged > 0) app.log.info({ purged }, 'уборка архива: отменённые свадьбы удалены')
   })
+  reportPass(app, pass)
   return out
 }
 
@@ -168,11 +171,23 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
  * Поэтому по шагам, в транзакции на человека:
  *   1. свадьбы, где он владелец, переходят живому партнёру с ролью «пара»
  *      (нет партнёра — свадьба уходит вместе с ним, это его данные);
- *   2. ссылки на него в приглашениях и запросе отмены обнуляются;
- *   3. его сделки как подрядчика остаются паре историей — с именем
+ *   2. у свадеб, которые уходят с ним, заранее снимаются отзывы пары и
+ *      занятость подрядчиков по сделкам — см. ниже;
+ *   3. ссылки на него в приглашениях и запросе отмены обнуляются;
+ *   4. его сделки как подрядчика остаются паре историей — с именем
  *      исполнителя и без ссылки на анкету (`deals_has_performer` держит);
- *   4. сам аккаунт удаляется — остальное уносит каскад.
+ *   5. сам аккаунт удаляется — остальное уносит каскад.
  * Сбой на одном человеке не останавливает остальных: ошибка в лог, дальше.
+ *
+ * Шаг 2 — тот же конфликт «SET NULL против CHECK», что ERR-0209 закрыл в
+ * `purgeArchivedWeddings` (R-221 требует пройти по всем удалениям родителя).
+ * Пара без второго партнёра, сделка `done`, отзыв оставлен: каскад
+ * `weddings → deals` обнулял `reviews.deal_id`, `CHECK reviews_key_matches_source`
+ * откатывал транзакцию, и аккаунт с телефоном не стирался НИКОГДА — каждый
+ * час та же ошибка в логе, а сто таких строк закупорили бы очередь целиком
+ * (D5-01/D6-04). Занятость подрядчика — по той же причине, что в архиве:
+ * `vendor_busy_dates.deal_id` стоит `SET NULL`, и дата осталась бы занятой
+ * призраком навсегда.
  */
 export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
   const db = app.db!
@@ -192,6 +207,22 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
             where w.owner_id = $1 and heir.wedding_id = w.id`,
           [id],
         )
+        /* Свадьбы, у которых наследника не нашлось, уйдут каскадом вместе
+         * с аккаунтом — до этого у них снимаются отзывы пары (с пересчётом
+         * рейтинга подрядчиков после) и занятость по сделкам. */
+        await client.query(
+          `delete from vendor_busy_dates
+            where source = 'deal'
+              and deal_id in (select d.id from deals d join weddings w on w.id = d.wedding_id where w.owner_id = $1)`,
+          [id],
+        )
+        const { rows: coupleReviews } = await client.query<{ vendor_id: string }>(
+          `delete from reviews
+            where source = 'couple'
+              and deal_id in (select d.id from deals d join weddings w on w.id = d.wedding_id where w.owner_id = $1)
+            returning vendor_id`,
+          [id],
+        )
         await client.query('update invites set created_by = null where created_by = $1', [id])
         await client.query('update invites set accepted_by = null where accepted_by = $1', [id])
         await client.query(
@@ -204,6 +235,9 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
           [id],
         )
         await client.query('delete from users where id = $1', [id])
+        for (const vendorId of new Set(coupleReviews.map((r) => r.vendor_id))) {
+          await recomputeRating(client, vendorId)
+        }
       })
       erased += 1
     } catch (err) {
@@ -264,18 +298,20 @@ export async function announceOpenedDayChats(app: FastifyInstance): Promise<numb
       where kind = 'day' and opens_at is not null and opens_at <= now() and opened_notified_at is null
       returning id, wedding_id`,
   )
+  const pass = startPass('dayx-open')
   for (const chat of rows) {
-    await isolated(app, { chatId: chat.id }, 'не удалось объявить открытие чата дня X', () =>
+    await isolated(app, pass, { chatId: chat.id }, 'не удалось объявить открытие чата дня X', () =>
       notifyWedding(db, chat.wedding_id, null, {
         kind: 'system',
         title: 'Чат дня X открыт',
-        body: 'Гости и команда теперь на связи — можно писать',
+        body: 'Команда теперь на связи — можно писать; гости в этот чат не заходят',
         link: `/chats/${chat.id}`,
         // День X критичен: тихие часы его не держат.
         critical: true,
       }),
     )
   }
+  reportPass(app, pass)
   return rows.length
 }
 
@@ -290,20 +326,45 @@ export async function announceOpenedDayChats(app: FastifyInstance): Promise<numb
  * Найдено аудитом 2026-09-07: `weeklyDigest` падал на внешнем ключе
  * `digest_sent`, когда `eraseDeletedUsers` стирал аккаунт параллельно.
  * Сбой уходит в лог со своим ключом, остальные строки идут дальше.
+ *
+ * Сбои при этом СЧИТАЮТСЯ по проходу (`Pass`), и итог уходит в Sentry:
+ * помеченные строки повтор задачи уже не увидит (R-199), и систематический
+ * сбой — `notify()` падает у всех — раньше не доходил никуда: задача была
+ * «успешна», события сделок за проход помечены и потеряны, а обнаружилось бы
+ * это через сутки по тому, что перестали приходить push (D4-12).
  */
+interface Pass {
+  job: string
+  total: number
+  failed: number
+}
+
+const startPass = (job: string): Pass => ({ job, total: 0, failed: 0 })
+
 async function isolated(
   app: FastifyInstance,
+  pass: Pass,
   context: Record<string, string>,
   message: string,
   fn: () => Promise<unknown>,
 ): Promise<boolean> {
+  pass.total += 1
   try {
     await fn()
     return true
   } catch (err) {
+    pass.failed += 1
     app.log.error({ err, ...context }, message)
     return false
   }
+}
+
+/** Итог прохода: были сбои — инцидент с числом, как у падения задачи целиком. */
+function reportPass(app: FastifyInstance, pass: Pass): void {
+  if (pass.failed === 0) return
+  const summary = `${pass.job}: ${pass.failed} из ${pass.total} строк не обработаны — см. лог задачи`
+  app.log.error({ job: pass.job, failed: pass.failed, total: pass.total }, 'фоновая задача прошла со сбоями')
+  reportJobFailure(pass.job, new Error(summary))
 }
 
 /**
@@ -321,20 +382,31 @@ export async function remindExpiringHolds(app: FastifyInstance): Promise<number>
         and negotiating_until between now() and now() + interval '12 hours'
       returning id, wedding_id`,
   )
+  const pass = startPass('holds')
   for (const deal of rows) {
-    await isolated(app, { dealId: deal.id }, 'не удалось напомнить об истечении брони', () =>
-      notifyWedding(db, deal.wedding_id, null, {
-        kind: 'deal',
-        title: 'Бронь скоро истечёт',
-        body: 'Осталось меньше 12 часов — подтвердите или отпустите дату',
-        /* Со сделкой, а не «куда-то в сделки»: экран открывается по её
-           идентификатору, и без него нажатие уводило бы в общий список. */
-        link: `/deal/${deal.id}`,
-        // Деньги и дата: ждать утра нельзя, к утру дату займут.
-        critical: true,
-      }),
+    await isolated(app, pass, { dealId: deal.id }, 'не удалось напомнить об истечении брони', () =>
+      notifyWedding(
+        db,
+        deal.wedding_id,
+        null,
+        {
+          kind: 'deal',
+          title: 'Бронь скоро истечёт',
+          body: 'Осталось меньше 12 часов — подтвердите или отпустите дату',
+          /* Со сделкой, а не «куда-то в сделки»: экран открывается по её
+             идентификатору, и без него нажатие уводило бы в общий список. */
+          link: `/deal/${deal.id}`,
+          // Деньги и дата: ждать утра нельзя, к утру дату займут.
+          critical: true,
+        },
+        new Date(),
+        false,
+        // Сделки по §18.6 — новость пары; помощнику и координатору они не адресованы.
+        DEAL_AUDIENCE,
+      ),
     )
   }
+  reportPass(app, pass)
   return rows.length
 }
 
@@ -365,8 +437,9 @@ export async function weeklyDigest(app: FastifyInstance): Promise<number> {
       group by m.user_id`,
   )
   let sent = 0
+  const pass = startPass('digest')
   for (const row of rows) {
-    const ok = await isolated(app, { userId: row.user_id }, 'не удалось отправить дайджест недели', async () => {
+    const ok = await isolated(app, pass, { userId: row.user_id }, 'не удалось отправить дайджест недели', async () => {
       // Ключ по неделе делает повтор задачи пустым: вторая строка не встанет,
       // и второго дайджеста не будет, сколько раз задачу ни перезапусти.
       const claimed = await db.query(
@@ -378,15 +451,24 @@ export async function weeklyDigest(app: FastifyInstance): Promise<number> {
         userId: row.user_id,
         kind: 'task',
         title: 'Задачи недели',
-        body: `На этой неделе ${row.tasks} — загляните в чек-лист`,
+        body: `На этой неделе ${Number(row.tasks)} ${plural(Number(row.tasks), 'задача', 'задачи', 'задач')} — загляните в чек-лист`,
         link: '/checklist',
       })
       return true
     })
     if (ok) sent += 1
   }
+  reportPass(app, pass)
   return sent
 }
+
+/**
+ * Кому из команды идут события сделок: только паре. §18.6 адресует сделки
+ * паре и подрядчику; помощник и координатор не видят денег нигде (§6), а
+ * журнал сделки несёт суммы — «Сумма изменена: 50 000 ₽ → 80 000 ₽» — и
+ * свободный текст пары. Подрядчик сделки получает своё отдельно.
+ */
+const DEAL_AUDIENCE = ['couple'] as const
 
 /** Человеческое название состояния сделки — в тексте уведомления. */
 const STATE_TITLE: Record<string, string> = {
@@ -413,6 +495,16 @@ const STATE_TITLE: Record<string, string> = {
  */
 export async function announceDealEvents(app: FastifyInstance, limit = 200): Promise<number> {
   const db = app.db!
+  /* Событие старше двух суток помечается БЕЗ рассылки: push о позавчерашней
+   * смене статуса — не новость, а шум. Раньше такие строки не помечались
+   * вовсе: простой воркера дольше двух суток (или стенд без Redis) оставлял
+   * их в частичном индексе `notified_at is null` навсегда (D4-25). Число —
+   * в лог: потерянные уведомления должны быть видны хоть где-то. */
+  const stale = await db.query(
+    "update deal_events set notified_at = now() where notified_at is null and at <= now() - interval '2 days'",
+  )
+  if (stale.rowCount) app.log.warn({ stale: stale.rowCount }, 'события сделок старше двух суток помечены без рассылки')
+
   const { rows } = await db.query<{
     deal_id: string
     wedding_id: string
@@ -435,6 +527,7 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
                 e.to_state, e.kind, e.actor_id, e.note`,
     [limit],
   )
+  const pass = startPass('deal-events')
   for (const event of rows) {
     if (!event.wedding_id) continue
     const item = {
@@ -449,9 +542,11 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
       // Деньги и дата: §18.6 относит сделки к неотключаемым.
       critical: true,
     }
-    await isolated(app, { dealId: event.deal_id }, 'не удалось разослать событие сделки', async () => {
-      // Тому, кто сам нажал кнопку, сообщать нечего.
-      await notifyWedding(db, event.wedding_id!, event.actor_id, item)
+    await isolated(app, pass, { dealId: event.deal_id }, 'не удалось разослать событие сделки', async () => {
+      /* Тому, кто сам нажал кнопку, сообщать нечего. Из команды — только паре:
+       * `note` несёт суммы («Сумма изменена: 50 000 ₽ → 80 000 ₽») и свободный
+       * текст, а помощнику и координатору деньги закрыты везде (D4-02/D1-05). */
+      await notifyWedding(db, event.wedding_id!, event.actor_id, item, new Date(), false, DEAL_AUDIENCE)
       /* Подрядчик ЭТОЙ сделки, а не «все забронированные на свадьбе».
        * Снятая мягкая бронь — новость того, чью дату держали, и состояние
        * сделки к этому моменту уже не `booked`: фильтр по забронированным
@@ -461,6 +556,7 @@ export async function announceDealEvents(app: FastifyInstance, limit = 200): Pro
       }
     })
   }
+  reportPass(app, pass)
   return rows.length
 }
 
@@ -482,8 +578,9 @@ export async function rsvpDigest(app: FastifyInstance): Promise<number> {
         and w.archived_at is null and w.cancelled_at is null
       group by w.id`,
   )
+  const pass = startPass('rsvp-digest')
   for (const row of rows) {
-    await isolated(app, { weddingId: row.wedding_id }, 'не удалось отправить сводку ответов гостей', () =>
+    await isolated(app, pass, { weddingId: row.wedding_id }, 'не удалось отправить сводку ответов гостей', () =>
       notifyWedding(db, row.wedding_id, null, {
         kind: 'guest',
         title: 'Ответы гостей за сутки',
@@ -492,6 +589,7 @@ export async function rsvpDigest(app: FastifyInstance): Promise<number> {
       }),
     )
   }
+  reportPass(app, pass)
   return rows.length
 }
 

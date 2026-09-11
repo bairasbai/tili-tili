@@ -12,6 +12,16 @@ const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 
 /**
+ * Сколько подарков один гость держит за собой одновременно.
+ *
+ * Резерв — не покупка: подарок просто исчезает из выбора для остальных.
+ * Пяти хватает даже на семью с детьми; предел на взносы и альбом живёт в
+ * настройках (`contributionsMaxPerGuest`, `albumMaxPerGuest`) — переезд
+ * этого туда же за владельцем настроек.
+ */
+const RESERVATIONS_MAX_PER_GUEST = 5
+
+/**
  * Идентификаторы из адреса обязаны быть UUID — почему именно схемой и почему
  * 422, а не 404, написано у `UUID_ID` в `ids.ts`.
  *
@@ -235,17 +245,25 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/weddings/:weddingId/wishlist/:giftId', { schema: { params: giftIdParam } }, async (request, reply) => {
     const { giftId } = request.params as { giftId: string }
-    const { rows } = await db().query<{ funded: string }>(
-      'select funded::text as funded from gifts where id = $1 and wedding_id = $2',
-      [giftId, request.member!.weddingId],
-    )
-    if (rows.length === 0) throw notFound('Подарок не найден')
-    // Удаление унесло бы взносы каскадом. Деньги гостей пара не выбрасывает
-    // одним тапом — сначала разбирается со складчиной (то же и у фонда).
-    if (Number(rows[0]!.funded) > 0) {
+    /* Удаление унесло бы взносы каскадом. Деньги гостей пара не выбрасывает
+     * одним тапом — сначала разбирается со складчиной (то же и у фонда).
+     *
+     * Условие «взносов нет» стоит в самом `delete`, а не в отдельном
+     * `select` перед ним: между проверкой и удалением успевает прийти взнос,
+     * и он уходил каскадом (D3-13). PostgreSQL перепроверяет `where` по
+     * свежей версии строки — гонка закрывается одним оператором (R-49). */
+    const removed = await db().query('delete from gifts where id = $1 and wedding_id = $2 and funded = 0', [
+      giftId,
+      request.member!.weddingId,
+    ])
+    if (removed.rowCount === 0) {
+      const { rows } = await db().query('select 1 from gifts where id = $1 and wedding_id = $2', [
+        giftId,
+        request.member!.weddingId,
+      ])
+      if (rows.length === 0) throw notFound('Подарок не найден')
       throw conflict('gift_has_contributions', 'В подарок уже сложились — сначала верните взносы')
     }
-    await db().query('delete from gifts where id = $1 and wedding_id = $2', [giftId, request.member!.weddingId])
     return reply.code(204).send()
   })
 
@@ -306,15 +324,19 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/weddings/:weddingId/funds/:fundId', { schema: { params: fundIdParam } }, async (request, reply) => {
     const { fundId } = request.params as { fundId: string }
-    const { rows } = await db().query<{ collected: string }>(
-      'select collected::text as collected from funds where id = $1 and wedding_id = $2',
-      [fundId, request.member!.weddingId],
-    )
-    if (rows.length === 0) throw notFound('Фонд не найден')
-    if (Number(rows[0]!.collected) > 0) {
+    // То же, что у подарка: условие по деньгам — в самом `delete`.
+    const removed = await db().query('delete from funds where id = $1 and wedding_id = $2 and collected = 0', [
+      fundId,
+      request.member!.weddingId,
+    ])
+    if (removed.rowCount === 0) {
+      const { rows } = await db().query('select 1 from funds where id = $1 and wedding_id = $2', [
+        fundId,
+        request.member!.weddingId,
+      ])
+      if (rows.length === 0) throw notFound('Фонд не найден')
       throw conflict('fund_has_contributions', 'В фонд уже внесены деньги — удалить его нельзя')
     }
-    await db().query('delete from funds where id = $1 and wedding_id = $2', [fundId, request.member!.weddingId])
     return reply.code(204).send()
   })
 
@@ -383,20 +405,38 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
         throw conflict('gift_has_contributions', 'В этот подарок уже складываются — его нельзя забрать целиком')
       }
 
+      // Подарок под блокировкой, так что чей он сейчас — уже известно точно.
+      const { rows: held } = await client.query<{ guest_token: string }>(
+        'select guest_token from gift_reservations where gift_id = $1',
+        [giftId],
+      )
+      if (held[0]) {
+        // Тот же гость нажал второй раз — подарок его, это не отказ и не новый резерв.
+        if (held[0].guest_token === guestToken) return { giftId, reserved: true, mine: true }
+        throw conflict('gift_reserved', 'Этот подарок уже выбрал другой гость')
+      }
+
+      /* Предел резервов на гостя — по образцу взносов и альбома (R-55/R-61).
+       * Без него один гость забирал весь список: пара видела «Зарезервирован»
+       * у всего, снять чужой резерв не могла (§9) и не знала, кто это. */
+      const { rows: mine } = await client.query<{ n: string }>(
+        `select count(*)::text as n from gift_reservations r join gifts g on g.id = r.gift_id
+          where g.wedding_id = $1 and r.guest_token = $2`,
+        [guest.weddingId, guestToken],
+      )
+      if (Number(mine[0]!.n) >= RESERVATIONS_MAX_PER_GUEST) {
+        throw quotaExceeded(
+          'reservation_limit',
+          `Больше ${RESERVATIONS_MAX_PER_GUEST} подарков один гость не резервирует — снимите лишний резерв`,
+        )
+      }
+
       const taken = await client.query(
         'insert into gift_reservations (gift_id, guest_token) values ($1,$2) on conflict (gift_id) do nothing',
         [giftId, guestToken],
       )
-      if (taken.rowCount === 0) {
-        const { rows: held } = await client.query<{ guest_token: string }>(
-          'select guest_token from gift_reservations where gift_id = $1',
-          [giftId],
-        )
-        // Тот же гость нажал второй раз — подарок его, это не отказ.
-        if (held[0]?.guest_token !== guestToken) {
-          throw conflict('gift_reserved', 'Этот подарок уже выбрал другой гость')
-        }
-      }
+      // Ноль строк при блокировке подарка — только чужая запись мимо кода.
+      if (taken.rowCount === 0) throw conflict('gift_reserved', 'Этот подарок уже выбрал другой гость')
       return { giftId, reserved: true, mine: true }
     })
     return reply.code(200).send(body)
@@ -405,15 +445,24 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/gifts/:guestToken/:giftId/reserve', { schema: { params: giftIdParam } }, async (request, reply) => {
     const { guestToken, giftId } = request.params as { guestToken: string; giftId: string }
     const guest = await guestByToken(db(), guestToken)
-    const { rows } = await db().query<{ guest_token: string }>(
-      `select r.guest_token from gift_reservations r join gifts g on g.id = r.gift_id
-        where r.gift_id = $1 and g.wedding_id = $2`,
-      [giftId, guest.weddingId],
+    /* Владелец резерва — условие в самом `delete`, а не в `select` перед
+     * ним: пока запрос ждал блокировки, резерв мог сменить хозяина (тот же
+     * гость снял его в другой вкладке, подарок занял другой), и удаление
+     * «по подарку» стирало чужой резерв (D3-13). */
+    const removed = await db().query(
+      `delete from gift_reservations r using gifts g
+        where r.gift_id = g.id and r.gift_id = $1 and g.wedding_id = $2 and r.guest_token = $3`,
+      [giftId, guest.weddingId, guestToken],
     )
-    // Резерва нет — снимать нечего, и это не ошибка: повтор отмены проходит.
-    if (rows.length === 0) return reply.code(204).send()
-    if (rows[0]!.guest_token !== guestToken) throw forbidden('Этот резерв поставил другой гость')
-    await db().query('delete from gift_reservations where gift_id = $1', [giftId])
+    if (removed.rowCount === 0) {
+      const { rows } = await db().query<{ guest_token: string }>(
+        `select r.guest_token from gift_reservations r join gifts g on g.id = r.gift_id
+          where r.gift_id = $1 and g.wedding_id = $2`,
+        [giftId, guest.weddingId],
+      )
+      // Резерва нет — снимать нечего, и это не ошибка: повтор отмены проходит.
+      if (rows[0] && rows[0].guest_token !== guestToken) throw forbidden('Этот резерв поставил другой гость')
+    }
     return reply.code(204).send()
   })
 

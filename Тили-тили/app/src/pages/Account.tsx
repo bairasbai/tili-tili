@@ -5,17 +5,16 @@ import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { useStore } from '@/lib/store'
-import { usePersist } from '@/lib/usePersist'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
-import { api, ApiError, saveTokens, url } from '@/lib/api/client'
+import { api, ApiError, saveTokens } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { endSession, getMe, getSessions, patchMe } from '@/lib/api/auth'
+import { endSession, getMe, getSessions, patchMe, signOutEverywhere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
 import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
-import { cancelWedding } from '@/lib/api/wedding'
+import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
 import { devicePushState, disableDevicePush, enableDevicePush, type DevicePushState } from '@/lib/push'
 import type { components } from '@/lib/api/schema'
@@ -33,21 +32,56 @@ const sessionSince = (iso?: string): string => {
   return `${t('вход')} ${d.toLocaleDateString(locale, { day: 'numeric', month: 'short' })}`
 }
 
+/** «60:00», «0:45»: таймер повторной отправки в минутах и секундах — сервер может просить и час. */
+const mmss = (sec: number): string => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+
+/**
+ * Код приглашения в команду, отложенный до входа (ревью D1-21).
+ *
+ * `/join/:code` открывается без входа, а «Принять» требует его: раньше человек
+ * получал «Сначала войдите» без перехода и без памяти о коде — после входа его
+ * ждал шаг «Кто вы?», где приглашённому предлагали завести СВОЮ свадьбу.
+ * В sessionStorage, не в localStorage: код живёт до конца этого захода.
+ */
+function takeJoinCode(): string | null {
+  try {
+    const code = sessionStorage.getItem(JOIN_CODE_KEY)
+    if (code) sessionStorage.removeItem(JOIN_CODE_KEY)
+    return code
+  } catch { return null }
+}
+
 /* Вход: телефон → OTP → роль */
 export function Auth() {
   const nav = useNavigate()
+  const { setWeddingId, finishOnboarding } = useStore()
   const [step, setStep] = useState<0 | 1 | 2>(0)
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState(['', '', '', ''])
   const [sec, setSec] = useState(0)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  /* 152-ФЗ: согласие даётся явным действием, галочка не может стоять заранее.
-     Факт согласия сохраняем с датой — это и есть подтверждение. До входа
-     хранить его негде, кроме устройства; сразу после входа отправляем на
-     сервер, потому что доказательством согласия должна быть наша запись,
-     а не localStorage в чужом браузере. */
-  const [consent, setConsent] = usePersist<{ at: string } | null>('tt_consent', null)
+  /*
+   * 152-ФЗ: согласие даётся явным действием, галочка не может стоять заранее.
+   *
+   * Живёт в состоянии экрана, а не в хранилище (ревью D1-12). В `localStorage`
+   * она переживала вход и не была привязана ни к человеку, ни к номеру:
+   * брошенный вход оставлял её отмеченной следующему на этом устройстве
+   * (второй партнёр, мама), а истёкшая сессия возвращала на вход с уже
+   * стоящей галочкой — и каждый повторный вход писал новую строку `consents`
+   * без явного действия. Доказательство согласия — запись сервера
+   * (`POST /users/me/consent`), не дата в чужом браузере. Смена номера и
+   * возврат на первый шаг галочку снимают: подпись ставится под конкретным
+   * номером, а не под устройством.
+   */
+  const [consent, setConsent] = useState(false)
+  /*
+   * Токены и согласие уже на месте, осталось решить, куда идти. Отдельное
+   * состояние нужно на случай отказа `GET /weddings`: код из SMS одноразовый,
+   * повторить «Войти» нельзя, а повторить выбор пути — можно («Продолжить»).
+   */
+  const [signedIn, setSignedIn] = useState(false)
+  const [joinCodeDraft, setJoinCodeDraft] = useState<string | null>(null)
   /*
    * Действующая редакция — с сервера, и СВЕРЯЕТСЯ с той, что лежит в сборке.
    *
@@ -83,6 +117,43 @@ export function Auth() {
       setSec(r?.resendAfter ?? 60)
       setStep(1)
     } catch (e) {
+      setErr(explain(e))
+      /* Ограничитель назвал срок (`Retry-After`, ревью D6-13) — таймер повтора
+         считает от него, а не от выдуманных 60 секунд: сервер может просить час. */
+      if (e instanceof ApiError && e.status === 429 && e.retryAfter != null) setSec(e.retryAfter)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /*
+   * Куда идти после входа (ревью D1-03, D1-21).
+   *
+   * Раньше после кода всех ждал один шаг «Кто вы?», а единственный видимый
+   * путь дальше — «Мы планируем свадьбу» — вёл в квиз, который создавал
+   * ВТОРУЮ свадьбу вернувшемуся на новом устройстве: настоящая, с гостями и
+   * сделками, пропадала с экрана. Теперь сначала спрашиваем сервер.
+   *
+   * Порядок: отложенный код приглашения → своя свадьба → выбор роли. Код
+   * важнее списка: помощника позвали в чужую свадьбу, и ему нужен приём,
+   * а не собственная главная.
+   */
+  const afterSignIn = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const joinCode = takeJoinCode()
+      if (joinCode) { nav(`/join/${encodeURIComponent(joinCode)}`); return }
+      const mine = pickMyWedding(await listMyWeddings())
+      if (mine) {
+        setWeddingId(mine)
+        finishOnboarding()
+        nav('/home')
+        return
+      }
+      setStep(2)
+    } catch (e) {
+      /* Список не пришёл — не гадаем, есть ли свадьба: показываем причину и
+         «Продолжить». Код из SMS уже погашен, повторить можно только этот шаг. */
       setErr(explain(e))
     } finally {
       setBusy(false)
@@ -122,19 +193,49 @@ export function Auth() {
           throw e
         }
       }
-      setStep(2)
+      /*
+       * Часовой пояс устройства — в профиль (ревью D4-04). Тихие часы и лимит
+       * push сервер считает по `users.tz`, а клиент его никогда не отправлял:
+       * пара во Владивостоке получала push ночью и тишину весь рабочий день.
+       * Ошибка — молча: пояс не стоит того, чтобы ломать вход.
+       */
+      void patchMe({ tz: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => undefined)
+      setSignedIn(true)
     } catch (e) {
       setCode(['', '', '', ''])
       setErr(explain(e))
-    } finally {
       setBusy(false)
+      return
     }
+    await afterSignIn()
   }
+
+  /* Назад с шага кода — на шаг номера; согласие при этом снимается (D1-12). */
+  const back = () => {
+    if (step === 0) { nav('/'); return }
+    setConsent(false)
+    setStep((step - 1) as 0 | 1)
+  }
+  /* Смена уже набранного номера снимает галочку: подпись стояла под другим
+     номером. Пока номер только набирается, порядок «галочка, потом цифры»
+     не наказывается — это один и тот же человек и одно действие. */
+  const changePhone = (value: string) => {
+    const digits = value.replace(/[^\d]/g, '').slice(0, 10)
+    if (consent && phone.length === 10 && digits !== phone) setConsent(false)
+    setPhone(digits)
+  }
+  const openJoin = () => {
+    const code = (joinCodeDraft ?? '').trim().toUpperCase()
+    if (code) nav(`/join/${encodeURIComponent(code)}`)
+  }
+  /* Вошли, но не узнали, куда идти (список свадеб не пришёл): кнопка
+     повторяет только этот шаг — код из SMS уже погашен. */
+  const primaryLocked = busy || (signedIn ? false : step === 0 ? !consent || phone.length !== 10 : code.join('').length !== 4)
 
   return (
     <div className="min-h-dvh flex flex-col">
       <div className="flex items-center px-5 pt-7">
-        <button onClick={() => (step > 0 ? setStep((step - 1) as 0 | 1) : nav('/'))} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
+        <button onClick={back} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
           <ChevronLeft size={18} />
         </button>
       </div>
@@ -147,15 +248,15 @@ export function Auth() {
           <div className="card-s flex items-center gap-3 px-5 py-4 mt-8">
             <Smartphone size={18} className="text-[var(--rose-deep)]" />
             <span className="text-[15px] font-semibold">+7</span>
-            <input type="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 10))}
+            <input type="tel" autoComplete="tel" value={phone} onChange={e => changePhone(e.target.value)}
               inputMode="tel" placeholder="917 123-45-67" className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]" />
           </div>
           <button
-            onClick={() => canConsent && setConsent(consent ? null : { at: new Date().toISOString() })}
+            onClick={() => canConsent && setConsent(!consent)}
             disabled={!canConsent}
             className="press w-full flex items-start gap-3 mt-5 text-left disabled:opacity-60"
             role="checkbox"
-            aria-checked={!!consent}
+            aria-checked={consent}
             aria-label={t('Я согласен на обработку персональных данных')}
           >
             <span className={cn('w-[22px] h-[22px] rounded-[7px] shrink-0 flex items-center justify-center mt-0.5 border-[1.5px]', consent ? 'grad border-transparent' : 'border-[var(--line)] bg-[var(--card)]')}>
@@ -201,11 +302,11 @@ export function Auth() {
                   setCode(cc => cc.map((x, i) => (i === k ? v : x)))
                   if (v && k < 3) document.getElementById(`otp-${k + 1}`)?.focus()
                 }}
-                className="card-s w-full aspect-square text-center text-[22px] font-bold outline-none focus:ring-2 focus:ring-[#C98A8A]" />
+                className="card-s w-full aspect-square text-center text-[22px] font-bold outline-none focus:ring-2 focus:ring-[var(--rose)]" />
             ))}
           </div>
           <button onClick={() => { if (sec === 0) void requestCode() }} className={cn('text-[12px] font-semibold mt-6 press', sec > 0 ? 'text-[var(--soft2)]' : 'text-[var(--rose-ink)]')}>
-            {sec > 0 ? `${t('Отправить код повторно · 0:')}${String(sec).padStart(2, '0')}` : t('Отправить код повторно')}
+            {sec > 0 ? `${t('Отправить код повторно · ')}${mmss(sec)}` : t('Отправить код повторно')}
           </button>
         </div>
       )}
@@ -220,6 +321,26 @@ export function Auth() {
               <div className="flex-1"><b className="text-[15px]">{t('Мы планируем свадьбу')}</b><p className="text-[11.5px] text-[var(--soft)] mt-0.5">{t('Конструктор, бюджет, гости, день X')}</p></div>
               <ChevronRight size={18} className="text-[var(--soft2)]" />
             </button>
+            {/* Приглашённому в чужую свадьбу заводить свою незачем (D1-21):
+                код из ссылки ДРУГ/КООРД/ПАРА ведёт на приём приглашения. */}
+            {joinCodeDraft === null ? (
+              <button onClick={() => setJoinCodeDraft('')} className="press w-full card p-5 flex items-center gap-4 text-left fade-up">
+                <div className="w-[52px] h-[52px] rounded-[18px] bg-[var(--lav)] flex items-center justify-center text-[24px]">🤝</div>
+                <div className="flex-1"><b className="text-[15px]">{t('У меня есть приглашение в команду')}</b><p className="text-[11.5px] text-[var(--soft)] mt-0.5">{t('Код из ссылки, которую прислала пара')}</p></div>
+                <ChevronRight size={18} className="text-[var(--soft2)]" />
+              </button>
+            ) : (
+              <div className="card p-5 fade-up">
+                <b className="text-[15px]">{t('У меня есть приглашение в команду')}</b>
+                <div className="card-s flex items-center gap-3 px-4 py-3 mt-3">
+                  <input value={joinCodeDraft} onChange={e => setJoinCodeDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && openJoin()} autoFocus
+                    placeholder="ДРУГ-7F3K" className="bg-transparent outline-none text-[15px] w-full tracking-[.12em] placeholder:text-[var(--soft2)]" />
+                </div>
+                <button onClick={openJoin} disabled={!joinCodeDraft.trim()} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13px] mt-3 disabled:opacity-40">
+                  {t('Открыть приглашение')}
+                </button>
+              </div>
+            )}
             <button onClick={() => nav('/vendor-app/profile')} className="press w-full card p-5 flex items-center gap-4 text-left fade-up">
               <div className="w-[52px] h-[52px] rounded-[18px] bg-[var(--sage-soft)] flex items-center justify-center text-[24px]">✨</div>
               <div className="flex-1"><b className="text-[15px]">{t('Я подрядчик')}</b><p className="text-[11.5px] text-[var(--soft)] mt-0.5">{t('Анкета-витрина, заявки, календарь, сделки')}</p></div>
@@ -240,13 +361,12 @@ export function Auth() {
         )}
         {step < 2 && (
           <button
-            onClick={() => void (step === 0 ? requestCode() : submitCode())}
-            disabled={busy || (step === 0 ? !consent || phone.length !== 10 : code.join('').length !== 4)}
-            className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px]',
-              (busy || (step === 0 ? !consent || phone.length !== 10 : code.join('').length !== 4)) && 'opacity-40')}
+            onClick={() => void (signedIn ? afterSignIn() : step === 0 ? requestCode() : submitCode())}
+            disabled={primaryLocked}
+            className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px]', primaryLocked && 'opacity-40')}
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
-            {busy ? t('Секунду…') : step === 0 ? t('Получить код') : t('Войти')}
+            {busy ? t('Секунду…') : signedIn ? t('Продолжить') : step === 0 ? t('Получить код') : t('Войти')}
           </button>
         )}
       </div>
@@ -303,7 +423,10 @@ export function Notifications() {
     void Promise.all(rest.map(id => markNotificationRead(id).catch(() => undefined))).then(() => q.reload())
   }
 
-  const today = new Date().toDateString()
+  /* Время снимается один раз при монтировании: конструктор даты без аргументов
+     в теле компонента — то же нарушение чистоты рендера, что и `Date.now()`
+     (D4-22); линт ловит только второе. */
+  const [today] = useState(() => new Date().toDateString())
   const isToday = (iso?: string) => !!iso && new Date(iso).toDateString() === today
   const when = (iso?: string) => {
     if (!iso) return ''
@@ -342,7 +465,7 @@ export function Notifications() {
               const to = notificationRoute(n.link, { vendor: !weddingId })
               return (
                 <button key={n.id} onClick={() => { markRead(n.id); if (to) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
-                  {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[#C98A8A]" />}
+                  {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[var(--rose)]" />}
                   <Tile icon={look.icon} tile={look.tile} size={42} />
                   <div className="min-w-0">
                     <b className="text-[13px]">{n.title}</b>
@@ -406,7 +529,7 @@ function DevicePushRow() {
     setBusy(true)
     setErr(null)
     try {
-      if (state === 'on') { await disableDevicePush(); setState('off') } else { await enableDevicePush(); setState('on') }
+      if (state === 'on' || state === 'unverified') { await disableDevicePush(); setState('off') } else { await enableDevicePush(); setState('on') }
     } catch (e) {
       /* Сервер без ключей отвечает 501 своим текстом — его и показываем;
          отказ браузера приходит словами из `lib/push.ts`. */
@@ -418,16 +541,20 @@ function DevicePushRow() {
     : state === 'no-key' ? t('Push появится, когда будут подключены ключи Web Push — уведомления пока в приложении')
     : state === 'denied' ? t('Уведомления запрещены в настройках браузера')
     : state === 'on' ? t('Push включён на этом устройстве')
+    /* Подписка в браузере есть, а привязана ли она к этому аккаунту, сервер не
+       сообщает (ревью D4-06): на общем устройстве она может быть чужой. */
+    : state === 'unverified' ? t('В браузере подписка есть, но привязана ли она к вашему аккаунту, проверить нельзя. Чтобы push точно приходили сюда, выключите и включите заново.')
     : t('Push на этом устройстве выключен')
-  const canToggle = state === 'on' || state === 'off'
+  const canToggle = state === 'on' || state === 'off' || state === 'unverified'
+  const looksOn = state === 'on' || state === 'unverified'
   return (
     <div className="py-3.5 border-t border-[var(--track)]">
       <div className="flex items-center gap-3">
         <Smartphone size={16} className="text-[var(--ink2)]" />
         <span className="flex-1 text-[13px] font-medium">{t('Push на этом устройстве')}</span>
         {canToggle && (
-          <button disabled={busy} onClick={toggle} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative disabled:opacity-50', state === 'on' ? 'grad' : 'bg-[var(--track)]')} aria-label={t('Push на этом устройстве')}>
-            <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', state === 'on' ? 'left-[22px]' : 'left-[3px]')} />
+          <button disabled={busy} onClick={toggle} className={cn('w-[46px] h-[27px] rounded-full transition-colors relative disabled:opacity-50', looksOn ? 'grad' : 'bg-[var(--track)]')} aria-label={t('Push на этом устройстве')}>
+            <span className={cn('absolute top-[3px] w-[21px] h-[21px] rounded-full bg-[var(--card)] shadow transition-all', looksOn ? 'left-[22px]' : 'left-[3px]')} />
           </button>
         )}
       </div>
@@ -499,38 +626,20 @@ export function Settings() {
    * устройств» не выполняет своего обещания. Локальное состояние чистим после
    * ответа сервера — если запрос не прошёл, человек остаётся там, где был,
    * и видит причину.
-   */
-  const forgetLocally = () => {
-    saveTokens(null)
-    try { localStorage.clear() } catch { /* приватный режим */ }
-  }
-
-  /*
-   * «Выйти со всех устройств» — именно со всех, включая это.
    *
-   * `DELETE /users/me/sessions` гасит все ЧУЖИЕ сессии и намеренно оставляет
-   * текущую: на сервере это «выгнать постороннего, не выгоняя себя». Если
-   * ограничиться им, кнопка врёт — своя сессия остаётся живой, а браузер
-   * просто забывает токен. Поэтому дальше находим свою в списке (`current`)
-   * и гасим отдельно.
+   * Сам выход — `signOutEverywhere()` в `lib/api/auth.ts`: он общий с
+   * «Выйти из аккаунта» на экране «Мы» (D1-20/D4-05) и снимает push этого
+   * устройства до очистки токенов (D4-06).
    */
   const signOut = async () => {
-    try {
-      await api.delete('/users/me/sessions')
-      const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
-      if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
-      /* Своя гасится последней и по идентификатору из списка: угадывать её
-         нечем, а погасив раньше, мы потеряли бы доступ к самому списку. */
-    } catch {
-      /* Сервер не ответил. Локально уйти всё равно даём — иначе человек
-         заперт в аккаунте, из которого хочет выйти. Живая сессия при этом
-         остаётся, и это честнее, чем не пустить его на экран входа. */
-    }
-    forgetLocally()
+    await signOutEverywhere()
     nav('/auth')
   }
 
   const [deleteErr, setDeleteErr] = useState<string | null>(null)
+  /* 409 `active_deals`: удаление держат сделки, а отзыв согласия их не
+     проверяет — предлагаем его (D1-23). */
+  const [offerWithdraw, setOfferWithdraw] = useState(false)
   const deleteAccount = async () => {
     setDeleteErr(null)
     try {
@@ -545,10 +654,49 @@ export function Settings() {
           ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
           : t('Что-то пошло не так'),
       )
+      if (e instanceof ApiError && e.status === 409) setOfferWithdraw(true)
       return
     }
+    /* Аккаунт помечен удалённым, сессии погашены — подписка push этого
+       устройства не должна пережить его (тот же случай, что D4-06). */
+    await disableDevicePush().catch(() => undefined)
     forgetLocally()
     nav('/')
+  }
+
+  /*
+   * Отзыв согласия (D1-23). Политика обещает «отозвать можно в любой момент —
+   * это то же действие, что удаление аккаунта», а в приложении пути к
+   * `DELETE /users/me/consent` не было: человек с забронированным фотографом
+   * упирался в 409 удаления и отозвать согласие не мог. Два шага одной
+   * кнопкой, как у удаления; второй называет, что именно сделает сервер.
+   */
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false)
+  const [withdrawErr, setWithdrawErr] = useState<string | null>(null)
+  const [withdrawBusy, setWithdrawBusy] = useState(false)
+  const withdraw = async () => {
+    if (withdrawBusy) return
+    setWithdrawBusy(true)
+    setWithdrawErr(null)
+    try {
+      await withdrawConsent()
+    } catch (e) {
+      setWithdrawErr(explainError(e))
+      setConfirmWithdraw(false)
+      setWithdrawBusy(false)
+      return
+    }
+    await disableDevicePush().catch(() => undefined)
+    forgetLocally()
+    nav('/auth')
+  }
+
+  /* Отказ завершения чужой сессии — словами под списком (D1-18): раньше
+     `then` без `catch` молчал, и строка оставалась как ни в чём не бывало. */
+  const [sessionErr, setSessionErr] = useState<string | null>(null)
+  const endOther = (id: string) => {
+    setSessionErr(null)
+    void endSession(id).then(() => sessions.reload()).catch((e: unknown) => setSessionErr(explainError(e)))
   }
   const [cityPick, setCityPick] = useState(false)
   const { weddingId, setWeddingId, city, cityRegion, setCity, theme, setTheme, lang, setLang } = useStore()
@@ -634,7 +782,7 @@ export function Settings() {
               экран не видел; тумблер при этом ещё и отправлял бы правку. */}
           {ready(me) && <>
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
-            <div className="w-10 h-10 rounded-full bg-[#C98A8A] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? '·'}</div>
+            <div className="w-10 h-10 rounded-full bg-[var(--rose)] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? '·'}</div>
             <div className="flex-1 min-w-0">
               {editName ? (
                 <input value={nameDraft ?? ''} onChange={e => setNameDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && commitName()} autoFocus
@@ -699,10 +847,11 @@ export function Settings() {
                 </p>
               </div>
               {!d.current && (
-                <button onClick={() => void endSession(d.id ?? '').then(() => sessions.reload())} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{t('Завершить')}</button>
+                <button onClick={() => endOther(d.id ?? '')} className="text-[10.5px] font-bold text-[var(--rose-deep)] press">{t('Завершить')}</button>
               )}
             </div>
           ))}
+          {sessionErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{sessionErr}</p>}
         </div>
         <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
         {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
@@ -741,7 +890,25 @@ export function Settings() {
         ) : (
           <button onClick={() => setConfirmDelete(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Удалить аккаунт и все данные')}</button>
         )}
-        {deleteErr && <p className="text-[11px] text-center text-[var(--rose-deep)]">{deleteErr}</p>}
+        {deleteErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{deleteErr}</p>}
+        {offerWithdraw && (
+          <p className="text-[11px] text-center text-[var(--soft)] leading-relaxed px-4">
+            {t('Удаление держат сделки. Отозвать согласие можно и с ними — это тоже удалит аккаунт, кнопка ниже.')}
+          </p>
+        )}
+        {confirmWithdraw ? (
+          <div className="card px-4 py-4 text-center">
+            <p className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
+              {t('Согласие будет отозвано, аккаунт помечен на удаление, все сессии закрыты; данные сотрутся через 30 дней. Живые сделки при этом не проверяются.')}
+            </p>
+            <button disabled={withdrawBusy} onClick={() => void withdraw()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)] disabled:opacity-50">
+              {withdrawBusy ? t('Секунду…') : t('Подтвердить отзыв согласия')}
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmWithdraw(true)} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)]">{t('Отозвать согласие на обработку данных')}</button>
+        )}
+        {withdrawErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{withdrawErr}</p>}
         <p className="flex items-center justify-center gap-1.5 text-[10px] text-[var(--soft2)]"><Shield size={11} />{t('Данные защищены по 152-ФЗ · удаление аккаунта — по запросу')}</p>
       </div>
       {cityPick && <CityPicker onClose={() => setCityPick(false)} onPick={(c) => { setCity(c.n, c.r); setCityPick(false) }} />}

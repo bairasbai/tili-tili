@@ -39,7 +39,8 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
       const { chat } = await chatForUser(db(), chatId, claims.sub)
       assertOpen(chat)
 
-      app.realtime.join(chatId, socket)
+      // Хаб запоминает, чьё соединение: своё «печатает» автору не доставляется.
+      app.realtime.join(chatId, socket, claims.sub)
 
       /* Соединение не должно переживать токен.
        *

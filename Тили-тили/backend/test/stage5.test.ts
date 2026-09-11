@@ -120,9 +120,15 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
     expect(list.json()[0].inviteUrlUsed).toBe(true)
   })
 
-  it('одноразовая ссылка гаснет после обмена', async () => {
+  it('одноразовая ссылка гаснет после обмена — за окном повтора', async () => {
     const w = await newWedding()
     const guest = await newGuest(w)
+    /* Внутри десяти минут тот же код отдаёт тот же токен: медленная сеть
+       гасила ссылку впустую (ERR-0220, D3-07). За окном — 410. */
+    const soon = await app.inject({ method: 'GET', url: `/invite/${guest.code}` })
+    expect(soon.statusCode).toBe(200)
+    expect(soon.json().guestToken).toBe(guest.token)
+    await app.db!.query("update guest_invite_codes set used_at = now() - interval '11 minutes' where code = $1", [guest.code])
     const again = await app.inject({ method: 'GET', url: `/invite/${guest.code}` })
     expect(again.statusCode).toBe(410)
   })

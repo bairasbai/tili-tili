@@ -85,7 +85,7 @@ describe('согласие на обработку данных', () => {
     expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
   })
 
-  it('согласие даётся нажатием и фиксируется с датой', async () => {
+  it('согласие даётся нажатием и живёт только на экране', async () => {
     await authReady()
     fireEvent.click(screen.getByRole('checkbox'))
     expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('true')
@@ -93,9 +93,10 @@ describe('согласие на обработку данных', () => {
        номера отправлять некуда. Согласие — необходимое условие, не достаточное. */
     fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
     expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(false)
-    const saved = JSON.parse(localStorage.getItem('tt_consent')!)
-    expect(typeof saved.at).toBe('string')
-    expect(Number.isNaN(Date.parse(saved.at))).toBe(false)
+    /* Галочка — состояние экрана, не устройства: в хранилище она переживала
+       брошенный вход и стояла заранее для следующего человека на этом
+       телефоне (ERR-0226, D1-12). Дата согласия фиксируется сервером. */
+    expect(localStorage.getItem('tt_consent')).toBeNull()
   })
 
   it('одного согласия мало — без телефона код не запросить', async () => {

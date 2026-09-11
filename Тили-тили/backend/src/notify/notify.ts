@@ -49,7 +49,18 @@ interface Prefs {
   wedding_today: boolean
 }
 
-export async function notify(db: Queryable, item: NewNotification, now = new Date()): Promise<string | null> {
+/**
+ * @param weddingTz  пояс свадьбы, о которой новость, — запасной, когда в
+ *                   профиле пояс не задан. Клиент его не отправляет, и без
+ *                   запасного вся страна жила по Москве: паре во Владивостоке
+ *                   push молчали весь рабочий день и звонили в два ночи (D4-04).
+ */
+export async function notify(
+  db: Queryable,
+  item: NewNotification,
+  now = new Date(),
+  weddingTz: string | null = null,
+): Promise<string | null> {
   const column = PREF_COLUMN[item.kind]
   const { rows } = await db.query<Prefs>(
     `select coalesce(${column ? `p.${column}` : 'true'}, true) as enabled,
@@ -74,13 +85,16 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
   // Молча писать строку, которую никто не увидит, незачем.
   if (!prefs || !prefs.enabled) return null
 
-  // Таймзона может быть не указана или испорчена: сервис работает в РФ,
-  // считаем по Москве. Уронить уведомление из-за настройки профиля нельзя.
-  const tz = knownTimeZone(prefs.tz)
+  // Пояс: профиль → свадьба, о которой новость → Москва. Таймзона может быть
+  // не указана или испорчена: сервис работает в РФ, считаем по Москве.
+  // Уронить уведомление из-за настройки профиля нельзя.
+  const tz = knownTimeZone(prefs.tz || weddingTz)
   /* В день X тишины и лимита нет вовсе (План §18.6): свадьба идёт прямо
    * сейчас, и «разбудим утром» тут значит «уже неважно». */
   const unlimited = item.critical || prefs.wedding_today
   let after = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, unlimited)
+  // Нашлось ли место для push в ближайшие две недели.
+  let placed = true
 
   if (!unlimited) {
     /* Лимит считается по УЖЕ ЗАПЛАНИРОВАННЫМ на эти сутки, а не по
@@ -94,6 +108,7 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
      * Сутки — МЕСТНЫЕ, как и тихие часы строкой выше. Раньше границу резал
      * `date_trunc('day')` по таймзоне сессии базы, то есть по UTC, и на
      * Камчатке лимит разрешал шесть push за местный день вместо трёх. */
+    placed = false
     for (let day = 0; day < PUSH_SPILL_DAYS; day++) {
       const bounds = localDayBounds(after, tz)
       const { rows: planned } = await db.query<{ n: string }>(
@@ -103,16 +118,25 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
       )
       // Свыше лимита — не выбрасываем, а переносим: непрочитанное
       // в приложении всё равно видно сразу.
-      if (Number(planned[0]!.n) < PUSH_LIMIT_PER_DAY) break
+      if (Number(planned[0]!.n) < PUSH_LIMIT_PER_DAY) {
+        placed = true
+        break
+      }
       after = new Date(after.getTime() + 86_400_000)
     }
   }
 
+  /* Места нет на две недели вперёд — push не будет вовсе: строка помечается
+   * доставленной сразу. Раньше она вставлялась с `deliver_after` на +14
+   * суток, и через две недели человеку звонили о новости двухнедельной
+   * давности — при живой переписке каждый день по три таких (D4-16).
+   * В приложении уведомление видно сразу, как и все остальные. */
+  if (!placed) after = now
   const id = uuidv7()
   await db.query(
-    `insert into notifications (id, user_id, kind, title, body, link, deliver_after)
-     values ($1,$2,$3,$4,$5,$6,$7)`,
-    [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after],
+    `insert into notifications (id, user_id, kind, title, body, link, deliver_after, pushed_at)
+     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after, placed ? null : now],
   )
   return id
 }
@@ -124,6 +148,11 @@ export async function notify(db: Queryable, item: NewNotification, now = new Dat
  * ставит им галочку наравне с парой в трёх строках из шести — тайминг,
  * сделки, день X, — а участниками свадьбы они не числятся: у них своя
  * сторона, а не роль в команде.
+ *
+ * `roles` сужает круг до перечисленных ролей команды: события сделок по
+ * §18.6 адресованы паре и подрядчику, и помощник с координатором, которым
+ * деньги закрыты везде, не должны получать «Сумма изменена: … ₽» (D4-02).
+ * Подрядчиков (`withVendors`) фильтр не касается — у них нет роли.
  */
 export async function notifyWedding(
   db: Queryable,
@@ -132,18 +161,20 @@ export async function notifyWedding(
   item: Omit<NewNotification, 'userId'>,
   now = new Date(),
   withVendors = false,
+  roles: readonly string[] | null = null,
 ): Promise<number> {
-  const { rows } = await db.query<{ user_id: string }>(
-    `select user_id from wedding_members where wedding_id = $1
+  const { rows } = await db.query<{ user_id: string; tz: string | null }>(
+    `select m.user_id, w.tz from wedding_members m join weddings w on w.id = m.wedding_id
+      where m.wedding_id = $1 and ($3::text[] is null or m.role = any($3))
       union
-     select v.user_id from deals d join vendors v on v.id = d.vendor_id
+     select v.user_id, w.tz from deals d join vendors v on v.id = d.vendor_id join weddings w on w.id = d.wedding_id
       where d.wedding_id = $1 and $2 and d.state in ('booked','paid_deposit','done')`,
-    [weddingId, withVendors],
+    [weddingId, withVendors, roles],
   )
   let sent = 0
   for (const row of rows) {
     if (row.user_id === exceptUserId) continue
-    if (await notify(db, { ...item, userId: row.user_id }, now)) sent += 1
+    if (await notify(db, { ...item, userId: row.user_id }, now, row.tz)) sent += 1
   }
   return sent
 }

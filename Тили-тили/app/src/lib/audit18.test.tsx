@@ -139,12 +139,38 @@ describe('редактор приглашений и мастер договор
     expect(screen.queryByLabelText('Предпочтения по еде')).toBeNull()
   })
 
-  it('«Договор готов» не обещает загрузку скана в сделку', async () => {
-    serve(COUPLE_OK)
-    const { container } = await open('/wedding/documents/new', 'Новый договор')
+  /*
+   * «Сгенерировать договор» обязана оформить документ на сервере — до ревью
+   * D2-03 этот тест кликал по ней без единого POST и был зелёным, то есть
+   * сертифицировал кнопку, которая меняла только экран (R-176). Теперь
+   * «Договор готов» показывается только после ответа 201 и проверяется
+   * тело запроса: код шаблона и стороны из формы.
+   */
+  it('«Сгенерировать договор» оформляет документ запросом, «Договор готов» — после ответа сервера', async () => {
+    const calls = serve({
+      ...COUPLE_OK,
+      '/weddings/w1/slots': [{
+        id: 's1', categoryId: 'photo', label: 'Фотограф', tileState: 'booked',
+        deal: { id: 'd1', state: 'booked', vendor: { id: 'v1', name: 'Елена Фото' }, price: { amount: 4_500_000, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' } },
+      }],
+      '/deals/d1/contract': { id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null },
+    })
+    const { container } = await open('/wedding/documents/new?deal=d1', 'Новый договор')
     fireEvent.click(screen.getByText('Далее'))
+    /* Исполнитель подставляется из сделки, как только мозаика пришла. */
+    await waitFor(() => expect((screen.getByPlaceholderText('ФИО или название исполнителя') as HTMLInputElement).value).toBe('Елена Фото'))
+    fireEvent.change(screen.getByPlaceholderText('ФИО заказчика — как в паспорте'), { target: { value: 'Анна Иванова' } })
+    fireEvent.change(screen.getByPlaceholderText('Заполните перед подписанием'), { target: { value: '4510 123456' } })
+    expect(calls.some(c => c.method === 'POST')).toBe(false)
     fireEvent.click(screen.getByText('Сгенерировать договор ✨'))
+
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/deals/d1/contract')).toBe(true))
+    expect(calls.find(c => c.method === 'POST' && c.path === '/deals/d1/contract')!.body).toEqual({
+      templateCode: 'photographer',
+      fields: { customerFullName: 'Анна Иванова', performerFullName: 'Елена Фото', customerPassport: '4510 123456' },
+    })
     await waitFor(() => expect(container.textContent).toContain('Договор готов'))
+    expect(container.textContent).toContain('версия 1')
     expect(container.textContent).not.toContain('загрузите скан')
     expect(container.textContent).toContain('загрузка сканов появится вместе с файловым хранилищем')
   })

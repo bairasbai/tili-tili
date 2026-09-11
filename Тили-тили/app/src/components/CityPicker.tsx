@@ -5,6 +5,24 @@ import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
 import { useEscape } from '@/lib/useEscape'
 
+/*
+ * Строка списка — на уровне модуля (инвариант 4): объявленная внутри
+ * `CityPicker`, она пересоздавалась на каждой отрисовке, и React размонтировал
+ * весь список при каждом введённом символе (ревью D5-27).
+ */
+function Row({ c, onPick }: { c: City; onPick: (c: City) => void }) {
+  return (
+    <button onClick={() => onPick(c)} className="press w-full flex items-center gap-3 px-5 py-3 text-left border-b border-[var(--track)] last:border-0">
+      <MapPin size={15} className="text-[var(--rose-deep)] shrink-0" />
+      <div className="flex-1 min-w-0">
+        <b className="text-[13.5px]">{c.n}</b>
+        <p className="text-[10.5px] text-[var(--soft)] truncate">{c.d ? `${c.d} · ` : ''}{c.r}</p>
+      </div>
+      <ChevronRight size={14} className="text-[var(--line)] shrink-0" />
+    </button>
+  )
+}
+
 /** Пикер города: полноэкранный оверлей с автопоиском. Используется в квизе, настройках, кабинете подрядчика. */
 export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onClose: () => void }) {
   useEscape(onClose)
@@ -28,17 +46,6 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
     )
   }
 
-  const Row = ({ c }: { c: City }) => (
-    <button onClick={() => onPick(c)} className="press w-full flex items-center gap-3 px-5 py-3 text-left border-b border-[#F3ECE5] last:border-0">
-      <MapPin size={15} className="text-[var(--rose-deep)] shrink-0" />
-      <div className="flex-1 min-w-0">
-        <b className="text-[13.5px]">{c.n}</b>
-        <p className="text-[10.5px] text-[var(--soft)] truncate">{c.d ? `${c.d} · ` : ''}{c.r}</p>
-      </div>
-      <ChevronRight size={14} className="text-[var(--line)] shrink-0" />
-    </button>
-  )
-
   return (
     <div role="dialog" aria-modal="true" aria-label={t('Выбор города')} className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col app-shell !relative" style={{ margin: '0 auto' }}>
       <div className="px-5 pt-6 pb-3 flex items-center gap-3">
@@ -59,7 +66,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
         {q.length >= 2 ? (
           results.length ? (
             <div className="card mx-5 overflow-hidden !p-0 stagger">
-              {results.map(c => <Row key={c.n + c.d} c={c} />)}
+              {results.map(c => <Row key={c.n + c.d} c={c} onPick={onPick} />)}
             </div>
           ) : (
             <div className="text-center pt-16 px-8">
@@ -71,7 +78,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
         ) : (
           <>
             <p className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-6 mb-2">{t('Башкортостан')}</p>
-            <div className="card mx-5 overflow-hidden !p-0 mb-4">{bashkir.map(c => <Row key={c.n} c={c} />)}</div>
+            <div className="card mx-5 overflow-hidden !p-0 mb-4">{bashkir.map(c => <Row key={c.n} c={c} onPick={onPick} />)}</div>
             <p className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-6 mb-2">{t('Популярные')}</p>
             <div className="flex flex-wrap gap-2 px-5">
               {russia.map(c => (

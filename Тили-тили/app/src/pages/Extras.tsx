@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Heart, Plus, Trash2, Wine, Users } from 'lucide-react'
-import { fmt } from '@/lib/money'
+import { fmt, rub } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getCategories, getFavorites } from '@/lib/api/catalog'
 import { useApi } from '@/lib/api/useApi'
@@ -106,6 +106,11 @@ export function Notes() {
 }
 
 /* Калькулятор алкоголя (боль жениха: «сколько брать, чтобы хватило и не переплатить») */
+/*
+ * Нормы — редакционные константы банкетного формата, а не расчёт Тиля: у
+ * ИИ-координатора нет модели, и подписывать его именем таблицу из кода
+ * значит приписывать ему то, чего он не делал (ревью D5-24, R-174).
+ */
 export function AlcoholCalc() {
   const [guestsN, setGuestsN] = useState(80)
   const [strong, setStrong] = useState(true)
@@ -117,7 +122,7 @@ export function AlcoholCalc() {
   ]
   return (
     <div className="pb-28">
-      <TopBar back title={t('Калькулятор алкоголя')} sub={t('Нормы банкетного формата · по Тилю')} />
+      <TopBar back title={t('Калькулятор алкоголя')} sub={t('Нормы банкетного формата')} />
       <div className="px-5 mt-3 space-y-3.5">
         <div className="card p-5">
           <div className="flex items-center justify-between">
@@ -154,12 +159,15 @@ export function AlcoholCalc() {
         </div>
 
         <div className="card-s p-4 text-[11.5px] text-[var(--ink2)] leading-relaxed">
-          ✦ <b>{t('Совет Тиля:')}</b> {t('закладывайте +10% запаса. Для усадьбы уточните пробковый сбор — иногда выгоднее закупаться самим. Берите с чеком: невскрытое часто принимают обратно.')}
+          ✦ <b>{t('Совет:')}</b> {t('закладывайте +10% запаса. Для усадьбы уточните пробковый сбор — иногда выгоднее закупаться самим. Берите с чеком: невскрытое часто принимают обратно.')}
         </div>
 
         <div className="card p-4 flex justify-between items-center">
           <span className="text-[12.5px] text-[var(--soft)]">{t('Ориентир по бюджету')}</span>
-          <b className="font-serif-d text-[18px] tabular">{fmt(guestsN * (strong ? 750 : 500))}</b>
+          {/* 750/500 — рубли на гостя, а `fmt` печатает копейки: без `rub()`
+              80 гостей давали «600 ₽» вместо «60 000 ₽» (ревью D5-06,
+              правило `money.ts`: литерал в рублях оборачивается в rub()). */}
+          <b className="font-serif-d text-[18px] tabular">{fmt(rub(guestsN * (strong ? 750 : 500)))}</b>
         </div>
       </div>
     </div>

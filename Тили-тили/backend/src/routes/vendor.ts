@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, conflict, notFound } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { holdDatesOf } from '../catalog/holds.js'
 import { assertRealDate } from '../wedding/dates.js'
@@ -275,17 +275,35 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
     const vendorId = await myVendorId(request.caller!.userId)
     if (!vendorId) throw notFound('Анкета ещё не создана')
 
-    // Автопубликация с пост-модерацией (План §19.2): анкета попадает в выдачу
-    // сразу. Держать её в очереди значит терять подрядчика, который пришёл
-    // один раз и больше не вернётся.
-    await db().query('update vendors set published_at = coalesce(published_at, now()) where id = $1', [vendorId])
+    /* Автопубликация с пост-модерацией (План §19.2): анкета попадает в выдачу
+     * сразу. Держать её в очереди значит терять подрядчика, который пришёл
+     * один раз и больше не вернётся.
+     *
+     * Снятая модератором анкета (`published_at` пуст, `moderated_at` стоит
+     * от решения) публикуется заново как НОВАЯ: `moderated_at` сбрасывается,
+     * и она снова встаёт в очередь. Раньше метка решения оставалась, анкета
+     * возвращалась в каталог одной кнопкой без единой правки и в очередь не
+     * попадала никогда — санкция отменялась самим подрядчиком (D5-03).
+     * Выражения в `set` читают старые значения строки, поэтому условие по
+     * `published_at` смотрит на состояние до записи.
+     *
+     * Заблокированная (`blocked_at`) не публикуется вовсе: блокировка —
+     * крайняя санкция §18.2, и «опубликована» ей отвечать нельзя, каталог
+     * её всё равно не покажет. 409 объявлен контрактом. */
+    const { rows } = await db().query<{ moderated_at: Date | null }>(
+      `update vendors
+          set published_at = coalesce(published_at, now()),
+              moderated_at = case when published_at is null then null else moderated_at end
+        where id = $1 and blocked_at is null
+        returning moderated_at`,
+      [vendorId],
+    )
+    if (rows.length === 0) {
+      throw conflict('vendor_blocked', 'Анкета заблокирована модерацией — публикация закрыта')
+    }
     await db().query(
       `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'vendor.published', 'vendor', $2)`,
       [request.caller!.userId, vendorId],
-    )
-    const { rows } = await db().query<{ moderated_at: Date | null }>(
-      'select moderated_at from vendors where id = $1',
-      [vendorId],
     )
     return { status: rows[0]!.moderated_at ? 'live' : 'moderation' }
   })

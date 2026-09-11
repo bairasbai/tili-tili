@@ -1,6 +1,7 @@
 import type { Queryable } from '../plugins/db.js'
 import { AppError, forbidden, notFound } from '../errors.js'
 import type { Role } from '../wedding/access.js'
+import { isUuid } from '../ids.js'
 
 /**
  * Кто какой чат видит — раздел 6 плана, одним списком.
@@ -72,13 +73,17 @@ export const CHAT_COLUMNS = 'c.id, c.wedding_id, c.kind, c.vendor_id, c.slot_id,
  * которому этот вид чата не положен: он и так знает, что чат есть.
  */
 export async function chatForUser(db: Queryable, chatId: string, userId: string): Promise<ChatCaller> {
-  if (!/^[0-9a-f-]{36}$/i.test(chatId)) throw notFound('Чат не найден')
+  if (!isUuid(chatId)) throw notFound('Чат не найден')
 
-  const { rows } = await db.query<ChatRow & { role: Role | null; owner_id: string | null; booked: boolean }>(
+  const { rows } = await db.query<
+    ChatRow & { role: Role | null; owner_id: string | null; booked: boolean; caller_blocked: boolean }
+  >(
     `select ${CHAT_COLUMNS}, m.role, v.user_id as owner_id,
             exists(select 1 from deals d join vendors mine on mine.id = d.vendor_id
                     where d.wedding_id = c.wedding_id and mine.user_id = $2
-                      and d.state in ('booked','paid_deposit','done')) as booked
+                      and d.state in ('booked','paid_deposit','done')) as booked,
+            -- Анкета того, кто пришёл, заблокирована модератором.
+            exists(select 1 from vendors b where b.user_id = $2 and b.blocked_at is not null) as caller_blocked
        from chats c
        join weddings w on w.id = c.wedding_id
        left join wedding_members m on m.wedding_id = c.wedding_id and m.user_id = $2
@@ -113,9 +118,17 @@ export async function chatForUser(db: Queryable, chatId: string, userId: string)
    * Свой чат открыт ему всегда, общие — только пока он забронирован:
    * §3.11 говорит про «забронированных подрядчиков», а кандидат чужую
    * кухню обсуждать не должен. */
-  if (row.owner_id && row.owner_id === userId) return { chat, as: 'vendor' }
-  if (row.booked && VENDOR_VISIBLE.includes(row.kind)) return { chat, as: 'vendor' }
-  throw notFound('Чат не найден')
+  const asVendor = (row.owner_id !== null && row.owner_id === userId) || (row.booked && VENDOR_VISIBLE.includes(row.kind))
+  if (!asVendor) throw notFound('Чат не найден')
+  /* Блокировка — высшая санкция модератора (План §18.2), и переписка в неё
+   * входит: заблокированный за спам или мошенничество не должен продолжать
+   * писать парам из своих чатов и сидеть в общих чатах свадьбы, пока сделка
+   * числится забронированной. Каталог его уже не показывает (ERR-0197) —
+   * чаты закрываются той же дверью. 403, а не 404: чат есть, и он его знает. */
+  if (row.caller_blocked) {
+    throw new AppError(403, 'vendor_blocked', 'Анкета заблокирована — переписка на платформе недоступна')
+  }
+  return { chat, as: 'vendor' }
 }
 
 /**

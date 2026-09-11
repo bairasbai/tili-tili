@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { UUID_ID, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
 import { rolesSeeing } from '../chats/access.js'
@@ -33,6 +33,19 @@ const MONEY_SCHEMA = {
 
 const EXTERNAL_TTL_DAYS = 30
 
+/**
+ * Цена сделки при заведении — больше нуля.
+ *
+ * Ноль проходил схему (`minimum: 0`) и дальше жил как цена: проверка
+ * переплаты в оплате отключена условием `price > 0`, и сделка с ценой 0
+ * принимала любые суммы без предела — ERR-0039 с нулём вместо `null`
+ * (D2-05, R-53). Схема оставлена общей с `PATCH /deals`, где ноль законен:
+ * там он назначается явно и оплату закрывает `no_price`.
+ */
+function assertPositivePrice(amount: number): void {
+  if (amount <= 0) throw new AppError(422, 'bad_amount', 'Цена сделки должна быть больше нуля')
+}
+
 export async function slotRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -40,10 +53,40 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   }
   const seesMoney = (role: string | undefined) => role === 'couple'
 
+  /**
+   * Отмена сделки в слоте — одна дверь для брони и для своего подрядчика.
+   *
+   * Состояние читается `for update`: два одновременных «Отменить» с разными
+   * ключами иначе оба видели `booked`, оба писали событие `booked → cancelled`
+   * и оба слали подрядчику «Сделка отменена» (D2-06, R-187). Переход
+   * проверяется той же машиной, что у `PATCH /deals`: из `done` отменять
+   * нельзя — услуга оказана и оплачена, а здесь до этого можно было, и
+   * плитка выполненной работы пустела (D2-02, R-102).
+   */
+  async function cancelDealInSlot(client: Queryable, slotId: string, dealId: string, actorId: string): Promise<void> {
+    const { rows } = await client.query<{ state: DealState }>('select state from deals where id = $1 for update', [
+      dealId,
+    ])
+    const state = rows[0]!.state
+    if (state === 'cancelled') throw conflict('already_cancelled', 'Сделка уже отменена')
+    assertTransition(state, 'cancelled')
+
+    await client.query(`update deals set state = 'cancelled', cancelled_at = now() where id = $1`, [dealId])
+    await client.query(
+      `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
+       values ($1, $2, $3, 'cancelled', $4)`,
+      [uuidv7(), dealId, state, actorId],
+    )
+    // Слот освобождается, дата возвращается подрядчику. Ручную отметку
+    // «занято» не трогаем — её ставил он сам.
+    await client.query('update slots set deal_id = null where id = $1', [slotId])
+    await releaseVendorDate(client, dealId)
+  }
+
   /** Слот этой свадьбы или 404. Проверка по weddingId обязательна: без неё
    *  чужой slotId из другой свадьбы прошёл бы по своей матрице доступа. */
   async function slotOf(client: Queryable, weddingId: string, slotId: string) {
-    if (!/^[0-9a-f-]{36}$/i.test(slotId)) throw notFound('Слот не найден')
+    if (!isUuid(slotId)) throw notFound('Слот не найден')
     const { rows } = await client.query<{ id: string; deal_id: string | null; category_id: string }>(
       'select id, deal_id, category_id from slots where id = $1 and wedding_id = $2',
       [slotId, weddingId],
@@ -85,7 +128,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const weddingId = request.member!.weddingId
       const { slotId } = request.params as { slotId: string }
-      const body = request.body as { vendorId: string; price: { amount: number } }
+      const body = request.body as { vendorId: string; packageId?: string; price: { amount: number } }
+      assertPositivePrice(body.price.amount)
 
       return withIdempotency(db(), request, reply, 'slots.book', async () => {
         const result = await db().tx(async (client) => {
@@ -97,6 +141,26 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
             [body.vendorId],
           )
           if (!vendor[0]) throw notFound('Подрядчик не найден')
+
+          /* Пакет, если назван, обязан быть пакетом ЭТОГО подрядчика.
+           * Раньше поле принималось и молча ничего не делало — класс
+           * ERR-0034 (D2-23). Колонки под пакет у сделки нет, поэтому
+           * здесь только проверка: чужой или несуществующий пакет — 422,
+           * а не бронь «как будто по пакету». */
+          if (body.packageId !== undefined) {
+            // Колонка uuid: строка не той формы роняет запрос драйвером (R-118).
+            const { rows: pkg } = new RegExp(UUID_ID.pattern).test(body.packageId)
+              ? await client.query('select 1 from vendor_packages where id = $1 and vendor_id = $2', [
+                  body.packageId,
+                  body.vendorId,
+                ])
+              : { rows: [] }
+            if (pkg.length === 0) {
+              throw new AppError(422, 'unknown_package', 'Такого пакета у подрядчика нет', {
+                packageId: 'пакет не найден у этого подрядчика',
+              })
+            }
+          }
 
           const dealId = uuidv7()
           await client.query(
@@ -145,26 +209,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const result = await db().tx(async (client) => {
         const slot = await slotOf(client, weddingId, slotId)
         if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нечего отменять')
-
-        const { rows } = await client.query<{ state: DealState }>('select state from deals where id = $1', [
-          slot.deal_id,
-        ])
-        const state = rows[0]!.state
-        if (state === 'cancelled') throw conflict('already_cancelled', 'Сделка уже отменена')
-
-        await client.query(
-          `update deals set state = 'cancelled', cancelled_at = now() where id = $1`,
-          [slot.deal_id],
-        )
-        await client.query(
-          `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
-           values ($1, $2, $3, 'cancelled', $4)`,
-          [uuidv7(), slot.deal_id, state, request.caller!.userId],
-        )
-        // Слот освобождается, дата возвращается подрядчику. Ручную отметку
-        // «занято» не трогаем — её ставил он сам.
-        await client.query('update slots set deal_id = null where id = $1', [slotId])
-        await releaseVendorDate(client, slot.deal_id)
+        await cancelDealInSlot(client, slotId, slot.deal_id, request.caller!.userId)
         return (await loadSlot(client, slotId, true))!
       })
       return { status: 200, body: result }
@@ -206,13 +251,16 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           if (!COMMITTED.includes(deal.state)) {
             throw conflict('not_booked', 'Оплатить можно только забронированную сделку')
           }
-          // Без цены платить нечего: сумма без договорённости — просто число,
-          // и проверить переплату не по чему.
-          if (deal.price === null) {
+          /* Без цены платить нечего: сумма без договорённости — просто число,
+           * и проверить переплату не по чему. Ноль — та же пустота: цена 0
+           * назначается через `PATCH /deals`, и оплата «в счёт нуля» была бы
+           * оплатой без предела (ERR-0039 с нулём вместо `null`, D2-05). */
+          const price = deal.price === null ? null : Number(deal.price)
+          if (price === null || price <= 0) {
             throw conflict('no_price', 'У сделки не указана цена — сначала договоритесь о сумме')
           }
 
-          const amount = body.amount?.amount ?? Number(deal.price)
+          const amount = body.amount?.amount ?? price
           if (amount <= 0) throw new AppError(422, 'bad_amount', 'Сумма оплаты должна быть больше нуля')
 
           const { rows: paid } = await client.query<{ total: string }>(
@@ -221,15 +269,14 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
             [slot.deal_id],
           )
           const already = Number(paid[0]!.total)
-          const price = Number(deal.price ?? 0)
-          if (price > 0 && already + amount > price) {
+          if (already + amount > price) {
             throw conflict('overpay', `Сумма оплат превысила цену сделки: уже ${already}, цена ${price}`)
           }
 
           await client.query(
             `insert into payments (id, deal_id, kind, amount, currency, status)
              values ($1, $2, $3, $4, 'RUB', 'recorded')`,
-            [uuidv7(), slot.deal_id, already + amount >= price && price > 0 ? 'balance' : 'deposit', amount],
+            [uuidv7(), slot.deal_id, already + amount >= price ? 'balance' : 'deposit', amount],
           )
 
           // Эквайринга в MVP нет: запись фиксирует факт, деньги ходят между
@@ -272,6 +319,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const { slotId } = request.params as { slotId: string }
       const body = request.body as { vendorName: string; price: { amount: number }; phone?: string }
+      assertPositivePrice(body.price.amount)
 
       return db().tx(async (client) => {
         await slotOf(client, weddingId, slotId)
@@ -317,19 +365,16 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     await db().tx(async (client) => {
       const slot = await slotOf(client, weddingId, slotId)
       if (!slot.deal_id) throw notFound('В этом слоте нет своего подрядчика')
-      const { rows } = await client.query<{ external_name: string | null; state: DealState }>(
-        'select external_name, state from deals where id = $1',
+      const { rows } = await client.query<{ external_name: string | null }>(
+        'select external_name from deals where id = $1',
         [slot.deal_id],
       )
       if (!rows[0]?.external_name) throw notFound('В этом слоте не свой подрядчик')
 
-      await client.query(`update deals set state = 'cancelled', cancelled_at = now() where id = $1`, [slot.deal_id])
-      await client.query(
-        `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
-         values ($1, $2, $3, 'cancelled', $4)`,
-        [uuidv7(), slot.deal_id, rows[0].state, request.caller!.userId],
-      )
-      await client.query('update slots set deal_id = null where id = $1', [slotId])
+      /* Тот же путь, что у отмены брони: состояние под блокировкой и через
+       * машину переходов. Раньше состояние здесь не смотрели вовсе, и
+       * выполненная работа своего подрядчика снималась с плитки (D2-02). */
+      await cancelDealInSlot(client, slotId, slot.deal_id, request.caller!.userId)
       // Выданный гостевой токен аннулируется вместе с подрядчиком: иначе
       // человек, которого убрали из свадьбы, продолжает видеть её данные.
       await client.query('update external_invites set revoked_at = now() where slot_id = $1 and revoked_at is null', [
@@ -408,16 +453,24 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     const { token } = request.params as { token: string }
     const invite = await inviteByToken(token)
     const chatId = await externalChatId(invite.wedding_id, invite.slot_id)
+    /* Чат ключуется слотом, а не сделкой: история прежнего подрядчика (его
+     * реплики, телефон, цены — ПДн третьего лица) доставалась следующему в
+     * том же слоте (ERR-0219, D4-01). Без миграции: по токену видна переписка
+     * не старше текущей сделки слота; без сделки — ничего. */
+    const { rows: current } = await db().query<{ since: Date }>(
+      `select coalesce((select d.created_at from slots s join deals d on d.id = s.deal_id where s.id = $1), now()) as since`,
+      [invite.slot_id],
+    )
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
     const { rows } = await db().query<MessageRow>(
       `select id, chat_id, sender_id, text, attachments, created_at
          from messages
-        where chat_id = $1
+        where chat_id = $1 and created_at >= $5
           and ($2::text is null or (created_at, id) < ($2::timestamptz, $3::uuid))
         order by created_at desc, id desc
         limit $4`,
-      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1, current[0]!.since],
     )
     return buildPage(rows.map(toMessage), page.limit, (m) => encodeCursor(m.sentAt, m.id))
   })

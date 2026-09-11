@@ -138,9 +138,16 @@ function FundsManage({ weddingId, funds, busyId, write }: {
     await addFund(weddingId!, name.trim(), rub(Number(target)), '💌')
     setName(''); setTarget(''); setAdding(false)
   })
+  /*
+   * Деньги через приложение не проходят: платёжного провайдера нет (хвост
+   * владельца). Взнос гостя — запись «обещаю внести», и сумма на полосе — то,
+   * что гости обещали, а не то, что пришло. До ревью D3-02 здесь стояло
+   * «Собрано» и «гости переводят на цель» — утверждение о деньгах без кода
+   * под ним (R-174, R-203).
+   */
   return (
     <>
-      <SectionHead title={t('Денежные фонды')} sub={t('гости переводят на цель вместо вещей')} />
+      <SectionHead title={t('Денежные фонды')} sub={t('гости обещают суммы на цель вместо вещей')} />
       <div className="px-5 space-y-2.5">
         {funds.map(f => (
           <div key={f.id} className="card p-3.5">
@@ -154,12 +161,15 @@ function FundsManage({ weddingId, funds, busyId, write }: {
             </div>
             <div className="mt-3">
               <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
-                <span>{t('Собрано')} {fmt(f.collected?.amount ?? 0)}</span><span>{pct(f.collected?.amount, f.target?.amount)}%</span>
+                <span>{t('Обещано гостями')} {fmt(f.collected?.amount ?? 0)}</span><span>{pct(f.collected?.amount, f.target?.amount)}%</span>
               </div>
               <Bar pct={pct(f.collected?.amount, f.target?.amount)} />
             </div>
           </div>
         ))}
+        {funds.length > 0 && (
+          <p className="text-[10.5px] text-[var(--soft2)] px-1 leading-relaxed">{t('Суммы — обещания гостей: деньги они передают вам сами, приложение их не принимает.')}</p>
+        )}
         {!adding ? (
           <button onClick={() => setAdding(true)} className="press w-full card-s p-4 flex items-center justify-center gap-2 text-[13px] font-semibold">
             <Plus size={16} />{t('Добавить фонд')}
@@ -237,12 +247,13 @@ function CoupleGiftRow({ g, i, busy, onRemove }: {
           : <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Свободен')}</span>}
         {!confirm
           ? <button onClick={() => setConfirm(true)} className="press w-8 h-8 rounded-full bg-[var(--track)] flex items-center justify-center text-[var(--track-ink)]" aria-label={t('Удалить')}><Trash2 size={14} /></button>
-          : <button disabled={busy} onClick={onRemove} className="press text-[10px] font-bold px-2.5 py-1.5 rounded-full text-white disabled:opacity-50" style={{ background: '#9B6A6A' }}>{t('Точно?')}</button>}
+          : <button disabled={busy} onClick={onRemove} className="press text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{t('Точно?')}</button>}
       </div>
       {g.group && (
         <div className="mt-3">
+          {/* Складчина — те же обещания, что и фонды: денег приложение не держит. */}
           <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
-            <span>{t('Собрано')} {fmt(g.funded?.amount ?? 0)}</span><span>{pct(g.funded?.amount, g.price?.amount)}%</span>
+            <span>{t('Обещано гостями')} {fmt(g.funded?.amount ?? 0)}</span><span>{pct(g.funded?.amount, g.price?.amount)}%</span>
           </div>
           <Bar pct={pct(g.funded?.amount, g.price?.amount)} />
         </div>
@@ -342,9 +353,16 @@ export function GiftPick() {
         </div>
       )}
 
+      {/*
+        * Фонды и складчина — обещания, а не переводы. Платёжного провайдера
+        * нет: сервер записывает сумму, которую гость обещал внести, и больше
+        * ничего — деньги гость передаёт паре сам. До ревью D3-02 кнопка
+        * называлась «Перевести на цель», подзаголовок — «анонимный перевод», и
+        * гость, нажав «Внести», считал, что деньги ушли (R-174, R-203).
+        */}
       {funds.length > 0 && (
         <>
-          <SectionHead title={t('Денежные фонды')} sub={t('анонимный перевод на цель')} />
+          <SectionHead title={t('Денежные фонды')} sub={t('обещание внести — анонимно; деньги передаёте паре сами')} />
           <div className="px-5 space-y-2.5">
             {funds.map(f => (
               <div key={f.id} className="card p-3.5">
@@ -352,17 +370,17 @@ export function GiftPick() {
                   <Tile icon={f.icon ?? '💌'} tile="bg-[var(--rose-soft)]" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[13.5px] font-semibold truncate">{f.name}</p>
-                    <p className="text-[11px] text-[var(--soft)]">{t('Собрано')} {fmt(f.collected?.amount ?? 0)} {t('из')} {fmt(f.target?.amount ?? 0)}</p>
+                    <p className="text-[11px] text-[var(--soft)]">{t('Обещано')} {fmt(f.collected?.amount ?? 0)} {t('из')} {fmt(f.target?.amount ?? 0)}</p>
                   </div>
                 </div>
                 <div className="mt-3"><Bar pct={pct(f.collected?.amount, f.target?.amount)} /></div>
                 {fundFor === f.id ? (
                   <div className="flex gap-2 mt-2.5">
                     <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-                    <button disabled={busyId === f.id} onClick={() => doFundMoney(f.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Внести')}</button>
+                    <button disabled={busyId === f.id} onClick={() => doFundMoney(f.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Записать обещание')}</button>
                   </div>
                 ) : (
-                  <button onClick={() => { setFundFor(f.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Перевести на цель')}</button>
+                  <button onClick={() => { setFundFor(f.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">{t('Обещаю внести')}</button>
                 )}
               </div>
             ))}
@@ -375,7 +393,7 @@ export function GiftPick() {
           <SectionHead title={t('Мой выбор')} />
           <div className="px-5 space-y-2.5">
             {mine.map(g => (
-              <div key={g.id} className="card p-3.5 flex items-center gap-3" style={{ border: '1.5px solid rgba(169,188,160,.5)' }}>
+              <div key={g.id} className="card p-3.5 flex items-center gap-3 border-[1.5px] border-[var(--sage)]">
                 <Tile icon={g.icon ?? '🎁'} tile="bg-[var(--sage-soft)]" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold truncate">{g.name}</p>
@@ -410,14 +428,15 @@ export function GiftPick() {
               </div>
               {g.group && (
                 <div className="mt-3">
+                  {/* Складчина — обещания гостей, как и фонды (см. выше). */}
                   <div className="flex justify-between text-[10.5px] text-[var(--soft)] mb-1">
-                    <span>{t('Собрано')} {fmt(funded)} {t('из')} {fmt(price)}</span><span>{pct(funded, price)}%</span>
+                    <span>{t('Обещано')} {fmt(funded)} {t('из')} {fmt(price)}</span><span>{pct(funded, price)}%</span>
                   </div>
                   <Bar pct={pct(funded, price)} />
                   {fundFor === g.id ? (
                     <div className="flex gap-2 mt-2.5">
                       <input value={amount} onChange={e => setAmount(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Сумма, ₽')} className="flex-1 bg-[var(--track)] rounded-[12px] px-3.5 py-2.5 text-[12.5px] outline-none" />
-                      <button disabled={busyId === g.id} onClick={() => doFund(g.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Внести')}</button>
+                      <button disabled={busyId === g.id} onClick={() => doFund(g.id ?? '')} className="press px-4 py-2.5 rounded-[12px] grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{t('Записать обещание')}</button>
                     </div>
                   ) : (
                     <button onClick={() => { setFundFor(g.id ?? null); setAmount('') }} className="press mt-2.5 text-[11px] font-bold px-3.5 py-2 rounded-full card-s">
@@ -462,6 +481,26 @@ export function GiftPick() {
   )
 }
 
+/**
+ * Календарная дата «сейчас» в поясе свадьбы, `YYYY-MM-DD`.
+ *
+ * Пояс — из ответа сервера, если он его отдал; без него — пояс устройства:
+ * гость обычно там же, где и свадьба, а UTC не совпадает ни с кем. Неизвестный
+ * пояс не роняет экран — считаем по устройству.
+ */
+function todayIn(tz: string | null, now: number): string {
+  const opts = { year: 'numeric', month: '2-digit', day: '2-digit' } as const
+  try {
+    return new Intl.DateTimeFormat('en-CA', { ...opts, timeZone: tz ?? undefined }).format(new Date(now))
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', opts).format(new Date(now))
+  }
+}
+
+/** Прошёл ли день свадьбы — по её поясу, как на сервере (`date < today`). */
+const weddingPassed = (date: string, tz: string | null, now: number): boolean =>
+  date < todayIn(tz, now)
+
 /*
  * Отзыв гостя о подрядчике.
  *
@@ -486,14 +525,21 @@ export function GuestReviewForm() {
   const [sentOk, setSentOk] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /* «Сейчас» фиксируется на монтировании: `Date.now()` в теле рендера —
+     нечистый вызов, его результат менялся бы от перерисовки к перерисовке. */
+  const [now] = useState(() => Date.now())
 
   /* Без команды оценивать некого — формы нет вовсе, а не пустой список кнопок. */
   if (!token || !weddingId || !team.length) return null
 
   /* До свадьбы отзыв не принимается — это правило сервера, и сказать о нём
-     нужно здесь, а не отказом после заполнения формы. */
+     нужно здесь, а не отказом после заполнения формы. День считается по
+     поясу свадьбы, как на сервере: по UTC форма для свадьбы во Владивостоке
+     появлялась на десять часов позже, чем сервер уже принимал отзыв, а при
+     часах устройства «вперёд» — раньше, и гость получал 403 после
+     заполнения (ревью D3-18). */
   const date = q.data?.weddingDate ?? null
-  if (!date || date >= new Date().toISOString().slice(0, 10)) return (
+  if (!date || !weddingPassed(date, (q.data as { tz?: string | null } | null)?.tz ?? null, now)) return (
     <>
       <SectionHead title={t('Как прошла свадьба?')} sub={t('отзыв о команде')} />
       <div className="px-5">

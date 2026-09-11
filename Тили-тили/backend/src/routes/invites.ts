@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, gone, notFound } from '../errors.js'
+import { AppError, conflict, gone, notFound } from '../errors.js'
 import { requireRole, type Role } from '../wedding/access.js'
 import { inviteCode, normalizeCode, referralCode } from '../wedding/codes.js'
 
@@ -104,14 +104,16 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
     }>(
       `select i.code, i.role, w.title, u.name as inviter, i.expires_at, i.accepted_at, i.revoked_at
          from invites i
-         join weddings w on w.id = i.wedding_id
+         join weddings w on w.id = i.wedding_id and w.archived_at is null
          left join users u on u.id = i.created_by
         where i.code = $1`,
       [code],
     )
     const invite = rows[0]
-    // Один и тот же ответ на «нет такого кода», «отозван», «истёк» и «уже
-    // использован»: иначе перебором выясняется, какие коды существовали.
+    // Один и тот же ответ на «нет такого кода», «отозван», «истёк», «уже
+    // использован» и «свадьба отменена»: иначе перебором выясняется, какие
+    // коды существовали. Приглашение в архивную свадьбу до 2026-09-11 звало
+    // «в команду», а после приёма человек получал 404 на всём (D1-26).
     if (!invite || invite.revoked_at || invite.accepted_at || invite.expires_at.getTime() < Date.now()) {
       throw gone('Ссылка недействительна: истекла, отозвана или уже использована')
     }
@@ -151,38 +153,41 @@ export async function inviteRoutes(app: FastifyInstance): Promise<void> {
     return db().tx(async (client) => {
       // Одноразовость держится условием `accepted_at is null` прямо в UPDATE:
       // два одновременных перехода по ссылке иначе добавили бы в команду двоих.
+      // Архивная (отменённая) свадьба приглашений не принимает: членство в ней
+      // даёт «Вы в команде!» и 404 на всём (D1-26).
       const claimed = await client.query<{ wedding_id: string; role: Role }>(
-        `update invites set accepted_by = $2, accepted_at = now()
-          where code = $1 and accepted_at is null and revoked_at is null and expires_at > now()
-          returning wedding_id, role`,
+        `update invites i set accepted_by = $2, accepted_at = now()
+          where i.code = $1 and i.accepted_at is null and i.revoked_at is null and i.expires_at > now()
+            and exists (select 1 from weddings w where w.id = i.wedding_id and w.archived_at is null)
+          returning i.wedding_id, i.role`,
         [code, userId],
       )
       const invite = claimed.rows[0]
       if (!invite) throw gone('Ссылка недействительна: истекла, отозвана или уже использована')
 
-      const inserted = await client.query<{ role: Role; joined_at: Date }>(
-        `insert into wedding_members (wedding_id, user_id, role) values ($1, $2, $3)
-         on conflict (wedding_id, user_id) do nothing
-         returning role, joined_at`,
+      /* Уже в команде — роль меняется на роль приглашения, если она другая и
+       * человек не «пара»: ПАРА-ссылка помощнику — единственный в приложении
+       * способ повысить его. До 2026-09-11 здесь стояло `do nothing`: код
+       * сгорал, роль оставалась прежней, у пары в списке — `used` (D1-13).
+       * Паре по ссылке помощника и участнику с той же ролью — 409, и код
+       * не гасится: исключение откатывает транзакцию вместе с `accepted_at`,
+       * ссылка остаётся годной тому, кому её выдали. */
+      const upserted = await client.query<{ role: Role; joined_at: Date; inserted: boolean }>(
+        `insert into wedding_members as m (wedding_id, user_id, role) values ($1, $2, $3)
+         on conflict (wedding_id, user_id) do update set role = excluded.role
+           where m.role <> 'couple' and m.role <> excluded.role
+         returning m.role, m.joined_at, (xmax = 0) as inserted`,
         [invite.wedding_id, userId, invite.role],
       )
-      if (inserted.rowCount === 0) {
-        // Уже в команде — код всё равно погашен. Возвращаем текущее членство,
-        // а не ошибку: для человека переход по ссылке сработал.
-        const { rows } = await client.query<{ role: Role; joined_at: Date }>(
-          'select role, joined_at from wedding_members where wedding_id = $1 and user_id = $2',
-          [invite.wedding_id, userId],
-        )
-        const existing = rows[0]!
-        return member(userId, existing.role, existing.joined_at)
-      }
+      const membership = upserted.rows[0]
+      if (!membership) throw conflict('already_member', 'Вы уже в команде этой свадьбы')
 
       await client.query(
         `insert into audit_log (actor_id, action, entity, entity_id, diff)
-         values ($1, 'invite.accepted', 'wedding', $2, $3)`,
-        [userId, invite.wedding_id, JSON.stringify({ role: invite.role })],
+         values ($1, $2, 'wedding', $3, $4)`,
+        [userId, membership.inserted ? 'invite.accepted' : 'member.role_changed', invite.wedding_id, JSON.stringify({ role: invite.role })],
       )
-      return member(userId, inserted.rows[0]!.role, inserted.rows[0]!.joined_at)
+      return member(userId, membership.role, membership.joined_at)
     })
   })
 

@@ -498,6 +498,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         trace?: never;
@@ -678,6 +679,7 @@ export interface paths {
                         "application/json": components["schemas"]["Member"];
                     };
                 };
+                409: components["responses"]["Conflict"];
                 /** @description Истёк/отозван/уже использован */
                 410: {
                     headers: {
@@ -1017,6 +1019,13 @@ export interface paths {
                         "application/json": components["schemas"]["VendorPage"];
                     };
                 };
+                /** @description Курсор от другой сортировки (bad_cursor) — начать листать заново */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         put?: never;
@@ -1099,6 +1108,7 @@ export interface paths {
                         };
                     };
                 };
+                404: components["responses"]["NotFound"];
             };
         };
         put?: never;
@@ -1287,6 +1297,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -1667,6 +1678,7 @@ export interface paths {
                         "application/json": components["schemas"]["Guest"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         trace?: never;
@@ -2645,6 +2657,7 @@ export interface paths {
                     };
                 };
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -2974,6 +2987,7 @@ export interface paths {
                         };
                     };
                 };
+                404: components["responses"]["NotFound"];
             };
         };
         put?: never;
@@ -3345,6 +3359,7 @@ export interface paths {
                     content?: never;
                 };
                 409: components["responses"]["Conflict"];
+                429: components["responses"]["QuotaExceeded"];
             };
         };
         /**
@@ -3548,6 +3563,7 @@ export interface paths {
                     };
                 };
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         /**
@@ -3573,6 +3589,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         options?: never;
@@ -4825,6 +4842,8 @@ export interface paths {
                     };
                     content?: never;
                 };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
             };
         };
         options?: never;
@@ -5302,6 +5321,7 @@ export interface paths {
                         "application/json": components["schemas"]["TimelineEvent"][];
                     };
                 };
+                422: components["responses"]["Validation"];
             };
         };
         post?: never;
@@ -6119,6 +6139,8 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
             };
         };
         delete?: never;

@@ -287,7 +287,10 @@ describe.skipIf(!live)('перепроверка этапа 4, второй пр
       method: 'POST',
       url: `/weddings/${w.weddingId}/slots/${slot.id}/external`,
       headers: auth(w.token),
-      payload: { vendorName: 'Без цены', price: { amount: 0, currency: 'RUB' } },
+      /* Ноль ценой больше не проходит (422 `bad_amount`, D2-05): сделка без
+       * цены получается только правкой базы — так она и выглядит у сделки,
+       * которой цену ещё не назначили. */
+      payload: { vendorName: 'Без цены', price: { amount: 100, currency: 'RUB' } },
     })
     expect(external.statusCode).toBe(200)
     await app.db!.query('update deals set price = null where slot_id = $1', [slot.id])

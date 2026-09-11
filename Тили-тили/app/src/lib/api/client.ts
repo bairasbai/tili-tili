@@ -81,6 +81,13 @@ export class ApiError extends Error {
    * человеку по-прежнему показывается `message`.
    */
   readonly fields: Readonly<Record<string, string>>
+  /**
+   * Через сколько секунд повторить (заголовок `Retry-After` у 429). Контракт
+   * обещает его ради клиента (ERR-0051), но экраны его не читали: таймер
+   * повторной отправки кода считался от выдуманных 60 секунд, а сервер мог
+   * просить час. `null` — сервер срок не назвал.
+   */
+  readonly retryAfter: number | null
 
   constructor(
     kind: 'network' | 'timeout' | 'http',
@@ -88,6 +95,7 @@ export class ApiError extends Error {
     code: string,
     message: string,
     fields: Readonly<Record<string, string>> = {},
+    retryAfter: number | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -95,6 +103,7 @@ export class ApiError extends Error {
     this.status = status
     this.code = code
     this.fields = fields
+    this.retryAfter = retryAfter
   }
 
   /** Текст сервера про конкретное поле или `null`, если сервер поле не назвал. */
@@ -115,16 +124,78 @@ export class ApiError extends Error {
   }
 }
 
-/* Обмен refresh идёт один на всех: остальные ждут этот же промис. */
-let refreshing: Promise<Tokens | null> | null = null
+/**
+ * Слова, которыми клиент называет смерть сессии: выход со всех устройств с
+ * другого телефона, 30 дней бездействия, повторное предъявление refresh.
+ *
+ * Экспортируется, потому что по ним `AsyncState` отличает «войдите снова» от
+ * прочих отказов и показывает кнопку «Войти» вместо «Повторить»: повтор без
+ * токена получал бы от сервера служебное «Нужен заголовок Authorization» —
+ * и именно этот текст человек читал на экране (ревью D6-09).
+ */
+export const SESSION_EXPIRED = 'Сессия истекла — войдите снова'
 
-async function refreshTokens(): Promise<Tokens | null> {
+/** Секунды из `Retry-After`: число или HTTP-дата; нет заголовка — `null`. */
+function readRetryAfter(res: Response): number | null {
+  const h = res.headers.get('retry-after')
+  if (!h) return null
+  const n = Number(h)
+  if (Number.isFinite(n)) return n >= 0 ? Math.ceil(n) : null
+  const at = Date.parse(h)
+  return Number.isNaN(at) ? null : Math.max(0, Math.ceil((at - Date.now()) / 1000))
+}
+
+/** Ошибка из не-2xx ответа: код и текст сервера, поля 422, срок повтора 429. */
+async function errorFrom(res: Response): Promise<ApiError> {
+  let code = String(res.status)
+  let message = `Сервер ответил ${res.status}`
+  let fields: Record<string, string> = {}
+  try {
+    const j = (await res.json()) as { error?: { code?: string; message?: string; fields?: unknown } }
+    if (j.error?.code) code = j.error.code
+    if (j.error?.message) message = j.error.message
+    /* Берём только строки: чужое тело с `fields: [1, 2]` не должно
+       превращаться в подпись под полем. */
+    const f = j.error?.fields
+    if (f && typeof f === 'object' && !Array.isArray(f)) {
+      fields = Object.fromEntries(
+        Object.entries(f as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
+      )
+    }
+  } catch { /* тело не JSON — оставляем сообщение по статусу */ }
+  return new ApiError('http', res.status, code, message, fields, readRetryAfter(res))
+}
+
+/*
+ * Чем кончился обмен refresh.
+ *
+ * Три исхода, а не два: «вход кончился» (сервер отверг сам refresh — 401/403),
+ * «сервер не смог» (5xx выката, 429 ограничителя, сеть, таймаут) и успех.
+ * До ревью D6-07 первые два были одним `null` со стиранием хранилища: 503 на
+ * двадцать секунд выката выбрасывал человека на вход, а повторный вход стоит
+ * SMS. Теперь хранилище трогает только первый исход.
+ */
+type RefreshResult =
+  | { ok: true; tokens: Tokens }
+  | { ok: false; why: 'expired' }
+  | { ok: false; why: 'down'; error: ApiError }
+
+/* Обмен refresh идёт один на всех: остальные ждут этот же промис. */
+let refreshing: Promise<RefreshResult> | null = null
+
+async function refreshTokens(): Promise<RefreshResult> {
   const current = readTokens()
-  if (!current) return null
-  refreshing ??= (async () => {
+  if (!current) return { ok: false, why: 'expired' }
+  refreshing ??= (async (): Promise<RefreshResult> => {
+    /* Тот же потолок ожидания, что у всех запросов (D6-08): зависший на
+       прокси refresh без него держал `refreshing` навсегда, и все следующие
+       401 ждали тот же промис — приложение «висело» без единой ошибки. */
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
     try {
       const res = await fetch(`${BASE}/auth/refresh`, {
         method: 'POST',
+        signal: ctrl.signal,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken: current.refreshToken }),
       })
@@ -136,18 +207,28 @@ async function refreshTokens(): Promise<Tokens | null> {
            в этот момент значит выкинуть и ту вкладку, у которой всё в
            порядке. Сначала смотрим, не сменилась ли пара под нами. */
         const stored = readTokens()
-        if (stored && stored.refreshToken !== current.refreshToken) return stored
-        saveTokens(null)
-        return null
+        if (stored && stored.refreshToken !== current.refreshToken) return { ok: true, tokens: stored }
+        /* Вход кончился, только если сервер отверг сам refresh. Всё остальное —
+           5xx, 429, 4xx неожиданного вида — сервер не смог ответить по делу:
+           хранилище не трогаем, повтор сделает следующий запрос. */
+        if (res.status === 401 || res.status === 403) {
+          saveTokens(null)
+          return { ok: false, why: 'expired' }
+        }
+        return { ok: false, why: 'down', error: await errorFrom(res) }
       }
       const body = (await res.json()) as Tokens
       const next = { accessToken: body.accessToken, refreshToken: body.refreshToken }
       saveTokens(next)
-      return next
-    } catch {
-      /* сеть отвалилась во время обмена — токены не трогаем, попробуем в другой раз */
-      return null
+      return { ok: true, tokens: next }
+    } catch (e) {
+      /* Сеть отвалилась или мы не дождались — токены не трогаем, попробуем в другой раз. */
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        return { ok: false, why: 'down', error: new ApiError('timeout', 0, 'timeout', 'Сервер не ответил вовремя') }
+      }
+      return { ok: false, why: 'down', error: new ApiError('network', 0, 'network', 'Нет связи с сервером') }
     } finally {
+      clearTimeout(timer)
       refreshing = null
     }
   })()
@@ -192,7 +273,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
 }
 
 async function request<T>(method: Method, path: string, body?: unknown, opts?: Options): Promise<T> {
-  let tokens = readTokens()
+  const tokens = readTokens()
   let res: Response
   try {
     res = await raw(method, path, body, tokens?.accessToken ?? null, opts)
@@ -205,35 +286,25 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
 
   /* 401 с токеном на руках — пробуем обновить и повторить ровно один раз. */
   if (res.status === 401 && tokens) {
-    tokens = await refreshTokens()
-    if (tokens) {
+    const refreshed = await refreshTokens()
+    if (refreshed.ok) {
       try {
-        res = await raw(method, path, body, tokens.accessToken, opts)
+        res = await raw(method, path, body, refreshed.tokens.accessToken, opts)
       } catch {
         throw new ApiError('network', 0, 'network', 'Нет связи с сервером')
       }
+    } else if (refreshed.why === 'expired') {
+      /* Своими словами, а не исходным 401 (`token_expired`, «Нужен заголовок
+         Authorization: Bearer»): человек должен понять, что надо войти, а не
+         читать служебный текст. Код `session_expired` — для экранов. */
+      throw new ApiError('http', 401, 'session_expired', SESSION_EXPIRED)
+    } else {
+      /* Сервер не смог обменять токен — это его недоступность, не конец входа. */
+      throw refreshed.error
     }
   }
 
-  if (!res.ok) {
-    let code = String(res.status)
-    let message = `Сервер ответил ${res.status}`
-    let fields: Record<string, string> = {}
-    try {
-      const j = (await res.json()) as { error?: { code?: string; message?: string; fields?: unknown } }
-      if (j.error?.code) code = j.error.code
-      if (j.error?.message) message = j.error.message
-      /* Берём только строки: чужое тело с `fields: [1, 2]` не должно
-         превращаться в подпись под полем. */
-      const f = j.error?.fields
-      if (f && typeof f === 'object' && !Array.isArray(f)) {
-        fields = Object.fromEntries(
-          Object.entries(f as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
-        )
-      }
-    } catch { /* тело не JSON — оставляем сообщение по статусу */ }
-    throw new ApiError('http', res.status, code, message, fields)
-  }
+  if (!res.ok) throw await errorFrom(res)
 
   /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
      у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет

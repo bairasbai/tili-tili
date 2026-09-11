@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { AppError, forbidden, notFound } from '../errors.js'
 import { GUEST_ACCESSIBLE_WEDDING_PATHS, guestByToken, readGuestToken } from '../guests/access.js'
+import { isUuid } from '../ids.js'
 
 export const ROLES = ['couple', 'helper', 'coordinator', 'vendor'] as const
 export type Role = (typeof ROLES)[number]
@@ -147,7 +148,7 @@ export function weddingAccessHook(app: FastifyInstance) {
 
     const weddingId = (request.params as { weddingId?: string }).weddingId
     if (!weddingId) return
-    if (!/^[0-9a-f-]{36}$/i.test(weddingId)) throw notFound('Свадьба не найдена')
+    if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
 
     const role = await memberRole(app, weddingId, request.caller!.userId)
     // Чужая свадьба — 404, а не 403: иначе по кодам ответа перебором

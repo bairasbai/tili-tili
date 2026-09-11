@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
+import { escapeLike } from '../catalog/vendors.js'
 
 interface CityRow {
   id: number
@@ -50,7 +51,9 @@ export async function geoRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const { q, limit = 12 } = request.query as { q: string; limit?: number }
-      const needle = normalizeQuery(q)
+      // `%` и `_` в наборе — буквы, а не шаблон: `q=%%` иначе отдавал весь
+      // справочник (D5-11). Экранированная строка — только в `like … escape`.
+      const needle = escapeLike(normalizeQuery(q))
 
       // Сортировка отвечает на вопрос «что человек скорее всего набирает»:
       // сначала то, что начинается с введённого («сиб» → Сибай, не Новосибирск),
@@ -59,8 +62,8 @@ export async function geoRoutes(app: FastifyInstance): Promise<void> {
       const { rows } = await db().query<CityRow>(
         `select id, name, region, district, big, lat, lon, population
            from cities
-          where name_norm like $1 || '%' or name_norm like '%' || $1 || '%'
-          order by (name_norm like $1 || '%') desc, big desc, population desc nulls last, name
+          where name_norm like $1 || '%' escape '\\' or name_norm like '%' || $1 || '%' escape '\\'
+          order by (name_norm like $1 || '%' escape '\\') desc, big desc, population desc nulls last, name
           limit $2`,
         [needle, limit],
       )

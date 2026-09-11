@@ -7,6 +7,7 @@ import { recomputeRating } from '../reviews/rating.js'
 import { notify } from '../notify/notify.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { Queryable } from '../plugins/db.js'
+import { isUuid } from '../ids.js'
 
 /**
  * Какая санкция к какой цели применима (План §18.2).
@@ -238,7 +239,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const staffId = await requireStaff(request)
       const { vendorId } = request.params as { vendorId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Анкета не найдена')
+      if (!isUuid(vendorId)) throw notFound('Анкета не найдена')
       const body = request.body as { action: 'approve' | 'reject' | 'verify'; reason?: string }
 
       /* Снятие с публикации без причины подрядчику нечем исправить: в
@@ -378,7 +379,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   app.get('/admin/verifications/:requestId', { preHandler: app.requireConsent }, async (request) => {
     const staffId = await requireStaff(request)
     const { requestId } = request.params as { requestId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw notFound('Заявка не найдена')
+    if (!isUuid(requestId)) throw notFound('Заявка не найдена')
 
     /* Та же выборка, что у очереди, но по одной заявке и без условия на
      * состояние: карточка показывает и разобранную — с датой решения.
@@ -449,7 +450,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const staffId = await requireStaff(request)
       const { requestId } = request.params as { requestId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw notFound('Заявка не найдена')
+      if (!isUuid(requestId)) throw notFound('Заявка не найдена')
       const body = request.body as { action: 'approve' | 'reject'; reason?: string }
 
       /* Отказ без причины подрядчику нечем исправить: в уведомление ушло бы
@@ -602,7 +603,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const staffId = await requireStaff(request)
       const { complaintId } = request.params as { complaintId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(complaintId)) throw notFound('Жалоба не найдена')
+      if (!isUuid(complaintId)) throw notFound('Жалоба не найдена')
       const body = request.body as { action: 'dismiss' | 'warn' | 'downrank' | 'block'; note?: string }
 
       /* Применимость санкции к цели — ДО транзакции. Иначе «заблокировать»
@@ -961,7 +962,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const staffId = await requireStaff(request)
       const { weddingId } = request.params as { weddingId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(weddingId)) throw notFound('Свадьба не найдена')
+      if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
       const { reason } = request.query as { reason: string }
 
       const { rows } = await db().query<{

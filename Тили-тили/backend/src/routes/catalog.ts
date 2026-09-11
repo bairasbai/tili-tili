@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
-import { UUID_ID, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
 import { holdDatesOf } from '../catalog/holds.js'
@@ -8,6 +8,8 @@ import { assertRealDate } from '../wedding/dates.js'
 import {
   VENDOR_COLUMNS,
   VENDOR_LIVE_JOIN,
+  assertVendorLive,
+  escapeLike,
   loadDetail,
   rotateNewcomers,
   toVendor,
@@ -34,14 +36,37 @@ const MONEY_MAX = Number.MAX_SAFE_INTEGER
  * прячет `publicRating`, здесь — то же условие (ERR-0216). */
 const SHOWN_RATING = `case when v.reviews_count >= ${MIN_REVIEWS_TO_SHOW} then v.rating end`
 
+/* `key` — форма значения в курсоре по типу колонки: дробь законна только
+ * у рейтинга, `4.5::bigint` и «9223372036854775807::int» база не примет и
+ * упадёт ошибкой приведения, то есть 500 (D5-09). Проверяется до запроса. */
+const INTEGER_KEY = /^-?\d+$/
 const SORTS = {
-  rating: { expr: `coalesce(${SHOWN_RATING}, -1)`, dir: 'desc', cast: '::numeric' },
-  price_asc: { expr: 'coalesce(v.price_from, 9223372036854775807)', dir: 'asc', cast: '::bigint' },
-  price_desc: { expr: 'coalesce(v.price_from, -1)', dir: 'desc', cast: '::bigint' },
-  popular: { expr: 'v.reviews_count', dir: 'desc', cast: '::int' },
+  rating: { expr: `coalesce(${SHOWN_RATING}, -1)`, dir: 'desc', cast: '::numeric', key: /^-?\d+(\.\d+)?$/ },
+  price_asc: { expr: 'coalesce(v.price_from, 9223372036854775807)', dir: 'asc', cast: '::bigint', key: INTEGER_KEY },
+  price_desc: { expr: 'coalesce(v.price_from, -1)', dir: 'desc', cast: '::bigint', key: INTEGER_KEY },
+  popular: { expr: 'v.reviews_count', dir: 'desc', cast: '::int', key: INTEGER_KEY },
 } as const
 
 type SortName = keyof typeof SORTS
+
+/** Пониженная санкцией анкета идёт после всех непониженных (ERR-0071). */
+const DOWNRANKED = '(v.downranked_at is not null)::int'
+
+/**
+ * Курсор каталога: `сортировка|понижение|значение` плюс идентификатор.
+ *
+ * Имя сортировки — чтобы курсор от `sort=rating` не приводился к типу
+ * `sort=price_asc` и не ронял запрос (D5-09): чужой курсор — 400. Признак
+ * понижения — потому что он первый ключ `ORDER BY`: без него условие «после
+ * курсора» сравнивало только значение, и пониженные анкеты при листании
+ * либо терялись (ключ пониженной выше ключа последней строки страницы),
+ * либо дублировали уже показанных (D5-10, R-47).
+ */
+const CATALOG_CURSOR = /^(rating|price_asc|price_desc|popular)\|[01]\|-?\d+(\.\d+)?$/
+
+function catalogCursor(sort: SortName, down: boolean, key: string, id: string): string {
+  return encodeCursor(`${sort}|${down ? 1 : 0}|${key}`, id)
+}
 
 /** `2027-06` → границы месяца. Без разбора руками: неверный месяц ловится схемой. */
 function monthRange(month: string): [string, string] {
@@ -113,8 +138,24 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       }
       // Каталог листается по рейтингу и цене, а не по времени: ключ курсора
       // приводится к `::numeric`/`::bigint`/`::int`, и проверять его надо как
-      // число. Остальные маршруты сортируют временем — там значение по умолчанию.
-      const page = parsePageQuery(query, 'number')
+      // число своей сортировки. Остальные маршруты сортируют временем — там
+      // значение по умолчанию.
+      const page = parsePageQuery(query, CATALOG_CURSOR)
+      const sortName: SortName = query.sort && query.sort in SORTS ? (query.sort as SortName) : 'rating'
+      const sort = SORTS[sortName]
+
+      let after: { down: number; key: string; id: string } | null = null
+      if (page.cursor) {
+        const [name, down, key] = page.cursor.sort.split('|') as [string, string, string]
+        if (name !== sortName || !sort.key.test(key)) {
+          throw new AppError(
+            400,
+            'bad_cursor',
+            'Курсор от другой сортировки. Начните листать заново, без параметра cursor.',
+          )
+        }
+        after = { down: Number(down), key, id: page.cursor.id }
+      }
 
       const where: string[] = ['v.published_at is not null']
       const args: unknown[] = []
@@ -169,9 +210,9 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
        * «у вас никого нет». */
       if (query.q) {
         add(
-          `(lower(v.name) like '%' || lower(?) || '%'
+          `(lower(v.name) like '%' || lower(?) || '%' escape '\\'
             or v.category_id in (select category_id from category_synonyms where word = lower(?)))`,
-          query.q,
+          escapeLike(query.q),
           query.q,
         )
       }
@@ -184,35 +225,41 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         add('not exists (select 1 from vendor_busy_dates b where b.vendor_id = v.id and b.date = ?::date)', query.date)
       }
 
-      const sort = SORTS[(query.sort as SortName) ?? 'rating'] ?? SORTS.rating
-
       // Условие «строго после курсора» при разнонаправленных ключах не
-      // выражается сравнением кортежей: значение идёт по убыванию,
-      // идентификатор — по возрастанию. Поэтому две ветки явно.
-      if (page.cursor) {
-        args.push(page.cursor.sort)
+      // выражается сравнением кортежей: понижение и идентификатор идут по
+      // возрастанию, значение — по убыванию или возрастанию. Поэтому ветки
+      // явно, в том же порядке, что и `ORDER BY`: сначала признак понижения,
+      // внутри него — значение, внутри значения — идентификатор.
+      if (after) {
+        args.push(after.down)
+        const downArg = `$${args.length}::int`
+        args.push(after.key)
         const keyArg = `$${args.length}${sort.cast}`
-        args.push(page.cursor.id)
+        args.push(after.id)
         const idArg = `$${args.length}`
         const beyond = sort.dir === 'desc' ? '<' : '>'
-        where.push(`(${sort.expr} ${beyond} ${keyArg} or (${sort.expr} = ${keyArg} and v.id > ${idArg}))`)
+        where.push(
+          `(${DOWNRANKED} > ${downArg} or (${DOWNRANKED} = ${downArg}
+             and (${sort.expr} ${beyond} ${keyArg} or (${sort.expr} = ${keyArg} and v.id > ${idArg}))))`,
+        )
       }
 
       args.push(page.limit + 1)
-      const { rows } = await db().query<VendorRow & { sort_key: string }>(
-        `select ${VENDOR_COLUMNS}, ${sort.expr}::text as sort_key
+      const { rows } = await db().query<VendorRow & { sort_key: string; down: boolean }>(
+        `select ${VENDOR_COLUMNS}, ${sort.expr}::text as sort_key, (v.downranked_at is not null) as down
            from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
           where ${where.join(' and ')}
-          order by (v.downranked_at is not null), ${sort.expr} ${sort.dir}, v.id asc
+          order by ${DOWNRANKED}, ${sort.expr} ${sort.dir}, v.id asc
           limit $${args.length}`,
         args,
       )
 
-      const withKeys = rows.map((r) => ({ ...toVendor(r), _key: r.sort_key }))
-      const result = buildPage(withKeys, page.limit, (v) => encodeCursor(v._key, v.id))
-      const strip = <T extends { _key: string }>(list: T[]) =>
-        list.map(({ _key, ...rest }) => {
+      const withKeys = rows.map((r) => ({ ...toVendor(r), _key: r.sort_key, _down: r.down }))
+      const result = buildPage(withKeys, page.limit, (v) => catalogCursor(sortName, v._down, v._key, v.id))
+      const strip = <T extends { _key: string; _down: boolean }>(list: T[]) =>
+        list.map(({ _key, _down, ...rest }) => {
           void _key
+          void _down
           return rest
         })
       const items = strip(result.items)
@@ -233,12 +280,15 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         // не попадут и на вторую страницу — то есть исчезнут насовсем.
         // Цена — новичок может встретиться ещё раз ниже по списку; это видно
         // и безобидно, в отличие от пропажи.
+        // Курсор по якорю — той же формы, что и обычный: с именем сортировки
+        // и признаком понижения. Иначе вторая страница получает 400 на свой
+        // же курсор (D5-09).
         const anchor = result.items[rotated.keptFromMain - 1]
         const nextCursor =
           result.nextCursor === null && rotated.keptFromMain === items.length
             ? null
             : anchor
-              ? encodeCursor(anchor._key, anchor.id)
+              ? catalogCursor(sortName, anchor._down, anchor._key, anchor.id)
               : result.nextCursor
         return { items: rotated.items, nextCursor }
       }
@@ -250,7 +300,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
   /* ── анкета ───────────────────────────────────────────────────────── */
   app.get('/catalog/vendors/:vendorId', authed, async (request) => {
     const { vendorId } = request.params as { vendorId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Анкета не найдена')
+    if (!isUuid(vendorId)) throw notFound('Анкета не найдена')
     const { rows } = await db().query<VendorRow & { about: string | null }>(
       `select ${VENDOR_COLUMNS}, v.about
          from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
@@ -263,12 +313,16 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
      * пролистывают, а сюда заходят осознанно.
      *
      * Сотрудник платформы в воронку не идёт: модератор открывает карточку
-     * по жалобе, а подрядчик читает эту цифру как интерес пары. Условие —
-     * тем же запросом, а не отдельным чтением: два запроса ради счётчика
-     * на каждое открытие карточки. */
+     * по жалобе, а подрядчик читает эту цифру как интерес пары. Владелец
+     * анкеты — тем более: свои открытия карточки интересом пар не являются,
+     * а до этого каждое его «посмотреть, как выглядит» шло в счётчик
+     * (D5-13; уникальность по паре и дню — таблица просмотров, владельцу).
+     * Условие — тем же запросом, а не отдельным чтением: два запроса ради
+     * счётчика на каждое открытие карточки. */
     await db().query(
       `update vendors set views = views + 1
-        where id = $1 and not exists (select 1 from users where id = $2 and is_staff)`,
+        where id = $1 and user_id <> $2
+          and not exists (select 1 from users where id = $2 and is_staff)`,
       [vendorId, request.caller!.userId],
     )
     // Телефон уходит только тому, кто этого подрядчика уже забронировал.
@@ -291,7 +345,12 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const { vendorId } = request.params as { vendorId: string }
       const { month } = request.query as { month?: string }
-      if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Анкета не найдена')
+      if (!isUuid(vendorId)) throw notFound('Анкета не найдена')
+      /* Календарь — часть анкеты, и живость у него та же, что у карточки:
+       * занятость заблокированной, снятой или удалённой анкеты не читается
+       * по прямой ссылке, неизвестный id — 404, а не пустой календарь
+       * «всё свободно» (D5-20). */
+      await assertVendorLive(db(), vendorId)
 
       const conditions = ['b.vendor_id = $1']
       const args: unknown[] = [vendorId]
@@ -390,13 +449,16 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── избранное ────────────────────────────────────────────────────── */
   app.get('/me/favorites', { preHandler: app.requireConsent }, async (request) => {
+    /* Живость та же, что у карточки, включая `published_at`: снятая
+     * модератором анкета оставалась в избранном, а карточка по ней
+     * отвечала 404 — сердечко вело в никуда (D5-20). */
     const { rows } = await db().query<VendorRow>(
       `select ${VENDOR_COLUMNS}
          from favorites f
          join vendors v on v.id = f.vendor_id
          ${VENDOR_LIVE_JOIN}
          left join cities c on c.id = v.city_id
-        where f.user_id = $1
+        where f.user_id = $1 and v.published_at is not null
         order by f.created_at desc`,
       [request.caller!.userId],
     )
@@ -405,7 +467,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
 
   app.put('/me/favorites/:vendorId', { preHandler: app.requireConsent }, async (request, reply) => {
     const { vendorId } = request.params as { vendorId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Анкета не найдена')
+    if (!isUuid(vendorId)) throw notFound('Анкета не найдена')
     const { rows } = await db().query(
       `select 1 from vendors v ${VENDOR_LIVE_JOIN} where v.id = $1 and v.published_at is not null`,
       [vendorId],

@@ -57,7 +57,12 @@ declare module 'fastify' {
   }
 }
 
-export function createDb(connectionString: string): Db {
+/** Куда писать ошибку простаивающего соединения. `app.log` подходит как есть. */
+export interface ErrorLog {
+  error: (details: object, message: string) => void
+}
+
+export function createDb(connectionString: string, log: ErrorLog = console): Db {
   const pool = new pg.Pool({
     connectionString,
     max: 10,
@@ -73,6 +78,12 @@ export function createDb(connectionString: string): Db {
     statement_timeout: 15_000,
     idle_in_transaction_session_timeout: 10_000,
   })
+  /* Обрыв ПРОСТАИВАЮЩЕГО соединения — рестарт PostgreSQL, `pg_terminate_backend`,
+   * idle-таймаут управляемой базы — приходит событием `error` на пуле. Без
+   * слушателя Node превращает его в `uncaughtException`, и процесс падает
+   * целиком, со всеми запросами и живыми каналами. Сам клиент pg-pool из пула
+   * уже убрал: делать больше ничего не нужно, только записать. */
+  pool.on('error', (err) => log.error({ err }, 'pg: оборвалось простаивающее соединение пула'))
 
   return {
     query: (text, values) => pool.query(text, values as unknown[]),
@@ -112,7 +123,7 @@ export async function registerDb(app: FastifyInstance, config: Config): Promise<
     app.log.warn('DATABASE_URL не задан — обработчики с базой работать не будут')
     return
   }
-  const db = createDb(config.databaseUrl)
+  const db = createDb(config.databaseUrl, app.log)
   app.decorate('db', db)
   app.addHook('onClose', () => db.close())
 }

@@ -23,9 +23,16 @@ const ROUTES = [
 ]
 
 /** Экраны грузятся отдельными чанками — ждём, пока заглушка Suspense уйдёт,
- *  иначе тест проверял бы саму заглушку и всегда был бы зелёным. */
-export const settled = (container: HTMLElement) =>
-  waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
+ *  иначе тест проверял бы саму заглушку и всегда был бы зелёным.
+ *
+ *  Падение экрана ловит `ErrorBoundary` и рисует «Что-то пошло не так» с
+ *  кнопкой — это заведомо больше 50 символов разметки, и проверка длины была
+ *  зелёной при рендер-крэше любого из маршрутов (ревью D6-11). Слова заглушки
+ *  на экране — провал. */
+export const settled = async (container: HTMLElement) => {
+  await waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
+  expect(container.textContent, 'экран упал в ErrorBoundary').not.toContain('Что-то пошло не так')
+}
 
 describe('smoke: каждый экран рендерится без падения', () => {
   beforeEach(() => {

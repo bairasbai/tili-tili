@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { uuidv7, isUuid } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { COMMITTED } from '../deals/state.js'
 
@@ -67,7 +67,7 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
       const { dealId } = request.params as { dealId: string }
       const body = request.body as { templateCode: string; fields?: Record<string, unknown> }
       const userId = request.caller!.userId
-      if (!/^[0-9a-f-]{36}$/i.test(dealId)) throw notFound('Сделка не найдена')
+      if (!isUuid(dealId)) throw notFound('Сделка не найдена')
 
       // Контракт заголовка не требует — не требуем и мы. С ключом повтор
       // вернёт тот же документ, без ключа переоформление даст новую версию.

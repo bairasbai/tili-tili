@@ -41,6 +41,24 @@ import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
 
 /**
+ * Ошибки разбора тела, которые Fastify выдаёт до обработчика, — в формате
+ * контракта. Ключ — внутренний код Fastify (`FST_ERR_CTP_*`).
+ */
+const BODY_PARSE_ERRORS: Record<string, { status: number; code: string; message: string }> = {
+  FST_ERR_CTP_BODY_TOO_LARGE: { status: 413, code: 'payload_too_large', message: 'Тело запроса слишком большое' },
+  FST_ERR_CTP_INVALID_MEDIA_TYPE: {
+    status: 415,
+    code: 'unsupported_media_type',
+    message: 'Такой тип содержимого не принимается — нужен application/json',
+  },
+  FST_ERR_CTP_INVALID_CONTENT_LENGTH: {
+    status: 400,
+    code: 'bad_content_length',
+    message: 'Длина тела запроса не совпадает с заголовком Content-Length',
+  },
+}
+
+/**
  * @param overrides    точечная подмена конфигурации (тесты, отладка)
  * @param extraRoutes  модули с РЕАЛИЗОВАННЫМИ маршрутами. Регистрируются до
  *                     заглушек, поэтому путь контракта, у которого появился
@@ -182,6 +200,13 @@ export async function buildApp(
       }
       return reply.code(422).send(toErrorBody('validation_failed', 'Запрос не прошёл проверку', fields))
     }
+    /* Отказы Fastify на разборе тела — своими кодами и по-русски.
+     *
+     * `FST_ERR_CTP_BODY_TOO_LARGE` и «Request body is too large» уходили
+     * клиенту как есть: фронт показывает `message` человеку, а `code`
+     * разбирает по своему словарю, в котором внутренних кодов Fastify нет. */
+    const parsed = BODY_PARSE_ERRORS[error.code ?? '']
+    if (parsed) return reply.code(parsed.status).send(toErrorBody(parsed.code, parsed.message))
     const status = error.statusCode ?? 500
     if (status >= 500) {
       request.log.error({ err: error }, 'необработанная ошибка')

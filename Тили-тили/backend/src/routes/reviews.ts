@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
-import { UUID_ID, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { isUniqueViolation } from '../plugins/db.js'
 import { guestByToken, readGuestToken } from '../guests/access.js'
 import { recomputeRating } from '../reviews/rating.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { assertVendorLive } from '../catalog/vendors.js'
 
 /** Окно на отзыв после завершения сделки (План §18.2). */
 const REVIEW_WINDOW_DAYS = 14
@@ -34,10 +35,16 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const { vendorId } = request.params as { vendorId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Подрядчик не найден')
+      if (!isUuid(vendorId)) throw notFound('Подрядчик не найден')
       const query = request.query as { source?: string }
       const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
       const source = query.source ?? 'all'
+
+      /* Лента — часть анкеты, и живость у неё та же, что у карточки
+       * (`GET /catalog/vendors/{id}`): заблокированная, снятая или удалённая
+       * анкета не читается и по прямой ссылке, неизвестный id — 404, а не
+       * `200 []` (D5-20). */
+      await assertVendorLive(db(), vendorId)
 
       /* Столбец `guest_token` не читается: у отзыва гостя видно, что он
        * гостевой, но не кто его оставил (§15 и §9 — одно и то же правило).
@@ -97,7 +104,7 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const { vendorId } = request.params as { vendorId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Подрядчик не найден')
+      if (!isUuid(vendorId)) throw notFound('Подрядчик не найден')
       const body = request.body as { rating: number; text: string }
       const userId = request.caller!.userId
 
@@ -243,7 +250,28 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const body = request.body as { targetKind: string; targetId: string; category: string; text?: string }
-      if (!/^[0-9a-f-]{36}$/i.test(body.targetId)) throw notFound('Объект жалобы не найден')
+      if (!isUuid(body.targetId)) throw notFound('Объект жалобы не найден')
+
+      /* Цель жалобы существует, и жаловаться на сделку вправе только её
+       * сторона. Без этого очередь модератора принимала мусор по случайным
+       * идентификаторам и чужие сделки, к которым жалобщик доступа не имеет
+       * (D5-21). Сторона сделки — участник её свадьбы или её подрядчик:
+       * «пара не пришла» жалуется подрядчик, «подрядчик пропал» — пара. */
+      const targetTable = { vendor: 'vendors', review: 'reviews', message: 'messages', deal: 'deals' }[
+        body.targetKind
+      ]!
+      const { rows: target } = await db().query(`select 1 from ${targetTable} where id = $1`, [body.targetId])
+      if (target.length === 0) throw notFound('Объект жалобы не найден')
+      if (body.targetKind === 'deal') {
+        const { rows: party } = await db().query(
+          `select 1 from deals d
+            where d.id = $1
+              and (exists (select 1 from wedding_members m where m.wedding_id = d.wedding_id and m.user_id = $2)
+                   or exists (select 1 from vendors v where v.id = d.vendor_id and v.user_id = $2))`,
+          [body.targetId, request.caller!.userId],
+        )
+        if (party.length === 0) throw forbidden('Жаловаться на сделку может только её сторона')
+      }
 
       const res = await db().query(
         `insert into complaints (id, reporter_id, target_kind, target_id, category, text)

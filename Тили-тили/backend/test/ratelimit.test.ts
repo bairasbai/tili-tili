@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { randomInt } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { signAccessToken } from '../src/auth/tokens.js'
 
 /**
  * Ограничение частоты на токен — §13.4 и раздел 6 плана.
@@ -57,9 +58,12 @@ describe.skipIf(!live)('ограничение частоты', () => {
     expect(Number(refused[0]!.headers['retry-after'])).toBeGreaterThan(0)
   })
 
-  it('счёт идёт по токену, а не по адресу', async () => {
-    const one = `Bearer ${'a'.repeat(40)}-${randomInt(1, 1_000_000)}`
-    const two = `Bearer ${'b'.repeat(40)}-${randomInt(1, 1_000_000)}`
+  it('счёт идёт по подписанному токену, а не по адресу', async () => {
+    /* Токены НАСТОЯЩИЕ, подписанные секретом сервера. До 2026-09-11 здесь
+     * стояли случайные строки, и тест сертифицировал обход: ключом был хеш
+     * сырого заголовка, и любой мусор в `Authorization` заводил новый счётчик. */
+    const one = `Bearer ${await signAccessToken(SECRET_A, { sub: randomUUID(), sid: randomUUID() })}`
+    const two = `Bearer ${await signAccessToken(SECRET_A, { sub: randomUUID(), sid: randomUUID() })}`
     // Сосед идёт в той же пачке: иначе он попадёт в следующее окно
     // и проверка ничего не докажет.
     const [, neighbour] = await Promise.all([
@@ -70,6 +74,16 @@ describe.skipIf(!live)('ограничение частоты', () => {
     // За одним адресом сидит целый свадебный чат с общим Wi-Fi: сосед
     // не должен получать отказ из-за чужой активности.
     expect(neighbour.statusCode).not.toBe(429)
+  })
+
+  it('мусорные токены счётчик адреса не обходят', async () => {
+    // Каждый запрос — с новым выдуманным Bearer, все с одного адреса.
+    const burst = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => hit({ authorization: `Bearer ${'z'.repeat(40)}-${i}-${randomInt(1, 1_000_000)}` })),
+    )
+    // До фикса все восемь проходили: ключ считался от сырого заголовка (D6-02).
+    expect(burst.filter((r) => r.statusCode === 429).length).toBeGreaterThan(0)
+    expect(burst.filter((r) => r.statusCode !== 429).length).toBeLessThanOrEqual(3)
   })
 
   it('проверки здоровья не ограничиваются', async () => {

@@ -60,9 +60,12 @@ export function VendorDashboard() {
   const filled = [!!p?.name, !!p?.categoryId, !!p?.city, !!p?.about, !!p?.phone, !!(p?.packages?.length), !!(p?.gallery?.length)]
   const donePct = Math.round(filled.filter(Boolean).length / filled.length * 100)
 
-  const stars = reviewList.length
-    ? Math.round(reviewList.reduce((sum, r) => sum + (r.rating ?? 0), 0) / reviewList.length * 10) / 10
-    : null
+  /* Оценка — серверная, та же, что в каталоге: взвешенная, с затуханием и
+     с порогом в три отзыва (`rating: null` до него). Своё среднее по видимым
+     отзывам давало «5» от одного гостевого отзыва, пока каталог показывал
+     «Новый на платформе» — три разных ответа на один вопрос (ревью D5-17,
+     ERR-0012). Null — прочерк, а не ноль (R-178). */
+  const rating = p?.rating ?? null
   const newLeads = leadList.filter(l => l.status === 'new').length
 
   const toggleDay = (date: string, busy: boolean) => void (async () => {
@@ -113,7 +116,7 @@ export function VendorDashboard() {
         <div className="grid grid-cols-3 gap-2.5 mt-3.5 stagger">
           {([
             [num(leads, newLeads), t('новых заявок'), MessageCircle, 'bg-[var(--rose-soft)]'],
-            [stars === null ? '—' : String(stars), t('средняя оценка'), Star, 'bg-[var(--honey)]'],
+            [rating === null ? '—' : String(rating), t('оценка в каталоге'), Star, 'bg-[var(--honey)]'],
             [num(calendar, days.filter(d => d.status === 'busy' || d.status === 'hold').length), t('занятых дней'), CalendarDays, 'bg-[var(--sage-soft)]'],
           ] as const).map(([v, l, Icon, tile]) => (
             <div key={l} className="card-s p-3.5 text-center fade-up">
@@ -151,8 +154,8 @@ export function VendorDashboard() {
 
         <button onClick={() => nav('/vendor-app/reviews')} className="press w-full card p-4 mt-3.5 flex items-center gap-4 text-left">
           <div className="text-center">
-            <b className="font-serif-d text-[30px] tabular">{stars ?? '—'}</b>
-            <p className="text-[9.5px] text-[var(--honey-deep)]">{stars ? '★'.repeat(Math.round(stars)) : ''}</p>
+            <b className="font-serif-d text-[30px] tabular">{rating ?? '—'}</b>
+            <p className="text-[9.5px] text-[var(--honey-deep)]">{rating ? '★'.repeat(Math.round(rating)) : ''}</p>
           </div>
           <div className="flex-1">
             <b className="text-[13px]">{t('Отзывы')}</b>
@@ -164,6 +167,9 @@ export function VendorDashboard() {
                 : reviewList.length
                   ? `${reviewList.length} ${plural(reviewList.length, t('отзыв'), t('отзыва'), t('отзывов'))} · ${t('без ответа')} ${reviewList.filter(r => !r.reply).length}`
                   : t('пока ни одного')}
+              {/* Отзывы есть, а оценки нет — это порог сервера, и сказать
+                  об этом надо здесь же, а не оставлять прочерк без слов. */}
+              {ready(reviews) && reviewList.length > 0 && rating === null ? ` · ${t('оценка в каталоге появится с третьего отзыва')}` : ''}
             </p>
           </div>
           <span className="text-[9px] font-bold text-[var(--sage-deep)] shrink-0">→</span>
@@ -566,6 +572,11 @@ export function VendorDeals() {
           <div className="card-s p-4">
             <b className="font-serif-d text-[20px] tabular block">{fmt(expected)}</b>
             <span className="text-[9.5px] text-[var(--soft)]">{t('ожидается по сделкам')}</span>
+            {/* Что это за число: сервер считает остаток — цена минус то, что
+                уже пришло платежами, по открытым броням (`booked`,
+                `paid_deposit`). Раньше складывалась цена целиком, и сделка с
+                внесённым авансом «ожидала» всю сумму (ревью D5-08). */}
+            <span className="text-[9.5px] text-[var(--soft2)] block mt-0.5">{t('остаток к оплате по открытым броням')}</span>
           </div>
           <div className="card-s p-4">
             <b className="font-serif-d text-[20px] tabular block">{active}</b>

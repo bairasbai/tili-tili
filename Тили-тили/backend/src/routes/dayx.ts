@@ -12,6 +12,16 @@ const MAX_SHIFT_MINUTES = 240
 const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
 
 /**
+ * Скольким гостям уходит сдвиг тайминга и план Б.
+ *
+ * Ноль — не «неизвестно», а факт (R-178): аккаунта у гостей нет, SMS и почта
+ * не подключены («Хвосты»), и сервер не уведомляет ни одного. Число
+ * подтвердивших участие здесь стояло как обещание, которого код не держал
+ * (D4-18). Появится канал — появится и настоящий счётчик.
+ */
+const GUESTS_NOTIFIED = 0
+
+/**
  * Чек-лист накануне — тот же список, что на экране «План Б» во фронте
  * (app/src/pages/Smart.tsx). Придумывать свой значило бы дать паре два
  * разных списка на одном экране после первой же синхронизации.
@@ -109,7 +119,12 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           true,
         )
 
-        return { status: 200, body: { minutes, shiftedBlocks: result.shifted, notifiedGuests: result.guests } }
+        /* `notifiedGuests` — скольким ГОСТЯМ ушло, а не сколько гостей
+         * подтвердило участие. Канала до гостей нет (ни SMS, ни почты —
+         * «Хвосты»), поэтому честное число — ноль (R-174), а не `result.guests`:
+         * то — `recipients` в журнале рассылок, кого сдвиг касается. Имя поля
+         * — контракт, оно остаётся. */
+        return { status: 200, body: { minutes, shiftedBlocks: result.shifted, notifiedGuests: GUESTS_NOTIFIED } }
       })
     },
   )
@@ -179,7 +194,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
       const { scenario } = request.body as { scenario: string }
 
       return withIdempotency(db(), request, reply, 'planb-activate', async () => {
-        const result = await db().tx(async (client) => {
+        await db().tx(async (client) => {
           /* Запоминаем ТОЛЬКО факт и сценарий. Новой точки сбора в продукте
            * нет нигде — ни в моках, ни в договоре с площадкой её поля не
            * заведено, — и выдумывать её здесь не за чем: план Б в §13.1
@@ -192,11 +207,11 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
             "select count(*)::text as n from guests where wedding_id = $1 and rsvp = 'yes'",
             [weddingId],
           )
+          // Журнал рассылок хранит, кого сценарий касается, — не кому ушло.
           await client.query(
             'insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)',
             [uuidv7(), weddingId, `planb:${scenario}`, Number(guests[0]!.n)],
           )
-          return { guests: Number(guests[0]!.n) }
         })
 
         await notifyWedding(
@@ -214,7 +229,8 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           true,
         )
 
-        return { status: 200, body: { scenario, notifiedGuests: result.guests } }
+        // Как и у сдвига: гостям ничего не уходит — в ответе ноль, а не число подтвердивших.
+        return { status: 200, body: { scenario, notifiedGuests: GUESTS_NOTIFIED } }
       })
     },
   )

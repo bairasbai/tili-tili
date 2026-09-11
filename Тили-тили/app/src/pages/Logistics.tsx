@@ -35,10 +35,15 @@ export function Logistics() {
   const [bn, setBn] = useState(''); const [bf, setBf] = useState(''); const [bt, setBt] = useState(''); const [bs, setBs] = useState('')
   const [hn, setHn] = useState(''); const [hr, setHr] = useState(''); const [hp, setHp] = useState('')
   const [hd, setHd] = useState(''); const [hc, setHc] = useState('')
-  const [notified, setNotified] = useState(false)
+  /* Итог рассылки — словами из ответа сервера, а не галочкой. */
+  const [notified, setNotified] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /* Удаление маршрута или блока с бронями гостей — необратимое: каскад уносит
+     их записи, а сообщить им нечем. Первое нажатие только предупреждает
+     (ревью D3-22); пустая строка удаляется сразу. */
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
   const busesQ = useApi(() => weddingId ? getBuses(weddingId) : Promise.resolve([]), [weddingId])
   const hotelsQ = useApi(() => weddingId ? getHotels(weddingId) : Promise.resolve([]), [weddingId])
@@ -57,7 +62,7 @@ export function Logistics() {
     await addBus(weddingId!, bn.trim(), bf.trim(), bt.trim(), Math.max(1, parseInt(bs, 10) || 20))
     setBn(''); setBf(''); setBt(''); setBs(''); setBusForm(false)
   })
-  const removeBus = (busId: string) => void write(() => deleteBus(weddingId!, busId))
+  const removeBus = (busId: string) => void write(async () => { await deleteBus(weddingId!, busId); setConfirmDel(null) })
 
   const addHotelBlock = () => void write(async () => {
     if (!hn.trim()) return
@@ -73,11 +78,21 @@ export function Logistics() {
     )
     setHn(''); setHr(''); setHp(''); setHd(''); setHc(''); setHotelForm(false)
   })
-  const removeHotel = (hotelId: string) => void write(() => deleteHotel(weddingId!, hotelId))
+  const removeHotel = (hotelId: string) => void write(async () => { await deleteHotel(weddingId!, hotelId); setConfirmDel(null) })
 
+  /*
+   * Точки сбора: сервер уведомляет команду в приложении и записывает факт
+   * рассылки. Гостям не уходит ничего — SMS и почта не подключены, очереди
+   * доставки нет. До ревью D3-06 кнопка обещала «Точки сбора поставлены в
+   * очередь ✓», и пара считала, что гости всё получили. Говорим то, что
+   * сервер сделал: по `notified` из его ответа.
+   */
   const notify = () => void write(async () => {
-    await notifyPickup(weddingId!)
-    setNotified(true)
+    setNotified(null)
+    const res = await notifyPickup(weddingId!)
+    setNotified(res?.debounced
+      ? t('Команде уже сообщали меньше минуты назад — повторно не пишем.')
+      : `${t('Команда уведомлена:')} ${res?.notified ?? '—'} · ${t('гостям пока не доставляется — отправьте точки сбора сами')}`)
   })
 
   const copy = (code: string) => {
@@ -120,7 +135,13 @@ export function Logistics() {
                 </p>
               </div>
               <span className="text-[11px] font-bold text-[var(--ink2)]">{b.taken}/{b.seats}</span>
-              <button disabled={busy} onClick={() => removeBus(b.id ?? '')} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-[var(--soft)] disabled:opacity-50" aria-label={t('Удалить')}><Trash2 size={13} /></button>
+              {confirmDel === b.id ? (
+                <button disabled={busy} onClick={() => removeBus(b.id ?? '')} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] text-left leading-tight disabled:opacity-50">
+                  {`${t('Удалить маршрут?')} ${b.taken ?? 0} ${plural(b.taken ?? 0, t('гость потеряет место'), t('гостя потеряют место'), t('гостей потеряют место'))}`}
+                </button>
+              ) : (
+                <button disabled={busy} onClick={() => ((b.taken ?? 0) > 0 ? setConfirmDel(b.id ?? '') : removeBus(b.id ?? ''))} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-[var(--soft)] disabled:opacity-50" aria-label={t('Удалить')}><Trash2 size={13} /></button>
+              )}
             </div>
             <div className="mt-3"><Bar pct={pct(b.taken, b.seats)} /></div>
             {(b.seats ?? 0) - (b.taken ?? 0) <= 5 && <p className="text-[10px] text-[var(--rose-deep)] font-semibold mt-2">{t('Осталось мало мест — добавьте ещё один автобус')}</p>}
@@ -143,10 +164,13 @@ export function Logistics() {
         ) : (
           <button onClick={() => setBusForm(true)} className="press w-full card-s py-3.5 text-[12.5px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить автобус')}</button>
         )}
-        {/* Рассылка идёт очередью: сервер отвечает «принято», а не «доставлено». */}
+        {/* Кнопка названа по тому, что делает сервер: уведомляет команду.
+            Гостям с этого экрана не уходит ничего (см. `notify`). */}
         <button disabled={busy || !buses.length} onClick={notify} className="press w-full h-[46px] rounded-full bg-[var(--ink)] text-[var(--bg)] text-[12.5px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50">
-          <Send size={14} />{notified ? t('Точки сбора поставлены в очередь ✓') : t('Отправить гостям точки сбора')}
+          <Send size={14} />{t('Сообщить команде о точках сбора')}
         </button>
+        {notified && <p className="text-[11px] text-[var(--soft)] px-1 leading-relaxed">{notified}</p>}
+        <p className="text-[10px] text-[var(--soft2)] px-1 leading-relaxed">{t('Гостям точки сбора не рассылаются — перешлите их сами; команда получит уведомление в приложении.')}</p>
       </div>
 
       {/* ОТЕЛЬНЫЙ БЛОК */}
@@ -174,7 +198,13 @@ export function Logistics() {
                   {[h.price?.amount != null ? `${fmt(h.price.amount)}${t('/ночь')}` : '', h.deadline ? `${t('бронь до ')}${shortWeddingDate(h.deadline)}` : ''].filter(Boolean).join(' · ')}
                 </p>
               </div>
-              <button disabled={busy} onClick={() => removeHotel(h.id ?? '')} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-[var(--soft)] disabled:opacity-50" aria-label={t('Удалить')}><Trash2 size={13} /></button>
+              {confirmDel === h.id ? (
+                <button disabled={busy} onClick={() => removeHotel(h.id ?? '')} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] text-left leading-tight disabled:opacity-50">
+                  {`${t('Удалить блок?')} ${h.booked ?? 0} ${plural(h.booked ?? 0, t('гость потеряет номер'), t('гостя потеряют номер'), t('гостей потеряют номер'))}`}
+                </button>
+              ) : (
+                <button disabled={busy} onClick={() => ((h.booked ?? 0) > 0 ? setConfirmDel(h.id ?? '') : removeHotel(h.id ?? ''))} className="press w-8 h-8 rounded-full bg-[var(--bg)] flex items-center justify-center text-[var(--soft)] disabled:opacity-50" aria-label={t('Удалить')}><Trash2 size={13} /></button>
+              )}
             </div>
             <div className="mt-3 flex items-center gap-3">
               <div className="flex-1"><Bar pct={pct(h.booked, h.rooms)} /></div>
@@ -221,7 +251,8 @@ export function Catering() {
   const { weddingId } = useStore()
   const [adding, setAdding] = useState(false)
   const [optName, setOptName] = useState('')
-  const [reminded, setReminded] = useState(false)
+  /* Итог напоминания — словами из ответа сервера (см. `remind`). */
+  const [reminded, setReminded] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -271,9 +302,17 @@ export function Catering() {
     setOptName(''); setAdding(false)
   })
 
+  /*
+   * «Напомнить» уведомляет команду в приложении — гостям не уходит ничего:
+   * SMS и почты нет, очереди доставки тоже. До ревью D3-06 кнопка отвечала
+   * «В очереди ✓», обещая доставку, которой нет. Говорим по ответу сервера.
+   */
   const remind = () => void write(async () => {
-    await remindMenuPoll(weddingId!)
-    setReminded(true)
+    setReminded(null)
+    const res = await remindMenuPoll(weddingId!)
+    setReminded(res?.debounced
+      ? t('Команде уже сообщали меньше минуты назад — повторно не пишем.')
+      : `${t('Команда уведомлена:')} ${res?.notified ?? '—'} · ${t('гостям пока не доставляется — напомните сами')}`)
   })
 
   return (
@@ -318,13 +357,16 @@ export function Catering() {
 
       <div className="px-5 mt-3 space-y-2.5">
         {pending > 0 && (
-          <div className="card-s px-4 py-3 flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full bg-[var(--peach)] flex items-center justify-center shrink-0"><Users size={15} className="text-[var(--ink2)]" /></span>
-            {/* Глагол согласуется с числом вместе с существительным: «1 гость ещё не выбрали» — ошибка. */}
-            <p className="text-[11.5px] flex-1"><b>{pending}</b> {plural(pending, t('гость ещё не выбрал блюдо'), t('гостя ещё не выбрали блюдо'), t('гостей ещё не выбрали блюдо'))}</p>
-            {/* «Напомнили» обещало доставку, которой ещё не было: рассылка уходит
-                очередью, и сервер отвечает «принято». Говорим то же самое. */}
-            <button disabled={busy} onClick={remind} className="press text-[11px] font-bold text-[var(--rose-deep)] shrink-0 disabled:opacity-50">{reminded ? t('В очереди ✓') : t('Напомнить')}</button>
+          <div className="card-s px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-full bg-[var(--peach)] flex items-center justify-center shrink-0"><Users size={15} className="text-[var(--ink2)]" /></span>
+              {/* Глагол согласуется с числом вместе с существительным: «1 гость ещё не выбрали» — ошибка. */}
+              <p className="text-[11.5px] flex-1"><b>{pending}</b> {plural(pending, t('гость ещё не выбрал блюдо'), t('гостя ещё не выбрали блюдо'), t('гостей ещё не выбрали блюдо'))}</p>
+              {/* Кнопка уведомляет команду — и называется по тому, что делает
+                  сервер; итог стоит под строкой словами из его ответа. */}
+              <button disabled={busy} onClick={remind} className="press text-[11px] font-bold text-[var(--rose-deep)] shrink-0 disabled:opacity-50">{t('Напомнить')}</button>
+            </div>
+            {reminded && <p className="text-[10.5px] text-[var(--soft)] mt-2 leading-relaxed">{reminded}</p>}
           </div>
         )}
         {options.length > 0 && (

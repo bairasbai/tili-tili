@@ -24,7 +24,14 @@ try {
   redirect = sessionStorage.getItem('tt_redirect')
   if (redirect) sessionStorage.removeItem('tt_redirect')
 } catch { /* хранилище недоступно — открываемся с текущего адреса */ }
-if (redirect) history.replaceState(null, '', redirect)
+/*
+ * Восстанавливаем только путь этого сайта: `/…`, но не `//…` (ревью D6-06).
+ * Запись кладёт шим из index.html, а тот берёт её из адресной строки —
+ * `//evil.com/auth` там возможен. `history.replaceState` с чужим origin
+ * бросает SecurityError на верхнем уровне модуля, до `createRoot`: вместо
+ * приложения человек получал бы пустую страницу.
+ */
+if (redirect && redirect.startsWith('/') && !redirect.startsWith('//')) history.replaceState(null, '', redirect)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

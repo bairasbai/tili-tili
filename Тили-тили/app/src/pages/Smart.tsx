@@ -6,12 +6,12 @@ import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getGuests, getPlanB, getTimeline, getWedding } from '@/lib/api/weddingData'
+import { getGuests, getPlanB, getSlots, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { activatePlanB, setTaskDone, shiftTimeline } from '@/lib/api/weddingWrite'
 import { formatWeddingDate } from '@/lib/weddingDate'
-import { getAvailability, getCategories, getFavorites, getVendors } from '@/lib/api/catalog'
+import { getAvailability, getCategories, getFavorites, getVendors, reviewsPendingRating } from '@/lib/api/catalog'
 import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -79,6 +79,12 @@ export function Assistant() {
  *
  * Теперь кандидаты приходят с сервера, а «Выбрать» открывает анкету: цена
  * сделки зависит от пакета, и придумывать её на экране сравнения нельзя.
+ *
+ * С `?cat=` здесь верх выдачи категории (три первых по рейтингу, с ротацией
+ * новичков сервера), а не кандидаты пары — и подпись так и говорит; слово
+ * «кандидаты» остаётся за избранным, которое пара отобрала сама (ревью
+ * D5-19). Упавший календарь одного подрядчика называется словами, а не
+ * «…» навсегда.
  */
 export function Compare() {
   const nav = useNavigate()
@@ -123,11 +129,18 @@ export function Compare() {
 
   const rows: [string, (v: (typeof list)[number]) => string][] = [
     [t('Цена «от»'), v => (v.priceFrom?.amount != null ? fmt(v.priceFrom.amount) : '—')],
-    [t('Рейтинг'), v => (v.reviewsCount ? `★ ${v.rating} · ${v.reviewsCount}${t(' отзывов')}` : t('Новый'))],
+    /* По самой оценке, не по числу отзывов: до третьего отзыва сервер отдаёт
+       `rating: null`, и клетка печатала «★ null · 2 отзывов» (ревью D5-02). */
+    [t('Рейтинг'), v => (v.rating != null
+      ? `★ ${v.rating}${v.reviewsCount != null ? ` · ${v.reviewsCount} ${plural(v.reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))}` : ''}`
+      : (v.reviewsCount ?? 0) > 0 ? reviewsPendingRating(v.reviewsCount ?? 0) : t('Новый'))],
     ...(weddingDate
       ? ([[t('Свободен на вашу дату'), v => {
           const f = free.data?.[v.id ?? '']
-          return f === undefined || f === null ? '…' : f ? t('✓ Да') : t('✕ Занят')
+          /* `null` — календарь этого подрядчика не пришёл, и это не «ждём»:
+             троеточие здесь стояло бессрочно (ERR-0160). */
+          if (f === null) return t('календарь не загрузился')
+          return f === undefined ? '…' : f ? t('✓ Да') : t('✕ Занят')
         }]] as [string, (v: (typeof list)[number]) => string][])
       : []),
     [t('Видео-визитка'), v => (v.hasVideo ? t('▶ Есть') : '—')],
@@ -153,7 +166,11 @@ export function Compare() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Сравнение')} sub={ready(q) ? `${list.length} ${plural(list.length, t('кандидат'), t('кандидата'), t('кандидатов'))}${catTitle ? ` · ${catTitle}` : ''}` : catTitle ?? undefined} />
+      <TopBar back title={t('Сравнение')} sub={ready(q)
+        ? catId
+          ? `${list.length === 1 ? t('первый в выдаче') : `${t('первые')} ${list.length} ${t('в выдаче')}`}${catTitle ? ` · ${catTitle}` : ''}`
+          : `${list.length} ${plural(list.length, t('кандидат'), t('кандидата'), t('кандидатов'))} ${t('из избранного')}`
+        : catTitle ?? undefined} />
       <AsyncState q={q} />
       <div className="px-5 mt-3 overflow-x-auto no-scrollbar">
         <table className="w-full min-w-[520px]">
@@ -209,10 +226,17 @@ export function Compare() {
  * команда об этом не узнавала.
  *
  * Теперь тайминг приходит с сервера, сдвиг уходит в `POST …/timeline/shift`
- * и рассылается команде и гостям, план Б — в `POST …/planb/activate`.
+ * и рассылается команде и подрядчикам (гостям канала нет — SMS не
+ * подключены), план Б — в `POST …/planb/activate`.
  * Статусов подрядчиков («едет», «на месте») в контракте нет вовсе, и
  * рисовать их нельзя: пара приняла бы выдумку за факт в день, когда цена
  * ошибки максимальна.
+ *
+ * Палитра — тёмная в любой теме, как велит план (§10.2: «режим дня X —
+ * тёмный, строго производная»). Токены для этого не выдумываются заново:
+ * корень экрана несёт `data-theme="dark"`, и внутри действуют те же
+ * переменные темы, что и у всего приложения в тёмном режиме. Раньше десяток
+ * цветов стоял в JSX буквами (ревью D4-22, R-01).
  */
 export function DayX() {
   const nav = useNavigate()
@@ -222,7 +246,19 @@ export function DayX() {
   const [err, setErr] = useState<string | null>(null)
   const [confirmPlanB, setConfirmPlanB] = useState(false)
   // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
-  const [now] = useState(() => new Date())
+  const [now, setNow] = useState(() => new Date())
+
+  /*
+   * Экран живёт весь день открытым у координатора. Раньше «сейчас» снималось
+   * один раз при монтировании, а тайминг перечитывался только после своих
+   * действий: блок «СЕЙЧАС» оставался тем, что был при открытии, и сдвиг
+   * «+15 мин», сделанный парой с другого телефона, сюда не доходил (ревью
+   * D4-13, R-171). Раз в минуту — часы вперёд и тайминг с планом Б заново.
+   */
+  useEffect(() => {
+    const id = setInterval(() => { setNow(new Date()); setTick(n => n + 1) }, 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId, tick])
@@ -253,32 +289,32 @@ export function DayX() {
     iso ? new Date(iso).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''
 
   return (
-    <div className="min-h-dvh pb-10" style={{ background: 'linear-gradient(180deg,#1E1A16,#0E0C0A)', color: '#EFE9DF' }}>
+    <div data-theme="dark" className="min-h-dvh pb-10 bg-[var(--bg)] text-[var(--ink)]">
       <div className="px-5 pt-7 flex items-center justify-between">
-        <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center" style={{ background: '#2A2520' }} aria-label={t('Назад')}><ChevronLeft size={18} /></button>
+        <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center bg-[var(--card)]" aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
           <b className="font-serif-d text-[19px]">{w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
-          <p className="text-[9.5px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
+          <p className="text-[9.5px] tracking-[.2em] font-bold text-[var(--gold-soft)]">{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
         </div>
         <div className="w-10" />
       </div>
 
       <div className="px-5 mt-5">
-        <div className="rounded-[26px] p-5" style={{ background: '#2A2520' }}>
+        <div className="rounded-[26px] p-5 bg-[var(--card)]">
           {current ? (
             <div className="flex items-center justify-between">
               <div className="min-w-0">
-                <span className="text-[9px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{t('СЕЙЧАС')}</span>
+                <span className="text-[9px] tracking-[.2em] font-bold text-[var(--gold-soft)]">{t('СЕЙЧАС')}</span>
                 <b className="font-serif-d text-[21px] block mt-1 truncate">{current.name}</b>
                 <p className="text-[11px] opacity-60 mt-0.5">
                   {time(current.startsAt)}{next ? ` · ${t('дальше')} ${time(next.startsAt)} · ${next.name}` : ''}
                 </p>
               </div>
-              <span className="text-[10px] font-bold px-3 py-1.5 rounded-full shrink-0" style={{ background: '#C4705A' }}>● LIVE</span>
+              <span className="text-[10px] font-bold px-3 py-1.5 rounded-full shrink-0 bg-[var(--rose-deep)] text-[var(--card)]">● LIVE</span>
             </div>
           ) : (
             <div>
-              <span className="text-[9px] tracking-[.2em] font-bold" style={{ color: '#C9A96A' }}>{next ? t('ДАЛЬШЕ') : t('ТАЙМИНГ')}</span>
+              <span className="text-[9px] tracking-[.2em] font-bold text-[var(--gold-soft)]">{next ? t('ДАЛЬШЕ') : t('ТАЙМИНГ')}</span>
               {/* До первого блока и после последнего честнее сказать это
                   словами, чем показывать «идёт фотосессия». */}
               {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
@@ -291,24 +327,24 @@ export function DayX() {
           )}
 
           <div className="flex gap-2.5 mt-4">
-            {/* Сдвиг уходит на сервер и рассылается команде и гостям. Раньше
-                он копился в браузере пары и не доходил ни до кого. */}
-            <button disabled={busy === 'shift' || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50" style={{ background: '#C9A96A', color: '#141210' }}>
+            {/* Сдвиг уходит на сервер и рассылается команде и подрядчикам.
+                Раньше он копился в браузере пары и не доходил ни до кого. */}
+            <button disabled={busy === 'shift' || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--gold-soft)] text-[var(--on-grad)]">
               {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
             </button>
-            <button onClick={() => void (async () => nav(await dayChatRoute()))()} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[#4a443c]">{t('Чат дня X')}</button>
+            <button onClick={() => void (async () => nav(await dayChatRoute()))()} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)]">{t('Чат дня X')}</button>
           </div>
         </div>
 
-        {err && <p role="alert" className="text-[12px] mt-3" style={{ color: '#E5A3A3' }}>{err}</p>}
+        {err && <p role="alert" className="text-[12px] mt-3 text-[var(--rose-ink)]">{err}</p>}
 
         <div className="mt-4 relative pl-6">
           <AsyncState q={q} />
-          <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px]" style={{ background: 'linear-gradient(rgba(201,169,106,.7),rgba(201,169,106,.1))' }} />
+          <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px] opacity-50" style={{ background: 'linear-gradient(var(--gold-soft), transparent)' }} />
           {events.map(e => (
             <div key={e.id} className="relative mb-4">
-              <span className="absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full" style={{ background: e.id === current?.id ? '#C4705A' : '#C9A96A', boxShadow: '0 0 12px rgba(201,169,106,.8)' }} />
-              <span className="text-[9.5px] tracking-[.15em] font-bold" style={{ color: '#C9A96A' }}>{time(e.startsAt)}</span>
+              <span className={cn('absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full', e.id === current?.id ? 'bg-[var(--rose-deep)]' : 'bg-[var(--gold-soft)]')} style={{ boxShadow: '0 0 12px rgba(201,169,106,.8)' }} />
+              <span className="text-[9.5px] tracking-[.15em] font-bold text-[var(--gold-soft)]">{time(e.startsAt)}</span>
               <b className="font-serif-d text-[15px] block">{e.name}</b>
               {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
@@ -328,7 +364,7 @@ export function DayX() {
           {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{slotsState === 'ready' ? t('Забронированных подрядчиков пока нет') : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : t('Загружаем…')}</p>}
           <div className="flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
             {team.map(s => (
-              <button key={s.id} onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ background: '#2A2520' }}>
+              <button key={s.id} onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)]">
                 <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
                 {s.vendor} · {t(s.label)}
               </button>
@@ -336,19 +372,23 @@ export function DayX() {
           </div>
         </div>
 
-        <div className="rounded-[26px] p-5 mt-4" style={{ background: '#2A2520' }}>
+        <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
           <div className="flex items-center gap-3">
-            <CloudRain size={20} style={{ color: '#C9A96A' }} />
+            <CloudRain size={20} className="text-[var(--gold-soft)]" />
             <div className="flex-1">
               <b className="text-[13.5px]">{t('План Б: дождь')}</b>
-              <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония переносится под крышу, тайминг пересобирается, команда и гости получают новую точку сбора.')}</p>
+              {/* Что активация делает на самом деле: сценарий фиксируется на
+                  сервере, команде уходит уведомление. Тайминг она не
+                  пересобирает, гостям не пишет — канала к ним нет (ревью
+                  D4-07). Обещать иначе значит оставить гостей без звонка. */}
+              <p className="text-[10.5px] opacity-60 mt-0.5">{t('Церемония переносится под крышу. Сценарий фиксируется, команде уходит уведомление; гостям сообщите сами.')}</p>
             </div>
-            {/* Необратимое действие: рассылка уходит всей команде и всем
-                гостям сразу. Поэтому подтверждение в два нажатия, как у отмены
-                сделки, — комментарий обещал это и раньше, а кнопка срабатывала
-                с первого касания. */}
+            {/* Необратимое действие: уведомление уходит всей команде сразу.
+                Поэтому подтверждение в два нажатия, как у отмены сделки, —
+                комментарий обещал это и раньше, а кнопка срабатывала с
+                первого касания. */}
             {planBOn ? (
-              <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0" style={{ background: '#7E9A74', color: '#fff' }}>{t('Включён')}</span>
+              <span className="text-[11px] font-bold px-3 py-2 rounded-full shrink-0 bg-[var(--sage-deep)] text-[var(--card)]">{t('Включён')}</span>
             ) : (
               /* Пока состояние плана Б не пришло, кнопка закрыта: без ответа
                  «не включён» — догадка, и по ней ушла бы повторная рассылка. */
@@ -356,8 +396,7 @@ export function DayX() {
                 disabled={busy === 'planb' || !ready(pb)}
                 title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
                 onClick={() => (confirmPlanB ? act('planb', () => activatePlanB(weddingId!)) : setConfirmPlanB(true))}
-                className="press px-4 h-[38px] rounded-full text-[11px] font-bold border border-[#4a443c] disabled:opacity-50"
-                style={confirmPlanB ? { background: '#C4705A', borderColor: '#C4705A' } : undefined}
+                className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold border disabled:opacity-50', confirmPlanB ? 'bg-[var(--rose-deep)] border-[var(--rose-deep)] text-[var(--card)]' : 'border-[var(--line)]')}
               >
                 {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}
               </button>
@@ -368,7 +407,7 @@ export function DayX() {
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
             координатора» не существует, а телефон +7 000 000-00-00 был
             выдуман. Пишем в командный чат — там координатор и сидит. */}
-        <button onClick={() => void (async () => nav(await teamChatRoute()))()} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2" style={{ background: '#C4705A', color: '#fff' }}>
+        <button onClick={() => void (async () => nav(await teamChatRoute()))()} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)]">
           <Zap size={16} /> {t('Написать всей команде')}
         </button>
       </div>
@@ -398,24 +437,29 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
  * Теперь всё считается по своей свадьбе, а отзывы ходят на сервер обе стороны.
  */
 export function After() {
-  const { weddingId, slots, slotsState } = useStore()
+  const { weddingId } = useStore()
   const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const guests = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const album = useApi(() => weddingId ? getAlbum(weddingId) : Promise.resolve([]), [weddingId])
   const reviews = useApi(() => weddingId ? getGuestReviews(weddingId) : Promise.resolve([]), [weddingId])
+  /* Мозаика читается здесь своим запросом, а не из стора: у слота в сторе
+     нет даты завершения сделки, а окно отзыва считается от неё (`doneAt`). */
+  const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : Promise.resolve([]), [weddingId])
   const [rating, setRating] = useState(false)
+  // Сегодняшний день — один раз за монтирование: в теле компонента время не берут (R-04).
+  const [today] = useState(() => new Date().toISOString().slice(0, 10))
 
   const date = w.data?.date ?? null
   const photos = album.data ?? []
   const guestReviews = reviews.data ?? []
   /* Команда — те, с кем есть сделка. Свой подрядчик (§11) сюда не попадает:
      он не из каталога, и отзыв о нём публиковать негде. */
-  const team = slots.filter(s => s.vendorId && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
+  const team = (slotsQ.data ?? []).filter(s => s.deal?.vendor?.id && (s.deal.state === 'booked' || s.deal.state === 'paid_deposit' || s.deal.state === 'done'))
   /* Итоги — только по пришедшим ответам: «0 гостей · 0 кадров» после свадьбы
      при лежащем сервере читается как «никто не пришёл и не снимал». */
   const guestCount = guests.data?.length ?? 0
   const stats: [string, string][] = [
-    [slotsState === 'ready' ? String(team.length) : '—', plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
+    [num(slotsQ, team.length), plural(team.length, t('подрядчик'), t('подрядчика'), t('подрядчиков'))],
     [num(guests, guestCount), plural(guestCount, t('гость'), t('гостя'), t('гостей'))],
     [num(album, photos.length), plural(photos.length, t('кадр от гостей'), t('кадра от гостей'), t('кадров от гостей'))],
     [num(reviews, guestReviews.length), plural(guestReviews.length, t('отзыв гостя'), t('отзыва гостей'), t('отзывов гостей'))],
@@ -435,7 +479,7 @@ export function After() {
               всегда, и «Поздравляем, ваша свадьба состоялась» до неё —
               неправда. */}
           <p className="text-[12px] opacity-90 mt-1">
-            {date && date < new Date().toISOString().slice(0, 10) ? t('Поздравляем! Ваша свадьба состоялась') : t('Итоги соберутся здесь после дня свадьбы')}
+            {date && date < today ? t('Поздравляем! Ваша свадьба состоялась') : t('Итоги соберутся здесь после дня свадьбы')}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2.5 mt-4 stagger">
@@ -460,8 +504,11 @@ export function After() {
         <button onClick={() => setRating(!rating)} className="press w-full card-s mt-3 py-4 text-[13px] font-semibold">{rating ? t('Скрыть') : t('Оставить отзывы команде')}</button>
         {rating && (
           <div className="mt-3 space-y-2.5 fade-up">
-            {!team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
-            {team.map(s => <CoupleReviewRow key={s.id} vendorId={s.vendorId!} name={s.vendor ?? ''} done={s.dealState === 'done'} />)}
+            <AsyncState q={slotsQ} />
+            {ready(slotsQ) && !team.length && <p className="text-[12px] text-[var(--soft)] text-center py-3">{t('Пока некого оценивать — в команде нет забронированных подрядчиков')}</p>}
+            {team.map(s => (
+              <CoupleReviewRow key={s.id} vendorId={s.deal?.vendor?.id ?? ''} name={s.deal?.vendor?.name ?? ''} done={s.deal?.state === 'done'} doneAt={s.deal?.doneAt ?? null} />
+            ))}
           </div>
         )}
 
@@ -497,13 +544,30 @@ export function After() {
  * Право на отзыв даёт завершённая сделка — это проверяет сервер, и до неё
  * форма не открывается: звёзды, которые никуда не уйдут, хуже честной строки
  * «после завершения сделки».
+ *
+ * Второе условие сервера — окно в 14 дней от завершения сделки
+ * (`REVIEW_WINDOW_DAYS` в `routes/reviews.ts`, 403 после). Раньше форма
+ * стояла у каждой завершённой сделки, и «через год» упиралось в отказ уже
+ * после набранного текста (ревью D4-26). Срок считается от `doneAt` сделки;
+ * без него сервер берёт дату создания сделки, которой у экрана нет, — тогда
+ * форма открыта, а дата не называется: выдумывать её нельзя.
  */
-function CoupleReviewRow({ vendorId, name, done }: { vendorId: string; name: string; done: boolean }) {
+const REVIEW_WINDOW_DAYS = 14
+
+function CoupleReviewRow({ vendorId, name, done, doneAt }: { vendorId: string; name: string; done: boolean; doneAt: string | null }) {
   const [stars, setStars] = useState(0)
   const [text, setText] = useState('')
   const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Момент открытия — один раз за монтирование (R-04).
+  const [openedAt] = useState(() => Date.now())
+
+  const deadline = doneAt ? new Date(doneAt).getTime() + REVIEW_WINDOW_DAYS * 86_400_000 : null
+  const closed = deadline !== null && openedAt > deadline
+  const deadlineText = deadline !== null
+    ? new Date(deadline).toLocaleDateString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long' })
+    : null
 
   const send = () => void (async () => {
     if (!stars || !text.trim()) return
@@ -517,8 +581,12 @@ function CoupleReviewRow({ vendorId, name, done }: { vendorId: string; name: str
       <div className="flex items-center justify-between gap-2">
         <b className="text-[12.5px] flex-1">{name}</b>
         {!done && <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('после завершения сделки')}</span>}
+        {done && closed && <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--track)] text-[var(--track-ink)]">{t('Окно для отзыва закрылось')}</span>}
       </div>
-      {done && !sent && (
+      {done && closed && (
+        <p className="text-[11px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Отзыв принимается 14 дней после завершения сделки — срок вышел')} {deadlineText}</p>
+      )}
+      {done && !closed && !sent && (
         <>
           <div className="flex items-center gap-1.5 mt-2">
             {[1, 2, 3, 4, 5].map(n => (
@@ -526,6 +594,7 @@ function CoupleReviewRow({ vendorId, name, done }: { vendorId: string; name: str
             ))}
           </div>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={t('Что получилось, а что нет')} className="w-full mt-2 px-4 py-3 rounded-xl bg-[var(--bg)] text-[12.5px] outline-none resize-none placeholder:text-[var(--soft2)]" />
+          {deadlineText && <p className="text-[10.5px] text-[var(--soft2)] mt-1.5">{t('Отзыв принимается до')} {deadlineText}</p>}
           {err && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-1.5">{err}</p>}
           <button disabled={busy || !stars || !text.trim()} onClick={send} className="press w-full h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-2 disabled:opacity-40">
             {busy ? t('Отправляем…') : t('Отправить отзыв')}
@@ -549,7 +618,10 @@ const planBRisks = [
   },
   {
     icon: '🌧', title: t('Дождь или непогода на выездной церемонии'),
-    how: t('План Б площадки согласован при бронировании: церемония переносится в зал, тенты и прозрачные зонты — красивые фото даже в дождь. Гости получают уведомление об изменении точки сбора.'),
+    /* Гостям канала нет — SMS не подключены (хвост владельца), поэтому
+       «гости получают уведомление» здесь не стояло бы честно ни в одной
+       форме. Уведомление уходит команде, гостям звонит пара. */
+    how: t('План Б площадки согласован при бронировании: церемония переносится в зал, тенты и прозрачные зонты — красивые фото даже в дождь. При активации команде уйдёт уведомление; гостям о новой точке сбора сообщите сами.'),
     action: 'rain',
   },
   {
@@ -582,7 +654,8 @@ const planBRisks = [
   },
   {
     icon: '🚗', title: t('Автобус с гостями сломался или водитель приехал не туда'),
-    how: t('Маршрут и точки сбора у водителя в приложении — он не «думает сам». Запасной вариант: второй автобус из раздела Логистики или такси-контракт, эскалация на координатора.'),
+    /* Приложения для водителя нет: маршрут ему передают руками. */
+    how: t('Маршрут и точки сбора передайте водителю заранее — приложения для водителя нет, и «думать сам» он не должен. Запасной вариант: второй автобус из раздела Логистики или такси-контракт, эскалация на координатора.'),
   },
   {
     icon: '💍', title: t('Забыли кольца или паспорта'),
@@ -630,7 +703,7 @@ export function PlanB() {
   const pct = checklist.length ? Math.round(doneCount / checklist.length * 100) : 0
   const activated = !!q.data?.activatedAt
 
-  /* Активация — необратимая рассылка всей команде и гостям, поэтому в два
+  /* Активация — необратимое уведомление всей команде, поэтому в два
      нажатия. Раньше кнопка называлась «Активировать план «дождь» (демо)» и
      переключала переменную на экране: пара видела «Уведомления ушли: площадка,
      декоратор, фотограф, координатор», а не уходило ничего. */
@@ -671,11 +744,14 @@ export function PlanB() {
 
         {/* Плашка стоит на ответе сервера, а не на локальном тумблере: до
             этого она загоралась от нажатия и утверждала, что уведомления
-            ушли, когда не уходило ничего. */}
+            ушли, когда не уходило ничего. Слова — ровно о том, что сервер
+            сделал: записал сценарий и уведомил команду. Тайминг он не
+            пересобирает, гостям не пишет — канала нет (ревью D4-07, R-174);
+            «гости получили новую точку сбора» оставило бы их без звонка. */}
         {activated && (
-          <div className="card p-4 fade-up" style={{ border: '1.5px solid #7E9A74' }}>
+          <div className="card p-4 fade-up" style={{ border: '1.5px solid var(--sage-deep)' }}>
             <b className="text-[13px]">🌧 {t('План «дождь» активирован')}</b>
-            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Команда и гости получили новую точку сбора, тайминг пересобран.')}</p>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Сценарий зафиксирован, команде ушло уведомление. Гостям сообщите сами — SMS пока нет.')}</p>
           </div>
         )}
 
@@ -694,8 +770,8 @@ export function PlanB() {
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
                   {r.action === 'rain' && !activated && (
-                    <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[#C4705A] text-white' : 'grad text-[var(--on-grad)]')}>
-                      {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команда и гости получат новую точку сбора') : t('Активировать план «дождь»')}
+                    <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[var(--rose-deep)] text-[var(--card)]' : 'grad text-[var(--on-grad)]')}>
+                      {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команде уйдёт уведомление') : t('Активировать план «дождь»')}
                     </button>
                   )}
                   {r.action === 'rain' && activated && (

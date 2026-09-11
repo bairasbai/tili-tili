@@ -112,13 +112,14 @@ export function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
   }
 }
 
-/** Задача «за 9 месяцев до» превращается в дату относительно дня свадьбы. */
-function dueDate(weddingDate: string | null, monthsBefore: number): string | null {
-  if (!weddingDate) return null
-  const d = new Date(weddingDate + 'T00:00:00Z')
-  d.setUTCMonth(d.getUTCMonth() - monthsBefore)
-  return d.toISOString().slice(0, 10)
-}
+/** Условие «участник жив»: мягко удалённый аккаунт в команде не считается и не показывается (R-224). */
+const LIVE_MEMBERS_SQL = `select m.user_id, u.name, m.role, m.joined_at
+         from wedding_members m join users u on u.id = m.user_id
+        where m.wedding_id = $1 and u.deleted_at is null order by m.joined_at`
+
+/** Есть ли в свадьбе $1 другой ЖИВОЙ участник с ролью «пара», кроме $2 — подзапрос для exists(). */
+const OTHER_LIVE_COUPLE_SQL = `select 1 from wedding_members o join users u on u.id = o.user_id
+                    where o.wedding_id = $1 and o.user_id <> $2 and o.role = 'couple' and u.deleted_at is null`
 
 export async function weddingRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -137,12 +138,10 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       [weddingId],
     )
     if (!rows[0]) throw notFound('Свадьба не найдена')
-    const { rows: members } = await db().query<MemberRow>(
-      `select m.user_id, u.name, m.role, m.joined_at
-         from wedding_members m join users u on u.id = m.user_id
-        where m.wedding_id = $1 order by m.joined_at`,
-      [weddingId],
-    )
+    /* Без мягко удалённых: иначе ушедший партнёр 30 дней стоял бы в команде
+     * как активный участник с короной, а его имя — персональные данные
+     * удалённого — продолжало отдаваться команде (D1-10). */
+    const { rows: members } = await db().query<MemberRow>(LIVE_MEMBERS_SQL, [weddingId])
     return toWedding(rows[0], members, role)
   }
 
@@ -264,10 +263,15 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           )
         }
         for (const t of TASK_TEMPLATE) {
+          /* Срок — той же формулой базы, что и перенос (`reschedule.ts`):
+           * JS-арифметика `setUTCMonth` не подрезала число, и «за 3 месяца»
+           * от 31 мая давало 31 февраля → 3 марта, а первая дата через
+           * перенос — 28 февраля. Одна свадьба получала разные сроки в
+           * зависимости от того, назвали дату в квизе или позже (D2-11). */
           await client.query(
             `insert into tasks (id, wedding_id, title, period, due, source, sort)
-             values ($1, $2, $3, $4, $5, 'system', $6)`,
-            [uuidv7(), weddingId, t.title, String(t.monthsBefore), dueDate(date, t.monthsBefore), t.sort],
+             values ($1, $2, $3, $4, ($5::date - make_interval(months => $6::int))::date, 'system', $7)`,
+            [uuidv7(), weddingId, t.title, String(t.monthsBefore), date, t.monthsBefore, t.sort],
           )
         }
         for (const e of TIMELINE_TEMPLATE) {
@@ -320,8 +324,10 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             tz: { type: 'string', maxLength: 64 },
             inviteText: { type: 'string', maxLength: 2000 },
             inviteThemeId: { type: 'integer', minimum: 0, maximum: 9 },
-            dressCode: { type: 'string', maxLength: 32 },
-            dressNote: { type: 'string', maxLength: 300 },
+            // `null` снимает значение (контракт: nullable). Однажды написанное
+            // «дамы — без белого» иначе гость видел бы вечно (D3-11).
+            dressCode: { type: ['string', 'null'], maxLength: 32 },
+            dressNote: { type: ['string', 'null'], maxLength: 300 },
           },
         },
       },
@@ -332,6 +338,9 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         city?: { name: string; region: string }
         budgetTotal?: { amount: number }
       }
+      /* Для полей, где `null` — законное значение, семантика «поле пришло»,
+       * а не `coalesce`: пропущенное не трогается, присланный `null` стирает. */
+      const has = (field: string) => Object.prototype.hasOwnProperty.call(body, field)
 
       let cityId: number | null = null
       let cityTz: string | null = null
@@ -373,7 +382,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
            style = coalesce($6, style), venue = coalesce($7, venue),
            tz = coalesce($8, $11, tz),
            invite_text = coalesce($9, invite_text), invite_theme_id = coalesce($10, invite_theme_id),
-           dress_code = coalesce($12, dress_code), dress_note = coalesce($13, dress_note)
+           dress_code = case when $14::boolean then $12::text else dress_code end,
+           dress_note = case when $15::boolean then $13::text else dress_note end
          where id = $1`,
         [
           weddingId,
@@ -387,8 +397,10 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           (body.inviteText as string) ?? null,
           (body.inviteThemeId as number) ?? null,
           cityTz,
-          (body.dressCode as string) ?? null,
-          (body.dressNote as string) ?? null,
+          (body.dressCode as string | null) ?? null,
+          (body.dressNote as string | null) ?? null,
+          has('dressCode'),
+          has('dressNote'),
         ],
       )
       return loadWedding(weddingId, request.member!.role)
@@ -397,12 +409,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── команда ──────────────────────────────────────────────────────── */
   app.get('/weddings/:weddingId/members', async (request) => {
-    const { rows } = await db().query<MemberRow>(
-      `select m.user_id, u.name, m.role, m.joined_at
-         from wedding_members m join users u on u.id = m.user_id
-        where m.wedding_id = $1 order by m.joined_at`,
-      [request.member!.weddingId],
-    )
+    const { rows } = await db().query<MemberRow>(LIVE_MEMBERS_SQL, [request.member!.weddingId])
     return rows.map((m) => ({
       user: { id: m.user_id, name: m.name ?? '' },
       role: m.role,
@@ -429,14 +436,22 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       const { userId } = request.params as { userId: string }
       const { role } = request.body as { role: Role }
 
-      if (role !== 'couple') await assertNotLastCouple(weddingId, userId)
-
-      const res = await db().query('update wedding_members set role = $3 where wedding_id = $1 and user_id = $2', [
-        weddingId,
-        userId,
-        role,
-      ])
-      if (res.rowCount === 0) throw notFound('Участник не найден')
+      /* Понижение пары — одним запросом с условием «есть другой ЖИВОЙ couple»,
+       * как у удаления ниже. Раздельная проверка считала мёртвого партнёра за
+       * живого (после его `deleted_at` свадьба оставалась без пары) и не была
+       * атомарной: два партнёра, понижающие друг друга одновременно, оба
+       * проходили (D1-09, R-224). Строка свадьбы берётся `for update`: две
+       * смены состава одной команды идут по очереди, и вторая видит первую. */
+      const changed = await db().tx(async (client) => {
+        await client.query('select id from weddings where id = $1 for update', [weddingId])
+        return client.query(
+          `update wedding_members m set role = $3
+            where m.wedding_id = $1 and m.user_id = $2
+              and ($3 = 'couple' or m.role <> 'couple' or exists (${OTHER_LIVE_COUPLE_SQL}))`,
+          [weddingId, userId, role],
+        )
+      })
+      if (changed.rowCount === 0) await explainMissing(weddingId, userId)
       return { ok: true }
     },
   )
@@ -452,40 +467,34 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       // Проверка «остался ли ещё кто-то с ролью couple» и само удаление — одно
       // действие. Раздельно двое участников с этой ролью, удаляющие друг друга
       // одновременно, оба увидели бы «остался» и оба удалили: свадьба стала бы
-      // ничьей. Условие NOT EXISTS считается в момент удаления строки.
-      const res = await db().query(
-        `delete from wedding_members m
-          where m.wedding_id = $1 and m.user_id = $2
-            and (m.role <> 'couple'
-                 or exists (select 1 from wedding_members o
-                             where o.wedding_id = $1 and o.user_id <> $2 and o.role = 'couple'))`,
-        [weddingId, userId],
-      )
-      if (res.rowCount === 0) {
-        const { rows } = await db().query<{ present: boolean }>(
-          'select true as present from wedding_members where wedding_id = $1 and user_id = $2',
+      // ничьей. Условие NOT EXISTS считается в момент удаления строки, а
+      // строка свадьбы под `for update` выстраивает такие удаления в очередь.
+      const res = await db().tx(async (client) => {
+        await client.query('select id from weddings where id = $1 for update', [weddingId])
+        return client.query(
+          `delete from wedding_members m
+            where m.wedding_id = $1 and m.user_id = $2
+              and (m.role <> 'couple' or exists (${OTHER_LIVE_COUPLE_SQL}))`,
           [weddingId, userId],
         )
-        if (rows.length === 0) throw notFound('Участник не найден')
-        throw conflict('last_couple', 'Нельзя убрать последнего участника с ролью «пара» — свадьба останется ничьей')
-      }
+      })
+      if (res.rowCount === 0) await explainMissing(weddingId, userId)
       return reply.code(204).send()
     },
   )
 
   /**
    * Свадьба без пары становится ничьей: её нельзя ни редактировать, ни удалить,
-   * ни вернуть себе доступ. Проверка тут, а не в БД: ограничением «хотя бы одна
-   * строка с ролью couple» в PostgreSQL не выражается.
+   * ни вернуть себе доступ. Проверка в условии запроса, а не в БД: ограничением
+   * «хотя бы одна строка с ролью couple» в PostgreSQL не выражается. Здесь —
+   * только объяснение отказа: участника нет вовсе или он последняя живая пара.
    */
-  async function assertNotLastCouple(weddingId: string, userId: string): Promise<void> {
-    const { rows } = await db().query<{ others: string }>(
-      `select count(*)::text as others from wedding_members
-        where wedding_id = $1 and role = 'couple' and user_id <> $2`,
+  async function explainMissing(weddingId: string, userId: string): Promise<never> {
+    const { rows } = await db().query<{ present: boolean }>(
+      'select true as present from wedding_members where wedding_id = $1 and user_id = $2',
       [weddingId, userId],
     )
-    if (Number(rows[0]!.others) === 0) {
-      throw conflict('last_couple', 'Нельзя убрать последнего участника с ролью «пара» — свадьба останется ничьей')
-    }
+    if (rows.length === 0) throw notFound('Участник не найден')
+    throw conflict('last_couple', 'Нельзя убрать последнего участника с ролью «пара» — свадьба останется ничьей')
   }
 }

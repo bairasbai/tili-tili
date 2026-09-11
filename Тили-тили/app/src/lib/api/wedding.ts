@@ -128,6 +128,17 @@ export const setWeddingDateOnServer = (weddingId: string, date: string) =>
   api.patch(url('/weddings/{weddingId}', { weddingId }), { date }, { idempotencyKey: newIdempotencyKey() })
 
 /**
+ * Задать общий бюджет свадьбы. Сумма — в копейках.
+ *
+ * До ревью D2-09 `budgetTotal` уходил только из квиза: пара, ответившая «пока
+ * не знаем», задать его потом не могла нигде, а экран бюджета показывал
+ * «из 0 ₽ запланировано · 0%» как факт. Тело — ровно одно поле: остальные
+ * поля свадьбы `PATCH` трогать не должен.
+ */
+export const setBudgetTotal = (weddingId: string, amount: number) =>
+  api.patch(url('/weddings/{weddingId}', { weddingId }), { budgetTotal: { amount, currency: 'RUB' } }, { idempotencyKey: newIdempotencyKey() })
+
+/**
  * Оформление приглашения: обращение пары и сценарий.
  *
  * Хранится у свадьбы, а не в браузере пары: гость открывает приглашение со

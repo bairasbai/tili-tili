@@ -1,4 +1,5 @@
 import { AppError } from './errors.js'
+import { UUID_RE } from './ids.js'
 
 /**
  * Пагинация по курсору, а не по offset.
@@ -35,11 +36,20 @@ export function encodeCursor(sort: string, id: string): string {
 /**
  * Чем сортирует маршрут: этим задаётся тип, к которому приводится ключ в SQL.
  * По времени листают почти все — каталог сортирует числами (рейтинг, цена).
+ *
+ * Регулярное выражение — для ключа составного вида: каталог несёт в курсоре
+ * имя сортировки и признак понижения рядом со значением, и форму такого
+ * ключа знает только он (D5-09, D5-10). Проверка всё равно идёт здесь, до
+ * базы: испорченный курсор — 400, а не ошибка приведения типа и 500.
  */
-export type CursorSort = 'timestamp' | 'number'
+export type CursorSort = 'timestamp' | 'number' | RegExp
 
 /** Идентификатор в курсоре — всегда uuid: он сравнивается с колонкой `id`. */
-const CURSOR_ID = /^[0-9a-fA-F-]{36}$/
+const CURSOR_ID = UUID_RE
+/* Ключ по времени — только ISO-вид, каким его выдаёт `Date#toISOString`:
+   `Date.parse` принимает и `'2026'`, и `'1'`, а `'2026'::timestamptz` в
+   PostgreSQL 16 — ошибка приведения, то есть 500 (ERR-0221). */
+const CURSOR_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/
 /** Числовой ключ. Своё, а не `Number()`: тот принимает `0x10` и ` 12 `, база — нет. */
 const CURSOR_NUMBER = /^-?\d+(\.\d+)?$/
 
@@ -66,9 +76,15 @@ export function decodeCursor(raw: string, kind: CursorSort = 'timestamp'): Curso
   const sort = text.slice(0, sep)
   const id = text.slice(sep + 1)
   if (!CURSOR_ID.test(id)) badCursor()
-  // Date.parse, а не свой разбор: он принимает всё, что принимает база, и
-  // отвергает то, что она отвергает. Курсоры мы выдаём в ISO — они пройдут.
-  if (kind === 'timestamp' ? Number.isNaN(Date.parse(sort)) : !CURSOR_NUMBER.test(sort)) badCursor()
+  // Курсоры мы выдаём в ISO — только такой вид и принимаем обратно: всё, что
+  // шире, база может не привести, и тогда это 500, а не 400.
+  const sortOk =
+    kind === 'timestamp'
+      ? CURSOR_TIMESTAMP.test(sort) && !Number.isNaN(Date.parse(sort))
+      : kind === 'number'
+        ? CURSOR_NUMBER.test(sort)
+        : kind.test(sort)
+  if (!sortOk) badCursor()
   return { sort, id }
 }
 

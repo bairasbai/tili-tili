@@ -27,9 +27,15 @@ export const getGuestReviews = (weddingId: string) =>
  * «Гульнара и Тимур», «Дина и Руслан» и «Гость свадьбы Алины и Тимура» — с
  * пометкой «сделка через «Тили-тили» — отзыв подтверждён». Это худший вид
  * выдумки: поддельный знак доверия на карточке живого человека.
+ *
+ * `cursor` — из `nextCursor` прошлой страницы: лента листается, а не
+ * обрывается на десяти. «47 отзывов» при десяти видимых и без кнопки «ещё»
+ * — ревью D5-26а.
  */
-export const getVendorReviews = (vendorId: string, limit = 10) =>
-  api.get(`${url('/catalog/vendors/{vendorId}/reviews', { vendorId })}?limit=${limit}` as '/catalog/vendors/{vendorId}/reviews')
+export const getVendorReviews = (vendorId: string, limit = 10, cursor?: string | null) =>
+  api.get(
+    `${url('/catalog/vendors/{vendorId}/reviews', { vendorId })}?limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}` as '/catalog/vendors/{vendorId}/reviews',
+  )
 
 /**
  * Отзыв пары о подрядчике.

@@ -227,10 +227,19 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
   })
 
   /* ── сделки в кабинете ────────────────────────────────────────────── */
-  it('кабинет показывает сделки с суммами, а не список заявок', async () => {
+  it('кабинет показывает сделки с суммами, а «ожидается» — остаток после платежей', async () => {
     const vendor = await newVendor('Сделочный')
     const w = await newWedding('2027-04-10')
-    await book(w, vendor.vendorId)
+    const dealId = await book(w, vendor.vendorId)
+    const { rows: slot } = await app.db!.query<{ slot_id: string }>('select slot_id from deals where id = $1', [dealId])
+    // Аванс 20 000 ₽ из 50 000 ₽: то, что пара уже внесла, подрядчику не «ожидается».
+    const paid = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/slots/${slot[0]!.slot_id}/pay`,
+      headers: { ...auth(w.token), ...key() },
+      payload: { amount: { amount: 2_000_000, currency: 'RUB' } },
+    })
+    expect(paid.statusCode).toBe(200)
 
     const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })
     expect(deals.statusCode).toBe(200)
@@ -238,10 +247,12 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     /* Экран «Сделки» есть в моках, а пути под него не было: заявка и сделка —
      * разные вещи, у заявки нет ни суммы, ни срока брони. */
     expect(items).toHaveLength(1)
-    expect(items[0]).toMatchObject({ state: 'booked' })
+    expect(items[0]).toMatchObject({ state: 'paid_deposit' })
     expect(items[0]!.price.amount).toBe(5_000_000)
-    // «Ожидается по сделкам» — только незакрытые.
-    expect(deals.json().expected.amount).toBe(5_000_000)
+    /* «Ожидается по сделкам» = цена − оплачено по `payments`, а не цена
+     * целиком: до 2026-09-11 здесь стояли 50 000 ₽ при внесённом авансе, и
+     * тест это закреплял (D5-08). */
+    expect(deals.json().expected.amount).toBe(3_000_000)
   })
 
   it('закрытая сделка в «ожидается» не входит', async () => {
@@ -251,7 +262,10 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [dealId])
 
     const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })
-    // Закрытая сделка уже оплачена — ждать по ней нечего.
+    /* «Ожидается» — только по открытым броням (`booked`, `paid_deposit`).
+     * Остаток по `done` без платежей в него не входит — переход в `done`
+     * оплат не проверяет, и это вопрос владельцу, а не допущение «закрытая
+     * уже оплачена». */
     expect(deals.json().expected.amount).toBe(0)
     expect((deals.json().items as { state: string }[])[0]!.state).toBe('done')
   })

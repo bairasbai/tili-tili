@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createHash } from 'node:crypto'
 import type { Config } from '../config.js'
 import { TooManyRequests } from '../errors.js'
-import { readGuestToken } from '../guests/access.js'
+import { GUEST_ACCESSIBLE_WEDDING_PATHS, readGuestToken } from '../guests/access.js'
+import { verifyAccessToken } from '../auth/tokens.js'
 import { withRedisTimeout } from './redis.js'
 
 /**
@@ -21,15 +22,41 @@ const WINDOW_SECONDS = 1
 /** Проверки здоровья считает балансировщик — им ограничение только мешает. */
 const SKIP = /^\/health/
 
-function callerKey(request: FastifyRequest): string {
-  // Гость ходит по токену в адресе, пользователь — по заголовку.
+/** Путь, где гостевой токен что-то значит: в адресе или в списке гостевых путей свадьбы. */
+function isGuestRoute(request: FastifyRequest): boolean {
+  const url = request.routeOptions?.url
+  if (!url) return false
+  return url.includes(':guestToken') || GUEST_ACCESSIBLE_WEDDING_PATHS.has(`${request.method} ${url}`)
+}
+
+/**
+ * Ключ счётчика: по человеку, по гостю или по адресу.
+ *
+ * Токен даёт свой ключ ТОЛЬКО с верной подписью. Ключ от сырого заголовка
+ * означал бы, что любой клиент без входа шлёт `Bearer <случайная строка>`
+ * и каждый его запрос попадает в новый счётчик — лимит на адрес для входа
+ * по SMS, обмена токенов и всех путей без токена не срабатывал бы никогда
+ * (D6-02). Подпись проверяется здесь без базы: `onRequest` идёт раньше
+ * `requireAuth`, а поход в базу ради счётчика превратил бы защиту от
+ * перегрузки в её источник. Просроченный или чужой токен — тот же мусор:
+ * счёт по адресу.
+ */
+export async function rateLimitKey(request: FastifyRequest, secret: string | null): Promise<string> {
+  /* Гость ходит по токену в адресе — но только на СВОИХ путях. Токен гостя
+   * подписи не имеет и проверяется лишь по базе, поэтому здесь он берётся
+   * на веру; чтобы `?guestToken=мусор` не заводил новый счётчик на входе по
+   * SMS или обмене токенов, вне гостевых путей он не считается вовсе. */
   const guest = readGuestToken(request)
-  if (guest) return `g:${createHash('sha256').update(guest).digest('base64url').slice(0, 22)}`
+  if (guest && isGuestRoute(request)) return `g:${createHash('sha256').update(guest).digest('base64url').slice(0, 22)}`
 
   const auth = request.headers.authorization
-  if (auth?.startsWith('Bearer ')) {
-    // Хешируем: сырой токен не должен оказаться ни в Redis, ни в логе.
-    return `u:${createHash('sha256').update(auth.slice(7)).digest('base64url').slice(0, 22)}`
+  if (secret && auth?.startsWith('Bearer ')) {
+    try {
+      const claims = await verifyAccessToken(secret, auth.slice(7).trim())
+      return `u:${claims.sub}`
+    } catch {
+      // Подпись не сошлась — заголовок ничего не доказывает.
+    }
   }
   return `ip:${request.ip}`
 }
@@ -44,7 +71,8 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
 
   app.addHook('onRequest', async (request) => {
     if (SKIP.test(request.url)) return
-    const key = `rl:${callerKey(request)}:${Math.floor(Date.now() / 1000 / WINDOW_SECONDS)}`
+    const caller = await rateLimitKey(request, config.jwtAccessSecret ?? null)
+    const key = `rl:${caller}:${Math.floor(Date.now() / 1000 / WINDOW_SECONDS)}`
 
     let count: number
     try {

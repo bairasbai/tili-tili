@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
-import { UUID_ID, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import type { Queryable } from '../plugins/db.js'
@@ -8,6 +8,15 @@ import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import type { Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
+
+/**
+ * Сколько минут после первого обмена тот же код отдаёт тот же токен.
+ *
+ * Достаточно, чтобы «Повторить» после потерянного ответа сработало, и мало,
+ * чтобы забытая в мессенджере ссылка не открывала гостевую страницу спустя
+ * час тому, кто её нашёл.
+ */
+const REDEEM_RETRY_MINUTES = 10
 
 interface GuestRow {
   id: string
@@ -155,7 +164,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             name: { type: 'string', minLength: 1, maxLength: 120 },
             plusOne: { type: 'boolean' },
             status: { type: 'string', enum: ['yes', 'no', 'pending'] },
-            group: { type: 'string', maxLength: 120 },
+            /* `null` снимает группу — контракт (`Guest.group: nullable`) это
+             * обещает, а без `nullable` AJV приводил `null` к пустой строке,
+             * и «без группы» записывалось как группа с пустым именем. */
+            group: { type: 'string', nullable: true, maxLength: 120 },
             // `null` стирает номер — гость попросил не писать ему (R-17).
             phone: { type: 'string', nullable: true, maxLength: 32 },
             // Стол уходит в колонку uuid; `null` снимает рассадку (R-17).
@@ -175,77 +187,126 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const { guestId } = request.params as { guestId: string }
       const body = request.body as Record<string, unknown>
-      if (!/^[0-9a-f-]{36}$/i.test(guestId)) throw notFound('Гость не найден')
-
-      if (body.tableId) {
-        // Стол обязан принадлежать этой же свадьбе: иначе гость садится
-        // за чужой стол и портит чужую рассадку.
-        const { rows } = await db().query('select 1 from tables where id = $1 and wedding_id = $2', [
-          body.tableId,
-          weddingId,
-        ])
-        if (rows.length === 0) throw notFound('Стол не найден')
-      }
+      if (!isUuid(guestId)) throw notFound('Гость не найден')
 
       // `undefined` — поле не прислали, оставить как есть. Явный `null` —
       // снять значение (R-17): пропуск и очистка это разные намерения.
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
-      const res = await db().query(
-        `update guests set
-           name = coalesce($3, name),
-           plus_one = coalesce($4, plus_one),
-           rsvp = coalesce($5, rsvp),
-           group_name = case when $6 then $7 else group_name end,
-           table_id = case when $8 then $9::uuid else table_id end,
-           diet = case when $10 then $11 else diet end,
-           diet_note = case when $12 then $13 else diet_note end,
-           transfer = case when $14 then $15 else transfer end,
-           phone = case when $16 then $17 else phone end
-         where id = $1 and wedding_id = $2`,
-        [
-          guestId,
-          weddingId,
-          (body.name as string) ?? null,
-          (body.plusOne as boolean) ?? null,
-          (body.status as string) ?? null,
-          has('group'),
-          (body.group as string) ?? null,
-          has('tableId'),
-          (body.tableId as string) ?? null,
-          has('diet'),
-          (body.diet as string) ?? null,
-          has('dietNote'),
-          (body.dietNote as string) ?? null,
-          has('transfer'),
-          (body.transfer as string) ?? null,
-          has('phone'),
-          (body.phone as string) ?? null,
-        ],
-      )
-      if (res.rowCount === 0) throw notFound('Гость не найден')
-      /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
-       * Декоратор расставляет карточки по столам, кейтеринг считает порции —
-       * им нужно узнать об этом от нас, а не от пары накануне. */
-      if (has('tableId')) {
-        const { rows: seated } = await db().query<{ n: string }>(
-          'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
-          [weddingId],
+
+      /* Правка гостя, посадка и освобождение мест — одна транзакция (R-122):
+       * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,
+       * которого не бывает в норме. */
+      return db().tx(async (client) => {
+        if (body.tableId) {
+          /* Стол обязан принадлежать этой же свадьбе: иначе гость садится
+           * за чужой стол и портит чужую рассадку. Строка стола под
+           * блокировкой: два одновременных «посадить» за последнее место
+           * иначе оба прошли бы проверку вместимости (R-49). */
+          const { rows: table } = await client.query<{ name: string; capacity: number }>(
+            'select name, capacity from tables where id = $1 and wedding_id = $2 for update',
+            [body.tableId, weddingId],
+          )
+          if (table.length === 0) throw notFound('Стол не найден')
+
+          /* Вместимость считается в персонах, а не в записях (R-29): «Ольга
+           * и Денис» с плюс-одним — двое за столом, как их считает кейтеринг
+           * на соседнем экране. Сам гость исключается из уже сидящих (он мог
+           * пересаживаться в пределах этого же стола) и добавляется с тем
+           * `plusOne`, который придёт вместе с посадкой. */
+          const { rows: seated } = await client.query<{ persons: string; plus_one: boolean | null }>(
+            `select coalesce(sum(1 + o.plus_one::int) filter (where o.id <> $3), 0)::text as persons,
+                    bool_or(o.plus_one) filter (where o.id = $3) as plus_one
+               from guests o
+              where o.wedding_id = $2 and (o.table_id = $1 or o.id = $3)`,
+            [body.tableId, weddingId, guestId],
+          )
+          if (seated[0]!.plus_one === null) throw notFound('Гость не найден')
+          const plusOne = has('plusOne') ? Boolean(body.plusOne) : seated[0]!.plus_one
+          const total = Number(seated[0]!.persons) + (plusOne ? 2 : 1)
+          const { capacity, name } = table[0]!
+          if (total > capacity) {
+            throw conflict(
+              'table_full',
+              `За столом «${name}» ${capacity} ${plural(capacity, 'место', 'места', 'мест')}, а с этим гостем сидело бы ${total}`,
+            )
+          }
+        }
+
+        const res = await client.query(
+          `update guests set
+             name = coalesce($3, name),
+             plus_one = coalesce($4, plus_one),
+             rsvp = coalesce($5, rsvp),
+             group_name = case when $6 then $7 else group_name end,
+             table_id = case when $8 then $9::uuid else table_id end,
+             diet = case when $10 then $11 else diet end,
+             diet_note = case when $12 then $13 else diet_note end,
+             transfer = case when $14 then $15 else transfer end,
+             phone = case when $16 then $17 else phone end
+           where id = $1 and wedding_id = $2`,
+          [
+            guestId,
+            weddingId,
+            (body.name as string) ?? null,
+            (body.plusOne as boolean) ?? null,
+            (body.status as string) ?? null,
+            has('group'),
+            (body.group as string) ?? null,
+            has('tableId'),
+            (body.tableId as string) ?? null,
+            has('diet'),
+            (body.diet as string) ?? null,
+            has('dietNote'),
+            (body.dietNote as string) ?? null,
+            has('transfer'),
+            (body.transfer as string) ?? null,
+            has('phone'),
+            (body.phone as string) ?? null,
+          ],
         )
-        const n = Number(seated[0]!.n)
-        await noteVendorUpdate(
-          db(),
-          weddingId,
-          'seating',
-          `Рассадка обновлена: за столами ${n} ${plural(n, 'гость', 'гостя', 'гостей')}`,
-        )
-      }
-      return loadGuest(db(), guestId, request.member!.role)
+        if (res.rowCount === 0) throw notFound('Гость не найден')
+
+        /* «Не придёт», поставленное рукой пары («бабушка без смартфона»,
+         * План §19.5), освобождает автобус и номер так же, как ответ самого
+         * гостя в `POST /rsvp/{t}`: иначе автобус выглядит полным при пустом
+         * сиденье (ERR-0040 другим путём). Счётчики поправит триггер. */
+        if (body.status === 'no') {
+          await client.query(
+            `delete from bus_bookings b using bus_routes r
+              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+            [guestId, weddingId],
+          )
+          await client.query(
+            `delete from hotel_bookings b using hotel_blocks h
+              where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
+            [guestId, weddingId],
+          )
+        }
+
+        /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
+         * Декоратор расставляет карточки по столам, кейтеринг считает порции —
+         * им нужно узнать об этом от нас, а не от пары накануне. */
+        if (has('tableId')) {
+          const { rows: seated } = await client.query<{ n: string }>(
+            'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
+            [weddingId],
+          )
+          const n = Number(seated[0]!.n)
+          await noteVendorUpdate(
+            client,
+            weddingId,
+            'seating',
+            `Рассадка обновлена: за столами ${n} ${plural(n, 'гость', 'гостя', 'гостей')}`,
+          )
+        }
+        return loadGuest(client, guestId, request.member!.role)
+      })
     },
   )
 
   app.delete('/weddings/:weddingId/guests/:guestId', async (request, reply) => {
     const { guestId } = request.params as { guestId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(guestId)) throw notFound('Гость не найден')
+    if (!isUuid(guestId)) throw notFound('Гость не найден')
     const res = await db().query('delete from guests where id = $1 and wedding_id = $2', [
       guestId,
       request.member!.weddingId,
@@ -337,17 +398,26 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.post('/weddings/:weddingId/guests/:guestId/invite-link', async (request) => {
     const weddingId = request.member!.weddingId
     const { guestId } = request.params as { guestId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(guestId)) throw notFound('Гость не найден')
+    if (!isUuid(guestId)) throw notFound('Гость не найден')
 
     const { rows } = await db().query('select 1 from guests where id = $1 and wedding_id = $2', [guestId, weddingId])
     if (rows.length === 0) throw notFound('Гость не найден')
 
     return db().tx(async (client) => {
-      // Прежний код гаснет: «выдать новую ссылку» означает, что старая
-      // потеряна или ушла не туда.
-      await client.query('update guest_invite_codes set used_at = now() where guest_id = $1 and used_at is null', [
-        guestId,
-      ])
+      /* Прежний код гаснет: «выдать новую ссылку» означает, что старая
+       * потеряна или ушла не туда.
+       *
+       * Гаснет он сроком, а не только отметкой `used_at`: у обмена есть
+       * окно повтора (`REDEEM_RETRY_MINUTES`), в котором уже использованный
+       * код отдаёт токен ещё раз. Перевыпуск закрывает это окно у ВСЕХ
+       * прежних кодов гостя — и у неоткрытого, и у открытого минуту назад:
+       * ушедшая не туда ссылка не должна выдать ни старый, ни новый токен. */
+      await client.query(
+        `update guest_invite_codes
+            set used_at = coalesce(used_at, now()), expires_at = least(expires_at, now())
+          where guest_id = $1 and expires_at > now()`,
+        [guestId],
+      )
 
       /* Вместе с кодом гаснет и сам токен.
        *
@@ -359,7 +429,19 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * Со сменой токена такой обмен выдаёт пустую личность (резервы уходят
        * по триггеру), а у настоящего гостя ссылка перестаёт работать — он
        * попросит новую, и подмена станет видна. */
-      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, newGuestToken()])
+      const { rows: prev } = await client.query<{ rsvp_token: string }>(
+        'select rsvp_token from guests where id = $1 for update',
+        [guestId],
+      )
+      const fresh = newGuestToken()
+      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, fresh])
+      /* Отзыв гостя ключуется его токеном («один отзыв на подрядчика на
+       * гостя» — уникальный индекс по `(guest_token, vendor_id)`), и без
+       * переноса новый токен писал бы второй отзыв о том же подрядчике, а
+       * оба шли бы в рейтинг: пара, которая сама выпускает ссылки, множила
+       * бы гостевые голоса без предела (D3-09/D5-04). Отзыв едет за гостем,
+       * как ехали бы резервы, если бы их не снимал триггер. */
+      await client.query('update reviews set guest_token = $2 where guest_token = $1', [prev[0]!.rsvp_token, fresh])
       let code = ''
       for (let attempt = 0; attempt < 3; attempt++) {
         code = newShareCode()
@@ -385,13 +467,22 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/invite/:shareCode', async (request) => {
     const { shareCode } = request.params as { shareCode: string }
-    // Гашение и выдача — один оператор: два одновременных перехода
-    // по ссылке иначе получили бы токен оба.
+    /* Гашение и выдача — один оператор, чтобы код нельзя было обменять
+     * второй раз спустя время.
+     *
+     * Но не «ровно один раз»: обмен — GET, который гасит код до ответа, а
+     * ответ теряется на мобильной сети или обрывается таймаутом клиента.
+     * Тогда токен получил никто, а «Повторить» упиралось в 410 — ссылка
+     * сгорала впустую (D3-07). Поэтому тот же код в окне после первого
+     * обмена отдаёт тот же токен: отметка `used_at` не двигается, окно
+     * считается от неё. Позже окна — 410, как и раньше; перевыпуск ссылки
+     * закрывает окно немедленно (см. `invite-link`). */
     const claimed = await db().query<{ guest_id: string }>(
-      `update guest_invite_codes set used_at = now()
-        where code = $1 and used_at is null and expires_at > now()
+      `update guest_invite_codes set used_at = coalesce(used_at, now())
+        where code = $1 and expires_at > now()
+          and (used_at is null or used_at > now() - make_interval(mins => $2))
         returning guest_id`,
-      [shareCode.toUpperCase()],
+      [shareCode.toUpperCase(), REDEEM_RETRY_MINUTES],
     )
     if (claimed.rowCount === 0) {
       throw gone('Ссылка недействительна: уже использована или истекла — попросите пару прислать новую')
@@ -626,6 +717,4 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send({ ...rows[0]!, guestIds: [] })
     },
   )
-
-  void conflict
 }

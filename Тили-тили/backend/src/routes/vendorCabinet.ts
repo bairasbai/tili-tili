@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { uuidv7, isUuid } from '../ids.js'
 import { notify } from '../notify/notify.js'
 import { rolesSeeing } from '../chats/access.js'
+import { PAID_SUM } from '../deals/repo.js'
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
@@ -103,7 +104,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/vendor/updates/:updateId/ack', { preHandler: app.requireConsent }, async (request, reply) => {
     const { updateId } = request.params as { updateId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(updateId)) throw notFound('Обновление не найдено')
+    if (!isUuid(updateId)) throw notFound('Обновление не найдено')
     const vendorId = await myVendorId(request.caller!.userId)
     // Повторное подтверждение не двигает время: «учёл» случается один раз.
     const res = await db().query(
@@ -147,7 +148,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const { leadId } = request.params as { leadId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(leadId)) throw notFound('Лид не найден')
+      if (!isUuid(leadId)) throw notFound('Лид не найден')
       const body = request.body as { action: 'reply' | 'hold' | 'decline' | 'reopen'; text?: string }
       const vendorId = await myVendorId(request.caller!.userId)
 
@@ -165,6 +166,28 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         throw new AppError(422, 'text_required', 'Для ответа нужен текст', { text: 'обязателен при action=reply' })
       }
 
+      /* Текст при любом действии — сообщение подрядчика в чат заявки.
+       *
+       * Раньше он читался только при `reply`: «отказ с причиной» (§3.13)
+       * принимался и выбрасывался, пара об отказе или холде не узнавала
+       * ничем (D5-22, R-48). Чат ищется ДО записи состояния: если передать
+       * текст некуда, заявка не должна менять состояние молча — это 422,
+       * а не «принято» без последствий. Чат есть у всякой заявки из
+       * «Написать»; без чата бывает только выигранная, а она отвергнута выше. */
+      let chatId: string | null = null
+      if (body.text) {
+        const { rows: chat } = await db().query<{ id: string }>(
+          "select id from chats where wedding_id = $1 and vendor_id = $2 and kind = 'vendor'",
+          [found[0]!.wedding_id, vendorId],
+        )
+        if (!chat[0]) {
+          throw new AppError(422, 'text_not_allowed', 'У этой заявки нет чата — текст передать некуда', {
+            text: 'у заявки без чата текст не принимается',
+          })
+        }
+        chatId = chat[0].id
+      }
+
       const { rows } = await db().query<LeadRow>(
         `update leads l set state = $3,
               hold_until = case when $3 = 'hold' then now() + make_interval(hours => $4) else null end
@@ -179,44 +202,38 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
 
       /* Ответ подрядчика — сообщение в общий чат, а не отдельная сущность.
        * Иначе у переписки два места хранения и два порядка сортировки. */
-      if (body.action === 'reply' && body.text) {
-        const { rows: chat } = await db().query<{ id: string }>(
-          "select id from chats where wedding_id = $1 and vendor_id = $2 and kind = 'vendor'",
-          [found[0]!.wedding_id, vendorId],
-        )
-        if (chat[0]) {
-          await db().query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,$3,$4)', [
-            uuidv7(),
-            chat[0].id,
-            request.caller!.userId,
-            body.text,
-          ])
-          await app.realtime.publish({ chatId: chat[0].id, type: 'message', actorId: request.caller!.userId })
+      if (body.text && chatId) {
+        await db().query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,$3,$4)', [
+          uuidv7(),
+          chatId,
+          request.caller!.userId,
+          body.text,
+        ])
+        await app.realtime.publish({ chatId, type: 'message', actorId: request.caller!.userId })
 
-          /* И уведомление — тоже как у обычного сообщения.
-           *
-           * Ответ из кабинета лидов писал в тот же чат, но никого не звал:
-           * живой канал доходит только до того, у кого чат открыт прямо
-           * сейчас, а пара узнавала об ответе, лишь заглянув туда сама. Один
-           * и тот же поступок через два входа давал разный результат — при
-           * том, что комментарий выше объясняет, зачем переписка сведена
-           * в одно место (ERR-0107).
-           *
-           * Получатели — по матрице видимости, а не все участники: помощник
-           * чат с подрядчиком не открывает (ERR-0099). */
-          const { rows: members } = await db().query<{ user_id: string }>(
-            'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
-            [found[0]!.wedding_id, rolesSeeing('vendor')],
-          )
-          for (const m of members) {
-            await notify(db(), {
-              userId: m.user_id,
-              kind: 'chat',
-              title: 'Новое сообщение',
-              body: body.text.length > 120 ? `${body.text.slice(0, 119)}…` : body.text,
-              link: `/chats/${chat[0].id}`,
-            })
-          }
+        /* И уведомление — тоже как у обычного сообщения.
+         *
+         * Ответ из кабинета лидов писал в тот же чат, но никого не звал:
+         * живой канал доходит только до того, у кого чат открыт прямо
+         * сейчас, а пара узнавала об ответе, лишь заглянув туда сама. Один
+         * и тот же поступок через два входа давал разный результат — при
+         * том, что комментарий выше объясняет, зачем переписка сведена
+         * в одно место (ERR-0107).
+         *
+         * Получатели — по матрице видимости, а не все участники: помощник
+         * чат с подрядчиком не открывает (ERR-0099). */
+        const { rows: members } = await db().query<{ user_id: string }>(
+          'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
+          [found[0]!.wedding_id, rolesSeeing('vendor')],
+        )
+        for (const m of members) {
+          await notify(db(), {
+            userId: m.user_id,
+            kind: 'chat',
+            title: 'Новое сообщение',
+            body: body.text.length > 120 ? `${body.text.slice(0, 119)}…` : body.text,
+            link: `/chats/${chatId}`,
+          })
         }
       }
       return toLead(rows[0]!)
@@ -236,20 +253,27 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       currency: string
       state: string
       negotiating_until: Date | null
+      paid: string
+      hold_alive: boolean
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
-              d.price::text as price, d.currency, d.state, d.negotiating_until
+              d.price::text as price, d.currency, d.state, d.negotiating_until,
+              ${PAID_SUM}::text as paid,
+              (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive
          from deals d join weddings w on w.id = d.wedding_id
         where d.vendor_id = $1 and w.archived_at is null
         order by d.created_at desc`,
       [vendorId],
     )
 
-    /* «Ожидается по сделкам» — только то, что ещё не закрыто и не отменено:
-     * закрытая сделка уже оплачена, отменённая не принесёт ничего. */
+    /* «Ожидается по сделкам» — остаток по открытым броням: цена минус то,
+     * что уже пришло платежами (те же `payments`, что видит пара; возвраты
+     * с минусом, отменённые не считаются). Раньше складывалась цена целиком,
+     * и сделка 100 000 ₽ с внесённым авансом 50 000 ₽ показывала «ожидается
+     * 100 000 ₽» (D5-08). Закрытые и отменённые в ожидание не входят. */
     const expected = rows
       .filter((r) => r.state === 'booked' || r.state === 'paid_deposit')
-      .reduce((sum, r) => sum + Number(r.price ?? 0), 0)
+      .reduce((sum, r) => sum + Math.max(0, Number(r.price ?? 0) - Number(r.paid)), 0)
 
     return {
       expected: { amount: expected, currency: 'RUB' },
@@ -259,7 +283,11 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         weddingDate: r.wedding_date,
         price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
         state: r.state,
-        holdUntil: r.state === 'negotiating' ? (r.negotiating_until?.toISOString() ?? null) : null,
+        /* Срок брони показывается, только пока он не вышел: истёкший снимает
+         * ленивый путь на стороне пары и ежечасная задача, а кабинет до этого
+         * часа писал «держим до <прошедшее время>» (D5-26б, R-178). */
+        holdUntil:
+          r.state === 'negotiating' && r.hold_alive ? (r.negotiating_until?.toISOString() ?? null) : null,
       })),
     }
   })
@@ -310,7 +338,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request) => {
       const { reviewId } = request.params as { reviewId: string }
-      if (!/^[0-9a-f-]{36}$/i.test(reviewId)) throw notFound('Отзыв не найден')
+      if (!isUuid(reviewId)) throw notFound('Отзыв не найден')
       const { text } = request.body as { text: string }
       const vendorId = await myVendorId(request.caller!.userId)
 
@@ -343,6 +371,13 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const period = (request.query as { period?: string }).period ?? 'season'
       const days = { month: 30, season: 92, year: 365 }[period] ?? 92
 
+      /* «Доход» — деньги, которые пришли: сумма платежей по дате платежа,
+       * возвраты с минусом, отменённые записи не считаются. Раньше складывалась
+       * цена сделок по дате их создания — бронь без единого рубля шла в
+       * «доход», и «+38 %» сравнивал такие же суммы (D5-08, R-178). */
+      const PAYMENTS_SUM = `select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
+             from payments p join deals d on d.id = p.deal_id
+            where d.vendor_id = $1 and p.status <> 'cancelled'`
       const { rows } = await db().query<{
         views: string
         contacts: string
@@ -357,10 +392,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
            (select count(*) from leads where vendor_id = $1 and created_at > now() - make_interval(days => $2))::text as leads,
            (select count(*) from deals where vendor_id = $1 and state in ('booked','paid_deposit','done')
              and created_at > now() - make_interval(days => $2))::text as deals,
-           (select coalesce(sum(price), 0) from deals where vendor_id = $1 and state in ('booked','paid_deposit','done')
-             and created_at > now() - make_interval(days => $2))::text as revenue,
-           (select coalesce(sum(price), 0) from deals where vendor_id = $1 and state in ('booked','paid_deposit','done')
-             and created_at between now() - make_interval(days => $2 * 2) and now() - make_interval(days => $2))::text
+           (${PAYMENTS_SUM} and p.created_at > now() - make_interval(days => $2))::text as revenue,
+           (${PAYMENTS_SUM}
+             and p.created_at between now() - make_interval(days => $2 * 2) and now() - make_interval(days => $2))::text
              as prev_revenue`,
         [vendorId, days],
       )

@@ -1,4 +1,6 @@
 import { api, url } from './client'
+import { t } from '../i18n'
+import { plural } from '../utils'
 
 /*
  * Каталог: категории, подрядчики, избранное.
@@ -9,6 +11,18 @@ import { api, url } from './client'
  */
 
 export interface Category { id?: string; title?: string; icon?: string }
+
+/**
+ * Отзывы есть, а оценки ещё нет: «2 отзыва · оценка с третьего».
+ *
+ * Сервер прячет рейтинг до третьего отзыва (`rating: null`, `reviewsCount`
+ * честный), а три экрана — карточка в выдаче, анкета и сравнение — ветвились
+ * по числу отзывов и печатали «★ null (2)» буквами (ревью D5-02). Ветвиться
+ * надо по самой оценке; эта фраза — общий ответ на случай «отзывы без оценки»,
+ * чтобы три экрана не разошлись в словах.
+ */
+export const reviewsPendingRating = (reviewsCount: number): string =>
+  `${reviewsCount} ${plural(reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))} ${t('· оценка с третьего')}`
 
 export interface Vendor {
   id?: string
@@ -34,6 +48,12 @@ export interface VendorFilters {
   hasVideo?: boolean
   sort?: 'rating' | 'price_asc' | 'price_desc' | 'popular'
   limit?: number
+  /**
+   * Курсор следующей страницы из `nextCursor` прошлого ответа. Без него список
+   * категории обрывался на первой странице: в `decor` общей базы две тысячи
+   * анкет, пара видела тридцать и остальных увидеть не могла (ревью D5-05).
+   */
+  cursor?: string | null
 }
 
 /** Строка запроса из фильтров: пустые значения не отправляем. */
@@ -53,6 +73,7 @@ function query(f: VendorFilters): string {
   if (f.hasVideo) p.set('hasVideo', 'true')
   if (f.sort) p.set('sort', f.sort)
   p.set('limit', String(f.limit ?? 30))
+  if (f.cursor) p.set('cursor', f.cursor)
   return p.toString()
 }
 

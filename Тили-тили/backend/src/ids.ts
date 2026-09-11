@@ -60,4 +60,14 @@ export function uuidv7Time(id: string): number {
  * слота и в отзыве гостя. Дефект там тот же, а название `UUID_PARAM` уводило
  * от мысли применить шаблон к телу (ERR-0104).
  */
-export const UUID_ID = { type: 'string', pattern: '^[0-9a-fA-F-]{36}$' } as const
+/*
+ * Форма uuid — ровно та, что принимает `uuid_in` PostgreSQL: пять групп hex
+ * через дефис. Прежний шаблон «36 знаков из [0-9a-f-]» пропускал 36 дефисов и
+ * дефис не на границе группы, и `'…'::uuid` падал ошибкой 22P02 — 500 с
+ * записью в журнал как об аварии (ERR-0221, R-111). Один шаблон на схему и на
+ * проверки в обработчиках: копии разъезжаются (R-113).
+ */
+const UUID_PATTERN = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+export const UUID_RE = new RegExp(UUID_PATTERN)
+export const isUuid = (value: unknown): value is string => typeof value === 'string' && UUID_RE.test(value)
+export const UUID_ID = { type: 'string', pattern: UUID_PATTERN } as const

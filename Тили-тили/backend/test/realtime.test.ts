@@ -21,16 +21,38 @@ const SECRET_A = 'a'.repeat(48)
 const SECRET_R = 'b'.repeat(48)
 
 describe('хаб живого канала', () => {
-  it('событие уходит всем подписчикам чата и только им', async () => {
+  it('«печатает» уходит подписчикам чата, кроме самого автора, и только им', async () => {
     const hub = new RealtimeHub()
     const seen: Record<string, string[]> = { a: [], b: [], other: [] }
-    hub.join('чат-1', { send: (d) => seen.a!.push(d) })
-    hub.join('чат-1', { send: (d) => seen.b!.push(d) })
-    hub.join('чат-2', { send: (d) => seen.other!.push(d) })
+    hub.join('чат-1', { send: (d) => seen.a!.push(d) }, 'u1')
+    hub.join('чат-1', { send: (d) => seen.b!.push(d) }, 'u2')
+    hub.join('чат-2', { send: (d) => seen.other!.push(d) }, 'u3')
 
+    /* Раньше тест закреплял доставку автору — и под полем ввода у того,
+     * кто печатает сам, на четыре секунды вставало «собеседник печатает»
+     * (D4-08). Своё событие о наборе автору не новость. */
     await hub.publish({ chatId: 'чат-1', type: 'typing', actorId: 'u1' })
-    expect({ a: seen.a!.length, b: seen.b!.length, other: seen.other!.length }).toEqual({ a: 1, b: 1, other: 0 })
-    expect(JSON.parse(seen.a![0]!)).toMatchObject({ type: 'typing', chatId: 'чат-1', actorId: 'u1' })
+    expect({ a: seen.a!.length, b: seen.b!.length, other: seen.other!.length }).toEqual({ a: 0, b: 1, other: 0 })
+    expect(JSON.parse(seen.b![0]!)).toMatchObject({ type: 'typing', chatId: 'чат-1', actorId: 'u1' })
+  })
+
+  it('сообщение доходит и автору: у него может быть открыта вторая вкладка', async () => {
+    const hub = new RealtimeHub()
+    const seen: Record<string, string[]> = { a: [], b: [] }
+    hub.join('чат-1', { send: (d) => seen.a!.push(d) }, 'u1')
+    hub.join('чат-1', { send: (d) => seen.b!.push(d) }, 'u2')
+
+    await hub.publish({ chatId: 'чат-1', type: 'message', actorId: 'u1', payload: { message: { text: 'привет' } } })
+    expect({ a: seen.a!.length, b: seen.b!.length }).toEqual({ a: 1, b: 1 })
+    expect(JSON.parse(seen.a![0]!)).toMatchObject({ type: 'message', actorId: 'u1', message: { text: 'привет' } })
+  })
+
+  it('соединение без имени владельца получает всё — исключать некого', async () => {
+    const hub = new RealtimeHub()
+    const seen: string[] = []
+    hub.join('чат-1', { send: (d) => seen.push(d) })
+    await hub.publish({ chatId: 'чат-1', type: 'typing', actorId: 'u1' })
+    expect(seen).toHaveLength(1)
   })
 
   it('отписка убирает соединение, обрыв не роняет рассылку', async () => {
@@ -222,6 +244,23 @@ describe.skipIf(!live)('живой канал против поднятого с
     )
     expect(Number(rows[0]!.n)).toBe(0)
     listener.socket.close()
+  })
+
+  it('D4-08: своё «печатает…» автору не приходит, собеседнику — приходит', async () => {
+    const { couple, vendorToken, chatId } = await newChat()
+    const author = listen(chatId, couple)
+    const peer = listen(chatId, vendorToken)
+    await Promise.all([author.ready, peer.ready])
+
+    const res = await app.inject({ method: 'POST', url: `/chats/${chatId}/typing`, headers: auth(couple) })
+    expect(res.statusCode).toBe(204)
+    await peer.waitFor('typing')
+    await new Promise((r) => setTimeout(r, 150))
+    // Человек печатает сам — «собеседник печатает» под его полем ввода ложь.
+    expect(author.events.filter((e) => e.type === 'typing')).toHaveLength(0)
+    expect(peer.events.filter((e) => e.type === 'typing')).toHaveLength(1)
+    author.socket.close()
+    peer.socket.close()
   })
 
   it('без токена канал не открывается, а объясняет причину', async () => {

@@ -3,7 +3,7 @@ import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
-import type { Vendor as ServerVendor } from '@/lib/api/catalog'
+import { reviewsPendingRating, type Vendor as ServerVendor } from '@/lib/api/catalog'
 import { useServerHealth } from '@/lib/api/health'
 import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
@@ -88,6 +88,11 @@ export function TabBar() {
  *
  * `freeOnDate` не поле, а следствие запроса: когда выдача спрошена с датой
  * свадьбы, занятых в ней уже нет — сервер их отфильтровал.
+ *
+ * Строка оценки ветвится по самой оценке, а не по числу отзывов: сервер
+ * прячет рейтинг до третьего отзыва, и у анкеты с одним-двумя отзывами
+ * `rating` — null при честном `reviewsCount`. Прежняя шаблонная строка
+ * печатала «★ null (2)» буквами (ревью D5-02).
  */
 export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, onOpen }: {
   v: ServerVendor
@@ -115,7 +120,11 @@ export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, o
           <b className="font-serif-d text-[15px] block truncate">{v.name}</b>
           <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
             {categoryTitle}
-            {(v.reviewsCount ?? 0) > 0 ? ` · ★ ${v.rating} (${v.reviewsCount})` : t(' · Новый на платформе')}
+            {v.rating != null
+              ? ` · ★ ${v.rating}${v.reviewsCount != null ? ` (${v.reviewsCount})` : ''}`
+              : (v.reviewsCount ?? 0) > 0
+                ? ` · ${reviewsPendingRating(v.reviewsCount ?? 0)}`
+                : t(' · Новый на платформе')}
             {v.verified && <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>}
           </span>
           {v.priceFrom?.amount != null && (

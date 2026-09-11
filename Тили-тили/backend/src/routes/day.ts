@@ -1,19 +1,45 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound, quotaExceeded } from '../errors.js'
+import { AppError, conflict, notFound, quotaExceeded, validationFailed } from '../errors.js'
 import { isCheckViolation } from '../plugins/db.js'
-import { UUID_ID, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { guestByToken } from '../guests/access.js'
 import { personCount } from './guests.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
-import { assertRealDate } from '../wedding/dates.js'
+import { plural } from '../text/plural.js'
+import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED } from '../deals/state.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
 const DEBOUNCE_SECONDS = 30
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
+
+/** Дата-время тайминга: `2027-06-14T09:00:00.000Z` или со смещением `+03:00`. */
+const ISO_MOMENT = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/
+
+/**
+ * Момент тайминга с проверкой до базы.
+ *
+ * Схема тела знала только `type: string`, и «вчера» или 30 февраля доходили
+ * до `$5::timestamptz` — PostgreSQL роняет такой запрос, человек получает
+ * 500, в журнал летит ложная авария (D2-12, класс R-103/ERR-0088).
+ * Календарность даты проверяет общий помощник (`isRealDate`), остальное —
+ * `Date.parse`: одного его мало, V8 читает 30 февраля как 2 марта.
+ *
+ * Пустая строка — «время ещё не назначено»: так экран возвращает `null`,
+ * полученный из GET (`startsAt: e.startsAt ?? ''`), и до этой проверки такой
+ * блок тоже падал в 500 при любом сохранении тайминга без даты свадьбы.
+ */
+function momentOrNull(value: string | null | undefined, field: string): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const m = ISO_MOMENT.exec(value)
+  if (!m || !isRealDate(m[1]!) || Number.isNaN(Date.parse(value))) {
+    throw validationFailed({ [field]: 'ожидается дата-время вида 2027-06-14T09:00:00Z' })
+  }
+  return value
+}
 
 export async function dayRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -71,9 +97,20 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         'select coalesce(max(sort), -1) + 1 as n from tasks where wedding_id = $1',
         [request.member!.weddingId],
       )
+      /* Срок своей задачи — по той же формуле, что у переноса даты и у
+       * шаблона: «за 3 месяца» от даты свадьбы через `make_interval`
+       * (31 мая − 3 мес = 28 февраля, а не 3 марта). Раньше своя задача
+       * заводилась без срока, и у свадьбы с датой «Заказать торт · За 3 мес»
+       * навсегда оставалась без дедлайна рядом с шаблонными (D2-19а). Период
+       * не числом («накануне») — срока нет, и это честнее выдуманного. */
+      const months = /^\d+$/.test(body.period) ? Number(body.period) : null
       await db().query(
-        `insert into tasks (id, wedding_id, title, period, source, sort) values ($1,$2,$3,$4,'user',$5)`,
-        [id, request.member!.weddingId, body.title, body.period, last[0]!.n],
+        `insert into tasks (id, wedding_id, title, period, source, sort, due)
+         select $1, $2, $3, $4, 'user', $5,
+                case when $6::int is null then null
+                     else (w.date - make_interval(months => $6::int))::date end
+           from weddings w where w.id = $2`,
+        [id, request.member!.weddingId, body.title, body.period, last[0]!.n, months],
       )
       const { rows } = await db().query('select id, title, period, done_at, source, due::text as due from tasks where id = $1', [id])
       return reply.code(201).send(toTask(rows[0] as never))
@@ -94,7 +131,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const { taskId } = request.params as { taskId: string }
       const body = request.body as { done?: boolean; title?: string }
-      if (!/^[0-9a-f-]{36}$/i.test(taskId)) throw notFound('Задача не найдена')
+      if (!isUuid(taskId)) throw notFound('Задача не найдена')
       const res = await db().query(
         `update tasks set
            title = coalesce($3, title),
@@ -104,14 +141,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         [taskId, request.member!.weddingId, body.title ?? null, body.done ?? null],
       )
       if (res.rowCount === 0) throw notFound('Задача не найдена')
-      const { rows } = await db().query('select id, title, period, done_at, source from tasks where id = $1', [taskId])
+      // Срок в ответе — контракт `Task.due` обещает его и здесь (ERR-0125 закрыл GET и POST, PATCH пропустили).
+      const { rows } = await db().query(
+        'select id, title, period, done_at, source, due::text as due from tasks where id = $1',
+        [taskId],
+      )
       return toTask(rows[0] as never)
     },
   )
 
   app.delete('/weddings/:weddingId/tasks/:taskId', async (request, reply) => {
     const { taskId } = request.params as { taskId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(taskId)) throw notFound('Задача не найдена')
+    if (!isUuid(taskId)) throw notFound('Задача не найдена')
     // Системные задачи из шаблона не удаляются: чек-лист перестанет быть
     // чек-листом, если из него можно вычеркнуть «забронировать площадку».
     const res = await db().query(
@@ -195,12 +236,19 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         outdoor?: boolean
       }[]
 
+      // Время проверяется ДО базы: иначе «вчера» и 30 февраля доходят до
+      // `::timestamptz`, и человек получает 500 вместо отказа (D2-12).
+      const moments = events.map((e, i) => ({
+        startsAt: momentOrNull(e.startsAt, `${i}.startsAt`),
+        endsAt: momentOrNull(e.endsAt, `${i}.endsAt`),
+      }))
+
       return db().tx(async (client) => {
         // Замена целиком: клиент присылает состояние экрана, а не список
         // правок. Дописывание оставило бы удалённые блоки.
         await client.query('delete from timeline_events where wedding_id = $1', [weddingId])
         let sort = 0
-        for (const e of events) {
+        for (const [i, e] of events.entries()) {
           await client.query(
             `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, sort)
              values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10)`,
@@ -209,8 +257,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               weddingId,
               e.name,
               e.location ?? null,
-              e.startsAt ?? null,
-              e.endsAt ?? null,
+              moments[i]!.startsAt,
+              moments[i]!.endsAt,
               e.who ?? null,
               e.icon ?? null,
               e.outdoor ?? false,
@@ -330,7 +378,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/weddings/:weddingId/logistics/buses/:busId', async (request, reply) => {
     const { busId } = request.params as { busId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(busId)) throw notFound('Маршрут не найден')
+    if (!isUuid(busId)) throw notFound('Маршрут не найден')
     const res = await db().query('delete from bus_routes where id = $1 and wedding_id = $2', [
       busId,
       request.member!.weddingId,
@@ -433,7 +481,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/weddings/:weddingId/logistics/hotels/:hotelId', async (request, reply) => {
     const { hotelId } = request.params as { hotelId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(hotelId)) throw notFound('Блок не найден')
+    if (!isUuid(hotelId)) throw notFound('Блок не найден')
     const res = await db().query('delete from hotel_blocks where id = $1 and wedding_id = $2', [
       hotelId,
       request.member!.weddingId,
@@ -500,13 +548,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           where g.wedding_id = $1`,
         [weddingId],
       )
+      const n = Number(rows[0]!.n)
+      /* Текст — правда (R-172/R-174): канала до гостей нет, «разосланы»
+       * было обещанием, которого сервер не держит. Число — со склонением,
+       * «1 гостей» читалось как поломка данных (ERR-0145). */
       return {
         status: 202,
         body: await broadcast(
           weddingId,
           'notify-pickup',
-          Number(rows[0]!.n),
-          `Точки сбора разосланы: ${rows[0]!.n} гостей в автобусах`,
+          n,
+          `Команда уведомлена о точках сбора: в автобусах ${n} ${plural(n, 'гость', 'гостя', 'гостей')}; ` +
+            'гостям доставки пока нет — передайте точки сбора сами',
           request.caller!.userId,
         ),
       }
@@ -657,13 +710,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          on conflict (wedding_id) do update set sent_at = now()`,
         [weddingId],
       )
+      const n = Number(rows[0]!.n)
       return {
         status: 202,
         body: await broadcast(
           weddingId,
           'menu-remind',
-          Number(rows[0]!.n),
-          `Напоминание о меню: ${rows[0]!.n} гостей ещё не выбрали блюдо`,
+          n,
+          `Напоминание о меню: ${n} ${plural(n, 'гость', 'гостя', 'гостей')} ещё не ${plural(n, 'выбрал', 'выбрали', 'выбрали')} блюдо; ` +
+            'гостям доставки пока нет — напомните им сами',
           request.caller!.userId,
         ),
       }
@@ -692,10 +747,12 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       // `reply.send()` внутри `tx` уходит клиенту до коммита: он видит 200,
       // а данных ещё нет — и если коммит упадёт, ему уже сказали «готово».
       return db().tx(async (client) => {
-        const { rows: bus } = await client.query('select 1 from bus_routes where id = $1 and wedding_id = $2', [
-          busId,
-          guest.weddingId,
-        ])
+        /* Маршрут под блокировкой строки: два гостя, садящиеся на последнее
+         * место одновременно, иначе оба проходят подсчёт персон ниже (R-49). */
+        const { rows: bus } = await client.query<{ seats: number }>(
+          'select seats from bus_routes where id = $1 and wedding_id = $2 for update',
+          [busId, guest.weddingId],
+        )
         if (bus.length === 0) throw notFound('Маршрут не найден')
 
         // Гость едет ОДНИМ автобусом. Пересел на другой рейс — место
@@ -706,6 +763,23 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and b.bus_id <> $3`,
           [guest.guestId, guest.weddingId, busId],
         )
+
+        /* Места считаются в персонах, а не в записях (R-29): гость «с +1»
+         * едет вдвоём. Счётчик `taken` в триггере по-прежнему считает строки
+         * — переполнение по людям ловится здесь, под блокировкой маршрута;
+         * триггер и `CHECK` остаются страховкой по записям (D3-16). */
+        const { rows: aboard } = await client.query<{ persons: string; plus_one: boolean | null; already: boolean }>(
+          `select coalesce((select sum(1 + g.plus_one::int) from bus_bookings b join guests g on g.id = b.guest_id
+                             where b.bus_id = $1 and b.guest_id <> $2), 0)::text as persons,
+                  (select g.plus_one from guests g where g.id = $2) as plus_one,
+                  exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already`,
+          [busId, guest.guestId],
+        )
+        const persons = Number(aboard[0]!.persons) + (aboard[0]!.plus_one ? 2 : 1)
+        // Кто уже едет этим автобусом, повтором записи места не отнимает.
+        if (!aboard[0]!.already && persons > bus[0]!.seats) {
+          throw conflict('bus_full', 'Мест в этом автобусе не осталось')
+        }
 
         // Счётчик ведёт триггер: строки исчезают и мимо обработчика —
         // удаление гостя уносит запись каскадом. Переполнение ловит
@@ -754,11 +828,22 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = await guestByToken(db(), guestToken)
 
       return db().tx(async (client) => {
-        const { rows: block } = await client.query('select 1 from hotel_blocks where id = $1 and wedding_id = $2', [
-          hotelId,
-          guest.weddingId,
-        ])
+        /* Дедлайн блока — до какого дня отель держит номера по брони пары
+         * (Бизнес-логика §12.1). День дедлайна ещё открыт, следующий — нет;
+         * «сегодня» считается по поясу свадьбы, как дата свадьбы у отзывов
+         * (`reviews.ts`), а не по часам сервера (D3-15). */
+        const { rows: block } = await client.query<{ deadline: string | null; closed: boolean }>(
+          `select h.deadline::text as deadline,
+                  (h.deadline is not null
+                   and h.deadline < (now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date) as closed
+             from hotel_blocks h join weddings w on w.id = h.wedding_id
+            where h.id = $1 and h.wedding_id = $2`,
+          [hotelId, guest.weddingId],
+        )
         if (block.length === 0) throw notFound('Блок не найден')
+        if (block[0]!.closed) {
+          throw conflict('deadline_passed', `Бронь в этом блоке закрылась ${block[0]!.deadline} — спросите у пары, как быть`)
+        }
 
         // Гость живёт в ОДНОМ отеле: смена блока освобождает прежний номер.
         await client.query(
@@ -983,7 +1068,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const { photoId } = request.params as { photoId: string }
       const { approved } = request.body as { approved: boolean }
-      if (!/^[0-9a-f-]{36}$/i.test(photoId)) throw notFound('Кадр не найден')
+      if (!isUuid(photoId)) throw notFound('Кадр не найден')
       const res = await db().query('update album_photos set approved = $3 where id = $1 and wedding_id = $2', [
         photoId,
         request.member!.weddingId,

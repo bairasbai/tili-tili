@@ -65,15 +65,31 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
    * Обновление токенов внутри существующей сессии: строка та же, меняется
    * только хеш. Прежний сохраняется — по нему ловится повторное предъявление
    * украденного токена.
+   *
+   * Обмен — сравнение с заменой: строка меняется, только если в ней ещё
+   * лежит предъявленный хеш. Без условия две вкладки с одним истёкшим access
+   * обменивали один и тот же refresh обе: каждая получала свою пару, в базе
+   * оставалась последняя, а первая вкладка держала токен, которого нет
+   * нигде, — и следующим обновлением выкидывала из приложения обе (D1-06).
+   * Проигравшей отвечаем «уже обменян»: клиент умеет взять свежую пару из
+   * общего хранилища.
    */
   async function rotateTokens(userId: string, sessionId: string, oldHash: string): Promise<Tokens> {
     const refreshToken = createRefreshToken()
-    await db().query(
+    const swapped = await db().query(
       `update sessions
           set refresh_hash = $2, prev_refresh_hash = $3, rotated_at = now(), last_used_at = now()
-        where id = $1`,
+        where id = $1 and refresh_hash = $3 and revoked_at is null`,
       [sessionId, hashRefreshToken(refreshToken), oldHash],
     )
+    if (swapped.rowCount === 0) {
+      // Перечитываем, чтобы назвать причину: сессию успели завершить или токен успели обменять.
+      const { rows } = await db().query<{ revoked_at: Date | null }>('select revoked_at from sessions where id = $1', [
+        sessionId,
+      ])
+      if (!rows[0] || rows[0].revoked_at) throw unauthorized('Сессия завершена — войдите заново')
+      throw new AppError(401, 'refresh_superseded', 'Токен обновления уже обменян — возьмите новый из хранилища')
+    }
     return withUser(userId, sessionId, refreshToken)
   }
 
@@ -195,8 +211,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { phone: string; code: string; device?: string }
       const phone = normalizePhone(body.phone)
 
-      const { rows } = await db().query<{ id: string; code_hash: string; attempts: number }>(
-        `select id, code_hash, attempts
+      const { rows } = await db().query<{ id: string }>(
+        `select id
            from otp_codes
           where phone = $1 and consumed_at is null and expires_at > now()
           order by created_at desc
@@ -205,10 +221,21 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       )
       const otp = rows[0]
       if (!otp) throw unauthorized('Код неверный или устарел. Запросите новый.')
-      if (otp.attempts >= MAX_ATTEMPTS) throw new TooManyRequests(60, 'Слишком много попыток. Запросите новый код.')
 
-      if (hashCode(otpSecret(), phone, body.code) !== otp.code_hash) {
-        await db().query('update otp_codes set attempts = attempts + 1 where id = $1', [otp.id])
+      /* Попытка засчитывается ДО сравнения и одним запросом с проверкой
+       * предела. Раздельно — `select attempts`, сравнение, `update +1` —
+       * восемь параллельных неверных кодов читали одно значение, все
+       * проходили порог, а шестой инкремент упирался в CHECK `attempts <= 5`:
+       * 500 в лог как падение сервера вместо 429, и перебор получал больше
+       * пяти попыток на код (D1-07). Условие `attempts < 5` в UPDATE
+       * атомарно: строку меняют по очереди, шестому не достаётся ничего. */
+      const attempt = await db().query<{ code_hash: string }>(
+        'update otp_codes set attempts = attempts + 1 where id = $1 and attempts < $2 returning code_hash',
+        [otp.id, MAX_ATTEMPTS],
+      )
+      if (attempt.rowCount === 0) throw new TooManyRequests(60, 'Слишком много попыток. Запросите новый код.')
+
+      if (hashCode(otpSecret(), phone, body.code) !== attempt.rows[0]!.code_hash) {
         throw unauthorized('Код неверный или устарел. Запросите новый.')
       }
 
@@ -263,13 +290,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         last_used_at: Date
         rotated_at: Date | null
         current: boolean
+        deleted_at: Date | null
       }>(
-        `select id, user_id, device, revoked_at, last_used_at, rotated_at, (refresh_hash = $1) as current
-           from sessions where refresh_hash = $1 or prev_refresh_hash = $1`,
+        `select s.id, s.user_id, s.device, s.revoked_at, s.last_used_at, s.rotated_at,
+                (s.refresh_hash = $1) as current, u.deleted_at
+           from sessions s join users u on u.id = s.user_id
+          where s.refresh_hash = $1 or s.prev_refresh_hash = $1`,
         [hash],
       )
       const session = rows[0]
       if (!session) throw unauthorized('Токен обновления недействителен')
+
+      if (session.deleted_at) {
+        /* Мягко удалённый аккаунт: `assertLiveSession` отвечает ему 401 на
+         * каждом запросе, а обмен токенов до 2026-09-11 проходил — клиент
+         * ходил по кругу «401 → refresh 200 → повтор → 401», ротируя пару
+         * впустую. Сессию гасим: она заведена повторным входом удалённого
+         * (сам вход — решение владельца, см. D6-05) и больше ни к чему. */
+        await db().query('update sessions set revoked_at = now() where id = $1 and revoked_at is null', [session.id])
+        throw unauthorized('Аккаунт удалён')
+      }
 
       if (!session.current && session.rotated_at && Date.now() - session.rotated_at.getTime() < REFRESH_GRACE_MS) {
         /* Прежний refresh предъявлен через секунды после обмена — это не
@@ -299,18 +339,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }
 
       if (session.revoked_at) {
-        // Погашенный refresh предъявлен второй раз. Либо его украли, либо
-        // украли новый — в обоих случаях владельца надо вывести отовсюду
-        // и заставить войти заново. Это дешевле, чем оставить вора внутри.
-        await db().query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [
-          session.user_id,
-        ])
-        await db().query(
-          `insert into audit_log (actor_id, action, entity, entity_id)
-           values ($1, 'auth.refresh_reuse', 'session', $2)`,
-          [session.user_id, session.id],
-        )
-        throw unauthorized('Токен обновления уже использован. Все сессии завершены — войдите заново.')
+        /* Завершённая сессия предъявляет свой же ТЕКУЩИЙ refresh. Это не вор,
+         * а выгнанное устройство: человек нажал «выйти везде» или завершил
+         * его со списка, а оно, получив 401 на access, штатно пошло обновлять
+         * пару. До 2026-09-11 это считалось кражей и гасило ВСЕ сессии —
+         * включая ту, с которой только что выгоняли постороннего; через
+         * четверть часа она вылетала следом (D1-01). Кража — это прежний хеш
+         * за окном grace, и она обработана выше. Здесь — просто 401. */
+        throw unauthorized('Сессия завершена — войдите заново')
       }
 
       // 30 дней бездействия, а не 30 дней с первого входа: created_at теперь

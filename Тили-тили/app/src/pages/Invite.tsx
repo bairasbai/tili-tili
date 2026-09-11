@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError } from '@/lib/api/useApi'
+import { ApiError } from '@/lib/api/client'
 import {
   bookHotelRoom, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
   joinShuttle, saveGuestToken, sendRsvp, voteMenu,
@@ -49,11 +50,52 @@ function downloadICS(title: string, date: string, location: string) {
   URL.revokeObjectURL(a.href)
 }
 
+/*
+ * Погасла ли ссылка — решает код ответа, а не факт ошибки.
+ *
+ * `useApi` отдаёт ошибку словами и стирает её причину, а здесь причина
+ * решает судьбу токена: 401/410 — пара перевыпустила приглашение, и токен
+ * мёртв; сеть, таймаут и 5xx — сервер, а не ссылка. До ревью D3-01 экран на
+ * любую ошибку писал «Ссылка больше не действует» и предлагал «Понятно»,
+ * которое стирало единственный ключ гостя к RSVP, подаркам и автобусу —
+ * из-за мобильной сети, отвалившейся на пятнадцать секунд. Восстановить его
+ * можно только новой ссылкой от пары, а перевыпуск снимает резерв подарка.
+ */
+const LINK_DEAD_STATUSES: ReadonlyArray<number> = [401, 410]
+
+/** Ответ вместе с ключом запроса: ответ другого запроса на экран не попадает. */
+type RsvpResult = { key: string; page: RsvpPage | null; error: unknown }
+
+function useRsvpPage(token: string | null) {
+  const [result, setResult] = useState<RsvpResult | null>(null)
+  const [tick, setTick] = useState(0)
+  /* Ключ меняется с токеном и с каждым «Повторить»: пока ответа с этим ключом
+     нет — грузимся. Состояние загрузки выводится, а не выставляется в
+     эффекте — так нет лишнего рендера и ответ устаревшего запроса отбрасывается. */
+  const key = `${token ?? ''}:${tick}`
+
+  useEffect(() => {
+    if (!token) return
+    let alive = true
+    getRsvp(token)
+      .then(p => { if (alive) setResult({ key, page: (p ?? null) as RsvpPage | null, error: null }) })
+      /* При отказе страницы нет: рядом с ошибкой она утверждала бы, что актуальна. */
+      .catch((e: unknown) => { if (alive) setResult({ key, page: null, error: e }) })
+    return () => { alive = false }
+  }, [token, key])
+
+  const reload = useCallback(() => setTick(n => n + 1), [])
+  const current = result?.key === key ? result : null
+  const error: unknown = current?.error ?? null
+  const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
+  return { page: current?.page ?? null, loading: !!token && current === null, error, linkDead, reload }
+}
+
 export default function Invite() {
   const nav = useNavigate()
   const token = guestToken()
-  const q = useApi(() => token ? getRsvp(token) : Promise.resolve(null), [token])
-  const page = q.data
+  const q = useRsvpPage(token)
+  const page = q.page
 
   const [opened, setOpened] = useState(false)
   const [scrollY, setScrollY] = useState(0)
@@ -95,19 +137,33 @@ export default function Invite() {
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       {q.loading && <p className="text-[13px] text-[var(--soft)]">{t('Открываем приглашение…')}</p>}
       {/*
-        * Недействительный токен — это не поломка, а замена ссылки: пара
-        * перевыпустила приглашение, и прежнее погасло. Голое «Ссылка
+        * Недействительный токен (401/410) — это не поломка, а замена ссылки:
+        * пара перевыпустила приглашение, и прежнее погасло. Голое «Ссылка
         * недействительна» оставляло гостя в тупике, поэтому объясняем, что
         * делать, и стираем мёртвый токен — иначе он мешает открыть новую
         * ссылку с этого же устройства.
         */}
-      {q.error && (
+      {q.linkDead && (
         <>
           <p role="alert" className="font-serif-d text-[20px]">{t('Ссылка больше не действует')}</p>
           <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
             {t('Похоже, пара выслала новое приглашение — прежняя ссылка после этого гаснет. Попросите у неё свежую.')}
           </p>
           <button onClick={() => { saveGuestToken(null); nav('/', { replace: true }) }} className="press mt-5 px-5 h-[42px] rounded-full card-s text-[12.5px] font-semibold">{t('Понятно')}</button>
+        </>
+      )}
+      {/*
+        * Всё остальное — сеть, таймаут, 5xx, неожиданный отказ — не про
+        * ссылку: токен остаётся на месте, а гость пробует ещё раз. Стирать
+        * его здесь значило бы отнимать у гостя доступ за чужую поломку.
+        */}
+      {!q.loading && q.error !== null && !q.linkDead && (
+        <>
+          <p role="alert" className="font-serif-d text-[20px]">{explainError(q.error)}</p>
+          <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
+            {t('Ссылка сохранена на этом устройстве — попробуйте ещё раз чуть позже.')}
+          </p>
+          <button onClick={q.reload} className="press mt-5 px-5 h-[42px] rounded-full card-s text-[12.5px] font-semibold">{t('Повторить')}</button>
         </>
       )}
     </div>

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
-import { UUID_ID, uuidv7 } from '../ids.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import {
@@ -12,7 +12,7 @@ import {
   toDeal,
   type DealRow,
 } from '../deals/repo.js'
-import { DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
+import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 
 /**
  * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
@@ -38,7 +38,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
    * даёт полный доступ к чужой брони.
    */
   async function dealForCouple(client: Queryable, dealId: string, userId: string) {
-    if (!/^[0-9a-f-]{36}$/i.test(dealId)) throw notFound('Сделка не найдена')
+    if (!isUuid(dealId)) throw notFound('Сделка не найдена')
     const { rows } = await client.query<{
       id: string
       wedding_id: string
@@ -88,12 +88,19 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
     const { dealId } = request.params as { dealId: string }
     const userId = request.caller!.userId
 
+    /* Две ветки — два разных права, и имена у них разные нарочно.
+     *
+     * Первая отдаёт роль участника свадьбы, и среди ролей есть `vendor` —
+     * подрядчик, принятый ПОДР-ссылкой в команду. Вторая говорит «это
+     * подрядчик ИМЕННО ЭТОЙ сделки». Пока обе назывались `vendor`, участник
+     * с ролью `vendor` проходил проверку ниже как сторона сделки и читал
+     * журнал сумм любой сделки свадьбы — чужой ему коллеги (D1-04). */
     const { rows: access } = await db().query<{ side: string }>(
       `select m.role as side from deals d
          join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2
         where d.id = $1
        union all
-       select 'vendor' as side from deals d
+       select 'deal_vendor' as side from deals d
          join vendors v on v.id = d.vendor_id and v.user_id = $2
         where d.id = $1`,
       [dealId, userId],
@@ -104,8 +111,10 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
     /* Журнал — деньги: «сумма изменена: 100 000 ₽ → 80 000 ₽» лежит в нём
      * текстом. Помощник и координатор денег не видят нигде (§6, ERR-0026),
      * а здесь до 2026-09-06 видели: проверка спрашивала «участник ли»,
-     * а не «пара ли». Им 403, не 404: сделку они и так знают по мозаике. */
-    if (!access.some((a) => a.side === 'couple' || a.side === 'vendor')) {
+     * а не «пара ли». Им 403, не 404: сделку они и так знают по мозаике.
+     * Участник с ролью `vendor` — такой же не-пара: суммы чужой сделки
+     * ему не положены, как и помощнику. */
+    if (!access.some((a) => a.side === 'couple' || a.side === 'deal_vendor')) {
       throw new AppError(403, 'forbidden', 'Журнал сделки видят пара и подрядчик — в нём суммы')
     }
 
@@ -199,7 +208,11 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
                   : 'После внесения аванса сумма фиксируется',
               )
             }
-            const was = Number(deal.price)
+            /* Цены не было — это `null`, а не ноль: `Number(null)` даёт 0, и
+             * «назначить 0 ₽» сделке без цены выглядело как «ничего не
+             * изменилось» — ни записи, ни события, а в ответе так и стояло
+             * `null` при том, что клиент просил ноль (D2-16, R-178). */
+            const was = deal.price === null ? null : Number(deal.price)
             if (was !== body.price.amount) {
               await client.query('update deals set price = $2 where id = $1', [dealId, body.price.amount])
               await client.query(
@@ -210,7 +223,10 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
                   dealId,
                   from,
                   userId,
-                  body.note ?? `Сумма изменена: ${rubles(was)} → ${rubles(body.price.amount)}`,
+                  body.note ??
+                    (was === null
+                      ? `Сумма назначена: ${rubles(body.price.amount)}`
+                      : `Сумма изменена: ${rubles(was)} → ${rubles(body.price.amount)}`),
                 ],
               )
             }
@@ -241,10 +257,14 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
 
           await client.query(`update deals set ${sets.join(', ')} where id = $1`, args)
 
-          // Дата подрядчика занимается ровно тогда, когда сделка становится
-          // бронью, и освобождается при отмене. Держать её на переговорах
-          // значит блокировать чужие свадьбы под несуществующую договорённость.
-          if (body.state === 'booked' && deal.vendor_id) {
+          /* Дата подрядчика занимается при первом входе в обязательство —
+           * в любое из `COMMITTED`, а не только в `booked`: переход вперёд
+           * через ступень разрешён (`negotiating → paid_deposit`), и сделка,
+           * миновавшая `booked`, деньги обещала, а дату не держала — её
+           * забирала другая пара (D2-07). Освобождается при отмене. Держать
+           * дату на переговорах значит блокировать чужие свадьбы под
+           * несуществующую договорённость. */
+          if (COMMITTED.includes(body.state) && !COMMITTED.includes(from) && deal.vendor_id) {
             const { rows: w } = await client.query<{ date: string | null }>(
               'select date::text as date from weddings where id = $1',
               [deal.wedding_id],

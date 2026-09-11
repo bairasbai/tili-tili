@@ -28,8 +28,13 @@ export interface DealRow {
  *
  * Возврат вычитается, отменённый платёж не считается вовсе: «оплачено»
  * должно означать «деньги у подрядчика», а не «когда-то была запись».
+ *
+ * Ждёт псевдоним `d` у строки `deals`. Экспортируется: кабинет подрядчика
+ * считает «ожидается» и «доход» по тем же платежам, а не по цене сделки
+ * (D5-08) — одна формула на обе стороны, иначе пара и подрядчик видят
+ * разные деньги по одной сделке.
  */
-const PAID_SUM = `(select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
+export const PAID_SUM = `(select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
                      from payments p where p.deal_id = d.id and p.status <> 'cancelled')`
 
 export const DEAL_COLUMNS = `

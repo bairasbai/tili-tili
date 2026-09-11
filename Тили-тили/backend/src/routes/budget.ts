@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { uuidv7, isUuid } from '../ids.js'
 import { expireHolds } from '../deals/repo.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
 import {
@@ -147,7 +147,7 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/weddings/:weddingId/budget/items/:itemId', async (request, reply) => {
     const { itemId } = request.params as { itemId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(itemId)) throw notFound('Статья не найдена')
+    if (!isUuid(itemId)) throw notFound('Статья не найдена')
     // Условие по свадьбе обязательно: без него по чужому идентификатору
     // удаляется чужая статья расхода.
     const res = await db().query('delete from budget_items where id = $1 and wedding_id = $2', [

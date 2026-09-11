@@ -106,6 +106,11 @@ const DEAL_LABEL: Record<string, string | undefined> = {
   done: 'Выполнено',
 }
 
+/** Мозаика с сервера и чья она: список без свадьбы, к которой относится, — ничей. */
+type SlotsSnapshot = { weddingId: string; list: ServerSlot[]; state: 'ready' | 'error' }
+/* Один и тот же пустой список, а не `[]` на каждую отрисовку: от него зависит `useMemo` мозаики. */
+const NO_SLOTS: ServerSlot[] = []
+
 const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -209,30 +214,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * повторять эту логику здесь значит завести второй набор правил, который
    * разойдётся с серверным на первом же непредусмотренном переходе.
    */
-  const [serverSlots, setServerSlots] = useState<ServerSlot[]>([])
-  const [slotsState, setSlotsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  /*
+   * Слоты хранятся вместе с идентификатором свадьбы, к которой относятся
+   * (ревью D2-10). Раньше список и его состояние жили отдельно от `weddingId`
+   * и при смене свадьбы не сбрасывались: пара отменила свадьбу и прошла квиз
+   * заново — до ответа `getSlots(newId)` мозаика показывала слоты отменённой
+   * с ценами и телефонами подрядчиков как готовые данные новой; координатор,
+   * у которого сверка при запуске подменила свадьбу, видел чужую. Снимок с
+   * чужим идентификатором считается отсутствующим — сброс происходит в той же
+   * отрисовке, что и смена свадьбы, без setState в эффекте.
+   */
+  const [slotsSnap, setSlotsSnap] = useState<SlotsSnapshot | null>(null)
   const [slotsTick, setSlotsTick] = useState(0)
   useEffect(() => {
-    /* Сброс делаем не синхронно в теле эффекта, а внутри ответа: синхронный
-       setState в эффекте даёт каскад перерисовок и запрещён линтом. Пока
-       свадьбы нет, спрашивать нечего — просто ничего не запрашиваем. */
+    /* Пока свадьбы нет, спрашивать нечего — просто ничего не запрашиваем. */
     if (!weddingId || !isAuthorized()) return
     let alive = true
     void getSlots(weddingId)
-      .then(list => { if (alive) { setServerSlots(list ?? []); setSlotsState('ready') } })
+      .then(list => { if (alive) setSlotsSnap({ weddingId, list: list ?? [], state: 'ready' }) })
       /* Отказ раньше глотался молча. Мозаика оставалась пустой — и экраны
          слота и сделки говорили «Загружаем…» до конца сеанса, потому что
-         выводили загрузку из нулевой длины списка. */
-      .catch(() => { if (alive) setSlotsState('error') })
+         выводили загрузку из нулевой длины списка. Прежний список той же
+         свадьбы при отказе перечитывания остаётся — он её, а не чужой. */
+      .catch(() => {
+        if (alive) setSlotsSnap(prev => ({ weddingId, list: prev?.weddingId === weddingId ? prev.list : [], state: 'error' }))
+      })
     return () => { alive = false }
   }, [weddingId, slotsTick])
   /** Перечитать мозаику после действия: состояние плитки считает сервер. */
   const refreshSlots = useCallback(() => setSlotsTick(n => n + 1), [])
 
+  const currentSnap = slotsSnap && slotsSnap.weddingId === weddingId ? slotsSnap : null
+  const serverSlots = currentSnap?.list ?? NO_SLOTS
+
   /* «Грузим» ставим здесь, а не в эффекте: синхронный setState в теле эффекта
      запрещён линтом, а знать об этом экранам надо с первой отрисовки. */
   const slotsPhase: 'idle' | 'loading' | 'ready' | 'error' =
-    !weddingId || !isAuthorized() ? 'idle' : slotsState === 'idle' ? 'loading' : slotsState
+    !weddingId || !isAuthorized() ? 'idle' : currentSnap ? currentSnap.state : 'loading'
 
   /*
    * Без свадьбы записывать некуда.

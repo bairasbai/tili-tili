@@ -303,6 +303,7 @@ paths:
                 role: { type: string, enum: [couple, helper, coordinator] }
       responses:
         '200': { description: OK }
+        '409': { $ref: '#/components/responses/Conflict' }
     delete:
       tags: [weddings]
       summary: Удалить участника
@@ -406,6 +407,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Member' }
         '410': { description: Истёк/отозван/уже использован }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────── GEO ─────────────────────────
   /health:
@@ -596,6 +598,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VendorPage' }
+        '400': { description: 'Курсор от другой сортировки (bad_cursor) — начать листать заново' }
   /catalog/vendors/{vendorId}:
     get:
       tags: [catalog]
@@ -638,6 +641,7 @@ paths:
                   holdDates:
                     type: array
                     items: { type: string, format: date }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ───────────────────────── FAVORITES ─────────────────────────
   /me/favorites:
@@ -725,6 +729,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
         '409': { description: Слот уже занят }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/slots/{slotId}/cancel:
     post:
       tags: [bookings]
@@ -909,6 +914,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Guest' }
+        '409': { $ref: '#/components/responses/Conflict' }
     delete:
       tags: [guests]
       summary: Удалить гостя
@@ -1439,6 +1445,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Lead' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /vendor/reviews:
     get:
       tags: [vendor]
@@ -1610,6 +1617,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/Review' } }
                   nextCursor: { type: string, nullable: true }
+        '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [catalog]
       summary: Оставить отзыв (только после завершённой сделки)
@@ -1788,6 +1796,7 @@ paths:
       responses:
         '200': { description: Зарезервировано }
         '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
     delete:
       tags: [wishlist-guest]
       summary: Снять свой резерв
@@ -1884,6 +1893,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
     delete:
       tags: [bookings]
       summary: Удалить своего подрядчика
@@ -1894,6 +1904,7 @@ paths:
         - { name: slotId, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: OK }
+        '409': { $ref: '#/components/responses/Conflict' }
   /weddings/{weddingId}/slots/{slotId}/external/invite:
     post:
       tags: [bookings]
@@ -2463,6 +2474,8 @@ paths:
       parameters: [{ name: sessionId, in: path, required: true, schema: { type: string } }]
       responses:
         '204': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /users/me/export:
     get:
       tags: [auth]
@@ -2696,6 +2709,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/TimelineEvent' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/timeline/autogen:
     post:
       tags: [timeline]
@@ -3095,6 +3109,8 @@ paths:
                 text: { type: string }
       responses:
         '201': { description: Создано }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /vendor/verification:
     get:
       tags: [vendor]

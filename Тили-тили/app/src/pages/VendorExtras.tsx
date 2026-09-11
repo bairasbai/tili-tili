@@ -4,7 +4,7 @@ import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, Ch
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { getVendorAnalytics, getVendorLeads, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
+import { getVendorAnalytics, getVendorLeads, getVendorProfile, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
 import { cn, pct, plural } from '@/lib/utils'
 import { fmt } from '@/lib/money'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -138,9 +138,16 @@ export function VendorLead() {
  * подрядчика оставался в браузере и до пары не доходил. Теперь отзывы читаются
  * с сервера, а ответ уходит в `POST /vendor/reviews/{id}/reply` и виден всем в
  * карточке анкеты.
+ *
+ * Число слева — та же серверная оценка, что видит пара в каталоге
+ * (`GET /vendor/profile` → `rating`): взвешенная, с затуханием, с порогом в
+ * три отзыва. Своё среднее по видимым отзывам давало второе число рядом с
+ * первым, и подрядчик с одним гостевым 5★ видел «5» здесь и «Новый на
+ * платформе» в каталоге (ревью D5-17). Пока оценки нет — прочерк (R-178).
  */
 export function VendorReviews() {
   const q = useApi(() => getVendorReviews(), [])
+  const profile = useApi(() => getVendorProfile(), [])
   const reviews = q.data ?? []
   const [answering, setAnswering] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -148,9 +155,7 @@ export function VendorReviews() {
   const [err, setErr] = useState<string | null>(null)
 
   const answered = reviews.filter(r => r.reply).length
-  /* Средняя оценка считается по тем же отзывам, что на экране. Сервер держит
-     свой рейтинг с затуханием — он в карточке анкеты, и это разные числа. */
-  const avg = reviews.length ? Math.round(reviews.reduce((s, r) => s + (r.rating ?? 0), 0) / reviews.length * 10) / 10 : null
+  const rating = ready(profile) ? (profile.data?.rating ?? null) : null
 
   const save = (reviewId: string) => void (async () => {
     if (!text.trim()) return
@@ -171,17 +176,17 @@ export function VendorReviews() {
         {reviews.length > 0 && (
           <div className="card p-4 flex items-center gap-4">
             <div className="text-center">
-              <b className="font-serif-d text-[30px] tabular">{avg}</b>
-              <p className="text-[9.5px] text-[var(--honey-deep)]">{'★'.repeat(Math.round(avg ?? 0))}</p>
+              <b className="font-serif-d text-[30px] tabular">{rating ?? '—'}</b>
+              <p className="text-[9.5px] text-[var(--soft)]">{t('оценка в каталоге')}</p>
+              {profile.error && <p role="alert" className="text-[9.5px] text-[var(--rose-ink)] mt-0.5">{t('не загрузилась')}</p>}
             </div>
             <div className="flex-1">
               <Bar pct={pct(answered, reviews.length)} />
               <p className="text-[10.5px] text-[var(--soft)] mt-2">{t('Отвечено на')} {answered} {t('из')} {reviews.length}. {t('Ответ виден парам в карточке анкеты.')}</p>
-              {/* Число слева — простое среднее по вашим отзывам. В каталоге
-                  стоит другое: взвешенное, со скидкой на давность и на вес
-                  гостя, и оно появляется только с третьего отзыва — один
-                  отзыв от знакомого не должен делать пятёрку. */}
-              {reviews.length < 3 && (
+              {/* Оценка взвешенная, со скидкой на давность и на вес гостя, и
+                  появляется только с третьего отзыва — один отзыв от знакомого
+                  не должен делать пятёрку. */}
+              {ready(profile) && rating === null && (
                 <p className="text-[10px] text-[var(--soft2)] mt-1">{t('В каталоге оценка появится с третьего отзыва')}</p>
               )}
             </div>
@@ -271,6 +276,11 @@ export function VendorAnalytics() {
             )}
           </div>
           <b className="font-serif-d text-[30px] block mt-1 tabular">{fmt(a?.revenue?.amount ?? 0)}</b>
+          {/* Что это за число: сервер складывает платежи по дате платежа —
+              аванс и остаток, возвраты с минусом, отменённые не в счёт.
+              Раньше «доходом» была цена брони без единого рубля (ревью
+              D5-08, R-178). */}
+          <p className="text-[10px] opacity-80 mt-1">{t('поступившие платежи за период')}</p>
         </div>
 
         )}

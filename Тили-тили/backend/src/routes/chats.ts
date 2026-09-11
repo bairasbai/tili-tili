@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound, quotaExceeded } from '../errors.js'
-import { uuidv7 } from '../ids.js'
+import { uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { assertOpen, chatForUser, rolesSeeing, type ChatKind } from '../chats/access.js'
 import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from '../chats/guard.js'
@@ -39,9 +39,24 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     wedding_title: string | null
     /** Смотрит не команда свадьбы, а подрядчик со стороны. */
     outsider: boolean
+    /** У смотрящего больше одной живой свадьбы — общие чаты без имени свадьбы не различить. */
+    many_weddings: boolean
   }
 
   const externalTitle = (name: string | null) => (name ? `${name} · свой подрядчик` : 'Свой подрядчик')
+
+  /**
+   * Непрочитанные для пользователя `user` в чате `chat` — один подзапрос
+   * на список и на ответ «Написать». Вторая копия правила уже расходилась
+   * с первой: повторное «Написать» отдавало `unread: 0` константой, а список
+   * рядом показывал 2 — ноль вместо неизвестного (R-178).
+   */
+  const unreadSql = (chat: string, user: string) =>
+    `(select count(*)::text from messages m
+       where m.chat_id = ${chat} and m.sender_id is distinct from ${user}
+         and m.created_at > coalesce(
+               (select r.read_at from chat_reads r where r.chat_id = ${chat} and r.user_id = ${user}),
+               to_timestamp(0)))`
 
   /*
    * Название чата зависит от того, кто смотрит.
@@ -51,6 +66,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
    * СВОИМ именем и не мог отличить их друг от друга. Общие чаты (команда,
    * исполнители, день X) у него тоже повторяются по числу свадеб — к ним
    * добавляем, чья свадьба.
+   *
+   * То же у координатора и помощника: координатор по определению ведёт
+   * несколько свадеб, и пять строк «Команда свадьбы» без имени свадьбы
+   * не отличить одну от другой. Имя добавляется, когда у смотрящего больше
+   * одной живой свадьбы; паре с единственной свадьбой уточнять нечего.
    */
   const toChat = (r: ListRow) => ({
     id: r.id,
@@ -59,7 +79,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         ? (r.outsider ? (r.wedding_title ?? 'Пара') : (r.vendor_name ?? 'Подрядчик'))
         : r.kind === 'external'
           ? externalTitle(r.external_name)
-          : r.outsider
+          : r.outsider || r.many_weddings
             ? `${TITLE_BY_KIND[r.kind]} · ${r.wedding_title ?? ''}`.trim()
             : TITLE_BY_KIND[r.kind],
     avatarUrl: r.vendor_photo,
@@ -86,19 +106,18 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               w.title as wedding_title,
               -- Кто смотрит: команда свадьбы или подрядчик со стороны.
               (mem.role is null) as outsider,
+              (select count(*) from wedding_members mm join weddings ww on ww.id = mm.wedding_id
+                where mm.user_id = $1 and ww.archived_at is null and ww.cancelled_at is null) > 1 as many_weddings,
               (select d.external_name from deals d
                 where d.slot_id = c.slot_id and d.external_name is not null
                 order by (d.state <> 'cancelled') desc, d.created_at desc limit 1) as external_name,
               (select m.text from messages m where m.chat_id = c.id order by m.created_at desc limit 1) as last_text,
-              (select count(*)::text from messages m
-                where m.chat_id = c.id and m.sender_id is distinct from $1
-                  and m.created_at > coalesce(r.read_at, to_timestamp(0))) as unread,
+              ${unreadSql('c.id', '$1')} as unread,
               (mem.role = 'couple' and c.kind = 'crew') as peek
          from chats c
          join weddings w on w.id = c.wedding_id
          left join vendors v on v.id = c.vendor_id
          left join wedding_members mem on mem.wedding_id = c.wedding_id and mem.user_id = $1
-         left join chat_reads r on r.chat_id = c.id and r.user_id = $1
         where w.archived_at is null and w.cancelled_at is null
           and (
             (mem.role = 'couple')
@@ -449,7 +468,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   /* ── чат с подрядчиком ────────────────────────────────────────────── */
   app.post('/chats/vendor/:vendorId', { preHandler: app.requireConsent }, async (request) => {
     const { vendorId } = request.params as { vendorId: string }
-    if (!/^[0-9a-f-]{36}$/i.test(vendorId)) throw notFound('Подрядчик не найден')
+    if (!isUuid(vendorId)) throw notFound('Подрядчик не найден')
     const userId = request.caller!.userId
 
     const { rows: mine } = await db().query<{ wedding_id: string }>(
@@ -461,9 +480,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     if (mine.length === 0) throw notFound('Сначала заведите свадьбу')
     const weddingId = mine[0]!.wedding_id
 
+    /* Заблокированная анкета — тот же «не найден», что у снятой с публикации:
+     * каталог её не показывает, и прямая ссылка из избранного или старого
+     * уведомления не должна заводить чат и лид тому, кого модератор убрал. */
     const { rows: vendor } = await db().query<{ name: string; photo_url: string | null }>(
       `select v.name, v.photo_url from vendors v join users u on u.id = v.user_id
-        where v.id = $1 and v.published_at is not null and u.deleted_at is null`,
+        where v.id = $1 and v.published_at is not null and v.blocked_at is null and u.deleted_at is null`,
       [vendorId],
     )
     if (vendor.length === 0) throw notFound('Подрядчик не найден')
@@ -483,16 +505,20 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
      * пара после первого сообщения пропала. */
     await openLead(db(), weddingId, vendorId, null)
 
-    const { rows: last } = await db().query<{ text: string }>(
-      'select text from messages where chat_id = $1 order by created_at desc limit 1',
-      [rows[0]!.id],
+    /* Повторное «Написать» открывает уже живую переписку, в которой подрядчик
+     * мог ответить: непрочитанные считаются тем же подзапросом, что в списке,
+     * а не ставятся нулём. Нового чата это тоже касается — там и выйдет ноль. */
+    const { rows: state } = await db().query<{ text: string | null; unread: string }>(
+      `select (select m.text from messages m where m.chat_id = $1 order by m.created_at desc limit 1) as text,
+              ${unreadSql('$1', '$2')} as unread`,
+      [rows[0]!.id, userId],
     )
     return {
       id: rows[0]!.id,
       title: vendor[0]!.name,
       avatarUrl: vendor[0]!.photo_url,
-      lastMessage: last[0]?.text ?? '',
-      unread: 0,
+      lastMessage: state[0]!.text ?? '',
+      unread: Number(state[0]!.unread),
       kind: 'vendor',
       openFrom: null,
     }

@@ -25,13 +25,22 @@ const CHANNEL = 'tili:chat'
 export interface ChatEvent {
   chatId: string
   type: 'message' | 'typing'
-  /** Кто вызвал событие: своему же соединению его слать незачем. */
+  /** Кто вызвал событие: «печатает» своему же соединению не доставляется. */
   actorId: string
   payload?: unknown
 }
 
 export class RealtimeHub {
-  private readonly rooms = new Map<string, Set<Socket>>()
+  /**
+   * Комната — соединения чата и то, чей пользователь за каждым из них.
+   *
+   * Пользователь нужен ради «печатает»: событие о наборе уходит через
+   * Redis всем процессам и приходит обратно в свой, и без имени владельца
+   * соединения хаб доставлял его и автору — под своим полем ввода человек
+   * видел «собеседник печатает» каждый раз, когда печатал сам (D4-08).
+   * Сообщения автору доставляются: у него может быть открыта вторая вкладка.
+   */
+  private readonly rooms = new Map<string, Map<Socket, string | null>>()
   private publisher: Redis | null = null
   private subscriber: Redis | null = null
 
@@ -62,9 +71,10 @@ export class RealtimeHub {
     if (subscriber.status === 'ready') resubscribe()
   }
 
-  join(chatId: string, socket: Socket): void {
-    const room = this.rooms.get(chatId) ?? new Set<Socket>()
-    room.add(socket)
+  /** `userId` — чьё это соединение; без него автор «печатает» неотличим от собеседника. */
+  join(chatId: string, socket: Socket, userId: string | null = null): void {
+    const room = this.rooms.get(chatId) ?? new Map<Socket, string | null>()
+    room.set(socket, userId)
     this.rooms.set(chatId, room)
   }
 
@@ -102,7 +112,9 @@ export class RealtimeHub {
     const room = this.rooms.get(event.chatId)
     if (!room) return
     const data = JSON.stringify({ type: event.type, chatId: event.chatId, actorId: event.actorId, ...(event.payload ?? {}) })
-    for (const socket of room) {
+    for (const [socket, userId] of room) {
+      // Свой же набор текста автору не новость — ему уходит только чужой.
+      if (event.type === 'typing' && userId !== null && userId === event.actorId) continue
       try {
         socket.send(data)
       } catch {

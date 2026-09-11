@@ -138,13 +138,28 @@ export const deleteHotel = (weddingId: string, hotelId: string) =>
   api.delete(url('/weddings/{weddingId}/logistics/hotels/{hotelId}', { weddingId, hotelId }))
 
 /**
- * Разослать точки сбора записавшимся.
+ * Чем кончилась рассылка (ответ `broadcast` на сервере, статус 202).
  *
- * Рассылка идёт очередью, ответ — 202: «принято», а не «доставлено». Экран
- * обязан говорить именно так, иначе обещает то, чего ещё не случилось.
+ * Два числа, а не одно: `recipients` — скольких гостей касается рассылка,
+ * `notified` — скольким членам команды ушло уведомление в приложении. Гостям
+ * не доставляется ничего: аккаунта у них нет, SMS и почта не подключены
+ * (хвост владельца), а таблицу `broadcasts` не читает ни одна задача. Экран
+ * обязан говорить ровно это (ревью D3-06, R-172). `debounced` — повтор в
+ * окне 30 секунд, команде второй раз не писали.
+ *
+ * Контракт описывает 202 без тела, сервер тело отдаёт — расхождение записано
+ * в отчёт; здесь тип назван руками, как у `guestInviteLink`.
  */
+export interface BroadcastResult {
+  broadcastId?: string
+  recipients?: number
+  notified?: number
+  debounced?: boolean
+}
+
+/** Сообщить команде о точках сбора: уведомление в приложении, гостям — нет. */
 export const notifyPickup = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/logistics/notify-pickup', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() })
+  api.post(url('/weddings/{weddingId}/logistics/notify-pickup', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() }) as Promise<BroadcastResult | undefined>
 
 /* ── Опрос по меню ── */
 
@@ -158,8 +173,22 @@ export const putMenuPoll = (weddingId: string, question: string, options: MenuOp
     ...(sent !== undefined ? { sent } : {}),
   })
 
+/** Напомнить о меню: уведомление команде в приложении, гостям — нет (см. `BroadcastResult`). */
 export const remindMenuPoll = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/menu-poll/remind', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() })
+  api.post(url('/weddings/{weddingId}/menu-poll/remind', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() }) as Promise<BroadcastResult | undefined>
+
+/* ── Договоры ── */
+
+/**
+ * Оформить договор по сделке из шаблона сервера.
+ *
+ * Стороны, дату, сумму и город подставляет сервер; в `fields` уходят ФИО
+ * сторон (обязательны — без них 422 `fields_missing`) и паспортные данные.
+ * По незабронированной сделке — 409 `not_booked`, команде свадьбы — 403.
+ * Документ ложится в `GET /weddings/{id}/documents` черновиком новой версии.
+ */
+export const createContract = (dealId: string, templateCode: string, fields: Record<string, string>) =>
+  api.post(url('/deals/{dealId}/contract', { dealId }), { templateCode, fields }, { idempotencyKey: newIdempotencyKey() })
 
 /** Одноразовая ссылка-приглашение конкретному гостю. */
 export const guestInviteLink = (weddingId: string, guestId: string) =>
