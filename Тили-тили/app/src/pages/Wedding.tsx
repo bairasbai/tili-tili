@@ -1295,6 +1295,15 @@ export function Album() {
 }
 
 /* Документы */
+/* Код шаблона сервера → название карточки: список показывал «photographer»
+   вместо «Договор с фотографом» (ERR-0241). Ключи — те же строки словаря. */
+const CONTRACT_TITLE: Record<string, string> = {
+  photographer: t('Договор с фотографом'),
+  venue: t('Аренда площадки'),
+  host: t('Договор с ведущим'),
+  universal: t('Универсальный договор услуг'),
+}
+
 export function Documents() {
   const nav = useNavigate()
   const { weddingId } = useStore()
@@ -1315,7 +1324,7 @@ export function Documents() {
             {(q.data ?? []).map((d, k) => (
               <div key={d.id ?? k} className="card-s p-3.5 flex items-center gap-3">
                 <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
-                <b className="text-[12.5px] flex-1 truncate">{d.templateCode ?? t('Договор')}</b>
+                <b className="text-[12.5px] flex-1 truncate">{(d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? t('Договор')}</b>
                 <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
               </div>
             ))}

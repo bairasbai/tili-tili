@@ -222,6 +222,15 @@ describe('D2-14 документы: заголовок не обещает по�
     const r = await open('/wedding/documents', 'Черновики договоров')
     expect(text(r)).not.toContain('Подписанные')
   })
+
+  it('строка договора называется по-русски, а не кодом шаблона сервера', async () => {
+    /* Живая проверка после ревью: договор из мастера ложился в список строкой
+       «photographer» — код шаблона вместо названия (ERR-0241). */
+    serve(base({ '/weddings/w1/documents': [{ id: 'doc1', dealId: 'd1', templateCode: 'photographer', version: 1, status: 'draft', pdfUrl: null, docxUrl: null }] }))
+    const r = await open('/wedding/documents', 'Черновики договоров')
+    expect(text(r)).toContain('Договор с фотографом')
+    expect(text(r)).not.toContain('photographer')
+  })
 })
 
 /* ── D2-21 / D2-02. Сделка и слот: деньги и действия по роли и состоянию ── */
