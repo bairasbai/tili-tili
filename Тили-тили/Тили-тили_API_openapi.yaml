@@ -2475,7 +2475,6 @@ paths:
       responses:
         '204': { description: OK }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
   /users/me/export:
     get:
       tags: [auth]

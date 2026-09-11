@@ -40,11 +40,29 @@ export function pushSupported(): boolean {
   return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
 
+/**
+ * Регистрация service worker, если она есть.
+ *
+ * `navigator.serviceWorker.ready` ждёт активного воркера и не отвечает
+ * никогда, если его не регистрировали: dev-сборка (регистрация только в
+ * PROD), приватный режим, сорвавшаяся регистрация. Выход из аккаунта повисал
+ * на «Секунду…» без единого запроса — нашла живая проверка (ERR-0232).
+ * `getRegistration()` отвечает сразу: нет регистрации — нет и подписки.
+ */
+async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
+  const sw = navigator.serviceWorker
+  if (typeof sw.getRegistration !== 'function') return sw.ready
+  const reg = await sw.getRegistration()
+  if (!reg) return null
+  return sw.ready
+}
+
 export async function devicePushState(): Promise<DevicePushState> {
   if (!pushSupported()) return 'unsupported'
   if (!vapidPublicKey()) return 'no-key'
   if (Notification.permission === 'denied') return 'denied'
-  const reg = await navigator.serviceWorker.ready
+  const reg = await swRegistration()
+  if (!reg) return 'off'
   const sub = await reg.pushManager.getSubscription()
   /* Подписка браузера — не подтверждение сервера: «включён» говорим только
      тогда, когда он её принял (см. `DevicePushState`). */
@@ -62,7 +80,8 @@ export async function enableDevicePush(): Promise<void> {
   if (!key) throw new Error(t('Ключ Web Push не задан в сборке'))
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') throw new Error(t('Разрешение на уведомления не дано'))
-  const reg = await navigator.serviceWorker.ready
+  const reg = await swRegistration()
+  if (!reg) throw new Error(t('Push работает в установленном приложении — здесь service worker не зарегистрирован'))
   const sub = (await reg.pushManager.getSubscription())
     ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKeyBytes(key) }))
   const json = sub.toJSON()
@@ -93,7 +112,8 @@ export async function enableDevicePush(): Promise<void> {
  */
 export async function disableDevicePush(): Promise<void> {
   if (!pushSupported()) return
-  const reg = await navigator.serviceWorker.ready
+  const reg = await swRegistration()
+  if (!reg) return
   const sub = await reg.pushManager.getSubscription()
   if (!sub) return
   const endpoint = sub.endpoint

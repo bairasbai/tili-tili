@@ -4843,7 +4843,6 @@ export interface paths {
                     content?: never;
                 };
                 404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
             };
         };
         options?: never;

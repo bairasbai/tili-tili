@@ -686,6 +686,25 @@ describe('D1-20 / D4-05 / D4-06: «Выйти из аккаунта» на эк�
     expect(storedTokens(), 'токены остались после выхода').toBeNull()
     expect(localStorage.getItem('tt_wedding_id'), 'свадьба осталась на устройстве после выхода').toBeNull()
   })
+
+  it('service worker не зарегистрирован — выход не виснет на «Секунду…» (ERR-0232)', async () => {
+    /* `navigator.serviceWorker.ready` без регистрации не отвечает никогда:
+       dev-сборка, приватный режим, сорвавшаяся регистрация. Живая проверка:
+       нажатие «Выйти из аккаунта» — ни одного запроса, токены на месте. */
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { ready: new Promise(() => {}), getRegistration: async () => undefined },
+      configurable: true,
+    })
+    vi.stubGlobal('PushManager', function PushManager() { /* признак поддержки */ })
+    vi.stubGlobal('Notification', { permission: 'default', requestPermission: async () => 'granted' })
+    const { calls, container } = await openUs(usRoutes())
+    fireEvent.click(screen.getByText('Выйти из аккаунта'))
+    await waitFor(() => expect(container.textContent).toContain('ЭКРАН ВХОДА'), { timeout: 4000 })
+    const seq = calls.filter(c => c.method === 'DELETE').map(c => `${c.method} ${c.url}`)
+    // Подписки нет — на сервере от этого устройства удалять нечего; сессии гасятся как обычно.
+    expect(seq).toEqual(['DELETE /users/me/sessions', 'DELETE /users/me/sessions/this-one'])
+    expect(storedTokens()).toBeNull()
+  })
 })
 
 describe('D4-06 / D4-10: push на этом устройстве', () => {

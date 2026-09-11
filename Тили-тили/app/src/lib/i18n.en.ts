@@ -1705,3 +1705,8 @@ Object.assign(EN, {
   'Применить': 'Apply',
   'Участник вышел': 'Member has left',
 })
+
+/* Живая проверка после ревью: service worker не зарегистрирован — push здесь не включить, выход не виснет (ERR-0232). */
+Object.assign(EN, {
+  'Push работает в установленном приложении — здесь service worker не зарегистрирован': 'Push works in the installed app — no service worker is registered here',
+})

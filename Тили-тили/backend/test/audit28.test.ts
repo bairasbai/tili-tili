@@ -320,7 +320,7 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
     expect(rows[0]!.attempts).toBe(5)
   })
 
-  it('D1-19: свою текущую сессию этим путём не погасить — 409; уже погашенную — 404', async () => {
+  it('D1-19: уже погашенную сессию не погасить второй раз — 404; свою — можно, так выходит приложение', async () => {
     const phone = nextPhone()
     const first = await signIn(phone, 'Телефон')
     await consent(first.accessToken)
@@ -330,9 +330,14 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
         current: boolean
       }[]
     ).find((s) => s.current)!.id
+    /* Своя сессия гасится этим же путём — последним шагом выхода из приложения
+       (ERR-0233): после неё токен мёртв на сервере, а не только стёрт на устройстве. */
     const self = await app.inject({ method: 'DELETE', url: `/users/me/sessions/${mine}`, headers: auth(first.accessToken) })
-    expect(self.statusCode).toBe(409)
-    expect(self.json().error.code).toBe('current_session')
+    expect(self.statusCode).toBe(204)
+    expect(
+      (await app.inject({ method: 'GET', url: '/users/me', headers: auth(first.accessToken) })).statusCode,
+      'токен погашенной сессии обязан умереть',
+    ).toBe(401)
 
     await pretendMinutePassed(phone)
     const second = await signIn(phone, 'Ноутбук')
@@ -342,12 +347,14 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
         current: boolean
       }[]
     ).find((s) => s.current)!.id
+    await pretendMinutePassed(phone)
+    const third = await signIn(phone, 'Планшет')
     expect(
-      (await app.inject({ method: 'DELETE', url: `/users/me/sessions/${other}`, headers: auth(first.accessToken) })).statusCode,
+      (await app.inject({ method: 'DELETE', url: `/users/me/sessions/${other}`, headers: auth(third.accessToken) })).statusCode,
     ).toBe(204)
     // Повторное завершение уже погашенной — 404, а не 204 с перезаписью revoked_at.
     expect(
-      (await app.inject({ method: 'DELETE', url: `/users/me/sessions/${other}`, headers: auth(first.accessToken) })).statusCode,
+      (await app.inject({ method: 'DELETE', url: `/users/me/sessions/${other}`, headers: auth(third.accessToken) })).statusCode,
     ).toBe(404)
   })
 
