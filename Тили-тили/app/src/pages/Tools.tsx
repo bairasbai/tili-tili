@@ -11,7 +11,7 @@ import { useBusy } from '@/lib/useBusy'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { saveInviteDesign } from '@/lib/api/wedding'
+import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
@@ -56,7 +56,8 @@ export function Deal() {
       <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">
         {slotsState === 'error'
           ? t('Сервер недоступен. Попробуйте позже')
-          : slotsState === 'ready' ? t('Сделка не найдена') : t('Загружаем…')}
+          : slotsState === 'ready' ? t('Сделка не найдена')
+          : slotsState === 'idle' ? t('Войдите, чтобы увидеть свою свадьбу') : t('Загружаем…')}
       </p>
     </div>
   )
@@ -94,6 +95,16 @@ function DealView({ s }: { s: Slot }) {
     setErr(null)
     try { await fn() } catch (e) { setErr(explainError(e)) }
   })
+
+  /* Адрес переписки выдаёт сервер, и он может отказать (429, истёкшая сессия,
+     сеть). Раньше промис висел без `catch`: кнопка молча не делала ничего, а
+     ошибка уходила в `unhandledrejection` (RF-04, R-148). */
+  const [chatBusy, setChatBusy] = useState(false)
+  const openChat = async () => {
+    setErr(null)
+    setChatBusy(true)
+    try { nav(await chatRouteForVendor(s.vendorId)) } catch (e) { setErr(explainError(e)) } finally { setChatBusy(false) }
+  }
 
   return (
     <div className="pb-28">
@@ -173,7 +184,7 @@ function DealView({ s }: { s: Slot }) {
         {s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
 
         <div className="grid grid-cols-2 gap-2.5">
-          <button onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
+          <button disabled={chatBusy} onClick={() => void openChat()} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{chatBusy ? t('Открываем чат…') : t('Написать')}</button>
           <button onClick={() => nav(`/wedding/documents/new?deal=${s.dealId ?? ''}`)} className="press card-s py-3.5 text-[13px] font-semibold flex items-center justify-center gap-1.5"><FileText size={14} />{t('Договор')}</button>
           {/* «Внести аванс» — отдельный путь контракта, остальные шаги двигает
               PATCH сделки. Разные адреса, поэтому и кнопки разные. Двигать
@@ -202,7 +213,7 @@ function DealView({ s }: { s: Slot }) {
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{t('Отменить сделку')}</button>
           )}
         </div>
-        {err && <p className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
 
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Защита сделки')}</span>
@@ -692,6 +703,18 @@ export function InviteEditor() {
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const guestList = gq.data ?? []
 
+  /*
+   * Своя роль — из списка свадеб, как на экране команды (ревью RF-09).
+   * Оформление (`PATCH /weddings/{id}`) и ссылки (`POST …/invite-link`)
+   * сервер принимает только от пары; помощник и координатор открывали полный
+   * редактор с «Сохранить оформление» и «Выдать ссылку» у каждого гостя —
+   * и получали 403 после нажатия. Им — превью и список гостей без кнопок.
+   * Пока роль едет — «Загружаем…», не пришла — причина и «Повторить».
+   */
+  const mine = useApi(() => listMyWeddings(), [])
+  const iAmCouple = (mine.data?.find(w => w.id === weddingId)?.role ?? null) === 'couple'
+  const roleKnown = ready(mine) && !!mine.data
+
   const run = async (id: string, fn: () => Promise<unknown>) => {
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — приглашения живут в ней')); return }
     setBusyId(id)
@@ -759,6 +782,14 @@ export function InviteEditor() {
               «Нужна ссылка из приглашения». */}
         </div>
 
+        {/* Роль ещё не пришла или не пришла вовсе — на месте редактора
+            состояние запроса, а не пустота (R-179). */}
+        {weddingId && <AsyncState q={mine} />}
+        {roleKnown && !iAmCouple && (
+          <p className="text-[12px] text-[var(--soft)] leading-relaxed px-1 mt-4">{t('Оформление и ссылки — у пары')}</p>
+        )}
+
+        {iAmCouple && <>
         {/* 10 сценариев */}
         <div className="flex items-baseline justify-between px-1 mt-6 mb-2">
           <h2 className="font-serif-d text-[19px]">{t('Сценарий приглашения')}</h2>
@@ -799,6 +830,7 @@ export function InviteEditor() {
             className="w-full mt-2 bg-[var(--bg)] rounded-xl px-4 py-3 text-[12.5px] outline-none leading-relaxed resize-none" />
           <p className="text-[9.5px] text-[var(--soft2)] mt-1.5">{t('Имя гостя подставляется автоматически в начало')}</p>
         </div>
+        </>}
         </>
         )}
 
@@ -820,8 +852,8 @@ export function InviteEditor() {
 
         {/* Сохранение оформления: текст и тему видит гость, значит они на
             сервере. Без ответа свадьбы кнопки нет — сохранять было бы нечего,
-            кроме умолчаний. */}
-        {ready(wq) && (
+            кроме умолчаний. Не паре сервер ответит 403 — кнопки нет (RF-09). */}
+        {ready(wq) && iAmCouple && (
         <button disabled={busyId === 'design'} onClick={saveDesign} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-4 flex items-center justify-center gap-2 disabled:opacity-50" style={{ boxShadow: 'var(--shadow-lift)' }}>
           <Check size={15} /> {busyId === 'design' ? t('Сохраняем…') : saved ? t('Оформление сохранено ✓') : t('Сохранить оформление')}
         </button>
@@ -858,7 +890,11 @@ export function InviteEditor() {
               return (
                 <div key={g.id} className="flex items-center gap-2">
                   <span className="flex-1 text-[12.5px] truncate">{g.name}</span>
-                  {url ? (
+                  {/* Не паре ссылки сервер не отдаёт и выдавать не даёт: только
+                      факт, что гость уже открыл свою (RF-09). */}
+                  {!iAmCouple ? (
+                    g.inviteUrlUsed ? <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold shrink-0">{t('Открыта ✓')}</span> : null
+                  ) : url ? (
                     <button onClick={() => copy(url)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--bg)] flex items-center gap-1.5">
                       {copied === url ? <><Check size={12} className="text-[var(--sage-deep)]" />{t('Скопировано')}</> : <><Copy size={12} />{t('Копировать')}</>}
                     </button>

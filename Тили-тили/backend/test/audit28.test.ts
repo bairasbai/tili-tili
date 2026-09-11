@@ -672,6 +672,11 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
     expect(Array.isArray(out['referralUses'])).toBe(true)
     expect(rows('invites').map((i) => i['code'])).toContain(inviteCode)
     expect(rows('complaints').map((c) => c['text'])).toContain('рассылка')
+    // Санкция на третье лицо и заметка модератора — не данные жалобщика (RF-BE-07).
+    for (const c of rows('complaints')) {
+      expect(c).not.toHaveProperty('resolution')
+      expect(c).not.toHaveProperty('note')
+    }
     expect(rows('conciergeRequests').map((c) => c['comment'])).toContain('нужен фотограф')
     expect(rows('dealEvents').some((e) => e['deal_id'] === dealId)).toBe(true)
     const archived = rows('weddings').find((w) => w['id'] === weddingId)

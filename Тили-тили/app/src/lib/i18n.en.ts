@@ -1710,3 +1710,8 @@ Object.assign(EN, {
 Object.assign(EN, {
   'Push работает в установленном приложении — здесь service worker не зарегистрирован': 'Push works in the installed app — no service worker is registered here',
 })
+
+/* Ревью фиксов фронта (RF-09): редактор приглашений не паре — только чтение. */
+Object.assign(EN, {
+  'Оформление и ссылки — у пары': 'Design and links are managed by the couple',
+})

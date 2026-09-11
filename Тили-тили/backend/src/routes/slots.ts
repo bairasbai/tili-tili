@@ -81,6 +81,22 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     // «занято» не трогаем — её ставил он сам.
     await client.query('update slots set deal_id = null where id = $1', [slotId])
     await releaseVendorDate(client, dealId)
+    await revokeSlotInvites(client, slotId)
+  }
+
+  /**
+   * Погасить все выданные приглашения своего подрядчика в слоте.
+   *
+   * Ссылка живёт 30 дней и открывает слот, тайминг и чат слота. Пока её
+   * отзывала только дверь «Убрать» (`DELETE …/external`), отмена сделки с
+   * экрана сделки (`POST …/cancel`, `PATCH /deals`) оставляла токен прежнего
+   * подрядчика живым — а фильтр «не старше текущей сделки» открывал ему
+   * переписку пары со СЛЕДУЮЩИМ подрядчиком того же слота (ERR-0242).
+   */
+  async function revokeSlotInvites(client: Queryable, slotId: string): Promise<void> {
+    await client.query('update external_invites set revoked_at = now() where slot_id = $1 and revoked_at is null', [
+      slotId,
+    ])
   }
 
   /** Слот этой свадьбы или 404. Проверка по weddingId обязательна: без неё
@@ -323,6 +339,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
       return db().tx(async (client) => {
         await slotOf(client, weddingId, slotId)
+        // Прежние ссылки слота гаснут до новой сделки: страховка от любого
+        // пути отмены, который их не отозвал (ERR-0242).
+        await revokeSlotInvites(client, slotId)
         const dealId = uuidv7()
         // Свой подрядчик занимает слот, бюджет и тайминг наравне с каталожным,
         // но даты в чужом календаре не занимает: его календаря у нас нет.
@@ -362,24 +381,24 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     const { slotId } = request.params as { slotId: string }
 
-    await db().tx(async (client) => {
-      const slot = await slotOf(client, weddingId, slotId)
-      if (!slot.deal_id) throw notFound('В этом слоте нет своего подрядчика')
-      const { rows } = await client.query<{ external_name: string | null }>(
-        'select external_name from deals where id = $1',
-        [slot.deal_id],
-      )
-      if (!rows[0]?.external_name) throw notFound('В этом слоте не свой подрядчик')
+    const slot = await slotOf(db(), weddingId, slotId)
+    if (!slot.deal_id) throw notFound('В этом слоте нет своего подрядчика')
+    const { rows } = await db().query<{ external_name: string | null }>('select external_name from deals where id = $1', [
+      slot.deal_id,
+    ])
+    if (!rows[0]?.external_name) throw notFound('В этом слоте не свой подрядчик')
 
+    /* Токен гасится ДО перехода и вне транзакции отмены: у выполненной
+     * работы сделка остаётся (409 ниже), а доступ убранного подрядчика по
+     * ссылке всё равно должен закрыться — иначе его нечем отозвать 30 дней
+     * (ревью фиксов, RF-BE-03). */
+    await revokeSlotInvites(db(), slotId)
+
+    await db().tx(async (client) => {
       /* Тот же путь, что у отмены брони: состояние под блокировкой и через
        * машину переходов. Раньше состояние здесь не смотрели вовсе, и
        * выполненная работа своего подрядчика снималась с плитки (D2-02). */
-      await cancelDealInSlot(client, slotId, slot.deal_id, request.caller!.userId)
-      // Выданный гостевой токен аннулируется вместе с подрядчиком: иначе
-      // человек, которого убрали из свадьбы, продолжает видеть её данные.
-      await client.query('update external_invites set revoked_at = now() where slot_id = $1 and revoked_at is null', [
-        slotId,
-      ])
+      await cancelDealInSlot(client, slotId, slot.deal_id!, request.caller!.userId)
     })
     return reply.code(204).send()
   })
@@ -525,6 +544,10 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
         [invite.wedding_id, rolesSeeing('external')],
       )
+      // Тихие часы по поясу свадьбы, если у получателя свой не задан (RF-BE-04).
+      const { rows: tzRow } = await db().query<{ tz: string | null }>('select tz from weddings where id = $1', [
+        invite.wedding_id,
+      ])
       for (const m of members) {
         await notify(db(), {
           userId: m.user_id,
@@ -532,7 +555,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           title: 'Сообщение от своего подрядчика',
           body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
           link: `/chats/${chatId}`,
-        })
+        }, new Date(), tzRow[0]?.tz ?? null)
       }
       return reply.code(201).send(message)
     },

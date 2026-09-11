@@ -95,17 +95,24 @@ export async function rescheduleWedding(
    * сделок этой свадьбы. Если та открыта, а вторая (второй слот) уже
    * выполнена, отработанный день держит именно вторая — ссылку переносим
    * на неё, иначе снятие открытой брони освободило бы и его. */
+  /* Переписывать ссылку на выполненную сделку можно только у той, у которой
+   * своей строки ещё нет: на втором переносе строка прежней даты уже
+   * принадлежала `done`-сделке, и переписывание второй строки на неё же
+   * оставляло день занятым призраком навсегда (ревью фиксов, RF-BE-02). */
   await client.query(
     `update vendor_busy_dates b
         set deal_id = (
           select d.id from deals d
            where d.vendor_id = b.vendor_id and d.wedding_id = $1 and d.state = 'done'
+             and not exists (select 1 from vendor_busy_dates o where o.deal_id = d.id and o.source = 'deal')
            order by d.created_at limit 1
         )
       where b.source = 'deal'
         and b.deal_id in (select id from deals where wedding_id = $1 and state = any($2))
         and exists (
-          select 1 from deals d where d.vendor_id = b.vendor_id and d.wedding_id = $1 and d.state = 'done'
+          select 1 from deals d
+           where d.vendor_id = b.vendor_id and d.wedding_id = $1 and d.state = 'done'
+             and not exists (select 1 from vendor_busy_dates o where o.deal_id = d.id and o.source = 'deal')
         )`,
     [weddingId, OPEN_BOOKINGS],
   )

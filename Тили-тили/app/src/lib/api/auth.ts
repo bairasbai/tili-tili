@@ -42,9 +42,17 @@ export const JOIN_CODE_KEY = 'tt_join_code'
  * сервер сделал своё: чистить раньше значит оставить живую сессию и потерять
  * причину отказа.
  */
+/* Свойства устройства (тема, язык, город) — не данные человека: они живут
+   и после выхода, как настройки телефона (CLAUDE.md §5 п. 12). */
+const DEVICE_KEYS = ['tt_theme', 'tt_lang', 'tt_city', 'tt_city_region'] as const
+
 export function forgetLocally(): void {
   saveTokens(null)
-  try { localStorage.clear() } catch { /* приватный режим */ }
+  try {
+    const keep = DEVICE_KEYS.map(k => [k, localStorage.getItem(k)] as const)
+    localStorage.clear()
+    for (const [k, v] of keep) if (v !== null) localStorage.setItem(k, v)
+  } catch { /* приватный режим */ }
 }
 
 /**

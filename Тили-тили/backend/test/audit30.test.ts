@@ -807,4 +807,65 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     expect(texts).not.toContain(secret)
     expect(texts).toEqual([])
   })
+
+  /* Зеркало D4-01 с другой двери (ревью фиксов, RF-BE-01): пара убирает
+   * своего подрядчика не «Убрать» (`DELETE …/external`), а «Отменить сделку»
+   * с экрана сделки — `POST …/cancel` или `PATCH /deals {cancelled}`. Токен А
+   * при этом не отзывался, а фильтр «не старше текущей сделки» открывал ему
+   * переписку пары со СЛЕДУЮЩИМ подрядчиком Б (ERR-0242). */
+  for (const door of ['cancel', 'patch'] as const) {
+    it(`RF-BE-01: старый токен своего подрядчика после отмены через ${door} гаснет и не читает переписку с новым`, async () => {
+      const w = await newWedding()
+      const slotId = await firstSlot(w, 'florist')
+      const addExternal = (vendorName: string) =>
+        app.inject({
+          method: 'POST',
+          url: `/weddings/${w.weddingId}/slots/${slotId}/external`,
+          headers: auth(w.token),
+          payload: { vendorName, price: { amount: 3_000_000, currency: 'RUB' } },
+        })
+      const inviteExternal = async () => {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/weddings/${w.weddingId}/slots/${slotId}/external/invite`,
+          headers: auth(w.token),
+        })
+        expect(res.statusCode).toBe(201)
+        return res.json().token as string
+      }
+      expect((await addExternal('Флорист А')).statusCode).toBe(200)
+      const tokenA = await inviteExternal()
+      const { rows } = await app.db!.query<{ deal_id: string }>('select deal_id from slots where id = $1', [slotId])
+      const dealA = rows[0]!.deal_id
+
+      if (door === 'cancel') {
+        expect(
+          (await app.inject({
+            method: 'POST',
+            url: `/weddings/${w.weddingId}/slots/${slotId}/cancel`,
+            headers: { ...auth(w.token), 'idempotency-key': `rf1-${RUN}-${counter++}` },
+          })).statusCode,
+        ).toBe(200)
+      } else {
+        expect(
+          (await app.inject({
+            method: 'PATCH',
+            url: `/deals/${dealA}`,
+            headers: { ...auth(w.token), 'idempotency-key': `rf1p-${RUN}-${counter++}` },
+            payload: { state: 'cancelled' },
+          })).statusCode,
+        ).toBe(200)
+      }
+      expect((await addExternal('Флорист Б')).statusCode).toBe(200)
+      const tokenB = await inviteExternal()
+      const secretB = `Адрес и предоплата для Б ${RUN}`
+      expect(
+        (await app.inject({ method: 'POST', url: `/guest-vendor/${tokenB}/messages`, payload: { text: secretB } })).statusCode,
+      ).toBe(201)
+
+      // Старый токен А погашен: ни слот с новой сделкой, ни переписка с Б.
+      expect((await app.inject({ method: 'GET', url: `/guest-vendor/${tokenA}` })).statusCode).toBe(410)
+      expect((await app.inject({ method: 'GET', url: `/guest-vendor/${tokenA}/messages` })).statusCode).toBe(410)
+    })
+  }
 })

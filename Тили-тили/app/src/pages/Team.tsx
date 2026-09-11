@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Check, ChevronRight, Copy, Crown, Heart, Link2, Shield, Users, X } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
+import { AsyncState } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
@@ -89,7 +90,7 @@ export function Team() {
    * приглашения запрещены (POST → 403), а список ссылок сервер отдаёт им без
    * кодов: блок «Пригласить» и кнопки строк для них — кнопки без действия.
    * Пока роль не пришла, блока нет: показать его значит обещать право,
-   * которого ещё не знаем.
+   * которого ещё не знаем; на его месте — состояние запроса (RF-03).
    */
   const mine = useApi(() => listMyWeddings(), [])
   const myRole = mine.data?.find(w => w.id === weddingId)?.role ?? null
@@ -258,7 +259,12 @@ export function Team() {
 
         {/* Пригласить — только паре (D1-25): помощнику и координатору сервер
             отвечает 403, а кнопка, за которой заведомо отказ, — кнопка без
-            действия. Роль неизвестна — блока нет. */}
+            действия. Пока роль едет — «Загружаем…», не пришла — причина и
+            «Повторить» (RF-03): без этого пара при отказе `GET /weddings`
+            видела список участников без блока «Пригласить» и читала это как
+            «приглашать нельзя» (R-179). Без свадьбы приглашать некуда —
+            и спрашивать не о чем. */}
+        {weddingId && <AsyncState q={mine} />}
         {iAmCouple && <>
           <div className="flex justify-between items-baseline px-1 mt-2">
             <h2 className="font-serif-d text-[18px]">{t('Пригласить')}</h2>

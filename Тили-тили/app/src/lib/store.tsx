@@ -32,6 +32,17 @@ interface Store {
   onboarded: boolean
   finishOnboarding: (answers?: QuizAnswers) => void
   /**
+   * Забыть сессию в памяти после выхода (ревью RF-01).
+   *
+   * `forgetLocally()` чистит только хранилище, а переход на вход — SPA-переход
+   * без перезагрузки: провайдер стоит над роутером и живёт дальше. В памяти
+   * оставались свадьба, мозаика с телефонами подрядчиков, дата, избранное и
+   * ответы квиза — и любой, кто взял телефон после «Выйти», открывал
+   * `/wedding/slot/<id>` без токена и без единого запроса. Зовётся после
+   * `forgetLocally()`: сначала устройство, потом память.
+   */
+  forgetSession: () => void
+  /**
    * Идентификатор активной свадьбы на сервере. Null — свадьбы ещё нет
    * или человек не вошёл.
    *
@@ -111,6 +122,17 @@ type SlotsSnapshot = { weddingId: string; list: ServerSlot[]; state: 'ready' | '
 /* Один и тот же пустой список, а не `[]` на каждую отрисовку: от него зависит `useMemo` мозаики. */
 const NO_SLOTS: ServerSlot[] = []
 
+/** Заготовка текста приглашения, пока пара не написала свой. */
+const DEFAULT_INVITE_TEXT = 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.'
+
+/*
+ * Ключи, которые сеттеры `usePersist` пишут обратно при сбросе состояния:
+ * `null` и пустой квиз ложатся в хранилище, которое `forgetLocally()` только
+ * что очистил. После сброса они снимаются ещё раз — устройство после выхода
+ * должно быть пустым, а не помнить «свадьбы нет» под ключом свадьбы.
+ */
+const SESSION_KEYS = ['tt_wedding_id', 'tt_wedding_date', 'tt_quiz'] as const
+
 const Ctx = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -151,7 +173,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWeddingsState(prev => prev === 'idle' ? 'loading' : prev)
     void myWeddings.current
       .then(list => {
-        if (!alive) return
+        /* Ответ пришёл после выхода — он про чужой уже аккаунт: записывать
+           его свадьбу на очищенное устройство нельзя (RF-01). */
+        if (!alive || !isAuthorized()) return
         setWeddingIdState(prev => {
           if (prev !== remembered.current) return prev
           if (prev && list.some(w => w.id === prev)) return prev
@@ -317,7 +341,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let alive = true
     void getFavorites()
       .then(list => {
-        if (!alive || !list) return
+        /* После выхода поздний ответ не должен положить чужое избранное на
+           очищенное устройство (RF-01). */
+        if (!alive || !list || !isAuthorized()) return
         const ids = list.map(v => v.id).filter((x): x is string => !!x)
         setFavorites(ids)
         safeSet('tt_fav', JSON.stringify(ids))
@@ -328,17 +354,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
   const [inviteTpl, setInviteTplState] = useState(() => Number(safeGet('tt_invite_tpl') ?? 0))
-  const [inviteText, setInviteTextState] = useState(() => safeGet('tt_invite_text') ?? 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.')
+  const [inviteText, setInviteTextState] = useState(() => safeGet('tt_invite_text') ?? DEFAULT_INVITE_TEXT)
   const [city, setCityState] = useState(() => safeGet('tt_city') ?? 'Уфа')
   const [cityRegion, setCityRegion] = useState(() => safeGet('tt_city_region') ?? 'Башкортостан')
   const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
     safeGet('tt_theme') === 'dark' ? 'dark' : 'light')
+
+  /*
+   * Сброс памяти после выхода (RF-01, см. описание в `Store`). Тема, язык и
+   * город остаются: это свойства устройства, а не аккаунта. `hadWedding`
+   * снимается до сброса идентификатора, иначе эффект даты записал бы `null`
+   * обратно в хранилище микрозадачей уже после очистки ключей.
+   */
+  const [forgotten, setForgotten] = useState(0)
+  const forgetSession = useCallback(() => {
+    hadWedding.current = false
+    setWeddingIdState(null)
+    setWeddingDateState(null)
+    setQuiz(EMPTY_QUIZ)
+    setSlotsSnap(null)
+    setFavorites([])
+    setOnboarded(false)
+    setInviteTplState(0)
+    setInviteTextState(DEFAULT_INVITE_TEXT)
+    setWeddingsState('idle')
+    setForgotten(n => n + 1)
+  }, [setWeddingIdState, setWeddingDateState, setQuiz])
+  /* Уже после того, как сеттеры `usePersist` отработали (они пишут в том же
+     проходе отрисовки, эффект идёт следом): хранилище снова пустое. */
+  useEffect(() => {
+    if (!forgotten) return
+    for (const key of SESSION_KEYS) {
+      try { localStorage.removeItem(key) } catch { /* приватный режим */ }
+    }
+  }, [forgotten])
 
   const value = useMemo<Store>(() => ({
     onboarded,
     weddingId,
     setWeddingId: setWeddingIdState,
     weddingsState,
+    forgetSession,
     finishOnboarding: (answers?: QuizAnswers) => {
       // Ответы квиза — это план свадьбы, ради которого его и проходят.
       // Раньше они терялись между последним «Далее» и главным экраном.
@@ -450,7 +506,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [onboarded, weddingId, setWeddingIdState, weddingsState, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
+  }), [onboarded, weddingId, setWeddingIdState, weddingsState, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

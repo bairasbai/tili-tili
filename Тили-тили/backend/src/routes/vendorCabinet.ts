@@ -226,6 +226,10 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
           'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
           [found[0]!.wedding_id, rolesSeeing('vendor')],
         )
+        // Тихие часы по поясу свадьбы, если у получателя свой не задан (RF-BE-04).
+        const { rows: tzRow } = await db().query<{ tz: string | null }>('select tz from weddings where id = $1', [
+          found[0]!.wedding_id,
+        ])
         for (const m of members) {
           await notify(db(), {
             userId: m.user_id,
@@ -233,7 +237,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             title: 'Новое сообщение',
             body: body.text.length > 120 ? `${body.text.slice(0, 119)}…` : body.text,
             link: `/chats/${chatId}`,
-          })
+          }, new Date(), tzRow[0]?.tz ?? null)
         }
       }
       return toLead(rows[0]!)

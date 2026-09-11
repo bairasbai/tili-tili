@@ -169,11 +169,14 @@ async function errorFrom(res: Response): Promise<ApiError> {
 /*
  * Чем кончился обмен refresh.
  *
- * Три исхода, а не два: «вход кончился» (сервер отверг сам refresh — 401/403),
- * «сервер не смог» (5xx выката, 429 ограничителя, сеть, таймаут) и успех.
- * До ревью D6-07 первые два были одним `null` со стиранием хранилища: 503 на
- * двадцать секунд выката выбрасывал человека на вход, а повторный вход стоит
- * SMS. Теперь хранилище трогает только первый исход.
+ * Три исхода, а не два: «вход кончился» (сервер отверг сам refresh — 401),
+ * «сервер не смог» (5xx выката, 429 ограничителя, 403 прокси, сеть, таймаут)
+ * и успех. До ревью D6-07 первые два были одним `null` со стиранием
+ * хранилища: 503 на двадцать секунд выката выбрасывал человека на вход, а
+ * повторный вход стоит SMS. Теперь хранилище трогает только первый исход.
+ * 403 приложение на `/auth/refresh` не отвечает никогда (у пути нет
+ * проверки прав) — он может прийти только от WAF или прокси, и это тот же
+ * класс, что 503 (ревью RF-08).
  */
 type RefreshResult =
   | { ok: true; tokens: Tokens }
@@ -182,6 +185,19 @@ type RefreshResult =
 
 /* Обмен refresh идёт один на всех: остальные ждут этот же промис. */
 let refreshing: Promise<RefreshResult> | null = null
+
+/*
+ * Сколько ждать соседнюю вкладку при `refresh_superseded` (ревью RF-08).
+ *
+ * Две вкладки с одним истёкшим access шлют один и тот же refresh; сервер
+ * обменивает его один раз (D1-06), проигравшей отвечает 401 с этим кодом.
+ * Ответ проигравшей может прийти раньше, чем победившая успела положить
+ * новую пару в общее хранилище, — тогда «пара под нами не сменилась» ещё не
+ * значит «вход кончился». Даём победившей время дописать, перечитываем и
+ * только если пара всё та же — считаем вход законченным.
+ */
+const SUPERSEDED_GRACE_MS = 300
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 async function refreshTokens(): Promise<RefreshResult> {
   const current = readTokens()
@@ -208,14 +224,21 @@ async function refreshTokens(): Promise<RefreshResult> {
            порядке. Сначала смотрим, не сменилась ли пара под нами. */
         const stored = readTokens()
         if (stored && stored.refreshToken !== current.refreshToken) return { ok: true, tokens: stored }
-        /* Вход кончился, только если сервер отверг сам refresh. Всё остальное —
-           5xx, 429, 4xx неожиданного вида — сервер не смог ответить по делу:
-           хранилище не трогаем, повтор сделает следующий запрос. */
-        if (res.status === 401 || res.status === 403) {
-          saveTokens(null)
-          return { ok: false, why: 'expired' }
+        const error = await errorFrom(res)
+        /* Вход кончился, только если сервер отверг сам refresh (401). Всё
+           остальное — 5xx, 429, 403 прокси, 4xx неожиданного вида — сервер не
+           смог ответить по делу: хранилище не трогаем, повтор сделает
+           следующий запрос. */
+        if (res.status !== 401) return { ok: false, why: 'down', error }
+        if (error.code === 'refresh_superseded') {
+          /* Соседняя вкладка обменяла тот же refresh и, возможно, ещё пишет
+             новую пару в хранилище — см. SUPERSEDED_GRACE_MS. */
+          await sleep(SUPERSEDED_GRACE_MS)
+          const later = readTokens()
+          if (later && later.refreshToken !== current.refreshToken) return { ok: true, tokens: later }
         }
-        return { ok: false, why: 'down', error: await errorFrom(res) }
+        saveTokens(null)
+        return { ok: false, why: 'expired' }
       }
       const body = (await res.json()) as Tokens
       const next = { accessToken: body.accessToken, refreshToken: body.refreshToken }

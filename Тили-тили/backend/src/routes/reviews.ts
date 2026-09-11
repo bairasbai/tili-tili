@@ -6,6 +6,7 @@ import { guestByToken, readGuestToken } from '../guests/access.js'
 import { recomputeRating } from '../reviews/rating.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { assertVendorLive } from '../catalog/vendors.js'
+import { chatForUser } from '../chats/access.js'
 
 /** Окно на отзыв после завершения сделки (План §18.2). */
 const REVIEW_WINDOW_DAYS = 14
@@ -271,6 +272,16 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
           [body.targetId, request.caller!.userId],
         )
         if (party.length === 0) throw forbidden('Жаловаться на сделку может только её сторона')
+      }
+      /* Жалоба на сообщение — только из чата, который жалобщик видит сам:
+       * иначе по идентификатору из чужого уведомления или перебора модератор
+       * открывал бы чужую переписку (ревью фиксов, RF-BE-05). Та же матрица,
+       * что и доступ к чату: чужой чат — 404, не своя роль — 403. */
+      if (body.targetKind === 'message') {
+        const { rows: msg } = await db().query<{ chat_id: string }>('select chat_id from messages where id = $1', [
+          body.targetId,
+        ])
+        await chatForUser(db(), msg[0]!.chat_id, request.caller!.userId)
       }
 
       const res = await db().query(

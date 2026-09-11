@@ -63,32 +63,49 @@ function downloadICS(title: string, date: string, location: string) {
  */
 const LINK_DEAD_STATUSES: ReadonlyArray<number> = [401, 410]
 
-/** Ответ вместе с ключом запроса: ответ другого запроса на экран не попадает. */
-type RsvpResult = { key: string; page: RsvpPage | null; error: unknown }
+/** Ответ вместе с тем, на какой запрос он пришёл: ответ другого запроса на экран не попадает. */
+type RsvpResult = { token: string; tick: number; page: RsvpPage | null; error: unknown }
 
 function useRsvpPage(token: string | null) {
   const [result, setResult] = useState<RsvpResult | null>(null)
   const [tick, setTick] = useState(0)
-  /* Ключ меняется с токеном и с каждым «Повторить»: пока ответа с этим ключом
-     нет — грузимся. Состояние загрузки выводится, а не выставляется в
-     эффекте — так нет лишнего рендера и ответ устаревшего запроса отбрасывается. */
-  const key = `${token ?? ''}:${tick}`
+  /* Запрос меняется с токеном и с каждым перечитыванием: пока ответа на этот
+     запрос нет — ждём. Состояние выводится, а не выставляется в эффекте — так
+     нет лишнего рендера и ответ устаревшего запроса отбрасывается. */
 
   useEffect(() => {
     if (!token) return
     let alive = true
     getRsvp(token)
-      .then(p => { if (alive) setResult({ key, page: (p ?? null) as RsvpPage | null, error: null }) })
+      .then(p => { if (alive) setResult({ token, tick, page: (p ?? null) as RsvpPage | null, error: null }) })
       /* При отказе страницы нет: рядом с ошибкой она утверждала бы, что актуальна. */
-      .catch((e: unknown) => { if (alive) setResult({ key, page: null, error: e }) })
+      .catch((e: unknown) => { if (alive) setResult({ token, tick, page: null, error: e }) })
     return () => { alive = false }
-  }, [token, key])
+  }, [token, tick])
 
   const reload = useCallback(() => setTick(n => n + 1), [])
-  const current = result?.key === key ? result : null
+  const current = result?.token === token && result.tick === tick ? result : null
+  /*
+   * Перечитывание того же токена держит прежнюю страницу до ответа, как
+   * `useApi` на `reload()` (ревью RF-06). После «Приду» страница становилась
+   * `null`, родитель рисовал «Открываем приглашение…» на весь экран, и
+   * `InviteView` размонтировался: пропадали набранные поля, блоки меню и
+   * автобуса уходили за данными заново, страница схлопывалась к началу, а
+   * гость искал свой ответ внизу. Стирается страница только при смене токена
+   * и при отказе.
+   */
+  const previous = current === null && result?.token === token && result.error === null ? result.page : null
+  const page = current ? current.page : previous
   const error: unknown = current?.error ?? null
   const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
-  return { page: current?.page ?? null, loading: !!token && current === null, error, linkDead, reload }
+  return {
+    page,
+    /* Первая загрузка: показывать нечего и ответа ещё нет. */
+    loading: !!token && current === null && page === null,
+    /* Перечитывание за спиной у показанной страницы: кнопки ответа ждут его. */
+    refreshing: !!token && current === null && page !== null,
+    error, linkDead, reload,
+  }
 }
 
 export default function Invite() {
@@ -169,7 +186,7 @@ export default function Invite() {
     </div>
   )
 
-  return <InviteView page={page} token={token} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} />
+  return <InviteView page={page} token={token} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress} rootRef={root} onAnswered={q.reload} refreshing={q.refreshing} />
 }
 
 /* Ограничения по еде — те же значения, что в контракте (`Guest.diet`).
@@ -203,7 +220,7 @@ interface RsvpPage {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, opened, setOpened, scrollY, progress, rootRef, onAnswered,
+  page, token, opened, setOpened, scrollY, progress, rootRef, onAnswered, refreshing,
 }: {
   page: RsvpPage
   token: string
@@ -213,6 +230,8 @@ function InviteView({
   progress: number
   rootRef: React.RefObject<HTMLDivElement | null>
   onAnswered: () => void
+  /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
+  refreshing: boolean
 }) {
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
@@ -227,7 +246,10 @@ function InviteView({
   const [dietNote, setDietNote] = useState(page.dietNote ?? '')
   const [transfer, setTransfer] = useState<'need' | 'own' | null>(page.transfer === 'need' || page.transfer === 'own' ? page.transfer : null)
   const [editing, setEditing] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [sending, setSending] = useState(false)
+  /* «Отправляем…» держится и пока страница перечитывается после ответа:
+     иначе между «отправлено» и «пришёл свежий ответ» форма на миг оживала. */
+  const busy = sending || refreshing
   const [err, setErr] = useState<string | null>(null)
   /* Ответ уже есть на сервере: `pending` значит «ещё не отвечал». Локальной
      копии нет намеренно — гость мог ответить с другого устройства. */
@@ -237,7 +259,7 @@ function InviteView({
      форма не спрашивала — пара видела пустые поля у каждого гостя, а
      кейтеринг не узнавал об аллергиях никогда. */
   const answer = (status: 'yes' | 'no') => void (async () => {
-    setBusy(true)
+    setSending(true)
     setErr(null)
     try {
       await sendRsvp(token, status, status === 'yes' ? (plus ?? false) : undefined, undefined,
@@ -246,7 +268,7 @@ function InviteView({
           : {})
       setEditing(false)
       onAnswered()
-    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
   })()
 
   const dietLabel = (id: string | null | undefined, note: string | null | undefined) =>
@@ -412,7 +434,7 @@ function InviteView({
                   </p>
                 )}
                 {page.status === 'yes' && (
-                  <button onClick={() => setEditing(true)} className="press mt-3 text-[11.5px] font-semibold underline" style={{ color: T.soft }}>{t('Изменить ответ')}</button>
+                  <button disabled={busy} onClick={() => setEditing(true)} className="press mt-3 text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>{t('Изменить ответ')}</button>
                 )}
                 {/* Планы меняются, и сервер принимает новый ответ поверх
                     старого. Экран, который этого не позволял, заставлял бы

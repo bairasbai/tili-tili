@@ -397,6 +397,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /** Уведомление всем, кто в этом чате состоит, кроме автора. */
+  /** Пояс свадьбы для тихих часов получателей без своего пояса. */
+  async function weddingTz(weddingId: string): Promise<string | null> {
+    const { rows } = await db().query<{ tz: string | null }>('select tz from weddings where id = $1', [weddingId])
+    return rows[0]?.tz ?? null
+  }
+
   async function notifyOthers(
     chatId: string,
     weddingId: string,
@@ -422,6 +428,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
           and d.state in ('booked','paid_deposit','done')`,
       [weddingId, chatId, kind, rolesSeeing(kind)],
     )
+    /* Тихие часы — по поясу свадьбы, если человек свой не назвал: самый
+     * частый push — «Новое сообщение» — шёл без него и считался по Москве
+     * (ревью фиксов, RF-BE-04). */
+    const tz = await weddingTz(weddingId)
     for (const row of rows) {
       if (row.user_id === authorId) continue
       await notify(db(), {
@@ -430,7 +440,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         title: 'Новое сообщение',
         body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
         link: `/chats/${chatId}`,
-      })
+      }, new Date(), tz)
     }
   }
 

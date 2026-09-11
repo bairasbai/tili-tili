@@ -196,28 +196,31 @@ export async function holdVendorDate(
  * хотя он занят.
  */
 export async function releaseVendorDate(client: Queryable, dealId: string): Promise<void> {
+  /* Строку удерживает другая сделка той же свадьбы у того же подрядчика,
+   * если она открыта — или выполнена и ещё не имеет своей строки. Выполненная
+   * сделка со своей строкой (день, уже отработанный до переноса) новую дату
+   * не держит: иначе отмена единственной открытой брони после переноса
+   * оставляла новую дату занятой (ревью фиксов, RF-BE-02). */
+  const HOLDER = `
+    select d.id from deals d
+     where d.id <> $1
+       and d.vendor_id = b.vendor_id
+       and d.state = any($2)
+       and d.wedding_id = (select wedding_id from deals where id = $1)
+       and (d.state <> 'done'
+            or not exists (select 1 from vendor_busy_dates o where o.deal_id = d.id and o.source = 'deal'))
+     order by d.created_at limit 1`
   await client.query(
     `delete from vendor_busy_dates b
       where b.deal_id = $1 and b.source = 'deal'
-        and not exists (
-          select 1 from deals d
-           where d.id <> $1
-             and d.vendor_id = b.vendor_id
-             and d.state = any($2)
-             and d.wedding_id = (select wedding_id from deals where id = $1)
-        )`,
+        and not exists (${HOLDER})`,
     [dealId, COMMITTED],
   )
   // Если строку удержал другой слот той же свадьбы — переписываем ссылку
   // на него, иначе она указывает на отменённую сделку.
   await client.query(
     `update vendor_busy_dates b
-        set deal_id = (
-          select d.id from deals d
-           where d.vendor_id = b.vendor_id and d.state = any($2)
-             and d.wedding_id = (select wedding_id from deals where id = $1)
-           order by d.created_at limit 1
-        )
+        set deal_id = (${HOLDER})
       where b.deal_id = $1 and b.source = 'deal'`,
     [dealId, COMMITTED],
   )

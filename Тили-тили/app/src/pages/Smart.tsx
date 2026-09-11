@@ -241,12 +241,29 @@ export function Compare() {
 export function DayX() {
   const nav = useNavigate()
   const { weddingId, slots, slotsState } = useStore()
-  const [tick, setTick] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  /* Отказ открыть чат — под той кнопкой, которую нажали: экран длинный, и
+     строка у верхней карточки для нижней кнопки не видна (RF-04). */
+  const [chatErr, setChatErr] = useState<{ at: 'day' | 'crew' | 'team'; text: string } | null>(null)
+  /* Какая из кнопок чата ждёт адрес: своя переменная, чтобы не перебивать
+     «Двигаем…» у сдвига тайминга. */
+  const [chatBusy, setChatBusy] = useState<string | null>(null)
   const [confirmPlanB, setConfirmPlanB] = useState(false)
   // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
   const [now, setNow] = useState(() => new Date())
+
+  const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId])
+  const events = q.data ?? []
+  /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
+     включённый сценарий, а экран «План Б» рядом писал «активирован»: два
+     экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
+     команде и гостям повторную рассылку. */
+  const pb = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId])
+  const planBOn = !!pb.data?.activatedAt
+  const reloadTimeline = q.reload
+  const reloadPlanB = pb.reload
 
   /*
    * Экран живёт весь день открытым у координатора. Раньше «сейчас» снималось
@@ -254,21 +271,16 @@ export function DayX() {
    * действий: блок «СЕЙЧАС» оставался тем, что был при открытии, и сдвиг
    * «+15 мин», сделанный парой с другого телефона, сюда не доходил (ревью
    * D4-13, R-171). Раз в минуту — часы вперёд и тайминг с планом Б заново.
+   *
+   * Заново — через `reload()`, а не счётчиком в зависимостях запроса (RF-02):
+   * смена зависимостей для `useApi` — «другой запрос», данные стираются до
+   * ответа, и раз в минуту карточка «СЕЙЧАС» превращалась в «Загружаем…»,
+   * «+15 мин» выключалась, а вместо бейджа «Включён» появлялась «Активировать».
    */
   useEffect(() => {
-    const id = setInterval(() => { setNow(new Date()); setTick(n => n + 1) }, 60_000)
+    const id = setInterval(() => { setNow(new Date()); reloadTimeline(); reloadPlanB() }, 60_000)
     return () => clearInterval(id)
-  }, [])
-
-  const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
-  const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId, tick])
-  const events = q.data ?? []
-  /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
-     включённый сценарий, а экран «План Б» рядом писал «активирован»: два
-     экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
-     команде и гостям повторную рассылку. */
-  const pb = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId, tick])
-  const planBOn = !!pb.data?.activatedAt
+  }, [reloadTimeline, reloadPlanB])
 
   /* «Сейчас» — это блок, который уже начался и ещё не сменился следующим.
      Раньше здесь стояла «Фотосессия до 16:30» независимо от времени суток. */
@@ -282,8 +294,20 @@ export function DayX() {
     if (!weddingId) return
     setBusy(name)
     setErr(null)
-    try { await fn(); setTick(n => n + 1) } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
+    try { await fn(); reloadTimeline(); reloadPlanB() } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
   })()
+
+  /* Адрес чата знает только сервер, и он может отказать: 429 ограничителя,
+     истёкшая сессия, обрыв сети. Раньше промис висел без `catch` — кнопка
+     молча не делала ничего, а ошибка уходила в `unhandledrejection` (RF-04,
+     R-148); в день свадьбы «Написать всей команде» просто не отвечала. */
+  const openChat = (at: 'day' | 'crew' | 'team', key: string, route: () => Promise<string>) => void (async () => {
+    setChatBusy(key)
+    setChatErr(null)
+    try { nav(await route()) } catch (e) { setChatErr({ at, text: explainError(e) }) } finally { setChatBusy(null) }
+  })()
+  const chatErrAt = (at: 'day' | 'crew' | 'team') =>
+    chatErr?.at === at ? <p role="alert" className="text-[11.5px] mt-2 text-[var(--rose-ink)]">{chatErr.text}</p> : null
 
   const time = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''
@@ -332,8 +356,9 @@ export function DayX() {
             <button disabled={busy === 'shift' || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--gold-soft)] text-[var(--on-grad)]">
               {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
             </button>
-            <button onClick={() => void (async () => nav(await dayChatRoute()))()} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)]">{t('Чат дня X')}</button>
+            <button disabled={chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
           </div>
+          {chatErrAt('day')}
         </div>
 
         {err && <p role="alert" className="text-[12px] mt-3 text-[var(--rose-ink)]">{err}</p>}
@@ -364,12 +389,13 @@ export function DayX() {
           {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{slotsState === 'ready' ? t('Забронированных подрядчиков пока нет') : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : t('Загружаем…')}</p>}
           <div className="flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
             {team.map(s => (
-              <button key={s.id} onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)]">
+              <button key={s.id} disabled={chatBusy === `chat:${s.id}`} onClick={() => openChat('crew', `chat:${s.id}`, () => chatRouteForVendor(s.vendorId))} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)] disabled:opacity-50">
                 <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
-                {s.vendor} · {t(s.label)}
+                {chatBusy === `chat:${s.id}` ? t('Открываем чат…') : `${s.vendor} · ${t(s.label)}`}
               </button>
             ))}
           </div>
+          {chatErrAt('crew')}
         </div>
 
         <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
@@ -407,9 +433,10 @@ export function DayX() {
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
             координатора» не существует, а телефон +7 000 000-00-00 был
             выдуман. Пишем в командный чат — там координатор и сидит. */}
-        <button onClick={() => void (async () => nav(await teamChatRoute()))()} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)]">
-          <Zap size={16} /> {t('Написать всей команде')}
+        <button disabled={chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
+          <Zap size={16} /> {chatBusy === 'chat:team' ? t('Открываем чат…') : t('Написать всей команде')}
         </button>
+        {chatErrAt('team')}
       </div>
     </div>
   )

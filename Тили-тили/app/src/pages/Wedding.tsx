@@ -163,7 +163,10 @@ export function SlotDetail() {
       <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">
         {slotsState === 'error'
           ? t('Сервер недоступен. Попробуйте позже')
-          : slotsState === 'ready' ? t('Слот не найден') : t('Загружаем…')}
+          : slotsState === 'ready' ? t('Слот не найден')
+          /* Без входа мозаика не запрашивается (`idle`) — обещать загрузку
+             нечего: сюда попадает «Назад» после выхода. */
+          : slotsState === 'idle' ? t('Войдите, чтобы увидеть свою свадьбу') : t('Загружаем…')}
       </p>
     </div>
   )
@@ -199,6 +202,21 @@ function SlotView({ s }: { s: Slot }) {
     setErr(null)
     try { await fn() } catch (e) { setErr(explainError(e)) }
   }
+
+  /* Адрес переписки выдаёт сервер, и он может отказать (429, истёкшая сессия,
+     сеть). Раньше «Написать» и «Чат по сделке» были промисом без `catch`:
+     кнопка молча не делала ничего, а ошибка уходила в `unhandledrejection`
+     (RF-04, R-148). У своего подрядчика идентификатора каталога нет: тогда
+     ведём в список чатов, где его переписка отдельной строкой. */
+  const [chatBusy, setChatBusy] = useState<'grid' | 'card' | null>(null)
+  /* Отказ из нижней карточки — под ней же, а не под сеткой кнопок выше:
+     экран длинный, и строка у сетки оттуда не видна. */
+  const [cardErr, setCardErr] = useState<string | null>(null)
+  const openChat = (from: 'grid' | 'card') => void (async () => {
+    setErr(null); setCardErr(null)
+    setChatBusy(from)
+    try { nav(await chatRouteForVendor(s.vendorId)) } catch (e) { (from === 'grid' ? setErr : setCardErr)(explainError(e)) } finally { setChatBusy(null) }
+  })()
 
   const addOwn = () => runOwn(async () => {
     if (!ownName.trim() || !Number(ownPrice)) return
@@ -288,9 +306,7 @@ function SlotView({ s }: { s: Slot }) {
         )}
 
         <div className="grid grid-cols-2 gap-2.5 mt-3">
-          {/* У своего подрядчика идентификатора каталога нет: тогда ведём в
-              список чатов, где его переписка отдельной строкой. */}
-          <button onClick={() => void (async () => nav(await chatRouteForVendor(s.vendorId)))()} className="press card-s py-3.5 text-[13px] font-semibold">{t('Написать')}</button>
+          <button disabled={chatBusy !== null} onClick={() => openChat('grid')} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{chatBusy === 'grid' ? t('Открываем чат…') : t('Написать')}</button>
           <button disabled={!s.dealId} onClick={() => nav(`/deal/${s.dealId}`)} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{t('Сделка')}</button>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press card-s py-3.5 text-[13px] font-semibold">{t('Заменить')}</button>
           {/*
@@ -346,12 +362,13 @@ function SlotView({ s }: { s: Slot }) {
                выдуманную переписку. */
             ['💬', 'bg-[var(--sage-soft)]', t('Чат по сделке'), ''],
           ].map(([ic, tile, l, to], i) => (
-            <button key={String(l)} onClick={() => void (async () => nav(to ? String(to) : await chatRouteForVendor(s.vendorId)))()} className={cn('press w-full flex items-center gap-3 py-3 text-left', i !== 2 && 'border-b border-[var(--track)]')}>
+            <button key={String(l)} disabled={!to && chatBusy !== null} onClick={() => (to ? nav(String(to)) : openChat('card'))} className={cn('press w-full flex items-center gap-3 py-3 text-left disabled:opacity-50', i !== 2 && 'border-b border-[var(--track)]')}>
               <Tile icon={String(ic)} tile={String(tile)} size={34} />
-              <span className="flex-1 text-[12px] font-medium">{l}</span>
+              <span className="flex-1 text-[12px] font-medium">{!to && chatBusy === 'card' ? t('Открываем чат…') : l}</span>
             </button>
           ))}
         </div>
+        {cardErr && <p role="alert" className="mt-3 text-[12px] text-[var(--rose-ink)]">{cardErr}</p>}
       </div>
     </div>
   )

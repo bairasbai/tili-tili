@@ -630,9 +630,15 @@ export function Settings() {
    * Сам выход — `signOutEverywhere()` в `lib/api/auth.ts`: он общий с
    * «Выйти из аккаунта» на экране «Мы» (D1-20/D4-05) и снимает push этого
    * устройства до очистки токенов (D4-06).
+   *
+   * После очистки устройства — память стора (RF-01): переход на вход не
+   * перезагружает страницу, и свадьба с мозаикой жила в памяти дальше — её
+   * открывал «Назад» без токена. То же у удаления и отзыва согласия ниже.
    */
+  const { forgetSession } = useStore()
   const signOut = async () => {
     await signOutEverywhere()
+    forgetSession()
     nav('/auth')
   }
 
@@ -661,6 +667,7 @@ export function Settings() {
        устройства не должна пережить его (тот же случай, что D4-06). */
     await disableDevicePush().catch(() => undefined)
     forgetLocally()
+    forgetSession()
     nav('/')
   }
 
@@ -688,6 +695,7 @@ export function Settings() {
     }
     await disableDevicePush().catch(() => undefined)
     forgetLocally()
+    forgetSession()
     nav('/auth')
   }
 

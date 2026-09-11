@@ -260,6 +260,13 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
       })
       expect(added.statusCode).toBe(200)
       const dealId = added.json().deal.id as string
+      const invited = await app.inject({
+        method: 'POST',
+        url: `/weddings/${w.weddingId}/slots/${slot.id}/external/invite`,
+        headers: auth(w.token),
+      })
+      expect(invited.statusCode).toBe(201)
+      const token = invited.json().token as string
       expect((await patchDeal(w.token, dealId, { state: 'done' })).statusCode).toBe(200)
 
       const res = await app.inject({
@@ -272,6 +279,9 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
       expect(res.json().error.code).toBe('bad_transition')
       const { rows } = await sql<{ state: string }>('select state from deals where id = $1', [dealId])
       expect(rows[0]!.state).toBe('done')
+      /* Сделка остаётся, а ссылка убранного подрядчика гаснет всё равно:
+         иначе её нечем отозвать 30 дней (ревью фиксов, RF-BE-03). */
+      expect((await app.inject({ method: 'GET', url: `/guest-vendor/${token}` })).statusCode).toBe(410)
     })
   })
 
@@ -464,6 +474,31 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
       /* Без переноса ссылки строка снималась вместе с открытой бронью, и
        * отработанный день видео освобождался — хотя работа на нём была. */
       expect(await busyDates(vendor.vendorId)).toEqual(['2027-06-14', '2027-06-21'])
+    })
+
+    it('второй перенос и отмена открытой брони не оставляют призрачных дат (RF-BE-02)', async () => {
+      const vendor = await newVendor('Дваждыпереносимый', 'photo')
+      const w = await newWedding('2027-06-14')
+      const photo = await bookIn(w, 'photo', vendor.vendorId)
+      const video = await bookIn(w, 'video', vendor.vendorId)
+      expect((await patchDeal(w.token, video.dealId, { state: 'done' })).statusCode).toBe(200)
+      expect((await reschedule(w, '2027-06-21')).statusCode).toBe(200)
+
+      /* Второй перенос: у выполненной сделки уже есть своя строка (14 июня),
+       * и переписывать на неё ещё и 21 июня нельзя — иначе этот день остаётся
+       * занят призраком навсегда (ревью фиксов, RF-BE-02). */
+      expect((await reschedule(w, '2027-06-28')).statusCode).toBe(200)
+      expect(await busyDates(vendor.vendorId)).toEqual(['2027-06-14', '2027-06-28'])
+
+      // Отмена единственной открытой брони освобождает новую дату; отработанный день остаётся.
+      expect(
+        (await app.inject({
+          method: 'POST',
+          url: `/weddings/${w.weddingId}/slots/${photo.slotId}/cancel`,
+          headers: { ...auth(w.token), 'idempotency-key': `rf2-${RUN}-${counter++}` },
+        })).statusCode,
+      ).toBe(200)
+      expect(await busyDates(vendor.vendorId)).toEqual(['2027-06-14'])
     })
   })
 
@@ -822,6 +857,35 @@ describe.skipIf(!live)('ревью старого кода: сделки, пер
         [dealId],
       )
       expect(Number(rows[0]!.n)).toBe(2)
+    })
+
+    it('жалоба на сообщение — только из своего чата: чужой чат 404, свой — 201 (RF-BE-05)', async () => {
+      const vendor = await newVendor('Переписывающийся', 'photo')
+      const w = await newWedding()
+      const stranger = await newWedding()
+      const chat = await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+      expect(chat.statusCode).toBe(200)
+      const chatId = chat.json().id as string
+      const sent = await app.inject({
+        method: 'POST',
+        url: `/chats/${chatId}/messages`,
+        headers: auth(w.token),
+        payload: { text: `Договоримся напрямую ${RUN}` },
+      })
+      expect(sent.statusCode).toBe(201)
+      const messageId = sent.json().id as string
+      const complain = (token: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/complaints',
+          headers: auth(token),
+          payload: { targetKind: 'message', targetId: messageId, category: 'spam' },
+        })
+      /* До фикса: 201 по идентификатору из чужого уведомления — модератор
+         открывал бы переписку, к которой жалобщик доступа не имеет. */
+      expect((await complain(stranger.token)).statusCode).toBe(404)
+      expect((await complain(vendor.token)).statusCode).toBe(201)
+      expect((await complain(w.token)).statusCode).toBe(201)
     })
   })
 

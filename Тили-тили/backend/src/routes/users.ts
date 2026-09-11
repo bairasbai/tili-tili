@@ -471,9 +471,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         where r.user_id = $1 order by r.created_at`,
       [userId],
     )
-    // Жалобы, которые подал он. Внутренняя пометка модератора — не его данные.
+    /* Жалобы, которые подал он. Внутренняя пометка модератора и санкция,
+     * наложенная на третье лицо (`resolution`), — не его данные: в продукте
+     * исход жалобы жалобщику не сообщается, и выгрузка не должна становиться
+     * единственным каналом узнать, кого предупредили или понизили (RF-BE-07). */
     const { rows: complaints } = await db().query(
-      `select target_kind, target_id, category, text, status, resolution, created_at, resolved_at
+      `select target_kind, target_id, category, text, status, created_at, resolved_at
          from complaints where reporter_id = $1 order by created_at`,
       [userId],
     )

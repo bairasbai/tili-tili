@@ -41,20 +41,26 @@ export function pushSupported(): boolean {
 }
 
 /**
- * Регистрация service worker, если она есть.
+ * Регистрация service worker с активным воркером, если она есть.
  *
  * `navigator.serviceWorker.ready` ждёт активного воркера и не отвечает
  * никогда, если его не регистрировали: dev-сборка (регистрация только в
  * PROD), приватный режим, сорвавшаяся регистрация. Выход из аккаунта повисал
  * на «Секунду…» без единого запроса — нашла живая проверка (ERR-0232).
  * `getRegistration()` отвечает сразу: нет регистрации — нет и подписки.
+ *
+ * Регистрация есть, а активного воркера нет — тот же случай (ревью RF-07):
+ * объект регистрации существует с момента `register()`, пока воркер ещё
+ * устанавливается, и если установка сорвалась (не скачался файл оболочки —
+ * сеть пропала сразу после загрузки страницы), `ready` так и остаётся в
+ * ожидании. Подписаться без активного воркера нельзя, значит и снимать
+ * нечего: `ready` не ждём вовсе.
  */
 async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
   const sw = navigator.serviceWorker
   if (typeof sw.getRegistration !== 'function') return sw.ready
   const reg = await sw.getRegistration()
-  if (!reg) return null
-  return sw.ready
+  return reg?.active ? reg : null
 }
 
 export async function devicePushState(): Promise<DevicePushState> {

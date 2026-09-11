@@ -47,12 +47,12 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   const run = useCallback(fetcher, deps)
   /* Какой запрос уже показан: по нему отличаем смену адреса от перечитывания. */
   const lastRun = useRef<typeof run | null>(null)
+  /* Есть ли на экране ответ этого запроса. Ссылка, а не `data` в зависимостях
+     эффекта: от смены данных перечитывать не надо. */
+  const settled = useRef(false)
 
   useEffect(() => {
     let alive = true
-    setLoading(true)
-    setError(null)
-    setForbidden(false)
     /*
      * Сменился запрос — старые данные сбрасываем: они относятся к другому
      * адресу. Без этого экран подрядчика, открытый по ссылке на удалённую
@@ -62,17 +62,26 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
      *
      * А вот на `reload()` того же запроса данные остаются: список перечитывают
      * после каждой галочки, и очистка давала бы мигание на ровном месте.
+     * И `loading` при этом не поднимается — так обещает `AsyncData.loading`,
+     * а до ревью RF-02 код делал иначе: минутный опрос дня X на секунды
+     * превращал карточку «СЕЙЧАС» в «Загружаем…» и выключал «+15 мин».
+     * После отказа данных нет, и «Повторить» по-прежнему показывает загрузку.
      */
     if (lastRun.current !== run) {
       lastRun.current = run
+      settled.current = false
       setData(null)
     }
+    if (!settled.current) setLoading(true)
+    setError(null)
+    setForbidden(false)
     run()
-      .then(v => { if (alive) { setData(v); setLoading(false) } })
+      .then(v => { if (alive) { settled.current = true; setData(v); setLoading(false) } })
       .catch(e => {
         if (!alive) return
         /* И при отказе тоже: показывать данные рядом с сообщением об ошибке
            значит утверждать, что они актуальны. */
+        settled.current = false
         setData(null)
         if (e instanceof ApiError && e.status === 403) setForbidden(true)
         else setError(explainError(e))

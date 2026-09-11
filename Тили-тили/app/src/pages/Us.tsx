@@ -16,7 +16,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
 
 /* «Мы» — профиль пары */
 export function Us() {
-  const { lang, setLang, weddingDate, setWeddingDate, weddingId } = useStore()
+  const { lang, setLang, weddingDate, setWeddingDate, weddingId, forgetSession } = useStore()
   /* Своя свадьба, а не «Алина Козлова & Тимур Волков» из моков: имя, город и
      площадка хранятся у неё. Экран профиля показывал чужую пару каждому. */
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
@@ -48,12 +48,16 @@ export function Us() {
     } catch (e) { setRefErr(explainError(e)) } finally { setRefBusy(false) }
   }
   /* Выход — тот же, что «Выйти со всех устройств» в настройках (D1-20/D4-05):
-     кнопка была `nav('/auth')` без единого запроса и без очистки устройства. */
+     кнопка была `nav('/auth')` без единого запроса и без очистки устройства.
+     После очистки устройства — память стора (RF-01): переход на вход не
+     перезагружает страницу, и без сброса мозаика с телефонами подрядчиков
+     открывалась «Назад» без токена. */
   const [leaving, setLeaving] = useState(false)
   const signOut = async () => {
     if (leaving) return
     setLeaving(true)
     await signOutEverywhere()
+    forgetSession()
     nav('/auth')
   }
   /* Признак сотрудника приходит в своём профиле. Пробный запрос в саму панель
@@ -221,20 +225,25 @@ export function Us() {
 export function Chats() {
   const nav = useNavigate()
   const [q, setQ] = useState('')
-  const [tick, setTick] = useState(0)
+  /* «Сейчас» для сравнения со сроком открытия чата дня X — не в отрисовке
+     (D4-22), а вместе с опросом: снятое один раз при монтировании оно
+     держало «Откроется 14 июня 09:00» и после девяти, пока экран не
+     перемонтируют (RF-05, R-171). */
+  const [now, setNow] = useState(() => Date.now())
   /* Список тоже перечитывается сам. Живого канала у него нет — он не про
      конкретный чат, — но человек, оставивший экран открытым, иначе не увидит
      ни новой реплики, ни значка непрочитанного, пока не уйдёт и не вернётся. */
+  const list = useApi(() => getChats(), [])
+  /* Опрос — через `reload()`, а не через счётчик в зависимостях: смена
+     зависимостей для `useApi` — «другой запрос», список пустел с «Загружаем…»
+     каждые полминуты (тот же класс, что RF-02 на дне X). */
+  const reloadList = useRef(list.reload)
+  useEffect(() => { reloadList.current = list.reload })
   useEffect(() => {
-    const poll = window.setInterval(() => setTick(n => n + 1), 30_000)
+    const poll = window.setInterval(() => { setNow(Date.now()); reloadList.current() }, 30_000)
     return () => window.clearInterval(poll)
   }, [])
-  const list = useApi(() => getChats(), [tick])
   const chats = list.data ?? []
-  /* «Сейчас» для сравнения со сроком открытия чата дня X — один раз при
-     монтировании, не в каждой отрисовке (D4-22). Список и так перечитывается
-     раз в полминуты, так что «откроется» сменится на реплику само. */
-  const [now] = useState(() => Date.now())
   const shown = chats.filter(c =>
     (c.title ?? '').toLowerCase().includes(q.toLowerCase()) ||
     (c.lastMessage ?? '').toLowerCase().includes(q.toLowerCase()))
@@ -335,7 +344,6 @@ export function Chat() {
   const { id } = useParams()
   const nav = useNavigate()
   const chatId = id ?? ''
-  const [tick, setTick] = useState(0)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -371,8 +379,12 @@ export function Chat() {
           throw e
         })
       : Promise.resolve(null),
-    [chatId, tick],
+    [chatId],
   )
+  /* Перечитывание хвоста — `reload()`: по событию сокета, по опросу и после
+     отправки данные остаются на экране, «Загружаем…» сверху не мигает. */
+  const reloadTail = useRef(q.reload)
+  useEffect(() => { reloadTail.current = q.reload })
   const tail = q.data && 'items' in q.data ? q.data : null
   const locked = !!q.data && 'locked' in q.data
   /*
@@ -412,7 +424,7 @@ export function Chat() {
     const close = openChatSocket(
       chatId,
       e => {
-        if (e.type === 'message') setTick(n => n + 1)
+        if (e.type === 'message') reloadTail.current()
         /* Хаб доставляет событие и его автору (D4-08): без сравнения три точки
            «печатает» появлялись под собственным полем ввода при каждом
            нажатии клавиши. Пока свой идентификатор неизвестен — не показываем:
@@ -427,7 +439,7 @@ export function Chat() {
          истечением токена, а подпись до конца сеанса обещала «связь живая». */
       setLive,
     )
-    const poll = window.setInterval(() => setTick(n => n + 1), 30_000)
+    const poll = window.setInterval(() => reloadTail.current(), 30_000)
     return () => { close(); window.clearInterval(poll) }
   }, [chatId])
 
@@ -463,7 +475,7 @@ export function Chat() {
     try {
       await sendMessage(chatId, body)
       setText('')
-      setTick(n => n + 1)
+      reloadTail.current()
     } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
   })()
 
