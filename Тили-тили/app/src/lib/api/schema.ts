@@ -2910,6 +2910,8 @@ export interface paths {
                                 /** Format: date */
                                 weddingDate?: string | null;
                                 price?: components["schemas"]["Money"] | null;
+                                /** @description пакет, по которому бронировали; null — без пакета или пакет снят с витрины */
+                                packageName?: string | null;
                                 /** @enum {string} */
                                 state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
                                 /** Format: date-time */
@@ -5696,7 +5698,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DayXBroadcast"];
+                    };
                 };
             };
         };

@@ -12,11 +12,11 @@ import { api, ApiError, saveTokens } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { endSession, getMe, getSessions, patchMe, signOutEverywhere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
+import { deleteAllPushSubscriptions, endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
 import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
-import { devicePushState, disableDevicePush, enableDevicePush, type DevicePushState } from '@/lib/push'
+import { devicePushState, disableDevicePush, enableDevicePush, pushSupported, type DevicePushState } from '@/lib/push'
 import type { components } from '@/lib/api/schema'
 
 /** Профиль пользователя — как его отдаёт и принимает сервер. */
@@ -97,8 +97,11 @@ export function Auth() {
   /* Расхождение — не ошибка сети: галочку в этом состоянии ставить нельзя. */
   const versionMismatch = !!serverVersion && serverVersion !== LEGAL_TEXT_VERSION
   const canConsent = !!serverVersion && !versionMismatch
+  /* Отсчёт идёт и на шаге номера: 429 на «Получить код» называет срок
+     (`Retry-After`), и кнопка закрыта до него — иначе повтор уходил в тот же
+     отказ (фича 005, T017). На шаге кода — как раньше. */
   useEffect(() => {
-    if (step !== 1 || sec <= 0) return
+    if (step > 1 || sec <= 0) return
     const t = setTimeout(() => setSec(s => s - 1), 1000)
     return () => clearTimeout(t)
   }, [step, sec])
@@ -227,6 +230,9 @@ export function Auth() {
   const changePhone = (value: string) => {
     const digits = value.replace(/[^\d]/g, '').slice(0, 10)
     if (consent && phone.length === 10 && digits !== phone) setConsent(false)
+    /* Срок из 429 относится к набранному номеру (лимиты — по номеру и паре
+       номер+адрес): другой номер — другой запрос, ждать за него нечего. */
+    if (step === 0 && digits !== phone) setSec(0)
     setPhone(digits)
   }
   const openJoin = () => {
@@ -235,7 +241,7 @@ export function Auth() {
   }
   /* Вошли, но не узнали, куда идти (список свадеб не пришёл): кнопка
      повторяет только этот шаг — код из SMS уже погашен. */
-  const primaryLocked = busy || (signedIn ? false : step === 0 ? !consent || phone.length !== 10 : code.join('').length !== 4)
+  const primaryLocked = busy || (signedIn ? false : step === 0 ? !consent || phone.length !== 10 || sec > 0 : code.join('').length !== 4)
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -371,7 +377,7 @@ export function Auth() {
             className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px]', primaryLocked && 'opacity-40')}
             style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}
           >
-            {busy ? t('Секунду…') : signedIn ? t('Продолжить') : step === 0 ? t('Получить код') : t('Войти')}
+            {busy ? t('Секунду…') : signedIn ? t('Продолжить') : step === 0 ? (sec > 0 ? `${t('Получить код')} · ${mmss(sec)}` : t('Получить код')) : t('Войти')}
           </button>
         )}
       </div>
@@ -521,6 +527,28 @@ function Row({ label, value, onChange }: { label: string; value: boolean; onChan
  * это — про браузер (разрешение и подписка). Состояние берётся у самого
  * браузера, а не хранится: подписка могла исчезнуть с очисткой данных сайта.
  */
+/**
+ * Адрес подписки этого устройства — его знает только браузер. По нему сервер
+ * помечает строку списка как `mine`; нет воркера или подписки — null, и
+ * «это устройство» экран не называет.
+ */
+async function thisDeviceEndpoint(): Promise<string | null> {
+  if (!pushSupported()) return null
+  try {
+    const reg = await navigator.serviceWorker.getRegistration()
+    const sub = await reg?.pushManager.getSubscription()
+    return sub?.endpoint ?? null
+  } catch { return null }
+}
+
+/** Дата подписки словами; пусто — сервер её не прислал. */
+function subscribedSince(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' })
+}
+
 function DevicePushRow() {
   const [state, setState] = useState<DevicePushState | 'loading'>('loading')
   const [busy, setBusy] = useState(false)
@@ -530,16 +558,39 @@ function DevicePushRow() {
     void devicePushState().then(s => { if (alive) setState(s) }).catch(() => { if (alive) setState('unsupported') })
     return () => { alive = false }
   }, [])
+  /*
+   * На каких устройствах push включён — с сервера (`GET /users/me/push-subscriptions`,
+   * контракт v0.29.0): хост push-службы, дата и «это устройство». До фичи 005
+   * человек видел только тумблер этого браузера и не знал, что ноутбук в
+   * офисе продолжает получать push. Снять чужую по одной нельзя — её адрес
+   * знает только то устройство (D4-10); «снять на всех» — `DELETE` без параметра.
+   */
+  const list = useApi(() => thisDeviceEndpoint().then(getPushSubscriptions), [])
+  const [confirmAll, setConfirmAll] = useState(false)
   const toggle = () => void (async () => {
     setBusy(true)
     setErr(null)
     try {
       if (state === 'on' || state === 'unverified') { await disableDevicePush(); setState('off') } else { await enableDevicePush(); setState('on') }
+      list.reload()
     } catch (e) {
       /* Сервер без ключей отвечает 501 своим текстом — его и показываем;
          отказ браузера приходит словами из `lib/push.ts`. */
       setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так'))
     } finally { setBusy(false) }
+  })()
+  /* Снять везде: сначала подписка этого браузера (иначе он держал бы адрес,
+     о котором сервер уже не знает, — «unverified»), затем все серверные. */
+  const removeAll = () => void (async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      await disableDevicePush().catch(() => undefined)
+      await deleteAllPushSubscriptions()
+      setConfirmAll(false)
+      if (state === 'on' || state === 'unverified') setState('off')
+      list.reload()
+    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
   const text = state === 'loading' ? t('Загружаем…')
     : state === 'unsupported' ? t('Этот браузер не умеет push — уведомления остаются в приложении')
@@ -565,6 +616,24 @@ function DevicePushRow() {
       </div>
       <p className="text-[10.5px] text-[var(--soft)] mt-1">{text}</p>
       {err && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-1">{err}</p>}
+      <AsyncState q={list} />
+      {ready(list) && (
+        <div className="mt-2">
+          {(list.data ?? []).length ? (list.data ?? []).map(sub => (
+            <div key={sub.id} className="flex items-center gap-2 py-1.5 text-[11px]">
+              <MonitorSmartphone size={13} className="text-[var(--ink2)] shrink-0" />
+              <span className="flex-1 min-w-0 truncate">{sub.endpointHost ?? t('Неизвестное устройство')}</span>
+              {sub.mine && <span className="text-[9.5px] font-bold text-[var(--sage-deep)] shrink-0">{t('это устройство')}</span>}
+              <span className="text-[10px] text-[var(--soft)] shrink-0">{subscribedSince(sub.createdAt)}</span>
+            </div>
+          )) : <p className="text-[10.5px] text-[var(--soft)]">{t('Push не включён ни на одном устройстве')}</p>}
+          {!!(list.data ?? []).length && (
+            <button disabled={busy} onClick={() => (confirmAll ? removeAll() : setConfirmAll(true))} className="press text-[10.5px] font-bold text-[var(--rose-deep)] mt-1 disabled:opacity-50">
+              {confirmAll ? t('Снять на всех устройствах?') : t('Снять push на всех устройствах')}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

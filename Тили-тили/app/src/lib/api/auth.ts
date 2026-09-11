@@ -33,6 +33,22 @@ export const getSessions = () => api.get('/users/me/sessions')
 export const endSession = (sessionId: string) =>
   api.delete(url('/users/me/sessions/{sessionId}', { sessionId }))
 
+/**
+ * Push-подписки человека на всех устройствах (контракт v0.29.0, фича 005).
+ *
+ * Наружу уходит только хост push-службы и дата: полный `endpoint` — секрет
+ * устройства. `endpoint` этого устройства передаётся строкой запроса, чтобы
+ * сервер отметил его подписку как `mine`; без него «это устройство» сервер
+ * назвать не может, и экран его не называет.
+ */
+export const getPushSubscriptions = (endpoint: string | null) =>
+  api.get((endpoint
+    ? `/users/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}`
+    : '/users/me/push-subscriptions') as '/users/me/push-subscriptions')
+
+/** Снять push на ВСЕХ устройствах: пути «снять чужую по одной» в контракте нет. */
+export const deleteAllPushSubscriptions = () => api.delete('/users/me/push-subscriptions')
+
 /** Ключ sessionStorage с кодом приглашения в команду, отложенным до входа (D1-21). */
 export const JOIN_CODE_KEY = 'tt_join_code'
 

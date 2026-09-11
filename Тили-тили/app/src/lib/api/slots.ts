@@ -28,6 +28,10 @@ export interface SlotDeal {
      первом же возврате. Приходит только тому, кто видит деньги. */
   paid?: { amount?: number; currency?: string }
   paidAt?: string | null
+  /* Название пакета, по которому бронировали (контракт v0.29.0, фича 005).
+     null — бронь без пакета или пакет снят с витрины; экран сделки показывает
+     его только когда он есть. */
+  packageName?: string | null
 }
 
 export interface ServerSlot {

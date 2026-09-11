@@ -31,4 +31,6 @@ export interface Slot {
   phone?: string
   dealId?: string
   dealState?: DealState
+  /** Название пакета, по которому бронировали; нет — бронь без пакета или пакет снят с витрины. */
+  packageName?: string
 }

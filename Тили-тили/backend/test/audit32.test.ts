@@ -379,6 +379,12 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
       expect(patched.statusCode, patched.body.slice(0, 200)).toBe(200)
       expect(patched.json().packageName).toBe(`Базовый ${RUN}`)
 
+      // Кабинет подрядчика видит пакет у своей сделки (v0.29.0, `GET /vendor/deals`).
+      const cabinet = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })
+      expect(cabinet.statusCode, cabinet.body.slice(0, 200)).toBe(200)
+      const mine = (cabinet.json() as { items: { id: string; packageName: string | null }[] }).items.find((d) => d.id === dealId)
+      expect(mine?.packageName, 'кабинет подрядчика видит пакет проданной брони').toBe(`Базовый ${RUN}`)
+
       // Подрядчик снял пакет с витрины — сделка остаётся, имя пакета честно пустое.
       await sql('delete from vendor_packages where id = $1', [packageId])
       expect((await slotIn(w, 'photo')).deal!.packageName).toBeNull()

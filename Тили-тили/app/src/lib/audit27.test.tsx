@@ -17,7 +17,7 @@ import { StoreProvider, useStore } from './store'
 import { LEGAL_TEXT_VERSION } from './legal'
 import { Auth, Settings } from '@/pages/Account'
 import { Join, Team } from '@/pages/Team'
-import { Chat, PAYOUT_WARNING, Us } from '@/pages/Us'
+import { Chat, Us } from '@/pages/Us'
 import type { ChatEvent } from '@/lib/api/chats'
 
 /*
@@ -835,6 +835,12 @@ describe('D1-22: реферальный блок — есть куда ввес�
 
 /* ── D4-08 / D4-09 / D4-11 / D4-15: диалог ──────────────────────────────── */
 
+/* Текст предупреждения платформы (§18.2) — как у сервера; после фичи 005 экран
+   узнаёт запись по `system`, а не по этому тексту, и копии в `Us.tsx` больше нет. */
+const PAYOUT_WARNING =
+  'Переводы вне договора не защищены: деньги идут мимо эскроу, и вернуть их при отмене нечем. ' +
+  'Договор формируется за две минуты в карточке сделки.'
+
 type Msg = { id: string; chatId: string; senderId: string | null; text: string; sentAt: string }
 const msg = (n: number, senderId: string | null, text = `реплика ${n}`): Msg =>
   ({ id: `m${n}`, chatId: 'ch1', senderId, text, sentAt: new Date(Date.UTC(2026, 8, 1, 10, 0, n)).toISOString() })
@@ -957,20 +963,17 @@ describe('D4-15: запись без автора — системная тол�
     expect(screen.getByText('Участник вышел')).toBeTruthy()
   })
 
+  /* Фича 005 (контракт v0.29.0): системную запись сервер помечает
+     `Message.system`, экран больше не держит копию текста предупреждения и
+     не сверяет его слово в слово — признак вместо угадывания (audit32, T5).
+     Прежний тест «текст на клиенте совпадает с серверным» снят: сверять
+     нечего, `PAYOUT_WARNING` из `Us.tsx` ушёл. */
   it('предупреждение платформы без автора — системная запись (контроль)', async () => {
     const { container } = await openChat(chatRoutes('team', {
-      '/chats/ch1/messages': { items: [msg(2, null, PAYOUT_WARNING), msg(1, 'u1')], nextCursor: null },
+      '/chats/ch1/messages': { items: [{ ...msg(2, null, PAYOUT_WARNING), system: true }, msg(1, 'u1')], nextCursor: null },
     }))
     await waitFor(() => expect(container.textContent).toContain('⚠'))
     expect(screen.queryByText('Участник вышел')).toBeNull()
-  })
-
-  it('текст предупреждения на клиенте совпадает с серверным', async () => {
-    const guard = projectFile('../backend/src/chats/guard.ts')
-    const m = /export const PAYOUT_WARNING =\s*((?:'[^']*'\s*\+?\s*)+)/.exec(guard)
-    expect(m, 'PAYOUT_WARNING в backend/src/chats/guard.ts не найден').toBeTruthy()
-    const server = [...m![1]!.matchAll(/'([^']*)'/g)].map(x => x[1]).join('')
-    expect(PAYOUT_WARNING).toBe(server)
   })
 })
 

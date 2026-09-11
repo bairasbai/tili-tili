@@ -88,6 +88,13 @@ export class ApiError extends Error {
    * просить час. `null` — сервер срок не назвал.
    */
   readonly retryAfter: number | null
+  /**
+   * Подробности отказа, если сервер их назвал (`error.details`): 409
+   * `wedding_exists` несёт `weddingId` живой свадьбы — без него квиз мог
+   * только показать текст, а открыть свою свадьбу было нечем (фича 005).
+   * Берётся как есть: форму знает только конкретный код ошибки.
+   */
+  readonly details: Readonly<Record<string, unknown>>
 
   constructor(
     kind: 'network' | 'timeout' | 'http',
@@ -96,6 +103,7 @@ export class ApiError extends Error {
     message: string,
     fields: Readonly<Record<string, string>> = {},
     retryAfter: number | null = null,
+    details: Readonly<Record<string, unknown>> = {},
   ) {
     super(message)
     this.name = 'ApiError'
@@ -104,6 +112,7 @@ export class ApiError extends Error {
     this.code = code
     this.fields = fields
     this.retryAfter = retryAfter
+    this.details = details
   }
 
   /** Текст сервера про конкретное поле или `null`, если сервер поле не назвал. */
@@ -150,8 +159,9 @@ async function errorFrom(res: Response): Promise<ApiError> {
   let code = String(res.status)
   let message = `Сервер ответил ${res.status}`
   let fields: Record<string, string> = {}
+  let details: Record<string, unknown> = {}
   try {
-    const j = (await res.json()) as { error?: { code?: string; message?: string; fields?: unknown } }
+    const j = (await res.json()) as { error?: { code?: string; message?: string; fields?: unknown; details?: unknown } }
     if (j.error?.code) code = j.error.code
     if (j.error?.message) message = j.error.message
     /* Берём только строки: чужое тело с `fields: [1, 2]` не должно
@@ -162,8 +172,10 @@ async function errorFrom(res: Response): Promise<ApiError> {
         Object.entries(f as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
       )
     }
+    const d = j.error?.details
+    if (d && typeof d === 'object' && !Array.isArray(d)) details = d as Record<string, unknown>
   } catch { /* тело не JSON — оставляем сообщение по статусу */ }
-  return new ApiError('http', res.status, code, message, fields, readRetryAfter(res))
+  return new ApiError('http', res.status, code, message, fields, readRetryAfter(res), details)
 }
 
 /*
@@ -344,9 +356,12 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
 
 type PathsWith<M extends string> = { [K in keyof paths]: paths[K] extends Record<M, unknown> ? K : never }[keyof paths]
 
+/* 202 — тоже успешный ответ с телом: рассылки (`BroadcastResult`, контракт
+   v0.29.0) отвечают им, и до фичи 005 их тело приходилось называть руками. */
 type Ok<T> = T extends { responses: infer R }
   ? R extends { 200: { content: { 'application/json': infer B } } } ? B
   : R extends { 201: { content: { 'application/json': infer B } } } ? B
+  : R extends { 202: { content: { 'application/json': infer B } } } ? B
   : void
   : void
 

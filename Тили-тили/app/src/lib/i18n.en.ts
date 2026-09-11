@@ -1720,3 +1720,40 @@ Object.assign(EN, {
 Object.assign(EN, {
   'Приложение ещё устанавливается — попробуйте через несколько секунд': 'The app is still installing — try again in a few seconds',
 })
+
+/* Фича 005 (контракт v0.29.0): рассылки словами из `BroadcastResult`, день X — кому сообщить,
+   бронь отеля гостя, комментарий и телефон гостя паре, столы, выбор сделки в мастере договора,
+   закрытый чат своего подрядчика, блокировка анкеты и недоплата в кабинете, push-подписки,
+   вторая живая свадьба. */
+Object.assign(EN, {
+  'Команде ушло:': 'Sent to the team:',
+  'касается гостей:': 'guests concerned:',
+})
+Object.assign(EN, {
+  'Сдвиг принят': 'Shift accepted',
+  'План Б включён': 'Plan B is on',
+  'сообщите им сами, приложение гостям не пишет': 'tell them yourself — the app does not message guests',
+})
+Object.assign(EN, {
+  'Вы здесь': 'You are here',
+  'Перенести бронь?': 'Move your booking?',
+  'телефон записан': 'phone number on file',
+  'Название стола': 'Table name',
+  'Мест за столом': 'Seats at the table',
+  'Переименовать стол': 'Rename table',
+  'Удалить стол': 'Delete table',
+  'Договор оформляется по сделке — выберите, с кем он:': 'A contract belongs to a deal — pick who it is with:',
+  'Забронированных сделок пока нет — договор появится вместе с первой бронью.': 'No booked deals yet — a contract becomes possible with the first booking.',
+  'Подрядчик убран — переписка осталась для чтения, писать больше некому': 'The vendor was removed — the chat stays readable, there is no one left to write to',
+  'закрыт': 'closed',
+  'Анкета заблокирована модератором — в каталоге её нет, публикация закрыта': 'Profile blocked by a moderator — it is out of the catalogue and cannot be published',
+  'Анкета остаётся заблокированной — пары её не увидят, пока модератор не снимет блокировку.': 'The profile stays blocked — couples will not see it until a moderator lifts the block.',
+  'недоплата по завершённым': 'underpaid on completed deals',
+  'работа сдана, а цена не закрыта платежами — в «ожидается» не входит': 'work delivered, price not covered by payments — not part of “expected”',
+  'Пакет:': 'Package:',
+  'это устройство': 'this device',
+  'Push не включён ни на одном устройстве': 'Push is not enabled on any device',
+  'Снять push на всех устройствах': 'Remove push on all devices',
+  'Снять на всех устройствах?': 'Remove on all devices?',
+  'У вас уже есть свадьба — открываем её': 'You already have a wedding — opening it',
+})

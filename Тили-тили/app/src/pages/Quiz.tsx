@@ -8,7 +8,7 @@ import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
 import { ApiError } from '@/lib/api/client'
-import { budgetFromRange, createWedding, guestsFromRange } from '@/lib/api/wedding'
+import { budgetFromRange, createWedding, guestsFromRange, listMyWeddings } from '@/lib/api/wedding'
 
 interface Step {
   q: string
@@ -72,7 +72,7 @@ const steps: Step[] = [
 
 export default function Quiz() {
   const nav = useNavigate()
-  const { finishOnboarding, city, cityRegion, setCity, setWeddingId } = useStore()
+  const { finishOnboarding, city, cityRegion, setCity, setWeddingId, adoptWeddings } = useStore()
   const [i, setI] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string[]>>({})
   const [picker, setPicker] = useState(false)
@@ -144,6 +144,25 @@ export default function Quiz() {
       setWeddingId(id)
       nav('/home')
     } catch (e) {
+      /*
+       * 409 `wedding_exists` (контракт v0.29.0): живая свадьба уже есть —
+       * партнёр завёл её с другого устройства, или телефон её не помнил.
+       * Вторую сервер не заводит; экран открывает первую по `weddingId` из
+       * `details`, а не оставляет человека с текстом отказа на последнем
+       * шаге квиза (фича 005). Список свадеб — стору: сверка при запуске
+       * могла пройти, когда свадьбы ещё не было; не пришёл — свадьба всё
+       * равно известна из ответа, сверка остаётся какой была.
+       */
+      if (e instanceof ApiError && e.code === 'wedding_exists') {
+        const existing = typeof e.details.weddingId === 'string' ? e.details.weddingId : null
+        if (existing) {
+          setErr(t('У вас уже есть свадьба — открываем её'))
+          setWeddingId(existing)
+          try { adoptWeddings(await listMyWeddings()) } catch { /* см. выше */ }
+          nav('/home')
+          return
+        }
+      }
       setErr(e instanceof ApiError
         ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
         : t('Что-то пошло не так'))

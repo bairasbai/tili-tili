@@ -10,7 +10,7 @@ import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, remindGuests, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
-import { setBudgetTotal } from '@/lib/api/wedding'
+import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -1013,6 +1013,13 @@ interface GuestRow {
   tableId?: string | null
   /** Телефон вводит пара — по нему уходит SMS-напоминание молчащим. */
   phone?: string | null
+  /* Номер видит только пара (152-ФЗ, контракт v0.29.0): помощнику и
+     координатору приходит лишь факт «телефон записан» — его и показываем,
+     без цифр и без поля ввода (фича 005). */
+  hasPhone?: boolean
+  /* Что гость написал в RSVP. До фичи 005 писалось и нигде не читалось
+     (D3-25); приходит только паре — нет поля, нет и строки. */
+  comment?: string | null
   diet?: string | null
   dietNote?: string | null
   transfer?: string | null
@@ -1049,6 +1056,8 @@ export function Guests() {
       plus: !!g.plusOne,
       tableId: g.tableId,
       phone: g.phone,
+      hasPhone: g.hasPhone,
+      comment: g.comment,
       diet: g.diet,
       dietNote: g.dietNote,
       transfer: g.transfer,
@@ -1070,6 +1079,15 @@ export function Guests() {
   const [phoneDraft, setPhoneDraft] = useState('')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [reminded, setReminded] = useState<string | null>(null)
+  /*
+   * Своя роль — из списка свадеб, как на экране команды (D1-25). «Напомнить
+   * не ответившим» тратит SMS-лимит свадьбы, и сервер отдаёт её только паре
+   * (403 остальным, фича 005): помощнику и координатору кнопки нет — кнопка
+   * с заведомым отказом равна кнопке без действия (R-176). Пока роль едет
+   * или не пришла — на её месте состояние запроса, а не кнопка (RF-03).
+   */
+  const mine = useApi(() => listMyWeddings(), [])
+  const iAmCouple = mine.data?.find(w => w.id === weddingId)?.role === 'couple'
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
@@ -1168,11 +1186,15 @@ export function Guests() {
                     <button disabled={busyId === g.id || (phoneDraft.length !== 0 && phoneDraft.length !== PHONE_DIGITS)} onClick={() => savePhone(g)} className="press text-[10px] font-bold text-[var(--sage-deep)] disabled:opacity-50">{t('Сохранить')}</button>
                     <button onClick={() => setPhoneEdit(null)} className="press text-[10px] text-[var(--soft)]">{t('Отмена')}</button>
                   </div>
+                ) : g.phone == null && g.hasPhone ? (
+                  <span className="block text-[10px] mt-0.5 text-[var(--soft)]">{t('телефон записан')}</span>
                 ) : (
                   <button onClick={() => { setPhoneEdit(g.id); setPhoneDraft((g.phone ?? '').replace(/^\+7/, '')) }} className="press block text-[10px] mt-0.5 text-[var(--sage-deep)] tabular">
                     {g.phone ?? t('+ телефон для напоминания')}
                   </button>
                 )}
+                {/* Слова гостя из RSVP — как написал, без правки за него. */}
+                {g.comment && <p className="text-[10.5px] text-[var(--ink2)] mt-1 leading-snug italic">«{g.comment}»</p>}
                 {/* Еда и трансфер — ответы самого гостя в его форме RSVP:
                     пара их видит, но не правит за него. */}
                 {(g.diet || g.dietNote || g.transfer === 'need') && (
@@ -1243,8 +1265,10 @@ export function Guests() {
             <AiTip text={`${waiting} ${plural(waiting, t('гость ещё не ответил'), t('гостя ещё не ответили'), t('гостей ещё не ответили'))}`} onPress={() => nav('/wedding/invites')} />
             {/* Одно СМС каждому молчащему — вместо обхода списка руками.
                 Кому не уйдёт, сервер называет отдельно: без телефона и с уже
-                открытой ссылкой (новая ссылка увела бы за собой выбор гостя). */}
-            <button disabled={busyId === 'remind'} onClick={() => void write('remind', async () => {
+                открытой ссылкой (новая ссылка увела бы за собой выбор гостя).
+                Только паре — см. `mine` выше. */}
+            <AsyncState q={mine} />
+            {iAmCouple && <button disabled={busyId === 'remind'} onClick={() => void write('remind', async () => {
               /* Итог прошлой попытки убираем сразу: иначе рядом с отказом
                  висит «Отправлено: 1» и читается как успех. */
               setReminded(null)
@@ -1255,7 +1279,7 @@ export function Guests() {
               setReminded(parts.join(' · '))
             })} className="press w-full card-s py-3.5 text-[12.5px] font-semibold disabled:opacity-50">
               {busyId === 'remind' ? t('Отправляем…') : t('Напомнить не ответившим')}
-            </button>
+            </button>}
             {reminded && <p className="text-[11px] text-[var(--soft)] px-1">{reminded}</p>}
           </div>
         )}

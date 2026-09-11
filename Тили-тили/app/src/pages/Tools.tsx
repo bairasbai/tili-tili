@@ -18,7 +18,7 @@ import { chatRouteForVendor } from '@/lib/api/chats'
 import { isAuthorized } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
 import { getGuests, getWedding } from '@/lib/api/weddingData'
-import { addTable, getTables, patchGuest } from '@/lib/api/weddingWrite'
+import { addTable, deleteTable, getTables, patchGuest, patchTable } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -134,6 +134,8 @@ function DealView({ s }: { s: Slot }) {
             <div className="flex-1 min-w-0">
               <b className="font-serif-d text-[17px] block truncate">{s.vendor ?? t('Исполнитель не выбран')}</b>
               <p className="text-[11px] text-[var(--soft)]">{t(s.label)}</p>
+              {/* Пакет из брони (`Deal.packageName`, фича 005) — только когда он есть. */}
+              {s.packageName && <p className="text-[11px] text-[var(--ink2)] mt-0.5 truncate">{t('Пакет:')} {s.packageName}</p>}
             </div>
             {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
@@ -379,13 +381,22 @@ function downloadPdf(name: string, f: ContractFacts) {
 /* Мастер договора: шаблон → данные → запрос на сервер → готово */
 export function ContractWizard() {
   const nav = useNavigate()
-  const { weddingDate, weddingId, slots } = useStore()
+  const { weddingDate, weddingId, slots, slotsState, weddingsState } = useStore()
   /* Договор всегда про конкретную сделку: её идентификатор приходит из адреса
      (`?deal=`), имя исполнителя и сумма берутся из мозаики. Без сделки
      оформлять нечего — сервер принимает договор только по ней. */
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const dealId = params.get('deal')
   const slot = dealId ? slots.find(x => x.dealId === dealId) : undefined
+  /*
+   * Без `?deal=` — выбор сделки из мозаики (фича 005): мастер открывают и с
+   * экрана «Документы», а не только из карточки сделки, и «недоступно»
+   * там читалось как поломка. Предлагаются только те, по которым сервер
+   * договор примет — забронированные, с авансом и выполненные (иначе 409
+   * `not_booked`). Выбор пишется в адрес: дальше мастер работает как из
+   * карточки. Мозаика не пришла — «не знаю», а не «сделок нет».
+   */
+  const contractable = slots.filter(x => x.dealId && (x.dealState === 'booked' || x.dealState === 'paid_deposit' || x.dealState === 'done'))
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const [step, setStep] = useState(0)
   const [tpl, setTpl] = useState(0)
@@ -458,12 +469,29 @@ export function ContractWizard() {
       {/* Заказчик и город берутся из свадьбы: если она не пришла, «уточняется»
           в договоре должно сопровождаться причиной, а не молчанием. */}
       {wq.error && <p role="alert" className="px-5 mt-2 text-[12px] text-[var(--rose-ink)] leading-relaxed">{wq.error}</p>}
-      {/* Без сделки кнопка недоступна, и человек читает почему — а не жмёт
-          в пустоту. Мастер открывают из карточки сделки: там есть `?deal=`. */}
+      {/* Без сделки кнопка недоступна, и человек выбирает сделку здесь — а не
+          жмёт в пустоту (см. `contractable`). */}
       {!dealId && (
-        <p className="px-5 mt-2 text-[12px] text-[var(--rose-ink)] leading-relaxed">
-          {t('Договор оформляется по сделке — откройте мастер кнопкой «Договор» на экране сделки.')}
-        </p>
+        <div className="px-5 mt-2">
+          <p className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{t('Договор оформляется по сделке — выберите, с кем он:')}</p>
+          {slotsState === 'ready' && !contractable.length && (
+            <p className="text-[12px] text-[var(--soft)] leading-relaxed mt-1.5">{t('Забронированных сделок пока нет — договор появится вместе с первой бронью.')}</p>
+          )}
+          {slotsState === 'error' && <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed mt-1.5">{t('Сервер недоступен. Попробуйте позже')}</p>}
+          {slotsState === 'loading' && <p className="text-[12px] text-[var(--soft)] mt-1.5">{t('Загружаем…')}</p>}
+          {slotsState === 'idle' && <p className="text-[12px] text-[var(--soft)] mt-1.5">{noWeddingText(weddingsState)}</p>}
+          <div className="space-y-2 mt-2.5">
+            {contractable.map(x => (
+              <button key={x.dealId} onClick={() => setParams({ deal: x.dealId! }, { replace: true })} className="press w-full card-s p-3.5 flex items-center gap-3 text-left">
+                <div className="flex-1 min-w-0">
+                  <b className="text-[13px] block truncate">{x.vendor ?? t('Исполнитель не выбран')}</b>
+                  <p className="text-[10.5px] text-[var(--soft)]">{t(x.label)}{x.price != null ? ` · ${fmt(x.price)}` : ''}</p>
+                </div>
+                <FileText size={14} className="text-[var(--soft)] shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       {step === 0 ? (
         <div className="px-5 mt-3 space-y-2.5 stagger">
@@ -594,6 +622,38 @@ export function Seating() {
 
   const addNewTable = () => void write(() => addTable(weddingId!, `${t('Стол №')}${tables.length + 1}`, 8))
 
+  /*
+   * Переименовать, сменить вместимость, убрать стол (контракт v0.29.0,
+   * фича 005). До этого промах по «Добавить стол» жил в рассадке навсегда.
+   * Правка идёт в карточке стола, и её отказ — там же, под «Сохранить»:
+   * вместимость меньше числа посаженных сервер отклоняет 409 `table_full`
+   * своими словами. Удаление — через второй тап: гости стола уходят в
+   * «без стола» на сервере, экран после ответа перечитывает оба списка.
+   */
+  const [editId, setEditId] = useState<string | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
+  const [capDraft, setCapDraft] = useState('')
+  const [editErr, setEditErr] = useState<string | null>(null)
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const openEdit = (tb: { id: string; name: string; capacity: number }) => {
+    setEditId(tb.id); setNameDraft(tb.name); setCapDraft(String(tb.capacity)); setEditErr(null); setConfirmDel(null)
+  }
+  const saveTable = (tableId: string) => {
+    const name = nameDraft.trim()
+    const capacity = parseInt(capDraft, 10)
+    if (!name || !Number.isFinite(capacity) || capacity < 1) return
+    setEditErr(null)
+    void write(async () => {
+      try { await patchTable(weddingId!, tableId, { name, capacity }) } catch (e) { setEditErr(explainError(e)); return }
+      setEditId(null)
+    })
+  }
+  const removeTable = (tableId: string) => void write(async () => {
+    await deleteTable(weddingId!, tableId)
+    setConfirmDel(null)
+    if (editId === tableId) setEditId(null)
+  })
+
   /* Тиль раскидывает нерассаженных по свободным местам — по людям, не по
      записям: гость с +1 занимает два. Записей столько, сколько гостей:
      отдельного пути «рассадить всех» контракт не знает. */
@@ -635,10 +695,32 @@ export function Seating() {
       <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
         {tables.map(tb => (
           <div key={tb.id} onClick={() => seat(tb.id)} className={cn('card p-4 text-left fade-up transition-all', fits(tb) && 'ring-2 ring-[var(--sage)] cursor-pointer')}>
-            <div className="flex items-center justify-between">
-              <b className="font-serif-d text-[16px]">{tb.name}</b>
-              <span className="text-[9px] text-[var(--soft)] flex items-center gap-1"><Armchair size={10} /> {tb.seated}/{tb.capacity}</span>
-            </div>
+            {editId === tb.id ? (
+              /* Клики в форме не сажают выбранного гостя за этот стол. */
+              <div className="space-y-1.5" onClick={e => e.stopPropagation()}>
+                <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value.slice(0, 60))} onKeyDown={e => e.key === 'Enter' && saveTable(tb.id)} aria-label={t('Название стола')} className="w-full h-8 px-2.5 rounded-lg bg-[var(--bg)] text-[12px] font-semibold outline-none" />
+                <div className="flex items-center gap-1.5">
+                  <Armchair size={10} className="text-[var(--soft)]" />
+                  <input value={capDraft} onChange={e => setCapDraft(e.target.value.replace(/\D/g, '').slice(0, 3))} onKeyDown={e => e.key === 'Enter' && saveTable(tb.id)} inputMode="numeric" aria-label={t('Мест за столом')} className="w-12 h-7 px-2 rounded-lg bg-[var(--bg)] text-[11px] outline-none tabular" />
+                  <span className="text-[9px] text-[var(--soft)]">{t('мест')}</span>
+                  <div className="flex-1" />
+                  <button disabled={busy || !nameDraft.trim() || !parseInt(capDraft, 10)} onClick={() => saveTable(tb.id)} className="press text-[10px] font-bold text-[var(--sage-deep)] disabled:opacity-50">{t('Сохранить')}</button>
+                  <button onClick={() => setEditId(null)} className="press text-[10px] text-[var(--soft)]">{t('Отмена')}</button>
+                </div>
+                {editErr && <p role="alert" className="text-[10.5px] text-[var(--rose-ink)] leading-snug">{editErr}</p>}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-1.5">
+                <b className="font-serif-d text-[16px] truncate">{tb.name}</b>
+                <span className="text-[9px] text-[var(--soft)] flex items-center gap-1 shrink-0"><Armchair size={10} /> {tb.seated}/{tb.capacity}</span>
+                <button onClick={e => { e.stopPropagation(); openEdit(tb) }} className="press text-[10px] text-[var(--soft)] shrink-0" aria-label={t('Переименовать стол')}>✎</button>
+                {confirmDel === tb.id ? (
+                  <button disabled={busy} onClick={e => { e.stopPropagation(); removeTable(tb.id) }} className="press text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] shrink-0 disabled:opacity-50">{t('Удалить?')}</button>
+                ) : (
+                  <button onClick={e => { e.stopPropagation(); setConfirmDel(tb.id) }} className="press text-[10px] text-[var(--soft)] shrink-0" aria-label={t('Удалить стол')}>×</button>
+                )}
+              </div>
+            )}
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
                 <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5 disabled:opacity-50">

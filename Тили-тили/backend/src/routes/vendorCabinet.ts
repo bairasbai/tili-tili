@@ -260,12 +260,15 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       negotiating_until: Date | null
       paid: string
       hold_alive: boolean
+      package_name: string | null
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
               d.price::text as price, d.currency, d.state, d.negotiating_until,
               ${PAID_SUM}::text as paid,
-              (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive
+              (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
+              pkg.name as package_name
          from deals d join weddings w on w.id = d.wedding_id
+         left join vendor_packages pkg on pkg.id = d.package_id
         where d.vendor_id = $1 and w.archived_at is null
         order by d.created_at desc`,
       [vendorId],
@@ -294,6 +297,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         coupleName: r.couple_name,
         weddingDate: r.wedding_date,
         price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
+        // Что именно продано: пакет с витрины; снятый пакет — null честно (FK SET NULL).
+        packageName: r.package_name,
         state: r.state,
         /* Срок брони показывается, только пока он не вышел: истёкший снимает
          * ленивый путь на стороне пары и ежечасная задача, а кабинет до этого

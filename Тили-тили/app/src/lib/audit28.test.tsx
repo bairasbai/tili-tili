@@ -409,7 +409,9 @@ describe('D3-06 рассылки говорят правду: команда у�
     const r = await open('/wedding/logistics', 'Автобус №1')
     expect(text(r)).not.toContain('Отправить гостям точки сбора')
     fireEvent.click(screen.getByText('Сообщить команде о точках сбора'))
-    await waitFor(() => expect(text(r)).toContain('Команда уведомлена: 2'))
+    /* Фича 005: подпись называет оба числа `BroadcastResult` — «Команде ушло: N ·
+       касается гостей: M» вместо «Команда уведомлена: N» (audit32, T10). */
+    await waitFor(() => expect(text(r)).toContain('Команде ушло: 2'))
     expect(text(r)).toContain('гостям пока не доставляется')
     expect(text(r)).not.toContain('поставлены в очередь')
   })
@@ -422,7 +424,8 @@ describe('D3-06 рассылки говорят правду: команда у�
     }))
     const r = await open('/wedding/catering', 'Мясо')
     fireEvent.click(screen.getByText('Напомнить'))
-    await waitFor(() => expect(text(r)).toContain('Команда уведомлена'))
+    /* Фича 005: та же подпись из двух чисел, что у точек сбора (audit32, T10). */
+    await waitFor(() => expect(text(r)).toContain('Команде ушло'))
     expect(text(r)).not.toContain('В очереди')
   })
 })

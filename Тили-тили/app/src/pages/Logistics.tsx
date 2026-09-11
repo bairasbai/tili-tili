@@ -9,9 +9,17 @@ import { rub } from '@/lib/money'
 import { useStore } from '@/lib/store'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { getBuses, getGuests, getHotels, getMenuPoll } from '@/lib/api/weddingData'
-import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, putMenuPoll, remindMenuPoll, type MenuOptionDraft } from '@/lib/api/weddingWrite'
+import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, putMenuPoll, remindMenuPoll, type BroadcastResult, type MenuOptionDraft } from '@/lib/api/weddingWrite'
 import { shortWeddingDate } from '@/lib/weddingDate'
 
+/*
+ * Итог рассылки словами из ответа 202 (`BroadcastResult`, фича 005): скольким
+ * из команды ушло и скольких гостей касается. Число, которого сервер не
+ * назвал, — прочерк, а не ноль (R-178). Гостям не доставляется ничего — эту
+ * часть подписи каждый экран добавляет своими словами.
+ */
+const broadcastSummary = (res: BroadcastResult | undefined): string =>
+  `${t('Команде ушло:')} ${res?.notified ?? '—'} · ${t('касается гостей:')} ${res?.recipients ?? '—'}`
 
 /* ---------- ЛОГИСТИКА: автобусы + отельный блок ---------- */
 
@@ -85,14 +93,15 @@ export function Logistics() {
    * рассылки. Гостям не уходит ничего — SMS и почта не подключены, очереди
    * доставки нет. До ревью D3-06 кнопка обещала «Точки сбора поставлены в
    * очередь ✓», и пара считала, что гости всё получили. Говорим то, что
-   * сервер сделал: по `notified` из его ответа.
+   * сервер сделал: по `notified` и `recipients` из его ответа (`BroadcastResult`,
+   * контракт v0.29.0) — скольким из команды ушло и скольких гостей касается.
    */
   const notify = () => void write(async () => {
     setNotified(null)
     const res = await notifyPickup(weddingId!)
     setNotified(res?.debounced
       ? t('Команде уже сообщали меньше минуты назад — повторно не пишем.')
-      : `${t('Команда уведомлена:')} ${res?.notified ?? '—'} · ${t('гостям пока не доставляется — отправьте точки сбора сами')}`)
+      : `${broadcastSummary(res)} · ${t('гостям пока не доставляется — отправьте точки сбора сами')}`)
   })
 
   const copy = (code: string) => {
@@ -322,7 +331,7 @@ export function Catering() {
     const res = await remindMenuPoll(weddingId!)
     setReminded(res?.debounced
       ? t('Команде уже сообщали меньше минуты назад — повторно не пишем.')
-      : `${t('Команда уведомлена:')} ${res?.notified ?? '—'} · ${t('гостям пока не доставляется — напомните сами')}`)
+      : `${broadcastSummary(res)} · ${t('гостям пока не доставляется — напомните сами')}`)
   })
 
   return (

@@ -76,12 +76,12 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 |---|---|---|
 | `cities` | id int, name text, region text, district text, lat, lon, population int | PK id · IDX name (trigram, `pg_trgm`) — автокомплит с ё→е через `unaccent` |
 | `categories` | id text, title text, icon text, sort int | PK id — ровно 35 строк, seed из `data.ts` |
-| `vendors` | id uuid, user_id, category_id, city_id, name text, about text, price_from bigint, currency, years int, photo_url text, published_at, moderated_at, verified_at, rating numeric(2,1), reviews_count int, created_at | PK id · FK user_id · FK category_id · FK city_id · IDX (category_id, city_id, published_at) — выдача · IDX user_id |
+| `vendors` | id uuid, user_id, category_id, city_id, name text, about text, price_from bigint, currency, years int, photo_url text, published_at, moderated_at, verified_at, rating numeric(2,1), reviews_count int, couple_reviews_count int (фича 005: порог показа рейтинга — по отзывам пар), created_at | PK id · FK user_id · FK category_id · FK city_id · IDX (category_id, city_id, published_at) — выдача · IDX user_id |
 | `vendor_packages` | id uuid, vendor_id, name text, price bigint, currency, items jsonb, sort int | PK id · FK vendor_id · IDX vendor_id |
 | `vendor_media` | id uuid, vendor_id, kind text, url text, duration_s int, sort int | PK id · FK vendor_id · CHECK kind IN (photo, video) · CHECK duration_s ≤ 180 |
 | `vendor_busy_dates` | vendor_id, date date, source text, deal_id uuid | **PK (vendor_id, date)** — единственная строка на дату; source IN (manual, deal) |
 | `favorites` | user_id, vendor_id, created_at | PK (user_id, vendor_id) |
-| `vendor_verifications` | id uuid, vendor_id, kind text, file_url text, inn text, status text, checked_at | PK id · FK vendor_id · CHECK kind IN (passport, ip, company) · документы не публикуются никогда, публична только галочка |
+| `vendor_verifications` | id uuid, vendor_id, kind text, file_url text, inn text, status text, checked_at | PK id · FK vendor_id · CHECK kind IN (passport, ip, company) · CHECK file_url LIKE 'https://%' · UQ (vendor_id) WHERE status='pending' (фича 005) · документы не публикуются никогда, публична только галочка |
 | `concierge_requests` | id uuid, user_id, category_id, budget bigint, currency, comment text, status text, created_at | PK id · FK user_id · IDX (status, created_at) — подбор вручную, пока в городе меньше 50 анкет |
 
 ### 2.4. Команда, сделки, деньги
@@ -89,7 +89,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | Таблица | Поля | Ключи и ограничения |
 |---|---|---|
 | `slots` | id uuid, wedding_id, category_id, label text, sort int, deal_id uuid, created_at | PK id · FK wedding_id · FK category_id · IDX wedding_id · UQ deal_id (nullable) — один слот = одна сделка |
-| `deals` | id uuid, wedding_id, slot_id, vendor_id (nullable), external_name text, external_phone text, state text, price bigint, currency, negotiating_until timestamptz, booked_at, done_at, cancelled_at, cancel_reason text, created_at | PK id · FK wedding_id · FK slot_id · FK vendor_id · CHECK state IN (candidate, contacted, negotiating, booked, paid_deposit, done, cancelled) · CHECK (vendor_id IS NOT NULL) OR (external_name IS NOT NULL) · IDX (wedding_id, state) · IDX negotiating_until WHERE state='negotiating' — истечение hold |
+| `deals` | id uuid, wedding_id, slot_id, vendor_id (nullable), external_name text, external_phone text, package_id (nullable, FK vendor_packages ON DELETE SET NULL — фича 005), state text, price bigint, currency, negotiating_until timestamptz, booked_at, done_at, cancelled_at, cancel_reason text, created_at | PK id · FK wedding_id · FK slot_id · FK vendor_id · CHECK state IN (candidate, contacted, negotiating, booked, paid_deposit, done, cancelled) · CHECK (vendor_id IS NOT NULL) OR (external_name IS NOT NULL) · IDX (wedding_id, state) · IDX negotiating_until WHERE state='negotiating' — истечение hold |
 | `deal_events` | id uuid, deal_id, from_state, to_state, actor_id, note text, at | PK id · FK deal_id · IDX (deal_id, at) — история сделки на экране |
 | `payments` | id uuid, deal_id, kind text, amount bigint, currency, status text, provider_ref text, created_at | PK id · FK deal_id · CHECK kind IN (deposit, balance, refund) · IDX deal_id |
 | `idempotency_keys` | key text, user_id, route text, request_hash text, status int, body jsonb, created_at | **PK key** · IDX created_at — чистка через 24 ч |
@@ -107,7 +107,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | `timeline_events` | id uuid, wedding_id, name text, location text, starts_at, ends_at, who text, icon text, sort int | PK id · FK wedding_id · IDX (wedding_id, sort) |
 | `timeline_shifts` | id uuid, wedding_id, minutes int, actor_id, at | PK id · FK wedding_id — «+15 мин» дня X, накопительно |
 | `bus_routes` | id uuid, wedding_id, name text, pickup text, departs time, seats int, taken int | PK id · FK wedding_id · **CHECK taken BETWEEN 0 AND seats** |
-| `bus_bookings` | bus_id, guest_id, created_at | **PK (bus_id, guest_id)** · FK оба |
+| `bus_bookings` | bus_id, guest_id, persons smallint (1 или 2 — ставится триггером из guests.plus_one, фича 005), created_at | **PK (bus_id, guest_id)** · FK оба · CHECK persons BETWEEN 1 AND 2 · триггеры: `bus_bookings_persons` (BEFORE INSERT), `bus_bookings_count` (taken ± persons), `guests_plus_one_seats` (пересчёт при смене plus_one) |
 | `hotel_blocks` | id uuid, wedding_id, name text, rooms int, booked int, price bigint, currency, deadline date, promo text | PK id · FK wedding_id · **CHECK booked BETWEEN 0 AND rooms** |
 | `hotel_bookings` | hotel_id, guest_id, created_at | **PK (hotel_id, guest_id)** |
 | `menu_polls` | wedding_id, question text, sent_at | PK wedding_id · FK wedding_id |
@@ -130,13 +130,13 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 
 | Таблица | Поля | Ключи и ограничения |
 |---|---|---|
-| `chats` | id uuid, wedding_id, kind text, vendor_id, opens_at timestamptz, created_at | PK id · FK wedding_id · CHECK kind IN (vendor, team, day, tilly) · UQ (wedding_id, vendor_id) WHERE kind='vendor' |
+| `chats` | id uuid, wedding_id, kind text, vendor_id, slot_id, deal_id (фича 005: чат своего подрядчика — по сделке), opens_at timestamptz, created_at | PK id · FK wedding_id · CHECK kind IN (vendor, team, day, tilly, external, crew) · UQ (wedding_id, vendor_id) WHERE kind='vendor' · UQ (deal_id) WHERE kind='external' · CHECK (kind='external') = (deal_id IS NOT NULL) · CHECK (kind='external') = (slot_id IS NOT NULL) |
 | `chat_members` | chat_id, user_id, last_read_at | PK (chat_id, user_id) |
 | `messages` | id uuid, chat_id, sender_id, text text, attachments jsonb, created_at | PK id · FK chat_id · IDX (chat_id, created_at) |
-| `reviews` | id uuid, vendor_id, wedding_id, deal_id, source text, guest_token text, stars smallint, text text, reply text, created_at, moderated_at | PK id · FK vendor_id · CHECK source IN (couple, guest) · CHECK stars BETWEEN 1 AND 5 · **UQ deal_id** (отзыв пары — один на сделку) · **UQ (guest_token, vendor_id)** (отзыв гостя — один на подрядчика) |
+| `reviews` | id uuid, vendor_id, wedding_id, deal_id, source text, guest_token text, guest_id (nullable, FK guests ON DELETE SET NULL — фича 005), stars smallint, text text, reply text, created_at, moderated_at | PK id · FK vendor_id · CHECK source IN (couple, guest) · CHECK stars BETWEEN 1 AND 5 · **UQ deal_id** (отзыв пары — один на сделку) · **UQ (guest_id, vendor_id) WHERE guest_id IS NOT NULL** (отзыв гостя — один на подрядчика; ключ — гость, не ссылка: перевыпуск ссылки второго отзыва не даёт) |
 | `notifications` | id uuid, user_id, kind text, title text, body text, link text, read_at, created_at | PK id · FK user_id · IDX (user_id, read_at, created_at) |
 | `documents` | id uuid, deal_id, template_code text, version int, fields jsonb, file_url text, status text | PK id · FK deal_id · CHECK status IN (draft, sent, signed) |
-| `complaints` | id uuid, reporter_id, target_kind text, target_id uuid, category text, text text, status text, created_at | PK id · IDX (status, created_at) — очередь модерации |
+| `complaints` | id uuid, reporter_id, target_kind text, target_id uuid, category text, text text, status text, created_at | PK id · IDX (status, created_at) — очередь модерации · CHECK complaints_resolution_by_target (санкция применима к цели: vendor — dismiss/warn/downrank/block, review — dismiss/warn/block, message/deal — dismiss/warn; фича 005, NOT VALID до уборки старых строк — RELEASE-BLOCKERS №26) |
 | `audit_log` | id bigint, actor_id, action text, entity text, entity_id uuid, diff jsonb, at | PK id · IDX (entity, entity_id) · **только INSERT**: роли приложения нет прав на UPDATE/DELETE (План §12.4) |
 
 ### 2.8. Ограничения, исключающие гонки
@@ -147,7 +147,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 |---|---|---|
 | **Двойное бронирование даты подрядчика** | `vendor_busy_dates` PK (vendor_id, date) | Переход сделки в `booked` и INSERT в `vendor_busy_dates` — в одной транзакции. Вторая пара получает `unique_violation` → откат → 409. Ручная отметка «занято» подрядчиком — та же таблица, source = manual. Двух строк на дату не бывает в принципе (План §18.3). |
 | **Двойной резерв подарка** | `gift_reservations` PK gift_id | Резерв — INSERT, не UPDATE флага. Второй INSERT падает. Снятие резерва — DELETE только `WHERE guest_token = $1` (чужой резерв снять нельзя). Пара читает `EXISTS(SELECT 1 FROM gift_reservations WHERE gift_id=…)` — токен в ответ не попадает. |
-| **Переполнение автобуса** | CHECK `taken ≤ seats` + PK (bus_id, guest_id) | `UPDATE bus_routes SET taken = taken + 1 WHERE id = $1 AND taken < seats RETURNING id` в одной транзакции с INSERT в `bus_bookings`. Ноль строк — 409. CHECK — страховка от любого обходного пути. Гость не запишется дважды из-за PK. |
+| **Переполнение автобуса** | CHECK `taken ≤ seats` + PK (bus_id, guest_id); с фичи 005 `taken` — сумма персон (`1 + plus_one`), считает триггер по `bus_bookings.persons` | `UPDATE bus_routes SET taken = taken + 1 WHERE id = $1 AND taken < seats RETURNING id` в одной транзакции с INSERT в `bus_bookings`. Ноль строк — 409. CHECK — страховка от любого обходного пути. Гость не запишется дважды из-за PK. |
 | **Переполнение отельного блока** | То же, что автобус: CHECK `booked ≤ rooms` + PK (hotel_id, guest_id) | Идентичный паттерн. |
 | **Повторное начисление / оплата** | `idempotency_keys` PK key | Первый запрос: ключ пишется в той же транзакции, что и эффект. Повтор: SELECT по ключу → тот же статус и тело ответа, эффект не повторяется. Ключ scoped по (user_id, route) внутри `key` — чужой ключ не сработает. Для гостевых операций (взносы, резервы) — UQ на `idempotency_key` прямо в таблице взносов. |
 | **Один голос гостя за блюдо** | `menu_votes` PK guest_id | UPSERT: повтор меняет выбор, а не добавляет второй. |

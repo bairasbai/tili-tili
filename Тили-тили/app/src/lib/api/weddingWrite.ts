@@ -1,4 +1,5 @@
 import { api, newIdempotencyKey, url } from './client'
+import type { components } from './schema'
 
 /*
  * Запись данных свадьбы: чек-лист, гости, бюджет, столы, тайминг.
@@ -81,6 +82,20 @@ export const getTables = (weddingId: string) =>
 export const addTable = (weddingId: string, name: string, capacity: number) =>
   api.post(url('/weddings/{weddingId}/tables', { weddingId }), { name, capacity })
 
+/**
+ * Переименовать стол или сменить вместимость (контракт v0.29.0, фича 005).
+ *
+ * До этого промах по «Добавить стол» жил в рассадке навсегда: ни переименовать,
+ * ни убрать. Вместимость меньше числа уже посаженных — 409 `table_full`,
+ * текст сервера показывается под кнопкой.
+ */
+export const patchTable = (weddingId: string, tableId: string, patch: { name?: string; capacity?: number }) =>
+  api.patch(url('/weddings/{weddingId}/tables/{tableId}', { weddingId, tableId }), patch)
+
+/** Удалить стол: гости с него уходят в «без стола» на сервере. */
+export const deleteTable = (weddingId: string, tableId: string) =>
+  api.delete(url('/weddings/{weddingId}/tables/{tableId}', { weddingId, tableId }))
+
 /* ── Тайминг ── */
 
 export interface TimelineDraft {
@@ -147,19 +162,14 @@ export const deleteHotel = (weddingId: string, hotelId: string) =>
  * обязан говорить ровно это (ревью D3-06, R-172). `debounced` — повтор в
  * окне 30 секунд, команде второй раз не писали.
  *
- * Контракт описывает 202 без тела, сервер тело отдаёт — расхождение записано
- * в отчёт; здесь тип назван руками, как у `guestInviteLink`.
+ * С контракта v0.29.0 тело 202 описано схемой `BroadcastResult` — тип берётся
+ * оттуда, а не называется руками (фича 005).
  */
-export interface BroadcastResult {
-  broadcastId?: string
-  recipients?: number
-  notified?: number
-  debounced?: boolean
-}
+export type BroadcastResult = components['schemas']['BroadcastResult']
 
 /** Сообщить команде о точках сбора: уведомление в приложении, гостям — нет. */
 export const notifyPickup = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/logistics/notify-pickup', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() }) as Promise<BroadcastResult | undefined>
+  api.post(url('/weddings/{weddingId}/logistics/notify-pickup', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() })
 
 /* ── Опрос по меню ── */
 
@@ -175,7 +185,7 @@ export const putMenuPoll = (weddingId: string, question: string, options: MenuOp
 
 /** Напомнить о меню: уведомление команде в приложении, гостям — нет (см. `BroadcastResult`). */
 export const remindMenuPoll = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/menu-poll/remind', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() }) as Promise<BroadcastResult | undefined>
+  api.post(url('/weddings/{weddingId}/menu-poll/remind', { weddingId }), {}, { idempotencyKey: newIdempotencyKey() })
 
 /* ── Договоры ── */
 
@@ -206,9 +216,18 @@ export const remindGuests = (weddingId: string) =>
   api.post(url('/weddings/{weddingId}/guests/remind', { weddingId }), {})
 
 /**
+ * Ответ на «+15 мин» и план Б (контракт v0.29.0, фича 005).
+ *
+ * `guestsAffected` — скольких ответивших «да» гостей касается сдвиг: им
+ * сообщает команда, канала до гостей нет. Прежнее `notifiedGuests` — всегда
+ * ноль (D4-18), экран его не читает.
+ */
+export type DayXBroadcast = components['schemas']['DayXBroadcast']
+
+/**
  * Сдвинуть день X на N минут.
  *
- * Двигает все последующие блоки тайминга и рассылает команде и гостям (§19.6).
+ * Двигает все последующие блоки тайминга и уведомляет команду (§19.6).
  * Раньше кнопка «+15 мин» копила задержку в `tt_dayx` браузера: у пары число
  * росло, а команда о сдвиге не знала.
  */
@@ -216,8 +235,9 @@ export const shiftTimeline = (weddingId: string, minutes: number) =>
   api.post(url('/weddings/{weddingId}/timeline/shift', { weddingId }), { minutes }, { idempotencyKey: newIdempotencyKey() })
 
 /**
- * Включить запасной сценарий: тайминг пересобирается, команда и гости получают
- * новую точку сбора. Тоже было тумблером в браузере.
+ * Включить запасной сценарий: сценарий фиксируется, команда получает
+ * уведомление. Тоже было тумблером в браузере. Ответ — `DayXBroadcast`
+ * (v0.29.0): кого касается, чтобы команда сообщила гостям сама.
  */
 export const activatePlanB = (weddingId: string, scenario = 'rain') =>
   api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }), { scenario }, { idempotencyKey: newIdempotencyKey() })

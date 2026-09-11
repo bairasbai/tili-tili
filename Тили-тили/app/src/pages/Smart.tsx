@@ -9,7 +9,7 @@ import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getGuests, getPlanB, getSlots, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
-import { activatePlanB, setTaskDone, shiftTimeline } from '@/lib/api/weddingWrite'
+import { activatePlanB, setTaskDone, shiftTimeline, type DayXBroadcast } from '@/lib/api/weddingWrite'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { getAvailability, getCategories, getFavorites, getVendors, reviewsPendingRating } from '@/lib/api/catalog'
 import { cn, goBack, plural } from '@/lib/utils'
@@ -290,11 +290,26 @@ export function DayX() {
 
   const team = slots.filter(s => s.vendor && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
 
-  const act = (name: string, fn: () => Promise<unknown>) => void (async () => {
+  /*
+   * Чем кончилось действие — словами из ответа (`DayXBroadcast`, фича 005):
+   * скольких ответивших «да» гостей касается сдвиг или план Б. Им сообщает
+   * команда — канала до гостей нет, и `notifiedGuests` (всегда ноль, D4-18)
+   * экран не читает. Сервер числа не назвал — строки нет, а не «касается 0».
+   */
+  const [outcome, setOutcome] = useState<string | null>(null)
+  const act = (name: string, fn: () => Promise<DayXBroadcast | undefined>) => void (async () => {
     if (!weddingId) return
     setBusy(name)
     setErr(null)
-    try { await fn(); reloadTimeline(); reloadPlanB() } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
+    setOutcome(null)
+    try {
+      const res = await fn()
+      const affected = res?.guestsAffected
+      if (typeof affected === 'number') {
+        setOutcome(`${name === 'shift' ? t('Сдвиг принят') : t('План Б включён')} · ${t('касается гостей:')} ${affected} — ${t('сообщите им сами, приложение гостям не пишет')}`)
+      }
+      reloadTimeline(); reloadPlanB()
+    } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
   })()
   /*
    * Сдвиг и план Б — неповторимые действия: каждый вызов двигает все будущие
@@ -371,6 +386,7 @@ export function DayX() {
         </div>
 
         {err && <p role="alert" className="text-[12px] mt-3 text-[var(--rose-ink)]">{err}</p>}
+        {outcome && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
 
         <div className="mt-4 relative pl-6">
           <AsyncState q={q} />
@@ -433,7 +449,7 @@ export function DayX() {
               <button
                 disabled={!!busy || stale || !ready(pb)}
                 title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
-                onClick={() => (confirmPlanB ? act('planb', async () => { await activatePlanB(weddingId!); setConfirmPlanB(false) }) : setConfirmPlanB(true))}
+                onClick={() => (confirmPlanB ? act('planb', async () => { const res = await activatePlanB(weddingId!); setConfirmPlanB(false); return res }) : setConfirmPlanB(true))}
                 className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold border disabled:opacity-50', confirmPlanB ? 'bg-[var(--rose-deep)] border-[var(--rose-deep)] text-[var(--card)]' : 'border-[var(--line)]')}
               >
                 {busy === 'planb' ? t('Включаем…') : confirmPlanB ? t('Подтвердить') : t('Активировать')}

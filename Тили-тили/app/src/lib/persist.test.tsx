@@ -65,6 +65,10 @@ vi.mock('@/lib/api/auth', () => ({
     { id: 'other-1', device: 'Android \u00b7 Chrome', current: false, createdAt: '2026-08-30T10:00:00Z' },
   ].filter(x => !endedSessions.includes(x.id)),
   endSession: async (id: string) => { endedSessions.push(id) },
+  /* Фича 005: настройки читают список push-подписок с сервера (audit32, T8);
+     здесь он пуст — тесты файла про тумблеры и сессии. */
+  getPushSubscriptions: async () => [],
+  deleteAllPushSubscriptions: async () => undefined,
 }))
 
 vi.mock('@/lib/api/notifications', async (orig) => ({

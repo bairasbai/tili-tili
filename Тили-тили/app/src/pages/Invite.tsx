@@ -586,20 +586,37 @@ function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: s
   )
 }
 
-/** Отельные блоки: номер занимается так же атомарно, как место в автобусе. */
+/**
+ * Отельные блоки: номер занимается так же атомарно, как место в автобусе.
+ *
+ * Свою бронь гость видит по `HotelBlock.mine` (контракт v0.29.0): без
+ * признака он не знал, где записан, а тап по другому блоку переносил бронь
+ * молча — сервер по POST освобождает прежний номер сам (D3-15, фича 005).
+ * Теперь перенос идёт через подтверждение: первый тап показывает
+ * «Перенести бронь?», второй — отправляет. Без своей брони тап занимает
+ * номер сразу, как раньше.
+ */
 function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
   const q = useApi(() => getGuestHotels(token), [token])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /* Блок, перенос в который ждёт второго тапа. */
+  const [moveTo, setMoveTo] = useState<string | null>(null)
   const blocks = q.data ?? []
   if (q.error) return <GuestBlockError title={t('Где остановиться')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!blocks.length) return null
 
+  const booked = blocks.some(h => h.mine)
   const book = (hotelId: string) => void (async () => {
     setBusy(true)
     setErr(null)
+    setMoveTo(null)
     try { await bookHotelRoom(token, hotelId); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
+  const tap = (hotelId: string) => {
+    if (booked && moveTo !== hotelId) { setMoveTo(hotelId); return }
+    book(hotelId)
+  }
 
   return (
     <div className="px-6 mt-6 relative z-10 rv">
@@ -608,9 +625,9 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
         <div className="space-y-2 mt-3">
           {blocks.map(h => {
             const full = (h.booked ?? 0) >= (h.rooms ?? 0)
-            return (
-              <button key={h.id} disabled={busy || full} onClick={() => book(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
-                style={{ background: T.bg, color: T.ink }}>
+            const left = (h.rooms ?? 0) - (h.booked ?? 0)
+            const inner = (
+              <>
                 <div className="flex-1 min-w-0">
                   <b className="text-[12.5px] block truncate">{h.name}</b>
                   <span className="text-[10.5px] opacity-80">
@@ -618,8 +635,20 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
                   </span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">
-                  {full ? t('мест нет') : `${(h.rooms ?? 0) - (h.booked ?? 0)} ${plural((h.rooms ?? 0) - (h.booked ?? 0), t('номер'), t('номера'), t('номеров'))}`}
+                  {h.mine ? t('Вы здесь') : moveTo === h.id ? t('Перенести бронь?') : full ? t('мест нет') : `${left} ${plural(left, t('номер'), t('номера'), t('номеров'))}`}
                 </span>
+              </>
+            )
+            /* Свой блок — состояние, а не кнопка: занимать его заново нечем. */
+            if (h.mine) return (
+              <div key={h.id} className="w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+                {inner}
+              </div>
+            )
+            return (
+              <button key={h.id} disabled={busy || full} onClick={() => tap(h.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
+                style={moveTo === h.id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
+                {inner}
               </button>
             )
           })}

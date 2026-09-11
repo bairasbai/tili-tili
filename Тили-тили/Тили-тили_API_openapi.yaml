@@ -1595,6 +1595,10 @@ paths:
                         price:
                           allOf: [{ $ref: '#/components/schemas/Money' }]
                           nullable: true
+                        packageName:
+                          type: string
+                          nullable: true
+                          description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         holdUntil: { type: string, format: date-time, nullable: true }
   /vendor/updates:
@@ -2935,7 +2939,11 @@ paths:
               properties:
                 scenario: { type: string, example: rain }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DayXBroadcast' }
 
   # ───────────────────────── ВДОХНОВЕНИЕ (§8.4) ─────────────────────────
   /inspiration/likes:

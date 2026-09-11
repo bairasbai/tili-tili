@@ -103,9 +103,13 @@ export function VendorDashboard() {
             </p>
           )}
           {/* Опубликована или нет — главный факт кабинета: пока нет, заявок
-              не будет, сколько ни заполняй поля. */}
+              не будет, сколько ни заполняй поля. Заблокирована модератором
+              (`blocked`, контракт v0.29.0) — это третье состояние, а не «не
+              опубликована»: публикация ответит 409, и кнопки для неё нет (D5-23). */}
           <p className="text-[10.5px] mt-2">
-            {p?.published
+            {p?.blocked
+              ? <span role="alert" className="text-[var(--rose-ink)] font-semibold">{t('Анкета заблокирована модератором — в каталоге её нет, публикация закрыта')}</span>
+              : p?.published
               ? <span className="text-[var(--sage-deep)] font-semibold">{t('Анкета опубликована — вы в каталоге')}</span>
               : <span className="text-[var(--honey-deep)] font-semibold">{t('Анкета не опубликована — пары её не видят')}</span>}
           </p>
@@ -395,9 +399,11 @@ export function VendorProfileWizard() {
       <div className="w-20 h-20 rounded-full grad flex items-center justify-center pop"><Check size={34} className="text-white" /></div>
       {/* Публикация и правка — разные события. Опубликованной анкете «Анкета
           опубликована!» сообщает о том, чего не происходило. */}
-      <h2 className="font-serif-d text-[26px] mt-6">{p?.published ? t('Изменения сохранены') : t('Анкета опубликована!')}</h2>
+      <h2 className="font-serif-d text-[26px] mt-6">{p?.blocked || p?.published ? t('Изменения сохранены') : t('Анкета опубликована!')}</h2>
       <p className="text-[12.5px] text-[var(--soft)] mt-2.5 leading-relaxed">
-        {p?.published
+        {p?.blocked
+          ? t('Анкета остаётся заблокированной — пары её не увидят, пока модератор не снимет блокировку.')
+          : p?.published
           ? t('Пары видят анкету в новом виде — обновлять ничего не нужно.')
           : t('Вы в каталоге и в фильтре «свободен на дату». Заявки придут в кабинет.')}
       </p>
@@ -523,8 +529,12 @@ export function VendorProfileWizard() {
               {form.priceFrom ? <p className="text-[12px] mt-1.5">{t('от')} <b className="tabular">{fmt(form.priceFrom)}</b></p> : null}
               <p className="text-[11.5px] text-[var(--ink2)] mt-2 leading-relaxed">{form.about || t('Рассказа о себе пока нет')}</p>
             </div>
+            {/* Заблокированной анкете публикация закрыта (409): кнопка ниже только
+                сохраняет, а причина названа здесь, а не отказом после нажатия. */}
             <p className="text-[11px] text-[var(--soft)] leading-relaxed px-1">
-              {p?.published
+              {p?.blocked
+                ? <span role="alert" className="text-[var(--rose-ink)] font-semibold">{t('Анкета заблокирована модератором — в каталоге её нет, публикация закрыта')}</span>
+                : p?.published
                 ? t('Анкета уже опубликована. Изменения видны парам сразу после сохранения.')
                 : t('После публикации анкета появляется в каталоге сразу, модерация проверит её в течение суток.')}
             </p>
@@ -534,10 +544,10 @@ export function VendorProfileWizard() {
 
       {err && <p role="alert" className="px-5 text-[12px] text-[var(--rose-ink)]">{err}</p>}
       <div className="px-5 pt-5 space-y-2">
-        <button disabled={busy || !form} onClick={() => step === 4 ? publish() : saveAnd(() => setStep(Math.min(4, step + 1)))}
+        <button disabled={busy || !form} onClick={() => step === 4 ? (p?.blocked ? saveAnd(() => setPublishedNow(true)) : publish()) : saveAnd(() => setStep(Math.min(4, step + 1)))}
           className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2 disabled:opacity-50"
           style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {busy ? t('Сохраняем…') : step === 4 ? (p?.published ? t('Сохранить изменения') : t('Опубликовать анкету ✨')) : t('Далее')} <ChevronRight size={16} />
+          {busy ? t('Сохраняем…') : step === 4 ? (p?.blocked || p?.published ? t('Сохранить изменения') : t('Опубликовать анкету ✨')) : t('Далее')} <ChevronRight size={16} />
         </button>
         {step > 0 && <button onClick={() => setStep(step - 1)} className="press w-full h-11 rounded-full bg-[var(--bg)] text-[12.5px] font-semibold text-[var(--soft)]">{t('Назад')}</button>}
       </div>
@@ -582,6 +592,17 @@ export function VendorDeals() {
             <b className="font-serif-d text-[20px] tabular block">{active}</b>
             <span className="text-[9.5px] text-[var(--soft)]">{t('активных сделок')}</span>
           </div>
+          {/* Недоплата по завершённым (`shortfall`, контракт v0.29.0): работа сдана,
+              а цена не закрыта платежами. В «ожидается» не входит — это предмет
+              спора, а не ожидания (решение владельца, В7). Только с ответом
+              сервера: без поля строки нет, а не «0 ₽» (R-178). */}
+          {q.data?.shortfall && (
+            <div className="card-s p-4 col-span-2">
+              <b className="font-serif-d text-[20px] tabular block text-[var(--rose-deep)]">{fmt(q.data.shortfall.amount ?? 0)}</b>
+              <span className="text-[9.5px] text-[var(--soft)]">{t('недоплата по завершённым')}</span>
+              <span className="text-[9.5px] text-[var(--soft2)] block mt-0.5">{t('работа сдана, а цена не закрыта платежами — в «ожидается» не входит')}</span>
+            </div>
+          )}
         </div>
       )}
       {!items.length && ready(q) && (
@@ -597,6 +618,8 @@ export function VendorDeals() {
                 {d.weddingDate ? formatWeddingDate(d.weddingDate) : t('дата не назначена')}
                 {d.price ? <> · <b className="text-[var(--rose-deep)]">{fmt(d.price.amount ?? 0)}</b></> : null}
               </p>
+              {/* Что именно продано — пакет с витрины; без пакета строки нет. */}
+              {d.packageName && <p className="text-[10.5px] text-[var(--soft)]">{t('Пакет:')} {d.packageName}</p>}
               {/* Мягкая бронь — срок, а не подпись: до него пара может
                   подтвердить сделку, после он сгорает сам. */}
               {d.holdUntil && <p className="text-[10px] text-[var(--honey-deep)] mt-0.5">{t('держим до')} {new Date(d.holdUntil).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}

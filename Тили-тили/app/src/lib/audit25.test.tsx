@@ -251,7 +251,9 @@ describe('отмена исполнена: устройство забывает
     fireEvent.click(screen.getByText('Отменить свадьбу'))
     fireEvent.click(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам'))
 
-    await waitFor(() => expect(screen.getByRole('alert').textContent ?? '').toContain(SERVER_DOWN))
+    /* Фича 005: в настройках появился список push-подписок со своим состоянием
+       запроса — без его адреса в моке это второй `alert`; ищем свой по тексту. */
+    await waitFor(() => expect(screen.getAllByRole('alert').map(e => e.textContent ?? '').join(' | ')).toContain(SERVER_DOWN))
     expect(rememberedWedding(), 'свадьба забыта после неудавшейся отмены').toBe('w1')
     expect(screen.queryByText('Свадьба отменена')).toBeNull()
   })
@@ -273,7 +275,9 @@ describe('отмена исполнена: устройство забывает
     fireEvent.click(screen.getByText('Отменить свадьбу'))
     fireEvent.click(screen.getByText('Подтвердить отмену — брони снимутся, даты уйдут подрядчикам'))
 
-    await waitFor(() => expect(screen.getByRole('alert').textContent ?? '').toContain(SERVER_DOWN))
+    /* Фича 005: в настройках появился список push-подписок со своим состоянием
+       запроса — без его адреса в моке это второй `alert`; ищем свой по тексту. */
+    await waitFor(() => expect(screen.getAllByRole('alert').map(e => e.textContent ?? '').join(' | ')).toContain(SERVER_DOWN))
     expect(rearmed(), 'подтверждение осталось взведённым после неудачи').toBeNull()
     expect(screen.getByText('Отменить свадьбу')).toBeTruthy()
   })
