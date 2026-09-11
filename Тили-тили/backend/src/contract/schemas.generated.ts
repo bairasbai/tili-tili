@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 55. */
+ * Схем: 57. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -163,6 +163,27 @@ export const CONTRACT_SCHEMAS = {
               },
               "user": {
                   "$ref": "contract#/definitions/User"
+              }
+          }
+      },
+      "BroadcastResult": {
+          "type": "object",
+          "description": "Что сделала «рассылка гостям»: гостям доставки нет (ни SMS, ни почты\n— «Хвосты»), запись уходит в журнал рассылок и команде в приложении.\n",
+          "properties": {
+              "broadcastId": {
+                  "type": "string"
+              },
+              "recipients": {
+                  "type": "integer",
+                  "description": "скольких гостей касается (по записям/ответам)"
+              },
+              "notified": {
+                  "type": "integer",
+                  "description": "скольким членам команды ушло уведомление"
+              },
+              "debounced": {
+                  "type": "boolean",
+                  "description": "true — та же рассылка уже была недавно, повторно не отправлялась"
               }
           }
       },
@@ -355,6 +376,10 @@ export const CONTRACT_SCHEMAS = {
                   ],
                   "description": "`vendor` — пара с подрядчиком из каталога. `external` — со своим\nподрядчиком, найденным парой (§11), привязан к слоту.\n`team` — команда свадьбы: пара, помощники и ЗАБРОНИРОВАННЫЕ\nподрядчики (Бизнес-логика §3.11); в нём координатор командует\nвсеми разом. `crew` — чат исполнителей: координатор и\nзабронированные подрядчики, БЕЗ пары (решение владельца\n2026-09-03). Пара видит строку `crew` в списке — с подписью\nвместо последней реплики и нулём непрочитанных, — а на чтение\nпереписки получает 403. `tilly` — помощник, только паре.\n`day` — чат дня X, открывается накануне.\n"
               },
+              "closed": {
+                  "type": "boolean",
+                  "description": "Только у kind=external: сделка со своим подрядчиком отменена —\nпереписка остаётся паре для чтения, писать больше некому. Чат\nпривязан к сделке, не к слоту: у нового подрядчика в том же слоте\nсвой чат, и историю прежнего он не видит (фича 005, ERR-0219).\n"
+              },
               "openFrom": {
                   "type": [
                       "string",
@@ -477,6 +502,35 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "DayXBroadcast": {
+          "type": "object",
+          "description": "Ответ на «+15 мин» и активацию плана Б.",
+          "properties": {
+              "minutes": {
+                  "type": "integer",
+                  "description": "только у сдвига"
+              },
+              "shiftedBlocks": {
+                  "type": "integer",
+                  "description": "только у сдвига — сколько блоков сдвинуто"
+              },
+              "scenario": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "только у плана Б"
+              },
+              "guestsAffected": {
+                  "type": "integer",
+                  "description": "скольких гостей (ответивших «да») касается — им сообщает команда"
+              },
+              "notifiedGuests": {
+                  "type": "integer",
+                  "description": "Всегда 0: канала до гостей нет, и число под старым именем было\nчестным нулём (D4-18). Оставлено до v0.30 — читайте `guestsAffected`.\n"
+              }
+          }
+      },
       "Deal": {
           "type": "object",
           "description": "Договорённость пары с конкретным исполнителем на конкретный слот.\nНоситель состояния: у слота собственного статуса нет (решение владельца\n2026-09-02) — раньше слот, сделка и фронтенд описывали одно понятие тремя\nразными наборами значений.\n",
@@ -515,6 +569,13 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "packageName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book`). null — бронь без пакета или пакет снят с витрины.\n"
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -740,7 +801,18 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "для напоминаний по SMS; вводит пара"
+                  "description": "Для напоминаний по SMS; вводит пара. Видит только пара (152-ФЗ,\nминимизация): помощнику и координатору поле не приходит —\nу них есть `hasPhone`.\n"
+              },
+              "hasPhone": {
+                  "type": "boolean",
+                  "description": "телефон записан — для ролей, которым сам номер не показывается"
+              },
+              "comment": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Что гость написал в RSVP (`POST /join/{guestToken}`). Только паре —\nдо фичи 005 писалось и нигде не читалось (D3-25).\n"
               },
               "status": {
                   "type": "string",
@@ -849,6 +921,11 @@ export const CONTRACT_SCHEMAS = {
               },
               "promo": {
                   "type": "string"
+              },
+              "mine": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "Только в `GET /join/{guestToken}/hotels`: гость уже занял номер\nв этом блоке. Без признака гость не видел своей брони и тап по\nдругому блоку переносил её молча (D3-15).\n"
               }
           }
       },
@@ -1028,6 +1105,10 @@ export const CONTRACT_SCHEMAS = {
               "sentAt": {
                   "type": "string",
                   "format": "date-time"
+              },
+              "system": {
+                  "type": "boolean",
+                  "description": "Системная запись (сдвиг тайминга, перенос даты, «участник вышел»)\n— не реплика человека. Экран рисует её по признаку, а не угадывает\nпо тексту (D4-15). У ответа Тиль и реплик своего подрядчика — false.\n"
               },
               "warning": {
                   "type": [
@@ -1564,6 +1645,10 @@ export const CONTRACT_SCHEMAS = {
                           "type": "boolean",
                           "description": "Прошла ли пост-модерацию. Публикация мгновенная, проверка идёт следом."
                       },
+                      "blocked": {
+                          "type": "boolean",
+                          "description": "Анкета заблокирована модератором по жалобе (`block`). Только\nвладельцу: в каталоге её нет, публикация отвечает 409, и\nкабинет обязан сказать почему, а не показывать «не опубликована»\nс кнопкой, которая не сработает (D5-23).\n"
+                      },
                       "gallery": {
                           "type": "array",
                           "description": "Ссылки на фотографии — совместимость с прежней формой ответа.",
@@ -2020,6 +2105,10 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "tz": {
+                  "type": "string",
+                  "description": "Часовой пояс места свадьбы. Гость считает «свадьба уже прошла»\n(окно отзыва) по нему, а не по поясу своего телефона (D3-18).\n"
               }
           }
       },
@@ -2078,6 +2167,7 @@ export type ContractSchemaName =
   | "AdminMetrics"
   | "AlbumPhoto"
   | "AuthTokens"
+  | "BroadcastResult"
   | "Budget"
   | "BudgetItem"
   | "BusRoute"
@@ -2089,6 +2179,7 @@ export type ContractSchemaName =
   | "CityRef"
   | "Complaint"
   | "ComplaintDecision"
+  | "DayXBroadcast"
   | "Deal"
   | "DealState"
   | "Document"

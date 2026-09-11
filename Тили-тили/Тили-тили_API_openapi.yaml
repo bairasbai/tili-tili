@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.28.0
+  version: 0.29.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -69,6 +69,12 @@ paths:
         успешной проверке кода. Пароля в продукте нет (экран /auth во фронте).
         Ответ одинаков и для нового, и для известного номера — иначе по нему
         можно перебором узнать, зарегистрирован ли человек.
+
+        Лимиты выдачи кода (фича 005): по паре «номер + адрес» — 3 в час, по
+        номеру — 10 в час и 30 в сутки, по адресу — как прежде. Каждый 429
+        несёт `Retry-After` в секундах. Чужой номер пятью запросами больше
+        не закрыть: посторонний с одного адреса упирается в свой лимит, а
+        владелец номера с другого адреса код получает.
       requestBody:
         required: true
         content:
@@ -97,6 +103,13 @@ paths:
       tags: [auth]
       security: []
       summary: Обменять код на токены
+      description: |
+        Аккаунт, удалённый через `DELETE /users/me` не больше 30 дней назад,
+        при входе тем же номером восстанавливается: `deleted_at` снимается,
+        в журнал аудита пишется `user.restored`, данные на месте. Отозванное
+        при удалении согласие даётся заново — ответ несёт `consentRequired`
+        как у нового аккаунта. Старше 30 дней строка уже стёрта уборкой, и
+        вход заводит новый аккаунт (фича 005, В2).
       requestBody:
         required: true
         content:
@@ -206,6 +219,14 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Wedding' }
+        '409':
+          description: |
+            `wedding_exists` — у пары уже есть живая свадьба (не отменена и
+            не в архиве); вторая заводится только после её отмены или
+            завершения. Тело ошибки несёт `weddingId` существующей в `details`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}:
     get:
       tags: [weddings]
@@ -961,6 +982,48 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Table' }
 
+  /weddings/{weddingId}/tables/{tableId}:
+    patch:
+      tags: [guests]
+      summary: Переименовать стол или изменить вместимость
+      description: |
+        До фичи 005 стол нельзя было ни переименовать, ни убрать — промах по
+        «Добавить стол» оставался навсегда. Вместимость меньше числа уже
+        посаженных — 409 `table_full`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: tableId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                capacity: { type: integer, minimum: 1, maximum: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Table' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [guests]
+      summary: Удалить стол
+      description: 'Гости стола остаются в списке без стола (tableId становится null).'
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: tableId, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Удалён }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ───────────────────────── GUEST RSVP (публично) ─────────────────────────
   /rsvp/{guestToken}:
     get:
@@ -1023,6 +1086,10 @@ paths:
       description: |
         Одно СМС каждому, кто не ответил на приглашение и у кого есть телефон.
         Раньше пара обходила список руками — на полусотне гостей это вечер.
+
+        **Только паре** (фича 005): рассылка тратит SMS-лимит свадьбы,
+        помощнику и координатору — 403. Телефоны гостей видит тоже только
+        пара — остальным в `Guest` приходит `hasPhone`.
 
         **Кому не уходит и почему.** Гостю, чья личная ссылка уже открыта,
         напоминание отсюда не идёт: новая ссылка гасит его токен, а вместе с
@@ -1437,7 +1504,14 @@ paths:
               required: [action]
               properties:
                 action: { type: string, enum: [reply, hold, decline, reopen] }
-                text: { type: string, description: 'для action=reply' }
+                text:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                  description: |
+                    Текст ответа паре — обязателен при `action=reply` (без него 422),
+                    у остальных действий не принимается. Уходит первым сообщением
+                    в чат пары с подрядчиком.
       responses:
         '200':
           description: OK
@@ -1496,7 +1570,15 @@ paths:
               schema:
                 type: object
                 properties:
-                  expected: { $ref: '#/components/schemas/Money' }
+                  expected:
+                    allOf: [{ $ref: '#/components/schemas/Money' }]
+                    description: 'остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус платежи'
+                  shortfall:
+                    allOf: [{ $ref: '#/components/schemas/Money' }]
+                    description: |
+                      Недоплата по ЗАВЕРШЁННЫМ (done) сделкам: работа сдана, а
+                      цена не закрыта платежами. В «ожидается» не входит — это
+                      предмет спора, а не ожидания (решение владельца, В7).
                   items:
                     type: array
                     items:
@@ -2103,13 +2185,22 @@ paths:
     post:
       tags: [logistics]
       summary: Разослать точки сбора записавшимся гостям
-      description: Массовая рассылка идёт через очередь; повторный вызов с тем же Idempotency-Key не дублирует push.
+      description: |
+        Гостям доставки нет (ни SMS, ни почты — «Хвосты»): рассылка пишется в
+        журнал и уведомляет команду в приложении. Тело ответа говорит, что
+        именно сделано, — `recipients` это кого касается, `notified` —
+        скольким членам команды ушло. Повторный вызов с тем же
+        Idempotency-Key рассылку не дублирует.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       responses:
-        '202': { description: Принято в очередь }
+        '202':
+          description: Принято
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BroadcastResult' }
   /join/{guestToken}/shuttle:
     get:
       tags: [logistics-guest]
@@ -2192,6 +2283,10 @@ paths:
                       Отзыв принимается только после дня свадьбы. Без даты гость
                       заполнил бы форму и получил отказ там, где сказать нужно
                       было заранее.
+                  tz:
+                    type: string
+                    example: Europe/Moscow
+                    description: 'пояс места свадьбы — «день прошёл» считается по нему, не по телефону гостя'
                   vendors:
                     type: array
                     items:
@@ -2271,12 +2366,19 @@ paths:
     post:
       tags: [catering]
       summary: Напомнить не выбравшим блюдо
+      description: |
+        Гостям доставки нет: напоминание уходит команде в приложении, чтобы
+        она добрала голоса сама. Тело — что сделано (см. `BroadcastResult`).
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       responses:
-        '202': { description: Принято в очередь }
+        '202':
+          description: Принято
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BroadcastResult' }
   /join/{guestToken}/menu-vote:
     get:
       tags: [logistics-guest]
@@ -2522,6 +2624,32 @@ paths:
         - { name: endpoint, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
         '204': { description: OK }
+    get:
+      tags: [notifications]
+      summary: Мои push-подписки
+      description: |
+        Экран «Настройки» показывает, на скольких устройствах включён push,
+        и может снять чужое. Адрес подписки — секрет устройства: наружу
+        уходит только его хост, полный `endpoint` — нет.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: endpoint, in: query, required: false, schema: { type: string, maxLength: 2048 }, description: 'адрес подписки этого устройства — чтобы отметить её как mine' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    endpointHost: { type: string, description: 'хост push-службы (fcm.googleapis.com, web.push.apple.com…)' }
+                    createdAt: { type: string, format: date-time }
+                    mine:
+                      type: boolean
+                      description: 'подписка этого устройства — сверяется с endpoint в query'
   /users/me/referral:
     get:
       tags: [auth]
@@ -2745,7 +2873,11 @@ paths:
               properties:
                 minutes: { type: integer, example: 15 }
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DayXBroadcast' }
   /weddings/{weddingId}/planb:
     get:
       tags: [timeline]
@@ -3721,6 +3853,12 @@ components:
         venue: { type: string, nullable: true }
         dressCode: { type: string, nullable: true, description: 'идентификатор палитры — гость видит её в приглашении' }
         dressNote: { type: string, nullable: true }
+        tz:
+          type: string
+          example: Europe/Moscow
+          description: |
+            Часовой пояс места свадьбы. Гость считает «свадьба уже прошла»
+            (окно отзыва) по нему, а не по поясу своего телефона (D3-18).
     CancelResult:
       type: object
       description: |
@@ -3834,6 +3972,13 @@ components:
             moderated:
               type: boolean
               description: 'Прошла ли пост-модерацию. Публикация мгновенная, проверка идёт следом.'
+            blocked:
+              type: boolean
+              description: |
+                Анкета заблокирована модератором по жалобе (`block`). Только
+                владельцу: в каталоге её нет, публикация отвечает 409, и
+                кабинет обязан сказать почему, а не показывать «не опубликована»
+                с кнопкой, которая не сработает (D5-23).
             gallery:
               type: array
               description: Ссылки на фотографии — совместимость с прежней формой ответа.
@@ -3993,7 +4138,20 @@ components:
         name: { type: string }
         plusOne: { type: boolean }
         group: { type: string, nullable: true }
-        phone: { type: string, nullable: true, description: 'для напоминаний по SMS; вводит пара' }
+        phone:
+          type: string
+          nullable: true
+          description: |
+            Для напоминаний по SMS; вводит пара. Видит только пара (152-ФЗ,
+            минимизация): помощнику и координатору поле не приходит —
+            у них есть `hasPhone`.
+        hasPhone: { type: boolean, description: 'телефон записан — для ролей, которым сам номер не показывается' }
+        comment:
+          type: string
+          nullable: true
+          description: |
+            Что гость написал в RSVP (`POST /join/{guestToken}`). Только паре —
+            до фичи 005 писалось и нигде не читалось (D3-25).
         status: { type: string, enum: [yes, no, pending] }
         tableId: { type: string, nullable: true }
         diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other], description: 'RSVP+ — ограничения по еде' }
@@ -4051,6 +4209,13 @@ components:
             вместо последней реплики и нулём непрочитанных, — а на чтение
             переписки получает 403. `tilly` — помощник, только паре.
             `day` — чат дня X, открывается накануне.
+        closed:
+          type: boolean
+          description: |
+            Только у kind=external: сделка со своим подрядчиком отменена —
+            переписка остаётся паре для чтения, писать больше некому. Чат
+            привязан к сделке, не к слоту: у нового подрядчика в том же слоте
+            свой чат, и историю прежнего он не видит (фича 005, ERR-0219).
         openFrom:
           type: string
           format: date-time
@@ -4077,6 +4242,12 @@ components:
         text: { type: string }
         attachmentUrl: { type: string, nullable: true }
         sentAt: { type: string, format: date-time }
+        system:
+          type: boolean
+          description: |
+            Системная запись (сдвиг тайминга, перенос даты, «участник вышел»)
+            — не реплика человека. Экран рисует её по признаку, а не угадывает
+            по тексту (D4-15). У ответа Тиль и реплик своего подрядчика — false.
         warning:
           type: string
           nullable: true
@@ -4174,6 +4345,12 @@ components:
           description: null у своего подрядчика не из каталога (§11)
         externalName: { type: string, nullable: true, description: имя своего подрядчика }
         externalPhone: { type: string, nullable: true }
+        packageName:
+          type: string
+          nullable: true
+          description: |
+            Название пакета, по которому бронировали (`packageId` в
+            `POST …/book`). null — бронь без пакета или пакет снят с витрины.
         price: { $ref: '#/components/schemas/Money' }
         paid:
           allOf: [{ $ref: '#/components/schemas/Money' }]
@@ -4256,6 +4433,41 @@ components:
         price: { $ref: '#/components/schemas/Money' }
         deadline: { type: string, format: date }
         promo: { type: string }
+        mine:
+          type: boolean
+          readOnly: true
+          description: |
+            Только в `GET /join/{guestToken}/hotels`: гость уже занял номер
+            в этом блоке. Без признака гость не видел своей брони и тап по
+            другому блоку переносил её молча (D3-15).
+    BroadcastResult:
+      type: object
+      description: |
+        Что сделала «рассылка гостям»: гостям доставки нет (ни SMS, ни почты
+        — «Хвосты»), запись уходит в журнал рассылок и команде в приложении.
+      properties:
+        broadcastId: { type: string }
+        recipients: { type: integer, description: 'скольких гостей касается (по записям/ответам)' }
+        notified: { type: integer, description: 'скольким членам команды ушло уведомление' }
+        debounced:
+          type: boolean
+          description: 'true — та же рассылка уже была недавно, повторно не отправлялась'
+    DayXBroadcast:
+      type: object
+      description: Ответ на «+15 мин» и активацию плана Б.
+      properties:
+        minutes: { type: integer, description: 'только у сдвига' }
+        shiftedBlocks: { type: integer, description: 'только у сдвига — сколько блоков сдвинуто' }
+        scenario: { type: string, nullable: true, description: 'только у плана Б' }
+        guestsAffected:
+          type: integer
+          description: 'скольких гостей (ответивших «да») касается — им сообщает команда'
+        notifiedGuests:
+          type: integer
+          deprecated: true
+          description: |
+            Всегда 0: канала до гостей нет, и число под старым именем было
+            честным нулём (D4-18). Оставлено до v0.30 — читайте `guestsAffected`.
     MenuPoll:
       type: object
       required: [options]

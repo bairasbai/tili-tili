@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.28.0).
- * Операций: 157. Путей: 119. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.29.0).
+ * Операций: 160. Путей: 120. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -90,6 +90,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/users/me/consent","url":"/users/me/consent","operationId":null,"summary":"Зафиксировать согласие на обработку персональных данных","tag":"auth"},
   {"method":"GET","openapi":"/users/me/export","url":"/users/me/export","operationId":null,"summary":"Экспорт моих данных","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Отписаться от push","tag":"notifications"},
+  {"method":"GET","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Мои push-подписки","tag":"notifications"},
   {"method":"POST","openapi":"/users/me/push-subscriptions","url":"/users/me/push-subscriptions","operationId":null,"summary":"Зарегистрировать подписку Web Push","tag":"notifications"},
   {"method":"GET","openapi":"/users/me/referral","url":"/users/me/referral","operationId":null,"summary":"Мой реферальный код и начисления","tag":"auth"},
   {"method":"DELETE","openapi":"/users/me/sessions","url":"/users/me/sessions","operationId":null,"summary":"Выйти со всех устройств, кроме текущего","tag":"auth"},
@@ -160,6 +161,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/pay","url":"/weddings/:weddingId/slots/:slotId/pay","operationId":null,"summary":"Оплата слота (доплата/полная)","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Рассадка (столы + гости)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Добавить стол","tag":"guests"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/tables/{tableId}","url":"/weddings/:weddingId/tables/:tableId","operationId":null,"summary":"Удалить стол","tag":"guests"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/tables/{tableId}","url":"/weddings/:weddingId/tables/:tableId","operationId":null,"summary":"Переименовать стол или изменить вместимость","tag":"guests"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Чек-лист (шаблонные + свои задачи)","tag":"tasks"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tasks","url":"/weddings/:weddingId/tasks","operationId":null,"summary":"Своя задача","tag":"tasks"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Удалить свою задачу","tag":"tasks"},

@@ -19,6 +19,12 @@ export interface paths {
          *     успешной проверке кода. Пароля в продукте нет (экран /auth во фронте).
          *     Ответ одинаков и для нового, и для известного номера — иначе по нему
          *     можно перебором узнать, зарегистрирован ли человек.
+         *
+         *     Лимиты выдачи кода (фича 005): по паре «номер + адрес» — 3 в час, по
+         *     номеру — 10 в час и 30 в сутки, по адресу — как прежде. Каждый 429
+         *     несёт `Retry-After` в секундах. Чужой номер пятью запросами больше
+         *     не закрыть: посторонний с одного адреса упирается в свой лимит, а
+         *     владелец номера с другого адреса код получает.
          */
         post: {
             parameters: {
@@ -85,7 +91,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Обменять код на токены */
+        /**
+         * Обменять код на токены
+         * @description Аккаунт, удалённый через `DELETE /users/me` не больше 30 дней назад,
+         *     при входе тем же номером восстанавливается: `deleted_at` снимается,
+         *     в журнал аудита пишется `user.restored`, данные на месте. Отозванное
+         *     при удалении согласие даётся заново — ответ несёт `consentRequired`
+         *     как у нового аккаунта. Старше 30 дней строка уже стёрта уборкой, и
+         *     вход заводит новый аккаунт (фича 005, В2).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -290,6 +304,19 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Wedding"];
+                    };
+                };
+                /**
+                 * @description `wedding_exists` — у пары уже есть живая свадьба (не отменена и
+                 *     не в архиве); вторая заводится только после её отмены или
+                 *     завершения. Тело ошибки несёт `weddingId` существующей в `details`.
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -1752,6 +1779,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/tables/{tableId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить стол
+         * @description Гости стола остаются в списке без стола (tableId становится null).
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    tableId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Удалён */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /**
+         * Переименовать стол или изменить вместимость
+         * @description До фичи 005 стол нельзя было ни переименовать, ни убрать — промах по
+         *     «Добавить стол» оставался навсегда. Вместимость меньше числа уже
+         *     посаженных — 409 `table_full`.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    tableId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name?: string;
+                        capacity?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Table"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
+    };
     "/rsvp/{guestToken}": {
         parameters: {
             query?: never;
@@ -1848,6 +1954,10 @@ export interface paths {
          * Напомнить гостям, которые не ответили
          * @description Одно СМС каждому, кто не ответил на приглашение и у кого есть телефон.
          *     Раньше пара обходила список руками — на полусотне гостей это вечер.
+         *
+         *     **Только паре** (фича 005): рассылка тратит SMS-лимит свадьбы,
+         *     помощнику и координатору — 403. Телефоны гостей видит тоже только
+         *     пара — остальным в `Guest` приходит `hasPhone`.
          *
          *     **Кому не уходит и почему.** Гостю, чья личная ссылка уже открыта,
          *     напоминание отсюда не идёт: новая ссылка гасит его токен, а вместе с
@@ -2641,7 +2751,11 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         action: "reply" | "hold" | "decline" | "reopen";
-                        /** @description для action=reply */
+                        /**
+                         * @description Текст ответа паре — обязателен при `action=reply` (без него 422),
+                         *     у остальных действий не принимается. Уходит первым сообщением
+                         *     в чат пары с подрядчиком.
+                         */
                         text?: string;
                     };
                 };
@@ -2773,7 +2887,14 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус платежи */
                             expected?: components["schemas"]["Money"];
+                            /**
+                             * @description Недоплата по ЗАВЕРШЁННЫМ (done) сделкам: работа сдана, а
+                             *     цена не закрыта платежами. В «ожидается» не входит — это
+                             *     предмет спора, а не ожидания (решение владельца, В7).
+                             */
+                            shortfall?: components["schemas"]["Money"];
                             items?: {
                                 id?: string;
                                 coupleName?: string;
@@ -4019,7 +4140,11 @@ export interface paths {
         put?: never;
         /**
          * Разослать точки сбора записавшимся гостям
-         * @description Массовая рассылка идёт через очередь; повторный вызов с тем же Idempotency-Key не дублирует push.
+         * @description Гостям доставки нет (ни SMS, ни почты — «Хвосты»): рассылка пишется в
+         *     журнал и уведомляет команду в приложении. Тело ответа говорит, что
+         *     именно сделано, — `recipients` это кого касается, `notified` —
+         *     скольким членам команды ушло. Повторный вызов с тем же
+         *     Idempotency-Key рассылку не дублирует.
          */
         post: {
             parameters: {
@@ -4034,12 +4159,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Принято в очередь */
+                /** @description Принято */
                 202: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BroadcastResult"];
+                    };
                 };
             };
         };
@@ -4203,6 +4330,11 @@ export interface paths {
                              *     было заранее.
                              */
                             weddingDate?: string | null;
+                            /**
+                             * @description пояс места свадьбы — «день прошёл» считается по нему, не по телефону гостя
+                             * @example Europe/Moscow
+                             */
+                            tz?: string;
                             vendors?: {
                                 vendorId?: string;
                                 name?: string;
@@ -4382,7 +4514,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Напомнить не выбравшим блюдо */
+        /**
+         * Напомнить не выбравшим блюдо
+         * @description Гостям доставки нет: напоминание уходит команде в приложении, чтобы
+         *     она добрала голоса сама. Тело — что сделано (см. `BroadcastResult`).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -4396,12 +4532,14 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Принято в очередь */
+                /** @description Принято */
                 202: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["BroadcastResult"];
+                    };
                 };
             };
         };
@@ -4896,7 +5034,43 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Мои push-подписки
+         * @description Экран «Настройки» показывает, на скольких устройствах включён push,
+         *     и может снять чужое. Адрес подписки — секрет устройства: наружу
+         *     уходит только его хост, полный `endpoint` — нет.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description адрес подписки этого устройства — чтобы отметить её как mine */
+                    endpoint?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: string;
+                            /** @description хост push-службы (fcm.googleapis.com, web.push.apple.com…) */
+                            endpointHost?: string;
+                            /** Format: date-time */
+                            createdAt?: string;
+                            /** @description подписка этого устройства — сверяется с endpoint в query */
+                            mine?: boolean;
+                        }[];
+                    };
+                };
+            };
+        };
         put?: never;
         /**
          * Зарегистрировать подписку Web Push
@@ -5412,7 +5586,9 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["DayXBroadcast"];
+                    };
                 };
             };
         };
@@ -6933,6 +7109,12 @@ export interface components {
             /** @description идентификатор палитры — гость видит её в приглашении */
             dressCode?: string | null;
             dressNote?: string | null;
+            /**
+             * @description Часовой пояс места свадьбы. Гость считает «свадьба уже прошла»
+             *     (окно отзыва) по нему, а не по поясу своего телефона (D3-18).
+             * @example Europe/Moscow
+             */
+            tz?: string;
         };
         /**
          * @description Чем кончился вызов отмены. Отмена свадьбы — решение обоих партнёров,
@@ -7030,6 +7212,13 @@ export interface components {
             published?: boolean;
             /** @description Прошла ли пост-модерацию. Публикация мгновенная, проверка идёт следом. */
             moderated?: boolean;
+            /**
+             * @description Анкета заблокирована модератором по жалобе (`block`). Только
+             *     владельцу: в каталоге её нет, публикация отвечает 409, и
+             *     кабинет обязан сказать почему, а не показывать «не опубликована»
+             *     с кнопкой, которая не сработает (D5-23).
+             */
+            blocked?: boolean;
             /** @description Ссылки на фотографии — совместимость с прежней формой ответа. */
             gallery?: string[];
             media?: {
@@ -7158,8 +7347,19 @@ export interface components {
             name?: string;
             plusOne?: boolean;
             group?: string | null;
-            /** @description для напоминаний по SMS; вводит пара */
+            /**
+             * @description Для напоминаний по SMS; вводит пара. Видит только пара (152-ФЗ,
+             *     минимизация): помощнику и координатору поле не приходит —
+             *     у них есть `hasPhone`.
+             */
             phone?: string | null;
+            /** @description телефон записан — для ролей, которым сам номер не показывается */
+            hasPhone?: boolean;
+            /**
+             * @description Что гость написал в RSVP (`POST /join/{guestToken}`). Только паре —
+             *     до фичи 005 писалось и нигде не читалось (D3-25).
+             */
+            comment?: string | null;
             /** @enum {string} */
             status?: "yes" | "no" | "pending";
             tableId?: string | null;
@@ -7229,6 +7429,13 @@ export interface components {
              */
             kind?: "vendor" | "team" | "day" | "tilly" | "external" | "crew";
             /**
+             * @description Только у kind=external: сделка со своим подрядчиком отменена —
+             *     переписка остаётся паре для чтения, писать больше некому. Чат
+             *     привязан к сделке, не к слоту: у нового подрядчика в том же слоте
+             *     свой чат, и историю прежнего он не видит (фича 005, ERR-0219).
+             */
+            closed?: boolean;
+            /**
              * Format: date-time
              * @description Только у kind=day: 09:00 НАКАНУНЕ свадьбы по Wedding.tz. Чат
              *     существует с момента создания свадьбы и до этого срока виден,
@@ -7247,6 +7454,12 @@ export interface components {
             attachmentUrl?: string | null;
             /** Format: date-time */
             sentAt?: string;
+            /**
+             * @description Системная запись (сдвиг тайминга, перенос даты, «участник вышел»)
+             *     — не реплика человека. Экран рисует её по признаку, а не угадывает
+             *     по тексту (D4-15). У ответа Тиль и реплик своего подрядчика — false.
+             */
+            system?: boolean;
             /**
              * @description Мягкое предупреждение о выводе сделки мимо платформы (§18.2):
              *     сообщение ДОСТАВЛЕНО, но обе стороны видят плашку и системную
@@ -7341,6 +7554,11 @@ export interface components {
             /** @description имя своего подрядчика */
             externalName?: string | null;
             externalPhone?: string | null;
+            /**
+             * @description Название пакета, по которому бронировали (`packageId` в
+             *     `POST …/book`). null — бронь без пакета или пакет снят с витрины.
+             */
+            packageName?: string | null;
             price?: components["schemas"]["Money"];
             /**
              * @description Сколько уже внесено по этой сделке: платежи `deposit` и `balance`
@@ -7426,6 +7644,42 @@ export interface components {
             /** Format: date */
             deadline?: string;
             promo?: string;
+            /**
+             * @description Только в `GET /join/{guestToken}/hotels`: гость уже занял номер
+             *     в этом блоке. Без признака гость не видел своей брони и тап по
+             *     другому блоку переносил её молча (D3-15).
+             */
+            readonly mine?: boolean;
+        };
+        /**
+         * @description Что сделала «рассылка гостям»: гостям доставки нет (ни SMS, ни почты
+         *     — «Хвосты»), запись уходит в журнал рассылок и команде в приложении.
+         */
+        BroadcastResult: {
+            broadcastId?: string;
+            /** @description скольких гостей касается (по записям/ответам) */
+            recipients?: number;
+            /** @description скольким членам команды ушло уведомление */
+            notified?: number;
+            /** @description true — та же рассылка уже была недавно, повторно не отправлялась */
+            debounced?: boolean;
+        };
+        /** @description Ответ на «+15 мин» и активацию плана Б. */
+        DayXBroadcast: {
+            /** @description только у сдвига */
+            minutes?: number;
+            /** @description только у сдвига — сколько блоков сдвинуто */
+            shiftedBlocks?: number;
+            /** @description только у плана Б */
+            scenario?: string | null;
+            /** @description скольких гостей (ответивших «да») касается — им сообщает команда */
+            guestsAffected?: number;
+            /**
+             * @deprecated
+             * @description Всегда 0: канала до гостей нет, и число под старым именем было
+             *     честным нулём (D4-18). Оставлено до v0.30 — читайте `guestsAffected`.
+             */
+            notifiedGuests?: number;
         };
         MenuPoll: {
             question?: string;
