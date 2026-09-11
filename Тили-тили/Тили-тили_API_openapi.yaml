@@ -1346,6 +1346,7 @@ paths:
                 type: object
                 properties:
                   status: { type: string, enum: [moderation, live] }
+        '409': { $ref: '#/components/responses/Conflict' }
   /vendor/calendar:
     get:
       tags: [vendor]

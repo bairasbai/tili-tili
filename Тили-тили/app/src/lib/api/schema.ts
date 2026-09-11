@@ -2464,6 +2464,7 @@ export interface paths {
                         };
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
