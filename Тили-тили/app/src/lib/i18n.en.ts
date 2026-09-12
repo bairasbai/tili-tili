@@ -1794,3 +1794,33 @@ Object.assign(EN, {
   'Это ваша анкета': 'This is your profile',
   'Редактировать': 'Edit',
 })
+
+/* Фича 008 «Импорт гостей списком, заявка консьержу, деталь задачи» (контракт v0.31.0): панель «Добавить
+   списком» с предпросмотром, форма консьержа при пустой выдаче, раскрываемая строка задачи. */
+Object.assign(EN, {
+  'Добавить списком': 'Add as a list',
+  'Список гостей': 'Guest list',
+  'Каждый гость — с новой строки. В строке через запятую: имя, телефон, +1': 'One guest per line. Within a line, comma-separated: name, phone, +1',
+  'Например: Анна Петрова, +7 917 000-11-22, +1': 'For example: Anna Petrova, +7 917 000-11-22, +1',
+  'нет имени': 'no name',
+  'телефон не распознан': 'phone not recognised',
+  'уже в списке': 'already on the list',
+  'За раз — не больше 300 гостей: разделите список': 'No more than 300 guests at a time — split the list',
+  'Добавлено': 'Added',
+  'пропущено': 'skipped',
+  'Добавляем…': 'Adding…',
+  'Снять отметку': 'Unmark as done',
+  'Отметить выполненной': 'Mark as done',
+  'Срок:': 'Due:',
+  'дата свадьбы не задана': 'wedding date not set',
+  'Название задачи': 'Task title',
+  'Переименовать': 'Rename',
+  'Удаляем…': 'Deleting…',
+  'Оставить заявку консьержу': 'Ask the concierge',
+  'Заявка консьержу': 'Concierge request',
+  'Бюджет и пожелания — необязательно, но с ними подбор точнее': 'Budget and wishes are optional, but they make the search more precise',
+  'Бюджет, ₽': 'Budget, ₽',
+  'Комментарий': 'Comment',
+  'Что важно: стиль, пожелания, сроки': 'What matters: style, wishes, timing',
+  'Заявка принята — свяжемся в течение суток': 'Request received — we will get in touch within 24 hours',
+})

@@ -25,6 +25,17 @@ export const setTaskDone = (weddingId: string, taskId: string, done: boolean) =>
 export const deleteTask = (weddingId: string, taskId: string) =>
   api.delete(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }))
 
+/**
+ * Переименовать задачу (фича 008, деталь задачи).
+ *
+ * `PATCH { title }` в контракте был с самого начала, а экран умел только
+ * ставить галочку: опечатка в своей задаче жила до удаления. Шаблонные
+ * задачи сервер переименовывать тоже даёт — удалять их нельзя (409
+ * `system_task`), поэтому у них «Переименовать» есть, а «Удалить» нет.
+ */
+export const renameTask = (weddingId: string, taskId: string, title: string) =>
+  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), { title })
+
 /* ── Гости ── */
 
 export interface GuestDraft {
@@ -59,6 +70,22 @@ export const patchGuest = (
 
 export const deleteGuest = (weddingId: string, guestId: string) =>
   api.delete(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }))
+
+/** Одна строка вставленного списка гостей — уже разобранная экраном (`lib/guestsImport.ts`). */
+export type GuestImportRow = { name: string; phone?: string; plusOne?: boolean; group?: string }
+
+/**
+ * Завести гостей списком (контракт v0.31.0, фича 008).
+ *
+ * Один запрос на весь список, до 300 строк: сервер заводит их одной
+ * транзакцией под замком свадьбы, сам приводит телефон к `+7…` и сам решает,
+ * что дубликат — по имени без регистра и пробелов или по телефону, с уже
+ * заведёнными гостями и с более ранней строкой того же списка. Пропущенные
+ * приходят в `skipped` с причиной; итог на экране — только из этого ответа,
+ * не из предпросмотра (инвариант §5.13).
+ */
+export const importGuests = (weddingId: string, guests: GuestImportRow[]) =>
+  api.post(url('/weddings/{weddingId}/guests/import', { weddingId }), { guests })
 
 /* ── Бюджет ── */
 

@@ -1,6 +1,6 @@
 import { createElement, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck } from 'lucide-react'
+import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
@@ -9,7 +9,8 @@ import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/wed
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, putTimeline, remindGuests, setTaskDone, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
@@ -616,6 +617,9 @@ export function Budget() {
 }
 
 /* Чек-лист */
+/** Подпись периода задачи: ключ словаря — русская строка (R-07); незнакомый период — как пришёл. */
+const PERIOD_LABEL: Record<string, string> = { '9': 'За 9 мес', '6': 'За 6 мес', '3': 'За 3 мес', '1': 'За 1 мес' }
+
 export function Checklist() {
   const { weddingId, weddingDate } = useStore()
   const [period, setPeriod] = useState('9')
@@ -629,8 +633,19 @@ export function Checklist() {
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  /* Ошибка помнит, чьё действие её вызвало: у раскрытой задачи она стоит под
+     строкой, остальные — внизу списка (фича 008). */
+  const [err, setErr] = useState<{ id: string; text: string } | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  /*
+   * Деталь задачи (фича 008, План §20.1 экран 12 — «внутри»): тап по названию
+   * раскрывает строку — срок, период, «Переименовать», «Удалить». Отдельного
+   * маршрута нет: заметок у задачи в контракте нет, и экран из двух строк не
+   * стоит перехода. Галочка при этом осталась галочкой — своей кнопкой слева.
+   */
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
   /* Поля контракта опциональны — приводим один раз здесь, чтобы дальше по
      экрану не тащить `?? ''` в каждом сравнении. */
   /* Срок считает сервер от даты свадьбы. Пока даты нет, срока нет ни у одной
@@ -649,17 +664,24 @@ export function Checklist() {
   const write = async (fn: () => Promise<unknown>, id: string) => {
     /* Без свадьбы записывать некуда — и молчать об этом нельзя: кнопка, которая
        ничего не делает и ничего не говорит, читается как поломка. */
-    if (!weddingId) { setErr(t('Сначала создайте свадьбу — задачи живут в ней')); return }
+    if (!weddingId) { setErr({ id, text: t('Сначала создайте свадьбу — задачи живут в ней') }); return }
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+    try { await fn(); q.reload() } catch (e) { setErr({ id, text: explainError(e) }) } finally { setBusyId(null) }
   }
   const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
-  /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт, и
-     крестика у них нет. */
+  /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт (409
+     `system_task`), и кнопки у них нет — кнопка с заведомым отказом равна
+     кнопке без действия (R-176). Переименовать даёт любую. */
   const removeTask = (id: string) => void write(async () => {
     await deleteTask(weddingId!, id)
     setConfirmDel(null)
+  }, id)
+  const rename = (id: string) => void write(async () => {
+    const title = draft.trim()
+    if (!title) return
+    await renameTask(weddingId!, id, title)
+    setRenaming(null)
   }, id)
   const addTask = () => void write(async () => {
     if (!title.trim()) return
@@ -734,30 +756,59 @@ export function Checklist() {
         <div className="card px-4 py-1.5">
           {list.map((task, i) => {
             const isDone = done.includes(task.id)
+            const open = openId === task.id
             return (
-              <div key={task.id} className={cn('flex items-center gap-1', i !== list.length - 1 && 'border-b border-[var(--track)]')}>
-                <button disabled={busyId === task.id} onClick={() => toggle(task.id, isDone)} className="flex-1 flex items-center gap-3 py-3.5 text-left disabled:opacity-60">
-                  <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
-                    isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[var(--line)] text-[var(--rose-deep)] font-bold text-[11px]')}>
-                    {isDone ? '✓' : i + 1}
-                  </span>
-                  <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
-                  {/* Точка «важный срок» убрана: признака срочности в контракте
-                      нет, и все точки были одного цвета при подписи о двух. */}
-                  {task.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(task.due)}</span>}
-                </button>
-                {/* Крестик — отдельной кнопкой рядом, а не внутри строки:
-                    кнопка внутри кнопки невалидна и нажимается не везде. */}
-                {task.custom && (
-                  confirmDel === task.id
-                    ? <button disabled={busyId === task.id} onClick={() => removeTask(task.id)} className="press text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--rose-deep)] text-[var(--card)] shrink-0 disabled:opacity-50">{t('Удалить?')}</button>
-                    : <button onClick={() => setConfirmDel(task.id)} className="press text-[var(--soft)] text-[13px] px-1.5 shrink-0" aria-label={t('Удалить задачу')}>×</button>
+              <div key={task.id} className={cn(i !== list.length - 1 && 'border-b border-[var(--track)]')}>
+                <div className="flex items-center gap-1">
+                  {/* Галочка и название — две кнопки, а не одна: кнопка внутри
+                      кнопки невалидна, а тап по названию теперь раскрывает
+                      строку, не отмечает задачу. */}
+                  <button disabled={busyId === task.id} onClick={() => toggle(task.id, isDone)} aria-label={isDone ? t('Снять отметку') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
+                    <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
+                      isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[var(--line)] text-[var(--rose-deep)] font-bold text-[11px]')}>
+                      {isDone ? '✓' : i + 1}
+                    </span>
+                  </button>
+                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
+                    <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
+                    {/* Точка «важный срок» убрана: признака срочности в контракте
+                        нет, и все точки были одного цвета при подписи о двух. */}
+                    {task.due && <span className="text-[10.5px] text-[var(--soft)] tabular shrink-0">{shortWeddingDate(task.due)}</span>}
+                  </button>
+                </div>
+                {open && (
+                  <div className="pb-3.5 pl-9 fade-up">
+                    {/* Срок считает сервер от даты свадьбы; без даты его нет ни у
+                        одной задачи — и это говорится словами, не пустотой. */}
+                    <p className="text-[11px] text-[var(--soft)]">
+                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('дата свадьбы не задана')} · {t(PERIOD_LABEL[task.period] ?? task.period)}
+                    </p>
+                    {renaming === task.id ? (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && rename(task.id)} aria-label={t('Название задачи')}
+                          className="flex-1 min-w-0 h-9 px-3 rounded-lg bg-[var(--bg)] text-[12.5px] outline-none" />
+                        <button disabled={busyId === task.id || !draft.trim()} onClick={() => rename(task.id)} className="press text-[11px] font-bold text-[var(--sage-deep)] disabled:opacity-50">{busyId === task.id ? t('Сохраняем…') : t('Сохранить')}</button>
+                        <button onClick={() => setRenaming(null)} className="press text-[11px] text-[var(--soft)]">{t('Отмена')}</button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => { setRenaming(task.id); setDraft(task.title); setConfirmDel(null) }} className="press text-[11px] font-semibold px-3 py-1.5 rounded-full bg-[var(--bg)]">{t('Переименовать')}</button>
+                        {task.custom && (
+                          confirmDel === task.id
+                            ? <button disabled={busyId === task.id} onClick={() => removeTask(task.id)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{busyId === task.id ? t('Удаляем…') : t('Удалить?')}</button>
+                            : <button onClick={() => setConfirmDel(task.id)} className="press text-[11px] font-semibold px-3 py-1.5 rounded-full bg-[var(--bg)] text-[var(--rose-ink)]">{t('Удалить')}</button>
+                        )}
+                      </div>
+                    )}
+                    {err?.id === task.id && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2 leading-relaxed">{err.text}</p>}
+                  </div>
                 )}
               </div>
             )
           })}
         </div>
-        {err && <p className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err}</p>}
+        {/* Ошибка раскрытой задачи стоит под её строкой; остальные — здесь. */}
+        {err && err.id !== openId && <p className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err.text}</p>}
       </div>
     </div>
   )
@@ -1028,6 +1079,9 @@ interface GuestRow {
 /** Ровно десять цифр после +7 — так контракт описывает телефон. */
 const PHONE_DIGITS = 10
 
+/** Потолок одного импорта — `maxItems` контракта: больше сервер отвечает 422 без имён. */
+const IMPORT_MAX = 300
+
 /** Подписи ограничений по еде: ключ словаря — русская строка (R-07). */
 const DIET_LABEL: Record<string, string> = {
   vegetarian: 'вегетарианец',
@@ -1080,6 +1134,49 @@ export function Guests() {
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [reminded, setReminded] = useState<string | null>(null)
   /*
+   * Списком (фича 008, экран 29). На свадьбе в сотню гостей заводить их по
+   * одному — час работы, а список у пары уже есть: заметки, таблица, чат.
+   * Разбор — на клиенте (`lib/guestsImport.ts`), предпросмотр без запроса;
+   * уходит один `POST …/guests/import` только с чистыми строками. Итог —
+   * из ответа сервера, не из предпросмотра: что дубликат, решает он
+   * (инвариант §5.13). Отказ — его словами, здесь же, под кнопкой.
+   */
+  const [bulk, setBulk] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+  const [bulkErr, setBulkErr] = useState<string | null>(null)
+  const [bulkResult, setBulkResult] = useState<{ created: number; skipped: { name: string; reason: 'duplicate' | 'invalid' }[] } | null>(null)
+  /* Пометка «уже в списке» — тем же правилом, что у сервера: имя без регистра
+     и пробелов, телефон как `+7…`. Повтор внутри вставленного текста — тоже
+     дубликат, сервер завёл бы лишь первого. Список не пришёл — пометок нет,
+     дедупликацию сделает сервер и назовёт её в `skipped`. */
+  const preview = useMemo(() => {
+    const names = new Set(list.map(g => guestNameKey(g.name)))
+    const phones = new Set(list.map(g => g.phone).filter((p): p is string => !!p))
+    return parseGuestList(bulkText).map(row => {
+      const phone = row.phone ? normalizeRuPhone(row.phone) : null
+      const dup = !row.error && (names.has(guestNameKey(row.name)) || (!!phone && phones.has(phone)))
+      if (!row.error && !dup) { names.add(guestNameKey(row.name)); if (phone) phones.add(phone) }
+      return { ...row, dup }
+    })
+  }, [bulkText, list])
+  const clean = preview.filter(r => !r.error && !r.dup)
+  const importList = async () => {
+    /* Без свадьбы записывать некуда — те же слова, что у добавления одного. */
+    if (!weddingId) { setBulkErr(t('Сначала создайте свадьбу — гости живут в ней')); return }
+    setBusyId('import')
+    setBulkErr(null)
+    setBulkResult(null)
+    try {
+      const rows: GuestImportRow[] = clean.map(r => ({ name: r.name, ...(r.phone ? { phone: r.phone } : {}), ...(r.plusOne ? { plusOne: true } : {}) }))
+      const res = await importGuests(weddingId, rows)
+      /* 201 без тела — не «добавлено 0»: итог без ответа не называем. */
+      if (!res) throw new Error('пустой ответ')
+      setBulkResult({ created: res.created.length, skipped: res.skipped })
+      setBulkText('')
+      q.reload()
+    } catch (e) { setBulkErr(explainError(e)) } finally { setBusyId(null) }
+  }
+  /*
    * Своя роль — из списка свадеб, как на экране команды (D1-25). «Напомнить
    * не ответившим» тратит SMS-лимит свадьбы, и сервер отдаёт её только паре
    * (403 остальным, фича 005): помощнику и координатору кнопки нет — кнопка
@@ -1127,11 +1224,57 @@ export function Guests() {
           подтвердили» при отказе читается как «нам никто не ответил». */}
       <TopBar back title={t('Гости')} sub={ready(q) ? `${list.length}${t(' в списке · ')}${yes}${t(' подтвердили')}` : undefined} right={
         <div className="flex gap-2">
-          <button onClick={() => setAdding(!adding)} className="press h-10 w-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить гостя')}><Plus size={16} /></button>
+          <button onClick={() => { setAdding(!adding); setBulk(false) }} className="press h-10 w-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить гостя')}><Plus size={16} /></button>
+          {/* Списком — рядом с добавлением одного: одна панель за раз. */}
+          <button onClick={() => { setBulk(!bulk); setAdding(false) }} className={cn('press h-10 w-10 rounded-full flex items-center justify-center', bulk ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить списком')} title={t('Добавить списком')}><ListPlus size={16} /></button>
           <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} />{t('Пригласить')}</button>
         </div>
       } />
       <AsyncState q={q} />
+      {bulk && (
+        <div className="px-5 mt-3 fade-up">
+          <div className="card p-4 space-y-2.5">
+            <p className="text-[12.5px] font-semibold">{t('Добавить списком')}</p>
+            <textarea autoFocus value={bulkText} onChange={e => setBulkText(e.target.value)} rows={5} aria-label={t('Список гостей')}
+              placeholder={t('Каждый гость — с новой строки. В строке через запятую: имя, телефон, +1')}
+              className="w-full rounded-2xl bg-[var(--bg)] px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] resize-y" />
+            <p className="text-[10.5px] text-[var(--soft2)]">{t('Например: Анна Петрова, +7 917 000-11-22, +1')}</p>
+            {/* Предпросмотр: строка с ошибкой показывается как написана, чтобы
+                было видно, что именно не разобралось. */}
+            {preview.length > 0 && (
+              <ul className="space-y-1">
+                {preview.map(r => (
+                  <li key={r.index} className="flex items-center gap-2 text-[12px]">
+                    <span className={cn('flex-1 min-w-0 truncate', (r.error || r.dup) && 'text-[var(--soft)]')}>
+                      {r.error ? r.raw : [r.name, r.phone, r.plusOne ? t('с +1') : null].filter(Boolean).join(' · ')}
+                    </span>
+                    {r.error === 'name' && <span className="text-[10px] font-bold text-[var(--rose-ink)] shrink-0">{t('нет имени')}</span>}
+                    {r.error === 'phone' && <span className="text-[10px] font-bold text-[var(--rose-ink)] shrink-0">{t('телефон не распознан')}</span>}
+                    {r.dup && <span className="text-[10px] font-bold text-[var(--honey-ink)] shrink-0">{t('уже в списке')}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {clean.length > IMPORT_MAX && <p className="text-[11px] text-[var(--rose-ink)]">{t('За раз — не больше 300 гостей: разделите список')}</p>}
+            {bulkErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed">{bulkErr}</p>}
+            {bulkResult && (
+              <div className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
+                <p className="font-semibold">{t('Добавлено')} {bulkResult.created} · {t('пропущено')} {bulkResult.skipped.length}</p>
+                {bulkResult.skipped.map((s, i) => (
+                  <p key={i} className="text-[var(--soft)]">{s.name} — {s.reason === 'duplicate' ? t('уже в списке') : t('телефон не распознан')}</p>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <div className="flex-1" />
+              <button onClick={() => setBulk(false)} className="press px-4 py-2 text-[12px] font-semibold text-[var(--soft)]">{t('Закрыть')}</button>
+              <button disabled={busyId === 'import' || clean.length === 0 || clean.length > IMPORT_MAX} onClick={() => void importList()} className="press px-5 py-2 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">
+                {busyId === 'import' ? t('Добавляем…') : `${t('Добавить')} ${clean.length} ${plural(clean.length, t('гостя'), t('гостей'), t('гостей'))}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {adding && (
         <div className="px-5 mt-3 fade-up">
           <div className="card p-4 space-y-2.5">

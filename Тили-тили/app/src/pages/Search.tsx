@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
-import { fmt } from '@/lib/money'
+import { fmt, rub } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
-import { getAvailability, getCategories, getVendors, getVendor, reviewsPendingRating, type Vendor, type VendorFilters } from '@/lib/api/catalog'
+import { getAvailability, getCategories, getVendors, getVendor, requestConcierge, reviewsPendingRating, type Vendor, type VendorFilters } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
@@ -14,6 +14,7 @@ import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
 import { cn, copyText, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
+import { isAuthorized } from '@/lib/api/client'
 import { t } from '@/lib/i18n'
 
 /* Каталог категорий */
@@ -137,6 +138,31 @@ export function VendorList() {
   const [more, setMore] = useState<{ key: string; items: Vendor[]; next: string | null }>({ key: '', items: [], next: null })
   const [moreBusy, setMoreBusy] = useState(false)
   const [moreErr, setMoreErr] = useState<string | null>(null)
+  /*
+   * Заявка консьержу (План §18.12, фича 008, экран 18). Пока анкет в городе
+   * мало, пустая выдача честно предлагает подбор руками за сутки: путь
+   * `POST /catalog/concierge` был в контракте, а экрана к нему не было —
+   * пустая категория предлагала лишь спросить Тиля. Состояние привязано к
+   * категории: экран один на все `/search/:catId`, и принятая заявка
+   * фотографа не должна закрывать форму декоратору. После 201 форма закрыта,
+   * вместо кнопки — итог: второе нажатие было бы второй заявкой и 409.
+   */
+  const [concierge, setConcierge] = useState<{ cat: string; step: 'closed' | 'open' | 'sent'; budget: string; comment: string }>({ cat: '', step: 'closed', budget: '', comment: '' })
+  const cz = concierge.cat === catId ? concierge : { cat: catId, step: 'closed' as const, budget: '', comment: '' }
+  const setCz = (patch: Partial<typeof cz>) => setConcierge({ ...cz, ...patch })
+  const [czBusy, setCzBusy] = useState(false)
+  const [czErr, setCzErr] = useState<string | null>(null)
+  const sendConcierge = async () => {
+    setCzBusy(true)
+    setCzErr(null)
+    try {
+      /* Бюджет вводится целыми рублями, уходит копейками (`Money`, инвариант §5.7). */
+      const budget = cz.budget ? rub(Number(cz.budget)) : undefined
+      const comment = cz.comment.trim()
+      await requestConcierge(catId, { ...(budget !== undefined ? { budget } : {}), ...(comment ? { comment } : {}), ...(city ? { city } : {}) })
+      setCz({ step: 'sent' })
+    } catch (e) { setCzErr(explainError(e)) } finally { setCzBusy(false) }
+  }
   const tail = more.key === pageKey ? more : null
   const nextCursor = tail ? tail.next : (list.data?.nextCursor ?? null)
   const shown = [...(list.data?.items ?? []), ...(tail?.items ?? [])]
@@ -221,6 +247,32 @@ export function VendorList() {
           <div className="text-center py-10 fade-up">
             <b className="text-[14px]">{t('Под фильтр никто не подходит')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Смягчите условия — или спросите Тиля, он расширит поиск')}</p>
+            {/* Только вошедшему: путь требует токен, кнопка с заведомым 401
+                равна кнопке без действия (R-176). Слова итога — ровно те, что
+                обещает контракт: подбор вручную, ответ в течение суток. */}
+            {isAuthorized() && (
+              cz.step === 'sent' ? (
+                <p className="text-[12px] font-semibold text-[var(--sage-deep)] mt-4">{t('Заявка принята — свяжемся в течение суток')}</p>
+              ) : cz.step === 'open' ? (
+                <div className="card p-4 mt-4 text-left space-y-2.5">
+                  <p className="text-[12.5px] font-semibold">{t('Заявка консьержу')}</p>
+                  <p className="text-[11px] text-[var(--soft)]">{t('Бюджет и пожелания — необязательно, но с ними подбор точнее')}</p>
+                  <div className="flex items-center gap-2 h-11 px-4 rounded-full bg-[var(--bg)]">
+                    <input value={cz.budget} onChange={e => setCz({ budget: e.target.value.replace(/\D/g, '').slice(0, 9) })} inputMode="numeric" aria-label={t('Бюджет, ₽')} placeholder={t('Бюджет, ₽')} className="flex-1 bg-transparent text-[13px] outline-none tabular" />
+                    <span className="text-[13px] text-[var(--soft)]">₽</span>
+                  </div>
+                  <textarea value={cz.comment} onChange={e => setCz({ comment: e.target.value })} maxLength={2000} rows={3} aria-label={t('Комментарий')} placeholder={t('Что важно: стиль, пожелания, сроки')}
+                    className="w-full rounded-2xl bg-[var(--bg)] px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] resize-y" />
+                  {czErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed">{czErr}</p>}
+                  <div className="flex gap-2.5">
+                    <button onClick={() => setCz({ step: 'closed' })} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
+                    <button disabled={czBusy} onClick={() => void sendConcierge()} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{czBusy ? t('Отправляем…') : t('Отправить')}</button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setCz({ step: 'open' })} className="press mt-4 px-6 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Оставить заявку консьержу')}</button>
+              )
+            )}
           </div>
         )}
       </div>

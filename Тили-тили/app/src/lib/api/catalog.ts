@@ -89,6 +89,25 @@ export function getVendors(f: VendorFilters) {
 export const getVendor = (vendorId: string) =>
   api.get(url('/catalog/vendors/{vendorId}', { vendorId }))
 
+/**
+ * Заявка консьержу при пустой выдаче (План §18.12, фича 008).
+ *
+ * Путь был в контракте с самого начала, а экрана к нему не было: пустая
+ * категория предлагала только «спросить Тиля». Бюджет — в копейках, как
+ * везде (`rub()` на экране); город — город поиска из стора, сервер сам его
+ * не выводит и без него заявка лежит без города. Вторая заявка по той же
+ * категории, пока первая в работе, — 409 `concierge_pending` словами сервера.
+ * Ответ 201 без тела: экран говорит ровно то, что обещает контракт —
+ * «свяжемся в течение суток», и ничего сверх.
+ */
+export const requestConcierge = (categoryId: string, draft: { budget?: number; comment?: string; city?: string }) =>
+  api.post('/catalog/concierge', {
+    categoryId,
+    ...(draft.budget !== undefined ? { budget: { amount: draft.budget, currency: 'RUB' } } : {}),
+    ...(draft.comment ? { comment: draft.comment } : {}),
+    ...(draft.city ? { city: draft.city } : {}),
+  })
+
 export const getFavorites = () => api.get('/me/favorites')
 
 export const addFavorite = (vendorId: string) =>
