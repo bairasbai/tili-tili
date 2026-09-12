@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.32.0
+  version: 0.33.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1382,7 +1382,17 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '423': { $ref: '#/components/responses/Locked' }
-        '429': { $ref: '#/components/responses/QuotaExceeded' }
+        '429':
+          description: |
+            Предел исчерпан: `cold_outreach_limit` — непроверенный подрядчик начал
+            за день больше переписок, чем разрешено (§18.2); `tilly_daily_limit` —
+            пара задала Тилю за сутки (по поясу свадьбы) больше реплик, чем
+            `Chat.tilly.limitPerDay` (План §18: 50 в день). Заголовка Retry-After
+            нет — счётчик сбрасывается в полночь по поясу места, и экран говорит
+            это словами сервера. Реплика не сохраняется.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /chats/{chatId}/ws:
     get:
       tags: [chats]
@@ -3841,8 +3851,9 @@ paths:
       summary: Дашборд платформы
       description: |
         Регистрации, свадьбы, опубликованные анкеты, размер очередей, просроченные
-        жалобы, сделки, оборот и готовность города к запуску (≥50 анкет).
-        Стоимости LLM и заполненности анкет здесь нет: сервер их не считает,
+        жалобы, сделки, оборот, готовность города к запуску (≥50 анкет) и расход
+        Тиля на модель за 30 дней (`llm`, фича 010 — из учёта вызовов
+        `tilly_usage`). Заполненности анкет здесь нет: сервер её не считает,
         а ноль вместо «не знаем» — обещание за код (R-174).
       security: [{ bearerAuth: [] }]
       responses:
@@ -4475,6 +4486,21 @@ components:
             но закрыт (423) — иначе в списке чатов до дня X была бы пустота
             вместо строки «откроется 13 июня». Дату перенесли — срок едет
             вместе с ней.
+        tilly:
+          type: object
+          description: |
+            Только у kind=tilly (фича 010). `live` — за Тилем стоит языковая
+            модель (провайдер настроен); false — он отвечает честной заглушкой
+            «Тиль пока без ИИ», и экран говорит это словами. `usedToday` —
+            сколько реплик пара уже отправила Тилю за сутки по поясу свадьбы,
+            `limitPerDay` — предел (План §18: 50); на пределе POST отвечает
+            429 `tilly_daily_limit`. Числа считает сервер — экран их не
+            досчитывает и без ответа не показывает.
+          required: [live, usedToday, limitPerDay]
+          properties:
+            live: { type: boolean }
+            usedToday: { type: integer, minimum: 0 }
+            limitPerDay: { type: integer, minimum: 1 }
     Message:
       type: object
       properties:
@@ -5071,6 +5097,22 @@ components:
               city: { type: string }
               vendors: { type: integer }
               launchReady: { type: boolean, description: 'город готов к запуску — анкет 50 и больше' }
+        llm:
+          type: object
+          description: |
+            Расход Тиля на языковую модель за последние 30 дней — по строкам
+            учёта `tilly_usage` (одна на каждый вызов, фича 010). `calls` —
+            все обращения, включая отказы провайдера и ответы заглушкой;
+            `answered` — сколько из них ответила модель; токены — только по
+            ответам модели. Стоимость в рублях сервер не считает: цены у
+            провайдеров и моделей разные и меняются — владелец умножает сам.
+          required: [since, calls, answered, inputTokens, outputTokens]
+          properties:
+            since: { type: string, format: date-time, description: 'начало окна — 30 дней назад' }
+            calls: { type: integer, minimum: 0 }
+            answered: { type: integer, minimum: 0 }
+            inputTokens: { type: integer, minimum: 0 }
+            outputTokens: { type: integer, minimum: 0 }
     WeddingSupportCard:
       type: object
       description: |

@@ -127,6 +127,40 @@ export const CONTRACT_SCHEMAS = {
                           }
                       }
                   }
+              },
+              "llm": {
+                  "type": "object",
+                  "description": "Расход Тиля на языковую модель за последние 30 дней — по строкам\nучёта `tilly_usage` (одна на каждый вызов, фича 010). `calls` —\nвсе обращения, включая отказы провайдера и ответы заглушкой;\n`answered` — сколько из них ответила модель; токены — только по\nответам модели. Стоимость в рублях сервер не считает: цены у\nпровайдеров и моделей разные и меняются — владелец умножает сам.\n",
+                  "required": [
+                      "since",
+                      "calls",
+                      "answered",
+                      "inputTokens",
+                      "outputTokens"
+                  ],
+                  "properties": {
+                      "since": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "начало окна — 30 дней назад"
+                      },
+                      "calls": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "answered": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                      }
+                  }
               }
           }
       },
@@ -408,6 +442,28 @@ export const CONTRACT_SCHEMAS = {
                   ],
                   "format": "date-time",
                   "description": "Только у kind=day: 09:00 НАКАНУНЕ свадьбы по Wedding.tz. Чат\nсуществует с момента создания свадьбы и до этого срока виден,\nно закрыт (423) — иначе в списке чатов до дня X была бы пустота\nвместо строки «откроется 13 июня». Дату перенесли — срок едет\nвместе с ней.\n"
+              },
+              "tilly": {
+                  "type": "object",
+                  "description": "Только у kind=tilly (фича 010). `live` — за Тилем стоит языковая\nмодель (провайдер настроен); false — он отвечает честной заглушкой\n«Тиль пока без ИИ», и экран говорит это словами. `usedToday` —\nсколько реплик пара уже отправила Тилю за сутки по поясу свадьбы,\n`limitPerDay` — предел (План §18: 50); на пределе POST отвечает\n429 `tilly_daily_limit`. Числа считает сервер — экран их не\nдосчитывает и без ответа не показывает.\n",
+                  "required": [
+                      "live",
+                      "usedToday",
+                      "limitPerDay"
+                  ],
+                  "properties": {
+                      "live": {
+                          "type": "boolean"
+                      },
+                      "usedToday": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "limitPerDay": {
+                          "type": "integer",
+                          "minimum": 1
+                      }
+                  }
               }
           }
       },
