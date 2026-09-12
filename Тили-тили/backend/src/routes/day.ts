@@ -1217,6 +1217,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     chat_id: string | null
     opens_at: Date | null
     closes_at: Date | null
+    /** Канун наступил по поясу места: с этого дня гостю уходит телефон координатора. */
+    eve_reached: boolean
   }
 
   /**
@@ -1233,7 +1235,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       `select to_char(w.date, 'YYYY-MM-DD') as date, coalesce(w.tz, 'Europe/Moscow') as tz,
               w.venue, w.dress_code, w.dress_note, c.id as chat_id, c.opens_at,
               case when w.date is null then null
-                   else ((w.date + 1) + time '23:59:59') at time zone coalesce(w.tz, 'Europe/Moscow') end as closes_at
+                   else ((w.date + 1) + time '23:59:59') at time zone coalesce(w.tz, 'Europe/Moscow') end as closes_at,
+              coalesce((now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date >= w.date - 1, false) as eve_reached
          from weddings w
          left join chats c on c.wedding_id = w.id and c.kind = 'day'
         where w.id = $1`,
@@ -1259,11 +1262,22 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
    * `wedding_exists` в `weddings.ts`: единый формат ошибки (`errors.ts`)
    * поля `details` не знает.
    */
-  const chatClosedForGuests = (reply: FastifyReply, window: ReturnType<typeof guestChatWindow>) => {
+  const chatClosedForGuests = (reply: FastifyReply, window: ReturnType<typeof guestChatWindow>, tz: string) => {
+    /* Срок — словами в поясе места («13 июня в 09:00»): текст уходит гостю на
+     * экран как есть, а сырой ISO там читать некому. Неизвестный пояс не
+     * роняет ответ — тогда без пояса. */
+    const when = (iso: string) => {
+      const opts = { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' } as const
+      try {
+        return new Intl.DateTimeFormat('ru-RU', { ...opts, timeZone: tz }).format(new Date(iso))
+      } catch {
+        return new Intl.DateTimeFormat('ru-RU', opts).format(new Date(iso))
+      }
+    }
     const message = !window.opensAt
       ? 'Чат дня откроется накануне свадьбы — пара ещё не назначила дату'
       : Date.now() < Date.parse(window.opensAt)
-        ? `Чат дня откроется ${window.opensAt} — накануне свадьбы в 09:00`
+        ? `Чат дня откроется ${when(window.opensAt)} — накануне свадьбы`
         : 'Чат дня закрыт — свадьба прошла'
     return reply.code(423).send({
       error: {
@@ -1277,8 +1291,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   /* Всё, что нужно гостю в день X, одним запросом (План §8.8): программа —
    * только блоки «для гостей»; свой стол; свой автобус с перевозчиком;
    * координатор с телефоном — он для того и назначен, «не жениха» (решение
-   * владельца В2: всегда, с кануна раздел и появляется на экране гостя);
-   * окно чата. Телефона пары здесь нет. */
+   * владельца В2: всегда, но с кануна — до него телефон участника команды
+   * гостю не уходит, и ворота эти держит сервер, а не только экран, который
+   * до кануна раздела не показывает); окно чата. Телефона пары здесь нет. */
   app.get('/join/:guestToken/day', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestOfDay(db(), guestToken)
@@ -1312,7 +1327,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       timeline: timeline.map(toEvent),
       table: table[0] ? { name: table[0].name } : null,
       bus: bus[0] ? toBus(bus[0]) : null,
-      coordinator: coordinator[0] ? { name: coordinator[0].name, phone: coordinator[0].phone } : null,
+      coordinator: day.eve_reached && coordinator[0] ? { name: coordinator[0].name, phone: coordinator[0].phone } : null,
       chat: guestChatWindow(day),
     }
   })
@@ -1325,7 +1340,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const guest = await guestOfDay(db(), guestToken)
     const day = await guestDayOf(guest.weddingId)
     const window = guestChatWindow(day)
-    if (!window.open || !day.chat_id) return chatClosedForGuests(reply, window)
+    if (!window.open || !day.chat_id) return chatClosedForGuests(reply, window, day.tz)
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
     const rows = await messagePage(db(), day.chat_id, page)
@@ -1354,7 +1369,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = await guestOfDay(db(), guestToken)
       const day = await guestDayOf(guest.weddingId)
       const window = guestChatWindow(day)
-      if (!window.open || !day.chat_id) return chatClosedForGuests(reply, window)
+      if (!window.open || !day.chat_id) return chatClosedForGuests(reply, window, day.tz)
       const chatId = day.chat_id
 
       /* Автор — гость из списка: `sender_id` пуст, `guest_id` — его строка.

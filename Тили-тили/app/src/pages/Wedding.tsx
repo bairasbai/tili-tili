@@ -5,7 +5,7 @@ import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
 import { useApi, explainError } from '@/lib/api/useApi'
-import { formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
+import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
@@ -814,23 +814,6 @@ export function Checklist() {
   )
 }
 
-/*
- * Часы и минуты блока тайминга в часовом поясе свадьбы.
- *
- * Прежняя версия брала `toISOString().slice(11, 16)` — то есть UTC. Церемония
- * в 13:00 в Уфе показывалась как 08:00, ровно на разницу поясов. Пояс берётся
- * у свадьбы, а не у зрителя: пара может смотреть тайминг из другого города,
- * а координатор — из третьего, но час на площадке один.
- */
-function formatTime(iso: string, tz?: string): string {
-  try {
-    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: tz, hour12: false }).format(new Date(iso))
-  } catch {
-    /* Неизвестный пояс не должен ронять экран: показываем по месту зрителя. */
-    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
-  }
-}
-
 /* Тайминг дня */
 export function Timeline() {
   const { weddingId, weddingDate } = useStore()
@@ -841,6 +824,10 @@ export function Timeline() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [conflicts, setConflicts] = useState<string[] | null>(null)
+  /* Галочка «Показывать гостям» у нового блока. По умолчанию включена — как
+     умолчание контракта: программа праздника гостям видна, снимают её у
+     «Сборов невесты» и «Монтажа арки» (План §8.8, фича 009). */
+  const [forGuestsNew, setForGuestsNew] = useState(true)
   /* Черновик автоплана: показан, но ещё не применён. */
   const [draft, setDraft] = useState<TimelineDraft[] | null>(null)
 
@@ -864,6 +851,8 @@ export function Timeline() {
     icon: e.icon ?? '📌',
     tile: 'bg-[var(--peach)]',
     who: e.who ?? '',
+    /* Без поля в ответе — умолчание контракта «виден»: так же читает базу сервер. */
+    forGuests: e.forGuests ?? true,
   }))
 
   /*
@@ -905,6 +894,7 @@ export function Timeline() {
       ...(e.who ? { who: e.who } : {}),
       ...(e.location ? { location: e.location } : {}),
       ...(e.icon ? { icon: e.icon } : {}),
+      forGuests: e.forGuests ?? true,
     }))
   }
   /* Крестики и «Добавить» закрыты, пока список перечитывается: правка по
@@ -918,11 +908,15 @@ export function Timeline() {
     const startsAt = isoAtWeddingTime(weddingDate, from, tz)
     if (!startsAt) { setErr(t('Укажите время в формате 19:00')); return }
     const endsAt = till ? isoAtWeddingTime(weddingDate, till, tz) : null
-    save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}) }])
-    setName(''); setFrom(''); setTill(''); setEditing(false)
+    save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}), forGuests: forGuestsNew }])
+    setName(''); setFrom(''); setTill(''); setForGuestsNew(true); setEditing(false)
   }
 
   const removeEvent = (id: string) => save(asDraft().filter(e => e.id !== id))
+  /* Галочка — тот же PUT всего списка, что крестик: отдельного пути «показать
+     гостям» контракт не знает. Список — из принятого сервером (`asDraft`), а
+     не с экрана: иначе галочка сразу после крестика вернула бы убранный блок. */
+  const toggleForGuests = (id: string) => save(asDraft().map(e => (e.id === id ? { ...e, forGuests: !e.forGuests } : e)))
 
   /*
    * Автоплан сервер отдаёт предпросмотром и сам ничего не меняет — так же
@@ -947,6 +941,7 @@ export function Timeline() {
         ...(e.who ? { who: e.who } : {}),
         ...(e.location ? { location: e.location } : {}),
         ...(e.icon ? { icon: e.icon } : {}),
+        forGuests: e.forGuests ?? true,
       })))
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
@@ -980,6 +975,13 @@ export function Timeline() {
               <input value={from} onChange={e => setFrom(e.target.value)} type="time" aria-label={t('Начало')} className="flex-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none tabular" />
               <input value={till} onChange={e => setTill(e.target.value)} type="time" aria-label={t('Конец')} className="flex-1 bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none tabular" />
             </div>
+            {/* Видят ли блок гости в день X: снятая галочка — блок только для
+                команды («Сборы невесты», «Монтаж арки»), гостю его не отдаёт
+                сервер (`GET /join/{t}/day`). */}
+            <label className="flex items-center gap-2 mt-2.5 text-[12px] font-medium">
+              <input type="checkbox" checked={forGuestsNew} onChange={e => setForGuestsNew(e.target.checked)} className="accent-[var(--rose)]" />
+              {t('Показывать гостям')}
+            </label>
             {!weddingDate && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Сначала выберите дату свадьбы — без неё у события нет дня.')}</p>}
             <button disabled={locked || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
@@ -998,6 +1000,15 @@ export function Timeline() {
               <p className="text-[11px] text-[var(--soft)] mt-0.5">{e.loc}</p>
               <p className="text-[11px] text-[var(--rose-deep)] font-semibold mt-1 tabular">{e.time}</p>
               <p className="text-[10px] text-[var(--sage-deep)] mt-0.5">{e.who}</p>
+              {/* Пометка — по ответу сервера, а не по галочке на экране: гость
+                  этого блока в своей программе не увидит. */}
+              {!e.forGuests && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('скрыт от гостей')}</p>}
+              {editing && (
+                <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[var(--soft)]">
+                  <input type="checkbox" checked={e.forGuests} disabled={locked} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
+                  {t('Показывать гостям')}
+                </label>
+              )}
             </div>
             {editing && (
               <button disabled={locked} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>

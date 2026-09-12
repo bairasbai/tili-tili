@@ -1824,3 +1824,27 @@ Object.assign(EN, {
   'Что важно: стиль, пожелания, сроки': 'What matters: style, wishes, timing',
   'Заявка принята — свяжемся в течение суток': 'Request received — we will get in touch within 24 hours',
 })
+
+/* Фича 009 «Гостевой день X» (контракт v0.32.0): раздел «День свадьбы» на приглашении гостя (с кануна),
+   чат дня глазами гостя, галочка «Показывать гостям» у блока тайминга, реплика гостя в чате пары. */
+Object.assign(EN, {
+  'Программа': 'Programme',
+  'Программу для гостей пара ещё не открыла': 'The couple has not opened the programme to guests yet',
+  'Ваш стол:': 'Your table:',
+  'стол пока не назначен': 'table not assigned yet',
+  'Ваш автобус:': 'Your bus:',
+  'автобус не выбран': 'no bus chosen',
+  'к трансферу': 'to transfer',
+  'Координатор:': 'Coordinator:',
+  'Дресс-код:': 'Dress code:',
+  'Построить маршрут': 'Get directions',
+  'Открыть чат дня': 'Open the day chat',
+  'Чат дня откроется': 'The day chat opens',
+  'Чат дня откроется накануне свадьбы': 'The day chat opens on the eve of the wedding',
+  'Чат дня закрыт — свадьба прошла': 'The day chat is closed — the wedding is over',
+  'Чат дня свадьбы': 'Wedding day chat',
+  'Ссылка недействительна': 'This link is no longer valid',
+  'Команда': 'Team',
+  'Показывать гостям': 'Show to guests',
+  'скрыт от гостей': 'hidden from guests',
+})

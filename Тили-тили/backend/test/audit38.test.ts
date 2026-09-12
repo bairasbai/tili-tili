@@ -342,15 +342,32 @@ describe.skipIf(!live)('фича 009, BE-009: день X глазами гост
     expect(olgaDay.bus).toBeNull()
   })
 
-  it('координатор — имя и телефон участника role=coordinator; без координатора — null (помощник не в счёт)', async () => {
+  it('координатор — имя и телефон участника role=coordinator, и только с кануна; без координатора — null (помощник не в счёт); tz в GET /rsvp', async () => {
     const w = await newWedding()
     const guest = await newGuest(w)
     await joinAs(w, 'helper', 'Пётр')
-
-    expect((await dayOf(guest.token)).coordinator, 'помощник выдан за координатора').toBeNull()
-
     const maria = await joinAs(w, 'coordinator', 'Мария')
-    expect((await dayOf(guest.token)).coordinator).toEqual({ name: 'Мария', phone: maria.phone })
+
+    /* До кануна телефон координатора гостю не уходит (план, ворота прав): свадьба в 2027-м —
+     * в ответе координатора нет, хотя он назначен. Экран раздел до кануна и не показывает,
+     * но держать ворота должен сервер, а не только экран. */
+    expect((await dayOf(guest.token)).coordinator, 'телефон координатора ушёл гостю до кануна').toBeNull()
+
+    await weddingToday(w)
+    const day = await dayOf(guest.token)
+    expect(day.coordinator).toEqual({ name: 'Мария', phone: maria.phone })
+
+    /* Пояс места нужен экрану гостя до запроса дня (раздел «с кануна» решается по нему):
+     * контракт держит его в WeddingPublic.tz — отдаёт и GET /rsvp/{t}. */
+    const rsvp = await app.inject({ method: 'GET', url: `/rsvp/${guest.token}` })
+    expect(rsvp.statusCode).toBe(200)
+    expect((rsvp.json() as { wedding: { tz?: string } }).wedding.tz, 'GET /rsvp без tz места').toBe(day.tz)
+
+    const w2 = await newWedding()
+    const guest2 = await newGuest(w2)
+    await joinAs(w2, 'helper', 'Пётр')
+    await weddingToday(w2)
+    expect((await dayOf(guest2.token)).coordinator, 'помощник выдан за координатора').toBeNull()
   })
 
   /* ── чат дня: окно, реплика гостя, имя у пары ─────────────────────── */
@@ -368,6 +385,10 @@ describe.skipIf(!live)('фича 009, BE-009: день X глазами гост
 
     const read = await guestMessages(guest.token)
     expect(read.statusCode, read.body.slice(0, 300)).toBe(423)
+    /* Текст 423 идёт гостю на экран как есть — дата словами в поясе места, не сырой ISO. */
+    const said = (read.json() as ErrorBody).error.message
+    expect(said, 'в тексте 423 сырой ISO').not.toMatch(/\d{4}-\d{2}-\d{2}T\d/)
+    expect(said).toContain('13 июня')
     expect((read.json() as ErrorBody).error).toMatchObject({
       code: 'chat_closed_for_guests',
       details: { opensAt: dayChat.openFrom },

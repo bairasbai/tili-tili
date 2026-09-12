@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel } from 'lucide-react'
+import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { ApiError } from '@/lib/api/client'
 import {
-  bookHotelRoom, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
-  joinShuttle, saveGuestToken, sendRsvp, voteMenu,
+  bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
+  joinShuttle, postGuestDayMessage, saveGuestToken, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
 import { dressPalettes } from '@/lib/dressPalettes'
-import { formatWeddingDate } from '@/lib/weddingDate'
+import { formatTime, formatWeddingDate, todayIn } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
-import { cn, plural } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { cn, goBack, plural } from '@/lib/utils'
+import { getI18nLang, t } from '@/lib/i18n'
 
 /*
  * Гостевое приглашение.
@@ -26,10 +26,13 @@ import { t } from '@/lib/i18n'
  * «14 июня 2027 · Уфа», программа дня из мока и ответ, который сохранялся в
  * `tt_guest_rsvp` на телефоне гостя — то есть никуда. Пара его не видела.
  *
- * Чего здесь намеренно нет: программы дня. Тайминг гостю контракт не отдаёт —
- * его видит только свой подрядчик по своему токену. Дресс-код вернулся: пара
- * хранила его в localStorage своего браузера, гость видел палитру по умолчанию
- * и принимал её за выбор пары — теперь палитра приходит со свадьбы.
+ * Программа дня появилась с фичей 009 и только с кануна: раздел «День
+ * свадьбы» (`GuestDay`) берёт из `GET /join/{t}/day` блоки, которые пара
+ * пометила «для гостей», стол, автобус, координатора и окно чата дня. До
+ * кануна её нет — до этого гостю нужно приглашение, а не тайминг. Дресс-код
+ * вернулся: пара хранила его в localStorage своего браузера, гость видел
+ * палитру по умолчанию и принимал её за выбор пары — теперь палитра приходит
+ * со свадьбы.
  */
 
 /** Скачивание .ics: событие календаря у гостя. */
@@ -214,6 +217,9 @@ interface RsvpPage {
     venue?: string | null
     dressCode?: string | null
     dressNote?: string | null
+    /* Пояс места (`WeddingPublic.tz`): сервер его в `/rsvp` пока не отдаёт,
+       но контракт позволяет — раздел дня читает его, когда он есть. */
+    tz?: string
   }
 }
 
@@ -273,6 +279,17 @@ function InviteView({
 
   const dietLabel = (id: string | null | undefined, note: string | null | undefined) =>
     id === 'other' && note ? note : t(DIETS.find(d => d[0] === (id ?? null))?.[1] ?? 'Без ограничений')
+
+  /* «Сейчас» — на монтировании: `Date.now()` в теле рендера нечист (R-04). */
+  const [now] = useState(() => Date.now())
+  /*
+   * Раздел «День свадьбы» — тем, кто придёт, и не раньше кануна. Точный пояс
+   * места приходит только вместе с содержимым дня (`/rsvp` его пока не отдаёт),
+   * поэтому здесь решается лишь «стоит ли спрашивать»: по поясу из `/rsvp`,
+   * а без него — по самому раннему поясу Земли. Так запрос не уходит за месяцы
+   * до свадьбы, а показывать раздел или нет, решает пояс из ответа.
+   */
+  const dayMayHaveCome = page.status === 'yes' && !!w.date && todayIn(w.tz ?? EARLIEST_TZ, now) >= eveOf(w.date)
 
   return (
     <div ref={rootRef} className="min-h-dvh relative overflow-x-hidden" style={{ background: T.bg, color: T.ink }}>
@@ -369,6 +386,11 @@ function InviteView({
             </a>
           </div>
         )}
+
+        {/* День свадьбы — с кануна, тем, кто придёт (фича 009). Выше RSVP
+            нарочно: в этот день гость открывает ссылку за программой и
+            столом, а не за формой ответа. */}
+        {dayMayHaveCome && <GuestDay token={token} city={w.city?.name} now={now} T={T} shadow={shadow} />}
 
         {/* RSVP */}
         <div className="px-6 mt-12 relative z-10 rv rv-scale">
@@ -565,7 +587,8 @@ function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: s
   })()
 
   return (
-    <div className="px-6 mt-6 relative z-10 rv">
+    /* `id` — якорь для «автобус не выбран» из раздела дня: гость записывается здесь. */
+    <div id="transfer" className="px-6 mt-6 relative z-10 rv">
       <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
         <p className="text-[11px] font-semibold flex items-center gap-1.5"><Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}</p>
         <div className="space-y-2 mt-3">
@@ -661,6 +684,307 @@ function GuestHotels({ token, T, shadow }: { token: string; T: Theme; shadow: st
         </div>
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
       </div>
+    </div>
+  )
+}
+
+/* ── День свадьбы (фича 009) ─────────────────────────────────────────── */
+
+/** Канун: дата свадьбы минус день, `YYYY-MM-DD`. Календарная арифметика в UTC — пояс тут не участвует. */
+function eveOf(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y!, m! - 1, d! - 1)).toISOString().slice(0, 10)
+}
+
+/*
+ * Самый ранний пояс Земли, UTC+14. Раздел дня решается по поясу места, а
+ * `GET /rsvp/{t}` его пока не отдаёт — точный пояс приходит только с ответом
+ * `GET /join/{t}/day`. Пока его нет, «канун мог наступить» считается по этому
+ * поясу: запрос уходит не раньше чем за сутки с небольшим до кануна, а не
+ * месяцами, и без выдумывания пояса за сервер.
+ */
+const EARLIEST_TZ = 'Etc/GMT-14'
+
+/** «13 июня, 09:00» в поясе места — срок открытия чата дня. */
+function formatWhen(iso: string, tz: string): string {
+  const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+  const opts = { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' } as const
+  try {
+    return new Intl.DateTimeFormat(locale, { ...opts, timeZone: tz }).format(new Date(iso))
+  } catch {
+    return new Intl.DateTimeFormat(locale, opts).format(new Date(iso))
+  }
+}
+
+/*
+ * Раздел «День свадьбы» (План §8.8, экран 59; фича 009).
+ *
+ * Всё — из одного ответа `GET /join/{t}/day`: программа (только блоки «для
+ * гостей», время в поясе места), свой стол, свой автобус с перевозчиком,
+ * координатор с кнопкой «Позвонить» («не жениху»), дресс-код, адрес с маршрутом
+ * и вход в чат дня. Раздел виден с кануна по поясу места: сравниваем
+ * календарную дату «сегодня там» с датой свадьбы минус день. До ответа сервера
+ * ничего не утверждаем — «стол пока не назначен» появляется только вместе с
+ * `table: null` (инвариант 13), а отказ показан словами с «Повторить», как у
+ * соседних блоков.
+ */
+function GuestDay({ token, city, now, T, shadow }: { token: string; city?: string; now: number; T: Theme; shadow: string }) {
+  const nav = useNavigate()
+  const q = useApi(() => getGuestDay(token), [token])
+  const disp = T.serif ? 'font-serif-d' : ''
+  if (q.error) return <GuestBlockError title={t('День свадьбы')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
+  const day = q.data
+  if (!day) {
+    if (!q.loading) return null
+    return (
+      <div className="px-6 mt-12 relative z-10">
+        <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+          <p className="text-[11px] font-semibold">{t('День свадьбы')}</p>
+          <p className="text-[11.5px] mt-2" style={{ color: T.soft }}>{t('Загружаем…')}</p>
+        </div>
+      </div>
+    )
+  }
+  /* Без даты кануна не бывает; до кануна по поясу места раздела нет — как раньше. */
+  if (!day.date || todayIn(day.tz, now) < eveOf(day.date)) return null
+
+  const address = [day.venue, city].filter(Boolean).join(', ')
+  const palette = day.dressCode ? dressPalettes.find(x => x.id === day.dressCode) : undefined
+  const closesAt = day.chat.closesAt ? Date.parse(day.chat.closesAt) : NaN
+  return (
+    <div className="px-6 mt-12 relative z-10 rv rv-scale">
+      <div className="rounded-[28px] p-6 relative overflow-hidden" style={{ background: T.card, boxShadow: shadow }}>
+        <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
+        <h2 className={cn('text-[24px] text-center', disp)}>{t('День свадьбы')}</h2>
+
+        <p className="text-[11px] font-semibold flex items-center gap-1.5 mt-5"><Clock3 size={12} style={{ color: T.accent }} />{t('Программа')}</p>
+        {day.timeline.length ? (
+          <ul className="mt-2 space-y-2">
+            {day.timeline.map(e => (
+              <li key={e.id} className="flex gap-3 text-[12.5px]">
+                <b className="tabular shrink-0 w-[46px]" style={{ color: T.accent }}>{e.startsAt ? formatTime(e.startsAt, day.tz) : '—'}</b>
+                <span className="min-w-0">
+                  <span className="font-medium">{e.name}</span>
+                  {e.location && <span className="block text-[10.5px]" style={{ color: T.soft }}>{e.location}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          /* Пустой список — ответ сервера, а не его отсутствие: пара ещё не
+             открыла гостям ни одного блока. */
+          <p className="text-[11.5px] mt-2" style={{ color: T.soft }}>{t('Программу для гостей пара ещё не открыла')}</p>
+        )}
+
+        <p className="text-[12.5px] mt-5 flex items-center gap-1.5">
+          <Armchair size={12} style={{ color: T.accent }} />
+          {day.table ? <span>{t('Ваш стол:')} <b>{day.table.name}</b></span> : <span style={{ color: T.soft }}>{t('стол пока не назначен')}</span>}
+        </p>
+        <p className="text-[12.5px] mt-2 flex items-center gap-1.5">
+          <Bus size={12} style={{ color: T.accent }} />
+          {day.bus
+            ? <span>{t('Ваш автобус:')} <b>{[day.bus.name, day.bus.time, day.bus.carrier].filter(Boolean).join(' · ')}</b></span>
+            /* Записаться можно ниже, в блоке трансфера — туда и ведёт ссылка. */
+            : <span style={{ color: T.soft }}>{t('автобус не выбран')} · <a href="#transfer" className="underline" style={{ color: T.accent }}>{t('к трансферу')}</a></span>}
+        </p>
+
+        {/* Координатор — тот, кому звонить в день X (План §8.8): телефон приходит
+            с кануна, кнопка — прямой `tel:`. Нет координатора — нет блока. */}
+        {day.coordinator && (
+          <div className="mt-4 flex items-center gap-3">
+            <p className="text-[12.5px] flex-1 min-w-0">{t('Координатор:')} <b>{day.coordinator.name}</b></p>
+            {day.coordinator.phone && (
+              <a href={`tel:${day.coordinator.phone}`} className="press shrink-0 px-4 h-[36px] rounded-full text-[11.5px] font-semibold flex items-center gap-1.5" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+                <Phone size={12} />{t('Позвонить')}
+              </a>
+            )}
+          </div>
+        )}
+
+        {palette && (
+          <p className="text-[12.5px] mt-4">
+            {t('Дресс-код:')} <b>{t(palette.name)}</b>
+            {day.dressNote && <span className="block text-[10.5px]" style={{ color: T.soft }}>{day.dressNote}</span>}
+          </p>
+        )}
+
+        {address && (
+          <div className="mt-4 flex items-center gap-3">
+            <p className="text-[12.5px] flex-1 min-w-0 flex items-center gap-1.5"><MapPin size={12} style={{ color: T.accent }} />{address}</p>
+            <a href={`https://yandex.ru/maps/?text=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer" className="press shrink-0 text-[11.5px] font-semibold underline" style={{ color: T.accent }}>{t('Построить маршрут')}</a>
+          </div>
+        )}
+
+        {/* Окно чата называет сервер (`chat.open`, `opensAt`, `closesAt`): срок —
+            его слова в поясе места, а не выдуманные 09:00 на экране. */}
+        {day.chat.open ? (
+          <button onClick={() => nav('/invite/day-chat')} className="press w-full h-[46px] rounded-full mt-5 text-[13px] font-semibold flex items-center justify-center gap-2" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+            <MessageCircle size={15} />{t('Открыть чат дня')}
+          </button>
+        ) : (
+          <p className="text-[11.5px] mt-5 text-center" style={{ color: T.soft }}>
+            {Number.isFinite(closesAt) && now > closesAt
+              ? t('Чат дня закрыт — свадьба прошла')
+              : day.chat.opensAt ? `${t('Чат дня откроется')} ${formatWhen(day.chat.opensAt, day.tz)}` : t('Чат дня откроется накануне свадьбы')}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── Чат дня глазами гостя (фича 009, экран 60) ──────────────────────── */
+
+type DayMessage = NonNullable<NonNullable<Awaited<ReturnType<typeof getGuestDayMessages>>>['items']>[number]
+/** Хвост ленты — либо причина, по которой его нет: окно закрыто (словами сервера) или ссылка мертва. */
+type DayTail = { items: DayMessage[] } | { locked: string } | { dead: true }
+
+/** Хронологический порядок: сервер отдаёт свежие первыми, в переписке последняя реплика внизу. */
+const bySentAt = (a: DayMessage, b: DayMessage) =>
+  (a.sentAt ?? '').localeCompare(b.sentAt ?? '') || (a.id ?? '').localeCompare(b.id ?? '')
+
+/*
+ * Чат дня X глазами гостя: та же лента, что у пары и команды, по токену
+ * гостя — читать и писать «автобус задерживается» всем сразу, а не жениху
+ * (План §8.8, §13.1 п. 4; решение владельца В3 — общий чат дня).
+ *
+ * Живого канала у гостя нет: сокет требует токен аккаунта, — поэтому только
+ * опрос раз в 30 с, и это `reload()` того же запроса: лента остаётся на
+ * экране, «Загружаем…» не мигает (ERR-0244). У гостя нет и идентификатора:
+ * свою реплику он узнаёт по `guestName` — своему имени со страницы гостя
+ * (тёзка среди гостей тоже покажется «своей», другого признака контракт не
+ * даёт). Вне окна сервер отвечает 423 — его текст на экран, поле закрыто;
+ * 410 — ссылка отозвана.
+ */
+export function GuestDayChat() {
+  const nav = useNavigate()
+  const token = guestToken()
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  /* Окно закрылось под рукой: 423 на отправку — текст сервера, поле закрыто. */
+  const [closed, setClosed] = useState<string | null>(null)
+  /* Свои реплики из ответов POST: в ленте сразу, а не через полминуты опроса. */
+  const [posted, setPosted] = useState<DayMessage[]>([])
+  const me = useApi(() => token ? getRsvp(token) : Promise.resolve(null), [token])
+  const myName = me.data?.guestName ?? null
+
+  const q = useApi<DayTail | null>(
+    () => token
+      ? getGuestDayMessages(token)
+        .then((page): DayTail => ({ items: page?.items ?? [] }))
+        .catch((e: unknown): DayTail => {
+          if (e instanceof ApiError && e.status === 423) return { locked: e.message }
+          if (e instanceof ApiError && LINK_DEAD_STATUSES.includes(e.status)) return { dead: true }
+          throw e
+        })
+      : Promise.resolve(null),
+    [token],
+  )
+  const reload = q.reload
+  useEffect(() => {
+    if (!token) return
+    const poll = window.setInterval(reload, 30_000)
+    return () => window.clearInterval(poll)
+  }, [token, reload])
+
+  const tail = q.data && 'items' in q.data ? q.data.items : null
+  const locked = closed ?? (q.data && 'locked' in q.data ? q.data.locked : null)
+  const dead = !!q.data && 'dead' in q.data
+  /* Хвост и свои отправленные — по идентификатору: реплика из ответа POST и
+     та же реплика из следующего опроса — одна строка, не две. */
+  const merged: Record<string, DayMessage> = {}
+  for (const m of [...posted, ...(tail ?? [])]) if (m.id) merged[m.id] = m
+  const messages = Object.values(merged).sort(bySentAt)
+
+  /* Прокрутка к последней реплике — по новой реплике, как в чате пары. */
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const lastId = messages[messages.length - 1]?.id
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [lastId])
+
+  const send = () => void (async () => {
+    const body = text.trim()
+    if (!token || !body || sending) return
+    setSending(true)
+    setErr(null)
+    try {
+      const m = await postGuestDayMessage(token, body)
+      if (m?.id) setPosted(prev => [...prev, m])
+      setText('')
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 423) setClosed(e.message)
+      else setErr(explainError(e))
+    } finally { setSending(false) }
+  })()
+
+  if (!token) return (
+    <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
+      <p className="font-serif-d text-[22px]">{t('Нужна ссылка из приглашения')}</p>
+    </div>
+  )
+
+  const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+  return (
+    <div className="h-dvh flex flex-col">
+      <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
+        <button onClick={() => goBack(n => nav(n), (to, o) => nav(to, o), '/invite')} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
+          <ChevronLeft size={17} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <b className="text-[14px] block truncate">{t('Чат дня свадьбы')}</b>
+          <span className="text-[10px] text-[var(--soft)]">{t('обновление раз в 30 секунд')}</span>
+        </div>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
+        {dead && <p role="alert" className="text-center text-[12.5px] text-[var(--soft)] px-6 mt-6 leading-relaxed">{t('Ссылка недействительна')}</p>}
+        {!dead && q.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>}
+        {q.error && (
+          <div className="py-6 text-center">
+            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{q.error}</p>
+            <button onClick={q.reload} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+          </div>
+        )}
+        {tail && !messages.length && (
+          <p className="text-center text-[12px] text-[var(--soft)] py-6">{t('Сообщений пока нет — напишите первым')}</p>
+        )}
+        {messages.map(m => {
+          /* Системная запись — по признаку сервера, как в чате пары (D4-15). */
+          if (m.system === true) return (
+            <p key={m.id} className="text-center text-[11px] text-[var(--soft)] leading-relaxed px-6 py-2">⚠ {m.text}</p>
+          )
+          const mine = !!myName && m.guestName === myName
+          return (
+            <div key={m.id} className={cn('flex fade-up', mine ? 'justify-end' : 'justify-start')}>
+              <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',
+                mine ? 'grad text-[var(--on-grad)] rounded-br-[6px]' : 'card rounded-bl-[6px] text-[var(--ink)]')}
+                style={{ borderRadius: 18 }}>
+                {/* Автор: у гостя — имя из ответа; у людей имени в ответе нет —
+                    это команда свадьбы. */}
+                {!mine && <span className="block text-[9.5px] text-[var(--soft)] mb-1">{m.guestName ?? t('Команда')}</span>}
+                {m.text}
+                <span className={cn('block text-[9px] mt-1 text-right', mine ? 'text-white/70' : 'text-[var(--soft)]')}>
+                  {m.sentAt ? new Date(m.sentAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) : ''}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {err && <p role="alert" className="px-5 pb-2 text-[12px] text-[var(--rose-ink)]">{err}</p>}
+      {dead ? null : locked ? (
+        <p className="glass-tab border-t-0 border-b-0 px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] text-center text-[11.5px] text-[var(--soft)] leading-relaxed">{locked}</p>
+      ) : (
+        <div className="glass-tab border-t-0 border-b-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex gap-2.5">
+          <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
+            placeholder={t('Сообщение…')} className="flex-1 bg-[var(--card)] rounded-full px-5 h-[48px] text-[13.5px] outline-none placeholder:text-[var(--soft2)]" style={{ boxShadow: 'var(--shadow)' }} />
+          <button disabled={sending || !text.trim()} onClick={send} className="press w-[48px] h-[48px] rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0 disabled:opacity-40" aria-label={t('Отправить')}><Send size={17} /></button>
+        </div>
+      )}
     </div>
   )
 }

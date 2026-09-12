@@ -112,3 +112,27 @@ export const sendGuestReview = (weddingId: string, token: string, vendorId: stri
     `${url('/weddings/{weddingId}/guest-reviews', { weddingId })}?guestToken=${encodeURIComponent(token)}` as '/weddings/{weddingId}/guest-reviews',
     { vendorId, stars, ...(text ? { text } : {}) },
   )
+
+/*
+ * День X глазами гостя (фича 009, контракт v0.32.0).
+ *
+ * Одним запросом всё, что нужно гостю в день свадьбы: программа (только блоки,
+ * которые пара пометила «для гостей»), адрес и дресс-код, свой стол, свой
+ * автобус с перевозчиком, координатор с телефоном и окно чата дня. Телефона
+ * пары здесь нет — «звонить координатору, не жениху» (План §8.8). 410 —
+ * ссылка отозвана.
+ */
+export const getGuestDay = (token: string) =>
+  api.get(url('/join/{guestToken}/day', { guestToken: token }))
+
+/**
+ * Хвост чата дня X по токену гостя — та же лента, что у пары и команды.
+ * Вне окна (с 09:00 кануна по конец дня после свадьбы) сервер отвечает 423
+ * `chat_closed_for_guests`, и его текст годится на экран как есть.
+ */
+export const getGuestDayMessages = (token: string, limit = 50) =>
+  api.get(`${url('/join/{guestToken}/day-chat/messages', { guestToken: token })}?limit=${limit}` as '/join/{guestToken}/day-chat/messages')
+
+/** Реплика гостя в общий чат дня: сервер подписывает её именем гостя (`guestName`). */
+export const postGuestDayMessage = (token: string, text: string) =>
+  api.post(url('/join/{guestToken}/day-chat/messages', { guestToken: token }), { text })

@@ -54,6 +54,8 @@ const Chats = lazy(() => load.us().then(m => ({ default: m.Chats })))
 const Chat = lazy(() => load.us().then(m => ({ default: m.Chat })))
 
 const Invite = lazy(() => load.invite())
+/* Чат дня гостя живёт в том же чанке, что приглашение: гость приходит туда с `/invite`. */
+const GuestDayChat = lazy(() => load.invite().then(m => ({ default: m.GuestDayChat })))
 const InviteRedeem = lazy(() => import('@/pages/InviteRedeem'))
 
 const Deal = lazy(() => load.tools().then(m => ({ default: m.Deal })))
@@ -137,6 +139,8 @@ function Shell() {
   const vendorTab = p.startsWith('/vendor-app') && !p.startsWith('/vendor-app/chats/')
   const noTab =
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
+    /* Гость без аккаунта: нижняя навигация пары ему ни к чему и на чате дня. */
+    p.startsWith('/invite/') ||
     p.startsWith('/i/') ||
     p.startsWith('/join') ||
     p.startsWith('/us/chats/') ||
@@ -152,6 +156,9 @@ function Shell() {
           <Route path="/" element={<Onboarding />} />
           <Route path="/quiz" element={<Quiz />} />
           <Route path="/invite" element={<Invite />} />
+          {/* Чат дня X глазами гостя (фича 009): вход — из раздела «День
+              свадьбы» на /invite, «Назад» возвращает туда же. */}
+          <Route path="/invite/day-chat" element={<GuestDayChat />} />
           {/* Ссылка из приглашения ведёт сюда: код меняется на токен гостя и
               гаснет, дальше гость живёт на /invite. */}
           <Route path="/i/:code" element={<InviteRedeem />} />

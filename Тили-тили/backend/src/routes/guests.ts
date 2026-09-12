@@ -670,10 +670,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       venue: string | null
       dress_code: string | null
       dress_note: string | null
+      tz: string
     }>(
       `select g.rsvp, g.plus_one, g.diet, g.diet_note, g.transfer,
               w.title, w.date::text as date, c.name as city, c.region,
-              w.invite_text, w.invite_theme_id, w.venue, w.dress_code, w.dress_note
+              w.invite_text, w.invite_theme_id, w.venue, w.dress_code, w.dress_note,
+              coalesce(w.tz, 'Europe/Moscow') as tz
          from guests g join weddings w on w.id = g.wedding_id
          left join cities c on c.id = w.city_id
         where g.id = $1`,
@@ -699,6 +701,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         /* Дресс-код видит гость — ради него он и заводится (План ч. 976). */
         dressCode: r.dress_code,
         dressNote: r.dress_note,
+        /* Пояс места (`WeddingPublic.tz`): раздел «День свадьбы» на экране гостя
+         * появляется с кануна по нему, а не по поясу телефона (фича 009); пустой
+         * пояс — Москва, как у остальных гостевых путей. */
+        tz: r.tz,
       },
     }
   })

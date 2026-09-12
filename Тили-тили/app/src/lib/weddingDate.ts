@@ -194,3 +194,37 @@ export function monthTitle(month: string): string {
   return label.replace(/\s*г\.$/, '').replace(/^./, c => c.toUpperCase())
 }
 
+/*
+ * Часы и минуты в часовом поясе свадьбы («13:00»).
+ *
+ * Прежняя версия брала `toISOString().slice(11, 16)` — то есть UTC. Церемония
+ * в 13:00 в Уфе показывалась как 08:00, ровно на разницу поясов. Пояс берётся
+ * у свадьбы, а не у зрителя: пара может смотреть тайминг из другого города,
+ * координатор — из третьего, гость — из четвёртого, но час на площадке один.
+ * Одна на тайминг пары и программу гостя (фича 009).
+ */
+export function formatTime(iso: string, tz?: string): string {
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: tz, hour12: false }).format(new Date(iso))
+  } catch {
+    /* Неизвестный пояс не должен ронять экран: показываем по месту зрителя. */
+    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
+  }
+}
+
+/**
+ * Календарная дата «сейчас» в поясе свадьбы, `YYYY-MM-DD`.
+ *
+ * Пояс — из ответа сервера, если он его отдал; без него — пояс устройства:
+ * гость обычно там же, где и свадьба, а UTC не совпадает ни с кем. Неизвестный
+ * пояс не роняет экран — считаем по устройству. Одна на окно отзыва гостя
+ * (`Wishlist.tsx`) и раздел «День свадьбы» (`Invite.tsx`, фича 009).
+ */
+export function todayIn(tz: string | null, now: number): string {
+  const opts = { year: 'numeric', month: '2-digit', day: '2-digit' } as const
+  try {
+    return new Intl.DateTimeFormat('en-CA', { ...opts, timeZone: tz ?? undefined }).format(new Date(now))
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', opts).format(new Date(now))
+  }
+}

@@ -575,7 +575,12 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
                  человек, чей аккаунт стёрт: `messages.sender_id` обнуляется
                  при удалении пользователя. */
               const system = m.system === true
-              const anonymous = !system && m.senderId === null && chat?.kind !== 'external' && chat?.kind !== 'tilly'
+              /* Реплика гостя в чате дня X (фича 009): аккаунта у гостя нет,
+                 `senderId` пуст, автора называет `guestName` из списка гостей.
+                 Без этого признака «автобус задерживается» от Марины рисовалось
+                 бы «Участник вышел». */
+              const guest = !system && !!m.guestName
+              const anonymous = !system && !guest && m.senderId === null && chat?.kind !== 'external' && chat?.kind !== 'tilly'
               if (system) return (
                 <p key={m.id} className="text-center text-[11px] text-[var(--soft)] leading-relaxed px-6 py-2">
                   ⚠ {m.text}
@@ -587,6 +592,7 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
                     mine ? 'grad text-[var(--on-grad)] rounded-br-[6px]' : 'card rounded-bl-[6px] text-[var(--ink)]')}
                     style={{ borderRadius: 18 }}>
                     {anonymous && <span className="block text-[9.5px] text-[var(--soft)] mb-1">{t('Участник вышел')}</span>}
+                    {guest && <span className="block text-[9.5px] text-[var(--soft)] mb-1">{m.guestName} · {t('гость')}</span>}
                     {/* Предупреждение о выводе сделки мимо платформы (§18.2)
                         приходит отдельным системным сообщением от сервера — его
                         видят обе стороны, и рисовать его на пузыре не нужно. */}

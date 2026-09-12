@@ -8,6 +8,7 @@ import { AsyncState, ready } from '@/components/AsyncState'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { addFund, addGift as addGiftApi, contributeToFund, deleteFund, deleteGift as deleteGiftApi, fundGift, getGuestGifts, getWishlist, putAntiGifts, releaseGift, reserveGift } from '@/lib/api/gifts'
 import { getGuestTeam, guestToken, sendGuestReview } from '@/lib/api/guest'
+import { todayIn } from '@/lib/weddingDate'
 import { useStore } from '@/lib/store'
 import { cn, goBack, pct } from '@/lib/utils'
 import { t } from '@/lib/i18n'
@@ -499,22 +500,6 @@ export function GiftPick() {
       </div>
     </div>
   )
-}
-
-/**
- * Календарная дата «сейчас» в поясе свадьбы, `YYYY-MM-DD`.
- *
- * Пояс — из ответа сервера, если он его отдал; без него — пояс устройства:
- * гость обычно там же, где и свадьба, а UTC не совпадает ни с кем. Неизвестный
- * пояс не роняет экран — считаем по устройству.
- */
-function todayIn(tz: string | null, now: number): string {
-  const opts = { year: 'numeric', month: '2-digit', day: '2-digit' } as const
-  try {
-    return new Intl.DateTimeFormat('en-CA', { ...opts, timeZone: tz ?? undefined }).format(new Date(now))
-  } catch {
-    return new Intl.DateTimeFormat('en-CA', opts).format(new Date(now))
-  }
 }
 
 /** Прошёл ли день свадьбы — по её поясу, как на сервере (`date < today`). */

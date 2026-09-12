@@ -27,6 +27,8 @@ import { projectFile } from '@/test/projectFiles'
    ниже: новый маршрут без проверки здесь — красный тест. */
 const ROUTES = [
   '/', '/quiz', '/auth', '/invite', '/i/c1', '/join/c1',
+  /* Фича 009: чат дня X глазами гостя — по токену, без аккаунта. */
+  '/invite/day-chat',
   '/home', '/notifications', '/settings', '/support', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',

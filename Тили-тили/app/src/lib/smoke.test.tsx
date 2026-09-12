@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import App from '@/App'
 
 const ROUTES = [
-  '/', '/quiz', '/invite', '/auth', '/join/ДРУГ-7F3K',
+  '/', '/quiz', '/invite', '/auth', '/join/ДРУГ-7F3K', '/invite/day-chat',
   '/home', '/notifications', '/settings', '/support',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',
