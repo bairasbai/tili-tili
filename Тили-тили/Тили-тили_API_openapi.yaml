@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.30.0
+  version: 0.30.1
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -624,6 +624,12 @@ paths:
     get:
       tags: [catalog]
       summary: Анкета подрядчика
+      description: |
+        Опубликованная анкета — любому вошедшему. Свою анкету владелец видит и
+        НЕопубликованной (и заблокированной) — так он смотрит её «глазами пары»
+        до публикации (фича 007); в ответе владельцу есть `published`/`blocked`.
+        Чужая неопубликованная — 404, как и раньше: по адресу нельзя узнать,
+        существует ли черновик.
       parameters:
         - name: vendorId
           in: path
@@ -4346,6 +4352,14 @@ components:
         status: { type: string, enum: [new, replied, hold, declined, won] }
         holdUntil: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
+        chatId:
+          type: string
+          nullable: true
+          description: |
+            Чат пары с этим подрядчиком — тот же, что открыло «Написать» пары
+            и в который уходит ответ на заявку. Кабинет ведёт из заявки прямо в
+            переписку (фича 007). null — у заявки без чата (выигранная без
+            переписки).
     Review:
       type: object
       properties:
