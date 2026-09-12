@@ -1773,3 +1773,24 @@ Object.assign(EN, {
   'Маршрутов:': 'Routes:',
   'записалось': 'signed up',
 })
+
+/* Фича 007 «Кабинет подрядчика» (контракт v0.30.1): чаты и настройки в кабинете, навигация кабинета,
+   карточка «Чаты с парами» на дашборде, «Открыть чат» из заявки, своя анкета глазами пары. */
+Object.assign(EN, {
+  'Кабинет': 'Dashboard',
+  'Навигация кабинета': 'Vendor dashboard navigation',
+  'Чаты с парами': 'Chats with couples',
+  'Пары · команды забронированных свадеб': 'Couples · teams of booked weddings',
+  'Чатов пока нет. Они появляются, когда пара пишет вам из каталога или бронирует вас.': 'No chats yet. They appear when a couple messages you from the catalogue or books you.',
+  'непрочитанное': 'unread',
+  'непрочитанных': 'unread',
+  'новых сообщений нет': 'no new messages',
+  'Чаты закрыты для вашей роли': 'Chats are closed to your role',
+  'тема, язык, push, сессии, выход': 'theme, language, push, sessions, sign out',
+  'Открыть чат': 'Open chat',
+  'Выйти': 'Sign out',
+  'Посмотреть анкету глазами пары': 'See your profile as couples do',
+  'Анкета не опубликована — пары её пока не видят': 'Profile not published — couples cannot see it yet',
+  'Это ваша анкета': 'This is your profile',
+  'Редактировать': 'Edit',
+})

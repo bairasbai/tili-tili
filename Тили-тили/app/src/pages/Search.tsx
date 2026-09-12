@@ -9,6 +9,7 @@ import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getVendorReviews } from '@/lib/api/reviews'
+import { getVendorProfile } from '@/lib/api/vendor'
 import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
 import { cn, copyText, plural } from '@/lib/utils'
@@ -295,6 +296,17 @@ export function VendorDetail() {
     () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, limit: 6 }) : Promise.resolve({ items: [] }),
     [v?.categoryId, city],
   )
+  /*
+   * Своя анкета глазами пары (фича 007). Владельца сервер пускает и к
+   * неопубликованной — с `published`/`blocked` в ответе (контракт v0.30.1);
+   * опубликованная своя приходит как любая другая, и узнать её можно только
+   * по своей анкете кабинета (`GET /vendor/profile` → `id`). Отказ на этом
+   * запросе — 404 у пары без анкеты, 403, лежащий сервер — не про этот экран:
+   * пока владелец не опознан, экран остаётся экраном пары. Кнопки самому себе
+   * («Написать», «Добавить в свадьбу») заменяются ссылкой на мастер.
+   */
+  const own = useApi(() => getVendorProfile().catch(() => null), [])
+  const mine = !!v?.id && ((!!own.data?.id && own.data.id === v.id) || v.published !== undefined || v.blocked !== undefined)
   const slot = slots.find(s => s.categoryId === v?.categoryId)
   /* Телефон показывается только тому, кто этого подрядчика забронировал
    * (решение владельца 2026-09-03). До брони разговор идёт в чате: номер
@@ -380,6 +392,14 @@ export function VendorDetail() {
           else { copyText(`${data.title}\n${data.text}\n${data.url}`) }
         }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('Поделиться')}</button>
       } />
+      {/* Что видят пары на самом деле: `published`/`blocked` приходят только
+          владельцу, и его надо предупредить прежде, чем он начнёт проверять
+          цены. Блокировка — сильнее «не опубликована»: публикация закрыта. */}
+      {v.blocked ? (
+        <p role="alert" className="mx-5 mt-2 rounded-2xl bg-[var(--rose-soft)] px-4 py-3 text-[12px] font-semibold text-[var(--rose-ink)] leading-relaxed">{t('Анкета заблокирована модератором — в каталоге её нет, публикация закрыта')}</p>
+      ) : v.published === false ? (
+        <p role="alert" className="mx-5 mt-2 rounded-2xl bg-[var(--honey)] px-4 py-3 text-[12px] font-semibold text-[var(--honey-ink)] leading-relaxed">{t('Анкета не опубликована — пары её пока не видят')}</p>
+      ) : null}
       {/* Галерея */}
       <div className="px-5 mt-2">
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
@@ -611,6 +631,15 @@ export function VendorDetail() {
       </div>
 
       {/* CTA */}
+      {mine ? (
+        /* Своя анкета: писать и бронировать самого себя нельзя — сервер
+           ответил бы отказом, а кнопка с одним исходом хуже её отсутствия.
+           Вместо них — путь в мастер, где анкету и правят. */
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex items-center gap-3 z-40">
+          <span className="flex-1 text-[12.5px] font-semibold text-[var(--ink2)]">{t('Это ваша анкета')}</span>
+          <button onClick={() => nav('/vendor-app/profile')} className="press h-[48px] px-6 rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Редактировать')}</button>
+        </div>
+      ) : (
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
         {/* Раньше кнопка вела на выдуманный чат `ch1` — один и тот же у всех
             подрядчиков. Теперь переписка создаётся на сервере и открывается
@@ -622,6 +651,7 @@ export function VendorDetail() {
           {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
         </button>
       </div>
+      )}
       {err && (
         <div className="fixed bottom-[92px] left-1/2 -translate-x-1/2 w-full max-w-[430px] px-5 z-40">
           <p className="rounded-2xl bg-[var(--card)] px-4 py-3 text-[12.5px] text-[var(--rose-ink)]" style={{ boxShadow: 'var(--shadow)' }}>{err}</p>

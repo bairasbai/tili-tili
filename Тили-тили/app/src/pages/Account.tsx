@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ChevronLeft, Shield, Smartphone, ChevronRight, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
+import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
@@ -12,8 +12,9 @@ import { api, ApiError, saveTokens } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { deleteAllPushSubscriptions, endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
+import { deleteAllPushSubscriptions, endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
 import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
 import { devicePushState, disableDevicePush, enableDevicePush, pushSupported, type DevicePushState } from '@/lib/push'
@@ -549,7 +550,8 @@ function subscribedSince(iso?: string): string {
   return d.toLocaleDateString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' })
 }
 
-function DevicePushRow() {
+/** `top` — рисовать ли верхнюю границу: её нет, когда строка в карточке первая. */
+function DevicePushRow({ top = true }: { top?: boolean }) {
   const [state, setState] = useState<DevicePushState | 'loading'>('loading')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -604,7 +606,7 @@ function DevicePushRow() {
   const canToggle = state === 'on' || state === 'off' || state === 'unverified'
   const looksOn = state === 'on' || state === 'unverified'
   return (
-    <div className="py-3.5 border-t border-[var(--track)]">
+    <div className={cn('py-3.5', top && 'border-t border-[var(--track)]')}>
       <div className="flex items-center gap-3">
         <Smartphone size={16} className="text-[var(--ink2)]" />
         <span className="flex-1 text-[13px] font-medium">{t('Push на этом устройстве')}</span>
@@ -638,10 +640,28 @@ function DevicePushRow() {
   )
 }
 
-export function Settings() {
+/*
+ * Режим подрядчика (`vendor`, фича 007): тот же экран по адресу
+ * `/vendor-app/settings`. Тема, язык, push на устройстве и подписки, сессии,
+ * выход и удаление аккаунта — общие для обеих ролей. Блоки свадьбы — город,
+ * отмена, всё, что читает `weddingId`, — скрыты: подрядчик может быть и парой,
+ * но в кабинете он подрядчик. Виды уведомлений и тихие часы здесь тоже не
+ * показываются: настройки уведомлений подрядчика по видам — отдельная фича
+ * (спека 007, A2), а «дедлайны задач» — про чек-лист пары. Своё — строка
+ * «Посмотреть анкету глазами пары» и «Выйти» только на этом устройстве.
+ */
+export function Settings({ vendor = false }: { vendor?: boolean }) {
   const nav = useNavigate()
   const me = useApi(() => getMe(), [])
   const sessions = useApi(() => getSessions(), [])
+  /* Своя анкета — только в кабинете и только ради ссылки «глазами пары»:
+     404 здесь — «анкеты ещё нет», ссылки не будет; остальные отказы тоже
+     не роняют настройки — они не про анкету. */
+  const profile = useApi(
+    () => (vendor ? getVendorProfile().catch(() => null) : Promise.resolve(null)),
+    [vendor],
+  )
+  const [leavingHere, setLeavingHere] = useState(false)
   /* Тумблер отзывается сразу, запрос уходит следом: ждать круга до сервера,
      чтобы переключатель сдвинулся, — это не отзывчиво. Отказ возвращает
      прежнее значение и называет причину. */
@@ -712,6 +732,15 @@ export function Settings() {
   const { forgetSession } = useStore()
   const signOut = async () => {
     await signOutEverywhere()
+    forgetSession()
+    nav('/auth')
+  }
+  /* «Выйти» в кабинете — только это устройство: гасится своя сессия по
+     идентификатору из списка (ERR-0233), чужие остаются. */
+  const signOutThisDevice = async () => {
+    if (leavingHere) return
+    setLeavingHere(true)
+    await signOutHere()
     forgetSession()
     nav('/auth')
   }
@@ -797,8 +826,10 @@ export function Settings() {
    * уже запросил партнёр, сервер ИСПОЛНИТ её сразу, и человек должен знать
    * это до нажатия (FR-002).
    */
-  const wedding = useApi(() => (weddingId ? getWedding(weddingId) : Promise.resolve(null)), [weddingId])
-  const iAmCouple = !!prof?.id && wedding.data?.members?.some(m => m.user?.id === prof.id && m.role === 'couple')
+  /* В кабинете свадьбу не читаем вовсе: блока отмены там нет, и запрос о
+     чужой для этого экрана роли был бы холостым. */
+  const wedding = useApi(() => (weddingId && !vendor ? getWedding(weddingId) : Promise.resolve(null)), [weddingId, vendor])
+  const iAmCouple = !vendor && !!prof?.id && wedding.data?.members?.some(m => m.user?.id === prof.id && m.role === 'couple')
   const requestedBy = wedding.data?.cancelRequestedBy ?? null
   /* Свой же запрос предупреждением не считается: человек и так помнит, что
      нажимал. Предупреждение — только про партнёра. */
@@ -841,8 +872,17 @@ export function Settings() {
   }
   return (
     <div className="pb-28">
-      <TopBar back title={t('Настройки')} />
+      <TopBar back title={t('Настройки')} sub={vendor ? t('Кабинет подрядчика') : undefined} fallback={vendor ? '/vendor-app' : undefined} />
       <div className="px-5 mt-3 space-y-3.5">
+        {/* Своя анкета так, как её откроет пара, — и неопубликованной тоже:
+            владельца сервер пускает (контракт v0.30.1). Без анкеты строки нет. */}
+        {vendor && ready(profile) && profile.data?.id && (
+          <button onClick={() => nav(`/vendor/${profile.data?.id ?? ''}`)} className="press w-full card px-4 py-3.5 flex items-center gap-3 text-left">
+            <Eye size={16} className="text-[var(--rose-deep)]" />
+            <span className="flex-1 text-[13px] font-medium">{t('Посмотреть анкету глазами пары')}</span>
+            <ChevronRight size={16} className="text-[var(--soft)]" />
+          </button>
+        )}
         <div className="card px-4 py-1.5">
           <Row label={theme === 'dark' ? t('🌙 Тёмная тема') : t('☀️ Светлая тема')} value={theme === 'dark'} onChange={v => setTheme(v ? 'dark' : 'light')} />
           <div className="flex items-center justify-between py-3.5">
@@ -863,7 +903,7 @@ export function Settings() {
               указано» и включённые push — утверждения о профиле, которого
               экран не видел; тумблер при этом ещё и отправлял бы правку. */}
           {ready(me) && <>
-          <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
+          <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)] last:border-none">
             <div className="w-10 h-10 rounded-full bg-[var(--rose)] text-[var(--on-grad)] font-serif-d text-[16px] flex items-center justify-center">{name[0] ?? '·'}</div>
             <div className="flex-1 min-w-0">
               {editName ? (
@@ -879,21 +919,27 @@ export function Settings() {
           {saveErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{saveErr}</p>}
           {/* Это виды уведомлений в приложении (и push, когда он включён на
               устройстве ниже). Подпись «Push: …» обещала push, которого
-              клиент до блока 8 аудита не умел вовсе. */}
+              клиент до блока 8 аудита не умел вовсе. Подрядчику виды не
+              показываются: его матрица (лиды/сделки/чаты) — отдельная фича. */}
+          {!vendor && <>
           <Row label={t('Уведомления: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />
           <Row label={t('Уведомления: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
           <Row label={t('Уведомления: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
+          </>}
           {/* Тумблер «Советы ИИ-координатора» убран: таких уведомлений никто не
               шлёт (ни одной задачи с видом «совет» в бэкенде), а переключатель
               для того, чего нет, — обещание (R-174). Поле `push.tips` в
               контракте остаётся — вернётся вместе с советами. */}
           </>}
+          {!vendor && (
           <button onClick={() => setCityPick(true)} className="press w-full flex items-center justify-between py-3.5 border-b border-[var(--track)] last:border-none text-left">
             <span className="text-[13px] font-medium">{t('Город свадьбы')}</span>
             <span className="flex items-center gap-1.5 text-[12px] text-[var(--soft)]"><MapPin size={13} className="text-[var(--rose-deep)]" />{t(city)} · {t(cityRegion)}</span>
           </button>
+          )}
         </div>
         <div className="card px-4 py-1.5">
+          {!vendor && <>
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
             <Moon size={16} className="text-[var(--ink2)]" />
             <span className="flex-1 text-[13px] font-medium">{t('Тихие часы')}</span>
@@ -912,7 +958,11 @@ export function Settings() {
                 ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
                 : t('Тихих часов нет: уведомления приходят в любое время суток.')}
           </p>
-          <DevicePushRow />
+          </>}
+          {/* Push на устройстве — обеим ролям: без ключей сервер ответит 501
+              своими словами и подрядчику, и паре (R-174). В кабинете строка
+              стоит первой в карточке — верхней границы у неё тогда нет. */}
+          <DevicePushRow top={!vendor} />
         </div>
         <div className="card px-4 py-1.5">
           <AsyncState q={sessions} />
@@ -935,6 +985,14 @@ export function Settings() {
           ))}
           {sessionErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{sessionErr}</p>}
         </div>
+        {/* У пары кнопка выхода стоит на экране «Мы»; в кабинете экрана «Мы»
+            нет — «Выйти» здесь, и гасит она только эту сессию: со всех
+            устройств — кнопкой ниже. */}
+        {vendor && (
+          <button onClick={() => void signOutThisDevice()} disabled={leavingHere} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50">
+            <LogOut size={15} />{leavingHere ? t('Секунду…') : t('Выйти')}
+          </button>
+        )}
         <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
         {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
         {cancelDone === 'cancelled' ? (

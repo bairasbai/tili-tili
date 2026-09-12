@@ -221,9 +221,19 @@ export function Us() {
  * «Артём Краснов · Аванс получил», «Чат дня X · откроется 13 июня» — одни и
  * те же пять строк у каждого, кто открывал экран. Теперь чаты приходят с
  * сервера: у пары — подрядчики, команда и день X, у подрядчика — его пары.
+ *
+ * Режим кабинета (`home="/vendor-app"`, фича 007): тот же экран по адресу
+ * `/vendor-app/chats`. Список — из того же `GET /chats`: сервер сам подписывает
+ * чаты подрядчика названием свадьбы. Меняются только слова и адреса — заголовок
+ * «Чаты с парами», строки ведут в переписку кабинета, «назад» — в кабинет, а не
+ * на главную пары. До этого у `/vendor-app` маршрута чатов не было вовсе:
+ * подрядчик отвечал на заявку и продолжить переписку не мог. Файл не
+ * разрезается: `Chats`/`Chat` живут здесь (`react-refresh/only-export-components`).
  */
-export function Chats() {
+export function Chats({ home }: { home?: '/vendor-app' }) {
   const nav = useNavigate()
+  const cabinet = home === '/vendor-app'
+  const chatsBase = cabinet ? '/vendor-app/chats' : '/us/chats'
   const [q, setQ] = useState('')
   /* «Сейчас» для сравнения со сроком открытия чата дня X — не в отрисовке
      (D4-22), а вместе с опросом: снятое один раз при монтировании оно
@@ -250,19 +260,23 @@ export function Chats() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Чаты')} sub={t('Подрядчики · команда · день X')} />
+      <TopBar back fallback={home}
+        title={cabinet ? t('Чаты с парами') : t('Чаты')}
+        sub={cabinet ? t('Пары · команды забронированных свадеб') : t('Подрядчики · команда · день X')} />
       <AsyncState q={list} />
       <div className="px-5 mt-3">
         <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={t('Поиск по чатам…')} className="w-full card-s px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
       </div>
       {!chats.length && ready(list) && (
         <p className="px-5 mt-4 text-[12.5px] text-[var(--soft)] leading-relaxed">
-          {t('Чатов пока нет. Они появляются, когда вы пишете подрядчику из каталога или собираете команду свадьбы.')}
+          {cabinet
+            ? t('Чатов пока нет. Они появляются, когда пара пишет вам из каталога или бронирует вас.')
+            : t('Чатов пока нет. Они появляются, когда вы пишете подрядчику из каталога или собираете команду свадьбы.')}
         </p>
       )}
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {shown.map(c => (
-          <button key={c.id} onClick={() => nav(`/us/chats/${c.id}`)} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
+          <button key={c.id} onClick={() => nav(`${chatsBase}/${c.id}`)} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
             <Tile icon={CHAT_ICON[c.kind ?? ''] ?? '💬'} tile={CHAT_TILE[c.kind ?? ''] ?? 'bg-[var(--track)]'} size={48} />
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-baseline gap-2">
@@ -341,10 +355,13 @@ const NO_HISTORY: History = { chatId: '', byId: {}, next: undefined }
 const bySentAt = (a: Message, b: Message) =>
   (a.sentAt ?? '').localeCompare(b.sentAt ?? '') || (a.id ?? '').localeCompare(b.id ?? '')
 
-export function Chat() {
+/* `home="/vendor-app"` — переписка открыта из кабинета подрядчика (фича 007):
+   «назад» ведёт в его список чатов, а не в чаты пары. Сама переписка та же. */
+export function Chat({ home }: { home?: '/vendor-app' }) {
   const { id } = useParams()
   const nav = useNavigate()
   const chatId = id ?? ''
+  const listRoute = home ? `${home}/chats` : '/us/chats'
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -495,7 +512,7 @@ export function Chat() {
 
   if (!chatId || missing) return (
     <div className="pb-28">
-      <TopBar back title={t('Чат')} />
+      <TopBar back title={t('Чат')} fallback={home ? listRoute : undefined} />
       <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{t('Такого чата у вас нет')}</p>
     </div>
   )
@@ -503,7 +520,7 @@ export function Chat() {
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
-        <button onClick={() => goBack(n => nav(n), (to, o) => nav(to, o), '/us/chats')} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
+        <button onClick={() => goBack(n => nav(n), (to, o) => nav(to, o), listRoute)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Назад')}>
           <ChevronLeft size={17} />
         </button>
         <Tile icon={CHAT_ICON[chat?.kind ?? ''] ?? '💬'} tile={CHAT_TILE[chat?.kind ?? ''] ?? 'bg-[var(--track)]'} size={38} />

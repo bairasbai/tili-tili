@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { TabBar, OfflineBanner } from '@/components/chrome'
+import { TabBar, VendorTabBar, OfflineBanner } from '@/components/chrome'
 import { t } from '@/lib/i18n'
 import Onboarding from '@/pages/Onboarding'
 import Quiz from '@/pages/Quiz'
@@ -132,12 +132,15 @@ function Shell() {
   // новый экран — всегда с верха страницы (иначе на телефоне кажется, что «ничего не нажалось»)
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   const p = loc.pathname
+  /* Кабинет подрядчика — со своей навигацией (фича 007): на всех `/vendor-app*`,
+     кроме переписки, где низ занимает поле ввода — как у пары в `/us/chats/:id`. */
+  const vendorTab = p.startsWith('/vendor-app') && !p.startsWith('/vendor-app/chats/')
   const noTab =
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
     p.startsWith('/i/') ||
     p.startsWith('/join') ||
     p.startsWith('/us/chats/') ||
-    p.startsWith('/vendor-app') ||
+    (p.startsWith('/vendor-app') && !vendorTab) ||
     /* Панель платформы — не раздел пары: нижняя навигация здесь предлагала бы
        уйти в «Свадьбу» и «Чаты» посреди разбора чужой жалобы. */
     p.startsWith('/admin')
@@ -194,6 +197,12 @@ function Shell() {
           <Route path="/vendor-app/leads/:id" element={<VendorLead />} />
           <Route path="/vendor-app/reviews" element={<VendorReviews />} />
           <Route path="/vendor-app/analytics" element={<VendorAnalytics />} />
+          {/* Чаты и настройки кабинета — те же экраны, что у пары, в режиме
+              кабинета (фича 007): данные и права у них общие, разные только
+              слова и адреса возврата. */}
+          <Route path="/vendor-app/chats" element={<Chats home="/vendor-app" />} />
+          <Route path="/vendor-app/chats/:id" element={<Chat home="/vendor-app" />} />
+          <Route path="/vendor-app/settings" element={<Settings vendor />} />
           <Route path="/us" element={<Us />} />
           <Route path="/us/team" element={<Team />} />
           <Route path="/inspiration" element={<Inspiration />} />
@@ -211,7 +220,7 @@ function Shell() {
           <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />
         </Routes>
       </Suspense>
-      {!noTab && <TabBar />}
+      {!noTab && (vendorTab ? <VendorTabBar /> : <TabBar />)}
     </div>
   )
 }

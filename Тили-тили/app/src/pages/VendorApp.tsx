@@ -21,6 +21,7 @@ import {
   type VendorDraft,
 } from '@/lib/api/vendor'
 import { getCategories } from '@/lib/api/catalog'
+import { getChats } from '@/lib/api/chats'
 import { cn, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, rub } from '@/lib/money'
@@ -49,12 +50,16 @@ export function VendorDashboard() {
   const reviews = useApi(() => getVendorReviews(), [])
   const updates = useApi(() => getVendorUpdates(), [])
   const calendar = useApi(() => getVendorCalendar(month), [month])
+  /* Переписка с парами (фича 007) — из общего `GET /chats`: сервер отдаёт
+     подрядчику его чаты сам. Число непрочитанных — только с ответом. */
+  const chats = useApi(() => getChats(), [])
 
   const p = profile.data
   const leadList = leads.data ?? []
   const reviewList = reviews.data ?? []
   const updateList = (updates.data ?? []).filter(u => !u.ackAt)
   const days = calendar.data ?? []
+  const unread = (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0)
 
   /* Заполненность — подсказка, а не оценка: показываем, чего не хватает. */
   const filled = [!!p?.name, !!p?.categoryId, !!p?.city, !!p?.about, !!p?.phone, !!(p?.packages?.length), !!(p?.gallery?.length)]
@@ -156,6 +161,31 @@ export function VendorDashboard() {
           </div>
         </div>
 
+        {/* Чаты с парами (фича 007): переписка по заявкам и общие чаты
+            забронированных свадеб. Строка состояния — только по ответу
+            `GET /chats`: «новых сообщений нет» рядом с лежащим сервером
+            подрядчик читает как «никто не написал» (R-178). «Повторить» —
+            отдельной кнопкой: вложить её в тап по карточке нельзя. */}
+        <div className="card p-4 mt-3.5">
+          <button onClick={() => nav('/vendor-app/chats')} className="press w-full flex items-center gap-3 text-left">
+            <Tile icon="💬" tile="bg-[var(--peach)]" size={42} />
+            <div className="flex-1 min-w-0">
+              <b className="text-[13px]">{t('Чаты с парами')}</b>
+              <p className="text-[10.5px] text-[var(--soft)]">
+                {chats.loading ? t('Загружаем…')
+                  : chats.error ? <span role="alert" className="text-[var(--rose-ink)]">{chats.error}</span>
+                  : chats.forbidden ? t('Чаты закрыты для вашей роли')
+                  : unread > 0 ? `${unread} ${plural(unread, t('непрочитанное'), t('непрочитанных'), t('непрочитанных'))}`
+                  : t('новых сообщений нет')}
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-[var(--soft)]" />
+          </button>
+          {chats.error && (
+            <button onClick={chats.reload} className="press mt-2 text-[10.5px] font-bold text-[var(--rose-deep)]">{t('Повторить')}</button>
+          )}
+        </div>
+
         <button onClick={() => nav('/vendor-app/reviews')} className="press w-full card p-4 mt-3.5 flex items-center gap-4 text-left">
           <div className="text-center">
             <b className="font-serif-d text-[30px] tabular">{rating ?? '—'}</b>
@@ -193,6 +223,18 @@ export function VendorDashboard() {
           <div className="flex-1">
             <b className="text-[13px]">{p?.verified ? t('Вы проверены') : t('Пройти верификацию')}</b>
             <p className="text-[10.5px] text-[var(--soft)]">{p?.verified ? t('галочка видна парам в каталоге') : t('пары чаще пишут проверенным')}</p>
+          </div>
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </button>
+
+        {/* Настройки кабинета (фича 007) — те же, что у пары, без блоков
+            свадьбы. Строка дублирует вкладку навигации нарочно: путь к выходу
+            и сессиям должен читаться и с самого дашборда. */}
+        <button onClick={() => nav('/vendor-app/settings')} className="press w-full card-s p-4 mt-2.5 flex items-center gap-3 text-left">
+          <Tile icon="⚙️" tile="bg-[var(--lav)]" size={42} />
+          <div className="flex-1">
+            <b className="text-[13px]">{t('Настройки')}</b>
+            <p className="text-[10.5px] text-[var(--soft)]">{t('тема, язык, push, сессии, выход')}</p>
           </div>
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>

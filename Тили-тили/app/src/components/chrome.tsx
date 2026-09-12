@@ -1,10 +1,13 @@
-import { createElement, useEffect, useState } from 'react'
-import { ArrowLeft, Heart, Home, Search, User, Sparkles } from 'lucide-react'
+import { createElement, useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Briefcase, Heart, Home, MessageCircle, Search, Settings as SettingsIcon, Store, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
 import { t } from '@/lib/i18n'
 import { reviewsPendingRating, type Vendor as ServerVendor } from '@/lib/api/catalog'
+import { getChats } from '@/lib/api/chats'
 import { useServerHealth } from '@/lib/api/health'
+import { useApi } from '@/lib/api/useApi'
+import { ready } from '@/components/AsyncState'
 import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
 import { cn, goBack } from '@/lib/utils'
@@ -67,6 +70,73 @@ export function TabBar() {
           return (
             <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[var(--rose-deep)]' : 'text-[var(--soft)]')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
+              <span className="text-[9.5px] font-medium tracking-wide">{tt(tb.label)}</span>
+              {on && <span className="tab-dot" />}
+            </button>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+
+/*
+ * Нижняя навигация кабинета подрядчика (фича 007): Кабинет · Сделки · Чаты ·
+ * Настройки — на всех `/vendor-app*`, кроме переписки, где низ занимает поле
+ * ввода (как у пары). Раньше кабинет шёл без навигации вовсе: с любого экрана
+ * выход был только кнопкой «назад», а продолжить переписку было негде.
+ *
+ * Бейдж на «Чатах» — сумма `unread` из `GET /chats`, того же ответа, что
+ * рисует список. Без ответа и при нуле бейджа нет: «горит всегда» — не
+ * состояние (R-178, R-180). Опроса здесь нет — список чатов опрашивает себя
+ * сам, и второй опрос удваивал бы запросы; бейдж перечитывается при каждом
+ * переходе между экранами кабинета.
+ */
+const vendorTabs = [
+  { to: '/vendor-app', label: t('Кабинет'), icon: Store },
+  { to: '/vendor-app/deals', label: t('Сделки'), icon: Briefcase },
+  { to: '/vendor-app/chats', label: t('Чаты'), icon: MessageCircle },
+  { to: '/vendor-app/settings', label: t('Настройки'), icon: SettingsIcon },
+]
+
+export function VendorTabBar() {
+  const nav = useNavigate()
+  const loc = useLocation()
+  const tt = useT()
+  const chats = useApi(() => getChats(), [])
+  /* Перечитывание на переходе — через `reload()`, а не через зависимость:
+     смена зависимостей у `useApi` — «другой запрос», и бейдж гас бы до
+     свежего ответа на каждом переходе (тот же класс, что RF-02). Путь
+     сравнивается с прошлым, а не с фактом монтирования: первый запрос делает
+     сам хук, и двойной вызов эффекта в StrictMode второго не добавляет. */
+  const reloadChats = useRef(chats.reload)
+  useEffect(() => { reloadChats.current = chats.reload })
+  const seenPath = useRef(loc.pathname)
+  useEffect(() => {
+    if (seenPath.current === loc.pathname) return
+    seenPath.current = loc.pathname
+    reloadChats.current()
+  }, [loc.pathname])
+  const unread = ready(chats) ? (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0) : 0
+  /* «Кабинет» подсвечен и на его подэкранах — анкете, заявке, отзывах,
+     аналитике, верификации: своей вкладки у них нет. */
+  const active = (to: string) => to === '/vendor-app'
+    ? !vendorTabs.some(x => x.to !== '/vendor-app' && loc.pathname.startsWith(x.to))
+    : loc.pathname.startsWith(to)
+  return (
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab z-40" aria-label={t('Навигация кабинета')}>
+      <div className="flex items-end justify-around px-2 pt-2 pb-[max(14px,env(safe-area-inset-bottom))]">
+        {vendorTabs.map(tb => {
+          const Icon = tb.icon
+          const on = active(tb.to)
+          return (
+            <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[var(--rose-deep)]' : 'text-[var(--soft)]')}>
+              <span className="relative">
+                <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
+                {tb.to === '/vendor-app/chats' && unread > 0 && (
+                  <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full grad text-[var(--on-grad)] text-[9px] font-bold flex items-center justify-center tabular">{unread}</span>
+                )}
+              </span>
               <span className="text-[9.5px] font-medium tracking-wide">{tt(tb.label)}</span>
               {on && <span className="tab-dot" />}
             </button>

@@ -109,6 +109,27 @@ export async function signOutEverywhere(): Promise<void> {
 }
 
 /**
+ * Выйти только на этом устройстве (фича 007, настройки подрядчика).
+ *
+ * Те же шаги, что у `signOutEverywhere`, без гашения чужих сессий: push этого
+ * устройства снимается первым, пока токен жив (D4-06); своя сессия находится
+ * в списке по `current` и гасится по идентификатору — `DELETE
+ * /users/me/sessions/{id}`, так приложение и выходит (ERR-0233); локальное
+ * чистится после ответа. Сервер не ответил — уйти всё равно даём, как и при
+ * выходе со всех устройств: запереть человека в аккаунте хуже живой сессии.
+ */
+export async function signOutHere(): Promise<void> {
+  try {
+    await disableDevicePush().catch(() => undefined)
+    const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
+    if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
+  } catch {
+    /* см. шаг 3 у signOutEverywhere */
+  }
+  forgetLocally()
+}
+
+/**
  * Отозвать согласие на обработку данных (ревью D1-23).
  *
  * На сервере это одна транзакция: согласие помечается отозванным, аккаунт —

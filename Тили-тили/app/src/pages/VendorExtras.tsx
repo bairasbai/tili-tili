@@ -79,6 +79,15 @@ export function VendorLead() {
           {lead.holdUntil && (
             <p className="text-[10.5px] text-[var(--honey-deep)] mt-2.5">{t('Держите до')} {new Date(lead.holdUntil).toLocaleString(dateLocale(), { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>
           )}
+          {/* Переписка по заявке (`Lead.chatId`, контракт v0.30.1, фича 007):
+              ответ ложится в чат пары, и продолжить разговор можно там же.
+              Чат называет сервер — это переход в существующий, не создание;
+              у заявки без чата (выигранной без переписки) кнопки нет. */}
+          {lead.chatId && (
+            <button onClick={() => nav(`/vendor-app/chats/${lead.chatId}`)} className="press w-full h-10 mt-3 rounded-full bg-[var(--bg)] text-[11.5px] font-bold text-[var(--rose-deep)] flex items-center justify-center gap-1.5">
+              <MessageCircle size={13} />{t('Открыть чат')}
+            </button>
+          )}
         </div>
 
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
@@ -91,9 +100,10 @@ export function VendorLead() {
                 <button key={x} disabled={busy} onClick={() => act('reply', x)} className="press w-full card-s px-4 py-3 text-left text-[12px] text-[var(--ink2)] disabled:opacity-50">{x}</button>
               ))}
             </div>
-            {/* Кнопки «В чат» здесь нет: список чатов ещё на моках (этап 10),
-                и подрядчик попадал в чужую выдуманную переписку. Ответ уходит
-                отсюда — полем ниже, и он же ложится в чат пары. */}
+            {/* Ответ уходит отсюда — полем ниже — и ложится в чат пары; сама
+                переписка открывается кнопкой «Открыть чат» в карточке выше,
+                по `chatId` от сервера (фича 007). Прежняя «В чат» вела в
+                выдуманный `ch1` и была снята вместе с моками. */}
             <div className="grid grid-cols-2 gap-2.5 pt-1">
               <button disabled={busy} onClick={() => act('hold')} className="press h-11 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] text-[11.5px] font-bold flex items-center justify-center gap-1 disabled:opacity-50"><Clock size={13} />{t('Hold 72 ч')}</button>
               <button disabled={busy} onClick={() => act('decline')} className="press h-11 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] text-[11.5px] font-bold flex items-center justify-center gap-1 disabled:opacity-50"><X size={13} />{t('Отклонить')}</button>
