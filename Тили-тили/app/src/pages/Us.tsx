@@ -494,6 +494,9 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
       await sendMessage(chatId, body)
       setText('')
       reloadTail.current()
+      /* Счётчик суток Тиля живёт в списке чатов (`Chat.tilly`, фича 010): после
+         отправки его перечитывает сервер, а не экран прибавляет единицу. */
+      if (chat?.kind === 'tilly') chats.reload()
     } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
   })()
 

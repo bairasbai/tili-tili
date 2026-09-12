@@ -9,7 +9,7 @@
  * Красный без фикса: на HEAD `Us.tsx` счётчика не рисовал, `Admin.tsx` карточки
  * не знал.
  */
-import { render, cleanup, waitFor } from '@testing-library/react'
+import { render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StoreProvider } from './store'
@@ -34,9 +34,11 @@ function serve(routes: Routes): Call[] {
     const path = decodeURIComponent(full.split('?')[0] ?? '')
     let body: unknown = null
     try { body = init?.body ? JSON.parse(String(init.body)) : null } catch { body = init?.body }
-    calls.push({ method: init?.method ?? 'GET', path, body })
+    const call: Call = { method: init?.method ?? 'GET', path, body }
+    calls.push(call)
     if (!(path in routes)) return Promise.resolve(json({ error: { code: 'not_found', message: `нет ответа для ${path}` } }, 404))
-    const reply = routes[path]
+    const stored = routes[path]
+    const reply = typeof stored === 'function' ? (stored as (c: Call) => unknown)(call) : stored
     if (reply === PENDING) {
       return new Promise<Response>((_, reject) => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
@@ -104,6 +106,22 @@ describe('T1: шапка чата Тиля — счётчик суток и пр
     const r = openChat()
     await waitFor(() => expect(text(r)).toContain('сегодня 0 из 50'), { timeout: 4000 })
     expect(text(r)).toContain('без ИИ — ответы появятся, когда помощник заработает')
+  })
+
+  it('после «Отправить» счётчик перечитывается с сервера: 3 → 4 из 50 по второму GET /chats, не прибавкой на экране', async () => {
+    let listed = 0
+    const calls = serve(base({
+      '/chats': () => [tillyChat({ live: true, usedToday: ++listed === 1 ? 3 : 4, limitPerDay: 50 })],
+      [MESSAGES]: { items: [], nextCursor: null },
+    }))
+    const r = openChat()
+    await waitFor(() => expect(text(r)).toContain('сегодня 3 из 50'), { timeout: 4000 })
+    const input = r.container.querySelector('input:not([type=checkbox])') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Что мы забыли?' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    await waitFor(() => expect(calls.filter(c => c.method === 'POST' && c.path === MESSAGES)).toHaveLength(1), { timeout: 4000 })
+    await waitFor(() => expect(text(r), 'счётчик не перечитан после отправки').toContain('сегодня 4 из 50'), { timeout: 4000 })
+    expect(calls.filter(c => c.method === 'GET' && c.path === '/chats').length).toBeGreaterThanOrEqual(2)
   })
 
   it('контроль: чат без поля tilly (день X, старый сервер) — ни счётчика, ни «без ИИ»', async () => {

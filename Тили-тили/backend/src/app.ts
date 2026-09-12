@@ -201,6 +201,8 @@ export async function buildApp(
    * фоновых ответов — иначе реплика Тиля терялась бы вместе с процессом. */
   const tillyModel = services.tillyModel === undefined ? createTillyModel(config.tilly, app.log) : services.tillyModel
   app.decorate('tilly', new TillyService(app, tillyModel, config.tilly))
+  if (!tillyModel) app.log.warn('TILLY_PROVIDER не задан — Тиль отвечает без ИИ честной заглушкой (см. .env.example)')
+  else app.log.info({ provider: tillyModel.provider, model: tillyModel.model }, 'Тиль: модель подключена')
   app.addHook('onClose', async () => {
     await app.tilly.settle()
   })
