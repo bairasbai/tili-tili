@@ -24,7 +24,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── лиды ─────────────────────────────────────────────────────────── */
   const LEAD_COLUMNS = `l.id, l.message, l.state, l.hold_until, l.created_at,
-    w.title as couple_name, w.date::text as wedding_date, c.name as city`
+    w.title as couple_name, w.date::text as wedding_date, c.name as city,
+    (select ch.id from chats ch where ch.wedding_id = l.wedding_id and ch.vendor_id = l.vendor_id and ch.kind = 'vendor') as chat_id`
 
   interface LeadRow {
     id: string
@@ -35,10 +36,13 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     couple_name: string
     wedding_date: string | null
     city: string | null
+    chat_id: string | null
   }
 
   const toLead = (r: LeadRow) => ({
     id: r.id,
+    // Чат заявки — тот же, что открыло «Написать» пары; кабинет ведёт в него из заявки (фича 007).
+    chatId: r.chat_id,
     coupleName: r.couple_name,
     weddingDate: r.wedding_date,
     city: r.city,
@@ -197,7 +201,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
                     (select w.title from weddings w where w.id = l.wedding_id) as couple_name,
                     (select w.date::text from weddings w where w.id = l.wedding_id) as wedding_date,
                     (select c.name from weddings w left join cities c on c.id = w.city_id
-                      where w.id = l.wedding_id) as city`,
+                      where w.id = l.wedding_id) as city,
+                    (select ch.id from chats ch where ch.wedding_id = l.wedding_id and ch.vendor_id = l.vendor_id
+                      and ch.kind = 'vendor') as chat_id`,
         [leadId, vendorId, next, HOLD_HOURS],
       )
 

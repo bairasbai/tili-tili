@@ -307,7 +307,22 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
         where v.id = $1 and v.published_at is not null`,
       [vendorId],
     )
-    if (!rows[0]) throw notFound('Анкета не найдена')
+    if (!rows[0]) {
+      /* Своя анкета — владельцу и до публикации, и под блокировкой: так он
+       * смотрит её «глазами пары» из кабинета (фича 007). Чужой черновик —
+       * 404, как и раньше: по адресу нельзя узнать, существует ли он.
+       * Условие `user_id = caller` — тем же запросом, а не отдельной проверкой
+       * прав: две строки для одного факта расходятся. */
+      const { rows: mine } = await db().query<VendorRow & { about: string | null; published_at: Date | null; blocked_at: Date | null }>(
+        `select ${VENDOR_COLUMNS}, v.about, v.published_at, v.blocked_at
+           from vendors v join users u on u.id = v.user_id left join cities c on c.id = v.city_id
+          where v.id = $1 and v.user_id = $2`,
+        [vendorId, request.caller!.userId],
+      )
+      if (!mine[0]) throw notFound('Анкета не найдена')
+      const own = await loadDetail(db(), vendorId, mine[0])
+      return { ...own, published: mine[0].published_at !== null, blocked: mine[0].blocked_at !== null }
+    }
     /* Счётчик просмотров — первая ступень воронки в кабинете подрядчика.
      * Считаем открытие карточки, а не показ в списке: в списке анкету
      * пролистывают, а сюда заходят осознанно.
