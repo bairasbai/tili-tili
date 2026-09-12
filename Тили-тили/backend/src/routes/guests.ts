@@ -106,6 +106,26 @@ export const seesInviteUrl = (role: Role): boolean => role === 'couple'
 const busFullForPlusOne = () =>
   conflict('bus_full', 'в автобусе нет места для +1 — снимите бронь автобуса или выберите другой')
 
+/**
+ * Телефон из списка гостей — к виду `+7XXXXXXXXXX` (фича 008).
+ *
+ * Пара вставляет номера как записала: «8 917 000-11-22», «+7 (917) …», «7917…».
+ * Один вид нужен дедупликации и напоминаниям; не российский или неполный
+ * номер — `null`, строка помечается `invalid` и не заводится.
+ */
+export function normalizeRuPhone(raw: string | undefined): string | null | undefined {
+  if (raw === undefined) return undefined
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) return `+7${digits.slice(1)}`
+  if (digits.length === 10 && digits[0] === '9') return `+7${digits}`
+  return null
+}
+
+/** Ключ имени для дедупликации: регистр и лишние пробелы — не другой гость. */
+export function guestNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
 /** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
 export function personCount(guests: { status: string; plusOne: boolean }[]): number {
   return guests.filter((g) => g.status === 'yes').reduce((a, g) => a + (g.plusOne ? 2 : 1), 0)
@@ -165,6 +185,85 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         ],
       )
       return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
+    },
+  )
+
+  /* ── импорт списком ────────────────────────────────────────────────── */
+  app.post(
+    '/weddings/:weddingId/guests/import',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['guests'],
+          additionalProperties: false,
+          properties: {
+            guests: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 300,
+              items: {
+                type: 'object',
+                required: ['name'],
+                additionalProperties: false,
+                properties: {
+                  name: { type: 'string', minLength: 2, maxLength: 120 },
+                  phone: { type: 'string', maxLength: 32 },
+                  plusOne: { type: 'boolean', default: false },
+                  group: { type: 'string', maxLength: 60 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const weddingId = request.member!.weddingId
+      const { guests } = request.body as {
+        guests: { name: string; phone?: string; plusOne?: boolean; group?: string }[]
+      }
+      const skipped: { index: number; name: string; reason: 'duplicate' | 'invalid' }[] = []
+      const createdIds: string[] = []
+
+      /* Одна транзакция под замком строки свадьбы: два одновременных импорта
+       * одного списка иначе прошли бы обе проверки на дубликаты и завели гостей
+       * дважды (R-49). Дубликат — совпадение имени без регистра и лишних пробелов
+       * или телефона: с уже заведёнными гостями и с более ранней строкой того же
+       * списка. Дубликаты пропускаются, не обновляются: импорт заводит, а не
+       * правит — правка у каждого гостя своя (`PATCH …/guests/{id}`). */
+      await db().tx(async (client) => {
+        await client.query('select id from weddings where id = $1 for update', [weddingId])
+        const { rows: existing } = await client.query<{ name: string; phone: string | null }>(
+          'select name, phone from guests where wedding_id = $1',
+          [weddingId],
+        )
+        const names = new Set(existing.map((g) => guestNameKey(g.name)))
+        const phones = new Set(existing.map((g) => g.phone).filter((p): p is string => !!p))
+
+        for (const [index, row] of guests.entries()) {
+          const phone = normalizeRuPhone(row.phone)
+          if (phone === null) { skipped.push({ index, name: row.name, reason: 'invalid' }); continue }
+          const nameKey = guestNameKey(row.name)
+          if (nameKey.length < 2 || names.has(nameKey) || (phone && phones.has(phone))) {
+            skipped.push({ index, name: row.name, reason: nameKey.length < 2 ? 'invalid' : 'duplicate' })
+            continue
+          }
+          names.add(nameKey)
+          if (phone) phones.add(phone)
+          const id = uuidv7()
+          await client.query(
+            `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
+             values ($1, $2, $3, $4, $5, $6, $7)`,
+            [id, weddingId, row.name.trim().replace(/\s+/g, ' '), row.plusOne ?? false, row.group ?? null, phone ?? null, newGuestToken()],
+          )
+          createdIds.push(id)
+        }
+      })
+
+      const created: unknown[] = []
+      for (const id of createdIds) created.push(await loadGuest(db(), id, request.member!.role))
+      return reply.code(201).send({ created, skipped })
     },
   )
 

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.30.1
+  version: 0.31.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1085,6 +1085,67 @@ paths:
       responses:
         '200': { description: Принято }
 
+  /weddings/{weddingId}/guests/import:
+    post:
+      tags: [guests]
+      summary: Завести гостей списком
+      description: |
+        Пара вставляет список из заметок или таблицы; экран разбирает строки
+        (имя, телефон, «+1») и показывает предпросмотр, сервер принимает уже
+        разобранные строки и заводит их одной транзакцией (фича 008, План
+        §20.1 экран 29). Дубликаты пропускаются, а не обновляются: совпадение
+        имени (без учёта регистра и лишних пробелов) или телефона с уже
+        существующим гостем свадьбы или с другой строкой того же запроса —
+        `skipped` с причиной `duplicate`. Телефон нормализуется к `+7XXXXXXXXXX`
+        (принимаются `8…`, `7…`, `+7…`); не распознанный — `invalid`, строка не
+        заводится, остальные — заводятся. Повтор того же списка добавляет ноль.
+        Права — как у `POST …/guests` (вся команда свадьбы).
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guests]
+              properties:
+                guests:
+                  type: array
+                  minItems: 1
+                  maxItems: 300
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string, minLength: 2, maxLength: 120 }
+                      phone: { type: string, maxLength: 32 }
+                      plusOne: { type: boolean, default: false }
+                      group: { type: string, maxLength: 60 }
+      responses:
+        '201':
+          description: Список заведён; что пропущено — в `skipped`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, skipped]
+                properties:
+                  created:
+                    type: array
+                    items: { $ref: '#/components/schemas/Guest' }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      required: [index, name, reason]
+                      properties:
+                        index: { type: integer, description: 'позиция строки в присланном списке, с нуля' }
+                        name: { type: string }
+                        reason: { type: string, enum: [duplicate, invalid] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/guests/remind:
     post:
       tags: [guests]

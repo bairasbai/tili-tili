@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.30.1).
- * Операций: 161. Путей: 120. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.31.0).
+ * Операций: 162. Путей: 121. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -133,6 +133,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Удалить гостя","tag":"guests"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Обновить гостя (статус RSVP циклом yes→no→pending)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/invite-link","url":"/weddings/:weddingId/guests/:guestId/invite-link","operationId":null,"summary":"Выдать (или перевыпустить) одноразовую ссылку-приглашение гостю","tag":"guests"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/guests/import","url":"/weddings/:weddingId/guests/import","operationId":null,"summary":"Завести гостей списком","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/remind","url":"/weddings/:weddingId/guests/remind","operationId":null,"summary":"Напомнить гостям, которые не ответили","tag":"guests"},
   {"method":"GET","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Активные приглашения","tag":"invites"},
   {"method":"POST","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Создать одноразовую ссылку-приглашение (7 дней)","tag":"invites"},

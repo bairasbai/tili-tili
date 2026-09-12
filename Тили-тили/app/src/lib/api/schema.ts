@@ -1948,6 +1948,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/guests/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Завести гостей списком
+         * @description Пара вставляет список из заметок или таблицы; экран разбирает строки
+         *     (имя, телефон, «+1») и показывает предпросмотр, сервер принимает уже
+         *     разобранные строки и заводит их одной транзакцией (фича 008, План
+         *     §20.1 экран 29). Дубликаты пропускаются, а не обновляются: совпадение
+         *     имени (без учёта регистра и лишних пробелов) или телефона с уже
+         *     существующим гостем свадьбы или с другой строкой того же запроса —
+         *     `skipped` с причиной `duplicate`. Телефон нормализуется к `+7XXXXXXXXXX`
+         *     (принимаются `8…`, `7…`, `+7…`); не распознанный — `invalid`, строка не
+         *     заводится, остальные — заводятся. Повтор того же списка добавляет ноль.
+         *     Права — как у `POST …/guests` (вся команда свадьбы).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        guests: {
+                            name: string;
+                            phone?: string;
+                            /** @default false */
+                            plusOne?: boolean;
+                            group?: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Список заведён; что пропущено — в `skipped` */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            created: components["schemas"]["Guest"][];
+                            skipped: {
+                                /** @description позиция строки в присланном списке, с нуля */
+                                index: number;
+                                name: string;
+                                /** @enum {string} */
+                                reason: "duplicate" | "invalid";
+                            }[];
+                        };
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/guests/remind": {
         parameters: {
             query?: never;
