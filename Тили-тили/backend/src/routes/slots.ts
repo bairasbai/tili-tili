@@ -11,6 +11,7 @@ import { withIdempotency } from '../deals/idempotency.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
+  detachBusRoutes,
   holdVendorDate,
   loadSlot,
   loadSlots,
@@ -82,6 +83,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     await client.query('update slots set deal_id = null where id = $1', [slotId])
     await releaseVendorDate(client, dealId)
     await revokeSlotInvites(client, slotId)
+    await detachBusRoutes(client, dealId)
   }
 
   /**

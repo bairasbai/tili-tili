@@ -543,7 +543,13 @@ function GuestMenu({ token, T, shadow }: { token: string; T: Theme; shadow: stri
   )
 }
 
-/** Трансфер. Место занимается атомарно: при переполнении сервер отвечает отказом. */
+/**
+ * Трансфер. Место занимается атомарно: при переполнении сервер отвечает отказом.
+ *
+ * Имя перевозчика — из `BusRoute.carrier` (контракт v0.30.0, фича 006): гость
+ * узнаёт автобус на точке сбора. Только имя — ни телефона, ни цены сервер
+ * гостю не отдаёт; без перевозчика маршрут подписан как раньше, без приписок.
+ */
 function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
   const q = useApi(() => getGuestShuttle(token), [token])
   const [busy, setBusy] = useState(false)
@@ -570,7 +576,7 @@ function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: s
               <button key={r.id} disabled={busy || (full && !mine)} onClick={() => join(r.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
                 style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                 <div className="flex-1 min-w-0">
-                  <b className="text-[12.5px] block truncate">{r.name}</b>
+                  <b className="text-[12.5px] block truncate">{r.carrier ? `${r.name} · ${r.carrier}` : r.name}</b>
                   <span className="text-[10.5px] opacity-80">{[r.from, r.time].filter(Boolean).join(' · ')}</span>
                 </div>
                 <span className="text-[10px] font-bold shrink-0">

@@ -11,18 +11,14 @@ const MAX_SHIFT_MINUTES = 240
 /** Сценарии плана Б из §13.1: то, что в моках переключается кнопкой. */
 const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
 
-/**
- * Скольким гостям УШЛИ сдвиг тайминга и план Б (`notifiedGuests`).
- *
- * Ноль — не «неизвестно», а факт (R-178): аккаунта у гостей нет, SMS и почта
- * не подключены («Хвосты»), и сервер не уведомляет ни одного. Число
- * подтвердивших участие здесь стояло как обещание, которого код не держал
- * (D4-18). Кого сдвиг КАСАЕТСЯ — ответившие «да» — отдаётся отдельным
- * полем `guestsAffected` (контракт v0.29.0): это то, что команда сообщает
- * гостям сама. Появится канал — ноль сменится настоящим счётчиком;
- * `notifiedGuests` остаётся до v0.30.
+/*
+ * Ответ сдвига и плана Б (`DayXBroadcast`) говорит, кого это КАСАЕТСЯ —
+ * `guestsAffected`, ответившие «да»: команда сообщает им сама. Поля «скольким
+ * гостям ушло» (`notifiedGuests`) больше нет: канала до гостей нет (ни SMS,
+ * ни почты — «Хвосты»), и оно всегда было нулём — числом, которое ничего не
+ * сообщает (D4-18, R-174). Контракт снял его в v0.30.0; появится канал —
+ * появится и настоящий счётчик, а не ноль под старым именем.
  */
-const GUESTS_NOTIFIED = 0
 
 /**
  * Чек-лист накануне — тот же список, что на экране «План Б» во фронте
@@ -122,14 +118,11 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           true,
         )
 
-        /* `notifiedGuests` — скольким ГОСТЯМ ушло, а не сколько гостей
-         * подтвердило участие. Канала до гостей нет (ни SMS, ни почты —
-         * «Хвосты»), поэтому честное число — ноль (R-174). Кого сдвиг
-         * КАСАЕТСЯ — `guestsAffected`, то же число, что `recipients` в
-         * журнале рассылок: команда сообщает им сама. */
+        /* Кого сдвиг КАСАЕТСЯ — `guestsAffected`, то же число, что
+         * `recipients` в журнале рассылок: команда сообщает им сама. */
         return {
           status: 200,
-          body: { minutes, shiftedBlocks: result.shifted, guestsAffected: result.guests, notifiedGuests: GUESTS_NOTIFIED },
+          body: { minutes, shiftedBlocks: result.shifted, guestsAffected: result.guests },
         }
       })
     },
@@ -236,8 +229,8 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           true,
         )
 
-        // Как и у сдвига: кого касается — число подтвердивших, кому ушло — ноль.
-        return { status: 200, body: { scenario, guestsAffected: affected, notifiedGuests: GUESTS_NOTIFIED } }
+        // Как и у сдвига: кого касается — число подтвердивших «да».
+        return { status: 200, body: { scenario, guestsAffected: affected } }
       })
     },
   )

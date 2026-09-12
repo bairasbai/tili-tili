@@ -1757,3 +1757,19 @@ Object.assign(EN, {
   'Снять на всех устройствах?': 'Remove on all devices?',
   'У вас уже есть свадьба — открываем её': 'You already have a wedding — opening it',
 })
+
+/* Фича 006 «Транспорт» (контракт v0.30.0): перевозчик у маршрута — в логистике, форме маршрута,
+   карточке транспортной сделки, у гостя и в кабинете перевозчика. */
+Object.assign(EN, {
+  'Название маршрута': 'Route name',
+  'Перевозчик': 'Carrier',
+  'Без перевозчика': 'No carrier',
+  'Перевозчик заводится в слоте «Транспорт» — маршрут можно завести и без него': 'A carrier is added in the “Transport” slot — a route can be created without one',
+  'Перевозчик:': 'Carrier:',
+  'без перевозчика': 'no carrier',
+  'Маршруты для гостей': 'Guest routes',
+  'Маршрутов для гостей пока нет': 'No guest routes yet',
+  'Добавить маршрут для гостей': 'Add a guest route',
+  'Маршрутов:': 'Routes:',
+  'записалось': 'signed up',
+})

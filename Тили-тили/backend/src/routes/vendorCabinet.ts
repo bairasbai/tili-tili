@@ -261,12 +261,18 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       paid: string
       hold_alive: boolean
       package_name: string | null
+      bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
               d.price::text as price, d.currency, d.state, d.negotiating_until,
               ${PAID_SUM}::text as paid,
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
-              pkg.name as package_name
+              pkg.name as package_name,
+              coalesce((select json_agg(json_build_object(
+                          'id', r.id, 'name', r.name, 'from', r.pickup, 'time', left(r.departs::text, 5),
+                          'seats', r.seats, 'taken', r.taken)
+                        order by r.departs nulls last, r.name)
+                   from bus_routes r where r.deal_id = d.id and d.state <> 'cancelled'), '[]'::json) as bus_routes
          from deals d join weddings w on w.id = d.wedding_id
          left join vendor_packages pkg on pkg.id = d.package_id
         where d.vendor_id = $1 and w.archived_at is null
@@ -305,6 +311,13 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
          * часа писал «держим до <прошедшее время>» (D5-26б, R-178). */
         holdUntil:
           r.state === 'negotiating' && r.hold_alive ? (r.negotiating_until?.toISOString() ?? null) : null,
+        /* Маршруты для гостей по этой сделке (фича 006): перевозчику нужно
+         * знать, сколько машин и мест готовить и сколько персон записалось —
+         * и только это. Имена и телефоны гостей — данные пары (152-ФЗ), их
+         * здесь нет и по контракту быть не должно. Отменённая сделка — не
+         * перевозчик: у неё пусто, как у пары `dealId: null`. У сделок вне
+         * слота «Транспорт» пусто само собой — привязать маршрут к ним нельзя. */
+        busRoutes: r.bus_routes,
       })),
     }
   })

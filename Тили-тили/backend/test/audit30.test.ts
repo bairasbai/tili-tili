@@ -646,7 +646,7 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     expect(aboutMenu?.body).not.toMatch(/разослан/)
   })
 
-  it('D4-18: notifiedGuests — скольким гостям ушло, а не сколько гостей есть', async () => {
+  it('D4-18: notifiedGuests снят (v0.30.0) — в ответе только guestsAffected', async () => {
     const w = await newWedding()
     for (const name of ['Ольга', 'Денис']) {
       const g = await newGuest(w, name)
@@ -667,7 +667,11 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     })
     expect(planb.statusCode).toBe(200)
     // Канала до гостей нет — ноль, а не число подтвердивших (R-174).
-    expect({ shift: shift.json().notifiedGuests, planb: planb.json().notifiedGuests }).toEqual({ shift: 0, planb: 0 })
+    // Поле «скольким гостям ушло» было честным нулём (канала до гостей нет) и снято в v0.30.0 —
+    // экран читает `guestsAffected`. Утверждение — что нуля-обещания в ответе больше нет.
+    expect(shift.json()).not.toHaveProperty('notifiedGuests')
+    expect(planb.json()).not.toHaveProperty('notifiedGuests')
+    expect(typeof shift.json().guestsAffected).toBe('number')
   })
 
   it('D4-19/D2-19б: PATCH задачи возвращает срок', async () => {

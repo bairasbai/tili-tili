@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { Bus, Hotel, Plus, Send, UtensilsCrossed, Copy, Check, Trash2, Users, MapPin, Clock3 } from 'lucide-react'
 import { AiTip, Bar, SectionHead, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
@@ -7,10 +8,66 @@ import { copyText, pct, plural } from '@/lib/utils'
 import { fmt } from '@/lib/money'
 import { rub } from '@/lib/money'
 import { useStore } from '@/lib/store'
+import type { Slot } from '@/lib/types'
+import type { components } from '@/lib/api/schema'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { getBuses, getGuests, getHotels, getMenuPoll } from '@/lib/api/weddingData'
-import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, putMenuPoll, remindMenuPoll, type BroadcastResult, type MenuOptionDraft } from '@/lib/api/weddingWrite'
+import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, patchBus, putMenuPoll, remindMenuPoll, type BroadcastResult, type MenuOptionDraft } from '@/lib/api/weddingWrite'
 import { shortWeddingDate } from '@/lib/weddingDate'
+
+type BusRoute = components['schemas']['BusRoute']
+
+/*
+ * Перевозчик маршрута — сделка из слота «Транспорт» (контракт v0.30.0,
+ * фича 006). Предлагаются только живые брони — как сделки для договора в
+ * мастере: у кандидата перевозчик ещё не утверждён, и подпись «Автобус №1 ·
+ * Такси «Ветер»» у гостей была бы обещанием. Сделку другой категории сервер
+ * не привяжет (422 `not_transport`), отменённую — тоже (409 `deal_cancelled`).
+ */
+const LIVE_DEAL: ReadonlySet<string> = new Set(['booked', 'paid_deposit', 'done'])
+const carriers = (slots: Slot[]): Slot[] =>
+  slots.filter(s => s.categoryId === 'transport' && !!s.dealId && LIVE_DEAL.has(s.dealState ?? ''))
+
+/* Черновик маршрута — строки полей как они набраны; `dealId` пустой — без перевозчика. */
+interface BusDraft { name: string; from: string; time: string; seats: string; dealId: string }
+const EMPTY_BUS: BusDraft = { name: '', from: '', time: '', seats: '', dealId: '' }
+const draftOf = (b: BusRoute): BusDraft =>
+  ({ name: b.name ?? '', from: b.from ?? '', time: b.time ?? '', seats: b.seats != null ? String(b.seats) : '', dealId: b.dealId ?? '' })
+
+/*
+ * Поля маршрута — одни на «Добавить автобус» и на «Изменить». Перевозчик —
+ * выбор из транспортных сделок мозаики; подсказка «сделок нет» — только по
+ * её ответу: без него «нет» было бы утверждением о том, чего не видели.
+ */
+function BusFields({ draft, onChange, slots, slotsState }: {
+  draft: BusDraft
+  onChange: (d: BusDraft) => void
+  slots: Slot[]
+  slotsState: 'idle' | 'loading' | 'ready' | 'error'
+}) {
+  const set = (patch: Partial<BusDraft>) => onChange({ ...draft, ...patch })
+  const deals = carriers(slots)
+  return (
+    <>
+      <input value={draft.name} onChange={e => set({ name: e.target.value })} placeholder={t('Название (Автобус №3)')} aria-label={t('Название маршрута')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
+      <input value={draft.from} onChange={e => set({ from: e.target.value })} placeholder={t('Точка сбора')} aria-label={t('Точка сбора')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
+      <div className="flex gap-2">
+        {/* Время — полем времени, а не строкой: сервер принимает ЧЧ:ММ. */}
+        <input value={draft.time} onChange={e => set({ time: e.target.value })} type="time" aria-label={t('Время отправления')} className="flex-1 h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none tabular" />
+        <input value={draft.seats} onChange={e => set({ seats: e.target.value })} placeholder={t('Мест')} aria-label={t('Мест')} inputMode="numeric" className="flex-1 h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
+      </div>
+      <select value={draft.dealId} onChange={e => set({ dealId: e.target.value })} aria-label={t('Перевозчик')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none">
+        <option value="">{t('Без перевозчика')}</option>
+        {deals.map(d => <option key={d.dealId} value={d.dealId}>{d.vendor ?? t(d.label)}</option>)}
+      </select>
+      {!deals.length && slotsState === 'ready' && (
+        <p className="text-[10.5px] text-[var(--soft2)] px-1 leading-relaxed">{t('Перевозчик заводится в слоте «Транспорт» — маршрут можно завести и без него')}</p>
+      )}
+      {!deals.length && slotsState === 'loading' && <p className="text-[10.5px] text-[var(--soft2)] px-1">{t('Загружаем…')}</p>}
+      {slotsState === 'error' && <p role="alert" className="text-[10.5px] text-[var(--rose-ink)] px-1 leading-relaxed">{t('Сервер недоступен. Попробуйте позже')}</p>}
+    </>
+  )
+}
 
 /*
  * Итог рассылки словами из ответа 202 (`BroadcastResult`, фича 005): скольким
@@ -37,10 +94,18 @@ const broadcastSummary = (res: BroadcastResult | undefined): string =>
  * 20 мая»: по такому коду в отеле не знают ничего.
  */
 export function Logistics() {
-  const { weddingId } = useStore()
-  const [busForm, setBusForm] = useState(false)
+  const { weddingId, slots, slotsState } = useStore()
+  /*
+   * `?deal=` — из карточки транспортной сделки («Добавить маршрут для гостей»,
+   * фича 006): форма раскрыта сразу, перевозчик предвыбран. Тот же приём, что
+   * `?deal=` у мастера договора. Сервер сам проверит, что сделка транспортная
+   * и живая, — экран передаёт выбор как есть.
+   */
+  const [params] = useSearchParams()
+  const preDeal = params.get('deal')
+  const [busForm, setBusForm] = useState(() => preDeal !== null)
   const [hotelForm, setHotelForm] = useState(false)
-  const [bn, setBn] = useState(''); const [bf, setBf] = useState(''); const [bt, setBt] = useState(''); const [bs, setBs] = useState('')
+  const [draft, setDraft] = useState<BusDraft>(() => ({ ...EMPTY_BUS, dealId: preDeal ?? '' }))
   const [hn, setHn] = useState(''); const [hr, setHr] = useState(''); const [hp, setHp] = useState('')
   const [hd, setHd] = useState(''); const [hc, setHc] = useState('')
   /* Итог рассылки — словами из ответа сервера, а не галочкой. */
@@ -66,11 +131,43 @@ export function Logistics() {
   }
 
   const addBusRoute = () => void write(async () => {
-    if (!bn.trim()) return
-    await addBus(weddingId!, bn.trim(), bf.trim(), bt.trim(), Math.max(1, parseInt(bs, 10) || 20))
-    setBn(''); setBf(''); setBt(''); setBs(''); setBusForm(false)
+    if (!draft.name.trim()) return
+    await addBus(weddingId!, draft.name.trim(), draft.from.trim(), draft.time.trim(), Math.max(1, parseInt(draft.seats, 10) || 20), draft.dealId || null)
+    setDraft({ ...EMPTY_BUS, dealId: preDeal ?? '' }); setBusForm(false)
   })
   const removeBus = (busId: string) => void write(async () => { await deleteBus(weddingId!, busId); setConfirmDel(null) })
+
+  /*
+   * Правка маршрута («Изменить», контракт v0.30.0, фича 006). До этого маршрут
+   * можно было только завести и удалить — опечатка во времени стоила записей
+   * гостей. Отказ сервера — под «Сохранить» в карточке, а не в общей строке
+   * экрана: мест меньше занятых персон — 409 `bus_full`, сделка не из слота
+   * «Транспорт» — 422 `not_transport`, отменённая — 409 `deal_cancelled`;
+   * форма при этом остаётся с введённым. Снятый перевозчик уходит `null`.
+   */
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<BusDraft>(EMPTY_BUS)
+  const [editErr, setEditErr] = useState<string | null>(null)
+  const openEdit = (b: BusRoute) => { setEditId(b.id ?? null); setEditDraft(draftOf(b)); setEditErr(null); setConfirmDel(null) }
+  const saveBus = (b: BusRoute) => {
+    const name = editDraft.name.trim()
+    if (!name || !b.id) return
+    setEditErr(null)
+    void write(async () => {
+      try {
+        await patchBus(weddingId!, b.id!, {
+          name,
+          ...(editDraft.from.trim() ? { from: editDraft.from.trim() } : {}),
+          ...(editDraft.time ? { time: editDraft.time } : {}),
+          /* Пустое или испорченное число мест — оставить как было, а не «1»:
+             сервер ответил бы 409 на маршрут, где уже сидят гости. */
+          seats: parseInt(editDraft.seats, 10) || (b.seats ?? 1),
+          dealId: editDraft.dealId || null,
+        })
+      } catch (e) { setEditErr(explainError(e)); return }
+      setEditId(null)
+    })
+  }
 
   const addHotelBlock = () => void write(async () => {
     if (!hn.trim()) return
@@ -142,8 +239,20 @@ export function Logistics() {
                   {b.from && <><MapPin size={10} /> {b.from}</>}
                   {b.time && <><Clock3 size={10} /> {b.time}</>}
                 </p>
+                {/* Кто везёт — по `carrier` из ответа (фича 006). «Без перевозчика»
+                    только при `dealId: null`: без поля сервер о перевозчике не
+                    говорил ничего, и утверждать «без» нельзя. Отменённая сделка
+                    обнуляет поле — маршрут остаётся, подпись честно пропадает. */}
+                {b.carrier ? (
+                  <p className="text-[10.5px] text-[var(--ink2)] mt-0.5 truncate">{t('Перевозчик:')} {b.carrier}</p>
+                ) : b.dealId === null ? (
+                  <p className="text-[10px] text-[var(--soft2)] mt-0.5">{t('без перевозчика')}</p>
+                ) : null}
               </div>
               <span className="text-[11px] font-bold text-[var(--ink2)]">{b.taken}/{b.seats}</span>
+              {editId !== b.id && (
+                <button disabled={busy} onClick={() => openEdit(b)} className="press text-[10.5px] font-semibold px-2.5 h-8 rounded-full bg-[var(--bg)] text-[var(--ink2)] disabled:opacity-50">{t('Изменить')}</button>
+              )}
               {confirmDel === b.id ? (
                 <button disabled={busy} onClick={() => removeBus(b.id ?? '')} className="press text-[10.5px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] text-left leading-tight disabled:opacity-50">
                   {`${t('Удалить маршрут?')} ${b.taken ?? 0} ${plural(b.taken ?? 0, t('гость потеряет место'), t('гостя потеряют место'), t('гостей потеряют место'))}`}
@@ -154,17 +263,21 @@ export function Logistics() {
             </div>
             <div className="mt-3"><Bar pct={pct(b.taken, b.seats)} /></div>
             {(b.seats ?? 0) - (b.taken ?? 0) <= 5 && <p className="text-[10px] text-[var(--rose-deep)] font-semibold mt-2">{t('Осталось мало мест — добавьте ещё один автобус')}</p>}
+            {editId === b.id && (
+              <div className="mt-3 space-y-2">
+                <BusFields draft={editDraft} onChange={setEditDraft} slots={slots} slotsState={slotsState} />
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setEditId(null)} className="press flex-1 h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Отмена')}</button>
+                  <button disabled={busy || !editDraft.name.trim()} onClick={() => saveBus(b)} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busy ? t('Сохраняем…') : t('Сохранить')}</button>
+                </div>
+                {editErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] px-1 leading-relaxed">{editErr}</p>}
+              </div>
+            )}
           </div>
         ))}
         {busForm ? (
           <div className="card p-4 space-y-2 fade-up">
-            <input value={bn} onChange={e => setBn(e.target.value)} placeholder={t('Название (Автобус №3)')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
-            <input value={bf} onChange={e => setBf(e.target.value)} placeholder={t('Точка сбора')} className="w-full h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
-            <div className="flex gap-2">
-              {/* Время — полем времени, а не строкой: сервер принимает ЧЧ:ММ. */}
-              <input value={bt} onChange={e => setBt(e.target.value)} type="time" aria-label={t('Время отправления')} className="flex-1 h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none tabular" />
-              <input value={bs} onChange={e => setBs(e.target.value)} placeholder={t('Мест')} inputMode="numeric" className="flex-1 h-11 px-4 rounded-xl bg-[var(--bg)] text-[13px] outline-none" />
-            </div>
+            <BusFields draft={draft} onChange={setDraft} slots={slots} slotsState={slotsState} />
             <div className="flex gap-2 pt-1">
               <button onClick={() => setBusForm(false)} className="press flex-1 h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Отмена')}</button>
               <button disabled={busy} onClick={addBusRoute} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Добавить автобус')}</button>

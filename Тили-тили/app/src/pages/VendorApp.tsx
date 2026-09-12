@@ -620,6 +620,16 @@ export function VendorDeals() {
               </p>
               {/* Что именно продано — пакет с витрины; без пакета строки нет. */}
               {d.packageName && <p className="text-[10.5px] text-[var(--soft)]">{t('Пакет:')} {d.packageName}</p>}
+              {/* Маршруты для гостей у транспортной сделки (контракт v0.30.0,
+                  фича 006): сколько машин и мест готовить. Только счётчики —
+                  имён и телефонов гостей перевозчику не отдают (152-ФЗ). Строка
+                  есть лишь при непустом `busRoutes`: пустой список и отсутствие
+                  поля — не «0 маршрутов» (R-178). */}
+              {d.busRoutes && d.busRoutes.length > 0 && (
+                <p className="text-[10.5px] text-[var(--soft)] tabular">
+                  {t('Маршрутов:')} {d.busRoutes.length} · {t('записалось')} {d.busRoutes.reduce((a, b) => a + (b.taken ?? 0), 0)} {t('из')} {d.busRoutes.reduce((a, b) => a + (b.seats ?? 0), 0)}
+                </p>
+              )}
               {/* Мягкая бронь — срок, а не подпись: до него пара может
                   подтвердить сделку, после он сгорает сам. */}
               {d.holdUntil && <p className="text-[10px] text-[var(--honey-deep)] mt-0.5">{t('держим до')} {new Date(d.holdUntil).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}

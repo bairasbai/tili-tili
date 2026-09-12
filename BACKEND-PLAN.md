@@ -106,7 +106,7 @@ PostgreSQL 16, одна схема `public`, миграции — `node-pg-migra
 | `tasks` | id uuid, wedding_id, title text, period text, due date, source text, done_at | PK id · FK wedding_id · CHECK source IN (system, user, ai) · IDX (wedding_id, done_at) |
 | `timeline_events` | id uuid, wedding_id, name text, location text, starts_at, ends_at, who text, icon text, sort int | PK id · FK wedding_id · IDX (wedding_id, sort) |
 | `timeline_shifts` | id uuid, wedding_id, minutes int, actor_id, at | PK id · FK wedding_id — «+15 мин» дня X, накопительно |
-| `bus_routes` | id uuid, wedding_id, name text, pickup text, departs time, seats int, taken int | PK id · FK wedding_id · **CHECK taken BETWEEN 0 AND seats** |
+| `bus_routes` | id uuid, wedding_id, name text, pickup text, departs time, seats int, taken int (персоны — считает триггер, фича 005), deal_id (nullable, FK deals ON DELETE SET NULL — перевозчик как подрядчик, фича 006) | PK id · FK wedding_id · FK deal_id · **CHECK taken BETWEEN 0 AND seats** (NOT VALID до уборки тестовых строк) · IDX deal_id |
 | `bus_bookings` | bus_id, guest_id, persons smallint (1 или 2 — ставится триггером из guests.plus_one, фича 005), created_at | **PK (bus_id, guest_id)** · FK оба · CHECK persons BETWEEN 1 AND 2 · триггеры: `bus_bookings_persons` (BEFORE INSERT), `bus_bookings_count` (taken ± persons), `guests_plus_one_seats` (пересчёт при смене plus_one) |
 | `hotel_blocks` | id uuid, wedding_id, name text, rooms int, booked int, price bigint, currency, deadline date, promo text | PK id · FK wedding_id · **CHECK booked BETWEEN 0 AND rooms** |
 | `hotel_bookings` | hotel_id, guest_id, created_at | **PK (hotel_id, guest_id)** |

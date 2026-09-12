@@ -1,6 +1,6 @@
 import { createElement, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
-import { Download, Check, Copy, FileText, Plus, Armchair } from 'lucide-react'
+import { Download, Check, Copy, FileText, Plus, Armchair, Bus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { dressPalettes } from '@/lib/dressPalettes'
 import { fmt } from '@/lib/money'
@@ -17,7 +17,7 @@ import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { isAuthorized } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
-import { getGuests, getWedding } from '@/lib/api/weddingData'
+import { getBuses, getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, deleteTable, getTables, patchGuest, patchTable } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct } from '@/lib/utils'
@@ -89,6 +89,47 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
  * скрытое за факт (R-178), а кнопки оплаты и отмены для его роли всегда 403.
  */
 const seesMoney = (s: Slot): boolean => s.price !== undefined || s.paid !== undefined
+
+/*
+ * Маршруты для гостей у транспортной сделки (контракт v0.30.0, фича 006).
+ *
+ * Перевозчик — подрядчик, маршрут — его работа глазами гостей: до этого пара
+ * бронировала «Автобусы Уфы» и отдельно руками заводила «Автобус №1», и никто
+ * не подсказывал сделать маршрут. Список — из `GET …/logistics/buses` по
+ * `dealId` этой сделки; «занято» считает сервер. До ответа — ничего: «пока
+ * нет» без ответа было бы нулём вместо «неизвестно» (R-178). Кнопка ведёт в
+ * логистику с `?deal=` — форма там раскрывается с этим перевозчиком, а
+ * `POST` уходит уже из неё (§5 п. 5: за кнопкой запрос, здесь — переход).
+ */
+function DealRoutes({ dealId }: { dealId: string }) {
+  const nav = useNavigate()
+  const { weddingId } = useStore()
+  const q = useApi(() => weddingId ? getBuses(weddingId) : Promise.resolve([]), [weddingId])
+  const mine = (q.data ?? []).filter(b => b.dealId === dealId)
+  return (
+    <div className="card p-5">
+      <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Маршруты для гостей')}</span>
+      <AsyncState q={q} />
+      {ready(q) && !mine.length && (
+        <p className="text-[12px] text-[var(--soft)] mt-3">{t('Маршрутов для гостей пока нет')}</p>
+      )}
+      <div className="mt-3 space-y-2.5">
+        {mine.map(b => (
+          <div key={b.id} className="flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <b className="text-[12.5px] block truncate">{b.name}</b>
+              <p className="text-[10.5px] text-[var(--soft)]">{[b.from, b.time].filter(Boolean).join(' · ')}</p>
+            </div>
+            <span className="text-[11px] font-bold text-[var(--ink2)] shrink-0 tabular">{t('занято')} {b.taken} {t('из')} {b.seats}</span>
+          </div>
+        ))}
+      </div>
+      <button onClick={() => nav(`/wedding/logistics?deal=${encodeURIComponent(dealId)}`)} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold flex items-center justify-center gap-2">
+        <Bus size={14} />{t('Добавить маршрут для гостей')}
+      </button>
+    </div>
+  )
+}
 
 function DealView({ s }: { s: Slot }) {
   const nav = useNavigate()
@@ -200,6 +241,14 @@ function DealView({ s }: { s: Slot }) {
             экране журнал обязан перечитаться, иначе он показывает историю до
             последнего шага и выглядит так, будто шага не было. */}
         {s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
+
+        {/* Маршруты для гостей — только у живой брони в слоте «Транспорт»: до
+            брони перевозчик не утверждён (форма маршрута его и не предложит),
+            после отмены сервер сам снимает сделку с маршрутов, и список здесь
+            был бы всегда пуст. Лимузин пары — та же сделка без маршрута. */}
+        {s.categoryId === 'transport' && s.dealId && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || finished) && (
+          <DealRoutes dealId={s.dealId} />
+        )}
 
         <div className="grid grid-cols-2 gap-2.5">
           <button disabled={chatBusy} onClick={() => void openChat()} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{chatBusy ? t('Открываем чат…') : t('Написать')}</button>

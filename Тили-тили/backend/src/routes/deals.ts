@@ -6,6 +6,7 @@ import { withIdempotency } from '../deals/idempotency.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
+  detachBusRoutes,
   expireHolds,
   holdVendorDate,
   releaseVendorDate,
@@ -276,6 +277,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           if (body.state === 'cancelled') {
             await client.query('update slots set deal_id = null where deal_id = $1', [dealId])
             await releaseVendorDate(client, dealId)
+            await detachBusRoutes(client, dealId)
             // Ссылка своего подрядчика гаснет любой дверью отмены (ERR-0242).
             await client.query(
               `update external_invites set revoked_at = now()

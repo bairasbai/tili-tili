@@ -450,7 +450,7 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
    * DayXBroadcast · guestsAffected
    * ═══════════════════════════════════════════════════════════════════ */
   describe('DayXBroadcast.guestsAffected', () => {
-    it('три гостя «да» → guestsAffected: 3 у сдвига и плана Б; notifiedGuests остаётся 0', async () => {
+    it('три гостя «да» → guestsAffected: 3 у сдвига и плана Б; notifiedGuests в ответе больше нет', async () => {
       const w = await newWedding()
       for (const name of ['Ольга', 'Денис', 'Марат', 'Не придёт']) {
         const created = await app.inject({
@@ -484,9 +484,13 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
         payload: { scenario: 'rain' },
       })
       expect(planb.statusCode, planb.body.slice(0, 200)).toBe(200)
-      // Кого касается — число ответивших «да»; кому ушло — по-прежнему ноль (канала нет).
-      expect(shift.json()).toMatchObject({ minutes: 15, guestsAffected: 3, notifiedGuests: 0 })
-      expect(planb.json()).toMatchObject({ scenario: 'rain', guestsAffected: 3, notifiedGuests: 0 })
+      /* Кого касается — число ответивших «да». «Кому ушло» (`notifiedGuests`)
+       * было всегда нулём — канала до гостей нет — и снято контрактом v0.30.0
+       * (фича 006): число, которое ничего не сообщает, в ответе не лежит. */
+      expect(shift.json()).toMatchObject({ minutes: 15, guestsAffected: 3 })
+      expect(shift.json()).not.toHaveProperty('notifiedGuests')
+      expect(planb.json()).toMatchObject({ scenario: 'rain', guestsAffected: 3 })
+      expect(planb.json()).not.toHaveProperty('notifiedGuests')
     })
   })
 })

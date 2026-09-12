@@ -129,13 +129,36 @@ export const autogenTimeline = (weddingId: string) =>
 
 /* ── Логистика ── */
 
-export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number) =>
+/**
+ * Маршрут для гостей. `dealId` — сделка с перевозчиком из слота «Транспорт»
+ * (контракт v0.30.0, фича 006): по ней сервер подписывает маршрут именем
+ * перевозчика и шлёт ему заметку. Без перевозчика поле не уходит вовсе —
+ * у нового маршрута снимать нечего.
+ */
+export const addBus = (weddingId: string, name: string, from: string, time: string, seats: number, dealId?: string | null) =>
   api.post(url('/weddings/{weddingId}/logistics/buses', { weddingId }), {
     name,
     ...(from ? { from } : {}),
     ...(time ? { time } : {}),
     seats,
+    ...(dealId ? { dealId } : {}),
   })
+
+/**
+ * Правка маршрута (контракт v0.30.0, фича 006).
+ *
+ * До этого маршрут можно было только завести и удалить — опечатка во времени
+ * стоила записей гостей. Мест меньше занятых персон — 409 `bus_full`, сделка
+ * не из слота «Транспорт» — 422 `not_transport`, отменённая — 409
+ * `deal_cancelled`; текст сервера показывается под «Сохранить». Снятый
+ * перевозчик уходит именно `null`: пропущенное поле сервер читает как «не
+ * трогать» (инвариант §5.3).
+ */
+export const patchBus = (
+  weddingId: string,
+  busId: string,
+  patch: { name?: string; from?: string; time?: string; seats?: number; dealId?: string | null },
+) => api.patch(url('/weddings/{weddingId}/logistics/buses/{busId}', { weddingId, busId }), patch)
 
 export const deleteBus = (weddingId: string, busId: string) =>
   api.delete(url('/weddings/{weddingId}/logistics/buses/{busId}', { weddingId, busId }))

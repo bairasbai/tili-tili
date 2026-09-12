@@ -4004,6 +4004,8 @@ export interface paths {
                         "application/json": components["schemas"]["BusRoute"];
                     };
                 };
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -4067,9 +4069,10 @@ export interface paths {
                 content: {
                     "application/json": {
                         name?: string;
-                        from?: string;
-                        /** @description HH:MM */
-                        time?: string;
+                        /** @description null — точка сбора ещё не назначена */
+                        from?: string | null;
+                        /** @description HH:MM; null — время ещё не назначено */
+                        time?: string | null;
                         seats?: number;
                         dealId?: string | null;
                     };
