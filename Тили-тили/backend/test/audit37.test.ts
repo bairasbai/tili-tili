@@ -172,6 +172,23 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
     expect((byHelper.json() as ImportResult).created).toHaveLength(1)
   })
 
+  /* Деталь задачи (фича 008, экран 12): `PATCH …/tasks/{id} { title }` до сих пор не имел ни одного
+   * теста — фронт получил «Переименовать», и правило «имя меняется, выполнение нет» закрепляется здесь. */
+  it('переименование задачи: PATCH { title } меняет имя, не трогая отметку; пустое имя — 422; чужая задача — 404', async () => {
+    const w = await newWedding()
+    const list = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tasks`, headers: auth(w.token) })
+    expect(list.statusCode).toBe(200)
+    const task = (list.json() as { id: string; title: string; done: boolean }[])[0]!
+    const done = await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/tasks/${task.id}`, headers: auth(w.token), payload: { done: true } })
+    expect(done.statusCode, done.body.slice(0, 200)).toBe(200)
+    const renamed = await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/tasks/${task.id}`, headers: auth(w.token), payload: { title: 'Заказать торт у бабушки' } })
+    expect(renamed.statusCode, renamed.body.slice(0, 200)).toBe(200)
+    expect(renamed.json()).toMatchObject({ id: task.id, title: 'Заказать торт у бабушки', done: true })
+    expect((await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/tasks/${task.id}`, headers: auth(w.token), payload: { title: '' } })).statusCode).toBe(422)
+    const other = await newWedding()
+    expect((await app.inject({ method: 'PATCH', url: `/weddings/${other.weddingId}/tasks/${task.id}`, headers: auth(other.token), payload: { title: 'Чужая' } })).statusCode).toBe(404)
+  })
+
   it('два одновременных импорта одного списка — гостей ровно столько, сколько строк', async () => {
     const w = await newWedding()
     const rows = Array.from({ length: 20 }, (_, i) => ({ name: `Одновременный ${i}` }))
