@@ -926,6 +926,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         group by c.name order by count(*) desc limit 20`,
     )
 
+    /* Расход Тиля на модель за 30 дней (фича 010) — по строкам учёта, одна на
+     * вызов. Стоимость в рублях не считается: цены у провайдеров и моделей
+     * разные и меняются, а число вместо «не знаем» — обещание за код (R-174). */
+    const { rows: llm } = await db().query<{ since: Date; calls: string; answered: string; input_tokens: string; output_tokens: string }>(
+      `select now() - interval '30 days' as since,
+              count(*)::text as calls,
+              count(*) filter (where outcome = 'answered')::text as answered,
+              coalesce(sum(input_tokens) filter (where outcome = 'answered'), 0)::text as input_tokens,
+              coalesce(sum(output_tokens) filter (where outcome = 'answered'), 0)::text as output_tokens
+         from tilly_usage where created_at >= now() - interval '30 days'`,
+    )
+
     return {
       users: Number(m.users),
       weddings: Number(m.weddings),
@@ -941,6 +953,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       deals: Number(m.deals),
       gmv: { amount: Number(m.gmv), currency: 'RUB' },
       cities: cities.map((c) => ({ city: c.city, vendors: Number(c.vendors), launchReady: Number(c.vendors) >= 50 })),
+      llm: {
+        since: llm[0]!.since.toISOString(),
+        calls: Number(llm[0]!.calls),
+        answered: Number(llm[0]!.answered),
+        inputTokens: Number(llm[0]!.input_tokens),
+        outputTokens: Number(llm[0]!.output_tokens),
+      },
     }
   })
 

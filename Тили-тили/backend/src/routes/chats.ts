@@ -8,10 +8,6 @@ import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from '../chats/guard.j
 import { notify } from '../notify/notify.js'
 import { openLead } from '../vendor/leads.js'
 
-/** Ответ Тиль, пока у неё нет модели. Честно, а не «думаю…» в пустоту. */
-const TILLY_STUB =
-  'Тиль пока без ИИ — подсказки готовятся. Напишите вопрос: он сохранится, и вы получите ответ, когда помощник заработает.'
-
 const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = {
   team: 'Команда свадьбы',
   day: 'Чат дня X · гости',
@@ -160,6 +156,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     outsider: boolean
     /** У смотрящего больше одной живой свадьбы — общие чаты без имени свадьбы не различить. */
     many_weddings: boolean
+    /** Свадьба чата — квота Тиля считается по её поясу (фича 010). */
+    wedding_id: string
   }
 
   const externalTitle = (name: string | null) => (name ? `${name} · свой подрядчик` : 'Свой подрядчик')
@@ -210,6 +208,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     kind: r.kind,
     closed: r.closed,
     openFrom: r.opens_at?.toISOString() ?? null,
+    /* Квота Тиля — только у его чата; у остальных поле есть и пусто (контракт). */
+    tilly: null as null | { live: boolean; usedToday: number; limitPerDay: number },
   })
 
   /* ── список чатов ─────────────────────────────────────────────────── */
@@ -226,7 +226,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
        * Отменённая сделка помечает чат закрытым: паре — история, писать
        * некому (ERR-0219). */
       `select c.id, c.kind, v.name as vendor_name, v.photo_url as vendor_photo, c.opens_at,
-              w.title as wedding_title,
+              w.title as wedding_title, c.wedding_id,
               -- Кто смотрит: команда свадьбы или подрядчик со стороны.
               (mem.role is null) as outsider,
               (select count(*) from wedding_members mm join weddings ww on ww.id = mm.wedding_id
@@ -263,7 +263,17 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     // Сверху — где только что написали. Порядок по дате создания означал бы,
     // что новое сообщение в старом чате никуда его не двигает, а на экране
     // мока чаты стоят по времени последней реплики.
-    return rows.map(toChat)
+    /* Чат Тиля несёт свою квоту (фича 010, `Chat.tilly`): «сегодня N из 50» и
+     * «за Тилем есть модель» экран показывает только по этому ответу, а не
+     * досчитывает и не предполагает. Чат Тиля у пары один — один запрос. */
+    return Promise.all(
+      rows.map(async (r) => {
+        const chat = toChat(r)
+        if (r.kind !== 'tilly') return chat
+        const quota = await app.tilly.quota(db(), r.id, r.wedding_id)
+        return { ...chat, tilly: { live: app.tilly.live, usedToday: quota.used, limitPerDay: quota.limit } }
+      }),
+    )
   })
 
   /* ── история ──────────────────────────────────────────────────────── */
@@ -316,6 +326,19 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       await assertNotClosed(chat)
 
       await assertNotColdOutreach(chatId, chat.kind, userId)
+      /* Квота Тиля (План §18: 50 реплик в сутки на свадьбу, фича 010) —
+       * ДО записи: реплика сверх предела не сохраняется, иначе счётчик на
+       * экране и переписка расходились бы. 429 без Retry-After — это квота,
+       * а не частота: сбросится в полночь по поясу свадьбы, о чём и сказано. */
+      if (chat.kind === 'tilly') {
+        const quota = await app.tilly.quota(db(), chatId, chat.wedding_id)
+        if (quota.used >= quota.limit) {
+          throw quotaExceeded(
+            'tilly_daily_limit',
+            `На сегодня Тиль ответил ${quota.limit} раз — это предел на сутки. Счётчик обнулится в полночь по времени свадьбы, завтра продолжим`,
+          )
+        }
+      }
       /* Свой подрядчик работает мимо платформы по определению: пара нашла
        * его сама, комиссии с него нет. Предупреждать тут не о чем — оно
        * читалось бы как обвинение на ровном месте. Заодно пустой отправитель
@@ -347,33 +370,11 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       await notifyOthers(db(), chatId, chat.wedding_id, chat.kind, userId, body.text)
       const warning = guardHere ? await warnAboutPayoutBypass(chatId, body.text) : null
 
-      // Тиль отвечает сразу и честно: вопрос сохранён, модели пока нет.
-      // Молчание выглядело бы как поломка, а «думаю…» — как обман.
-      if (chat.kind === 'tilly') {
-        const replyId = uuidv7()
-        const { rows: answered } = await db().query<{ created_at: Date }>(
-          'insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3) returning created_at',
-          [replyId, chatId, TILLY_STUB],
-        )
-        await app.realtime.publish({
-          chatId,
-          type: 'message',
-          actorId: userId,
-          payload: {
-            message: {
-              id: replyId,
-              chatId,
-              senderId: null,
-              text: TILLY_STUB,
-              attachmentUrl: null,
-              sentAt: answered[0]!.created_at.toISOString(),
-              // Ответ Тиль — реплика помощника, не системная запись.
-              system: false,
-              guestName: null,
-            },
-          },
-        })
-      }
+      /* Тиль отвечает в фоне (фича 010): 201 паре — сразу, ответ модели —
+       * отдельной репликой через живой канал и опрос, «печатает…» пока
+       * думает. Без модели — честная заглушка тем же путём; молчание
+       * выглядело бы как поломка, а «думаю…» без модели — как обман. */
+      if (chat.kind === 'tilly') app.tilly.answer({ chatId, weddingId: chat.wedding_id, userId })
 
       // Предупреждение едет вместе с ответом: клиенту не нужно перечитывать
       // историю, чтобы понять, что показать всплывающей плашкой.

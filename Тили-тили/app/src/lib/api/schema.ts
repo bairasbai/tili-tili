@@ -7830,7 +7830,7 @@ export interface components {
              */
             openFrom?: string | null;
             /**
-             * @description Только у kind=tilly (фича 010). `live` — за Тилем стоит языковая
+             * @description Только у kind=tilly (фича 010), у остальных чатов — null. `live` — за Тилем стоит языковая
              *     модель (провайдер настроен); false — он отвечает честной заглушкой
              *     «Тиль пока без ИИ», и экран говорит это словами. `usedToday` —
              *     сколько реплик пара уже отправила Тилю за сутки по поясу свадьбы,
@@ -7842,7 +7842,7 @@ export interface components {
                 live: boolean;
                 usedToday: number;
                 limitPerDay: number;
-            };
+            } | null;
         };
         Message: {
             id?: string;

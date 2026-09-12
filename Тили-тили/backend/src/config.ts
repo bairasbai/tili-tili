@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { MAX_SENDS_PER_HOUR_PER_IP, MAX_SENDS_PER_HOUR_TOTAL } from './auth/otp.js'
+import { DEFAULT_BASE_URL, DEFAULT_MODEL, type TillyConfig, type TillyProvider } from './tilly/model.js'
 
 export const ENVS = ['development', 'test', 'production'] as const
 export type Env = (typeof ENVS)[number]
@@ -69,6 +70,12 @@ export interface Config {
   smsAeroEmail: string | null
   smsAeroKey: string | null
   smsAeroSign: string | null
+  /**
+   * Языковая модель за Тилем (фича 010). Провайдер пуст — Тиль отвечает честной
+   * заглушкой, и сервер стартует и в production: без SMS входа нет, без Тиля —
+   * есть. Провайдер назван, а ключа/адреса нет — ошибка на старте.
+   */
+  tilly: TillyConfig
 }
 
 export class ConfigError extends Error {
@@ -149,6 +156,49 @@ function parseArchiveDays(raw: string | undefined): number {
   return Math.max(30, Math.round(envNumber(raw, 365)))
 }
 
+const TILLY_PROVIDERS: readonly TillyProvider[] = ['openrouter', 'ollama', 'openai']
+
+/**
+ * Тиль: провайдер, адрес, ключ, модели — из `TILLY_*` (фича 010, В1).
+ *
+ * Один протокол на всех (OpenAI-совместимые chat completions), поэтому
+ * умолчания — по провайдеру: OpenRouter — `https://openrouter.ai/api/v1` и
+ * маршрутизатор бесплатных моделей `openrouter/free` (В2); Ollama на своём
+ * сервере — `http://127.0.0.1:11434/v1` и `hermes3`; `openai` — любой
+ * совместимый сервер (vLLM, llama.cpp, LM Studio) — адрес и модель обязательны.
+ * `TILLY_MODEL` через запятую — основная и запасные (OpenRouter `models[]`).
+ * Неполная настройка — `ConfigError`: провайдер без ключа молча превращал бы
+ * Тиля в «временно без ИИ» на каждый вопрос, и это заметили бы через неделю.
+ */
+function parseTilly(source: NodeJS.ProcessEnv): TillyConfig {
+  const rawProvider = envText(source.TILLY_PROVIDER)
+  if (rawProvider !== null && !(TILLY_PROVIDERS as readonly string[]).includes(rawProvider)) {
+    throw new ConfigError(`TILLY_PROVIDER — один из: ${TILLY_PROVIDERS.join(', ')} или пусто (Тиль без ИИ). Получено: ${JSON.stringify(rawProvider)}`)
+  }
+  const provider = rawProvider as TillyProvider | null
+  const models = (source.TILLY_MODEL ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const config: TillyConfig = {
+    provider,
+    baseUrl: envText(source.TILLY_BASE_URL) ?? (provider ? DEFAULT_BASE_URL[provider] : null),
+    apiKey: envText(source.TILLY_API_KEY),
+    models: models.length ? models : provider && DEFAULT_MODEL[provider] ? [DEFAULT_MODEL[provider]!] : [],
+    dailyLimit: Math.max(1, Math.round(envNumber(source.TILLY_DAILY_LIMIT, 50))),
+    timeoutMs: Math.max(1_000, Math.round(envNumber(source.TILLY_TIMEOUT_MS, 60_000))),
+    maxTokens: Math.max(64, Math.round(envNumber(source.TILLY_MAX_TOKENS, 1_500))),
+    temperature: Math.min(2, Math.max(0, envNumber(source.TILLY_TEMPERATURE, 0.4))),
+  }
+  if (provider === 'openrouter' && !config.apiKey) {
+    throw new ConfigError('TILLY_PROVIDER=openrouter требует TILLY_API_KEY (ключ с openrouter.ai/keys)')
+  }
+  if (provider && (!config.baseUrl || config.models.length === 0)) {
+    throw new ConfigError(`TILLY_PROVIDER=${provider} требует TILLY_BASE_URL и TILLY_MODEL`)
+  }
+  return config
+}
+
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   const rawEnv = source.NODE_ENV ?? 'development'
   // Опечатка вроде NODE_ENV=prod тихо переводит сервер в режим разработки:
@@ -209,6 +259,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     smsAeroEmail: envText(source.SMSAERO_EMAIL),
     smsAeroKey: envText(source.SMSAERO_KEY),
     smsAeroSign: envText(source.SMSAERO_SIGN),
+    tilly: parseTilly(source),
   }
 
   if (production) {

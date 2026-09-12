@@ -39,6 +39,17 @@ import { weddingRoutes } from './routes/weddings.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
+import { createTillyModel, type TillyModel } from './tilly/model.js'
+import { TillyService } from './tilly/service.js'
+
+/**
+ * Внешние службы, которые тест подменяет своей реализацией того же интерфейса.
+ * `tillyModel`: не задано — модель из конфигурации (`TILLY_*`); `null` — Тиль
+ * без модели (заглушка); объект — подставная модель (фича 010).
+ */
+export interface AppServices {
+  tillyModel?: TillyModel | null
+}
 
 /**
  * Ошибки разбора тела, которые Fastify выдаёт до обработчика, — в формате
@@ -68,6 +79,7 @@ const BODY_PARSE_ERRORS: Record<string, { status: number; code: string; message:
 export async function buildApp(
   overrides: Partial<Config> = {},
   extraRoutes: FastifyPluginAsync[] = [],
+  services: AppServices = {},
 ): Promise<FastifyInstance> {
   const config = { ...loadConfig(), ...overrides }
 
@@ -183,6 +195,15 @@ export async function buildApp(
     })
   }
   await registerAuth(app, config)
+
+  /* Тиль (фича 010): модель — из конфигурации или подставная из теста; без
+   * неё служба отвечает честной заглушкой. Остановка сервера дожидается
+   * фоновых ответов — иначе реплика Тиля терялась бы вместе с процессом. */
+  const tillyModel = services.tillyModel === undefined ? createTillyModel(config.tilly, app.log) : services.tillyModel
+  app.decorate('tilly', new TillyService(app, tillyModel, config.tilly))
+  app.addHook('onClose', async () => {
+    await app.tilly.settle()
+  })
 
   // Всё, что нельзя разобрать, обязано выглядеть одинаково — иначе фронт
   // разбирает три разных формы ошибки вместо одной.
