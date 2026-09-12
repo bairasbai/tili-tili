@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.31.0).
- * Операций: 162. Путей: 121. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.32.0).
+ * Операций: 165. Путей: 123. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -66,6 +66,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Отозвать приглашение","tag":"invites"},
   {"method":"GET","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Просмотр приглашения (экран /join/:code)","tag":"invites"},
   {"method":"POST","openapi":"/invites/{code}/accept","url":"/invites/:code/accept","operationId":null,"summary":"Принять приглашение (после регистрации/входа)","tag":"invites"},
+  {"method":"GET","openapi":"/join/{guestToken}/day","url":"/join/:guestToken/day","operationId":null,"summary":"День свадьбы глазами гостя","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Чат дня X глазами гостя","tag":"logistics-guest"},
+  {"method":"POST","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Гость пишет в чат дня X","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Отельные блоки для гостя","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Гость занимает номер в блоке","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Опрос по горячему глазами гостя","tag":"logistics-guest"},

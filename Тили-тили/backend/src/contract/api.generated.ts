@@ -4424,6 +4424,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/join/{guestToken}/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * День свадьбы глазами гостя
+         * @description Одним запросом всё, что нужно гостю в день X (План §8.8, фича 009):
+         *     программа — только блоки с `forGuests`, в поясе места; адрес и дресс-код;
+         *     свой стол; свой автобус с перевозчиком; координатор (имя и телефон — он
+         *     для того и назначен, «не жениха»); окно чата дня. Телефона пары здесь
+         *     нет. Раздел на экране гостя появляется с кануна (по `tz`).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: date */
+                            date: string | null;
+                            /** @example Europe/Moscow */
+                            tz: string;
+                            venue?: string | null;
+                            dressCode?: string | null;
+                            dressNote?: string | null;
+                            timeline: components["schemas"]["TimelineEvent"][];
+                            table: {
+                                name?: string;
+                            } | null;
+                            bus: components["schemas"]["BusRoute"] | null;
+                            coordinator: {
+                                name?: string | null;
+                                phone?: string | null;
+                            } | null;
+                            chat: {
+                                /** @description чат дня открыт гостям: с 09:00 кануна по конец дня после свадьбы (по tz) */
+                                open: boolean;
+                                /** Format: date-time */
+                                opensAt?: string | null;
+                                /** Format: date-time */
+                                closesAt?: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Ссылка отозвана или истекла */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/join/{guestToken}/day-chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Чат дня X глазами гостя
+         * @description Та же лента, что у пары и команды (`kind=day`), только по токену гостя и
+         *     только в окне дня; вне окна — 423 `chat_closed_for_guests` с `opensAt`
+         *     в `details`. Реплики гостей несут `guestName`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    cursor?: components["parameters"]["Cursor"];
+                };
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items?: components["schemas"]["Message"][];
+                            nextCursor?: string | null;
+                        };
+                    };
+                };
+                /** @description Ссылка отозвана или истекла */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                423: components["responses"]["Locked"];
+            };
+        };
+        put?: never;
+        /**
+         * Гость пишет в чат дня X
+         * @description Реплика от имени гостя из списка (`guestName`), в общий чат дня — её
+         *     видят пара, команда и забронированные подрядчики (решение владельца,
+         *     В3 фичи 009). Команде уходит уведомление, как от участника.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Отправлено */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Message"];
+                    };
+                };
+                /** @description Ссылка отозвана или истекла */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                423: components["responses"]["Locked"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/join/{guestToken}/team": {
         parameters: {
             query?: never;
@@ -7626,9 +7826,15 @@ export interface components {
             /**
              * @description Системная запись (сдвиг тайминга, перенос даты, «участник вышел»)
              *     — не реплика человека. Экран рисует её по признаку, а не угадывает
-             *     по тексту (D4-15). У ответа Тиль и реплик своего подрядчика — false.
+             *     по тексту (D4-15). У ответа Тиль, реплик своего подрядчика и гостей — false.
              */
             system?: boolean;
+            /**
+             * @description Имя гостя, если реплику написал гость по своей ссылке в чат дня X
+             *     (фича 009): у гостя нет аккаунта, `senderId` пуст, имя — из списка
+             *     гостей. У остальных реплик — null.
+             */
+            guestName?: string | null;
             /**
              * @description Мягкое предупреждение о выводе сделки мимо платформы (§18.2):
              *     сообщение ДОСТАВЛЕНО, но обе стороны видят плашку и системную
@@ -7985,6 +8191,13 @@ export interface components {
             icon?: string;
             /** @description блок под открытым небом — к нему привязывается план Б */
             outdoor?: boolean;
+            /**
+             * @description Видят ли блок гости в день X (`GET /join/{guestToken}/day`). По
+             *     умолчанию да — программа праздника; «Сборы невесты» и «Монтаж
+             *     арки» пара снимает галочкой (План §8.8, фича 009).
+             * @default true
+             */
+            forGuests: boolean;
         };
         AlbumPhoto: {
             id?: string;

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.31.0
+  version: 0.32.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -2371,6 +2371,111 @@ paths:
       responses:
         '200': { description: Записан }
         '409': { $ref: '#/components/responses/Conflict' }
+  /join/{guestToken}/day:
+    get:
+      tags: [logistics-guest]
+      summary: День свадьбы глазами гостя
+      description: |
+        Одним запросом всё, что нужно гостю в день X (План §8.8, фича 009):
+        программа — только блоки с `forGuests`, в поясе места; адрес и дресс-код;
+        свой стол; свой автобус с перевозчиком; координатор (имя и телефон — он
+        для того и назначен, «не жениха»); окно чата дня. Телефона пары здесь
+        нет. Раздел на экране гостя появляется с кануна (по `tz`).
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [date, tz, timeline, table, bus, coordinator, chat]
+                properties:
+                  date: { type: string, format: date, nullable: true }
+                  tz: { type: string, example: Europe/Moscow }
+                  venue: { type: string, nullable: true }
+                  dressCode: { type: string, nullable: true }
+                  dressNote: { type: string, nullable: true }
+                  timeline:
+                    type: array
+                    items: { $ref: '#/components/schemas/TimelineEvent' }
+                  table:
+                    type: object
+                    nullable: true
+                    properties:
+                      name: { type: string }
+                  bus:
+                    allOf: [{ $ref: '#/components/schemas/BusRoute' }]
+                    nullable: true
+                  coordinator:
+                    type: object
+                    nullable: true
+                    properties:
+                      name: { type: string, nullable: true }
+                      phone: { type: string, nullable: true }
+                  chat:
+                    type: object
+                    required: [open]
+                    properties:
+                      open: { type: boolean, description: 'чат дня открыт гостям: с 09:00 кануна по конец дня после свадьбы (по tz)' }
+                      opensAt: { type: string, format: date-time, nullable: true }
+                      closesAt: { type: string, format: date-time, nullable: true }
+        '410': { description: 'Ссылка отозвана или истекла' }
+  /join/{guestToken}/day-chat/messages:
+    get:
+      tags: [logistics-guest]
+      summary: Чат дня X глазами гостя
+      description: |
+        Та же лента, что у пары и команды (`kind=day`), только по токену гостя и
+        только в окне дня; вне окна — 423 `chat_closed_for_guests` с `opensAt`
+        в `details`. Реплики гостей несут `guestName`.
+      parameters:
+        - { $ref: '#/components/parameters/GuestToken' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  nextCursor: { type: string, nullable: true }
+        '410': { description: 'Ссылка отозвана или истекла' }
+        '423': { $ref: '#/components/responses/Locked' }
+    post:
+      tags: [logistics-guest]
+      summary: Гость пишет в чат дня X
+      description: |
+        Реплика от имени гостя из списка (`guestName`), в общий чат дня — её
+        видят пара, команда и забронированные подрядчики (решение владельца,
+        В3 фичи 009). Команде уходит уведомление, как от участника.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Отправлено
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '410': { description: 'Ссылка отозвана или истекла' }
+        '422': { $ref: '#/components/responses/Validation' }
+        '423': { $ref: '#/components/responses/Locked' }
   /join/{guestToken}/team:
     get:
       tags: [logistics-guest]
@@ -4391,7 +4496,14 @@ components:
           description: |
             Системная запись (сдвиг тайминга, перенос даты, «участник вышел»)
             — не реплика человека. Экран рисует её по признаку, а не угадывает
-            по тексту (D4-15). У ответа Тиль и реплик своего подрядчика — false.
+            по тексту (D4-15). У ответа Тиль, реплик своего подрядчика и гостей — false.
+        guestName:
+          type: string
+          nullable: true
+          description: |
+            Имя гостя, если реплику написал гость по своей ссылке в чат дня X
+            (фича 009): у гостя нет аккаунта, `senderId` пуст, имя — из списка
+            гостей. У остальных реплик — null.
         warning:
           type: string
           nullable: true
@@ -4752,6 +4864,13 @@ components:
             невесты» — это рассвет, а «Первый танец» — музыка, и подбирать
             значок по названию значит гадать по строке.
         outdoor: { type: boolean, description: 'блок под открытым небом — к нему привязывается план Б' }
+        forGuests:
+          type: boolean
+          default: true
+          description: |
+            Видят ли блок гости в день X (`GET /join/{guestToken}/day`). По
+            умолчанию да — программа праздника; «Сборы невесты» и «Монтаж
+            арки» пара снимает галочкой (План §8.8, фича 009).
     AlbumPhoto:
       type: object
       properties:
