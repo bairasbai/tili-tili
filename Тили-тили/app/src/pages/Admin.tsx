@@ -141,6 +141,26 @@ export function AdminHome() {
           ))}
         </div>
 
+        {/* Тиль и модель за 30 дней (фича 010): вызовы, ответы модели, токены —
+            из учёта `tilly_usage`, только по ответу сервера. Стоимость в рублях
+            сервер не считает (цены провайдеров разные) — и экран не выдумывает. */}
+        <div className="card p-4 mt-2.5">
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold block mb-2">{t('Тиль · модель за последний месяц')}</span>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {[
+              { label: t('Вызовов'), value: num(q, m?.llm?.calls ?? '—') },
+              { label: t('Ответов модели'), value: num(q, m?.llm?.answered ?? '—') },
+              { label: t('Токенов на вход'), value: num(q, m?.llm?.inputTokens != null ? m.llm.inputTokens.toLocaleString('ru-RU') : '—') },
+              { label: t('Токенов на выход'), value: num(q, m?.llm?.outputTokens != null ? m.llm.outputTokens.toLocaleString('ru-RU') : '—') },
+            ].map(it => (
+              <div key={it.label}>
+                <b className="font-serif-d text-[18px] block tabular">{it.value}</b>
+                <span className="text-[9.5px] text-[var(--soft)] leading-tight block mt-0.5">{it.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Города — только по ответу сервера: пустой список без ответа читался
             бы как «платформы нет ни в одном городе». */}
         {ready(q) && (

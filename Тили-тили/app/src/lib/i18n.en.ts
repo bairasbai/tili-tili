@@ -1848,3 +1848,13 @@ Object.assign(EN, {
   'Показывать гостям': 'Show to guests',
   'скрыт от гостей': 'hidden from guests',
 })
+
+/* Фича 010 «Тиль на живой модели»: счётчик суток в шапке чата Тиля, признак «без ИИ», карточка модели в панели. */
+Object.assign(EN, {
+  'без ИИ — ответы появятся, когда помощник заработает': 'no AI yet — answers will come when the assistant is live',
+  'Тиль · модель за последний месяц': 'Til · model, last month',
+  'Вызовов': 'Calls',
+  'Ответов модели': 'Model answers',
+  'Токенов на вход': 'Input tokens',
+  'Токенов на выход': 'Output tokens',
+})
