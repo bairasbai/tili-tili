@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.29.0
+  version: 0.30.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1601,6 +1601,22 @@ paths:
                           description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         holdUntil: { type: string, format: date-time, nullable: true }
+                        busRoutes:
+                          type: array
+                          description: |
+                            Маршруты для гостей, привязанные к этой сделке (перевозчик,
+                            фича 006): сколько машин и мест готовить. Только счётчики —
+                            имён и телефонов гостей перевозчик не получает (152-ФЗ).
+                            У сделок не из слота «Транспорт» — пустой список.
+                          items:
+                            type: object
+                            properties:
+                              id: { type: string }
+                              name: { type: string }
+                              from: { type: string, nullable: true }
+                              time: { type: string, nullable: true }
+                              seats: { type: integer }
+                              taken: { type: integer, description: 'занято персон' }
   /vendor/updates:
     get:
       tags: [vendor]
@@ -2137,6 +2153,39 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/BusRoute' }
   /weddings/{weddingId}/logistics/buses/{busId}:
+    patch:
+      tags: [logistics]
+      summary: Изменить маршрут
+      description: |
+        До фичи 006 маршрут можно было только завести и удалить — опечатка во
+        времени стоила записей гостей. Все поля необязательны; `seats` меньше
+        занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
+        Перевозчику из каталога уходит заметка «пара изменила маршрут».
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: busId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+                from: { type: string, maxLength: 200 }
+                time: { type: string, description: 'HH:MM' }
+                seats: { type: integer, minimum: 1, maximum: 500 }
+                dealId: { type: string, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusRoute' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
     delete:
       tags: [logistics]
       summary: Удалить маршрут
@@ -4442,13 +4491,34 @@ components:
         collected: { $ref: '#/components/schemas/Money' }
     BusRoute:
       type: object
+      description: |
+        Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,
+        время, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);
+        маршрут может ссылаться на его сделку (фича 006), а может жить сам по
+        себе (свой микроавтобус без сделки). Лимузин пары — сделка без маршрута.
       properties:
         id: { type: string }
         name: { type: string, example: Автобус №1 }
         from: { type: string, example: 'Уфа, ост. «Гостиный двор»' }
         time: { type: string, example: '14:30' }
         seats: { type: integer }
-        taken: { type: integer, description: 'инкрементируется атомарно, переполнение запрещено' }
+        taken: { type: integer, readOnly: true, description: 'занято ПЕРСОН (гость «с +1» — двое); считает база, переполнение запрещено' }
+        dealId:
+          type: string
+          nullable: true
+          description: |
+            Сделка с перевозчиком этой свадьбы — только в слоте категории
+            `transport` (иначе 422 `not_transport`) и не отменённая (409
+            `deal_cancelled`). null — маршрут без перевозчика. Отмена сделки
+            обнуляет поле, маршрут и записи гостей остаются.
+        carrier:
+          type: string
+          nullable: true
+          readOnly: true
+          description: |
+            Имя перевозчика по сделке: название анкеты из каталога или имя
+            своего подрядчика. Видят пара, команда и гость (`GET /join/{t}/shuttle`)
+            — только имя, без телефона и цены.
     HotelBlock:
       type: object
       properties:
@@ -4487,13 +4557,9 @@ components:
         scenario: { type: string, nullable: true, description: 'только у плана Б' }
         guestsAffected:
           type: integer
-          description: 'скольких гостей (ответивших «да») касается — им сообщает команда'
-        notifiedGuests:
-          type: integer
-          deprecated: true
           description: |
-            Всегда 0: канала до гостей нет, и число под старым именем было
-            честным нулём (D4-18). Оставлено до v0.30 — читайте `guestsAffected`.
+            Скольких гостей (ответивших «да») касается — им сообщает команда.
+            Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
     MenuPoll:
       type: object
       required: [options]

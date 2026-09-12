@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.29.0).
- * Операций: 160. Путей: 120. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.30.0).
+ * Операций: 161. Путей: 120. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -139,6 +139,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Маршруты трансфера","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/buses","url":"/weddings/:weddingId/logistics/buses","operationId":null,"summary":"Добавить маршрут трансфера","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/buses/{busId}","url":"/weddings/:weddingId/logistics/buses/:busId","operationId":null,"summary":"Удалить маршрут","tag":"logistics"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/logistics/buses/{busId}","url":"/weddings/:weddingId/logistics/buses/:busId","operationId":null,"summary":"Изменить маршрут","tag":"logistics"},
   {"method":"GET","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Отельные блоки","tag":"logistics"},
   {"method":"POST","openapi":"/weddings/{weddingId}/logistics/hotels","url":"/weddings/:weddingId/logistics/hotels","operationId":null,"summary":"Добавить отельный блок","tag":"logistics"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/logistics/hotels/{hotelId}","url":"/weddings/:weddingId/logistics/hotels/:hotelId","operationId":null,"summary":"Удалить отельный блок","tag":"logistics"},

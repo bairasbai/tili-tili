@@ -2916,6 +2916,21 @@ export interface paths {
                                 state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
                                 /** Format: date-time */
                                 holdUntil?: string | null;
+                                /**
+                                 * @description Маршруты для гостей, привязанные к этой сделке (перевозчик,
+                                 *     фича 006): сколько машин и мест готовить. Только счётчики —
+                                 *     имён и телефонов гостей перевозчик не получает (152-ФЗ).
+                                 *     У сделок не из слота «Транспорт» — пустой список.
+                                 */
+                                busRoutes?: {
+                                    id?: string;
+                                    name?: string;
+                                    from?: string | null;
+                                    time?: string | null;
+                                    seats?: number;
+                                    /** @description занято персон */
+                                    taken?: number;
+                                }[];
                             }[];
                         };
                     };
@@ -4031,7 +4046,50 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Изменить маршрут
+         * @description До фичи 006 маршрут можно было только завести и удалить — опечатка во
+         *     времени стоила записей гостей. Все поля необязательны; `seats` меньше
+         *     занятых персон — 409 `bus_full`; `dealId: null` снимает перевозчика.
+         *     Перевозчику из каталога уходит заметка «пара изменила маршрут».
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    busId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name?: string;
+                        from?: string;
+                        /** @description HH:MM */
+                        time?: string;
+                        seats?: number;
+                        dealId?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BusRoute"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
         trace?: never;
     };
     "/weddings/{weddingId}/logistics/hotels": {
@@ -7650,6 +7708,12 @@ export interface components {
             target?: components["schemas"]["Money"];
             collected?: components["schemas"]["Money"];
         };
+        /**
+         * @description Маршрут для гостей — работа перевозчика глазами гостей: точка сбора,
+         *     время, места. Перевозчик — подрядчик (сделка в слоте «Транспорт»);
+         *     маршрут может ссылаться на его сделку (фича 006), а может жить сам по
+         *     себе (свой микроавтобус без сделки). Лимузин пары — сделка без маршрута.
+         */
         BusRoute: {
             id?: string;
             /** @example Автобус №1 */
@@ -7659,8 +7723,21 @@ export interface components {
             /** @example 14:30 */
             time?: string;
             seats?: number;
-            /** @description инкрементируется атомарно, переполнение запрещено */
-            taken?: number;
+            /** @description занято ПЕРСОН (гость «с +1» — двое); считает база, переполнение запрещено */
+            readonly taken?: number;
+            /**
+             * @description Сделка с перевозчиком этой свадьбы — только в слоте категории
+             *     `transport` (иначе 422 `not_transport`) и не отменённая (409
+             *     `deal_cancelled`). null — маршрут без перевозчика. Отмена сделки
+             *     обнуляет поле, маршрут и записи гостей остаются.
+             */
+            dealId?: string | null;
+            /**
+             * @description Имя перевозчика по сделке: название анкеты из каталога или имя
+             *     своего подрядчика. Видят пара, команда и гость (`GET /join/{t}/shuttle`)
+             *     — только имя, без телефона и цены.
+             */
+            readonly carrier?: string | null;
         };
         HotelBlock: {
             id?: string;
@@ -7699,14 +7776,11 @@ export interface components {
             shiftedBlocks?: number;
             /** @description только у плана Б */
             scenario?: string | null;
-            /** @description скольких гостей (ответивших «да») касается — им сообщает команда */
-            guestsAffected?: number;
             /**
-             * @deprecated
-             * @description Всегда 0: канала до гостей нет, и число под старым именем было
-             *     честным нулём (D4-18). Оставлено до v0.30 — читайте `guestsAffected`.
+             * @description Скольких гостей (ответивших «да») касается — им сообщает команда.
+             *     Поле `notifiedGuests` (всегда 0, канала до гостей нет) снято в v0.30.0.
              */
-            notifiedGuests?: number;
+            guestsAffected?: number;
         };
         MenuPoll: {
             question?: string;
