@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, quotaExceeded } from '../errors.js'
+import type { Queryable } from '../plugins/db.js'
 import { uuidv7, isUuid } from '../ids.js'
-import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { buildPage, encodeCursor, parsePageQuery, type PageQuery } from '../pagination.js'
 import { assertOpen, chatForUser, rolesSeeing, type ChatKind } from '../chats/access.js'
 import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from '../chats/guard.js'
 import { notify } from '../notify/notify.js'
@@ -16,6 +17,122 @@ const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = 
   day: 'Чат дня X · гости',
   tilly: 'Тиль — помощник',
   crew: 'Чат исполнителей — ведёт координатор',
+}
+
+/**
+ * Строка реплики из базы — одна на всех, кто читает `messages`: лента чата
+ * (`GET /chats/{id}/messages`) и лента гостя в чате дня X
+ * (`GET /join/{t}/day-chat/messages`, фича 009). Имя гостя — `left join
+ * guests`: у гостя нет аккаунта, `sender_id` пуст, и без имени его реплика
+ * была бы неотличима от системной записи; удалённый из списка гость имя
+ * уносит (`SET NULL`) — реплика остаётся, имя пропадает честно.
+ */
+export interface MessageRow {
+  id: string
+  chat_id: string
+  sender_id: string | null
+  guest_id: string | null
+  guest_name: string | null
+  text: string
+  attachments: { url?: string } | null
+  created_at: Date
+}
+
+/**
+ * Страница ленты от свежих к старым: открывая чат, человек видит последнее.
+ * Берётся `limit + 1` строка — лишняя отвечает «есть ли ещё» (`buildPage`).
+ */
+export async function messagePage(db: Queryable, chatId: string, page: PageQuery): Promise<MessageRow[]> {
+  const { rows } = await db.query<MessageRow>(
+    `select m.id, m.chat_id, m.sender_id, m.guest_id, g.name as guest_name, m.text, m.attachments, m.created_at
+       from messages m
+       left join guests g on g.id = m.guest_id
+      where m.chat_id = $1
+        and ($2::text is null or (m.created_at, m.id) < ($2::timestamptz, $3::uuid))
+      order by m.created_at desc, m.id desc
+      limit $4`,
+    [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+  )
+  return rows
+}
+
+/**
+ * `Message` контракта из строки базы.
+ *
+ * Системная запись — признак от сервера, а не догадка экрана по тексту
+ * (D4-15): пустой отправитель означает систему только там, где ей есть
+ * место. У Тиль пустой отправитель — её ответ, в чате со своим подрядчиком —
+ * сам подрядчик (аккаунта у него нет), а в чате дня X — гость по своей
+ * ссылке (фича 009): у него нет `sender_id`, но есть `guest_id`.
+ */
+export function toMessage(r: MessageRow, kind: ChatKind) {
+  const systemHere = kind !== 'tilly' && kind !== 'external'
+  return {
+    id: r.id,
+    chatId: r.chat_id,
+    senderId: r.sender_id,
+    text: r.text,
+    attachmentUrl: r.attachments?.url ?? null,
+    sentAt: r.created_at.toISOString(),
+    system: systemHere && r.sender_id === null && r.guest_id === null,
+    guestName: r.guest_name,
+  }
+}
+
+/** Пояс свадьбы для тихих часов получателей без своего пояса. */
+async function weddingTz(db: Queryable, weddingId: string): Promise<string | null> {
+  const { rows } = await db.query<{ tz: string | null }>('select tz from weddings where id = $1', [weddingId])
+  return rows[0]?.tz ?? null
+}
+
+/**
+ * Уведомление всем, кто в этом чате состоит, кроме автора.
+ *
+ * Общее для реплики участника и реплики гостя в чате дня X (фича 009,
+ * `routes/day.ts`): у гостя аккаунта нет, `authorId` пуст — получают все,
+ * кто чат видит. Свой список получателей для гостя разошёлся бы с этим при
+ * первой же правке матрицы — как уже расходился (ERR-0099, ERR-0106).
+ */
+export async function notifyOthers(
+  db: Queryable,
+  chatId: string,
+  weddingId: string,
+  kind: ChatKind,
+  authorId: string | null,
+  text: string,
+): Promise<void> {
+  if (kind === 'tilly') return
+  /* Получатели — те же, кто видит чат, и берутся они из ТОЙ ЖЕ матрицы,
+   * что и доступ (`rolesSeeing`). Здесь стоял свой список, и он учитывал
+   * ровно один случай — `crew` только координатору. Всё остальное уходило
+   * всем участникам свадьбы: помощник получал в теле уведомления первые
+   * 120 символов переписки с подрядчиком, хотя по матрице ему видны только
+   * `team` и `day`, а по ссылке его ждал 403 (ERR-0099). */
+  const { rows } = await db.query<{ user_id: string }>(
+    `select mem.user_id from wedding_members mem
+       where mem.wedding_id = $1 and mem.role = any($4)
+      union
+     select v.user_id from chats c join vendors v on v.id = c.vendor_id where c.id = $2
+      union
+     select mine.user_id from deals d join vendors mine on mine.id = d.vendor_id
+      where d.wedding_id = $1 and $3 in ('team','crew')
+        and d.state in ('booked','paid_deposit','done')`,
+    [weddingId, chatId, kind, rolesSeeing(kind)],
+  )
+  /* Тихие часы — по поясу свадьбы, если человек свой не назвал: самый
+   * частый push — «Новое сообщение» — шёл без него и считался по Москве
+   * (ревью фиксов, RF-BE-04). */
+  const tz = await weddingTz(db, weddingId)
+  for (const row of rows) {
+    if (row.user_id === authorId) continue
+    await notify(db, {
+      userId: row.user_id,
+      kind: 'chat',
+      title: 'Новое сообщение',
+      body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
+      link: `/chats/${chatId}`,
+    }, new Date(), tz)
+  }
 }
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
@@ -156,23 +273,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     assertOpen(chat)
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
-    // Лента идёт от свежих к старым: открывая чат, человек видит последнее.
-    const { rows } = await db().query<{
-      id: string
-      chat_id: string
-      sender_id: string | null
-      text: string
-      attachments: { url?: string } | null
-      created_at: Date
-    }>(
-      `select id, chat_id, sender_id, text, attachments, created_at
-         from messages
-        where chat_id = $1
-          and ($2::text is null or (created_at, id) < ($2::timestamptz, $3::uuid))
-        order by created_at desc, id desc
-        limit $4`,
-      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
-    )
+    const rows = await messagePage(db(), chatId, page)
 
     // Открыл чат — значит прочитал. Отметка на пользователя, а не на чат:
     // прочитал один, а не «прочитали все».
@@ -182,21 +283,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       [chatId, request.caller!.userId],
     )
 
-    /* Системная запись — признак от сервера, а не догадка экрана по тексту
-     * (D4-15): пустой отправитель означает систему только там, где ей есть
-     * место. У Тиль пустой отправитель — её ответ, в чате со своим
-     * подрядчиком — сам подрядчик (аккаунта у него нет). */
-    const systemHere = chat.kind !== 'tilly' && chat.kind !== 'external'
     return buildPage(
-      rows.map((r) => ({
-        id: r.id,
-        chatId: r.chat_id,
-        senderId: r.sender_id,
-        text: r.text,
-        attachmentUrl: r.attachments?.url ?? null,
-        sentAt: r.created_at.toISOString(),
-        system: systemHere && r.sender_id === null,
-      })),
+      rows.map((r) => toMessage(r, chat.kind)),
       page.limit,
       (m) => encodeCursor(m.sentAt, m.id),
     )
@@ -250,11 +338,13 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         attachmentUrl: body.attachmentUrl ?? null,
         sentAt: rows[0]!.created_at.toISOString(),
         system: false,
+        // Реплика участника: имя гостя бывает только у реплик по ссылке гостя.
+        guestName: null,
       }
       // Сначала живому каналу, потом уведомление: у кого чат открыт,
       // тот увидит сообщение, а не значок о нём.
       await app.realtime.publish({ chatId, type: 'message', actorId: userId, payload: { message } })
-      await notifyOthers(chatId, chat.wedding_id, chat.kind, userId, body.text)
+      await notifyOthers(db(), chatId, chat.wedding_id, chat.kind, userId, body.text)
       const warning = guardHere ? await warnAboutPayoutBypass(chatId, body.text) : null
 
       // Тиль отвечает сразу и честно: вопрос сохранён, модели пока нет.
@@ -279,6 +369,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
               sentAt: answered[0]!.created_at.toISOString(),
               // Ответ Тиль — реплика помощника, не системная запись.
               system: false,
+              guestName: null,
             },
           },
         })
@@ -426,54 +517,6 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         'outreach_limit',
         `До проверки анкеты — не больше ${app.appConfig.coldOutreachPerDay} новых переписок в день`,
       )
-    }
-  }
-
-  /** Уведомление всем, кто в этом чате состоит, кроме автора. */
-  /** Пояс свадьбы для тихих часов получателей без своего пояса. */
-  async function weddingTz(weddingId: string): Promise<string | null> {
-    const { rows } = await db().query<{ tz: string | null }>('select tz from weddings where id = $1', [weddingId])
-    return rows[0]?.tz ?? null
-  }
-
-  async function notifyOthers(
-    chatId: string,
-    weddingId: string,
-    kind: ChatKind,
-    authorId: string,
-    text: string,
-  ): Promise<void> {
-    if (kind === 'tilly') return
-    /* Получатели — те же, кто видит чат, и берутся они из ТОЙ ЖЕ матрицы,
-     * что и доступ (`rolesSeeing`). Здесь стоял свой список, и он учитывал
-     * ровно один случай — `crew` только координатору. Всё остальное уходило
-     * всем участникам свадьбы: помощник получал в теле уведомления первые
-     * 120 символов переписки с подрядчиком, хотя по матрице ему видны только
-     * `team` и `day`, а по ссылке его ждал 403 (ERR-0099). */
-    const { rows } = await db().query<{ user_id: string }>(
-      `select mem.user_id from wedding_members mem
-         where mem.wedding_id = $1 and mem.role = any($4)
-        union
-       select v.user_id from chats c join vendors v on v.id = c.vendor_id where c.id = $2
-        union
-       select mine.user_id from deals d join vendors mine on mine.id = d.vendor_id
-        where d.wedding_id = $1 and $3 in ('team','crew')
-          and d.state in ('booked','paid_deposit','done')`,
-      [weddingId, chatId, kind, rolesSeeing(kind)],
-    )
-    /* Тихие часы — по поясу свадьбы, если человек свой не назвал: самый
-     * частый push — «Новое сообщение» — шёл без него и считался по Москве
-     * (ревью фиксов, RF-BE-04). */
-    const tz = await weddingTz(weddingId)
-    for (const row of rows) {
-      if (row.user_id === authorId) continue
-      await notify(db(), {
-        userId: row.user_id,
-        kind: 'chat',
-        title: 'Новое сообщение',
-        body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
-        link: `/chats/${chatId}`,
-      }, new Date(), tz)
     }
   }
 

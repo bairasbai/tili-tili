@@ -1,10 +1,12 @@
-import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound, quotaExceeded, validationFailed } from '../errors.js'
+import type { FastifyInstance, FastifyReply } from 'fastify'
+import { AppError, conflict, gone, notFound, quotaExceeded, validationFailed } from '../errors.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
+import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { guestByToken } from '../guests/access.js'
+import { guestByToken, type GuestCaller } from '../guests/access.js'
 import { personCount } from './guests.js'
+import { messagePage, notifyOthers, toMessage } from './chats.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
@@ -72,6 +74,26 @@ async function carrierDeal(db: Queryable, weddingId: string, dealId: string): Pr
   }
   if (rows[0]!.state === 'cancelled') {
     throw conflict('deal_cancelled', 'Сделка с перевозчиком отменена — выберите другую или оставьте маршрут без перевозчика')
+  }
+}
+
+/**
+ * Гость дня X — по той же ссылке, что и остальные `/join/{t}/…` (фича 009).
+ *
+ * Мёртвая ссылка здесь — 410, а не 401 (контракт v0.32.0, как у
+ * `/guest-vendor/{token}`): ссылка была и отозвана или истекла, и экрану
+ * гостя нужно «попросите пару прислать новую», а не приглашение войти.
+ * Ответ на «нет такого токена» и «свадьба отменена» один и тот же — по коду
+ * не должно быть видно, существовал ли токен (как в `guestByToken`).
+ */
+async function guestOfDay(db: Queryable, token: string): Promise<GuestCaller> {
+  try {
+    return await guestByToken(db, token)
+  } catch (error) {
+    if (error instanceof AppError && error.statusCode === 401) {
+      throw gone('Ссылка недействительна: отозвана или истекла — попросите пару прислать новую')
+    }
+    throw error
   }
 }
 
@@ -205,7 +227,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /* ── тайминг ──────────────────────────────────────────────────────── */
-  const toEvent = (r: {
+  interface EventRow {
     id: string
     name: string
     location: string | null
@@ -214,7 +236,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     who: string | null
     icon: string | null
     outdoor: boolean
-  }) => ({
+    for_guests: boolean
+  }
+  /* Одни колонки на все чтения тайминга: список, ответ `PUT`, автоплан. Пока
+   * их перечисляли в каждом запросе, новая колонка (`for_guests`, фича 009)
+   * означала бы четыре правки — и одна забытая отдавала бы блок без признака. */
+  const EVENT_COLUMNS = 'id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests'
+  const toEvent = (r: EventRow) => ({
     id: r.id,
     name: r.name,
     location: r.location,
@@ -223,14 +251,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     who: r.who,
     icon: r.icon,
     outdoor: r.outdoor,
+    /* Видят ли блок гости в день X (`GET /join/{t}/day`, фича 009). Признак
+     * хранит база и по умолчанию ставит «да»: программа праздника — норма,
+     * «сборы невесты» пара снимает галочкой. */
+    forGuests: r.for_guests,
   })
 
   app.get('/weddings/:weddingId/timeline', async (request) => {
-    const { rows } = await db().query(
-      'select id, name, location, starts_at, ends_at, who, icon, outdoor from timeline_events where wedding_id = $1 order by sort, starts_at',
+    const { rows } = await db().query<EventRow>(
+      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort, starts_at`,
       [request.member!.weddingId],
     )
-    return rows.map((r) => toEvent(r as never))
+    return rows.map(toEvent)
   })
 
   app.put(
@@ -253,6 +285,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               who: { type: 'string', nullable: true, maxLength: 300 },
               icon: { type: 'string', nullable: true, maxLength: 16 },
               outdoor: { type: 'boolean', default: false },
+              // Пропущено — виден: как у колонки в базе и у блока без галочки.
+              forGuests: { type: 'boolean', default: true },
             },
           },
         },
@@ -268,6 +302,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         who?: string | null
         icon?: string | null
         outdoor?: boolean
+        forGuests?: boolean
       }[]
 
       // Время проверяется ДО базы: иначе «вчера» и 30 февраля доходят до
@@ -284,8 +319,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         let sort = 0
         for (const [i, e] of events.entries()) {
           await client.query(
-            `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, sort)
-             values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10)`,
+            `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort)
+             values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11)`,
             [
               uuidv7(),
               weddingId,
@@ -296,34 +331,26 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               e.who ?? null,
               e.icon ?? null,
               e.outdoor ?? false,
+              e.forGuests ?? true,
               sort++,
             ],
           )
         }
         // Тайминг переписали целиком — подрядчику приезжать к другому часу.
         await noteVendorUpdate(client, weddingId, 'timeline', 'Тайминг дня обновлён')
-        const { rows } = await client.query(
-          'select id, name, location, starts_at, ends_at, who, icon, outdoor from timeline_events where wedding_id = $1 order by sort',
+        const { rows } = await client.query<EventRow>(
+          `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
           [weddingId],
         )
-        return rows.map((r) => toEvent(r as never))
+        return rows.map(toEvent)
       })
     },
   )
 
   app.post('/weddings/:weddingId/timeline/autogen', async (request) => {
     const weddingId = request.member!.weddingId
-    const { rows: current } = await db().query<{
-      id: string
-      name: string
-      location: string | null
-      starts_at: Date | null
-      ends_at: Date | null
-      who: string | null
-      icon: string | null
-      outdoor: boolean
-    }>(
-      'select id, name, location, starts_at, ends_at, who, icon, outdoor from timeline_events where wedding_id = $1 order by sort',
+    const { rows: current } = await db().query<EventRow>(
+      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
       [weddingId],
     )
     const { rows: team } = await db().query<{ label: string; performer: string | null }>(
@@ -1176,6 +1203,184 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         await client.query('update guests set menu_option_id = $2 where id = $1', [guest.guestId, optionId])
       })
       return { optionId }
+    },
+  )
+
+  /* ── день X глазами гостя (фича 009) ──────────────────────────────── */
+  interface GuestDayRow {
+    date: string | null
+    tz: string
+    venue: string | null
+    dress_code: string | null
+    dress_note: string | null
+    /** Чат дня X свадьбы: заводит база при создании свадьбы. */
+    chat_id: string | null
+    opens_at: Date | null
+    closes_at: Date | null
+  }
+
+  /**
+   * Свадьба и окно её чата дня для гостя.
+   *
+   * Начало окна — `chats.opens_at`, 09:00 кануна по поясу места: его считает
+   * база (`day_chat_opens_at`) и пересчитывает при переносе даты — второй
+   * формулы здесь нет. Конец — 23:59:59 дня ПОСЛЕ свадьбы по тому же поясу
+   * (спека, FR-004): назавтра гости ещё пишут «спасибо» и ищут забытое.
+   * Пояс — как у остальных гостевых путей: пустой значит Москву.
+   */
+  const guestDayOf = async (weddingId: string): Promise<GuestDayRow> => {
+    const { rows } = await db().query<GuestDayRow>(
+      `select to_char(w.date, 'YYYY-MM-DD') as date, coalesce(w.tz, 'Europe/Moscow') as tz,
+              w.venue, w.dress_code, w.dress_note, c.id as chat_id, c.opens_at,
+              case when w.date is null then null
+                   else ((w.date + 1) + time '23:59:59') at time zone coalesce(w.tz, 'Europe/Moscow') end as closes_at
+         from weddings w
+         left join chats c on c.wedding_id = w.id and c.kind = 'day'
+        where w.id = $1`,
+      [weddingId],
+    )
+    return rows[0]!
+  }
+
+  /* Открыт ли чат гостям сейчас. Даты нет — окна нет: «накануне свадьбы»
+   * без свадьбы не наступает (как в `assertOpen`). */
+  const guestChatWindow = (day: GuestDayRow, now = Date.now()) => ({
+    open:
+      day.opens_at !== null && day.closes_at !== null &&
+      day.opens_at.getTime() <= now && now <= day.closes_at.getTime(),
+    opensAt: day.opens_at?.toISOString() ?? null,
+    closesAt: day.closes_at?.toISOString() ?? null,
+  })
+
+  /**
+   * Вне окна — 423 `chat_closed_for_guests` с `details.opensAt`: доступ не
+   * запрещён, он ещё не наступил (или уже прошёл), и экрану гостя нужна
+   * дата — «откроется 13 июня», а не «нет доступа». Тело — руками, как 409
+   * `wedding_exists` в `weddings.ts`: единый формат ошибки (`errors.ts`)
+   * поля `details` не знает.
+   */
+  const chatClosedForGuests = (reply: FastifyReply, window: ReturnType<typeof guestChatWindow>) => {
+    const message = !window.opensAt
+      ? 'Чат дня откроется накануне свадьбы — пара ещё не назначила дату'
+      : Date.now() < Date.parse(window.opensAt)
+        ? `Чат дня откроется ${window.opensAt} — накануне свадьбы в 09:00`
+        : 'Чат дня закрыт — свадьба прошла'
+    return reply.code(423).send({
+      error: {
+        code: 'chat_closed_for_guests',
+        message,
+        details: { opensAt: window.opensAt, closesAt: window.closesAt },
+      },
+    })
+  }
+
+  /* Всё, что нужно гостю в день X, одним запросом (План §8.8): программа —
+   * только блоки «для гостей»; свой стол; свой автобус с перевозчиком;
+   * координатор с телефоном — он для того и назначен, «не жениха» (решение
+   * владельца В2: всегда, с кануна раздел и появляется на экране гостя);
+   * окно чата. Телефона пары здесь нет. */
+  app.get('/join/:guestToken/day', async (request) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const guest = await guestOfDay(db(), guestToken)
+    const day = await guestDayOf(guest.weddingId)
+    const { rows: timeline } = await db().query<EventRow>(
+      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 and for_guests order by sort, starts_at`,
+      [guest.weddingId],
+    )
+    const { rows: table } = await db().query<{ name: string }>(
+      'select t.name from guests g join tables t on t.id = g.table_id where g.id = $1',
+      [guest.guestId],
+    )
+    // Тот же маршрут, что видит пара, — с перевозчиком, без телефона и цены.
+    const { rows: bus } = await db().query<BusRow>(
+      `${BUS_SELECT} join bus_bookings b on b.bus_id = r.id where b.guest_id = $1 and r.wedding_id = $2 limit 1`,
+      [guest.guestId, guest.weddingId],
+    )
+    // Мягко удалённый аккаунт в команде не считается (R-224).
+    const { rows: coordinator } = await db().query<{ name: string | null; phone: string }>(
+      `select u.name, u.phone from wedding_members m join users u on u.id = m.user_id
+        where m.wedding_id = $1 and m.role = 'coordinator' and u.deleted_at is null
+        order by m.joined_at limit 1`,
+      [guest.weddingId],
+    )
+    return {
+      date: day.date,
+      tz: day.tz,
+      venue: day.venue,
+      dressCode: day.dress_code,
+      dressNote: day.dress_note,
+      timeline: timeline.map(toEvent),
+      table: table[0] ? { name: table[0].name } : null,
+      bus: bus[0] ? toBus(bus[0]) : null,
+      coordinator: coordinator[0] ? { name: coordinator[0].name, phone: coordinator[0].phone } : null,
+      chat: guestChatWindow(day),
+    }
+  })
+
+  /* Та же лента, что у пары и команды (`GET /chats/{id}/messages`), только по
+   * токену гостя и в окне дня. Отметки «прочитано» нет — она на пользователя,
+   * а у гостя его нет. */
+  app.get('/join/:guestToken/day-chat/messages', async (request, reply) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const guest = await guestOfDay(db(), guestToken)
+    const day = await guestDayOf(guest.weddingId)
+    const window = guestChatWindow(day)
+    if (!window.open || !day.chat_id) return chatClosedForGuests(reply, window)
+
+    const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+    const rows = await messagePage(db(), day.chat_id, page)
+    return buildPage(
+      rows.map((r) => toMessage(r, 'day')),
+      page.limit,
+      (m) => encodeCursor(m.sentAt, m.id),
+    )
+  })
+
+  app.post(
+    '/join/:guestToken/day-chat/messages',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['text'],
+          additionalProperties: false,
+          properties: { text: { type: 'string', minLength: 1, maxLength: 2000 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { guestToken } = request.params as { guestToken: string }
+      const { text } = request.body as { text: string }
+      const guest = await guestOfDay(db(), guestToken)
+      const day = await guestDayOf(guest.weddingId)
+      const window = guestChatWindow(day)
+      if (!window.open || !day.chat_id) return chatClosedForGuests(reply, window)
+      const chatId = day.chat_id
+
+      /* Автор — гость из списка: `sender_id` пуст, `guest_id` — его строка.
+       * Что у реплики не бывает двух авторов, держит CHECK `messages_one_author`
+       * (§5 п. 11), а не обработчик. Реплика идёт в ОБЩИЙ чат дня (решение
+       * владельца В3): пара, команда и подрядчики видят её с именем гостя. */
+      const id = uuidv7()
+      const { rows } = await db().query<{ created_at: Date }>(
+        'insert into messages (id, chat_id, sender_id, guest_id, text) values ($1,$2,null,$3,$4) returning created_at',
+        [id, chatId, guest.guestId, text],
+      )
+      const message = {
+        id,
+        chatId,
+        senderId: null,
+        text,
+        attachmentUrl: null,
+        sentAt: rows[0]!.created_at.toISOString(),
+        system: false,
+        guestName: guest.name,
+      }
+      // Сначала живому каналу, потом уведомление — как у реплики участника.
+      await app.realtime.publish({ chatId, type: 'message', actorId: `guest:${guest.guestId}`, payload: { message } })
+      // Команде — тем же путём и тем же получателям, что от участника; автора-пользователя нет.
+      await notifyOthers(db(), chatId, guest.weddingId, 'day', null, text)
+      return reply.code(201).send(message)
     },
   )
 

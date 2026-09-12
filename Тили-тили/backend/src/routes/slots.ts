@@ -459,7 +459,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
      * когда церемония и когда банкет — иначе он не поймёт, к чему привязан
      * его выход. Гостей, бюджета и остальной команды здесь нет (§11). */
     const { rows: timeline } = await db().query(
-      `select id, name, location, starts_at, ends_at, who, icon, outdoor
+      `select id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests
          from timeline_events where wedding_id = $1 order by sort, starts_at`,
       [invite.wedding_id],
     )
@@ -532,6 +532,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         attachmentUrl: null,
         sentAt: rows[0]!.created_at.toISOString(),
         system: false,
+        // Гостей в чате со своим подрядчиком не бывает — имя гостя всегда пустое (фича 009).
+        guestName: null,
       }
       await app.realtime.publish({ chatId, type: 'message', actorId: 'external', payload: { message } })
 
@@ -622,6 +624,7 @@ interface TimelineRow {
   who: string | null
   icon: string | null
   outdoor: boolean
+  for_guests: boolean
 }
 
 const toTimelineEvent = (r: TimelineRow) => ({
@@ -633,6 +636,7 @@ const toTimelineEvent = (r: TimelineRow) => ({
   who: r.who,
   icon: r.icon,
   outdoor: r.outdoor,
+  forGuests: r.for_guests,
 })
 
 interface MessageRow {
@@ -654,4 +658,5 @@ const toMessage = (r: MessageRow) => ({
   // В чате со своим подрядчиком системных записей не бывает: пустой
   // отправитель здесь — сам подрядчик (контракт, Message.senderId).
   system: false,
+  guestName: null,
 })
