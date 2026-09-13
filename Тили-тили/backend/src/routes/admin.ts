@@ -900,7 +900,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   /* ── метрики платформы ────────────────────────────────────────────── */
   app.get('/admin/metrics', { preHandler: app.requireConsent }, async (request) => {
     await requireStaff(request)
-    const { rows } = await db().query<Record<string, string>>(
+    /* Все показатели — одним снимком (REPEATABLE READ): четыре запроса подряд
+     * под живой нагрузкой видели разные состояния, и `vendorsPublished`
+     * расходился с `profiles.published` на две анкеты, опубликованные между
+     * ними (фича 012). Дашборд обещает одно «сейчас» — пусть оно и будет одно. */
+    return db().tx(async (snap) => {
+    await snap.query('set transaction isolation level repeatable read')
+    const { rows } = await snap.query<Record<string, string>>(
       `select
          (select count(*) from users where deleted_at is null)::text as users,
          (select count(*) from weddings where archived_at is null)::text as weddings,
@@ -918,7 +924,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
     /* Готовность города к запуску: план считает город готовым от 50 анкет.
      * Список выводится сразу с числом — «готов» без числа нечем оспорить. */
-    const { rows: cities } = await db().query<{ city: string; vendors: string }>(
+    const { rows: cities } = await snap.query<{ city: string; vendors: string }>(
       `select c.name as city, count(*)::text as vendors
          from vendors v join users u on u.id = v.user_id and u.deleted_at is null
          join cities c on c.id = v.city_id
@@ -926,10 +932,29 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         group by c.name order by count(*) desc limit 20`,
     )
 
+    /* Заполненность живых опубликованных анкет (фича 012, План §19.10 п. 4):
+     * доля заполненных из четырёх полей, которые подрядчик может заполнить
+     * сам — описание, рабочий телефон, цена «от», хотя бы один пакет. Фото и
+     * видео не считаются: загрузок нет до хранилища (№3), и метрика штрафовала
+     * бы всех за инфраструктуру. Набор анкет — тот же, что у vendorsPublished. */
+    const { rows: profiles } = await snap.query<{ published: string; complete: string; average_percent: string }>(
+      `with filled as (
+         select (case when coalesce(v.about, '') <> '' then 1 else 0 end
+               + case when v.phone is not null then 1 else 0 end
+               + case when v.price_from is not null then 1 else 0 end
+               + case when exists (select 1 from vendor_packages p where p.vendor_id = v.id) then 1 else 0 end) as n
+           from vendors v join users u on u.id = v.user_id and u.deleted_at is null
+          where v.published_at is not null and v.blocked_at is null)
+       select count(*)::text as published,
+              count(*) filter (where n = 4)::text as complete,
+              coalesce(round(100 * avg(n / 4.0)), 0)::text as average_percent
+         from filled`,
+    )
+
     /* Расход Тиля на модель за 30 дней (фича 010) — по строкам учёта, одна на
      * вызов. Стоимость в рублях не считается: цены у провайдеров и моделей
      * разные и меняются, а число вместо «не знаем» — обещание за код (R-174). */
-    const { rows: llm } = await db().query<{ since: Date; calls: string; answered: string; input_tokens: string; output_tokens: string }>(
+    const { rows: llm } = await snap.query<{ since: Date; calls: string; answered: string; input_tokens: string; output_tokens: string }>(
       `select now() - interval '30 days' as since,
               count(*)::text as calls,
               count(*) filter (where outcome = 'answered')::text as answered,
@@ -960,7 +985,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         inputTokens: Number(llm[0]!.input_tokens),
         outputTokens: Number(llm[0]!.output_tokens),
       },
+      profiles: {
+        published: Number(profiles[0]!.published),
+        complete: Number(profiles[0]!.complete),
+        averagePercent: Number(profiles[0]!.average_percent),
+      },
     }
+    })
   })
 
   /* ── просмотр проекта поддержкой ──────────────────────────────────── */

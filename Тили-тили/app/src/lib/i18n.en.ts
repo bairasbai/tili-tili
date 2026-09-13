@@ -1866,3 +1866,12 @@ Object.assign(EN, {
   'до': 'up to',
   'км': 'km',
 })
+
+/* Фича 012 «Заполненность анкет»: карточка панели сотрудника. */
+Object.assign(EN, {
+  'Заполненность анкет': 'Profile completeness',
+  'средняя': 'average',
+  'полных анкет': 'complete profiles',
+  'опубликовано': 'published',
+  'Заполненность — описание, телефон, цена «от» и хотя бы один пакет; фото не считаются до подключения хранилища': 'Completeness — description, phone, “price from” and at least one package; photos are not counted until storage is connected',
+})

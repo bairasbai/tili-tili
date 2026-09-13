@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.34.0
+  version: 0.35.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -3860,8 +3860,8 @@ paths:
         Регистрации, свадьбы, опубликованные анкеты, размер очередей, просроченные
         жалобы, сделки, оборот, готовность города к запуску (≥50 анкет) и расход
         Тиля на модель за 30 дней (`llm`, фича 010 — из учёта вызовов
-        `tilly_usage`). Заполненности анкет здесь нет: сервер её не считает,
-        а ноль вместо «не знаем» — обещание за код (R-174).
+        `tilly_usage`) и заполненность опубликованных анкет (`profiles`,
+        фича 012).
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -5130,6 +5130,22 @@ components:
             answered: { type: integer, minimum: 0 }
             inputTokens: { type: integer, minimum: 0 }
             outputTokens: { type: integer, minimum: 0 }
+        profiles:
+          type: object
+          description: |
+            Заполненность живых опубликованных анкет (фича 012, План §19.10
+            п. 4). Заполненность одной анкеты — доля заполненных из четырёх
+            полей, которые подрядчик может заполнить сам: описание, рабочий
+            телефон, цена «от», хотя бы один пакет. Фото и видео не считаются —
+            загрузок нет до хранилища, и метрика штрафовала бы всех за
+            инфраструктуру. `published` — тот же набор, что `vendorsPublished`;
+            `complete` — 4 из 4; `averagePercent` — среднее по анкетам, 0…100.
+            Пустой каталог — нули по факту ответа, не «неизвестно».
+          required: [published, complete, averagePercent]
+          properties:
+            published: { type: integer, minimum: 0 }
+            complete: { type: integer, minimum: 0 }
+            averagePercent: { type: integer, minimum: 0, maximum: 100 }
     WeddingSupportCard:
       type: object
       description: |

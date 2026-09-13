@@ -141,6 +141,27 @@ export function AdminHome() {
           ))}
         </div>
 
+        {/* Заполненность опубликованных анкет (фича 012, План §19.10 п. 4): доля
+            заполненных из четырёх полей подрядчика — описание, телефон, цена «от»,
+            пакет; считает сервер по тому же набору, что «Анкет в каталоге».
+            До ответа — прочерки без цифр (R-178). */}
+        <div className="card p-4 mt-2.5">
+          <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold block mb-2">{t('Заполненность анкет')}</span>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[
+              { label: t('средняя'), value: num(q, m?.profiles?.averagePercent != null ? `${m.profiles.averagePercent}%` : '—') },
+              { label: t('полных анкет'), value: num(q, m?.profiles?.complete ?? '—') },
+              { label: t('опубликовано'), value: num(q, m?.profiles?.published ?? '—') },
+            ].map(it => (
+              <div key={it.label}>
+                <b className="font-serif-d text-[18px] block tabular">{it.value}</b>
+                <span className="text-[9.5px] text-[var(--soft)] leading-tight block mt-0.5">{it.label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-[var(--soft)] mt-2 leading-relaxed">{t('Заполненность — описание, телефон, цена «от» и хотя бы один пакет; фото не считаются до подключения хранилища')}</p>
+        </div>
+
         {/* Тиль и модель за 30 дней (фича 010): вызовы, ответы модели, токены —
             из учёта `tilly_usage`, только по ответу сервера. Стоимость в рублях
             сервер не считает (цены провайдеров разные) — и экран не выдумывает. */}

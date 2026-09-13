@@ -161,6 +161,30 @@ export const CONTRACT_SCHEMAS = {
                           "minimum": 0
                       }
                   }
+              },
+              "profiles": {
+                  "type": "object",
+                  "description": "Заполненность живых опубликованных анкет (фича 012, План §19.10\nп. 4). Заполненность одной анкеты — доля заполненных из четырёх\nполей, которые подрядчик может заполнить сам: описание, рабочий\nтелефон, цена «от», хотя бы один пакет. Фото и видео не считаются —\nзагрузок нет до хранилища, и метрика штрафовала бы всех за\nинфраструктуру. `published` — тот же набор, что `vendorsPublished`;\n`complete` — 4 из 4; `averagePercent` — среднее по анкетам, 0…100.\nПустой каталог — нули по факту ответа, не «неизвестно».\n",
+                  "required": [
+                      "published",
+                      "complete",
+                      "averagePercent"
+                  ],
+                  "properties": {
+                      "published": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "complete": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "averagePercent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                      }
+                  }
               }
           }
       },
