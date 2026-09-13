@@ -1,4 +1,4 @@
-import { api, newIdempotencyKey, url } from './client'
+import { api, ApiError, newIdempotencyKey, url } from './client'
 
 /*
  * Мозаика команды: бронь, отмена, аванс, свои подрядчики.
@@ -44,6 +44,28 @@ export interface ServerSlot {
 
 const slotPath = (weddingId: string, slotId: string, tail: string) =>
   url(`/weddings/{weddingId}/slots/{slotId}/${tail}` as '/weddings/{weddingId}/slots/{slotId}/book', { weddingId, slotId })
+
+/**
+ * Слот категории вне шаблона мозаики (фича 014, A1).
+ *
+ * Шаблон — 12 категорий, каталог знает 35: у аниматора или пиротехника места
+ * в мозаике не было, и «Добавить в свадьбу» на их анкетах упиралось в надпись.
+ * Слот заводит сервер; если он уже есть, сервер отвечает 409 `slot_exists` и
+ * называет его в `details.slotId` — второй слот одной категории мозаике не
+ * нужен, бронь идёт в существующий. Возвращает идентификатор слота, в который
+ * можно бронировать.
+ */
+export async function ensureSlotForCategory(weddingId: string, categoryId: string): Promise<string> {
+  try {
+    const slot = await api.post(url('/weddings/{weddingId}/slots', { weddingId }), { categoryId })
+    if (!slot?.id) throw new Error('сервер не вернул слот')
+    return slot.id
+  } catch (e) {
+    const existing = e instanceof ApiError && e.status === 409 ? e.details.slotId : undefined
+    if (typeof existing === 'string' && existing) return existing
+    throw e
+  }
+}
 
 /** Забронировать подрядчика из каталога. Цена — в копейках. */
 export const bookSlot = (weddingId: string, slotId: string, vendorId: string, price: number, packageId?: string) =>

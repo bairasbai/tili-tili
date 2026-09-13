@@ -10,6 +10,8 @@ import { TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { getVendorReviews } from '@/lib/api/reviews'
 import { getVendorProfile } from '@/lib/api/vendor'
+import { getWedding } from '@/lib/api/weddingData'
+import { ensureSlotForCategory } from '@/lib/api/slots'
 import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
 import { cn, copyText, plural } from '@/lib/utils'
@@ -96,7 +98,7 @@ export function SearchCategories() {
 export function VendorList() {
   const { catId = 'photo' } = useParams()
   const nav = useNavigate()
-  const { city, weddingDate } = useStore()
+  const { city, weddingDate, weddingId } = useStore()
   const [filter, setFilter] = useState('free')
   const [showFilters, setShowFilters] = useState(true)
   /* Радиус поиска (фича 011, блокер №16). Умолчание 100 — ровно то, что сервер
@@ -157,6 +159,12 @@ export function VendorList() {
   const setCz = (patch: Partial<typeof cz>) => setConcierge({ ...cz, ...patch })
   const [czBusy, setCzBusy] = useState(false)
   const [czErr, setCzErr] = useState<string | null>(null)
+  /* Город заявки — город СВАДЬБЫ, если она есть (фича 014, A6): консьерж
+     ищет подрядчика туда, где свадьба, а не туда, где телефон. Стор — запас:
+     без свадьбы или пока её карточка не пришла. Отказ на этом запросе экран
+     каталога не роняет — он не про каталог. */
+  const wedding = useApi(() => (weddingId ? getWedding(weddingId).catch(() => null) : Promise.resolve(null)), [weddingId])
+  const conciergeCity = wedding.data?.city?.name || city
   const sendConcierge = async () => {
     setCzBusy(true)
     setCzErr(null)
@@ -164,7 +172,7 @@ export function VendorList() {
       /* Бюджет вводится целыми рублями, уходит копейками (`Money`, инвариант §5.7). */
       const budget = cz.budget ? rub(Number(cz.budget)) : undefined
       const comment = cz.comment.trim()
-      await requestConcierge(catId, { ...(budget !== undefined ? { budget } : {}), ...(comment ? { comment } : {}), ...(city ? { city } : {}) })
+      await requestConcierge(catId, { ...(budget !== undefined ? { budget } : {}), ...(comment ? { comment } : {}), ...(conciergeCity ? { city: conciergeCity } : {}) })
       setCz({ step: 'sent' })
     } catch (e) { setCzErr(explainError(e)) } finally { setCzBusy(false) }
   }
@@ -299,7 +307,7 @@ export function VendorList() {
 export function VendorDetail() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { slots, bookVendor, city, weddingDate } = useStore()
+  const { slots, bookVendor, city, weddingDate, weddingId } = useStore()
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -389,18 +397,21 @@ export function VendorDetail() {
    * сразу по нажатию. Раньше `setAdded(true)` стоял безусловно — экран
    * рапортовал об успехе даже тогда, когда бронировать было нечего.
    *
-   * Мозаика — 12 слотов, а категорий в каталоге 35. Для подрядчика из
-   * категории вне мозаики места нет, и добавить слот контракт не умеет:
-   * честнее сказать это словами, чем сделать вид, что бронь прошла.
+   * Мозаика — 12 слотов из шаблона, а категорий в каталоге 35. Подрядчику из
+   * категории вне шаблона слот заводится тут же (`POST …/slots`, фича 014, A1):
+   * раньше кнопка упиралась в надпись «категория не входит в мозаику», и
+   * аниматора было некуда забронировать. Слот уже есть — сервер называет его
+   * (409 `slot_exists`), бронь идёт в него.
    */
   const add = async () => {
     const price = v?.packages?.[pkg]?.price?.amount
-    if (!slot) { setErr(t('Эта категория пока не входит в мозаику свадьбы')); return }
     if (!v?.id || price == null) { setErr(t('У этого подрядчика не указана цена пакета')); return }
+    if (!v.categoryId || !weddingId) { setErr(t('Сначала заведите свадьбу')); return }
     setErr(null)
     setBusy(true)
     try {
-      await bookVendor(slot.id, v.id, price)
+      const slotId = slot?.id ?? (await ensureSlotForCategory(weddingId, v.categoryId))
+      await bookVendor(slotId, v.id, price)
       setAdded(true)
     } catch (e) {
       setErr(explainError(e))

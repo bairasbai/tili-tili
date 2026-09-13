@@ -283,13 +283,16 @@ function InviteView({
   /* «Сейчас» — на монтировании: `Date.now()` в теле рендера нечист (R-04). */
   const [now] = useState(() => Date.now())
   /*
-   * Раздел «День свадьбы» — тем, кто придёт, и не раньше кануна. Точный пояс
-   * места приходит только вместе с содержимым дня (`/rsvp` его пока не отдаёт),
-   * поэтому здесь решается лишь «стоит ли спрашивать»: по поясу из `/rsvp`,
-   * а без него — по самому раннему поясу Земли. Так запрос не уходит за месяцы
-   * до свадьбы, а показывать раздел или нет, решает пояс из ответа.
+   * Раздел «День свадьбы» — всем, кроме ответивших «не приду», и не раньше
+   * кануна (фича 014, A7: раньше — только «приду», и гость без ответа накануне
+   * не видел ни программы, ни стола, хотя пара его ждёт; «не приду» — не
+   * увидит: программа не для него). Точный пояс места приходит только вместе
+   * с содержимым дня (`/rsvp` его пока не отдаёт), поэтому здесь решается лишь
+   * «стоит ли спрашивать»: по поясу из `/rsvp`, а без него — по самому раннему
+   * поясу Земли. Так запрос не уходит за месяцы до свадьбы, а показывать раздел
+   * или нет, решает пояс из ответа.
    */
-  const dayMayHaveCome = page.status === 'yes' && !!w.date && todayIn(w.tz ?? EARLIEST_TZ, now) >= eveOf(w.date)
+  const dayMayHaveCome = page.status !== 'no' && !!w.date && todayIn(w.tz ?? EARLIEST_TZ, now) >= eveOf(w.date)
 
   return (
     <div ref={rootRef} className="min-h-dvh relative overflow-x-hidden" style={{ background: T.bg, color: T.ink }}>
@@ -387,8 +390,8 @@ function InviteView({
           </div>
         )}
 
-        {/* День свадьбы — с кануна, тем, кто придёт (фича 009). Выше RSVP
-            нарочно: в этот день гость открывает ссылку за программой и
+        {/* День свадьбы — с кануна, всем, кроме «не приду» (фичи 009/014). Выше
+            RSVP нарочно: в этот день гость открывает ссылку за программой и
             столом, а не за формой ответа. */}
         {dayMayHaveCome && <GuestDay token={token} city={w.city?.name} now={now} T={T} shadow={shadow} />}
 
@@ -850,11 +853,11 @@ const bySentAt = (a: DayMessage, b: DayMessage) =>
  *
  * Живого канала у гостя нет: сокет требует токен аккаунта, — поэтому только
  * опрос раз в 30 с, и это `reload()` того же запроса: лента остаётся на
- * экране, «Загружаем…» не мигает (ERR-0244). У гостя нет и идентификатора:
- * свою реплику он узнаёт по `guestName` — своему имени со страницы гостя
- * (тёзка среди гостей тоже покажется «своей», другого признака контракт не
- * даёт). Вне окна сервер отвечает 423 — его текст на экран, поле закрыто;
- * 410 — ссылка отозвана.
+ * экране, «Загружаем…» не мигает (ERR-0244). У гостя нет идентификатора, и
+ * свою реплику называет сервер — `Message.mine` по строке гостя (фича 014,
+ * A8): до этого экран сравнивал имена, и реплика тёзки (две Марины на одной
+ * свадьбе) рисовалась «своей». Вне окна сервер отвечает 423 — его текст на
+ * экран, поле закрыто; 410 — ссылка отозвана.
  */
 export function GuestDayChat() {
   const nav = useNavigate()
@@ -866,8 +869,6 @@ export function GuestDayChat() {
   const [closed, setClosed] = useState<string | null>(null)
   /* Свои реплики из ответов POST: в ленте сразу, а не через полминуты опроса. */
   const [posted, setPosted] = useState<DayMessage[]>([])
-  const me = useApi(() => token ? getRsvp(token) : Promise.resolve(null), [token])
-  const myName = me.data?.guestName ?? null
 
   const q = useApi<DayTail | null>(
     () => token
@@ -956,7 +957,8 @@ export function GuestDayChat() {
           if (m.system === true) return (
             <p key={m.id} className="text-center text-[11px] text-[var(--soft)] leading-relaxed px-6 py-2">⚠ {m.text}</p>
           )
-          const mine = !!myName && m.guestName === myName
+          /* Своя ли — говорит сервер; своя отправка из ответа POST несёт `mine: true` тем же полем. */
+          const mine = m.mine === true
           return (
             <div key={m.id} className={cn('flex fade-up', mine ? 'justify-end' : 'justify-start')}>
               <div className={cn('max-w-[78%] px-4 py-3 text-[13px] leading-relaxed',

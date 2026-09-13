@@ -5,9 +5,10 @@
  * может лежать в подпапке статического хостинга, и абсолютный '/' указывал бы
  * на чужой корень: кэш не наполнялся, офлайн не работал.
  */
-/* Версия поднята вместе с правилом кэширования (ниже): в кэше v3 лежат записи,
-   положенные туда прежним «всё, кроме /api/», — их вычищает `activate`. */
-const CACHE = 'tilitili-v4'
+/* Версия поднимается вместе с правилом кэширования (ниже): в кэше прежней
+   версии лежат записи, положенные туда прежним правилом, — их вычищает `activate`.
+   v4 — «всё, кроме /api/» → белый список статики; v5 — только сборка и оболочка. */
+const CACHE = 'tilitili-v5'
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
 const OFFLINE_PAGE = new URL('./index.html', self.registration.scope).toString()
 
@@ -42,20 +43,29 @@ function looksLikeHtmlSwap(request, response) {
  * cache-first, и панель отдавала бы вчерашние очереди до следующей версии
  * кэша (Cache-Control: no-store Cache API не читает, ERR-0204).
  *
- * Поэтому наоборот: кэшируем только то, что названо статикой приложения —
- * по типу запроса и по расширению, — а всё остальное, любой JSON по любому
- * адресу, уходит в сеть без кэша. Документ в список не входит: страницу
- * отдаёт ветка навигации, у неё своё правило и своя офлайн-оболочка.
+ * Поэтому наоборот: кэшируем только сборку приложения — файлы Vite в
+ * `./assets/` (имя несёт хеш содержимого, такой файл не меняется никогда) —
+ * и файлы оболочки из SHELL. Правило «по типу запроса» (script/style/image по
+ * любому адресу) было шире, чем надо: картинка с того же origin по любому
+ * другому пути — будущее хранилище фото за прокси, кадр альбома, скан
+ * документа — ложилась бы в cache-first и показывалась после удаления или
+ * замены до следующей версии кэша (фича 014, A11). Всё остальное, любой JSON
+ * и любая картинка не из сборки, уходит в сеть без кэша. Документ в список
+ * не входит: страницу отдаёт ветка навигации, у неё своё правило и своя
+ * офлайн-оболочка.
  */
-const STATIC_DEST = new Set(['script', 'style', 'image', 'font', 'manifest'])
 const STATIC_EXT = /\.(?:js|mjs|css|png|jpe?g|webp|gif|svg|ico|webmanifest|woff2?|ttf|otf)$/i
+/* Пути — от адреса воркера: приложение может лежать в подпапке хостинга. */
+const ASSETS_DIR = new URL('./assets/', self.registration.scope).pathname
+const SHELL_PATHS = new Set(SHELL.map(p => new URL(p, self.registration.scope).pathname))
 
 function isStaticAsset(request) {
   const url = new URL(request.url)
   /* Чужой origin в кэш не кладём: он живёт своей жизнью, и версия нашего
      кэша ему не указ. */
   if (url.origin !== location.origin) return false
-  return STATIC_DEST.has(request.destination) || STATIC_EXT.test(url.pathname)
+  if (SHELL_PATHS.has(url.pathname)) return true
+  return url.pathname.startsWith(ASSETS_DIR) && STATIC_EXT.test(url.pathname)
 }
 
 /*

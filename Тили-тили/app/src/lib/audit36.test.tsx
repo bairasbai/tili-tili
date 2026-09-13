@@ -269,16 +269,17 @@ describe('T2: чат дня глазами гостя — лента, имена
 
   const msg = (n: number, body: string, over: Record<string, unknown> = {}) =>
     ({ id: `m${n}`, chatId: 'ch1', senderId: null, text: body, attachmentUrl: null, sentAt: `2027-06-14T10:00:0${n}.000Z`, system: false, guestName: null, ...over })
-  /* Сервер отдаёт свежие первыми. */
+  /* Сервер отдаёт свежие первыми. Своя реплика помечена `mine` сервером (фича 014):
+     по имени экран её больше не узнаёт — две Марины на одной свадьбе не редкость. */
   const ITEMS = [
-    msg(4, 'Тайминг сдвинут на 15 минут', { system: true }),
-    msg(3, 'Автобус задерживается', { guestName: 'Ольга' }),
-    msg(2, 'Еду', { guestName: 'Марина' }),
-    msg(1, 'Мы на месте', { senderId: 'u1' }),
+    msg(4, 'Тайминг сдвинут на 15 минут', { system: true, mine: false }),
+    msg(3, 'Автобус задерживается', { guestName: 'Ольга', mine: false }),
+    msg(2, 'Еду', { guestName: 'Марина', mine: true }),
+    msg(1, 'Мы на месте', { senderId: 'u1', mine: false }),
   ]
   const openChat = () => openGuest('/invite/day-chat')
 
-  it('лента по времени; у реплики гостя — его имя, у человека — «Команда», своя (guestName = моё имя) — справа, системная — по признаку', async () => {
+  it('лента по времени; у реплики гостя — его имя, у человека — «Команда», своя (mine от сервера) — справа, системная — по признаку', async () => {
     serve(guestRoutes({ [MSGS]: { items: ITEMS, nextCursor: null } }))
     const r = openChat()
     await waitFor(() => expect(text(r)).toContain('Мы на месте'), { timeout: 4000 })
@@ -297,7 +298,7 @@ describe('T2: чат дня глазами гостя — лента, имена
 
   it('«Отправить» → POST {text}; реплика из ответа появляется в ленте, поле очищено', async () => {
     const calls = serve(guestRoutes({
-      [MSGS]: (c: Call) => (c.method === 'POST' ? msg(9, (c.body as { text: string }).text, { guestName: 'Марина' }) : { items: ITEMS, nextCursor: null }),
+      [MSGS]: (c: Call) => (c.method === 'POST' ? msg(9, (c.body as { text: string }).text, { guestName: 'Марина', mine: true }) : { items: ITEMS, nextCursor: null }),
     }))
     const r = openChat()
     await waitFor(() => expect(text(r)).toContain('Мы на месте'), { timeout: 4000 })

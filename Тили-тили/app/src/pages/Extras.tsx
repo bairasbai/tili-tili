@@ -4,11 +4,13 @@ import { Heart, Plus, Trash2, Wine, Users } from 'lucide-react'
 import { fmt, rub } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getCategories, getFavorites } from '@/lib/api/catalog'
-import { useApi } from '@/lib/api/useApi'
+import { useApi, explainError } from '@/lib/api/useApi'
 import { Tile, TopBar, VendorCard } from '@/components/chrome'
-import { ready } from '@/components/AsyncState'
+import { AsyncState, ready } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { t, getI18nLang } from '@/lib/i18n'
+import { useStore } from '@/lib/store'
+import { createNote, deleteNote, getNotes, readLegacyNotes, LEGACY_NOTES_KEY } from '@/lib/api/notes'
 
 /* Избранное — отложенные подрядчики (боль: «кандидаты теряются в переписках») */
 export function Favorites() {
@@ -58,48 +60,116 @@ export function Favorites() {
 
 /* Заметки и идеи (боль: «референсы в трёх мессенджерах») */
 /*
- * Заметки живут в браузере: пути для них в контракте нет (хвост владельца —
- * нужны путь и миграция). Пока так, экран честен хотя бы в одном: он
- * начинается пустым. Раньше первое открытие показывало три готовые записи
- * — «Букет: пионы + эвкалипт…», «песню «Perfect»» — как будто их оставил
- * сам человек.
+ * Заметки — на сервере, у свадьбы (фича 014, блокер №7): их видит и пишет вся
+ * команда, смена телефона их не теряет. Раньше они жили в `localStorage`, и
+ * экран честно писал «хранятся только на этом устройстве». Заметки прежней
+ * версии, если они остались в хранилище, переносятся одной кнопкой — по
+ * запросу на каждую, — и хранилище очищается; без нажатия ничего не уходит.
+ * Без свадьбы заметок нет: они принадлежат ей, а не аккаунту.
  */
 export function Notes() {
-  const [notes, setNotes] = useState<{ id: string; icon: string; tile: string; text: string }[]>(() => {
-    try {
-      const parsed: unknown = JSON.parse(localStorage.getItem('tt_notes') ?? '[]')
-      return Array.isArray(parsed) ? parsed : []
-    } catch { return [] }
-  })
-  const save = (n: typeof notes) => { setNotes(n); localStorage.setItem('tt_notes', JSON.stringify(n)) }
+  const nav = useNavigate()
+  const { weddingId } = useStore()
+  const q = useApi(() => (weddingId ? getNotes(weddingId) : Promise.resolve(null)), [weddingId])
+  const notes = q.data ?? []
   const [text, setText] = useState('')
-  const add = () => {
-    if (!text.trim()) return
-    save([{ id: `n${Date.now()}`, icon: '📌', tile: 'bg-[var(--honey)]', text: text.trim() }, ...notes])
-    setText('')
+  const [busy, setBusy] = useState<'add' | 'move' | string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  /* Заметки прежней версии читаются один раз, на монтировании: хранилище — не
+     состояние экрана, и перечитывать его на каждом рендере незачем. */
+  const [legacy, setLegacy] = useState<string[]>(() => readLegacyNotes())
+
+  const run = async (key: string, action: () => Promise<unknown>) => {
+    if (busy) return
+    setBusy(key)
+    setErr(null)
+    try {
+      await action()
+      q.reload()
+    } catch (e) {
+      setErr(explainError(e))
+    } finally {
+      setBusy(null)
+    }
   }
+  const add = () => {
+    const body = text.trim()
+    if (!body || !weddingId) return
+    void run('add', async () => { await createNote(weddingId, body); setText('') })
+  }
+  const remove = (id: string) => { if (weddingId) void run(id, () => deleteNote(weddingId, id)) }
+  /* Перенос: по запросу на заметку, старые первыми — так они лягут в том же
+     порядке, что были. Хранилище очищается только после того, как все ушли:
+     оборвалось на середине — оставшиеся ждут следующего нажатия, а те, что
+     уже на сервере, из списка переноса убираются. */
+  const move = () => {
+    if (!weddingId) return
+    void run('move', async () => {
+      const rest = [...legacy]
+      try {
+        for (const item of [...legacy].reverse()) {
+          await createNote(weddingId, item)
+          rest.splice(rest.indexOf(item), 1)
+        }
+      } finally {
+        setLegacy(rest)
+        try {
+          if (rest.length) localStorage.setItem(LEGACY_NOTES_KEY, JSON.stringify(rest.map(t => ({ text: t }))))
+          else localStorage.removeItem(LEGACY_NOTES_KEY)
+        } catch { /* приватный режим */ }
+      }
+    })
+  }
+  const when = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }) : '')
+  const legacyCaption = `${t('На этом устройстве остались заметки прежней версии:')} ${legacy.length}`
+
   return (
     <div className="pb-28">
       <TopBar back title={t('Заметки и идеи')} sub={t('Всё, что не хочется забыть')} />
       <div className="px-5 mt-3">
-        <div className="card-s flex items-center gap-2.5 px-4 py-2">
-          <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()}
-            placeholder={t('Новая заметка…')} className="flex-1 bg-transparent outline-none text-[13.5px] py-2.5 placeholder:text-[var(--soft2)]" />
-          <button onClick={add} className="press w-9 h-9 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0" aria-label={t('Добавить')}><Plus size={16} /></button>
-        </div>
-        <div className="space-y-2.5 mt-4 stagger">
-          {notes.map(n => (
-            <div key={n.id} className="card-s p-4 flex items-center gap-3 fade-up">
-              <Tile icon={n.icon} tile={n.tile} size={40} />
-              <p className="flex-1 text-[12.5px] leading-relaxed">{n.text}</p>
-              <button onClick={() => save(notes.filter(y => y.id !== n.id))} className="press text-[var(--soft2)]" aria-label={t('Удалить')}><Trash2 size={15} /></button>
+        {!weddingId ? (
+          <div className="text-center py-14 fade-up">
+            <b className="text-[15px] block">{t('Заметки принадлежат свадьбе')}</b>
+            <p className="text-[12px] text-[var(--soft)] mt-1.5 leading-relaxed">{t('Заведите свадьбу — и записывайте идеи вместе с партнёром')}</p>
+            <button onClick={() => nav('/quiz')} className="press mt-5 px-6 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Начать новую свадьбу')}</button>
+          </div>
+        ) : (
+          <>
+            <div className="card-s flex items-center gap-2.5 px-4 py-2">
+              <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()}
+                placeholder={t('Новая заметка…')} className="flex-1 bg-transparent outline-none text-[13.5px] py-2.5 placeholder:text-[var(--soft2)]" />
+              <button onClick={add} disabled={!!busy || !text.trim()} className="press w-9 h-9 rounded-full grad text-[var(--on-grad)] flex items-center justify-center shrink-0 disabled:opacity-50" aria-label={t('Добавить')}><Plus size={16} /></button>
             </div>
-          ))}
-          {/* Заметки хранятся только на этом устройстве — это надо сказать до
-              того, как человек начнёт на них полагаться со второго телефона. */}
-          {notes.length === 0 && <p className="text-center text-[12px] text-[var(--soft2)] py-10">{t('Заметок пока нет — запишите первую идею')}</p>}
-          <p className="text-center text-[10px] text-[var(--soft2)] pt-4">{t('Заметки хранятся только на этом устройстве')}</p>
-        </div>
+            {err && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-2 leading-relaxed">{err}</p>}
+            {legacy.length > 0 && (
+              <div className="card-s p-4 mt-3 fade-up">
+                <p className="text-[12px] leading-relaxed">{legacyCaption}</p>
+                <p className="text-[10.5px] text-[var(--soft)] mt-1 leading-relaxed">{t('Перенесите их к свадьбе — увидит вся команда, а телефон можно менять.')}</p>
+                <button onClick={move} disabled={!!busy} className="press mt-3 h-[38px] px-5 rounded-full grad text-[var(--on-grad)] text-[11.5px] font-semibold disabled:opacity-50">
+                  {busy === 'move' ? t('Переносим…') : t('Перенести на сервер')}
+                </button>
+              </div>
+            )}
+            <div className="space-y-2.5 mt-4 stagger">
+              <AsyncState q={q} />
+              {notes.map(n => {
+                const by = `${n.authorName ?? t('без имени')} · ${when(n.createdAt)}`
+                return (
+                  <div key={n.id} className="card-s p-4 flex items-center gap-3 fade-up">
+                    <Tile icon="📌" tile="bg-[var(--honey)]" size={40} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words">{n.text}</p>
+                      <p className="text-[10px] text-[var(--soft2)] mt-1">{by}</p>
+                    </div>
+                    <button onClick={() => remove(n.id)} disabled={!!busy} className="press text-[var(--soft2)] disabled:opacity-50" aria-label={t('Удалить')}><Trash2 size={15} /></button>
+                  </div>
+                )
+              })}
+              {ready(q) && notes.length === 0 && <p className="text-center text-[12px] text-[var(--soft2)] py-10">{t('Заметок пока нет — запишите первую идею')}</p>}
+              {ready(q) && <p className="text-center text-[10px] text-[var(--soft2)] pt-4">{t('Заметки видит вся команда свадьбы')}</p>}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

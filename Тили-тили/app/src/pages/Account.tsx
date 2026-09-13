@@ -645,10 +645,13 @@ function DevicePushRow({ top = true }: { top?: boolean }) {
  * `/vendor-app/settings`. Тема, язык, push на устройстве и подписки, сессии,
  * выход и удаление аккаунта — общие для обеих ролей. Блоки свадьбы — город,
  * отмена, всё, что читает `weddingId`, — скрыты: подрядчик может быть и парой,
- * но в кабинете он подрядчик. Виды уведомлений и тихие часы здесь тоже не
- * показываются: настройки уведомлений подрядчика по видам — отдельная фича
- * (спека 007, A2), а «дедлайны задач» — про чек-лист пары. Своё — строка
- * «Посмотреть анкету глазами пары» и «Выйти» только на этом устройстве.
+ * но в кабинете он подрядчик. Виды уведомлений «сообщения» и «сделки» и тихие
+ * часы — обеим ролям (фича 014, A4): подрядчику приходят те же `chat` и `deal`,
+ * и те же `notification_prefs` их держат; «дедлайны задач» — про чек-лист пары,
+ * подрядчику не показываются. Своё в кабинете — строка «Посмотреть анкету
+ * глазами пары». Выход только с этого устройства — тоже обеим (A5): раньше у
+ * пары была лишь кнопка «со всех устройств», и уйти с чужого ноутбука, не
+ * выкинув свой телефон, было нечем.
  */
 export function Settings({ vendor = false }: { vendor?: boolean }) {
   const nav = useNavigate()
@@ -919,13 +922,12 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
           {saveErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{saveErr}</p>}
           {/* Это виды уведомлений в приложении (и push, когда он включён на
               устройстве ниже). Подпись «Push: …» обещала push, которого
-              клиент до блока 8 аудита не умел вовсе. Подрядчику виды не
-              показываются: его матрица (лиды/сделки/чаты) — отдельная фича. */}
-          {!vendor && <>
-          <Row label={t('Уведомления: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />
+              клиент до блока 8 аудита не умел вовсе. Подрядчику — «сообщения»
+              и «сделки»: ему приходят те же виды и держат их те же настройки
+              (фича 014, A4); «дедлайны задач» — про чек-лист пары. */}
+          {!vendor && <Row label={t('Уведомления: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />}
           <Row label={t('Уведомления: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
           <Row label={t('Уведомления: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
-          </>}
           {/* Тумблер «Советы ИИ-координатора» убран: таких уведомлений никто не
               шлёт (ни одной задачи с видом «совет» в бэкенде), а переключатель
               для того, чего нет, — обещание (R-174). Поле `push.tips` в
@@ -939,7 +941,8 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
           )}
         </div>
         <div className="card px-4 py-1.5">
-          {!vendor && <>
+          {/* Тихие часы — обеим ролям (фича 014, A4): сервер держит их у
+              человека, а не у роли, и подрядчика ночью будит то же уведомление. */}
           <div className="flex items-center gap-3 py-3.5 border-b border-[var(--track)]">
             <Moon size={16} className="text-[var(--ink2)]" />
             <span className="flex-1 text-[13px] font-medium">{t('Тихие часы')}</span>
@@ -958,11 +961,9 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
                 ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
                 : t('Тихих часов нет: уведомления приходят в любое время суток.')}
           </p>
-          </>}
           {/* Push на устройстве — обеим ролям: без ключей сервер ответит 501
-              своими словами и подрядчику, и паре (R-174). В кабинете строка
-              стоит первой в карточке — верхней границы у неё тогда нет. */}
-          <DevicePushRow top={!vendor} />
+              своими словами и подрядчику, и паре (R-174). */}
+          <DevicePushRow />
         </div>
         <div className="card px-4 py-1.5">
           <AsyncState q={sessions} />
@@ -985,14 +986,13 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
           ))}
           {sessionErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] py-2">{sessionErr}</p>}
         </div>
-        {/* У пары кнопка выхода стоит на экране «Мы»; в кабинете экрана «Мы»
-            нет — «Выйти» здесь, и гасит она только эту сессию: со всех
-            устройств — кнопкой ниже. */}
-        {vendor && (
-          <button onClick={() => void signOutThisDevice()} disabled={leavingHere} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50">
-            <LogOut size={15} />{leavingHere ? t('Секунду…') : t('Выйти')}
-          </button>
-        )}
+        {/* Выход только с этого устройства — обеим ролям (фича 014, A5): гасит
+            одну сессию, чужие остаются; со всех устройств — кнопкой ниже. В
+            кабинете это и есть «Выйти» (экрана «Мы» там нет), у пары «Выйти из
+            аккаунта» стоит на экране «Мы» и гасит всё — здесь второй, точный вариант. */}
+        <button onClick={() => void signOutThisDevice()} disabled={leavingHere} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50">
+          <LogOut size={15} />{leavingHere ? t('Секунду…') : vendor ? t('Выйти') : t('Выйти только с этого устройства')}
+        </button>
         <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
         {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
         {cancelDone === 'cancelled' ? (

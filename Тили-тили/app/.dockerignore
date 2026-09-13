@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+coverage
+.claude
+.dockerignore
+README.md
+info.md

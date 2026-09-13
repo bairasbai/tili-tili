@@ -160,7 +160,8 @@ describe('частичный отказ сервера: экран различ�
   })
 
   it('заметки: первое открытие пустое, а не с чужими «пионами» и «Perfect»', async () => {
-    serve(COUPLE_OK)
+    // Заметки — с сервера (фича 014): пустой ответ — «пока нет», без ответа было бы «не пришло».
+    serve({ ...COUPLE_OK, '/weddings/w1/notes': [] })
     const text = await open('/notes', 'Заметок пока нет')
     expect(text).not.toContain('пионы')
     expect(text).not.toContain('Perfect')

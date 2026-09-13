@@ -337,12 +337,12 @@ export function DayX() {
     iso ? new Date(iso).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''
 
   return (
-    <div data-theme="dark" className="min-h-dvh pb-10 bg-[var(--bg)] text-[var(--ink)]">
+    <div data-theme="dark" className="min-h-dvh pb-10 bg-[var(--dark-bg)] text-[var(--dark-ink)]">
       <div className="px-5 pt-7 flex items-center justify-between">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center bg-[var(--card)]" aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
           <b className="font-serif-d text-[19px]">{w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
-          <p className="text-[9.5px] tracking-[.2em] font-bold text-[var(--gold-soft)]">{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
+          <p className="text-[9.5px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
         </div>
         <div className="w-10" />
       </div>
@@ -352,7 +352,7 @@ export function DayX() {
           {current ? (
             <div className="flex items-center justify-between">
               <div className="min-w-0">
-                <span className="text-[9px] tracking-[.2em] font-bold text-[var(--gold-soft)]">{t('СЕЙЧАС')}</span>
+                <span className="text-[9px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('СЕЙЧАС')}</span>
                 <b className="font-serif-d text-[21px] block mt-1 truncate">{current.name}</b>
                 <p className="text-[11px] opacity-60 mt-0.5">
                   {time(current.startsAt)}{next ? ` · ${t('дальше')} ${time(next.startsAt)} · ${next.name}` : ''}
@@ -362,7 +362,7 @@ export function DayX() {
             </div>
           ) : (
             <div>
-              <span className="text-[9px] tracking-[.2em] font-bold text-[var(--gold-soft)]">{next ? t('ДАЛЬШЕ') : t('ТАЙМИНГ')}</span>
+              <span className="text-[9px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{next ? t('ДАЛЬШЕ') : t('ТАЙМИНГ')}</span>
               {/* До первого блока и после последнего честнее сказать это
                   словами, чем показывать «идёт фотосессия». */}
               {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
@@ -377,7 +377,7 @@ export function DayX() {
           <div className="flex gap-2.5 mt-4">
             {/* Сдвиг уходит на сервер и рассылается команде и подрядчикам.
                 Раньше он копился в браузере пары и не доходил ни до кого. */}
-            <button disabled={!!busy || stale || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--gold-soft)] text-[var(--on-grad)]">
+            <button disabled={!!busy || stale || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--dark-gold)] text-[var(--on-grad)]">
               {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
             </button>
             <button disabled={chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
@@ -390,11 +390,11 @@ export function DayX() {
 
         <div className="mt-4 relative pl-6">
           <AsyncState q={q} />
-          <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px] opacity-50" style={{ background: 'linear-gradient(var(--gold-soft), transparent)' }} />
+          <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px] opacity-50" style={{ background: 'linear-gradient(var(--dark-gold), transparent)' }} />
           {events.map(e => (
             <div key={e.id} className="relative mb-4">
-              <span className={cn('absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full', e.id === current?.id ? 'bg-[var(--rose-deep)]' : 'bg-[var(--gold-soft)]')} style={{ boxShadow: '0 0 12px rgba(201,169,106,.8)' }} />
-              <span className="text-[9.5px] tracking-[.15em] font-bold text-[var(--gold-soft)]">{time(e.startsAt)}</span>
+              <span className={cn('absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full', e.id === current?.id ? 'bg-[var(--rose-deep)]' : 'bg-[var(--dark-gold)]')} style={{ boxShadow: '0 0 12px var(--dark-gold-glow)' }} />
+              <span className="text-[9.5px] tracking-[.15em] font-bold text-[var(--dark-gold)]">{time(e.startsAt)}</span>
               <b className="font-serif-d text-[15px] block">{e.name}</b>
               {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
@@ -425,7 +425,7 @@ export function DayX() {
 
         <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
           <div className="flex items-center gap-3">
-            <CloudRain size={20} className="text-[var(--gold-soft)]" />
+            <CloudRain size={20} className="text-[var(--dark-gold)]" />
             <div className="flex-1">
               <b className="text-[13.5px]">{t('План Б: дождь')}</b>
               {/* Что активация делает на самом деле: сценарий фиксируется на

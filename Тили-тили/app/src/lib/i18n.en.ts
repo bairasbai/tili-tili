@@ -1894,3 +1894,16 @@ Object.assign(EN, {
   'пара': 'couple',
   'система': 'system',
 })
+
+/* Фича 014 «Хвосты до прода»: заметки на сервере, слот вне шаблона, выход с устройства у пары. */
+Object.assign(EN, {
+  'Выйти только с этого устройства': 'Sign out on this device only',
+  'Сначала заведите свадьбу': 'Create a wedding first',
+  'Заметки принадлежат свадьбе': 'Notes belong to the wedding',
+  'Заведите свадьбу — и записывайте идеи вместе с партнёром': 'Create a wedding — and write down ideas together with your partner',
+  'На этом устройстве остались заметки прежней версии:': 'Notes from the previous version remain on this device:',
+  'Перенесите их к свадьбе — увидит вся команда, а телефон можно менять.': 'Move them to the wedding — the whole team will see them, and you can change phones.',
+  'Переносим…': 'Moving…',
+  'Перенести на сервер': 'Move to the server',
+  'Заметки видит вся команда свадьбы': 'Notes are visible to the whole wedding team',
+})
