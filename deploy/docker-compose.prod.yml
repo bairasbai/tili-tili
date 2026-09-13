@@ -1,0 +1,92 @@
+# Тили-тили — боевой состав на одном VPS Timeweb (блокер №19, фича 014).
+#
+#   web   — nginx: статика PWA, SPA-fallback, прокси /api → api (deploy/nginx.conf)
+#   api   — Fastify (backend/Dockerfile), миграции — отдельной командой (DEPLOY.md)
+#   redis — очереди BullMQ, ограничитель запросов, живой канал
+#   db    — PostgreSQL 16 ТОЛЬКО как запасной вариант (profile `localdb`):
+#           основной план — управляемая БД Timeweb (BACKEND-PLAN.md §1.1),
+#           её адрес приходит в DATABASE_URL из backend/.env.
+#
+# Запуск из папки deploy/:
+#   docker compose -f docker-compose.prod.yml up -d --build
+# С локальной базой:
+#   docker compose -f docker-compose.prod.yml --profile localdb up -d --build
+#
+# Секреты — только в ../Тили-тили/backend/.env (в репозиторий не попадает).
+# TLS снимает балансировщик Timeweb или certbot на хосте перед портом 80.
+
+services:
+  web:
+    build:
+      context: ../Тили-тили/app
+      dockerfile: ../../deploy/Dockerfile.web
+      args:
+        # Публичный ключ Web Push — пара к VAPID_PUBLIC_KEY бэкенда (блокер №4).
+        VITE_VAPID_PUBLIC_KEY: ${VITE_VAPID_PUBLIC_KEY:-}
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-80}:80"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../Тили-тили/backend
+    env_file:
+      - path: ../Тили-тили/backend/.env
+        required: true
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+      REDIS_URL: redis://redis:6379
+      # Один прокси впереди — nginx этого состава. За балансировщиком Timeweb — 2.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # /health/ready — 503, пока база или Redis недоступны: трафик на api не идёт.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  db:
+    profiles: ["localdb"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tili}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-tili}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tili} -d ${POSTGRES_DB:-tili}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  db-data:

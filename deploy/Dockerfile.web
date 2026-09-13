@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+# Фронт Тили-тили: сборка Vite на Node 22 LTS, отдача — nginx с SPA-fallback
+# и прокси /api (deploy/nginx.conf). Контекст сборки — папка `Тили-тили/app`
+# (см. docker-compose.prod.yml).
+#
+# Node 22 — чётная ветка: Node 25 на машине разработчика ломает npm
+# (ERR-0006), в образе этой проблемы нет. Версия pnpm закреплена так же, как в
+# backend/Dockerfile; лок-файл — pnpm-lock.yaml, пересобранный из package-lock
+# через `pnpm import` (CLAUDE.md §3).
+FROM node:22-alpine AS build
+WORKDIR /app
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
+RUN printf 'minimum-release-age=0\n' > /app/.npmrc
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm-store-web,target=/pnpm/store \
+    pnpm install --frozen-lockfile --node-linker=hoisted
+COPY . .
+# VITE_API_URL не задаётся: клиент ходит на /api того же origin, nginx проксирует.
+# Публичный ключ Web Push — аргумент сборки (пара к VAPID_PUBLIC_KEY бэкенда).
+ARG VITE_VAPID_PUBLIC_KEY=
+ENV VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY
+RUN pnpm run build
+
+FROM nginx:1.27-alpine AS runtime
+COPY --from=build /app/dist /usr/share/nginx/html
+# Конфигурация nginx (deploy/nginx.conf) лежит вне контекста сборки и монтируется
+# томом в docker-compose.prod.yml: так её правят без пересборки образа.
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
