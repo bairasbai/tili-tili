@@ -654,18 +654,18 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     expect(afterFault).toBe(before.title)
   })
 
-  it('успешное сохранение справочника принимает null у значка и оставляет запись в журнале', async () => {
+  it('успешное сохранение справочника принимает null у значка (стирает его) и оставляет запись в журнале', async () => {
     const staff = await newStaff()
     const before = (await readCategories(staff.token)).categories.find((c) => c.id === CAT2)!
     const put = (payload: unknown) =>
       app.inject({ method: 'PUT', url: '/admin/categories', headers: auth(staff.token), payload })
 
     try {
-      /* `icon: null` — «значок не трогать». Контракт объявляет поле
-       * `nullable`, панель шлёт тело тем же типом, что читает, — а ручная
-       * копия схемы в обработчике объявляла `icon` строкой. Отказа при этом
-       * не было: AJV с `coerceTypes` превращал `null` в пустую строку, и
-       * значок стирался молча — правка названия съедала картинку. */
+      /* `icon: null` принимается: контракт объявляет поле `nullable`, а
+       * ручная копия схемы в обработчике объявляла `icon` строкой — AJV с
+       * `coerceTypes` превращал `null` в пустую строку без отказа. С фичи 014
+       * (A9, R-17) `null` значит «стереть значок», пропуск поля — «не трогать»
+       * (это проверяет тест выше и `audit43`). */
       const saved = await put({ categories: [{ id: CAT2, title: `Медовый ${RUN}`, icon: null, sort: before.sort }] })
       expect(saved.statusCode, saved.body.slice(0, 200)).toBe(200)
       const written = saved.json() as { categories: number; synonyms: number; version: string }
@@ -675,7 +675,7 @@ describe.skipIf(!live)('админка: основа панели сотрудн
 
       const now = (await readCategories(staff.token)).categories.find((c) => c.id === CAT2)!
       expect(now.title).toBe(`Медовый ${RUN}`)
-      expect(now.icon).toBe(before.icon)
+      expect(now.icon, 'null стирает значок (фича 014, A9)').toBeNull()
 
       const { rows } = await app.db!.query<{ diff: Record<string, unknown> }>(
         "select diff from audit_log where actor_id = $1 and action = 'categories.update'",
@@ -684,14 +684,8 @@ describe.skipIf(!live)('админка: основа панели сотрудн
       expect(rows).toHaveLength(1)
       expect(rows[0]!.diff).toEqual({ categories: 1, synonyms: 0 })
     } finally {
-      // Справочник общий: возвращаем как было.
-      await put({
-        categories: [
-          before.icon === null
-            ? { id: CAT2, title: before.title, sort: before.sort }
-            : { id: CAT2, title: before.title, icon: before.icon, sort: before.sort },
-        ],
-      })
+      // Справочник общий: возвращаем как было (пустой значок — явным `null`).
+      await put({ categories: [{ id: CAT2, title: before.title, icon: before.icon, sort: before.sort }] })
     }
   })
 })

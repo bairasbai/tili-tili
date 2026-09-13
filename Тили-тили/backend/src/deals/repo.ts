@@ -1,6 +1,5 @@
 import type { Db, Queryable } from '../plugins/db.js'
 import { AppError } from '../errors.js'
-import { uuidv7 } from '../ids.js'
 import { COMMITTED, HOLD_HOURS, tileState, type DealState } from './state.js'
 
 export interface DealRow {
@@ -112,21 +111,24 @@ export function toSlot(r: SlotRow, seesMoney: boolean) {
  * UPDATE выполняется перед чтением: иначе пара видит «бронь держится», хотя
  * 72 часа прошли, и подрядчик уже свободен для других. Условие в WHERE делает
  * повтор пустым, поэтому фоновая задача потом просто добавит расписание.
+ *
+ * Снятие брони и запись в журнал сделки — ОДИН запрос (CTE), а не два: сюда
+ * приходят и из транзакции, и с голого пула (`loadSlots`, бюджет, подарки),
+ * и обрыв между «сняли» и «записали» оставлял сделку без истории — событие,
+ * по которому `announceDealEvents` сообщает подрядчику о снятой брони, не
+ * появлялось никогда (фича 014, D2-20). Идентификатор события — от базы:
+ * событий может быть несколько, а один запрос — один набор параметров.
  */
 export async function expireHolds(db: Queryable, weddingId: string): Promise<void> {
-  const { rows } = await db.query<{ id: string; state: DealState }>(
-    `update deals set state = 'candidate', negotiating_until = null
-      where wedding_id = $1 and state = 'negotiating' and negotiating_until <= now()
-      returning id, state`,
+  await db.query(
+    `with expired as (
+       update deals set state = 'candidate', negotiating_until = null
+        where wedding_id = $1 and state = 'negotiating' and negotiating_until <= now()
+        returning id)
+     insert into deal_events (id, deal_id, from_state, to_state, note)
+     select gen_random_uuid(), id, 'negotiating', 'candidate', 'истёк срок мягкой брони' from expired`,
     [weddingId],
   )
-  for (const row of rows) {
-    await db.query(
-      `insert into deal_events (id, deal_id, from_state, to_state, note)
-       values ($1, $2, 'negotiating', 'candidate', 'истёк срок мягкой брони')`,
-      [uuidv7(), row.id],
-    )
-  }
 }
 
 export async function loadSlots(db: Db, weddingId: string, seesMoney: boolean) {

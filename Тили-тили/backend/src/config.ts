@@ -53,6 +53,8 @@ export interface Config {
   albumMaxPerGuest: number
   /** Сколько взносов один гость делает в один подарок или фонд. */
   contributionsMaxPerGuest: number
+  /** Сколько подарков один гость держит в резерве одновременно (§9). */
+  reservationsMaxPerGuest: number
   /** Запросов в секунду на токен (§13.4). Ноль выключает ограничитель. */
   rateLimitPerSecond: number
   /** Сколько новых переписок в день начинает НЕпроверенный подрядчик (§18.2). */
@@ -248,6 +250,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: parseTrustProxy(source.TRUST_PROXY),
     albumMaxPerGuest: envNumber(source.ALBUM_MAX_PER_GUEST, 50),
     contributionsMaxPerGuest: envNumber(source.CONTRIBUTIONS_MAX_PER_GUEST, 20),
+    reservationsMaxPerGuest: envNumber(source.RESERVATIONS_MAX_PER_GUEST, 5),
     rateLimitPerSecond: envNumber(source.RATE_LIMIT_PER_SECOND, 10),
     coldOutreachPerDay: envNumber(source.COLD_OUTREACH_PER_DAY, 5),
     weddingArchiveDays: parseArchiveDays(source.WEDDING_ARCHIVE_DAYS),

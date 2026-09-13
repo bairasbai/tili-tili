@@ -11,6 +11,7 @@ import {
   normalizePhone,
 } from '../auth/otp.js'
 import { codeMessage } from '../auth/sms.js'
+import { eraseUser } from '../jobs/index.js'
 import {
   ACCESS_TTL_SECONDS,
   REFRESH_TTL_SECONDS,
@@ -300,6 +301,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         otp.id,
       ])
       if (consumed.rowCount === 0) throw unauthorized('Код уже использован. Запросите новый.')
+
+      /* Строка старше окна восстановления — стирается сразу, до входа
+       * (фича 014, A18). Уборка ежечасная, и до её прохода вход выдавал
+       * токены, с которыми каждый запрос отвечал 401 «Аккаунт удалён»: SMS
+       * потрачена, войти нельзя. Путь — тот же, что у уборки (`eraseUser`),
+       * в одной транзакции; ниже заводится новый аккаунт с чистой историей. */
+      const { rows: stale } = await db().query<{ id: string }>(
+        `select id from users
+          where phone = $1 and deleted_at is not null and deleted_at <= now() - make_interval(days => $2::int)`,
+        [phone, RESTORE_WINDOW_DAYS],
+      )
+      if (stale[0]) await db().tx((client) => eraseUser(client, stale[0]!.id))
 
       // Регистрация и вход — одно и то же действие. Гонку закрывает
       // уникальность телефона в БД, а не проверка «а есть ли уже такой».

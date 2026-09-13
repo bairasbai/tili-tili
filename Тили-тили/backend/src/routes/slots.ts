@@ -8,6 +8,7 @@ import { rolesSeeing } from '../chats/access.js'
 import { openLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
+import { CREATED_AT_US } from './chats.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
@@ -126,6 +127,74 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     loadSlots(db(), request.member!.weddingId, seesMoney(request.member!.role)),
   )
 
+  /**
+   * Слот категории вне шаблона (фича 014, A1).
+   *
+   * Шаблон мозаики — 12 категорий, каталог знает 35: аниматора, фейерверк
+   * или фотобудку было некуда забронировать — кнопка «Добавить в свадьбу»
+   * на их анкетах вела в никуда. Слот заводится пустым, подпись — имя
+   * категории из справочника, место — в конец мозаики.
+   *
+   * Свадьба берётся `for update`: уникального индекса (свадьба, категория)
+   * у слотов нет — шаблон его не требовал, — и два одновременных «добавить
+   * аниматора» иначе заводили бы два слота. Один слот на категорию — не
+   * ограничение базы, а правило мозаики, поэтому и держится здесь, под
+   * блокировкой строки свадьбы. Повтор — 409 `slot_exists` с `slotId` в
+   * `details`: экран ведёт бронь в существующий слот, а не показывает отказ.
+   */
+  app.post(
+    '/weddings/:weddingId/slots',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['categoryId'],
+          additionalProperties: false,
+          properties: { categoryId: { type: 'string', minLength: 1, maxLength: 40 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const weddingId = request.member!.weddingId
+      const { categoryId } = request.body as { categoryId: string }
+
+      const result = await db().tx(async (client) => {
+        await client.query('select id from weddings where id = $1 for update', [weddingId])
+        const { rows: cat } = await client.query<{ name: string }>('select name from categories where id = $1', [
+          categoryId,
+        ])
+        if (!cat[0]) {
+          throw new AppError(422, 'validation_failed', 'Такой категории нет', { categoryId: 'категория не найдена' })
+        }
+        const { rows: existing } = await client.query<{ id: string }>(
+          'select id from slots where wedding_id = $1 and category_id = $2 order by sort limit 1',
+          [weddingId, categoryId],
+        )
+        if (existing[0]) return { exists: existing[0].id }
+
+        const id = uuidv7()
+        await client.query(
+          `insert into slots (id, wedding_id, category_id, label, sort)
+           values ($1, $2, $3, $4, (select coalesce(max(sort), 0) + 1 from slots where wedding_id = $2))`,
+          [id, weddingId, categoryId, cat[0].name],
+        )
+        return { slot: (await loadSlot(client, id, true))! }
+      })
+      if ('exists' in result) {
+        /* Тело — руками, как 409 `wedding_exists` в `weddings.ts`: единый
+         * формат ошибки (`errors.ts`) поля `details` не знает. */
+        return reply.code(409).send({
+          error: {
+            code: 'slot_exists',
+            message: 'Слот этой категории уже есть в мозаике',
+            details: { slotId: result.exists },
+          },
+        })
+      }
+      return reply.code(201).send(result.slot)
+    },
+  )
+
   /* ── бронирование ─────────────────────────────────────────────────── */
   app.post(
     '/weddings/:weddingId/slots/:slotId/book',
@@ -149,8 +218,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { vendorId: string; packageId?: string; price: { amount: number } }
       assertPositivePrice(body.price.amount)
 
-      return withIdempotency(db(), request, reply, 'slots.book', async () => {
-        const result = await db().tx(async (client) => {
+      return withIdempotency(db(), request, reply, 'slots.book', (tx) =>
+        tx(async (client) => {
           await slotOf(client, weddingId, slotId)
 
           const { rows: vendor } = await client.query<{ id: string }>(
@@ -211,10 +280,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           // забронировали одного фотографа на 14 июня».
           const date = await weddingDate(client, weddingId)
           if (date) await holdVendorDate(client, body.vendorId, date, dealId, weddingId)
-          return (await loadSlot(client, slotId, true))!
-        })
-        return { status: 200, body: result }
-      })
+          return { status: 200, body: (await loadSlot(client, slotId, true))! }
+        }),
+      )
     },
   )
 
@@ -223,15 +291,14 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     const { slotId } = request.params as { slotId: string }
 
-    return withIdempotency(db(), request, reply, 'slots.cancel', async () => {
-      const result = await db().tx(async (client) => {
+    return withIdempotency(db(), request, reply, 'slots.cancel', (tx) =>
+      tx(async (client) => {
         const slot = await slotOf(client, weddingId, slotId)
         if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нечего отменять')
         await cancelDealInSlot(client, slotId, slot.deal_id, request.caller!.userId)
-        return (await loadSlot(client, slotId, true))!
-      })
-      return { status: 200, body: result }
-    })
+        return { status: 200, body: (await loadSlot(client, slotId, true))! }
+      }),
+    )
   })
 
   /* ── оплата ───────────────────────────────────────────────────────── */
@@ -251,8 +318,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const { slotId } = request.params as { slotId: string }
       const body = (request.body ?? {}) as { amount?: { amount: number } }
 
-      return withIdempotency(db(), request, reply, 'slots.pay', async () => {
-        const result = await db().tx(async (client) => {
+      return withIdempotency(db(), request, reply, 'slots.pay', (tx) =>
+        tx(async (client) => {
           const slot = await slotOf(client, weddingId, slotId)
           if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нет сделки')
 
@@ -309,10 +376,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
               [uuidv7(), slot.deal_id, deal.state, request.caller!.userId],
             )
           }
-          return (await loadSlot(client, slotId, true))!
-        })
-        return { status: 200, body: result }
-      })
+          return { status: 200, body: (await loadSlot(client, slotId, true))! }
+        }),
+      )
     },
   )
 
@@ -485,15 +551,17 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
     const { rows } = await db().query<MessageRow>(
-      `select id, chat_id, sender_id, text, attachments, created_at
-         from messages
-        where chat_id = $1
-          and ($2::text is null or (created_at, id) < ($2::timestamptz, $3::uuid))
-        order by created_at desc, id desc
+      `select m.id, m.chat_id, m.sender_id, m.text, m.attachments, m.created_at, ${CREATED_AT_US}
+         from messages m
+        where m.chat_id = $1
+          and ($2::text is null or (m.created_at, m.id) < ($2::timestamptz, $3::uuid))
+        order by m.created_at desc, m.id desc
         limit $4`,
       [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
     )
-    return buildPage(rows.map(toMessage), page.limit, (m) => encodeCursor(m.sentAt, m.id))
+    // Курсор — по микросекундам строки, как в `GET /chats/{id}/messages` (D4-23).
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.created_at_us, r.id))
+    return { items: paged.items.map(toMessage), nextCursor: paged.nextCursor }
   })
 
   app.post(
@@ -646,6 +714,7 @@ interface MessageRow {
   text: string
   attachments: { url?: string } | null
   created_at: Date
+  created_at_us: string
 }
 
 const toMessage = (r: MessageRow) => ({

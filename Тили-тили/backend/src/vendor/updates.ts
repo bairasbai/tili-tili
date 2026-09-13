@@ -13,7 +13,7 @@ import { uuidv7 } from '../ids.js'
  * Кому. Только тем, чья сделка дошла до брони: кандидату, который ещё
  * ничего не обещал, чужая рассадка не нужна.
  */
-export type VendorUpdateKind = 'seating' | 'menu' | 'timeline' | 'guests'
+export type VendorUpdateKind = 'seating' | 'menu' | 'timeline' | 'guests' | 'transport'
 
 export async function noteVendorUpdate(
   db: Queryable,

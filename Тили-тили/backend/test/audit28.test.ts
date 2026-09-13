@@ -362,14 +362,14 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
     const phone = nextPhone()
     const s = await signIn(phone)
     await consent(s.accessToken)
-    expect((await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(s.accessToken) })).statusCode).toBe(204)
     /* Фича 005 (В2): вход в 30-дневном окне ВОССТАНАВЛИВАЕТ аккаунт, и refresh
-     * после него — 200 (`audit34`). Здесь окно уже прошло: строка ждёт уборки,
-     * вход по-прежнему выдаёт токены, и обмен обязан отвечать 401. */
+     * после него — 200 (`audit34`). Здесь строка помечена удалённой мимо
+     * `DELETE /users/me` (сессии не погашены) — и обмен живого refresh всё
+     * равно обязан отвечать 401: удалённый аккаунт токенов не получает.
+     * Вход после окна с фичи 014 (A18) строку стирает и заводит новый аккаунт
+     * — это проверяет `audit43`; сюда он больше не относится. */
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [s.user.id])
-    await pretendMinutePassed(phone)
-    const again = await signIn(phone)
-    const res = await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: again.refreshToken } })
+    const res = await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: s.refreshToken } })
     expect(res.statusCode).toBe(401)
   })
 
@@ -807,7 +807,7 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
     expect(sent[sent.length - 1]!.message).toMatch(/\b1\b/)
   })
 
-  it('D5-01/D6-04: пара-одиночка с отзывом по завершённой сделке стирается через 30 дней — отзыв уходит, дата подрядчика освобождается', async () => {
+  it('D5-01/D6-04: пара-одиночка с отзывом по завершённой сделке стирается через 30 дней — отзыв остаётся подрядчику, дата освобождается', async () => {
     const owner = await newUser()
     const weddingId = await newWedding(owner.token)
     const vendor = await newVendor('photo')
@@ -837,10 +837,19 @@ describe.skipIf(!live)('ревью старого кода: вход, профи
       vendor.vendorId,
     ])
     expect(busy).toHaveLength(0)
+    /* Фича 014 (B5, решение владельца): отзыв пары — история подрядчика, а не
+     * свадьбы, и стирание аккаунта его не уносит: сделка у него — `null`
+     * (миграция 1760500000000 ослабила CHECK), рейтинг стоит как был. */
+    const { rows: kept } = await app.db!.query<{ deal_id: string | null }>(
+      "select deal_id from reviews where vendor_id = $1 and source = 'couple' and text = 'Отлично отработали'",
+      [vendor.vendorId],
+    )
+    expect(kept).toHaveLength(1)
+    expect(kept[0]!.deal_id).toBeNull()
     const { rows: v } = await app.db!.query<{ reviews_count: number }>('select reviews_count from vendors where id = $1', [
       vendor.vendorId,
     ])
-    expect(v[0]!.reviews_count).toBe(0)
+    expect(v[0]!.reviews_count).toBe(1)
   })
 
   /* ── каркас ───────────────────────────────────────────────────────── */

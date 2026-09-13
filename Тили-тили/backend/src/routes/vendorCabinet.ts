@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { ref } from '../contract/schemas.generated.js'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { notify } from '../notify/notify.js'
@@ -495,24 +496,13 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     {
       preHandler: app.requireConsent,
       schema: {
-        /* Слово в слово с контрактом (`POST /vendor/verification`), включая
-         * `https`: ссылка открывается сотрудником в новой вкладке из карточки
-         * заявки, и `http`, `javascript:` или `file:` были бы не документом, а
-         * тем, что подсунули сотруднику. Раньше это требование жило ТОЛЬКО
-         * здесь: контракт объявлял `fileUrl` голой строкой, и клиент, писавший
-         * по контракту, узнавал о правиле из 422. `ref()` тут не поставить —
-         * генератор переносит только `components.schemas`, а тело этого пути
-         * объявлено в самом пути. */
-        body: {
-          type: 'object',
-          required: ['kind', 'fileUrl'],
-          additionalProperties: false,
-          properties: {
-            kind: { type: 'string', enum: ['passport', 'ip', 'company'] },
-            fileUrl: { type: 'string', maxLength: 2000, pattern: '^https://[^ ]+$' },
-            inn: { type: 'string', pattern: '^[0-9]{10}$|^[0-9]{12}$' },
-          },
-        },
+        /* Тело — схема контракта `VerificationSubmit` (фича 014): одна на
+         * контракт и обработчик. Правило `https` живёт в ней: ссылка
+         * открывается сотрудником в новой вкладке из карточки заявки, и
+         * `http`, `javascript:` или `file:` были бы не документом, а тем, что
+         * подсунули сотруднику. Раньше схема тела была объявлена в самом пути,
+         * `ref()` до неё не доставал, и правила жили второй копией здесь. */
+        body: ref('VerificationSubmit'),
       },
     },
     async (request, reply) => {

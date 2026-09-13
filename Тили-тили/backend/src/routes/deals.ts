@@ -182,8 +182,8 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { state?: DealState; price?: { amount: number }; note?: string }
       const userId = request.caller!.userId
 
-      return withIdempotency(db(), request, reply, 'deals.patch', async () => {
-        const result = await db().tx(async (client) => {
+      return withIdempotency(db(), request, reply, 'deals.patch', (tx) =>
+        tx(async (client) => {
           const deal = await dealForCouple(client, dealId, userId)
           await expireHolds(client, deal.wedding_id)
 
@@ -238,7 +238,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
               `select ${DEAL_COLUMNS} from deals d ${DEAL_JOINS} where d.id = $1`,
               [dealId],
             )
-            return toDeal(only[0]!, true)
+            return { status: 200, body: toDeal(only[0]!, true) }
           }
 
           assertTransition(from, body.state)
@@ -296,10 +296,9 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             `select ${DEAL_COLUMNS} from deals d ${DEAL_JOINS} where d.id = $1`,
             [dealId],
           )
-          return toDeal(out[0]!, true)
-        })
-        return { status: 200, body: result }
-      })
+          return { status: 200, body: toDeal(out[0]!, true) }
+        }),
+      )
     },
   )
 }

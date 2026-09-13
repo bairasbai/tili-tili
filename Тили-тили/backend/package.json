@@ -17,6 +17,7 @@
     "gen:types": "openapi-typescript ../Тили-тили_API_openapi.yaml -o src/contract/api.generated.ts",
     "gen": "pnpm run gen:contract && pnpm run gen:schemas && pnpm run gen:types",
     "migrate": "node-pg-migrate -m migrations",
+    "migrate:fresh": "node -r dotenv/config scripts/migrate-fresh.mjs",
     "verify": "pnpm run typecheck && pnpm run test && pnpm run lint",
     "gen:schemas": "node scripts/gen-schemas.mjs",
     "gen:cities": "node scripts/gen-cities.mjs",

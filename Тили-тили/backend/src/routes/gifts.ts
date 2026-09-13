@@ -12,16 +12,6 @@ const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 
 /**
- * Сколько подарков один гость держит за собой одновременно.
- *
- * Резерв — не покупка: подарок просто исчезает из выбора для остальных.
- * Пяти хватает даже на семью с детьми; предел на взносы и альбом живёт в
- * настройках (`contributionsMaxPerGuest`, `albumMaxPerGuest`) — переезд
- * этого туда же за владельцем настроек.
- */
-const RESERVATIONS_MAX_PER_GUEST = 5
-
-/**
  * Идентификаторы из адреса обязаны быть UUID — почему именно схемой и почему
  * 422, а не 404, написано у `UUID_ID` в `ids.ts`.
  *
@@ -424,10 +414,12 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
           where g.wedding_id = $1 and r.guest_token = $2`,
         [guest.weddingId, guestToken],
       )
-      if (Number(mine[0]!.n) >= RESERVATIONS_MAX_PER_GUEST) {
+      // Предел — из конфигурации (`RESERVATIONS_MAX_PER_GUEST`), как у альбома и взносов (фича 014, A17).
+      const maxReservations = app.appConfig.reservationsMaxPerGuest
+      if (Number(mine[0]!.n) >= maxReservations) {
         throw quotaExceeded(
           'reservation_limit',
-          `Больше ${RESERVATIONS_MAX_PER_GUEST} подарков один гость не резервирует — снимите лишний резерв`,
+          `Больше ${maxReservations} подарков один гость не резервирует — снимите лишний резерв`,
         )
       }
 

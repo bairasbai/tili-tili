@@ -63,12 +63,15 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       const { date } = request.body as { date: string }
       assertWeddingDate(date)
 
-      return withIdempotency(db(), request, reply, 'weddings.reschedule', async () => {
+      return withIdempotency(db(), request, reply, 'weddings.reschedule', (tx) =>
         /* Вся работа — в одной транзакции: между освобождением старых дат
-         * и захватом новых другая пара успевает занять подрядчика. */
-        const report = await db().tx((client) => rescheduleWedding(client, weddingId, date, request.caller!.userId))
-        return { status: 200 as const, body: report }
-      })
+         * и захватом новых другая пара успевает занять подрядчика. Ответ —
+         * из неё же, вместе с записью идемпотентности (D2-13). */
+        tx(async (client) => ({
+          status: 200,
+          body: await rescheduleWedding(client, weddingId, date, request.caller!.userId),
+        })),
+      )
     },
   )
 

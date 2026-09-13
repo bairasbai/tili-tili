@@ -96,6 +96,21 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
 export const seesInviteUrl = (role: Role): boolean => role === 'couple'
 
 /**
+ * Телефон гостя пишет тот же, кто его читает, — пара (фича 014, A2).
+ *
+ * Помощник и координатор номер не видят (`hasPhone` вместо него), но до
+ * этого могли его записать и перезаписать — вслепую, не зная, что там было.
+ * Право писать то, что нельзя прочитать, — не право, а дыра: чужой номер
+ * затирается «своим», и напоминание уходит не туда. 403, а не молчаливый
+ * пропуск поля: молча выброшенный телефон — класс ERR-0034.
+ */
+export function assertPhoneByCouple(role: Role, hasPhone: boolean): void {
+  if (hasPhone && !seesInviteUrl(role)) {
+    throw new AppError(403, 'forbidden', 'Телефоны гостей ведёт пара — остальной команде они не показываются и не правятся')
+  }
+}
+
+/**
  * «+1» у гостя, который уже сидит в полном автобусе.
  *
  * Места считает база: смена `plus_one` пересчитывает персоны его записи
@@ -170,6 +185,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       const body = request.body as { name: string; plusOne?: boolean; group?: string; phone?: string }
+      assertPhoneByCouple(request.member!.role, body.phone !== undefined)
       const id = uuidv7()
       await db().query(
         `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
@@ -223,6 +239,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const { guests } = request.body as {
         guests: { name: string; phone?: string; plusOne?: boolean; group?: string }[]
       }
+      assertPhoneByCouple(request.member!.role, guests.some((g) => g.phone !== undefined))
       const skipped: { index: number; name: string; reason: 'duplicate' | 'invalid' }[] = []
       const createdIds: string[] = []
 
@@ -306,6 +323,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       // `undefined` — поле не прислали, оставить как есть. Явный `null` —
       // снять значение (R-17): пропуск и очистка это разные намерения.
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
+      assertPhoneByCouple(request.member!.role, has('phone'))
 
       /* Правка гостя, посадка и освобождение мест — одна транзакция (R-122):
        * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,

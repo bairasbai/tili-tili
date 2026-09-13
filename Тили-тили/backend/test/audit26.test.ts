@@ -365,7 +365,7 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     return { ...w, deal }
   }
 
-  it('уборка уносит отзыв пары вместе со свадьбой, пересчитывает рейтинг и не трогает отзыв гостя', async () => {
+  it('уборка убирает свадьбу, а отзывы — и пары, и гостя — оставляет подрядчику с прежним рейтингом', async () => {
     const w = await cancelledWithCoupleReview(900)
     const vendorId = w.deal.vendor.vendorId
 
@@ -389,11 +389,13 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     const removed = await cleanup(app)
     expect(removed.weddings_purged).toBeTypeOf('number')
 
-    /* Главное: свадьба удалена. Каскад по сделкам обнуляет `reviews.deal_id`,
-     * а `CHECK reviews_key_matches_source` требует его у отзыва пары —
-     * `delete from weddings` падал на этой проверке, откатывал всю партию,
-     * `isolated()` глотал ошибку, и первая по `archived_at` свадьба
-     * возвращалась в выборку следующего прохода уже навсегда. */
+    /* Главное: свадьба удалена. Каскад по сделкам обнуляет `reviews.deal_id`;
+     * до фичи 014 `CHECK reviews_key_matches_source` требовал его у отзыва
+     * пары — `delete from weddings` падал на этой проверке, откатывал всю
+     * партию, `isolated()` глотал ошибку, и первая по `archived_at` свадьба
+     * возвращалась в выборку следующего прохода уже навсегда (ERR-0209).
+     * Уборка тогда удаляла отзыв пары заранее; миграция 1760500000000
+     * ослабила проверку, и отзыв остаётся (решение владельца, B5). */
     expect(await count('select count(*)::text as n from weddings where id = $1', [w.weddingId])).toBe(0)
     // Чей бы проход ни успел — след в журнале ровно один (FR-008).
     expect(
@@ -404,13 +406,14 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
       ),
     ).toBe(1)
 
-    // Отзыв пары уходит вместе со сделкой: оставить его база не даёт.
-    expect(
-      await count('select count(*)::text as n from reviews where wedding_id = $1 and source = $2', [
-        w.weddingId,
-        'couple',
-      ]),
-    ).toBe(0)
+    // Отзыв пары остаётся подрядчику: свадьба и сделка у него — `null`.
+    const couple = await one<{ deal_id: string | null; wedding_id: string | null }>(
+      "select deal_id, wedding_id from reviews where vendor_id = $1 and source = 'couple'",
+      [vendorId],
+    )
+    expect(couple, 'отзыв пары переживает уборку (фича 014, B5)').not.toBeNull()
+    expect(couple!.deal_id).toBeNull()
+    expect(couple!.wedding_id).toBeNull()
 
     /* Отзыв гостя остаётся историей подрядчика, `wedding_id` обнуляется
      * каскадом — проверку это не нарушает, ключ у него свой. */
@@ -422,11 +425,9 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     expect(guest!.wedding_id).toBeNull()
     expect(guest!.vendor_id).toBe(vendorId)
 
-    /* Рейтинг пересчитан: `reviews_count` считал бы отзывы, которых уже
-     * нет, а в каталоге у подрядчика стояло бы число из воздуха (R-178). */
+    /* Рейтинг — как был: оба отзыва на месте, пересчитывать нечего. */
     const rating = await ratingOf(vendorId)
-    expect(rating!.reviews_count).toBe(1)
-    expect(Number(rating!.rating)).toBe(4)
+    expect(rating!.reviews_count).toBe(2)
   })
 
   it('одна свадьба с отзывом не блокирует уборку остальных', async () => {

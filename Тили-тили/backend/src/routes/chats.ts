@@ -32,7 +32,21 @@ export interface MessageRow {
   text: string
   attachments: { url?: string } | null
   created_at: Date
+  /** `created_at` знаками, с микросекундами — ключ курсора (см. `CREATED_AT_US`). */
+  created_at_us: string
 }
+
+/**
+ * Время реплики для курсора — текстом из базы, с микросекундами.
+ *
+ * Драйвер отдаёт `timestamptz` как `Date`, а у него миллисекунды: курсор
+ * `(created_at, id) < ($cursor, $id)` с усечённым временем пропускал реплики,
+ * записанные в те же миллисекунды после последней на странице — их
+ * `created_at` больше усечённого ключа, и в следующую страницу они не
+ * попадали (фича 014, D4-23). Формат — ISO с шестью знаками дроби, который
+ * `decodeCursor` принимает и `::timestamptz` приводит без потерь.
+ */
+export const CREATED_AT_US = `to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at_us`
 
 /**
  * Страница ленты от свежих к старым: открывая чат, человек видит последнее.
@@ -40,7 +54,8 @@ export interface MessageRow {
  */
 export async function messagePage(db: Queryable, chatId: string, page: PageQuery): Promise<MessageRow[]> {
   const { rows } = await db.query<MessageRow>(
-    `select m.id, m.chat_id, m.sender_id, m.guest_id, g.name as guest_name, m.text, m.attachments, m.created_at
+    `select m.id, m.chat_id, m.sender_id, m.guest_id, g.name as guest_name, m.text, m.attachments, m.created_at,
+            ${CREATED_AT_US}
        from messages m
        left join guests g on g.id = m.guest_id
       where m.chat_id = $1
@@ -60,8 +75,16 @@ export async function messagePage(db: Queryable, chatId: string, page: PageQuery
  * место. У Тиль пустой отправитель — её ответ, в чате со своим подрядчиком —
  * сам подрядчик (аккаунта у него нет), а в чате дня X — гость по своей
  * ссылке (фича 009): у него нет `sender_id`, но есть `guest_id`.
+ *
+ * `mine` — своя ли реплика для того, кто читает (фича 014, A8). Участнику
+ * — по `sender_id`, гостю по ссылке — по его строке в списке гостей: у гостя
+ * нет идентификатора аккаунта, и экран узнавал свою реплику по имени, а две
+ * Марины на одной свадьбе — не редкость. Без читателя (живой канал, куда
+ * одна и та же реплика уходит всем) — `null`: «не знаем», а не «не моя».
  */
-export function toMessage(r: MessageRow, kind: ChatKind) {
+export type MessageViewer = { userId: string } | { guestId: string } | null
+
+export function toMessage(r: MessageRow, kind: ChatKind, viewer: MessageViewer = null) {
   const systemHere = kind !== 'tilly' && kind !== 'external'
   return {
     id: r.id,
@@ -72,7 +95,14 @@ export function toMessage(r: MessageRow, kind: ChatKind) {
     sentAt: r.created_at.toISOString(),
     system: systemHere && r.sender_id === null && r.guest_id === null,
     guestName: r.guest_name,
+    mine: isMine(r, viewer),
   }
+}
+
+export function isMine(r: { sender_id: string | null; guest_id: string | null }, viewer: MessageViewer): boolean | null {
+  if (!viewer) return null
+  if ('userId' in viewer) return r.sender_id !== null && r.sender_id === viewer.userId
+  return r.guest_id !== null && r.guest_id === viewer.guestId
 }
 
 /** Пояс свадьбы для тихих часов получателей без своего пояса. */
@@ -293,11 +323,9 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       [chatId, request.caller!.userId],
     )
 
-    return buildPage(
-      rows.map((r) => toMessage(r, chat.kind)),
-      page.limit,
-      (m) => encodeCursor(m.sentAt, m.id),
-    )
+    // Курсор — по микросекундам строки, а не по `sentAt` с миллисекундами (D4-23).
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.created_at_us, r.id))
+    return { items: paged.items.map((r) => toMessage(r, chat.kind, { userId: request.caller!.userId })), nextCursor: paged.nextCursor }
   })
 
   /* ── отправка ─────────────────────────────────────────────────────── */
@@ -363,6 +391,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         system: false,
         // Реплика участника: имя гостя бывает только у реплик по ссылке гостя.
         guestName: null,
+        // В живой канал уходит всем — своя ли она, каждый экран решает по `senderId`; автору в ответе — `true` ниже.
+        mine: null as boolean | null,
       }
       // Сначала живому каналу, потом уведомление: у кого чат открыт,
       // тот увидит сообщение, а не значок о нём.
@@ -378,7 +408,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
 
       // Предупреждение едет вместе с ответом: клиенту не нужно перечитывать
       // историю, чтобы понять, что показать всплывающей плашкой.
-      return reply.code(201).send(warning ? { ...message, warning } : message)
+      return reply.code(201).send(warning ? { ...message, mine: true, warning } : { ...message, mine: true })
     },
   )
 

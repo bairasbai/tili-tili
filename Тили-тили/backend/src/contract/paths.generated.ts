@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.36.0).
- * Операций: 166. Путей: 124. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.37.0).
+ * Операций: 170. Путей: 126. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -155,10 +155,14 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/menu-poll","url":"/weddings/:weddingId/menu-poll","operationId":null,"summary":"Опрос гостей по горячему","tag":"catering"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/menu-poll","url":"/weddings/:weddingId/menu-poll","operationId":null,"summary":"Изменить опрос","tag":"catering"},
   {"method":"POST","openapi":"/weddings/{weddingId}/menu-poll/remind","url":"/weddings/:weddingId/menu-poll/remind","operationId":null,"summary":"Напомнить не выбравшим блюдо","tag":"catering"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Заметки и идеи свадьбы","tag":"wedding"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Добавить заметку","tag":"wedding"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/notes/{noteId}","url":"/weddings/:weddingId/notes/:noteId","operationId":null,"summary":"Удалить заметку","tag":"wedding"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
-  {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды (12 категорий: площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор)","tag":"bookings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) плюс добавленные парой","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Добавить слот категории в мозаику","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/book","url":"/weddings/:weddingId/slots/:slotId/book","operationId":null,"summary":"Забронировать подрядчика в слот («Добавить в свадьбу»)","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/cancel","url":"/weddings/:weddingId/slots/:slotId/cancel","operationId":null,"summary":"Отменить бронь (слот → free, бюджет минус)","tag":"bookings"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/external","url":"/weddings/:weddingId/slots/:slotId/external","operationId":null,"summary":"Удалить своего подрядчика","tag":"bookings"},

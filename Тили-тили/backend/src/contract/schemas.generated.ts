@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 58. */
+ * Схем: 61. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -33,6 +33,38 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "AdminCategoriesUpdate": {
+          "type": "object",
+          "description": "Тело правки справочника категорий (фича 014: одна схема — и контракту, и обработчику).",
+          "additionalProperties": false,
+          "properties": {
+              "categories": {
+                  "type": "array",
+                  "maxItems": 200,
+                  "description": "до 200 категорий — справочник шлётся целиком (сейчас 35)",
+                  "items": {
+                      "$ref": "contract#/definitions/AdminCategory"
+                  }
+              },
+              "synonyms": {
+                  "type": "object",
+                  "maxProperties": 2000,
+                  "propertyNames": {
+                      "maxLength": 40
+                  },
+                  "description": "слово → идентификатор категории; слово хранится в нижнем регистре.\nНе больше 2000 слов, длина слова — до 40 знаков: словарь\nзаменяется целиком и вставляется построчно под блокировкой\nсправочника, а «фотограф» — это слово, а не абзац.\n",
+                  "additionalProperties": {
+                      "type": "string"
+                  }
+              },
+              "version": {
+                  "type": "string",
+                  "maxLength": 16,
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Версия справочника, с которой начата правка (из `GET /admin/categories`).\nНе совпала с текущей — 409 `categories_stale`. Без поля сохранение\nидёт без проверки. Шестнадцать шестнадцатеричных знаков — всё\nостальное 422, а не 409: такой версии сервер не выдавал никогда.\n"
+              }
+          }
+      },
       "AdminCategory": {
           "type": "object",
           "description": "Категория глазами сотрудника: то же, что в каталоге, плюс порядок в мозаике.\nОтдельная схема, а не Category, потому что `sort` наружу не выходит —\nпаре он не нужен, а панель без него не может переставлять плитки.\n",
@@ -57,7 +89,7 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "maxLength": 16,
-                  "description": "Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».\nВ теле PUT `null` или пропуск — прежний значок.\n"
+                  "description": "Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».\nВ теле PUT пропуск — прежний значок, `null` — стереть (R-17: пропуск и\nочистка — разные намерения; фича 014).\n"
               },
               "sort": {
                   "type": "integer",
@@ -356,7 +388,7 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "Сделка с перевозчиком этой свадьбы — только в слоте категории\n`transport` (иначе 422 `not_transport`) и не отменённая (409\n`deal_cancelled`). null — маршрут без перевозчика. Отмена сделки\nобнуляет поле, маршрут и записи гостей остаются.\n"
+                  "description": "Сделка с перевозчиком этой свадьбы — только в слоте категории\n`transport` (иначе 422 `not_transport`) и живая: отменённая — 409\n`deal_cancelled`, кандидат или переговоры — 409 `deal_not_booked`\n(фича 014: «везёт перевозчик X» — обещание гостям, его не дают за\nподрядчика, который ничего не подтвердил). null — маршрут без\nперевозчика. Отмена сделки обнуляет поле, маршрут и записи гостей\nостаются.\n"
               },
               "carrier": {
                   "type": [
@@ -1229,6 +1261,13 @@ export const CONTRACT_SCHEMAS = {
                   ],
                   "description": "Имя гостя, если реплику написал гость по своей ссылке в чат дня X\n(фича 009): у гостя нет аккаунта, `senderId` пуст, имя — из списка\nгостей. У остальных реплик — null.\n"
               },
+              "mine": {
+                  "type": [
+                      "boolean",
+                      "null"
+                  ],
+                  "description": "Своя ли это реплика для того, кто читает (фича 014). Участнику —\nпо `senderId`, гостю в чате дня — по его строке в списке гостей:\nу гостя нет идентификатора аккаунта, и сравнивать имена (две\nМарины) экран не должен. Считает сервер. `null` — читатель\nнеизвестен (реплика пришла живым каналом всем сразу): экран\nучастника тогда решает по `senderId`.\n"
+              },
               "warning": {
                   "type": [
                       "string",
@@ -1301,6 +1340,33 @@ export const CONTRACT_SCHEMAS = {
                   "enum": [
                       "RUB"
                   ]
+              }
+          }
+      },
+      "Note": {
+          "type": "object",
+          "description": "Заметка команды свадьбы (фича 014). Автор — по имени из профиля; удалённый аккаунт — null.",
+          "required": [
+              "id",
+              "text",
+              "createdAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "text": {
+                  "type": "string"
+              },
+              "authorName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
               }
           }
       },
@@ -2246,6 +2312,36 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VerificationSubmit": {
+          "type": "object",
+          "description": "Тело подачи документов на верификацию (фича 014: одна схема — и контракту, и обработчику).",
+          "required": [
+              "kind",
+              "fileUrl"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "passport",
+                      "ip",
+                      "company"
+                  ]
+              },
+              "fileUrl": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "pattern": "^https://[^ ]+$",
+                  "description": "Ссылка на скан. Только `https` — сотрудник открывает её в новой\nвкладке из карточки заявки, и `http`, `javascript:` или `file:`\nздесь были бы не документом, а тем, что сотруднику подсунули.\n"
+              },
+              "inn": {
+                  "type": "string",
+                  "pattern": "^[0-9]{10}$|^[0-9]{12}$",
+                  "description": "ИНН: 10 знаков у организации, 12 у ИП и физлица."
+              }
+          }
+      },
       "Wedding": {
           "type": "object",
           "properties": {
@@ -2413,6 +2509,7 @@ export function ref(name: ContractSchemaName): { $ref: string } {
 
 export type ContractSchemaName =
   | "AdminCategories"
+  | "AdminCategoriesUpdate"
   | "AdminCategory"
   | "AdminMetrics"
   | "AlbumPhoto"
@@ -2446,6 +2543,7 @@ export type ContractSchemaName =
   | "ModerationVendor"
   | "ModerationVendorPage"
   | "Money"
+  | "Note"
   | "Notification"
   | "Readiness"
   | "Review"
@@ -2467,6 +2565,7 @@ export type ContractSchemaName =
   | "VerificationPage"
   | "VerificationRequest"
   | "VerificationStatus"
+  | "VerificationSubmit"
   | "Wedding"
   | "WeddingPublic"
   | "WeddingSupportCard"

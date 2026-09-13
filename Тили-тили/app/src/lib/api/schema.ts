@@ -1253,6 +1253,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Заметки и идеи свадьбы
+         * @description Заметки жили в `localStorage` одного телефона (фича 014, блокер №7 — решение
+         *     владельца): теперь — на сервере, у свадьбы, свежие первыми. Видит и пишет вся
+         *     команда свадьбы (пара, помощник, координатор): идеи — общее поле, как чат команды.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Note"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        /** Добавить заметку */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Добавлена */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Note"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/notes/{noteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить заметку */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    noteId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Удалена */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/slots": {
         parameters: {
             query?: never;
@@ -1260,7 +1376,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Слоты команды (12 категорий: площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) */
+        /** Слоты команды: 12 из шаблона (площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) плюс добавленные парой */
         get: {
             parameters: {
                 query?: never;
@@ -1284,7 +1400,58 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /**
+         * Добавить слот категории в мозаику
+         * @description Каталог знает 35 категорий, шаблон мозаики — 12: подрядчика из категории
+         *     вне шаблона (аниматор, фейерверк, фотобудка…) было некуда забронировать
+         *     (фича 014, хвост этапа 6). Слот заводится пустым, подпись — название
+         *     категории, ставится в конец мозаики; дальше — обычная бронь
+         *     `POST …/slots/{slotId}/book`. Слот той же категории уже есть — 409
+         *     `slot_exists` с его идентификатором в `details.slotId`: второй слот одной
+         *     категории мозаике не нужен, пара бронирует в существующий. Неизвестная
+         *     категория — 422. Заводит пара; помощник и координатор — 403 (состав
+         *     команды решает пара, как и бронь).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        categoryId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Слот добавлен */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Slot"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                /** @description `slot_exists` — слот этой категории уже есть; `details.slotId` — какой */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -3080,8 +3247,11 @@ export interface paths {
                             wedding?: string;
                             /** Format: date */
                             weddingDate?: string | null;
-                            /** @enum {string} */
-                            kind?: "seating" | "menu" | "timeline" | "guests";
+                            /**
+                             * @description `transport` — маршрут для гостей заведён или изменён по сделке перевозчика (фичи 006/014)
+                             * @enum {string}
+                             */
+                            kind?: "seating" | "menu" | "timeline" | "guests" | "transport";
                             text?: string;
                             /** Format: date-time */
                             createdAt?: string;
@@ -6762,18 +6932,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        /** @enum {string} */
-                        kind: "passport" | "ip" | "company";
-                        /**
-                         * @description Ссылка на скан. Только `https` — сотрудник открывает её в новой
-                         *     вкладке из карточки заявки, и `http`, `javascript:` или `file:`
-                         *     здесь были бы не документом, а тем, что сотруднику подсунули.
-                         */
-                        fileUrl: string;
-                        /** @description ИНН: 10 знаков у организации, 12 у ИП и физлица. */
-                        inn?: string;
-                    };
+                    "application/json": components["schemas"]["VerificationSubmit"];
                 };
             };
             responses: {
@@ -7240,25 +7399,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        categories?: components["schemas"]["AdminCategory"][];
-                        /**
-                         * @description слово → идентификатор категории; слово хранится в нижнем регистре.
-                         *     Не больше 2000 слов, длина слова — до 40 знаков: словарь
-                         *     заменяется целиком и вставляется построчно под блокировкой
-                         *     справочника, а «фотограф» — это слово, а не абзац.
-                         */
-                        synonyms?: {
-                            [key: string]: string;
-                        };
-                        /**
-                         * @description Версия справочника, с которой начата правка (из `GET /admin/categories`).
-                         *     Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
-                         *     идёт без проверки. Шестнадцать шестнадцатеричных знаков — всё
-                         *     остальное 422, а не 409: такой версии сервер не выдавал никогда.
-                         */
-                        version?: string;
-                    };
+                    "application/json": components["schemas"]["AdminCategoriesUpdate"];
                 };
             };
             responses: {
@@ -7734,6 +7875,14 @@ export interface components {
                 durationS?: number | null;
             }[];
         };
+        /** @description Заметка команды свадьбы (фича 014). Автор — по имени из профиля; удалённый аккаунт — null. */
+        Note: {
+            id: string;
+            text: string;
+            authorName?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
         /**
          * @description Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного
          *     статуса у него нет. tileState — производная подпись для мозаики команды,
@@ -7938,6 +8087,15 @@ export interface components {
              */
             guestName?: string | null;
             /**
+             * @description Своя ли это реплика для того, кто читает (фича 014). Участнику —
+             *     по `senderId`, гостю в чате дня — по его строке в списке гостей:
+             *     у гостя нет идентификатора аккаунта, и сравнивать имена (две
+             *     Марины) экран не должен. Считает сервер. `null` — читатель
+             *     неизвестен (реплика пришла живым каналом всем сразу): экран
+             *     участника тогда решает по `senderId`.
+             */
+            mine?: boolean | null;
+            /**
              * @description Мягкое предупреждение о выводе сделки мимо платформы (§18.2):
              *     сообщение ДОСТАВЛЕНО, но обе стороны видят плашку и системную
              *     запись в чате. Блокировать нельзя — разговор просто уйдёт
@@ -8126,9 +8284,12 @@ export interface components {
             readonly taken?: number;
             /**
              * @description Сделка с перевозчиком этой свадьбы — только в слоте категории
-             *     `transport` (иначе 422 `not_transport`) и не отменённая (409
-             *     `deal_cancelled`). null — маршрут без перевозчика. Отмена сделки
-             *     обнуляет поле, маршрут и записи гостей остаются.
+             *     `transport` (иначе 422 `not_transport`) и живая: отменённая — 409
+             *     `deal_cancelled`, кандидат или переговоры — 409 `deal_not_booked`
+             *     (фича 014: «везёт перевозчик X» — обещание гостям, его не дают за
+             *     подрядчика, который ничего не подтвердил). null — маршрут без
+             *     перевозчика. Отмена сделки обнуляет поле, маршрут и записи гостей
+             *     остаются.
              */
             dealId?: string | null;
             /**
@@ -8333,7 +8494,8 @@ export interface components {
             title: string;
             /**
              * @description Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».
-             *     В теле PUT `null` или пропуск — прежний значок.
+             *     В теле PUT пропуск — прежний значок, `null` — стереть (R-17: пропуск и
+             *     очистка — разные намерения; фича 014).
              */
             icon?: string | null;
             /** @description порядок в мозаике: меньше — выше */
@@ -8352,6 +8514,40 @@ export interface components {
              *     мимо панели: он считается по самим строкам, а не по времени сохранения.
              *     Возвращается в теле PUT, чтобы сохранение не затёрло чужую правку.
              * @example 9f2c1ab340de77b5
+             */
+            version?: string;
+        };
+        /** @description Тело подачи документов на верификацию (фича 014: одна схема — и контракту, и обработчику). */
+        VerificationSubmit: {
+            /** @enum {string} */
+            kind: "passport" | "ip" | "company";
+            /**
+             * @description Ссылка на скан. Только `https` — сотрудник открывает её в новой
+             *     вкладке из карточки заявки, и `http`, `javascript:` или `file:`
+             *     здесь были бы не документом, а тем, что сотруднику подсунули.
+             */
+            fileUrl: string;
+            /** @description ИНН: 10 знаков у организации, 12 у ИП и физлица. */
+            inn?: string;
+        };
+        /** @description Тело правки справочника категорий (фича 014: одна схема — и контракту, и обработчику). */
+        AdminCategoriesUpdate: {
+            /** @description до 200 категорий — справочник шлётся целиком (сейчас 35) */
+            categories?: components["schemas"]["AdminCategory"][];
+            /**
+             * @description слово → идентификатор категории; слово хранится в нижнем регистре.
+             *     Не больше 2000 слов, длина слова — до 40 знаков: словарь
+             *     заменяется целиком и вставляется построчно под блокировкой
+             *     справочника, а «фотограф» — это слово, а не абзац.
+             */
+            synonyms?: {
+                [key: string]: string;
+            };
+            /**
+             * @description Версия справочника, с которой начата правка (из `GET /admin/categories`).
+             *     Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
+             *     идёт без проверки. Шестнадцать шестнадцатеричных знаков — всё
+             *     остальное 422, а не 409: такой версии сервер не выдавал никогда.
              */
             version?: string;
         };

@@ -85,7 +85,10 @@ const MATRIX: Rule[] = [
     url: /^\/weddings\/:weddingId\/(guests|tables|tasks|logistics|menu-poll|timeline|album)/,
     by: { GET: ALL_TEAM, POST: ALL_TEAM, PUT: ALL_TEAM, PATCH: ALL_TEAM, DELETE: ALL_TEAM },
   },
-  { url: /^\/weddings\/:weddingId\/slots$/, by: { GET: ALL_TEAM } },
+  // Мозаику видит команда; состав слотов, как и бронь, решает пара (фича 014).
+  { url: /^\/weddings\/:weddingId\/slots$/, by: { GET: ALL_TEAM, POST: ONLY_COUPLE } },
+  // Заметки — общее поле идей команды, как чат команды (фича 014, блокер №7).
+  { url: /^\/weddings\/:weddingId\/notes/, by: { GET: ALL_TEAM, POST: ALL_TEAM, DELETE: ALL_TEAM } },
 
   /* План Б. Чек-лист накануне сверяет вся команда — за то он и общий.
    * Объявляет запасной сценарий тот, кто днём X командует: пара и

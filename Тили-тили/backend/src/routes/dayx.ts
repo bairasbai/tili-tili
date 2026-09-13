@@ -62,8 +62,10 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         throw new AppError(422, 'empty_shift', 'Сдвиг на ноль минут ничего не меняет', { minutes: 'не может быть 0' })
       }
 
-      return withIdempotency(db(), request, reply, 'timeline-shift', async () => {
-        const result = await db().tx(async (client) => {
+      return withIdempotency(db(), request, reply, 'timeline-shift', async (tx) => {
+        /* Ответ — из транзакции действия: туда же ложится и запись
+         * идемпотентности (D2-13). Рассылка — после: она не часть ответа. */
+        const result = await tx(async (client) => {
           /* Двигаются блоки, которые ЕЩЁ НЕ НАЧАЛИСЬ. Прошедшие не трогаем:
            * церемония, которая уже прошла, не сдвинется от того, что банкет
            * задержался, а в расписании поедет всё. */
@@ -97,7 +99,9 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
             'timeline',
             `Тайминг сдвинут на ${minutes > 0 ? '+' : ''}${minutes} мин`,
           )
-          return { shifted: moved.length, guests: Number(guests[0]!.n) }
+          /* Кого сдвиг КАСАЕТСЯ — `guestsAffected`, то же число, что
+           * `recipients` в журнале рассылок: команда сообщает им сама. */
+          return { status: 200, body: { minutes, shiftedBlocks: moved.length, guestsAffected: Number(guests[0]!.n) } }
         })
 
         /* День X критичен: тихие часы его не держат — гости уже в дороге.
@@ -118,12 +122,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           true,
         )
 
-        /* Кого сдвиг КАСАЕТСЯ — `guestsAffected`, то же число, что
-         * `recipients` в журнале рассылок: команда сообщает им сама. */
-        return {
-          status: 200,
-          body: { minutes, shiftedBlocks: result.shifted, guestsAffected: result.guests },
-        }
+        return result
       })
     },
   )
@@ -192,8 +191,9 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const { scenario } = request.body as { scenario: string }
 
-      return withIdempotency(db(), request, reply, 'planb-activate', async () => {
-        const affected = await db().tx(async (client) => {
+      return withIdempotency(db(), request, reply, 'planb-activate', async (tx) => {
+        // Ответ — из транзакции действия, рассылка — после (D2-13), как у сдвига тайминга.
+        const result = await tx(async (client) => {
           /* Запоминаем ТОЛЬКО факт и сценарий. Новой точки сбора в продукте
            * нет нигде — ни в моках, ни в договоре с площадкой её поля не
            * заведено, — и выдумывать её здесь не за чем: план Б в §13.1
@@ -211,7 +211,8 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
             'insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)',
             [uuidv7(), weddingId, `planb:${scenario}`, Number(guests[0]!.n)],
           )
-          return Number(guests[0]!.n)
+          // Как и у сдвига: кого касается — число подтвердивших «да».
+          return { status: 200, body: { scenario, guestsAffected: Number(guests[0]!.n) } }
         })
 
         await notifyWedding(
@@ -229,8 +230,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           true,
         )
 
-        // Как и у сдвига: кого касается — число подтвердивших «да».
-        return { status: 200, body: { scenario, guestsAffected: affected } }
+        return result
       })
     },
   )

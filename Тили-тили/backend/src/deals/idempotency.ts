@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import type { Db } from '../plugins/db.js'
+import type { Db, Queryable } from '../plugins/db.js'
 import { AppError } from '../errors.js'
 
 /**
@@ -23,8 +23,16 @@ function scopedKey(userId: string, route: string, clientKey: string): string {
   return `${userId}:${route}:${clientKey}`
 }
 
-function hashBody(body: unknown): string {
-  return createHash('sha256').update(JSON.stringify(body ?? null)).digest('hex')
+/**
+ * Отпечаток запроса — адрес вместе с телом (фича 014, D2-13).
+ *
+ * Один ключ, одинаковое тело и РАЗНЫЕ слоты в адресе — `POST …/slots/A/pay`
+ * и `…/slots/B/pay` с пустым телом — по одному отпечатку тела считались
+ * повтором: второй получал ответ первого, и оплата слота B не записывалась
+ * молча. Адрес — часть запроса, значит и часть отпечатка.
+ */
+function hashRequest(url: string, body: unknown): string {
+  return createHash('sha256').update(`${url}\n${JSON.stringify(body ?? null)}`).digest('hex')
 }
 
 export function readKeyHeader(request: FastifyRequest, required: boolean): string | null {
@@ -45,19 +53,20 @@ export function readKeyHeader(request: FastifyRequest, required: boolean): strin
 /**
  * Возвращает сохранённый ответ, если этот ключ уже отработал.
  *
- * Тот же ключ с ДРУГИМ телом — ошибка клиента: он переиспользовал ключ для
- * другого запроса. Молча вернуть старый ответ значило бы потерять второе
- * действие, поэтому 409.
+ * Тот же ключ с ДРУГИМ запросом (адрес или тело) — ошибка клиента: он
+ * переиспользовал ключ. Молча вернуть старый ответ значило бы потерять
+ * второе действие, поэтому 409.
  */
 export async function replayOrClaim(
   db: Db,
   userId: string,
   route: string,
   clientKey: string,
+  url: string,
   body: unknown,
 ): Promise<Replay | null> {
   const key = scopedKey(userId, route, clientKey)
-  const hash = hashBody(body)
+  const hash = hashRequest(url, body)
 
   // Ключи старше суток не нужны: клиент столько не повторяет. Уборка здесь,
   // а не в кроне — таблица растёт только от этого кода, значит и подметает
@@ -92,7 +101,7 @@ export async function replayOrClaim(
 }
 
 export async function saveResult(
-  db: Db,
+  db: Queryable,
   userId: string,
   route: string,
   clientKey: string,
@@ -113,16 +122,36 @@ export async function releaseKey(db: Db, userId: string, route: string, clientKe
   ])
 }
 
+export interface IdempotentResult<T> {
+  status: number
+  body: T
+}
+
+/**
+ * Транзакция действия, в которой сохраняется и ответ (фича 014, D2-13).
+ *
+ * Раньше ответ записывался ПОСЛЕ транзакции действия, отдельным запросом:
+ * обрыв между ними оставлял ключ «в работе» — действие сделано, деньги
+ * записаны, а каждый повтор до суточной уборки получал 409 «ещё
+ * выполняется», и клиент не узнавал результат никогда. Действие возвращает
+ * ответ ИЗ транзакции — и ответ ложится в ту же транзакцию: либо есть и
+ * действие, и ответ, либо ни того, ни другого.
+ */
+export type IdempotentTx = <T>(
+  action: (client: Queryable) => Promise<IdempotentResult<T>>,
+) => Promise<IdempotentResult<T>>
+
 /**
  * Обёртка вокруг действия: разбирает заголовок, отдаёт сохранённый ответ или
- * выполняет и запоминает.
+ * выполняет и запоминает. Действие получает `tx` — транзакцию, в которую
+ * ложится и его ответ; действию без транзакции ответ записывается после.
  */
 export async function withIdempotency<T>(
   db: Db,
   request: FastifyRequest,
   reply: FastifyReply,
   route: string,
-  action: () => Promise<{ status: number; body: T }>,
+  action: (tx: IdempotentTx) => Promise<IdempotentResult<T>>,
   /**
    * Требовать ли заголовок. Обязателен там, где его объявляет контракт;
    * на остальных путях — необязателен: клиент, написанный строго
@@ -133,18 +162,26 @@ export async function withIdempotency<T>(
   const userId = request.caller!.userId
   const clientKey = readKeyHeader(request, required)
   if (!clientKey) {
-    const result = await action()
+    const result = await action((fn) => db.tx(fn))
     return reply.code(result.status).send(result.body)
   }
-  const replayed = await replayOrClaim(db, userId, route, clientKey, request.body)
+  const replayed = await replayOrClaim(db, userId, route, clientKey, request.url, request.body)
   if (replayed) {
     reply.header('idempotent-replay', 'true')
     return reply.code(replayed.status).send(replayed.body)
   }
 
+  let saved = false
+  const tx: IdempotentTx = (fn) =>
+    db.tx(async (client) => {
+      const result = await fn(client)
+      await saveResult(client, userId, route, clientKey, result.status, result.body)
+      saved = true
+      return result
+    })
   try {
-    const result = await action()
-    await saveResult(db, userId, route, clientKey, result.status, result.body)
+    const result = await action(tx)
+    if (!saved) await saveResult(db, userId, route, clientKey, result.status, result.body)
     return reply.code(result.status).send(result.body)
   } catch (error) {
     await releaseKey(db, userId, route, clientKey)

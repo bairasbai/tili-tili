@@ -1,8 +1,9 @@
 import { Queue, Worker, type Job } from 'bullmq'
 import type { FastifyInstance } from 'fastify'
+import type { Queryable } from '../plugins/db.js'
 import { sendDuePushes } from '../notify/push.js'
 import { notify, notifyWedding } from '../notify/notify.js'
-import { recomputeAllRatings, recomputeRating } from '../reviews/rating.js'
+import { recomputeAllRatings } from '../reviews/rating.js'
 import { reportJobFailure } from '../plugins/sentry.js'
 import { uuidv7 } from '../ids.js'
 import { plural } from '../text/plural.js'
@@ -93,19 +94,14 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
  * стоит `ON DELETE SET NULL`, и каскад оставил бы дату занятой навсегда —
  * с обнулённой ссылкой её не нашёл бы уже никто, включая самого подрядчика.
  *
- * Отзыв ПАРЫ уходит вместе со свадьбой, и это вынужденно: сделки уносит
- * каскад, а `reviews.deal_id` стоит `ON DELETE SET NULL` — и обнулённая
- * ссылка тут же ломает `CHECK reviews_key_matches_source`, который требует
- * у отзыва пары сделку. Именно на этом падала вся партия. Рейтинг
- * подрядчика после удаления пересчитывается, иначе `reviews_count`
- * считал бы отзывы, которых уже нет.
- *
- * Отзыв ГОСТЯ уборку переживает: `reviews.wedding_id` и `reviews.guest_id`
- * (гость уходит каскадом вместе со свадьбой) стоят `ON DELETE SET NULL`, а
- * `CHECK reviews_key_matches_source` требует у гостевого отзыва только
- * `guest_token` — он остаётся. Это история подрядчика, а не свадьбы. То же
- * при стирании аккаунта ниже: свадьба без наследника уносит гостей, отзывы
- * их остаются без `guest_id`.
+ * Отзывы — и пары, и гостя — уборку переживают: это история подрядчика, а
+ * не свадьбы. `reviews.wedding_id`, `reviews.deal_id` и `reviews.guest_id`
+ * (гость уходит каскадом вместе со свадьбой) стоят `ON DELETE SET NULL`, и
+ * `CHECK reviews_key_matches_source` после миграции 1760500000000 (фича 014,
+ * решение владельца) сделку у отзыва пары больше не требует. До неё отзыв
+ * пары удалялся здесь заранее — иначе каскад упирался в проверку и падала
+ * вся партия (ERR-0209); рейтинг подрядчика от уборки теперь не меняется,
+ * пересчитывать нечего. То же при стирании аккаунта ниже.
  */
 export async function purgeArchivedWeddings(app: FastifyInstance): Promise<number> {
   const db = app.db!
@@ -127,15 +123,6 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
             where source = 'deal' and deal_id in (select id from deals where wedding_id = $1)`,
           [row.id],
         )
-        /* Отзывы пары — ДО удаления свадьбы: каскад по сделкам обнулил бы
-         * им `deal_id` и упёрся бы в `CHECK`. Подрядчики запоминаются, их
-         * рейтинг пересчитывается после — как при скрытии отзыва в админке. */
-        const { rows: coupleReviews } = await client.query<{ vendor_id: string }>(
-          `delete from reviews
-            where source = 'couple' and deal_id in (select id from deals where wedding_id = $1)
-            returning vendor_id`,
-          [row.id],
-        )
         /* `actor_id` пустой: уборку делает платформа, а не человек, и записать
          * сюда чьё-то имя значило бы соврать в журнале. Колонка это допускает. */
         await client.query(
@@ -146,9 +133,6 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
         // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
         // чаты, задачи — все двадцать три таблицы свадьбы.
         await client.query('delete from weddings where id = $1', [row.id])
-        for (const vendorId of new Set(coupleReviews.map((r) => r.vendor_id))) {
-          await recomputeRating(client, vendorId)
-        }
       })
       purged += 1
     } catch (err) {
@@ -174,23 +158,22 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
  * Поэтому по шагам, в транзакции на человека:
  *   1. свадьбы, где он владелец, переходят живому партнёру с ролью «пара»
  *      (нет партнёра — свадьба уходит вместе с ним, это его данные);
- *   2. у свадеб, которые уходят с ним, заранее снимаются отзывы пары и
- *      занятость подрядчиков по сделкам — см. ниже;
+ *   2. у свадеб, которые уходят с ним, заранее снимается занятость
+ *      подрядчиков по сделкам — см. ниже;
  *   3. ссылки на него в приглашениях и запросе отмены обнуляются;
  *   4. его сделки как подрядчика остаются паре историей — с именем
  *      исполнителя и без ссылки на анкету (`deals_has_performer` держит);
  *   5. сам аккаунт удаляется — остальное уносит каскад.
  * Сбой на одном человеке не останавливает остальных: ошибка в лог, дальше.
  *
- * Шаг 2 — тот же конфликт «SET NULL против CHECK», что ERR-0209 закрыл в
- * `purgeArchivedWeddings` (R-221 требует пройти по всем удалениям родителя).
- * Пара без второго партнёра, сделка `done`, отзыв оставлен: каскад
- * `weddings → deals` обнулял `reviews.deal_id`, `CHECK reviews_key_matches_source`
- * откатывал транзакцию, и аккаунт с телефоном не стирался НИКОГДА — каждый
- * час та же ошибка в логе, а сто таких строк закупорили бы очередь целиком
- * (D5-01/D6-04). Занятость подрядчика — по той же причине, что в архиве:
- * `vendor_busy_dates.deal_id` стоит `SET NULL`, и дата осталась бы занятой
- * призраком навсегда.
+ * Шаг 2 — по той же причине, что в архиве: `vendor_busy_dates.deal_id`
+ * стоит `SET NULL`, и дата осталась бы занятой призраком навсегда (R-221
+ * требует пройти по всем удалениям родителя). Отзывы пары здесь тоже
+ * удалялись — «SET NULL против CHECK», ERR-0209, D5-01/D6-04: каскад
+ * `weddings → deals` обнулял `reviews.deal_id`, проверка откатывала
+ * транзакцию, и аккаунт не стирался никогда. После миграции 1760500000000
+ * (фича 014) проверка сделку у отзыва пары не требует, отзыв остаётся
+ * подрядчику историей.
  */
 export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
   const db = app.db!
@@ -200,54 +183,53 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
   let erased = 0
   for (const { id } of rows) {
     try {
-      await db.tx(async (client) => {
-        await client.query(
-          `update weddings w set owner_id = heir.user_id
-             from (select distinct on (m.wedding_id) m.wedding_id, m.user_id
-                     from wedding_members m join users u on u.id = m.user_id
-                    where m.role = 'couple' and m.user_id <> $1 and u.deleted_at is null
-                    order by m.wedding_id, m.joined_at) heir
-            where w.owner_id = $1 and heir.wedding_id = w.id`,
-          [id],
-        )
-        /* Свадьбы, у которых наследника не нашлось, уйдут каскадом вместе
-         * с аккаунтом — до этого у них снимаются отзывы пары (с пересчётом
-         * рейтинга подрядчиков после) и занятость по сделкам. */
-        await client.query(
-          `delete from vendor_busy_dates
-            where source = 'deal'
-              and deal_id in (select d.id from deals d join weddings w on w.id = d.wedding_id where w.owner_id = $1)`,
-          [id],
-        )
-        const { rows: coupleReviews } = await client.query<{ vendor_id: string }>(
-          `delete from reviews
-            where source = 'couple'
-              and deal_id in (select d.id from deals d join weddings w on w.id = d.wedding_id where w.owner_id = $1)
-            returning vendor_id`,
-          [id],
-        )
-        await client.query('update invites set created_by = null where created_by = $1', [id])
-        await client.query('update invites set accepted_by = null where accepted_by = $1', [id])
-        await client.query(
-          'update weddings set cancel_requested_by = null, cancel_requested_at = null where cancel_requested_by = $1',
-          [id],
-        )
-        await client.query(
-          `update deals d set vendor_id = null, external_name = coalesce(d.external_name, v.name)
-             from vendors v where v.id = d.vendor_id and v.user_id = $1`,
-          [id],
-        )
-        await client.query('delete from users where id = $1', [id])
-        for (const vendorId of new Set(coupleReviews.map((r) => r.vendor_id))) {
-          await recomputeRating(client, vendorId)
-        }
-      })
+      await db.tx((client) => eraseUser(client, id))
       erased += 1
     } catch (err) {
       app.log.error({ err, userId: id }, 'не удалось стереть аккаунт')
     }
   }
   return erased
+}
+
+/**
+ * Стирание одного аккаунта — шаги из `eraseDeletedUsers`, в транзакции
+ * вызывающего. Вынесено, потому что дверей две: ежечасная уборка и вход по
+ * телефону, чья строка старше окна восстановления (фича 014, A18): до прохода
+ * уборки такой вход выдавал токены, с которыми каждый запрос отвечал 401
+ * «Аккаунт удалён», — SMS потрачена, войти нельзя. Вход стирает строку сразу
+ * тем же путём и заводит аккаунт заново.
+ */
+export async function eraseUser(client: Queryable, id: string): Promise<void> {
+  await client.query(
+    `update weddings w set owner_id = heir.user_id
+       from (select distinct on (m.wedding_id) m.wedding_id, m.user_id
+               from wedding_members m join users u on u.id = m.user_id
+              where m.role = 'couple' and m.user_id <> $1 and u.deleted_at is null
+              order by m.wedding_id, m.joined_at) heir
+      where w.owner_id = $1 and heir.wedding_id = w.id`,
+    [id],
+  )
+  /* Свадьбы, у которых наследника не нашлось, уйдут каскадом вместе
+   * с аккаунтом — до этого у них снимается занятость по сделкам. */
+  await client.query(
+    `delete from vendor_busy_dates
+      where source = 'deal'
+        and deal_id in (select d.id from deals d join weddings w on w.id = d.wedding_id where w.owner_id = $1)`,
+    [id],
+  )
+  await client.query('update invites set created_by = null where created_by = $1', [id])
+  await client.query('update invites set accepted_by = null where accepted_by = $1', [id])
+  await client.query(
+    'update weddings set cancel_requested_by = null, cancel_requested_at = null where cancel_requested_by = $1',
+    [id],
+  )
+  await client.query(
+    `update deals d set vendor_id = null, external_name = coalesce(d.external_name, v.name)
+       from vendors v where v.id = d.vendor_id and v.user_id = $1`,
+    [id],
+  )
+  await client.query('delete from users where id = $1', [id])
 }
 
 /**

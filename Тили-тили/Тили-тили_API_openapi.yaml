@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.36.0
+  version: 0.37.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -716,10 +716,69 @@ paths:
         '204': { description: OK }
 
   # ───────────────────────── BOOKINGS / SLOTS ─────────────────────────
+  /weddings/{weddingId}/notes:
+    get:
+      tags: [wedding]
+      summary: Заметки и идеи свадьбы
+      description: |
+        Заметки жили в `localStorage` одного телефона (фича 014, блокер №7 — решение
+        владельца): теперь — на сервере, у свадьбы, свежие первыми. Видит и пишет вся
+        команда свадьбы (пара, помощник, координатор): идеи — общее поле, как чат команды.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Note' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [wedding]
+      summary: Добавить заметку
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Добавлена
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Note' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /weddings/{weddingId}/notes/{noteId}:
+    delete:
+      tags: [wedding]
+      summary: Удалить заметку
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: noteId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Удалена }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /weddings/{weddingId}/slots:
     get:
       tags: [bookings]
-      summary: "Слоты команды (12 категорий: площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор)"
+      summary: "Слоты команды: 12 из шаблона (площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) плюс добавленные парой"
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       responses:
@@ -730,6 +789,44 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Slot' }
+    post:
+      tags: [bookings]
+      summary: Добавить слот категории в мозаику
+      description: |
+        Каталог знает 35 категорий, шаблон мозаики — 12: подрядчика из категории
+        вне шаблона (аниматор, фейерверк, фотобудка…) было некуда забронировать
+        (фича 014, хвост этапа 6). Слот заводится пустым, подпись — название
+        категории, ставится в конец мозаики; дальше — обычная бронь
+        `POST …/slots/{slotId}/book`. Слот той же категории уже есть — 409
+        `slot_exists` с его идентификатором в `details.slotId`: второй слот одной
+        категории мозаике не нужен, пара бронирует в существующий. Неизвестная
+        категория — 422. Заводит пара; помощник и координатор — 403 (состав
+        команды решает пара, как и бронь).
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categoryId]
+              properties:
+                categoryId: { type: string, maxLength: 40 }
+      responses:
+        '201':
+          description: Слот добавлен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: '`slot_exists` — слот этой категории уже есть; `details.slotId` — какой'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/slots/{slotId}/book:
     post:
       tags: [bookings]
@@ -1725,7 +1822,7 @@ paths:
                     id: { type: string }
                     wedding: { type: string }
                     weddingDate: { type: string, format: date, nullable: true }
-                    kind: { type: string, enum: [seating, menu, timeline, guests] }
+                    kind: { type: string, enum: [seating, menu, timeline, guests, transport], description: '`transport` — маршрут для гостей заведён или изменён по сделке перевозчика (фичи 006/014)' }
                     text: { type: string }
                     createdAt: { type: string, format: date-time }
                     ackAt: { type: string, format: date-time, nullable: true }
@@ -3533,23 +3630,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [kind, fileUrl]
-              properties:
-                kind: { type: string, enum: [passport, ip, company] }
-                fileUrl:
-                  type: string
-                  maxLength: 2000
-                  pattern: '^https://[^ ]+$'
-                  description: |
-                    Ссылка на скан. Только `https` — сотрудник открывает её в новой
-                    вкладке из карточки заявки, и `http`, `javascript:` или `file:`
-                    здесь были бы не документом, а тем, что сотруднику подсунули.
-                inn:
-                  type: string
-                  pattern: '^[0-9]{10}$|^[0-9]{12}$'
-                  description: 'ИНН: 10 знаков у организации, 12 у ИП и физлица.'
+            schema: { $ref: '#/components/schemas/VerificationSubmit' }
       responses:
         '201': { description: Отправлено на проверку }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -3816,32 +3897,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                categories:
-                  type: array
-                  maxItems: 100
-                  items: { $ref: '#/components/schemas/AdminCategory' }
-                synonyms:
-                  type: object
-                  maxProperties: 2000
-                  propertyNames: { maxLength: 40 }
-                  description: |
-                    слово → идентификатор категории; слово хранится в нижнем регистре.
-                    Не больше 2000 слов, длина слова — до 40 знаков: словарь
-                    заменяется целиком и вставляется построчно под блокировкой
-                    справочника, а «фотограф» — это слово, а не абзац.
-                  additionalProperties: { type: string }
-                version:
-                  type: string
-                  maxLength: 16
-                  pattern: '^[0-9a-f]{16}$'
-                  description: |
-                    Версия справочника, с которой начата правка (из `GET /admin/categories`).
-                    Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
-                    идёт без проверки. Шестнадцать шестнадцатеричных знаков — всё
-                    остальное 422, а не 409: такой версии сервер не выдавал никогда.
+            schema: { $ref: '#/components/schemas/AdminCategoriesUpdate' }
       responses:
         '200':
           description: OK
@@ -4375,6 +4431,15 @@ components:
               kind: { type: string, enum: [photo, video] }
               url: { type: string }
               durationS: { type: integer, minimum: 1, maximum: 180, nullable: true }
+    Note:
+      type: object
+      description: Заметка команды свадьбы (фича 014). Автор — по имени из профиля; удалённый аккаунт — null.
+      required: [id, text, createdAt]
+      properties:
+        id: { type: string }
+        text: { type: string }
+        authorName: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
     Slot:
       type: object
       description: |
@@ -4586,6 +4651,16 @@ components:
             Имя гостя, если реплику написал гость по своей ссылке в чат дня X
             (фича 009): у гостя нет аккаунта, `senderId` пуст, имя — из списка
             гостей. У остальных реплик — null.
+        mine:
+          type: boolean
+          nullable: true
+          description: |
+            Своя ли это реплика для того, кто читает (фича 014). Участнику —
+            по `senderId`, гостю в чате дня — по его строке в списке гостей:
+            у гостя нет идентификатора аккаунта, и сравнивать имена (две
+            Марины) экран не должен. Считает сервер. `null` — читатель
+            неизвестен (реплика пришла живым каналом всем сразу): экран
+            участника тогда решает по `senderId`.
         warning:
           type: string
           nullable: true
@@ -4779,9 +4854,12 @@ components:
           nullable: true
           description: |
             Сделка с перевозчиком этой свадьбы — только в слоте категории
-            `transport` (иначе 422 `not_transport`) и не отменённая (409
-            `deal_cancelled`). null — маршрут без перевозчика. Отмена сделки
-            обнуляет поле, маршрут и записи гостей остаются.
+            `transport` (иначе 422 `not_transport`) и живая: отменённая — 409
+            `deal_cancelled`, кандидат или переговоры — 409 `deal_not_booked`
+            (фича 014: «везёт перевозчик X» — обещание гостям, его не дают за
+            подрядчика, который ничего не подтвердил). null — маршрут без
+            перевозчика. Отмена сделки обнуляет поле, маршрут и записи гостей
+            остаются.
         carrier:
           type: string
           nullable: true
@@ -4995,7 +5073,8 @@ components:
           nullable: true
           description: |
             Значок категории. В базе может быть пустым, и это `null`, а не «нет поля».
-            В теле PUT `null` или пропуск — прежний значок.
+            В теле PUT пропуск — прежний значок, `null` — стереть (R-17: пропуск и
+            очистка — разные намерения; фича 014).
         sort: { type: integer, description: 'порядок в мозаике: меньше — выше' }
     AdminCategories:
       type: object
@@ -5015,6 +5094,54 @@ components:
             Меняется от ЛЮБОЙ правки категорий или словаря, в том числе сделанной
             мимо панели: он считается по самим строкам, а не по времени сохранения.
             Возвращается в теле PUT, чтобы сохранение не затёрло чужую правку.
+    VerificationSubmit:
+      type: object
+      description: "Тело подачи документов на верификацию (фича 014: одна схема — и контракту, и обработчику)."
+      required: [kind, fileUrl]
+      additionalProperties: false
+      properties:
+        kind: { type: string, enum: [passport, ip, company] }
+        fileUrl:
+          type: string
+          maxLength: 2000
+          pattern: '^https://[^ ]+$'
+          description: |
+            Ссылка на скан. Только `https` — сотрудник открывает её в новой
+            вкладке из карточки заявки, и `http`, `javascript:` или `file:`
+            здесь были бы не документом, а тем, что сотруднику подсунули.
+        inn:
+          type: string
+          pattern: '^[0-9]{10}$|^[0-9]{12}$'
+          description: 'ИНН: 10 знаков у организации, 12 у ИП и физлица.'
+    AdminCategoriesUpdate:
+      type: object
+      description: "Тело правки справочника категорий (фича 014: одна схема — и контракту, и обработчику)."
+      additionalProperties: false
+      properties:
+        categories:
+          type: array
+          maxItems: 200
+          description: 'до 200 категорий — справочник шлётся целиком (сейчас 35)'
+          items: { $ref: '#/components/schemas/AdminCategory' }
+        synonyms:
+          type: object
+          maxProperties: 2000
+          propertyNames: { maxLength: 40 }
+          description: |
+            слово → идентификатор категории; слово хранится в нижнем регистре.
+            Не больше 2000 слов, длина слова — до 40 знаков: словарь
+            заменяется целиком и вставляется построчно под блокировкой
+            справочника, а «фотограф» — это слово, а не абзац.
+          additionalProperties: { type: string }
+        version:
+          type: string
+          maxLength: 16
+          pattern: '^[0-9a-f]{16}$'
+          description: |
+            Версия справочника, с которой начата правка (из `GET /admin/categories`).
+            Не совпала с текущей — 409 `categories_stale`. Без поля сохранение
+            идёт без проверки. Шестнадцать шестнадцатеричных знаков — всё
+            остальное 422, а не 409: такой версии сервер не выдавал никогда.
     CategoriesUpdated:
       type: object
       description: 'Сколько строк сохранено. Словарь заменён целиком — число равно его новому размеру.'

@@ -29,6 +29,7 @@ import { registerJobs } from './jobs/index.js'
 import { dayxRoutes } from './routes/dayx.js'
 import { geoRoutes } from './routes/geo.js'
 import { notificationRoutes } from './routes/notifications.js'
+import { noteRoutes } from './routes/notes.js'
 import { giftRoutes } from './routes/gifts.js'
 import { healthRoutes } from './routes/health.js'
 import { legalRoutes } from './routes/legal.js'
@@ -324,6 +325,7 @@ export async function buildApp(
   await app.register(giftRoutes)
   await app.register(chatRoutes)
   await app.register(notificationRoutes)
+  await app.register(noteRoutes)
   await app.register(dayxRoutes)
   await app.register(realtimeRoutes)
   await app.register(vendorCabinetRoutes)

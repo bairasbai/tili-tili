@@ -500,6 +500,18 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       `select chat_id, text, created_at from messages where sender_id = $1 order by created_at`,
       [userId],
     )
+    /* Отметки «прочитано» — тоже его след: когда он открывал какой чат.
+     * Таблица завелась после первой версии выгрузки и в ней не значилась —
+     * «все свои данные» без неё были неправдой (фича 014, A12). */
+    const { rows: chatReads } = await db().query(
+      'select chat_id, read_at from chat_reads where user_id = $1 order by read_at',
+      [userId],
+    )
+    // Заметки, которые написал он (фича 014): чужие заметки команды — чужие слова.
+    const { rows: notes } = await db().query(
+      'select wedding_id, text, created_at from notes where author_id = $1 order by created_at',
+      [userId],
+    )
     const { rows: favorites } = await db().query(
       'select vendor_id, created_at from favorites where user_id = $1 order by created_at',
       [userId],
@@ -594,6 +606,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       dealEvents,
       notifications,
       messages,
+      chatReads,
+      notes,
       favorites,
       inspirationLikes,
       pushSubscriptions,

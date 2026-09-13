@@ -190,12 +190,13 @@ describe.skipIf(!live)('фича 005, BE-B: вход удалённого, ли�
     expect((await signIn(phone)).consentRequired).toBe(false)
   })
 
-  it('T015: строка старше 30 дней не восстанавливается — токены выдаются, но аккаунт остаётся удалённым до стирания', async () => {
-    /* Что происходит: `on conflict (phone)` отдаёт прежнюю строку, условие
-     * `deleted_at > now() - 30 days` в восстановлении не срабатывает, токены
-     * выдаются, и каждый запрос с ними — 401 «Аккаунт удалён», как до фичи.
-     * Уборка (`eraseDeletedUsers`, раз в час) стирает строку, после чего
-     * тот же номер заводит новый аккаунт. */
+  it('T015: строка старше 30 дней не восстанавливается — вход стирает её и заводит новый аккаунт', async () => {
+    /* До фичи 014 (A18): `on conflict (phone)` отдавал прежнюю строку, условие
+     * `deleted_at > now() - 30 days` в восстановлении не срабатывало, токены
+     * выдавались, и каждый запрос с ними — 401 «Аккаунт удалён» до прохода
+     * уборки. Теперь вход стирает просроченную строку тем же путём, что
+     * уборка (`eraseUser`), и заводит аккаунт заново: восстановления нет,
+     * старого идентификатора нет, новый работает. */
     const u = await newUser()
     expect((await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(u.token) })).statusCode).toBe(204)
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [u.userId])
@@ -203,13 +204,12 @@ describe.skipIf(!live)('фича 005, BE-B: вход удалённого, ли�
     await pretendMinutePassed(app, u.phone)
     const again = await signIn(u.phone)
     expect(await auditActions(u.userId)).not.toContain('user.restored')
-    const { rows } = await app.db!.query<{ deleted_at: Date | null }>('select deleted_at from users where id = $1', [
-      u.userId,
-    ])
-    expect(rows[0]!.deleted_at).not.toBeNull()
-    expect((await app.inject({ method: 'GET', url: '/users/me', headers: auth(again.accessToken) })).statusCode).toBe(401)
-    const refreshed = await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: again.refreshToken } })
-    expect(refreshed.statusCode).toBe(401)
+    expect(again.user.id).not.toBe(u.userId)
+    expect(again.consentRequired).toBe(true)
+    const { rows } = await app.db!.query('select 1 from users where id = $1', [u.userId])
+    expect(rows, 'просроченная строка стёрта при входе').toHaveLength(0)
+    await consent(again.accessToken)
+    expect((await app.inject({ method: 'GET', url: '/users/me', headers: auth(again.accessToken) })).statusCode).toBe(200)
   })
 
   /* ── T016: лимиты выдачи кода ─────────────────────────────────────── */

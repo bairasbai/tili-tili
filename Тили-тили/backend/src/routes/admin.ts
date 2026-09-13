@@ -747,41 +747,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     {
       preHandler: app.requireConsent,
       schema: {
-        body: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            /* Схема — из контракта, а не вторая копия правил рядом.
-             * Ручная копия уже разошлась с ним: она объявляла `icon`
-             * строкой, контракт — `nullable`. Панель, честно приславшая
-             * `icon: null` («значок не трогать»), отказа не получала: AJV
-             * с `coerceTypes` превращал `null` в пустую строку, `coalesce`
-             * видел не NULL — и значок молча СТИРАЛСЯ. */
-            categories: { type: 'array', maxItems: 100, items: ref('AdminCategory') },
-            /* Пределы словаря — те же, что в контракте. Без них тело было
-             * ограничено только общим потолком размера запроса: словарь на
-             * сто тысяч слов принимался, вставлялся по строке в цикле и
-             * держал блокировку справочника всё это время. `propertyNames`
-             * ограничивает само слово: категория «фотограф» — это слово, а
-             * не абзац. */
-            synonyms: {
-              type: 'object',
-              maxProperties: 2000,
-              propertyNames: { maxLength: 40 },
-              additionalProperties: { type: 'string' },
-            },
-            /* Без этого поля в схеме панель получала бы 422 на собственную
-             * версию: `additionalProperties: false` отвергает всё, чего в
-             * схеме нет, — и защита от затирания не доехала бы до кода.
-             *
-             * Ограничение — из контракта: шестнадцать шестнадцатеричных
-             * знаков. Копия объявляла `maxLength: 64`, и версия, которой
-             * сервер не выдавал никогда, доезжала до сравнения отпечатков и
-             * получала 409 «справочник изменили» вместо честного отказа
-             * проверки. */
-            version: { type: 'string', maxLength: 16, pattern: '^[0-9a-f]{16}$' },
-          },
-        },
+        /* Тело — схема контракта целиком (`AdminCategoriesUpdate`, фича 014),
+         * а не копия правил рядом. Копия уже расходилась с ним дважды: `icon`
+         * строкой против `nullable` (AJV с `coerceTypes` превращал `null` в
+         * пустую строку, и значок молча стирался), `version` с `maxLength: 64`
+         * против шестнадцати шестнадцатеричных знаков (409 вместо 422). Одна
+         * схема — одно место правды; предел 200 категорий — там же. */
+        body: ref('AdminCategoriesUpdate'),
       },
     },
     async (request) => {
@@ -818,12 +790,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
              * уходил `c.sort ?? 0`, и `coalesce(0, старое)` — это 0: правка
              * одного названия поднимала категорию на первое место мозаики.
              * Колонка `not null default 0`, поэтому для новой строки ноль
-             * подставляется явно, а для существующей смотрится сам параметр. */
+             * подставляется явно, а для существующей смотрится сам параметр.
+             *
+             * Значок — по тому же правилу (R-17, фича 014): поля нет — прежний,
+             * `null` — стереть. Раньше стояло `coalesce(excluded.icon, …)`, и
+             * стереть значок было нельзя ничем — `null` подставлял старый. */
             `insert into categories (id, name, icon, sort) values ($1,$2,$3,coalesce($4::int, 0))
              on conflict (id) do update set name = excluded.name,
-                                            icon = coalesce(excluded.icon, categories.icon),
+                                            icon = case when $5 then excluded.icon else categories.icon end,
                                             sort = case when $4::int is null then categories.sort else excluded.sort end`,
-            [c.id, c.title, c.icon ?? null, c.sort ?? null],
+            [c.id, c.title, c.icon ?? null, c.sort ?? null, Object.prototype.hasOwnProperty.call(c, 'icon')],
           )
         }
         if (body.synonyms) {

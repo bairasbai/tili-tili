@@ -50,9 +50,12 @@ function momentOrNull(value: string | null | undefined, field: string): string |
  * ссылаться только на сделку ЭТОЙ свадьбы (чужой `dealId` — 422, как любое
  * негодное поле: 404 здесь выдал бы перебором, какие сделки существуют), в
  * слоте категории `transport` (свой перевозчик, заведённый в «Прочее», не
- * годится — 422 `not_transport` с подсказкой, куда его завести) и не
- * отменённую (409 `deal_cancelled`: отменённая сделка — не перевозчик).
- * Категория и принадлежность — кросс-табличные, CHECK их не выразить.
+ * годится — 422 `not_transport` с подсказкой, куда его завести) и живую:
+ * отменённая — 409 `deal_cancelled`, а кандидат или переговоры — 409
+ * `deal_not_booked` (фича 014, A3): маршрут «везёт перевозчик X» — обещание
+ * гостям, и давать его за подрядчика, который ещё ничего не подтвердил,
+ * нельзя (R-174). Категория и принадлежность — кросс-табличные, CHECK их
+ * не выразить.
  *
  * Общая для `POST` и `PATCH …/logistics/buses`; живёт на уровне модуля, а не
  * внутри обработчика: правило одно, а дверей две.
@@ -74,6 +77,9 @@ async function carrierDeal(db: Queryable, weddingId: string, dealId: string): Pr
   }
   if (rows[0]!.state === 'cancelled') {
     throw conflict('deal_cancelled', 'Сделка с перевозчиком отменена — выберите другую или оставьте маршрут без перевозчика')
+  }
+  if (!COMMITTED.includes(rows[0]!.state as DealState)) {
+    throw conflict('deal_not_booked', 'Перевозчик ещё не забронирован — сначала подтвердите сделку, потом привяжите маршрут')
   }
 }
 
@@ -435,8 +441,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
    * один — подрядчик по сделке маршрута, а не все забронированные: декоратору
    * автобус пары не нужен. Общий `noteVendorUpdate` рассылает всем, поэтому
    * строка пишется здесь тем же оператором (одна неподтверждённая на вид и
-   * свадьбу — правки сливаются, как у рассадки). Вид — `timeline`: сбор и
-   * время — тайминг дня, а справочник видов держит CHECK базы и контракт.
+   * свадьбу — правки сливаются, как у рассадки). Вид — `transport` (фича
+   * 014, миграция 1760400000000): до неё писалось под видом `timeline`, и
+   * карточка не могла назвать событие своим словом.
    * Своему подрядчику (без анкеты) писать некуда; кандидату, который ещё
    * ничего не обещал, — незачем, как и в `noteVendorUpdate`.
    */
@@ -445,7 +452,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const seats = `${row.seats} ${plural(row.seats, 'место', 'места', 'мест')}`
     const time = row.departs ? `, сбор ${row.departs.slice(0, 5)}` : ''
     await client.query(
-      `insert into vendor_updates (id, vendor_id, wedding_id, kind, text) values ($1,$2,$3,'timeline',$4)
+      `insert into vendor_updates (id, vendor_id, wedding_id, kind, text) values ($1,$2,$3,'transport',$4)
        on conflict (vendor_id, wedding_id, kind) where ack_at is null
        do update set text = excluded.text, created_at = now()`,
       [uuidv7(), row.carrier_vendor_id, weddingId, `Пара ${verb} маршрут «${row.name}» — ${seats}${time}`],
@@ -1344,11 +1351,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
     const rows = await messagePage(db(), day.chat_id, page)
-    return buildPage(
-      rows.map((r) => toMessage(r, 'day')),
-      page.limit,
-      (m) => encodeCursor(m.sentAt, m.id),
-    )
+    // Курсор — по микросекундам строки, как в `GET /chats/{id}/messages` (D4-23).
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.created_at_us, r.id))
+    return { items: paged.items.map((r) => toMessage(r, 'day', { guestId: guest.guestId })), nextCursor: paged.nextCursor }
   })
 
   app.post(
@@ -1390,12 +1395,14 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         sentAt: rows[0]!.created_at.toISOString(),
         system: false,
         guestName: guest.name,
+        // Всем по живому каналу — без признака; автору в ответе — своя (фича 014).
+        mine: null as boolean | null,
       }
       // Сначала живому каналу, потом уведомление — как у реплики участника.
       await app.realtime.publish({ chatId, type: 'message', actorId: `guest:${guest.guestId}`, payload: { message } })
       // Команде — тем же путём и тем же получателям, что от участника; автора-пользователя нет.
       await notifyOthers(db(), chatId, guest.weddingId, 'day', null, text)
-      return reply.code(201).send(message)
+      return reply.code(201).send({ ...message, mine: true })
     },
   )
 
