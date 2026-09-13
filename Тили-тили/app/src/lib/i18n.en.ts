@@ -1875,3 +1875,22 @@ Object.assign(EN, {
   'опубликовано': 'published',
   'Заполненность — описание, телефон, цена «от» и хотя бы один пакет; фото не считаются до подключения хранилища': 'Completeness — description, phone, “price from” and at least one package; photos are not counted until storage is connected',
 })
+
+/* Фича 013 «Сделки для поддержки»: карточка свадьбы в панели — сделки по кнопке, без переписки. */
+Object.assign(EN, {
+  'Список гостей и переписка поддержке не показываются. Сделки — по кнопке ниже, каждый просмотр записывается.': 'Guest list and chats are not shown to support. Deals — via the button below; every view is logged.',
+  'Сделки свадьбы: подрядчики, состояния, цены и оплаты — без переписки и телефонов. Просмотр записывается с той же причиной.': 'Wedding deals: vendors, states, prices and payments — no chats, no phones. The view is logged with the same reason.',
+  'Показать сделки': 'Show deals',
+  'Сделок у свадьбы нет': 'This wedding has no deals',
+  'без имени': 'no name',
+  'свой подрядчик': 'own vendor',
+  'цена не названа': 'no price yet',
+  'оплачено': 'paid',
+  'связались': 'contacted',
+  'мягкая бронь': 'soft hold',
+  'внесён аванс': 'deposit paid',
+  'выполнено': 'done',
+  'отменено': 'cancelled',
+  'пара': 'couple',
+  'система': 'system',
+})

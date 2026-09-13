@@ -21,6 +21,7 @@ export type Complaint = components['schemas']['Complaint']
 export type AdminCategory = components['schemas']['AdminCategory']
 export type AdminCategories = components['schemas']['AdminCategories']
 export type WeddingSupportCard = components['schemas']['WeddingSupportCard']
+export type SupportDeal = components['schemas']['SupportDeal']
 
 /**
  * Тело сохранения справочника — из контракта, а не своё.
@@ -147,5 +148,15 @@ export const putAdminCategories = (body: AdminCategoriesBody) => api.put('/admin
  */
 export function getWeddingForSupport(weddingId: string, reason: string) {
   const path = url('/admin/weddings/{weddingId}', { weddingId })
+  return api.get(`${path}?reason=${encodeURIComponent(reason)}` as typeof path)
+}
+
+/**
+ * Сделки свадьбы для разбора спора о деньгах (фича 013; решение владельца —
+ * сделки да, переписка нет). Отдельный запрос с той же причиной: каждое чтение
+ * чужих денег — своя строка журнала `wedding.deals.view`.
+ */
+export function getWeddingDealsForSupport(weddingId: string, reason: string) {
+  const path = url('/admin/weddings/{weddingId}/deals', { weddingId })
   return api.get(`${path}?reason=${encodeURIComponent(reason)}` as typeof path)
 }

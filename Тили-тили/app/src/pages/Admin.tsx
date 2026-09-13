@@ -21,10 +21,10 @@ import {
   getModerationQueue,
   getVerification,
   getVerifications,
-  getWeddingForSupport,
+  getWeddingDealsForSupport, getWeddingForSupport,
   putAdminCategories,
   type AdminCategory,
-  type WeddingSupportCard,
+  type SupportDeal, type WeddingSupportCard,
 } from '@/lib/api/admin'
 
 /*
@@ -1207,6 +1207,25 @@ type WeddingLookup =
   | { kind: 'forbidden' }
   | { kind: 'card'; card: WeddingSupportCard }
 
+/** Сделки свадьбы на карточке (фича 013): грузятся отдельной кнопкой — отдельная строка журнала. */
+type DealsLookup =
+  | { kind: 'idle' }
+  | { kind: 'busy' }
+  | { kind: 'error'; text: string }
+  | { kind: 'list'; items: SupportDeal[] }
+
+/** Состояние сделки словами — те же слова, что у пары на мозаике. */
+const DEAL_STATE_RU: Record<string, string> = {
+  candidate: 'кандидат',
+  contacted: 'связались',
+  negotiating: 'мягкая бронь',
+  booked: 'забронирован',
+  paid_deposit: 'внесён аванс',
+  done: 'выполнено',
+  cancelled: 'отменено',
+}
+const DEAL_BY_RU: Record<string, string> = { couple: 'пара', vendor: 'подрядчик', system: 'система' }
+
 /** Границы причины из контракта: короче пяти знаков сервер не принимает. */
 const REASON_MIN = 5
 const REASON_MAX = 500
@@ -1219,10 +1238,13 @@ export function AdminWedding() {
      букву значит писать в журнал десяток просмотров вместо одного, а кнопка
      обязана сама делать то, что на ней написано (R-176). */
   const [look, setLook] = useState<WeddingLookup>({ kind: 'idle' })
+  const [deals, setDeals] = useState<DealsLookup>({ kind: 'idle' })
   const valid = wid.trim().length > 0 && reason.trim().length >= REASON_MIN
 
   const lookUp = () => void (async () => {
     setLook({ kind: 'busy' })
+    /* Новая карточка — сделки прошлой свадьбы на экране не остаются. */
+    setDeals({ kind: 'idle' })
     try {
       const card = await getWeddingForSupport(wid.trim(), reason.trim())
       if (card) setLook({ kind: 'card', card })
@@ -1232,6 +1254,17 @@ export function AdminWedding() {
       else if (e instanceof ApiError && e.status === 404) setLook({ kind: 'error', text: t('Свадьба не найдена') })
       else setLook({ kind: 'error', text: explainError(e) })
     }
+  })()
+
+  /* Сделки — отдельной кнопкой с той же причиной (фича 013, решение владельца
+     «сделки без чатов»): каждое чтение чужих денег — своя строка журнала, и
+     нажимает её сотрудник сам, а не экран за него. */
+  const showDeals = (weddingId: string) => void (async () => {
+    setDeals({ kind: 'busy' })
+    try {
+      const page = await getWeddingDealsForSupport(weddingId, reason.trim())
+      setDeals({ kind: 'list', items: page?.items ?? [] })
+    } catch (e) { setDeals({ kind: 'error', text: explainError(e) }) }
   })()
 
   /* Отказ снимает и форму: предлагать ввести причину тому, кому раздел
@@ -1296,10 +1329,56 @@ export function AdminWedding() {
                   {t('Заведена:')} {fmtDate(card.createdAt)}
                 </p>
               )}
-              {/* Ни бюджета, ни гостей, ни переписки: для разбора обращения
-                  этого достаточно, а лишнее здесь — чужая свадьба на экране. */}
-              <p className="text-[10.5px] text-[var(--soft2)] leading-relaxed pt-1">{t('Бюджет, список гостей и переписка поддержке не показываются.')}</p>
+              {/* Ни гостей, ни переписки: для разбора обращения этого достаточно,
+                  а лишнее здесь — чужая свадьба на экране. Сделки — ниже, по
+                  кнопке и с записью в журнал (фича 013). */}
+              <p className="text-[10.5px] text-[var(--soft2)] leading-relaxed pt-1">{t('Список гостей и переписка поддержке не показываются. Сделки — по кнопке ниже, каждый просмотр записывается.')}</p>
             </div>
+          </div>
+        )}
+
+        {card && (
+          <div className="card p-4 space-y-2.5">
+            {deals.kind === 'list' ? (
+              <>
+                <b className="text-[13px] block">{t('Сделки')} · {deals.items.length}</b>
+                {deals.items.length === 0 && <p className="text-[12px] text-[var(--soft)]">{t('Сделок у свадьбы нет')}</p>}
+                {deals.items.map(d => {
+                  const last = d.events[d.events.length - 1]
+                  /* Имя и пометка — одной строкой: свой подрядчик пары помечается словами, у анкеты каталога пометки нет. */
+                  const who = `${d.vendorName ?? d.externalName ?? t('без имени')}${d.externalName ? ` (${t('свой подрядчик')})` : ''}`
+                  return (
+                    <div key={d.id} className="pt-2.5 border-t border-[var(--track)] first:border-none first:pt-0">
+                      <p className="text-[12.5px]">
+                        <b>{d.slotLabel}</b> · {who}
+                      </p>
+                      <p className="text-[11.5px] text-[var(--ink2)] mt-0.5 tabular">
+                        {t(DEAL_STATE_RU[d.state] ?? d.state)}
+                        {d.price ? ` · ${fmt(d.price.amount)}` : ` · ${t('цена не названа')}`}
+                        {` · ${t('оплачено')} ${fmt(d.paid.amount)}`}
+                      </p>
+                      {last && (
+                        <p className="text-[10.5px] text-[var(--soft)] mt-0.5">
+                          {fmtDate(last.at)} · {t(DEAL_BY_RU[last.by] ?? last.by)} → {t(DEAL_STATE_RU[last.toState] ?? last.toState)}{last.note ? ` · ${last.note}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            ) : (
+              <>
+                <p className="text-[10.5px] text-[var(--soft)] leading-relaxed">{t('Сделки свадьбы: подрядчики, состояния, цены и оплаты — без переписки и телефонов. Просмотр записывается с той же причиной.')}</p>
+                {deals.kind === 'error' && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{deals.text}</p>}
+                <button
+                  disabled={deals.kind === 'busy'}
+                  onClick={() => showDeals(card.id ?? wid.trim())}
+                  className="press w-full h-[42px] rounded-full card-s text-[12.5px] font-semibold disabled:opacity-50"
+                >
+                  {deals.kind === 'busy' ? t('Открываем…') : t('Показать сделки')}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
