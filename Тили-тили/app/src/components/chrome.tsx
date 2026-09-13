@@ -196,6 +196,10 @@ export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, o
                 ? ` · ${reviewsPendingRating(v.reviewsCount ?? 0)}`
                 : t(' · Новый на платформе')}
             {v.verified && <i className="not-italic text-[var(--sage-deep)] font-bold"> {t('· ✓ проверен')}</i>}
+            {/* Анкета из другого города — с городом и километрами от города
+                поиска (фича 011): расстояние считает сервер от центров городов;
+                ноль и null (свой город, нет координат) не показываем. */}
+            {v.distanceKm != null && v.distanceKm > 0 && <span> · {v.city} · {v.distanceKm} {t('км')}</span>}
           </span>
           {v.priceFrom?.amount != null && (
             <span className="font-serif-d text-[14px] text-[var(--rose-ink)] font-semibold block mt-1">{t('от')} {fmt(v.priceFrom.amount)}</span>

@@ -99,6 +99,10 @@ export function VendorList() {
   const { city, weddingDate } = useStore()
   const [filter, setFilter] = useState('free')
   const [showFilters, setShowFilters] = useState(true)
+  /* Радиус поиска (фича 011, блокер №16). Умолчание 100 — ровно то, что сервер
+     делал и молча: анкета из Бирска приходила в выдачу «Уфа» без единого
+     слова об этом. Теперь радиус виден и меняется: «только город» → 0. */
+  const [radius, setRadius] = useState(100)
 
   const cats = useApi(() => getCategories(), [])
   const cat = (cats.data ?? []).find(c => c.id === catId)
@@ -122,8 +126,9 @@ export function VendorList() {
     priceMax: filter === 'budget' ? 10_000_000 : undefined,
     sort: filter === 'budget' ? 'price_asc' : 'rating',
     limit: 30,
+    radiusKm: radius,
   }
-  const list = useApi(() => getVendors(filters), [catId, city, weddingDate, filter])
+  const list = useApi(() => getVendors(filters), [catId, city, weddingDate, filter, radius])
 
   /*
    * Страницы после первой.
@@ -134,7 +139,7 @@ export function VendorList() {
    * запроса: сменился фильтр или город — первая страница едет заново, а
    * хвост прошлого запроса к ней не пришивается.
    */
-  const pageKey = [catId, city, weddingDate ?? '', filter].join('|')
+  const pageKey = [catId, city, weddingDate ?? '', filter, radius].join('|')
   const [more, setMore] = useState<{ key: string; items: Vendor[]; next: string | null }>({ key: '', items: [], next: null })
   const [moreBusy, setMoreBusy] = useState(false)
   const [moreErr, setMoreErr] = useState<string | null>(null)
@@ -190,8 +195,11 @@ export function VendorList() {
      называется только когда список дочитан до конца; пока есть курсор, это
      размер страницы, а не число подрядчиков. */
   const sortLabel = filter === 'budget' ? t('сначала дешевле') : t('по рейтингу')
+  /* Радиус в подписи — тот, что ушёл в запрос: «рядом» без километров
+     читалось как «в городе», а сервер искал в сотне. */
+  const radiusLabel = radius === 0 ? t('только город') : `${t('до')} ${radius} ${t('км')}`
   const sub = ready(list)
-    ? `${nextCursor ? `${t('первые')} ${shown.length}` : `${shown.length} ${t('рядом')}`} · ${t('сортировка:')} ${sortLabel}`
+    ? `${nextCursor ? `${t('первые')} ${shown.length}` : `${shown.length} ${t('рядом')}`} · ${radiusLabel} · ${t('сортировка:')} ${sortLabel}`
     : undefined
 
   return (
@@ -215,6 +223,13 @@ export function VendorList() {
         {/* Сравниваем ту категорию, которую человек и открыл: без неё экран
             сравнения показывал бы избранное, а он пришёл из списка фотографов. */}
         <button onClick={() => nav(`/compare?cat=${catId}`)} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
+        {/* Радиус — отдельным выбором, не чипом-переключателем: он сочетается с
+            любым чипом. Смена — новый запрос и новая первая страница (ключ). */}
+        <select value={radius} onChange={e => setRadius(Number(e.target.value))} aria-label={t('Радиус поиска')}
+          className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--soft)] outline-none" style={{ boxShadow: 'var(--shadow)' }}>
+          <option value={0}>{t('только город')}</option>
+          {[50, 100, 300].map(km => <option key={km} value={km}>{`${t('до')} ${km} ${t('км')}`}</option>)}
+        </select>
       </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {list.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем каталог…')}</p>}

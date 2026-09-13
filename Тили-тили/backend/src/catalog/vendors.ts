@@ -27,6 +27,8 @@ export interface VendorRow {
   created_at: Date
   /** Рабочий телефон. В карточку попадает не всегда — см. `loadDetail`. */
   phone?: string | null
+  /** Километры от города поиска до города анкеты — только в выдаче с `city` (фича 011). */
+  distance_km?: number | string | null
 }
 
 /**
@@ -94,6 +96,9 @@ export function toVendor(r: VendorRow) {
     photoUrl: r.photo_url,
     verified: r.verified_at !== null,
     hasVideo: r.has_video,
+    /* Расстояние есть только у выдачи по городу (фича 011): у анкеты и у
+     * выдачи без `city` сравнивать нечего — null, а не ноль (R-178). */
+    distanceKm: r.distance_km === undefined || r.distance_km === null ? null : Number(r.distance_km),
   }
 }
 

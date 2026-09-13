@@ -35,6 +35,8 @@ export interface Vendor {
   photoUrl?: string | null
   verified?: boolean
   hasVideo?: boolean
+  /** Километры от города поиска до города анкеты (фича 011): 0 — свой город, null — нет города или координат. */
+  distanceKm?: number | null
 }
 
 export interface VendorFilters {
@@ -54,6 +56,12 @@ export interface VendorFilters {
    * анкет, пара видела тридцать и остальных увидеть не могла (ревью D5-05).
    */
   cursor?: string | null
+  /**
+   * Радиус от города в километрах (фича 011): 0 — только город, без поля —
+   * умолчание сервера (100). Сервер и раньше искал в 100 км молча — экран
+   * этого не знал и не давал ни сузить, ни расширить.
+   */
+  radiusKm?: number
 }
 
 /** Строка запроса из фильтров: пустые значения не отправляем. */
@@ -62,6 +70,8 @@ function query(f: VendorFilters): string {
   if (f.q) p.set('q', f.q)
   if (f.categoryId) p.set('categoryId', f.categoryId)
   if (f.city) p.set('city', f.city)
+  /* Ноль — значение, а не «не задано»: «только город» уходит как radiusKm=0. */
+  if (f.radiusKm !== undefined) p.set('radiusKm', String(f.radiusKm))
   /* Дата свадьбы убирает из выдачи занятых: иначе пара пишет тому, кто
      заведомо не сможет (описание параметра в контракте). */
   if (f.date) p.set('date', f.date)

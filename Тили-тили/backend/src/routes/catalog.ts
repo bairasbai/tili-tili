@@ -171,6 +171,19 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       }
 
       if (query.categoryId) add('v.category_id = ?', query.categoryId)
+      /* Расстояние до города поиска — тем же гаверсинусом, что и фильтр по
+       * радиусу (фича 011): ноль у своего города, null без координат у
+       * одного из городов; без `city` сравнивать нечего — колонка пустая. */
+      let distanceSql = 'null::int'
+      if (query.city) {
+        args.push(query.city)
+        distanceSql = `(select round(6371 * acos(least(1, greatest(-1,
+                       sin(radians(anchor.lat)) * sin(radians(c.lat))
+                     + cos(radians(anchor.lat)) * cos(radians(c.lat)) * cos(radians(c.lon - anchor.lon))))))::int
+                       from cities anchor
+                      where anchor.name = $${args.length} and anchor.lat is not null and c.lat is not null
+                      limit 1)`
+      }
       if (query.city) {
         if (query.radiusKm && query.radiusKm > 0) {
           // Радиус считается от координат города-якоря. Координаты есть
@@ -246,7 +259,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
 
       args.push(page.limit + 1)
       const { rows } = await db().query<VendorRow & { sort_key: string; down: boolean }>(
-        `select ${VENDOR_COLUMNS}, ${sort.expr}::text as sort_key, (v.downranked_at is not null) as down
+        `select ${VENDOR_COLUMNS}, ${distanceSql} as distance_km, ${sort.expr}::text as sort_key, (v.downranked_at is not null) as down
            from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
           where ${where.join(' and ')}
           order by ${DOWNRANKED}, ${sort.expr} ${sort.dir}, v.id asc
@@ -267,7 +280,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       // Ротация новичков — только на первой странице (см. rotateNewcomers).
       if (!page.cursor) {
         const { rows: fresh } = await db().query<VendorRow>(
-          `select ${VENDOR_COLUMNS}
+          `select ${VENDOR_COLUMNS}, ${distanceSql} as distance_km
              from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
             where ${where.join(' and ')} and v.reviews_count = 0
             order by v.created_at desc
