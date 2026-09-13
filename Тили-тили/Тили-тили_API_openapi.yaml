@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.35.0
+  version: 0.36.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -3899,6 +3899,45 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
 
+  /admin/weddings/{weddingId}/deals:
+    get:
+      tags: [admin]
+      summary: Сделки свадьбы для поддержки (только чтение, с причиной и записью в журнал)
+      description: |
+        Разбор спора о деньгах по обращению пары (План §19.10 п. 5; решение
+        владельца 2026-09-13: сделки — да, переписка — нет). Список сделок
+        свадьбы: подрядчик или свой подрядчик по имени (без телефонов), слот,
+        состояние, цена, оплачено, история событий. Причина обязательна (5…500
+        знаков), каждый запрос пишется в журнал действий как `wedding.deals.view`
+        с причиной — как и карточка свадьбы. Переписки пары ни с кем здесь нет
+        и не будет без отдельного решения.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: weddingId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: reason
+          in: query
+          required: true
+          description: Зачем смотрим — номер обращения или его суть. Уходит в журнал.
+          schema: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SupportDeal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
 components:
   securitySchemes:
     bearerAuth:
@@ -5146,6 +5185,39 @@ components:
             published: { type: integer, minimum: 0 }
             complete: { type: integer, minimum: 0 }
             averagePercent: { type: integer, minimum: 0, maximum: 100 }
+    SupportDeal:
+      type: object
+      description: |
+        Сделка глазами поддержки (фича 013): только то, что нужно для разбора
+        спора о деньгах. Имена — есть, телефонов и переписки — нет.
+      required: [id, slotLabel, categoryId, state, paid, events]
+      properties:
+        id: { type: string }
+        slotLabel: { type: string, description: 'подпись слота на мозаике пары («Фотограф»)' }
+        categoryId: { type: string }
+        vendorName: { type: string, nullable: true, description: 'анкета каталога; null у своего подрядчика' }
+        externalName: { type: string, nullable: true, description: 'свой подрядчик пары (§11); null у сделки из каталога' }
+        state: { $ref: '#/components/schemas/DealState' }
+        price:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          nullable: true
+        paid:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: 'оплачено по платежам (возвраты вычтены, отменённые не считаются) — та же формула, что у пары и подрядчика'
+        bookedAt: { type: string, format: date-time, nullable: true }
+        cancelledAt: { type: string, format: date-time, nullable: true }
+        events:
+          type: array
+          description: 'история состояний по времени: кто (couple | vendor | system), откуда, куда, заметка'
+          items:
+            type: object
+            required: [at, by, toState]
+            properties:
+              at: { type: string, format: date-time }
+              by: { type: string, enum: [couple, vendor, system] }
+              fromState: { type: string, nullable: true }
+              toState: { type: string }
+              note: { type: string, nullable: true }
     WeddingSupportCard:
       type: object
       description: |

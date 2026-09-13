@@ -7381,6 +7381,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/weddings/{weddingId}/deals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Сделки свадьбы для поддержки (только чтение, с причиной и записью в журнал)
+         * @description Разбор спора о деньгах по обращению пары (План §19.10 п. 5; решение
+         *     владельца 2026-09-13: сделки — да, переписка — нет). Список сделок
+         *     свадьбы: подрядчик или свой подрядчик по имени (без телефонов), слот,
+         *     состояние, цена, оплачено, история событий. Причина обязательна (5…500
+         *     знаков), каждый запрос пишется в журнал действий как `wedding.deals.view`
+         *     с причиной — как и карточка свадьбы. Переписки пары ни с кем здесь нет
+         *     и не будет без отдельного решения.
+         */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Зачем смотрим — номер обращения или его суть. Уходит в журнал. */
+                    reason: string;
+                };
+                header?: never;
+                path: {
+                    weddingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["SupportDeal"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8489,6 +8545,38 @@ export interface components {
                 complete: number;
                 averagePercent: number;
             };
+        };
+        /**
+         * @description Сделка глазами поддержки (фича 013): только то, что нужно для разбора
+         *     спора о деньгах. Имена — есть, телефонов и переписки — нет.
+         */
+        SupportDeal: {
+            id: string;
+            /** @description подпись слота на мозаике пары («Фотограф») */
+            slotLabel: string;
+            categoryId: string;
+            /** @description анкета каталога; null у своего подрядчика */
+            vendorName?: string | null;
+            /** @description свой подрядчик пары (§11); null у сделки из каталога */
+            externalName?: string | null;
+            state: components["schemas"]["DealState"];
+            price?: components["schemas"]["Money"] | null;
+            /** @description оплачено по платежам (возвраты вычтены, отменённые не считаются) — та же формула, что у пары и подрядчика */
+            paid: components["schemas"]["Money"];
+            /** Format: date-time */
+            bookedAt?: string | null;
+            /** Format: date-time */
+            cancelledAt?: string | null;
+            /** @description история состояний по времени: кто (couple | vendor | system), откуда, куда, заметка */
+            events: {
+                /** Format: date-time */
+                at: string;
+                /** @enum {string} */
+                by: "couple" | "vendor" | "system";
+                fromState?: string | null;
+                toState: string;
+                note?: string | null;
+            }[];
         };
         /**
          * @description Карточка, а не свадьба целиком: ни гостей, ни переписки, ни сумм.

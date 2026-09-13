@@ -1,3 +1,4 @@
+import { PAID_SUM } from '../deals/repo.js'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
@@ -1047,6 +1048,104 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         style: w.style,
         guestsPlanned: w.guests_planned,
         createdAt: w.created_at.toISOString(),
+      }
+    },
+  )
+
+  /* ── сделки свадьбы для поддержки (фича 013, решение владельца 2026-09-13) ── */
+  /*
+   * Разбор спора о деньгах по обращению пары: сделки — да, переписка — нет.
+   * Те же правила, что у карточки: причина обязательна и уходит в журнал ДО
+   * ответа; имена подрядчиков есть, телефонов нет (`external_phone` не
+   * читается вовсе). Оплачено — той же формулой, что у пары и подрядчика
+   * (`PAID_SUM`), иначе поддержка спорила бы с обеими сторонами о третьем числе.
+   */
+  app.get(
+    '/admin/weddings/:weddingId/deals',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['reason'],
+          additionalProperties: false,
+          properties: { reason: { type: 'string', minLength: 5, maxLength: 500 } },
+        },
+      },
+    },
+    async (request) => {
+      const staffId = await requireStaff(request)
+      const { weddingId } = request.params as { weddingId: string }
+      if (!isUuid(weddingId)) throw notFound('Свадьба не найдена')
+      const { reason } = request.query as { reason: string }
+      const { rows: exists } = await db().query('select 1 from weddings where id = $1', [weddingId])
+      if (exists.length === 0) throw notFound('Свадьба не найдена')
+
+      await audit(staffId, 'wedding.deals.view', 'wedding', weddingId, { reason })
+
+      const { rows } = await db().query<{
+        id: string
+        slot_label: string
+        category_id: string
+        vendor_name: string | null
+        external_name: string | null
+        state: string
+        price: string | null
+        currency: string
+        paid: string
+        booked_at: Date | null
+        cancelled_at: Date | null
+      }>(
+        `select d.id, s.label as slot_label, s.category_id, ven.name as vendor_name, d.external_name, d.state,
+                d.price::text as price, d.currency, ${PAID_SUM}::text as paid, d.booked_at, d.cancelled_at
+           from deals d
+           join slots s on s.id = d.slot_id
+           left join vendors ven on ven.id = d.vendor_id
+          where d.wedding_id = $1
+          order by s.sort, d.created_at`,
+        [weddingId],
+      )
+      const { rows: events } = await db().query<{
+        deal_id: string
+        at: Date
+        by: string
+        from_state: string | null
+        to_state: string
+        note: string | null
+      }>(
+        `select e.deal_id, e.at, e.from_state, e.to_state, e.note,
+                case
+                  when e.actor_id is null then 'system'
+                  when exists(select 1 from vendors v where v.id = d.vendor_id and v.user_id = e.actor_id) then 'vendor'
+                  else 'couple'
+                end as by
+           from deal_events e join deals d on d.id = e.deal_id
+          where d.wedding_id = $1
+          order by e.at`,
+        [weddingId],
+      )
+      const byDeal = new Map<string, typeof events>()
+      for (const e of events) byDeal.set(e.deal_id, [...(byDeal.get(e.deal_id) ?? []), e])
+      return {
+        items: rows.map((d) => ({
+          id: d.id,
+          slotLabel: d.slot_label,
+          categoryId: d.category_id,
+          vendorName: d.vendor_name,
+          externalName: d.external_name,
+          state: d.state,
+          price: d.price === null ? null : { amount: Number(d.price), currency: d.currency },
+          paid: { amount: Number(d.paid), currency: d.currency },
+          bookedAt: d.booked_at?.toISOString() ?? null,
+          cancelledAt: d.cancelled_at?.toISOString() ?? null,
+          events: (byDeal.get(d.id) ?? []).map((e) => ({
+            at: e.at.toISOString(),
+            by: e.by,
+            fromState: e.from_state,
+            toState: e.to_state,
+            note: e.note,
+          })),
+        })),
       }
     },
   )

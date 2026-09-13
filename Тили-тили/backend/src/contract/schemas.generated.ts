@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 57. */
+ * Схем: 58. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1477,6 +1477,125 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "SupportDeal": {
+          "type": "object",
+          "description": "Сделка глазами поддержки (фича 013): только то, что нужно для разбора\nспора о деньгах. Имена — есть, телефонов и переписки — нет.\n",
+          "required": [
+              "id",
+              "slotLabel",
+              "categoryId",
+              "state",
+              "paid",
+              "events"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "slotLabel": {
+                  "type": "string",
+                  "description": "подпись слота на мозаике пары («Фотограф»)"
+              },
+              "categoryId": {
+                  "type": "string"
+              },
+              "vendorName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "анкета каталога; null у своего подрядчика"
+              },
+              "externalName": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "свой подрядчик пары (§11); null у сделки из каталога"
+              },
+              "state": {
+                  "$ref": "contract#/definitions/DealState"
+              },
+              "price": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "paid": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "оплачено по платежам (возвраты вычтены, отменённые не считаются) — та же формула, что у пары и подрядчика"
+              },
+              "bookedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "cancelledAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "events": {
+                  "type": "array",
+                  "description": "история состояний по времени: кто (couple | vendor | system), откуда, куда, заметка",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "at",
+                          "by",
+                          "toState"
+                      ],
+                      "properties": {
+                          "at": {
+                              "type": "string",
+                              "format": "date-time"
+                          },
+                          "by": {
+                              "type": "string",
+                              "enum": [
+                                  "couple",
+                                  "vendor",
+                                  "system"
+                              ]
+                          },
+                          "fromState": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "toState": {
+                              "type": "string"
+                          },
+                          "note": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "Table": {
           "type": "object",
           "properties": {
@@ -2332,6 +2451,7 @@ export type ContractSchemaName =
   | "Review"
   | "Session"
   | "Slot"
+  | "SupportDeal"
   | "Table"
   | "Task"
   | "TimelineEvent"

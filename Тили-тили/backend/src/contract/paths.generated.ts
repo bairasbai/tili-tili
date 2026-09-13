@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.35.0).
- * Операций: 165. Путей: 123. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.36.0).
+ * Операций: 166. Путей: 124. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -26,6 +26,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Карточка заявки на верификацию","tag":"admin"},
   {"method":"POST","openapi":"/admin/verifications/{requestId}","url":"/admin/verifications/:requestId","operationId":null,"summary":"Решение по заявке на верификацию","tag":"admin"},
   {"method":"GET","openapi":"/admin/weddings/{weddingId}","url":"/admin/weddings/:weddingId","operationId":null,"summary":"Просмотр проекта поддержкой","tag":"admin"},
+  {"method":"GET","openapi":"/admin/weddings/{weddingId}/deals","url":"/admin/weddings/:weddingId/deals","operationId":null,"summary":"Сделки свадьбы для поддержки (только чтение, с причиной и записью в журнал)","tag":"admin"},
   {"method":"GET","openapi":"/auth/oauth/{provider}","url":"/auth/oauth/:provider","operationId":null,"summary":"OAuth-вход (VK, Yandex, Google, Telegram)","tag":"auth"},
   {"method":"POST","openapi":"/auth/otp","url":"/auth/otp","operationId":null,"summary":"Запросить код из SMS","tag":"auth"},
   {"method":"POST","openapi":"/auth/otp/verify","url":"/auth/otp/verify","operationId":null,"summary":"Обменять код на токены","tag":"auth"},
