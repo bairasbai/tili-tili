@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import { Bell, Sparkles, CalendarDays, Mail, BarChart3, Map, Lightbulb } from 'lucide-react'
 import { useApi } from '@/lib/api/useApi'
 import { isAuthorized } from '@/lib/api/client'
-import { getBudget, getGuests, getTasks, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getGuests, getTasks, getTips, getWedding } from '@/lib/api/weddingData'
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -44,6 +44,11 @@ export default function Home() {
   const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
   const tq = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
   const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  /* Правила §3.14 считает сервер (дефицит категории, блокирующий слот, лимит
+     бюджета): первая подсказка — на главную. Помощнику они закрыты (403 —
+     внутри суммы), тогда остаётся общая подсказка ниже. */
+  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId])
+  const serverTip = tipsQ.data?.items?.[0] ?? null
   /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
      контракте нет, поэтому считаем по списку. */
   const nq = useApi(() => getNotifications(), [])
@@ -232,7 +237,11 @@ export default function Home() {
             разбираются за 8 месяцев. Свободных на 14.06 осталось 6» — цифры
             и дата ни с чем не связаны, а «осталось 6» выглядит как результат
             запроса к каталогу, которого не было. */}
-        <div className="mt-4"><AiTip text={homeTip} onPress={() => nav('/assistant')} /></div>
+        <div className="mt-4">
+          {serverTip
+            ? <AiTip text={`${serverTip.title}. ${serverTip.body}`} onPress={() => nav(serverTip.link ?? '/assistant')} />
+            : <AiTip text={homeTip} onPress={() => nav('/assistant')} />}
+        </div>
       </div>}
 
       {/* Быстрые действия */}

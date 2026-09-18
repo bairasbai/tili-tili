@@ -1970,3 +1970,18 @@ Object.assign(EN, {
   'Сдвиг и план Б без сети не сработают.': 'Shifting and plan B will not work without a connection.',
   'телефона нет': 'no phone',
 })
+
+/* Корзина 1 после сверки планов (2026-09-18): карточка сделки подрядчика, заполненность, подсказки. */
+Object.assign(EN, {
+  'цены «от»': 'a starting price',
+  'Состояние': 'Status',
+  'Остаток': 'Remaining',
+  'Оплаты отмечает пара в своей карточке сделки; приложение денег не держит.': 'The couple marks payments in their deal card; the app does not hold money.',
+  'Редакция': 'Version',
+  'Договора пока нет — его оформляет пара из шаблона в своей карточке сделки.': 'No contract yet — the couple creates it from a template in their deal card.',
+  'Написать паре': 'Message the couple',
+  'Пара ещё не писала': 'The couple has not written yet',
+  'Вернулась в кандидаты': 'Back to candidates',
+  'Пара написала': 'The couple wrote',
+  'Мягкая бронь': 'Soft hold',
+})

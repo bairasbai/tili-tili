@@ -139,6 +139,20 @@ describe('десктоп-раскладка (≥900px)', () => {
     }
     expect(desktop.join('\n')).toMatch(/nav\.glass-tab\s*\{/)
   })
+
+  it('панель действий анкеты стоит над таб-баром, мастера под таб-баром держат pb-28', () => {
+    /* ERR-0268: обе панели «Написать / Добавить в свадьбу» были `fixed bottom-0`
+       вместе с таб-баром и лежали под ним на телефоне; мастера анкеты и договора
+       с `pb-10` прятали «Далее» под навигацию. Кликом это видно, jsdom — нет. */
+    const search = projectFile('src/pages/Search.tsx')
+    const bars = search.match(/className="[^"]*fixed bottom-0[^"]*glass-tab[^"]*"/g) ?? []
+    expect(bars.length).toBeGreaterThanOrEqual(2)
+    for (const bar of bars) expect(bar, 'панель без .action-bar — ляжет под таб-бар').toContain('action-bar')
+    expect(css).toMatch(/\.action-bar\s*\{\s*\n?\s*bottom: calc\(56px/)
+    for (const f of ['src/pages/VendorApp.tsx', 'src/pages/Tools.tsx']) {
+      expect(projectFile(f), `${f}: корень мастера с pb-10 — кнопка под таб-баром`).not.toMatch(/min-h-dvh flex flex-col pb-10"/)
+    }
+  })
 })
 
 describe('шрифты подключены до бандла стилей', () => {

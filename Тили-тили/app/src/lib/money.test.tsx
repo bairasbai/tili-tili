@@ -34,6 +34,7 @@ vi.mock('@/lib/api/weddingData', () => ({
       { id: 'b1', title: 'Площадка и кейтеринг', planned: { amount: 56_000_000 }, fromSlots: 48_000_000, color: '#D9A8A0', live: null, items: [] },
     ],
   }),
+  getTips: async () => ({ items: [] }),
   getTasks: async () => [{ id: 't1', title: 'Выбрать дату', period: '9', done: false, custom: false }],
   getGuests: async () => [],
   getTimeline: async () => [],

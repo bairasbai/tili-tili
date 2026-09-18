@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { getI18nLang } from './i18n'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -36,6 +37,12 @@ export function goBack(nav: (n: number) => void, go: (to: string, opts?: { repla
  * экране, где есть счётчик.
  */
 export function plural(n: number, one: string, few: string, many: string): string {
+  /* В английском интерфейсе формы приходят уже переведёнными (`t('гость')` →
+     «guest»), а правило — русское: 21 давало «21 guest». Категорию считает
+     `Intl.PluralRules` текущего языка (сверка планов 2026-09-18, ICU): у
+     английского две формы — «one» и всё остальное. Русское правило оставлено
+     руками: оно и раньше было верным, а `Intl` в нём не нужен. */
+  if (getI18nLang() === 'en') return new Intl.PluralRules('en').select(n) === 'one' ? one : many
   const mod100 = Math.abs(n) % 100
   if (mod100 >= 11 && mod100 <= 14) return many
   const mod10 = mod100 % 10

@@ -524,8 +524,9 @@ export function ContractWizard() {
 
   const canGenerate = !!dealId && !busy
 
+  /* `pb-28` под таб-бар: с `pb-10` «Далее» на телефоне лежала под ним (живая проверка 2026-09-18). */
   return (
-    <div className="min-h-dvh flex flex-col pb-10">
+    <div className="min-h-dvh flex flex-col pb-28">
       <TopBar back title={t('Новый договор')} sub={`${t('Шаг ')}${step + 1}${t(' из 2')}`} />
       {/* Заказчик и город берутся из свадьбы: если она не пришла, «уточняется»
           в договоре должно сопровождаться причиной, а не молчанием. */}

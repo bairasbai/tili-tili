@@ -16,6 +16,10 @@ export const getSlots = (weddingId: string) =>
 export const getBudget = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/budget', { weddingId }))
 
+/** Подсказки Тиля по правилам §3.14 — считает сервер: дефицит категории, блокирующий слот, лимит бюджета. */
+export const getTips = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/tips', { weddingId }))
+
 export const getTasks = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/tasks', { weddingId }))
 

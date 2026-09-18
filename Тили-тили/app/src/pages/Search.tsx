@@ -219,6 +219,9 @@ export function VendorList() {
           <SlidersHorizontal size={16} />
         </button>
       } />
+      {/* Описание категории — из справочника (миграция 39): что делает
+          подрядчик и что у него спросить. Нет описания — нет строки. */}
+      {cat?.description && <p className="px-5 mt-1 text-[11.5px] text-[var(--soft)] leading-relaxed">{cat.description}</p>}
       {showFilters && <div className="px-5 flex gap-2 mt-2 overflow-x-auto no-scrollbar">
         {/* Подпись «свободны» — по выбранной дате, а не по вшитому 14.06: дату
             выбирает пара, и чип с чужим числом врёт. Без даты чип не нужен. */}
@@ -467,7 +470,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      подрядчика подменялось первым из мок-списка: открыв чужую ссылку,
      человек видел чью-то чужую анкету вместо «не нашлось». */
   if (!v) return (
-    <div className="pb-28">
+    <div className="pb-44">
       <TopBar back title={t('Анкета подрядчика')} sub={city} />
       <div className="px-5 mt-8 text-center fade-up">
         {detail.loading && <p className="text-[12.5px] text-[var(--soft)]">{t('Загружаем анкету…')}</p>}
@@ -602,7 +605,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Пакеты и цены')}</h2>
         <div className="space-y-2.5">
           {(v.packages ?? []).map((p, k) => (
-            <button key={p.name} onClick={() => setPkg(k)} className={cn('press w-full card p-4 text-left', pkg === k && 'ring-2 ring-[#C98A8A]')}>
+            <button key={p.name} onClick={() => setPkg(k)} className={cn('press w-full card p-4 text-left', pkg === k && 'ring-2 ring-[var(--rose)]')}>
               <div className="flex justify-between items-center">
                 <b className="text-[14px]">{p.name}</b>
                 <span className="font-serif-d text-[17px] text-[var(--rose-ink)] font-semibold tabular">{p.price?.amount != null ? fmt(p.price.amount) : ''}</span>
@@ -646,7 +649,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
               const held = !busy && holdDates.includes(iso)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding && !busy && !held ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through' : held ? 'bg-[var(--honey)] text-[var(--honey-ink)]' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-ink)] font-bold' : 'text-[var(--ink)]')}>
+                  isWedding && !busy && !held ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through' : held ? 'bg-[var(--honey)] text-[var(--honey-ink)]' : isWedding ? 'ring-2 ring-[var(--rose)] text-[var(--rose-ink)] font-bold' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
@@ -738,12 +741,12 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         /* Своя анкета: писать и бронировать самого себя нельзя — сервер
            ответил бы отказом, а кнопка с одним исходом хуже её отсутствия.
            Вместо них — путь в мастер, где анкету и правят. */
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex items-center gap-3 z-40">
+        <div className="action-bar fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex items-center gap-3 z-40">
           <span className="flex-1 text-[12.5px] font-semibold text-[var(--ink2)]">{t('Это ваша анкета')}</span>
           <button onClick={() => nav('/vendor-app/profile')} className="press h-[48px] px-6 rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Редактировать')}</button>
         </div>
       ) : (
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
+      <div className="action-bar fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab px-5 pt-3 pb-[max(18px,env(safe-area-inset-bottom))] flex gap-2.5 z-40">
         {/* Раньше кнопка вела на выдуманный чат `ch1` — один и тот же у всех
             подрядчиков. Теперь переписка создаётся на сервере и открывается
             своя. Создание — запрос (`POST /chats/vendor/{id}`), и отказ на
@@ -756,7 +759,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       </div>
       )}
       {err && (
-        <div className="fixed bottom-[92px] left-1/2 -translate-x-1/2 w-full max-w-[430px] px-5 z-40">
+        <div className="fixed bottom-[176px] left-1/2 -translate-x-1/2 w-full max-w-[430px] px-5 z-40">
           <p className="rounded-2xl bg-[var(--card)] px-4 py-3 text-[12.5px] text-[var(--rose-ink)]" style={{ boxShadow: 'var(--shadow)' }}>{err}</p>
         </div>
       )}

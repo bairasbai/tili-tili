@@ -208,7 +208,7 @@ export default function Quiz() {
           <button
             onClick={() => { setDate(null); setAnswers(a => ({ ...a, [DATE_STEP]: [NOT_DECIDED] })) }}
             className={cn('press w-full mt-2.5 card-s p-4 flex items-center justify-between text-left text-[14px]',
-              !date && sel.includes(NOT_DECIDED) && 'ring-2 ring-[#C98A8A]')}
+              !date && sel.includes(NOT_DECIDED) && 'ring-2 ring-[var(--rose)]')}
           >
             <span className="font-medium">{t('Ещё не решили')}</span>
             <span className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all',
@@ -275,7 +275,7 @@ export default function Quiz() {
           {s.opts.map(o => {
             const on = sel.includes(o)
             return (
-              <button key={o} onClick={() => pick(o)} className={cn('press w-full card-s p-4 flex items-center justify-between gap-3 text-left text-[14px] fade-up', on && 'ring-2 ring-[#C98A8A]')}>
+              <button key={o} onClick={() => pick(o)} className={cn('press w-full card-s p-4 flex items-center justify-between gap-3 text-left text-[14px] fade-up', on && 'ring-2 ring-[var(--rose)]')}>
                 <span className="min-w-0">
                   <span className="font-medium block">{t(o)}</span>
                   {/* Объяснение всегда видно: раскрывать его тапом значит просить

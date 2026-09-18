@@ -413,7 +413,8 @@ export function DayX() {
           <div className="flex gap-2.5 mt-4">
             {/* Сдвиг уходит на сервер и рассылается команде и подрядчикам.
                 Раньше он копился в браузере пары и не доходил ни до кого. */}
-            <button disabled={!!busy || stale || !events.length} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--dark-gold)] text-[var(--on-grad)]">
+            {/* Из офлайн-копии сдвигать нечего: запрос не дойдёт, а кнопка обещала бы. */}
+            <button disabled={!!busy || stale || !events.length || !!offline} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--dark-gold)] text-[var(--on-grad)]">
               {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
             </button>
             <button disabled={chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>

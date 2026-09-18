@@ -173,6 +173,9 @@ const budgetRoutes = (total: number, items: unknown[] = []) => base({
     reserve: { amount: total / 10, currency: 'RUB' },
     categories: [{ id: 'other', title: 'Прочее', planned: { amount: total > 0 ? 7_900_000 : 0, currency: 'RUB' }, fromSlots: 0, color: '#D9A8A0', live: null, items }],
   },
+  /* Подсказка о лимите — с сервера (§3.14, сверка планов 2026-09-18): считается
+     той же функцией, что бюджет (`wedding/tips.ts`, тест бэкенда audit47). */
+  '/weddings/w1/tips': { items: items.length ? [{ kind: 'budget', title: '«Прочее» — 89 % лимита', body: 'Обещано 70 000 ₽ из 79 000 ₽ — зафиксируйте состав, пока укладываетесь', link: '/wedding/budget', categoryId: 'other' }] : [] },
 })
 
 describe('D2-04 бюджет: сумма категории включает свои статьи', () => {
@@ -185,9 +188,9 @@ describe('D2-04 бюджет: сумма категории включает с�
     expect(text(r)).toContain('70К/')
     /* Отдельно стоящий «0К/» — ноль в строке категории; «70К/» его не содержит. */
     expect(text(r)).not.toMatch(/(^|\D)0К\//)
-    /* Подсказка о лимите — от той же суммы: 70К из 79К это 89%, и она есть;
-       от одних сделок было 0%, и подсказки не было вовсе. */
-    expect(text(r)).toContain('89% лимита')
+    /* Подсказка о лимите — от той же суммы, теперь с сервера: 70К из 79К это 89 %,
+       и она есть; от одних сделок было 0%, и подсказки не было вовсе. */
+    expect(text(r)).toContain('89 % лимита')
   })
 })
 

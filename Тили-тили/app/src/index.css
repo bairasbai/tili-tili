@@ -245,6 +245,17 @@ input[type="range"] { accent-color: var(--rose-deep); }
   .sheen::after, .halo::before { display: none; }
 }
 
+/* Панель действий экрана (анкета подрядчика: «Написать» / «Добавить в свадьбу»).
+   На телефоне стоит НАД таб-баром: обе панели были `fixed bottom-0 z-40`, таб-бар
+   позже в DOM — и кнопки брони лежали под навигацией (живая проверка кликом
+   2026-09-18, 390px; ERR-0268). Высота таб-бара: 56px + нижний отступ с учётом
+   выреза. На десктопе таб-бар — сайдбар слева, панель возвращается вниз. */
+.action-bar {
+  bottom: calc(56px + max(14px, env(safe-area-inset-bottom, 0px))) !important;
+  padding-bottom: 14px !important;
+  border-bottom: 1px solid rgba(201,138,138,.14);
+}
+
 /* ---------- Десктоп (≥900px): сайдбар слева, широкая колонка ---------- */
 @media (min-width: 900px) {
   .app-shell { max-width: 1180px; padding-left: 232px; }
@@ -252,6 +263,7 @@ input[type="range"] { accent-color: var(--rose-deep); }
      него оставлял слева мёртвые 232px и уводил контент вправо от центра экрана.
      Ширина колонки та же (1180 - 232), меняется только выключка. */
   .app-shell.no-tab { max-width: 948px; padding-left: 0; }
+  .action-bar { bottom: 0 !important; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)) !important; border-bottom: none; }
   /* Сайдбаром становится только таб-бар (`nav` в chrome.tsx). Стекло `.glass-tab`
      носят ещё шапка и строка ввода чата, панель «Написать / Добавить в свадьбу»
      анкеты: с голым селектором они на десктопе уезжали в колонку 216px за левый

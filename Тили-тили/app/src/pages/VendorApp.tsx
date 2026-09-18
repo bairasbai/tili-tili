@@ -61,12 +61,13 @@ export function VendorDashboard() {
   const days = calendar.data ?? []
   const unread = (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0)
 
-  /* Заполненность — подсказка, а не оценка: показываем, чего не хватает.
-     Фотографии не считаются, пока нет хранилища (RELEASE-BLOCKERS №3): иначе
-     «не хватает: фотографий» и 86 % стояли бы у каждой анкеты навсегда — так
-     же считает и панель (фича 012; ревью 015). */
-  const filled = [!!p?.name, !!p?.categoryId, !!p?.city, !!p?.about, !!p?.phone, !!(p?.packages?.length)]
-  const donePct = Math.round(filled.filter(Boolean).length / filled.length * 100)
+  /* Заполненность — с сервера (`completeness`, одно правило с панелью:
+     `vendor/completeness.ts`). Свой расчёт по шести полям давал одной анкете
+     два процента — здесь и в панели (сверка планов 2026-09-18, класс ERR-0012).
+     Без ответа — прочерк, а не ноль (R-178). */
+  const donePct = p?.completeness?.pct ?? null
+  const missingLabel: Record<string, string> = { about: 'рассказа о себе', phone: 'рабочего телефона', priceFrom: 'цены «от»', packages: 'пакетов услуг' }
+  const missing = (p?.completeness?.missing ?? []).map(m => t(missingLabel[m] ?? m))
 
   /* Оценка — серверная, та же, что в каталоге: взвешенная, с затуханием и
      с порогом в три отзыва (`rating: null` до него). Своё среднее по видимым
@@ -114,13 +115,13 @@ export function VendorDashboard() {
       <AsyncState q={profile} />
       <div className="px-5 mt-2">
         <div className="card p-4">
-          <div className="flex justify-between text-[12px] mb-2"><span className="text-[var(--soft)]">{t('Заполненность анкеты')}</span><b>{donePct}%</b></div>
-          <Bar pct={donePct} />
-          {donePct < 100 && (
+          <div className="flex justify-between text-[12px] mb-2"><span className="text-[var(--soft)]">{t('Заполненность анкеты')}</span><b>{donePct === null ? '—' : `${donePct}%`}</b></div>
+          {donePct !== null && <Bar pct={donePct} />}
+          {missing.length > 0 && (
             /* Называем недостающее поле, а не советуем «добавить видео» вообще:
                прежняя подсказка стояла константой и не зависела от анкеты. */
             <p className="text-[10.5px] text-[var(--soft)] mt-2.5">
-              {t('Не хватает:')} {[!p?.about && t('рассказа о себе'), !p?.phone && t('рабочего телефона'), !p?.packages?.length && t('пакетов услуг')].filter(Boolean).join(', ')}
+              {t('Не хватает:')} {missing.join(', ')}
             </p>
           )}
           {/* Опубликована или нет — главный факт кабинета: пока нет, заявок
@@ -480,7 +481,11 @@ export function VendorProfileWizard() {
   )
 
   return (
-    <div className="min-h-dvh flex flex-col pb-10">
+    /* `pb-28`, как у остальных экранов кабинета: с фичи 007 внизу стоит
+       таб-бар кабинета, и при `pb-10` кнопка «Далее» / «Опубликовать» на
+       телефоне оказывалась под ним — нажатие перехватывала навигация
+       (живая проверка 2026-09-18, 390px). */
+    <div className="min-h-dvh flex flex-col pb-28">
       <TopBar back title={t('Моя анкета')} sub={`${t('Шаг ')}${step + 1}${t(' из 5 · ')}${steps[step]}`} />
       <AsyncState q={profile} />
       <div className="px-5 mt-2 flex gap-1.5">
@@ -496,7 +501,7 @@ export function VendorProfileWizard() {
             <div className="grid grid-cols-2 gap-2.5">
               {(cats.data ?? []).map(c => (
                 <button key={c.id} onClick={() => set({ categoryId: c.id ?? '' })}
-                  className={cn('press card-s p-4 text-[12.5px] font-semibold text-left', form?.categoryId === c.id && 'ring-2 ring-[#C98A8A]')}>
+                  className={cn('press card-s p-4 text-[12.5px] font-semibold text-left', form?.categoryId === c.id && 'ring-2 ring-[var(--rose)]')}>
                   {c.icon} {c.title}
                 </button>
               ))}
@@ -651,6 +656,7 @@ export function VendorProfileWizard() {
  * Поэтому здесь только сделки, а заявки живут в кабинете отдельным списком.
  */
 export function VendorDeals() {
+  const nav = useNavigate()
   const q = useApi(() => getVendorDeals(), [])
   const items = q.data?.items ?? []
   const expected = q.data?.expected?.amount ?? 0
@@ -695,7 +701,8 @@ export function VendorDeals() {
       )}
       <div className="px-5 mt-3 space-y-2.5 stagger">
         {items.map(d => (
-          <div key={d.id} className="card-s p-4 flex items-center gap-3 fade-up">
+          /* Строка открывает карточку сделки (План §8.2): журнал, оплаты, договор, чат. */
+          <button key={d.id} onClick={() => nav(`/vendor-app/deals/${d.id}`)} className="press w-full card-s p-4 flex items-center gap-3 fade-up text-left">
             <Tile icon={DEAL_ICON[d.state ?? ''] ?? '💬'} tile="bg-[var(--rose-soft)]" size={44} />
             <div className="flex-1 min-w-0">
               <b className="text-[13.5px]">{d.coupleName}</b>
@@ -722,7 +729,7 @@ export function VendorDeals() {
             <span className={cn('text-[9px] font-bold px-2.5 py-1.5 rounded-full whitespace-nowrap', DEAL_TILE[d.state ?? ''] ?? 'bg-[var(--track)] text-[var(--track-ink)]')}>
               {t(DEAL_STATE_LABEL[d.state ?? ''] ?? d.state ?? '')}
             </span>
-          </div>
+          </button>
         ))}
       </div>
       {/* Кнопка «Запросить отзыв у пары» убрана: пути для такого запроса нет,

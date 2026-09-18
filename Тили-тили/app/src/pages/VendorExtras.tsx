@@ -5,7 +5,8 @@ import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi } from '@/lib/api/useApi'
-import { getVendorAnalytics, getVendorLeads, getVendorProfile, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
+import { getVendorAnalytics, getVendorDeals, getVendorLeads, getVendorProfile, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
+import { getDealEvents } from '@/lib/api/slots'
 import { cn, pct, plural } from '@/lib/utils'
 import { fmt } from '@/lib/money'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -28,6 +29,119 @@ const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
  * дату они не бронируют и паре не пишут. Экран говорит это словами, потому
  * что подрядчик планирует свой месяц по этим пометкам.
  */
+/*
+ * Карточка сделки подрядчика (План §8.2: «статус, мини-таймлайн, договор,
+ * отметки оплат»). До сверки планов 2026-09-18 строка списка не открывалась:
+ * подрядчик видел сумму и статус, а что происходило со сделкой и сколько
+ * пришло платежами — нет. Переходы состояний делает пара (`PATCH /deals` —
+ * только ей); подрядчику здесь — журнал, оплаты, договор, чат и спор.
+ */
+const DEAL_STATE_LABEL: Record<string, string> = {
+  candidate: 'Кандидат', contacted: 'Написали', negotiating: 'Держим дату', booked: 'Забронировано',
+  paid_deposit: 'Аванс получен', done: 'Завершена', cancelled: 'Отменена',
+}
+const EVENT_STATE: Record<string, string> = {
+  candidate: 'Вернулась в кандидаты', contacted: 'Пара написала', negotiating: 'Мягкая бронь', booked: 'Забронировано',
+  paid_deposit: 'Аванс внесён', done: 'Выполнено', cancelled: 'Сделка отменена',
+}
+const EVENT_BY: Record<string, string> = { couple: 'пара', vendor: 'вы', system: 'автоматически' }
+const CONTRACT_STATUS: Record<string, string> = { draft: 'черновик', sent: 'отправлен', signed: 'подписан' }
+
+export function VendorDealCard() {
+  const { id = '' } = useParams()
+  const nav = useNavigate()
+  const q = useApi(() => getVendorDeals(), [])
+  const events = useApi(() => getDealEvents(id), [id])
+  const [dispute, setDispute] = useState(false)
+  const d = (q.data?.items ?? []).find(x => x.id === id)
+  const price = d?.price?.amount ?? null
+  const paid = d?.paid?.amount ?? null
+  const locale = getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+
+  return (
+    <div className="pb-28">
+      <TopBar back fallback="/vendor-app/deals" title={d?.coupleName ?? t('Сделка')} sub={d?.weddingDate ? formatWeddingDate(d.weddingDate) : undefined} />
+      <div className="px-5 mt-3 space-y-3">
+        <AsyncState q={q} />
+        {ready(q) && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
+        {d && (
+          <>
+            <div className="card p-5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Состояние')}</span>
+                <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)]">{t(DEAL_STATE_LABEL[d.state ?? ''] ?? d.state ?? '')}</span>
+              </div>
+              {d.packageName && <p className="text-[12px] mt-2">{t('Пакет:')} <b>{d.packageName}</b></p>}
+              {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
+              {/* Отметки оплат — те же платежи, что видит пара; без ответа — прочерк (R-178). */}
+              <div className="grid grid-cols-3 gap-2 mt-4">
+                <div><span className="text-[9.5px] text-[var(--soft)] block">{t('Сумма')}</span><b className="tabular text-[13px]">{price === null ? '—' : fmt(price)}</b></div>
+                <div><span className="text-[9.5px] text-[var(--soft)] block">{t('Оплачено')}</span><b className="tabular text-[13px]">{paid === null ? '—' : fmt(paid)}</b></div>
+                <div><span className="text-[9.5px] text-[var(--soft)] block">{t('Остаток')}</span><b className="tabular text-[13px]">{price === null || paid === null ? '—' : fmt(Math.max(0, price - paid))}</b></div>
+              </div>
+              {price !== null && paid !== null && price > 0 && <div className="mt-2.5"><Bar pct={pct(Math.min(paid, price), price)} /></div>}
+              <p className="text-[10.5px] text-[var(--soft)] mt-2 leading-relaxed">{t('Оплаты отмечает пара в своей карточке сделки; приложение денег не держит.')}</p>
+            </div>
+
+            {/* Договор: заголовок последней редакции. Полей сторон здесь нет —
+                их видит пара на экране документов. */}
+            <div className="card p-5">
+              <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Договор')}</span>
+              {d.contract ? (
+                <p className="text-[12.5px] mt-2">
+                  {t('Редакция')} {d.contract.version} · {t(CONTRACT_STATUS[d.contract.status ?? ''] ?? d.contract.status ?? '')}
+                  {d.contract.createdAt && <span className="text-[10.5px] text-[var(--soft2)] block mt-0.5">{new Date(d.contract.createdAt).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
+                </p>
+              ) : (
+                <p className="text-[12px] text-[var(--soft)] mt-2 leading-relaxed">{t('Договора пока нет — его оформляет пара из шаблона в своей карточке сделки.')}</p>
+              )}
+            </div>
+
+            {d.busRoutes && d.busRoutes.length > 0 && (
+              <div className="card p-5">
+                <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Маршруты для гостей')}</span>
+                <div className="mt-2 space-y-1.5">
+                  {d.busRoutes.map(r => (
+                    <p key={r.id} className="text-[12px] tabular">{r.name}{r.time ? ` · ${r.time}` : ''} · {r.taken ?? 0} {t('из')} {r.seats ?? 0}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="card p-5">
+              <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Что происходило')}</span>
+              <AsyncState q={events} />
+              {ready(events) && !(events.data ?? []).length && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Пока ничего не происходило')}</p>}
+              <div className="mt-3 space-y-3">
+                {(events.data ?? []).map(e => (
+                  <div key={e.id} className="flex gap-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12.5px] font-medium">{e.kind === 'price' ? (e.note ?? t('Цена изменена')) : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}</p>
+                      <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
+                        {e.at ? new Date(e.at).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
+                        {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2.5">
+              <button disabled={!d.chatId} onClick={() => d.chatId && nav(`/vendor-app/chats/${d.chatId}`)} className="press flex-1 h-[48px] rounded-full grad text-[var(--on-grad)] text-[13px] font-semibold disabled:opacity-50">
+                {d.chatId ? t('Написать паре') : t('Пара ещё не писала')}
+              </button>
+              <button onClick={() => setDispute(true)} className="press px-5 h-[48px] rounded-full bg-[var(--card)] text-[12.5px] font-semibold" style={{ boxShadow: 'var(--shadow)' }}>{t('Открыть спор')}</button>
+            </div>
+            {dispute && <ComplaintSheet target="deal" targetId={d.id ?? ''} title={`${t('Сделка')}: ${d.coupleName ?? ''}`} onClose={() => setDispute(false)} />}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function VendorLead() {
   const nav = useNavigate()
   const { id } = useParams()

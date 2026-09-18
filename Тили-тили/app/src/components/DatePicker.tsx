@@ -113,7 +113,7 @@ export function DatePicker({
                 'press h-11 rounded-2xl text-[13px] font-medium tabular',
                 chosen && 'grad text-[var(--on-grad)] font-bold',
                 !chosen && !disabled && 'bg-[var(--card)]',
-                !chosen && iso === todayIso && 'ring-1 ring-[#C98A8A]',
+                !chosen && iso === todayIso && 'ring-1 ring-[var(--rose)]',
                 disabled && 'text-[var(--soft2)] opacity-40',
               )}
             >

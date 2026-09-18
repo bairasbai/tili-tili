@@ -7,7 +7,7 @@ import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
@@ -66,6 +66,10 @@ export function WeddingTeam() {
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
   const budget = useApi(() => weddingId ? getBudget(weddingId) : noWedding(), [weddingId])
+  /* Дефицит категории и блокирующий слот (§3.14 п. 1–2) — с сервера: подсказка
+     о пустом слоте ниже берёт их первыми, общее «подобрать свободных» — когда
+     сервер поводов не назвал. */
+  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : noWedding(), [weddingId])
   /* Ноль здесь — «итог не задан», а не сумма: полоса «от нуля» была бы
      процентом от неизвестного (R-178, ревью D2-09). */
   const budgetTotal = budget.data?.total?.amount ?? 0
@@ -121,6 +125,8 @@ export function WeddingTeam() {
             константой, и не обещает дату 14.06, которой у этой пары может не
             быть. Когда пустых слотов нет — подсказки тоже нет. */}
         {(() => {
+          const urgent = (tipsQ.data?.items ?? []).find(x => x.kind === 'deficit' || x.kind === 'blocking_slot')
+          if (urgent) return <div className="mt-4"><AiTip text={`${urgent.title}. ${urgent.body}`} onPress={() => nav(urgent.link ?? '/search')} /></div>
           const empty = slots.filter(s => s.state === 'empty')
           if (!empty.length) return null
           const names = empty.slice(0, 2).map(s => `«${t(s.label)}»`).join(t(' и '))
@@ -431,6 +437,7 @@ export function Budget() {
    * расходится с тем, что реально ушло подрядчикам.
    */
   const q = useApi(() => weddingId ? getBudget(weddingId) : noWedding(), [weddingId])
+  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : noWedding(), [weddingId])
   const server = q.data
   /*
    * Общий бюджет может быть не задан: квиз с «пока не знаем» оставляет
@@ -586,11 +593,12 @@ export function Budget() {
             до 1 марта» — текст с процентом и датой, не связанными ни с чем.
             Показываем только когда есть о чём говорить: категория, которая
             реально подошла к своему лимиту. */}
-        {(() => {
-          const tight = cats.find(b => b.limit > 0 && b.amount / b.limit >= 0.8)
-          if (!tight) return null
-          return <div className="mt-3.5"><AiTip text={`«${tight.name}»${t(' — ')}${pct(tight.amount, tight.limit)}${t('% лимита. Проверьте, всё ли учтено, прежде чем добавлять расходы сюда.')}`} /></div>
-        })()}
+        {/* Порог и текст — с сервера (правило §3.14 п. 3, 85 % плана): раньше
+            экран считал свои 80 % по загруженной странице, и главная с бюджетом
+            могли назвать разные проценты. */}
+        {(tipsQ.data?.items ?? []).filter(x => x.kind === 'budget').slice(0, 1).map(x => (
+          <div key={x.categoryId ?? x.title} className="mt-3.5"><AiTip text={`${x.title}. ${x.body}`} /></div>
+        ))}
 
         {/*
           * Блок «оплачено · предстоит · резерв» убран.
