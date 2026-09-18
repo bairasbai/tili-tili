@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.39.0).
- * Операций: 174. Путей: 129. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.40.0).
+ * Операций: 175. Путей: 130. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -185,6 +185,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PUT","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Заменить тайминг целиком","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/timeline/autogen","url":"/weddings/:weddingId/timeline/autogen","operationId":null,"summary":"Автоплан дня по забронированной команде","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/timeline/shift","url":"/weddings/:weddingId/timeline/shift","operationId":null,"summary":"Сдвинуть день X на N минут","tag":"timeline"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/tips","url":"/weddings/:weddingId/tips","operationId":null,"summary":"Подсказки Тиля по правилам (Бизнес-логика §3.14)","tag":"wedding"},
   {"method":"GET","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Список желаний пары","tag":"wishlist"},
   {"method":"POST","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Добавить желание","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/wishlist/{giftId}","url":"/weddings/:weddingId/wishlist/:giftId","operationId":null,"summary":"Удалить желание","tag":"wishlist"},

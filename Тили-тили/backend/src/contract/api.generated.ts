@@ -1675,6 +1675,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/tips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Подсказки Тиля по правилам (Бизнес-логика §3.14)
+         * @description Три правила, считаются на сервере из данных свадьбы: дефицит категории
+         *     (слот без брони, до свадьбы < 8 месяцев, свободных на дату анкет в городе
+         *     ≤ 6), блокирующий слот (блок тайминга из шаблона зависит от пустого слота),
+         *     лимит бюджета (категория обещана больше чем на 85 % плана). Пустой список —
+         *     поводов нет. Внутри суммы — только паре (матрица §6). До 2026-09-18 правила
+         *     жили на клиенте: порог 80 % по загруженной странице, остальных не было.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["Tip"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/budget/items": {
         parameters: {
             query?: never;
@@ -3211,6 +3262,20 @@ export interface paths {
                                 packageName?: string | null;
                                 /** @enum {string} */
                                 state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
+                                /** @description внесено платежами (те же `payments`, что видит пара; возвраты с минусом) — карточка сделки, План §8.2 */
+                                paid?: components["schemas"]["Money"];
+                                /** @description чат с парой этой свадьбы (`kind: vendor`); null — пара ещё не писала */
+                                chatId?: string | null;
+                                /** @description последняя редакция договора по сделке — только заголовок, без полей сторон */
+                                contract?: {
+                                    id?: string;
+                                    templateCode?: string;
+                                    version?: number;
+                                    /** @enum {string} */
+                                    status?: "draft" | "sent" | "signed";
+                                    /** Format: date-time */
+                                    createdAt?: string;
+                                } | null;
                                 /** Format: date-time */
                                 holdUntil?: string | null;
                                 /**
@@ -7994,6 +8059,8 @@ export interface components {
             icon?: string;
             /** @description опубликованных анкет: в городе `city`, если он передан, иначе по всей базе */
             vendorsCount?: number;
+            /** @description одна строка: что делает подрядчик и что у него спросить (миграция 39, план бэкенда §8.5) */
+            description?: string | null;
         };
         Vendor: {
             id?: string;
@@ -8069,6 +8136,16 @@ export interface components {
              *     и не снимается; мастер анкеты не публикует без него.
              */
             mediaRights?: boolean;
+            /**
+             * @description Заполненность анкеты (План §8.2) — только владельцу. Одно правило
+             *     на кабинет и панель (`vendor/completeness.ts`): четыре поля —
+             *     о себе, телефон, цена «от», пакеты; фотографии не считаются до
+             *     хранилища (№3). `missing` — чего не хватает, для подсказки.
+             */
+            completeness?: {
+                pct: number;
+                missing: ("about" | "phone" | "priceFrom" | "packages")[];
+            };
             /** @description Ссылки на фотографии — совместимость с прежней формой ответа. */
             gallery?: string[];
             media?: {
@@ -8198,6 +8275,16 @@ export interface components {
                 live?: string | null;
                 items?: components["schemas"]["BudgetItem"][];
             }[];
+        };
+        /** @description Подсказка по правилу §3.14; `link` — куда ведёт (экран поиска категории или бюджет). */
+        Tip: {
+            /** @enum {string} */
+            kind: "deficit" | "blocking_slot" | "budget";
+            title: string;
+            body: string;
+            /** @example /search/florist */
+            link: string;
+            categoryId?: string | null;
         };
         BudgetItem: {
             id?: string;

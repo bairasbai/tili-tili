@@ -107,8 +107,8 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
        * до этого число либо выдумывалось, либо не показывалось. С `city` —
        * по точному имени города, как якорь выдачи (радиус здесь ни к чему:
        * это довод, а не фильтр); без него — по всей базе. */
-      const { rows } = await db().query<{ id: string; name: string; icon: string | null; tile: string | null; vendors: string }>(
-        `select k.id, k.name, k.icon, k.tile,
+      const { rows } = await db().query<{ id: string; name: string; icon: string | null; tile: string | null; description: string | null; vendors: string }>(
+        `select k.id, k.name, k.icon, k.tile, k.description,
                 (select count(*)::text from vendors v ${VENDOR_LIVE_JOIN}
                    left join cities c on c.id = v.city_id
                   where v.category_id = k.id and v.published_at is not null
@@ -116,7 +116,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
            from categories k order by k.sort, k.name`,
         [city ?? null],
       )
-      return rows.map((r) => ({ id: r.id, title: r.name, icon: r.icon, tile: r.tile, vendorsCount: Number(r.vendors) }))
+      return rows.map((r) => ({ id: r.id, title: r.name, icon: r.icon, tile: r.tile, description: r.description, vendorsCount: Number(r.vendors) }))
     },
   )
 

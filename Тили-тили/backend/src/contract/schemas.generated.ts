@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 64. */
+ * Схем: 65. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -455,6 +455,13 @@ export const CONTRACT_SCHEMAS = {
               "vendorsCount": {
                   "type": "integer",
                   "description": "опубликованных анкет: в городе `city`, если он передан, иначе по всей базе"
+              },
+              "description": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "одна строка: что делает подрядчик и что у него спросить (миграция 39, план бэкенда §8.5)"
               }
           }
       },
@@ -1857,6 +1864,41 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "Tip": {
+          "type": "object",
+          "description": "Подсказка по правилу §3.14; `link` — куда ведёт (экран поиска категории или бюджет).",
+          "required": [
+              "kind",
+              "title",
+              "body",
+              "link"
+          ],
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "deficit",
+                      "blocking_slot",
+                      "budget"
+                  ]
+              },
+              "title": {
+                  "type": "string"
+              },
+              "body": {
+                  "type": "string"
+              },
+              "link": {
+                  "type": "string"
+              },
+              "categoryId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
       "User": {
           "type": "object",
           "properties": {
@@ -2075,6 +2117,33 @@ export const CONTRACT_SCHEMAS = {
                       "mediaRights": {
                           "type": "boolean",
                           "description": "Подрядчик подтвердил права на фото и видео портфолио и согласие\nснятых на публикацию (152-ФЗ, план бэкенда §7). Только владельцу.\nСтавится один раз через `mediaRights: true` в `PUT /vendor/profile`\nи не снимается; мастер анкеты не публикует без него.\n"
+                      },
+                      "completeness": {
+                          "type": "object",
+                          "description": "Заполненность анкеты (План §8.2) — только владельцу. Одно правило\nна кабинет и панель (`vendor/completeness.ts`): четыре поля —\nо себе, телефон, цена «от», пакеты; фотографии не считаются до\nхранилища (№3). `missing` — чего не хватает, для подсказки.\n",
+                          "required": [
+                              "pct",
+                              "missing"
+                          ],
+                          "properties": {
+                              "pct": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                              },
+                              "missing": {
+                                  "type": "array",
+                                  "items": {
+                                      "type": "string",
+                                      "enum": [
+                                          "about",
+                                          "phone",
+                                          "priceFrom",
+                                          "packages"
+                                      ]
+                                  }
+                              }
+                          }
                       },
                       "gallery": {
                           "type": "array",
@@ -2671,6 +2740,7 @@ export type ContractSchemaName =
   | "Table"
   | "Task"
   | "TimelineEvent"
+  | "Tip"
   | "User"
   | "UserProfile"
   | "Vendor"

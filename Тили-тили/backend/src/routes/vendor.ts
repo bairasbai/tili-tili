@@ -4,6 +4,7 @@ import { uuidv7 } from '../ids.js'
 import { holdDatesOf } from '../catalog/holds.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
+import { profileCompleteness } from '../vendor/completeness.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 export const MAX_VIDEO_SECONDS = 180
@@ -99,6 +100,14 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       /* Подтверждение прав на портфолио (152-ФЗ, план §7) — только владельцу:
          мастер по нему решает, показывать ли галочку заново. */
       mediaRights: state[0]!.media_rights_at !== null,
+      /* Заполненность — одним правилом с панелью (`vendor/completeness.ts`):
+         кабинет считал своё на клиенте, и одна анкета получала два процента. */
+      completeness: profileCompleteness({
+        about: rows[0]!.about,
+        phone: detail.phone ?? null,
+        priceFrom: detail.priceFrom?.amount ?? null,
+        packagesCount: detail.packages.length,
+      }),
     }
   }
 

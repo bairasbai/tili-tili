@@ -241,12 +241,21 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       hold_alive: boolean
       package_name: string | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
+      chat_id: string | null
+      contract: { id: string; templateCode: string; version: number; status: string; createdAt: string } | null
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
               d.price::text as price, d.currency, d.state, d.negotiating_until,
               ${PAID_SUM}::text as paid,
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
               pkg.name as package_name,
+              /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
+              (select c.id from chats c where c.kind = 'vendor' and c.wedding_id = d.wedding_id and c.vendor_id = d.vendor_id) as chat_id,
+              /* Последняя редакция договора по сделке — только заголовок:
+                 состав полей (паспорта сторон) подрядчику из списка не отдаём. */
+              (select json_build_object('id', doc.id, 'templateCode', doc.template_code, 'version', doc.version,
+                                        'status', doc.status, 'createdAt', doc.created_at)
+                 from documents doc where doc.deal_id = d.id order by doc.version desc, doc.created_at desc limit 1) as contract,
               coalesce((select json_agg(json_build_object(
                           'id', r.id, 'name', r.name, 'from', r.pickup, 'time', left(r.departs::text, 5),
                           'seats', r.seats, 'taken', r.taken)
@@ -285,6 +294,12 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         // Что именно продано: пакет с витрины; снятый пакет — null честно (FK SET NULL).
         packageName: r.package_name,
         state: r.state,
+        /* Карточка сделки (План §8.2): отметки оплат — те же `payments`, что у
+           пары; чат с парой и заголовок договора — чтобы с карточки было куда
+           идти. До сверки планов 2026-09-18 строка списка не открывалась вовсе. */
+        paid: { amount: Number(r.paid), currency: r.currency },
+        chatId: r.chat_id,
+        contract: r.contract,
         /* Срок брони показывается, только пока он не вышел: истёкший снимает
          * ленивый путь на стороне пары и ежечасная задача, а кабинет до этого
          * часа писал «держим до <прошедшее время>» (D5-26б, R-178). */

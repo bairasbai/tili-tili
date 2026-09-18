@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.39.0
+  version: 0.40.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -957,6 +957,34 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Budget' }
+  /weddings/{weddingId}/tips:
+    get:
+      tags: [wedding]
+      summary: Подсказки Тиля по правилам (Бизнес-логика §3.14)
+      description: |
+        Три правила, считаются на сервере из данных свадьбы: дефицит категории
+        (слот без брони, до свадьбы < 8 месяцев, свободных на дату анкет в городе
+        ≤ 6), блокирующий слот (блок тайминга из шаблона зависит от пустого слота),
+        лимит бюджета (категория обещана больше чем на 85 % плана). Пустой список —
+        поводов нет. Внутри суммы — только паре (матрица §6). До 2026-09-18 правила
+        жили на клиенте: порог 80 % по загруженной странице, остальных не было.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Tip' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /weddings/{weddingId}/budget/items:
     post:
       tags: [budget]
@@ -1811,6 +1839,23 @@ paths:
                           nullable: true
                           description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
+                        paid:
+                          allOf: [{ $ref: '#/components/schemas/Money' }]
+                          description: 'внесено платежами (те же `payments`, что видит пара; возвраты с минусом) — карточка сделки, План §8.2'
+                        chatId:
+                          type: string
+                          nullable: true
+                          description: 'чат с парой этой свадьбы (`kind: vendor`); null — пара ещё не писала'
+                        contract:
+                          type: object
+                          nullable: true
+                          description: 'последняя редакция договора по сделке — только заголовок, без полей сторон'
+                          properties:
+                            id: { type: string }
+                            templateCode: { type: string }
+                            version: { type: integer }
+                            status: { type: string, enum: [draft, sent, signed] }
+                            createdAt: { type: string, format: date-time }
                         holdUntil: { type: string, format: date-time, nullable: true }
                         busRoutes:
                           type: array
@@ -4429,6 +4474,10 @@ components:
         vendorsCount:
           type: integer
           description: 'опубликованных анкет: в городе `city`, если он передан, иначе по всей базе'
+        description:
+          type: string
+          nullable: true
+          description: 'одна строка: что делает подрядчик и что у него спросить (миграция 39, план бэкенда §8.5)'
     Vendor:
       type: object
       properties:
@@ -4516,6 +4565,19 @@ components:
                 снятых на публикацию (152-ФЗ, план бэкенда §7). Только владельцу.
                 Ставится один раз через `mediaRights: true` в `PUT /vendor/profile`
                 и не снимается; мастер анкеты не публикует без него.
+            completeness:
+              type: object
+              description: |
+                Заполненность анкеты (План §8.2) — только владельцу. Одно правило
+                на кабинет и панель (`vendor/completeness.ts`): четыре поля —
+                о себе, телефон, цена «от», пакеты; фотографии не считаются до
+                хранилища (№3). `missing` — чего не хватает, для подсказки.
+              required: [pct, missing]
+              properties:
+                pct: { type: integer, minimum: 0, maximum: 100 }
+                missing:
+                  type: array
+                  items: { type: string, enum: [about, phone, priceFrom, packages] }
             gallery:
               type: array
               description: Ссылки на фотографии — совместимость с прежней формой ответа.
@@ -4676,6 +4738,16 @@ components:
               items:
                 type: array
                 items: { $ref: '#/components/schemas/BudgetItem' }
+    Tip:
+      type: object
+      description: 'Подсказка по правилу §3.14; `link` — куда ведёт (экран поиска категории или бюджет).'
+      required: [kind, title, body, link]
+      properties:
+        kind: { type: string, enum: [deficit, blocking_slot, budget] }
+        title: { type: string }
+        body: { type: string }
+        link: { type: string, example: /search/florist }
+        categoryId: { type: string, nullable: true }
     BudgetItem:
       type: object
       properties:
