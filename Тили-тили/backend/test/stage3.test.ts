@@ -378,14 +378,15 @@ describe.skipIf(!live)('этап 3: каталог и анкета подряд�
     expect(badCity.statusCode).toBe(404)
   })
 
-  it('без анкеты кабинет отвечает 404, а не пустотой', async () => {
+  it('без анкеты профиль отвечает 404, остальные пути кабинета — 403, а не пустотой', async () => {
     const user = await newUser()
-    for (const url of ['/vendor/profile', '/vendor/calendar']) {
-      expect((await app.inject({ method: 'GET', url, headers: auth(user.token) })).statusCode).toBe(404)
-    }
+    /* 404 — только у профиля: по нему экран показывает «Анкеты ещё нет». Календарь
+       и публикация без анкеты — 403, как пути кабинета в `vendorCabinet.ts` (ревью 015, V15). */
+    expect((await app.inject({ method: 'GET', url: '/vendor/profile', headers: auth(user.token) })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'GET', url: '/vendor/calendar', headers: auth(user.token) })).statusCode).toBe(403)
     expect(
       (await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(user.token) })).statusCode,
-    ).toBe(404)
+    ).toBe(403)
   })
 
   /* ── фильтры ──────────────────────────────────────────────────────── */

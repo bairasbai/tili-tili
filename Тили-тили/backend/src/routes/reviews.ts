@@ -4,7 +4,7 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { isUniqueViolation } from '../plugins/db.js'
 import { guestByToken, readGuestToken } from '../guests/access.js'
 import { recomputeRating } from '../reviews/rating.js'
-import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { buildPage, encodeCursor, parsePageQuery, timestampKey } from '../pagination.js'
 import { assertVendorLive } from '../catalog/vendors.js'
 import { chatForUser } from '../chats/access.js'
 
@@ -58,8 +58,9 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
         reply: string | null
         replied_at: Date | null
         created_at: Date
+        key: string
       }>(
-        `select id, source, stars, text, reply, replied_at, created_at
+        `select id, source, stars, text, reply, replied_at, created_at, ${timestampKey('created_at')} as key
            from reviews
           where vendor_id = $1 and hidden_at is null
             and ($2 = 'all' or source = $2)
@@ -69,8 +70,10 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
         [vendorId, source, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
       )
 
-      return buildPage(
-        rows.map((r) => ({
+      // Ключ курсора — с микросекундами (`timestampKey`, ревью 015): усечённый пропускал отзывы той же миллисекунды.
+      const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.key, r.id))
+      return {
+        items: paged.items.map((r) => ({
           id: r.id,
           source: r.source,
           // Бейдж рисуется по источнику: у пары договор, у гостя впечатление.
@@ -80,9 +83,8 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
           createdAt: r.created_at.toISOString(),
           reply: r.reply ? { text: r.reply, createdAt: (r.replied_at ?? r.created_at).toISOString() } : null,
         })),
-        page.limit,
-        (r) => encodeCursor(r.createdAt, r.id),
-      )
+        nextCursor: paged.nextCursor,
+      }
     },
   )
 
@@ -109,21 +111,44 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { rating: number; text: string }
       const userId = request.caller!.userId
 
+      /* Подрядчика нет вовсе — 404; есть, но права на отзыв нет — 403 ниже.
+       * До ревью 015 несуществующий id тоже получал 403 «только по
+       * завершённой сделке» — про сделку с тем, кого нет. Публикация не
+       * требуется: анкету могли снять после свадьбы, а работа была. */
+      const { rows: vendor } = await db().query('select 1 from vendors where id = $1', [vendorId])
+      if (vendor.length === 0) throw notFound('Подрядчик не найден')
+
       /* Право на отзыв — это завершённая сделка, а не желание высказаться.
        * Ищем её сразу с проверкой окна: «отзыв через год» — это уже
-       * не впечатление, а сведение счётов (§18.2). */
+       * не впечатление, а сведение счётов (§18.2).
+       *
+       * Берётся свежайшая завершённая сделка БЕЗ отзыва: у фотографа с двумя
+       * слотами (фото + видео) вторая `done`-сделка иначе упиралась в 409
+       * «отзыв уже оставлен» по первой, хотя по ней отзыва нет (ревью 015). */
       const { rows } = await db().query<{ id: string; wedding_id: string; too_late: boolean }>(
         `select d.id, d.wedding_id,
                 (coalesce(d.done_at, d.created_at) < now() - make_interval(days => $3)) as too_late
            from deals d
            join wedding_members m on m.wedding_id = d.wedding_id
           where d.vendor_id = $1 and m.user_id = $2 and m.role = 'couple' and d.state = 'done'
+            and not exists (select 1 from reviews r where r.deal_id = d.id)
           order by coalesce(d.done_at, d.created_at) desc limit 1`,
         [vendorId, userId, REVIEW_WINDOW_DAYS],
       )
       const deal = rows[0]
-      // 403, а не 404: подрядчик существует, права на отзыв нет.
-      if (!deal) throw forbidden('Отзыв можно оставить только по завершённой сделке')
+      /* 403, а не 404: подрядчик существует, права на отзыв нет. Сделка есть,
+       * но отзыв по ней уже оставлен — 409, как и при гонке двух отправок. */
+      if (!deal) {
+        const { rows: reviewed } = await db().query(
+          `select 1 from deals d
+             join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $2 and m.role = 'couple'
+            where d.vendor_id = $1 and d.state = 'done' and exists (select 1 from reviews r where r.deal_id = d.id)
+            limit 1`,
+          [vendorId, userId],
+        )
+        if (reviewed.length > 0) throw conflict('review_exists', 'По этой сделке отзыв уже оставлен')
+        throw forbidden('Отзыв можно оставить только по завершённой сделке')
+      }
       if (deal.too_late) {
         throw forbidden(`Отзыв принимается ${REVIEW_WINDOW_DAYS} дней после завершения сделки`)
       }
@@ -263,10 +288,17 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
        * идентификаторам и чужие сделки, к которым жалобщик доступа не имеет
        * (D5-21). Сторона сделки — участник её свадьбы или её подрядчик:
        * «пара не пришла» жалуется подрядчик, «подрядчик пропал» — пара. */
-      const targetTable = { vendor: 'vendors', review: 'reviews', message: 'messages', deal: 'deals' }[
-        body.targetKind
-      ]!
-      const { rows: target } = await db().query(`select 1 from ${targetTable} where id = $1`, [body.targetId])
+      /* Анкета — только опубликованная, отзыв — только не скрытый: жалуются
+       * на то, что видно. Иначе по коду ответа (404 или 201) перебором
+       * узнавали бы, существует ли чужой черновик или скрытый модератором
+       * отзыв (ревью 015, тот же класс, что 404 на чужой черновик в каталоге). */
+      const targetSql = {
+        vendor: 'select 1 from vendors where id = $1 and published_at is not null',
+        review: 'select 1 from reviews where id = $1 and hidden_at is null',
+        message: 'select 1 from messages where id = $1',
+        deal: 'select 1 from deals where id = $1',
+      }[body.targetKind]!
+      const { rows: target } = await db().query(targetSql, [body.targetId])
       if (target.length === 0) throw notFound('Объект жалобы не найден')
       if (body.targetKind === 'deal') {
         const { rows: party } = await db().query(

@@ -384,6 +384,12 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     const guest = await guestByToken(db(), guestToken)
 
     const body = await db().tx(async (client) => {
+      /* Строка гостя под замком — ПЕРВОЙ: предел резервов на гостя ниже
+       * считается «прочитали — сравнили — записали», и два одновременных
+       * резерва РАЗНЫХ подарков одним гостем оба видели «два из трёх» и оба
+       * проходили (R-49; ревью 015, D10). Порядок «гость → подарок» — как у
+       * автобуса и отеля: гость, потом строки, за которые он садится. */
+      await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
       const { rows } = await client.query<{ funded: string; price: string }>(
         'select funded::text as funded, price::text as price from gifts where id = $1 and wedding_id = $2 for update',
         [giftId, guest.weddingId],

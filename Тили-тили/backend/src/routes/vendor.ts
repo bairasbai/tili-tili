@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound } from '../errors.js'
+import { AppError, conflict, notFound, forbidden } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { holdDatesOf } from '../catalog/holds.js'
 import { assertRealDate } from '../wedding/dates.js'
@@ -50,6 +50,20 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
   const myVendorId = async (userId: string): Promise<string | null> => {
     const { rows } = await db().query<{ id: string }>('select id from vendors where user_id = $1', [userId])
     return rows[0]?.id ?? null
+  }
+
+  /**
+   * Анкета обязательна — иначе 403, как у путей кабинета (`vendorCabinet.ts`).
+   *
+   * Только `GET /vendor/profile` отвечает 404: по нему экран отличает «анкеты
+   * ещё нет» от поломки (`VendorApp`, `noProfile`). Публикация, календарь и
+   * занятость до ревью 015 отвечали тем же 404 — «адреса нет» на путь
+   * контракта (§5.10), и кабинет с двумя кодами на одно и то же.
+   */
+  const requireVendorId = async (userId: string): Promise<string> => {
+    const id = await myVendorId(userId)
+    if (!id) throw forbidden('Кабинет доступен только подрядчику с анкетой')
+    return id
   }
 
   const loadMine = async (vendorId: string) => {
@@ -278,8 +292,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── публикация ───────────────────────────────────────────────────── */
   app.post('/vendor/profile/publish', { preHandler: app.requireConsent }, async (request) => {
-    const vendorId = await myVendorId(request.caller!.userId)
-    if (!vendorId) throw notFound('Анкета ещё не создана')
+    const vendorId = await requireVendorId(request.caller!.userId)
 
     /* Автопубликация с пост-модерацией (План §19.2): анкета попадает в выдачу
      * сразу. Держать её в очереди значит терять подрядчика, который пришёл
@@ -328,8 +341,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (request) => {
-      const vendorId = await myVendorId(request.caller!.userId)
-      if (!vendorId) throw notFound('Анкета ещё не создана')
+      const vendorId = await requireVendorId(request.caller!.userId)
       const { month } = request.query as { month?: string }
 
       const conditions = ['vendor_id = $1']
@@ -386,8 +398,7 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (request, reply) => {
-      const vendorId = await myVendorId(request.caller!.userId)
-      if (!vendorId) throw notFound('Анкета ещё не создана')
+      const vendorId = await requireVendorId(request.caller!.userId)
       const { dates, status } = request.body as { dates: string[]; status: 'free' | 'busy' }
       // Шаблон пропускает 30 февраля, а PostgreSQL на такой дате падает.
       for (const date of dates) assertRealDate(date, 'dates')

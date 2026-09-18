@@ -402,39 +402,44 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * Раньше здесь менялась только колонка: подрядчик оставался занят
        * на дне, которого больше нет, а на настоящий день свадьбы у него
        * в календаре было пусто — и эту дату успевала занять другая пара.
-       * Теперь обе двери в это поле ведут в один и тот же перенос. */
-      if (body.date !== undefined) {
-        await db().tx((client) => rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId))
-      }
-
-      await db().query(
-        `update weddings set
-           date = coalesce($2::date, date), city_id = coalesce($3, city_id),
-           budget_total = coalesce($4::bigint, budget_total), guests_planned = coalesce($5, guests_planned),
-           style = coalesce($6, style), venue = coalesce($7, venue),
-           tz = coalesce($8, $11, tz),
-           invite_text = coalesce($9, invite_text), invite_theme_id = coalesce($10, invite_theme_id),
-           dress_code = case when $14::boolean then $12::text else dress_code end,
-           dress_note = case when $15::boolean then $13::text else dress_note end
-         where id = $1`,
-        [
-          weddingId,
-          (body.date as string) ?? null,
-          cityId,
-          body.budgetTotal?.amount ?? null,
-          (body.guestsPlanned as number) ?? null,
-          (body.style as string) ?? null,
-          (body.venue as string) ?? null,
-          (body.tz as string) ?? null,
-          (body.inviteText as string) ?? null,
-          (body.inviteThemeId as number) ?? null,
-          cityTz,
-          (body.dressCode as string | null) ?? null,
-          (body.dressNote as string | null) ?? null,
-          has('dressCode'),
-          has('dressNote'),
-        ],
-      )
+       * Теперь обе двери в это поле ведут в один и тот же перенос.
+       *
+       * Перенос и остальные поля — одна транзакция, и дату пишет только
+       * перенос: до ревью 015 колонка `date` писалась второй раз отдельным
+       * запросом, уже без замка свадьбы, — перенос с другого устройства
+       * между ними затирался старой датой при сдвинутых задачах (D8). */
+      await db().tx(async (client) => {
+        if (body.date !== undefined) {
+          await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId)
+        }
+        await client.query(
+          `update weddings set
+             city_id = coalesce($2, city_id),
+             budget_total = coalesce($3::bigint, budget_total), guests_planned = coalesce($4, guests_planned),
+             style = coalesce($5, style), venue = coalesce($6, venue),
+             tz = coalesce($7, $10, tz),
+             invite_text = coalesce($8, invite_text), invite_theme_id = coalesce($9, invite_theme_id),
+             dress_code = case when $13::boolean then $11::text else dress_code end,
+             dress_note = case when $14::boolean then $12::text else dress_note end
+           where id = $1`,
+          [
+            weddingId,
+            cityId,
+            body.budgetTotal?.amount ?? null,
+            (body.guestsPlanned as number) ?? null,
+            (body.style as string) ?? null,
+            (body.venue as string) ?? null,
+            (body.tz as string) ?? null,
+            (body.inviteText as string) ?? null,
+            (body.inviteThemeId as number) ?? null,
+            cityTz,
+            (body.dressCode as string | null) ?? null,
+            (body.dressNote as string | null) ?? null,
+            has('dressCode'),
+            has('dressNote'),
+          ],
+        )
+      })
       return loadWedding(weddingId, request.member!.role)
     },
   )

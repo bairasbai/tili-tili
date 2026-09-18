@@ -2,9 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { ref } from '../contract/schemas.generated.js'
 import { AppError, conflict, forbidden, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
-import { notify } from '../notify/notify.js'
-import { rolesSeeing } from '../chats/access.js'
 import { PAID_SUM } from '../deals/repo.js'
+import { sendChatMessage } from '../chats/post.js'
 import { isUniqueViolation } from '../plugins/db.js'
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
@@ -209,44 +208,17 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       )
 
       /* Ответ подрядчика — сообщение в общий чат, а не отдельная сущность.
-       * Иначе у переписки два места хранения и два порядка сортировки. */
+       * Иначе у переписки два места хранения и два порядка сортировки.
+       *
+       * Той же дверью, что `POST /chats/{id}/messages` (`sendChatMessage`):
+       * прямая вставка здесь обходила блокировку модератора, предел холодных
+       * обращений непроверенного подрядчика, модерацию ссылки в первом
+       * сообщении и сторож §18.2, а уведомление собирала своим списком
+       * (ERR-0107 → ревью 015). Состояние заявки уже записано выше — отказ
+       * сторожа (403/429) откатит только текст, и это честно: заявка
+       * переведена, а писать паре подрядчик права не имеет. */
       if (body.text && chatId) {
-        await db().query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,$3,$4)', [
-          uuidv7(),
-          chatId,
-          request.caller!.userId,
-          body.text,
-        ])
-        await app.realtime.publish({ chatId, type: 'message', actorId: request.caller!.userId })
-
-        /* И уведомление — тоже как у обычного сообщения.
-         *
-         * Ответ из кабинета лидов писал в тот же чат, но никого не звал:
-         * живой канал доходит только до того, у кого чат открыт прямо
-         * сейчас, а пара узнавала об ответе, лишь заглянув туда сама. Один
-         * и тот же поступок через два входа давал разный результат — при
-         * том, что комментарий выше объясняет, зачем переписка сведена
-         * в одно место (ERR-0107).
-         *
-         * Получатели — по матрице видимости, а не все участники: помощник
-         * чат с подрядчиком не открывает (ERR-0099). */
-        const { rows: members } = await db().query<{ user_id: string }>(
-          'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
-          [found[0]!.wedding_id, rolesSeeing('vendor')],
-        )
-        // Тихие часы по поясу свадьбы, если у получателя свой не задан (RF-BE-04).
-        const { rows: tzRow } = await db().query<{ tz: string | null }>('select tz from weddings where id = $1', [
-          found[0]!.wedding_id,
-        ])
-        for (const m of members) {
-          await notify(db(), {
-            userId: m.user_id,
-            kind: 'chat',
-            title: 'Новое сообщение',
-            body: body.text.length > 120 ? `${body.text.slice(0, 119)}…` : body.text,
-            link: `/chats/${chatId}`,
-          }, new Date(), tzRow[0]?.tz ?? null)
-        }
+        await sendChatMessage(app, { chatId, userId: request.caller!.userId, text: body.text })
       }
       return toLead(rows[0]!)
     },

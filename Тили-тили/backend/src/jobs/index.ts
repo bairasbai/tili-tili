@@ -36,6 +36,13 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
   }
   await drop('otp_codes', 'delete from otp_codes where expires_at < now()')
   await drop('idempotency_keys', "delete from idempotency_keys where created_at < now() - interval '1 day'")
+  /* Сессия без обновления дольше срока refresh (30 дней) мертва — гасим,
+   * чтобы она не жила в списке устройств вечно (ревью 015); погашенные
+   * старше 90 дней удаляются. */
+  await drop(
+    'sessions_expired',
+    "update sessions set revoked_at = now() where revoked_at is null and last_used_at < now() - interval '30 days'",
+  )
   await drop(
     'sessions',
     "delete from sessions where revoked_at is not null and revoked_at < now() - interval '90 days'",
@@ -201,12 +208,18 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
  * тем же путём и заводит аккаунт заново.
  */
 export async function eraseUser(client: Queryable, id: string): Promise<void> {
+  /* Наследник — живой партнёр, а если такого нет — партнёр, мягко удалённый
+   * в своём 30-дневном окне: он ещё может вернуться входом (`auth.ts`), и
+   * свадьба должна дождаться его, а не уйти каскадом вместе с первым
+   * стёртым (ревью 015). Не вернётся — уборка дойдёт и до него, и тогда
+   * свадьба уйдёт с ним, как положено. */
   await client.query(
     `update weddings w set owner_id = heir.user_id
        from (select distinct on (m.wedding_id) m.wedding_id, m.user_id
                from wedding_members m join users u on u.id = m.user_id
-              where m.role = 'couple' and m.user_id <> $1 and u.deleted_at is null
-              order by m.wedding_id, m.joined_at) heir
+              where m.role = 'couple' and m.user_id <> $1
+                and (u.deleted_at is null or u.deleted_at > now() - interval '30 days')
+              order by m.wedding_id, (u.deleted_at is not null), m.joined_at) heir
       where w.owner_id = $1 and heir.wedding_id = w.id`,
     [id],
   )
@@ -289,7 +302,7 @@ export async function announceOpenedDayChats(app: FastifyInstance): Promise<numb
       notifyWedding(db, chat.wedding_id, null, {
         kind: 'system',
         title: 'Чат дня X открыт',
-        body: 'Команда теперь на связи — можно писать; гости в этот чат не заходят',
+        body: 'Команда теперь на связи — можно писать; гости пишут в него по своей ссылке',
         link: `/chats/${chat.id}`,
         // День X критичен: тихие часы его не держат.
         critical: true,

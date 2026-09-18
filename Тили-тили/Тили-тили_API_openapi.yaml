@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.37.0
+  version: 0.38.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -108,8 +108,11 @@ paths:
         при входе тем же номером восстанавливается: `deleted_at` снимается,
         в журнал аудита пишется `user.restored`, данные на месте. Отозванное
         при удалении согласие даётся заново — ответ несёт `consentRequired`
-        как у нового аккаунта. Старше 30 дней строка уже стёрта уборкой, и
-        вход заводит новый аккаунт (фича 005, В2).
+        как у нового аккаунта. Старше 30 дней строка стирается при входе (или
+        уборкой раньше), и вход заводит новый аккаунт (фичи 005/014). Код
+        сверяется со всеми живыми кодами номера: чужой запрос кода на ваш
+        номер ваш код не отменяет; попытки считаются, после пяти неверных —
+        429 (ревью 015).
       requestBody:
         required: true
         content:
@@ -778,7 +781,7 @@ paths:
   /weddings/{weddingId}/slots:
     get:
       tags: [bookings]
-      summary: "Слоты команды: 12 из шаблона (площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) плюс добавленные парой"
+      summary: "Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца) плюс добавленные парой"
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       responses:
@@ -896,6 +899,12 @@ paths:
         Идемпотентно по `Idempotency-Key`. Статус → «Оплачено полностью».
         Эквайринга в MVP нет (План §3.2): запись в `payments` фиксирует факт,
         деньги ходят между парой и подрядчиком напрямую.
+
+        Без `amount` записывается ОСТАТОК — цена минус уже оплаченное (возвраты
+        с минусом, отменённые записи не считаются — та же формула, что `Deal.paid`);
+        сделка, оплаченная целиком, — 409 `overpay`. Сумма сверх остатка — 409
+        `overpay`; ноль — 422 `bad_amount`; сделка без цены — 409 `no_price`
+        (ревью 015).
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -916,7 +925,7 @@ paths:
             schema:
               type: object
               properties:
-                amount: { $ref: '#/components/schemas/Money' }  # description: 'пусто = полная сумма'
+                amount: { $ref: '#/components/schemas/Money' }  # description: 'пусто = остаток до цены'
       responses:
         '200':
           description: OK
@@ -924,6 +933,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   # ───────────────────────── BUDGET ─────────────────────────
   /weddings/{weddingId}/budget:
@@ -1282,7 +1292,10 @@ paths:
                   skippedNoPhone: { type: integer, description: 'не ответили, но телефона нет' }
                   skippedLinkUsed:
                     type: integer
-                    description: 'не ответили, но личная ссылка уже открыта — им ссылку выдают поштучно'
+                    description: 'не ответили, но живой личной ссылки нет — открыта или не выдавалась; им ссылку выдают поштучно'
+                  failed:
+                    type: integer
+                    description: 'телефон и ссылка есть, а SMS не ушла: отказ провайдера или предел рассылки (300 за нажатие; остальные — в следующие сутки)'
         '403': { $ref: '#/components/responses/Forbidden' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /weddings/{weddingId}/guests/{guestId}/invite-link:
@@ -1323,8 +1336,10 @@ paths:
       summary: Обменять одноразовый код на персональный токен гостя
       description: >
         Вызывается браузером гостя при переходе по ссылке. Код гасится в этот момент.
-        Токен возвращается один раз и дальше живёт в localStorage гостя; повторный вызов
-        с тем же кодом отдаёт 410.
+        Токен возвращается один раз и дальше живёт в localStorage гостя. Повторный вызов
+        с тем же кодом в течение 10 минут после первого отдаёт тот же токен (ответ мог не
+        дойти по мобильной сети — D3-07), позже — 410; 410 также у истёкшего и
+        перевыпущенного парой кода и у кода отменённой или убранной свадьбы.
       parameters:
         - { name: shareCode, in: path, required: true, schema: { type: string } }
       responses:
@@ -1569,6 +1584,9 @@ paths:
     get:
       tags: [vendor]
       summary: Моя анкета подрядчика
+      description: |
+        Анкеты ещё нет — 404: по нему кабинет показывает «Анкеты ещё нет» с кнопкой
+        заполнить. Остальные пути `/vendor/*` без анкеты отвечают 403 (ревью 015).
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1576,6 +1594,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VendorDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [vendor]
       summary: "Создать/обновить анкету (мастер: категория → пакеты → город → публикация)"
@@ -1695,9 +1714,11 @@ paths:
                   minLength: 1
                   maxLength: 4000
                   description: |
-                    Текст ответа паре — обязателен при `action=reply` (без него 422),
-                    у остальных действий не принимается. Уходит первым сообщением
-                    в чат пары с подрядчиком.
+                    Сообщение паре в чат заявки. Обязателен при `action=reply` (без него 422);
+                    при `hold`/`decline`/`reopen` — по желанию: причина отказа или холда (§3.13,
+                    R-48). Уходит той же дверью, что `POST /chats/{chatId}/messages`:
+                    заблокированному подрядчику — 403 `vendor_blocked`, непроверенному сверх
+                    предела холодных обращений — 429 `cold_outreach_limit`.
       responses:
         '200':
           description: OK
@@ -1925,8 +1946,16 @@ paths:
               properties:
                 rating: { type: integer, minimum: 1, maximum: 5 }
                 text: { type: string }
+      description: |
+        Право на отзыв — завершённая (`done`) сделка этой пары с подрядчиком, ещё без
+        отзыва и не старше 14 дней после завершения: берётся свежайшая такая
+        (у фотографа с двумя слотами — вторая сделка получает свой отзыв, ревью 015).
+        Нет ни одной — 403; все завершённые уже с отзывом — 409 `review_exists`;
+        подрядчика с таким идентификатором нет — 404.
       responses:
         '201': { description: Создан }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────── NOTIFICATIONS ─────────────────────────
@@ -2185,19 +2214,27 @@ paths:
     delete:
       tags: [bookings]
       summary: Удалить своего подрядчика
-      description: Слот возвращается в empty, выданный гостевой токен аннулируется.
+      description: |
+        Слот возвращается в empty, выданный гостевой токен аннулируется. В слоте нет
+        сделки или сделка каталожная (не свой подрядчик) — 404; выполненная работа
+        не снимается — 409 `bad_transition`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: slotId, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
   /weddings/{weddingId}/slots/{slotId}/external/invite:
     post:
       tags: [bookings]
       summary: Ссылка-приглашение для своего подрядчика
-      description: Одноразовый токен, scope guest_vendor, TTL 30 дней, привязан к слоту.
+      description: |
+        Одноразовый токен, scope guest_vendor, TTL 30 дней, привязан к слоту.
+        Только для своего подрядчика: в слоте с каталожной сделкой — 409
+        `not_external` (у каталожного есть кабинет и чат по анкете; ссылка
+        открывала бы слот и переписку постороннему — ревью 015). Пустой слот — 404.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -2213,6 +2250,8 @@ paths:
                   token: { type: string }
                   url: { type: string, example: 'https://tili-tili.ru/join/ТИЛИ-СВОЙ-S8' }
                   expiresAt: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /guest-vendor/{token}:
     get:
       tags: [bookings]
@@ -2228,9 +2267,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  weddingDate: { type: string, format: date }
+                  weddingDate: { type: string, format: date, nullable: true, description: 'пусто, пока пара не выбрала дату' }
                   slot: { $ref: '#/components/schemas/Slot' }
                   chatId: { type: string }
+                  holdHours: { type: integer, description: 'срок мягкой брони в часах (§18.3) — справочно, как у сделки' }
                   timeline:
                     type: array
                     description: >
@@ -3566,10 +3606,11 @@ paths:
                 categoryId: { type: string }
                 budget: { $ref: '#/components/schemas/Money' }
                 comment: { type: string }
-                city: { type: string, description: 'город поиска, если отличается от города свадьбы' }
+                city: { type: string, description: 'город поиска, если отличается от города свадьбы; только из справочника — иначе 422' }
       responses:
         '201': { description: Создано }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /complaints:
     post:
       tags: [moderation]
@@ -3860,6 +3901,60 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
+  /admin/concierge:
+    get:
+      tags: [admin]
+      summary: Очередь заявок консьержу
+      description: |
+        Заявки «подобрать вручную» (`POST /catalog/concierge`, План §18.12): открытые
+        (`new`, `in_progress`), старейшие сверху — обещание «свяжемся в течение суток»
+        считается от подачи. До ревью 015 заявки копились в базе, и разобрать их было
+        неоткуда. Телефон пары — в заявке: она сама попросила связаться с ней, и
+        сотрудник звонит по нему; чтение очереди пишется в журнал действий
+        (`concierge.queue.view`), как открытие документов верификации.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Limit' }, { $ref: '#/components/parameters/Cursor' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConciergePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /admin/concierge/{requestId}:
+    post:
+      tags: [admin]
+      summary: Состояние заявки консьержу
+      description: |
+        `in_progress` — взята в работу; `done` — подрядчик подобран, пара получает
+        уведомление «Консьерж подобрал варианты»; `cancelled` — снята (пара передумала
+        или не отвечает). Закрытую (`done`/`cancelled`) не открывают заново — 409
+        `concierge_closed`: новая просьба — новая заявка. Чужой или несуществующий
+        идентификатор — 404. Решение — в журнал действий (`concierge.<status>`).
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [in_progress, done, cancelled] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConciergeDecision' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /admin/categories:
     get:
       tags: [admin]
@@ -3883,8 +3978,8 @@ paths:
       description: |
         «тамада» = «ведущий», «сладкий стол» = «кондитер» (План §19.2).
         Категории добавляются и правятся, но не удаляются: на них ссылаются анкеты
-        и слоты, и исчезнувшая категория — это осиротевшая мозаика. `icon` со значением
-        `null` или пропущенный оставляет прежний значок. Словарь `synonyms` заменяется ЦЕЛИКОМ —
+        и слоты, и исчезнувшая категория — это осиротевшая мозаика. `icon` пропущенный
+        оставляет прежний значок, `null` — стирает (R-17, фича 014). Словарь `synonyms` заменяется ЦЕЛИКОМ —
         чего не прислали, того больше нет. Слово, ведущее на неизвестную категорию, —
         422 с полем `synonyms.<слово>`, и не меняется ничего.
 
@@ -5183,6 +5278,35 @@ components:
       properties:
         complaintId: { type: string }
         action: { type: string, enum: [dismiss, warn, downrank, block] }
+    ConciergeRequest:
+      type: object
+      description: 'Заявка консьержу в очереди панели: что искать, где, на какой бюджет и кому перезвонить.'
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [new, in_progress, done, cancelled] }
+        categoryId: { type: string }
+        categoryName: { type: string, description: 'название категории из справочника' }
+        city: { type: string, nullable: true, description: 'город поиска; пусто — заявка без города' }
+        budget:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          nullable: true
+        comment: { type: string, nullable: true }
+        phone:
+          type: string
+          description: 'номер входа пары — она попросила связаться; сотрудник звонит по нему'
+        name: { type: string, nullable: true, description: 'имя пары из профиля' }
+        createdAt: { type: string, format: date-time, description: 'когда подана — от неё считаются сутки' }
+    ConciergePage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ConciergeRequest' } }
+        nextCursor: { type: string, nullable: true }
+    ConciergeDecision:
+      type: object
+      description: 'Что записано по заявке консьержу.'
+      properties:
+        requestId: { type: string }
+        status: { type: string, enum: [in_progress, done, cancelled] }
     VerificationItem:
       type: object
       description: |

@@ -154,8 +154,8 @@ describe.skipIf(!live)('прод: резерв бюджета и напомин�
       headers: auth(w.token),
     })
     expect(res.statusCode).toBe(200)
-    // Один молчун с телефоном, один без телефона; ответивший не в счёт.
-    expect(res.json()).toEqual({ sent: 1, skippedNoPhone: 1, skippedLinkUsed: 0 })
+    // Один молчун с телефоном, один без телефона; ответивший не в счёт. `failed` — отказы провайдера и предел рассылки (ревью 015).
+    expect(res.json()).toEqual({ sent: 1, skippedNoPhone: 1, skippedLinkUsed: 0, failed: 0 })
   })
 
   it('гостю с уже открытой ссылкой массово не пишут — иначе он потеряет свой выбор', async () => {
@@ -172,7 +172,7 @@ describe.skipIf(!live)('прод: резерв бюджета и напомин�
       url: `/weddings/${w.weddingId}/guests/remind`,
       headers: auth(w.token),
     })
-    expect(res.json()).toEqual({ sent: 0, skippedNoPhone: 0, skippedLinkUsed: 1 })
+    expect(res.json()).toEqual({ sent: 0, skippedNoPhone: 0, skippedLinkUsed: 1, failed: 0 })
   })
 
   it('вторая рассылка в те же сутки отклоняется', async () => {

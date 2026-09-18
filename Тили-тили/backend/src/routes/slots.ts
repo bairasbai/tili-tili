@@ -5,13 +5,14 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
 import { rolesSeeing } from '../chats/access.js'
-import { openLead } from '../vendor/leads.js'
+import { openLead, releaseLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { CREATED_AT_US } from './chats.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
+  PAID_SUM,
   detachBusRoutes,
   holdVendorDate,
   loadSlot,
@@ -85,6 +86,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     await releaseVendorDate(client, dealId)
     await revokeSlotInvites(client, slotId)
     await detachBusRoutes(client, dealId)
+    // Лид подрядчика из `won` — обратно в работу (ревью 015).
+    await releaseLead(client, dealId)
   }
 
   /**
@@ -114,9 +117,16 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     return rows[0]
   }
 
+  /**
+   * Дата свадьбы для захвата у подрядчика — под замком `for share` строки
+   * свадьбы: перенос (`rescheduleWedding`) держит её `for update`, и бронь,
+   * прочитавшая дату до переноса и записавшая занятость после, занимала у
+   * подрядчика день, которого у свадьбы уже нет (ревью 015, D2). Читается
+   * до захвата слота — порядок «свадьба → остальное», как у переноса.
+   */
   async function weddingDate(client: Queryable, weddingId: string): Promise<string | null> {
     const { rows } = await client.query<{ date: string | null }>(
-      'select date::text as date from weddings where id = $1',
+      'select date::text as date from weddings where id = $1 for share',
       [weddingId],
     )
     return rows[0]?.date ?? null
@@ -220,11 +230,20 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
       return withIdempotency(db(), request, reply, 'slots.book', (tx) =>
         tx(async (client) => {
+          // Свадьба (её дата — под замком) прежде слота: порядок замков как у переноса.
+          const date = await weddingDate(client, weddingId)
           await slotOf(client, weddingId, slotId)
 
+          /* Живая анкета: опубликована и не заблокирована модератором — та же
+           * граница, что у каталога (`VENDOR_LIVE_JOIN`). Заблокированную
+           * (`block`, §18.2) каталог не показывает, а бронь по прямому
+           * идентификатору до ревью 015 проходила — и подрядчик, снятый за
+           * мошенничество, получал сделку и дату. Категорию анкеты со слотом
+           * нарочно не сверяем: фотограф, который снимает и видео, занимает
+           * два слота одной анкетой (ERR-0037) — слот выбирает пара. */
           const { rows: vendor } = await client.query<{ id: string }>(
             `select v.id from vendors v join users u on u.id = v.user_id and u.deleted_at is null
-              where v.id = $1 and v.published_at is not null`,
+              where v.id = $1 and v.published_at is not null and v.blocked_at is null`,
             [body.vendorId],
           )
           if (!vendor[0]) throw notFound('Подрядчик не найден')
@@ -278,7 +297,6 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           // Захват даты — в той же транзакции. Вторая пара упирается
           // в первичный ключ (vendor_id, date) и получает 409, а не «обе
           // забронировали одного фотографа на 14 июня».
-          const date = await weddingDate(client, weddingId)
           if (date) await holdVendorDate(client, body.vendorId, date, dealId, weddingId)
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
@@ -345,15 +363,26 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
             throw conflict('no_price', 'У сделки не указана цена — сначала договоритесь о сумме')
           }
 
-          const amount = body.amount?.amount ?? price
-          if (amount <= 0) throw new AppError(422, 'bad_amount', 'Сумма оплаты должна быть больше нуля')
-
+          /* «Оплачено» — та же формула, что видят пара и подрядчик (`PAID_SUM`):
+           * возврат с минусом, отменённая запись не считается. До ревью 015
+           * возвраты здесь не вычитались, и после возврата аванса доплатить
+           * остаток было нельзя — «переплата» при пустом счёте (D9). */
           const { rows: paid } = await client.query<{ total: string }>(
-            `select coalesce(sum(amount), 0)::text as total from payments
-              where deal_id = $1 and status <> 'cancelled' and kind <> 'refund'`,
+            `select ${PAID_SUM}::text as total from deals d where d.id = $1`,
             [slot.deal_id],
           )
           const already = Number(paid[0]!.total)
+
+          /* Без суммы — остаток, а не цена целиком: «пусто = полная сумма» в
+           * контракте значит «закрыть сделку», а после аванса цена целиком
+           * упиралась в переплату, и кнопка «Оплатить полностью» не работала
+           * ровно там, где нужна (ревью 015, D7). Остатка нет — 409 `overpay`
+           * ниже, как и раньше. */
+          const amount = body.amount?.amount ?? Math.max(price - already, 0)
+          if (amount <= 0) {
+            if (body.amount === undefined) throw conflict('overpay', `Сделка уже оплачена целиком: ${already} из ${price}`)
+            throw new AppError(422, 'bad_amount', 'Сумма оплаты должна быть больше нуля')
+          }
           if (already + amount > price) {
             throw conflict('overpay', `Сумма оплат превысила цену сделки: уже ${already}, цена ${price}`)
           }
@@ -478,6 +507,15 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
     const slot = await slotOf(db(), weddingId, slotId)
     if (!slot.deal_id) throw notFound('Сначала добавьте своего подрядчика в слот')
+    /* Ссылка — только своему подрядчику: у каталожного есть кабинет и чат
+     * по анкете, а ссылка в слот с ним открывала бы постороннему слот,
+     * тайминг и переписку (ревью 015, D5). 409, а не 404: слот и сделка
+     * есть, не тот вид сделки. */
+    const { rows: kind } = await db().query<{ external: boolean }>(
+      'select (external_name is not null) as external from deals where id = $1',
+      [slot.deal_id],
+    )
+    if (!kind[0]?.external) throw conflict('not_external', 'Ссылка выдаётся только своему подрядчику — у каталожного есть кабинет')
 
     // 128 бит случайности: токен лежит в ссылке и не читается вслух,
     // поэтому длина здесь важнее удобства (план §6, правило 5).
@@ -602,6 +640,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         system: false,
         // Гостей в чате со своим подрядчиком не бывает — имя гостя всегда пустое (фича 009).
         guestName: null,
+        // Всем по живому каналу — без признака; автору в ответе — своя (фича 014).
+        mine: null as boolean | null,
       }
       await app.realtime.publish({ chatId, type: 'message', actorId: 'external', payload: { message } })
 
@@ -630,7 +670,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           link: `/chats/${chatId}`,
         }, new Date(), tzRow[0]?.tz ?? null)
       }
-      return reply.code(201).send(message)
+      return reply.code(201).send({ ...message, mine: true })
     },
   )
 
@@ -728,4 +768,6 @@ const toMessage = (r: MessageRow) => ({
   // отправитель здесь — сам подрядчик (контракт, Message.senderId).
   system: false,
   guestName: null,
+  // Читает подрядчик без аккаунта: своя реплика — та, где отправитель пуст.
+  mine: r.sender_id === null,
 })

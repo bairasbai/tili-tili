@@ -77,6 +77,11 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
               returning id`,
             [weddingId, minutes],
           )
+          /* Двигать нечего — и объявлять нечего: сдвиг после последнего блока
+           * (или без тайминга) писал журнал, заметку подрядчикам и слал
+           * критический push всей команде мимо тихих часов ни о чём (ревью
+           * 015). Ответ честный — `shiftedBlocks: 0`, рассылки ниже нет. */
+          if (moved.length === 0) return { status: 200, body: { minutes, shiftedBlocks: 0, guestsAffected: 0 } }
           await client.query('insert into timeline_shifts (id, wedding_id, minutes, actor_id) values ($1,$2,$3,$4)', [
             uuidv7(),
             weddingId,
@@ -104,6 +109,8 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
           return { status: 200, body: { minutes, shiftedBlocks: moved.length, guestsAffected: Number(guests[0]!.n) } }
         })
 
+        // Ничего не сдвинулось — рассылки нет (см. выше).
+        if (result.body.shiftedBlocks === 0) return result
         /* День X критичен: тихие часы его не держат — гости уже в дороге.
          * Подрядчикам тоже: §13.2 требует, чтобы `timeline.shifted` доходил
          * до забронированных, иначе ведущий приедет к прежнему времени. */

@@ -26,6 +26,34 @@ const GUEST_NAMES_MAX = 40
 const rub = (minor: number | string | null): string =>
   minor === null ? '—' : `${Math.round(Number(minor) / 100).toLocaleString('ru-RU')} ₽`
 
+/** Телефон в свободном тексте: от 10 цифр с разделителями, с «+» или без. */
+const PHONE_RE = /\+?\d[\d\s().-]{8,}\d/g
+const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
+/** Сколько знаков свободного текста уходит модели за одно поле. */
+const FREE_TEXT_MAX = 160
+
+/**
+ * Свободный текст третьих лиц — как ДАННЫЕ, не как часть подсказки (ревью 015).
+ *
+ * Имя гостя, название задачи, анкеты подрядчика, площадки, статьи бюджета —
+ * это текст, который пишут люди, в том числе посторонние (подрядчик — своё
+ * имя анкеты). Две опасности: (1) контакты внутри текста — «Тётя Люда
+ * +7916…», «позвонить флористу 8-917-…» — уходили внешнему провайдеру, хотя
+ * контекст обещает «без телефонов»; (2) перевод строки и заголовок внутри
+ * названия читаются моделью как новая строка подсказки. Телефоны и e-mail
+ * вырезаются, переводы строк и управляющие знаки — в пробел, длина — до 160.
+ */
+export function safeText(raw: string | null | undefined): string {
+  if (!raw) return ''
+  // \p{Cc} — управляющие знаки (U+0000–U+001F, U+007F–U+009F) плюс разделители строк Unicode.
+  const flat = raw.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ').replace(/\s+/g, ' ').trim()
+  // Дата «2027-06-14» под шаблон тоже подходит — телефоном считается только строка с 10+ цифрами.
+  const clean = flat
+    .replace(EMAIL_RE, '[e-mail скрыт]')
+    .replace(PHONE_RE, (m) => (m.replace(/\D/g, '').length >= 10 ? '[номер скрыт]' : m))
+  return clean.length > FREE_TEXT_MAX ? `${clean.slice(0, FREE_TEXT_MAX - 1)}…` : clean
+}
+
 /** Календарная дата «сейчас» в поясе свадьбы, `YYYY-MM-DD` — как в `routes/day.ts`. */
 export function todayIn(tz: string, now: Date): string {
   const opts = { year: 'numeric', month: '2-digit', day: '2-digit' } as const
@@ -86,7 +114,7 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
 
   const lines: string[] = []
   lines.push('## Свадьба')
-  lines.push(`Название: ${wedding.title}`)
+  lines.push(`Название: ${safeText(wedding.title)}`)
   if (wedding.date) {
     const days = daysBetween(today, wedding.date)
     const when = days > 0 ? `через ${days} дн.` : days === 0 ? 'сегодня' : `прошла ${-days} дн. назад`
@@ -95,8 +123,8 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
     lines.push(`Дата ещё не выбрана; сегодня: ${today}`)
   }
   lines.push(`Город: ${wedding.city ? `${wedding.city}${wedding.region ? `, ${wedding.region}` : ''}` : 'не выбран'}`)
-  lines.push(`Площадка: ${wedding.venue ?? 'не указана'}`)
-  lines.push(`Стиль: ${wedding.style ?? 'не выбран'}`)
+  lines.push(`Площадка: ${wedding.venue ? safeText(wedding.venue) : 'не указана'}`)
+  lines.push(`Стиль: ${wedding.style ? safeText(wedding.style) : 'не выбран'}`)
   lines.push(`Гостей планируется: ${wedding.guests_planned ?? 'не указано'}`)
   lines.push(`Общий бюджет: ${rub(wedding.budget_total)}`)
 
@@ -110,7 +138,7 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   lines.push('', '## Гости')
   lines.push(`В списке: ${guests.length} (придут: ${count('yes')}, не придут: ${count('no')}, без ответа: ${count('pending')}); с «+1»: ${plusOnes}`)
   for (const g of guests.slice(0, GUEST_NAMES_MAX)) {
-    lines.push(`- ${g.name} — ${RSVP_RU[g.rsvp] ?? g.rsvp}${g.plus_one ? ', +1' : ''}`)
+    lines.push(`- ${safeText(g.name)} — ${RSVP_RU[g.rsvp] ?? g.rsvp}${g.plus_one ? ', +1' : ''}`)
   }
   if (guests.length > GUEST_NAMES_MAX) lines.push(`… и ещё ${guests.length - GUEST_NAMES_MAX}`)
 
@@ -119,13 +147,13 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   lines.push('', '## Команда подрядчиков (слоты)')
   for (const s of slots) {
     if (!s.deal) {
-      lines.push(`- ${s.label}: пусто — подрядчик не выбран`)
+      lines.push(`- ${safeText(s.label)}: пусто — подрядчик не выбран`)
       continue
     }
-    const who = s.deal.vendor?.name ?? s.deal.externalName ?? 'без имени'
+    const who = safeText(s.deal.vendor?.name ?? s.deal.externalName) || 'без имени'
     const price = 'price' in s.deal && s.deal.price ? `, цена сделки ${rub(s.deal.price.amount)}` : ''
     const own = s.deal.vendor ? '' : ' (свой подрядчик вне каталога)'
-    lines.push(`- ${s.label}: ${STATE_RU[s.deal.state] ?? s.deal.state} — ${who}${own}${price}${s.deal.packageName ? `, пакет «${s.deal.packageName}»` : ''}`)
+    lines.push(`- ${safeText(s.label)}: ${STATE_RU[s.deal.state] ?? s.deal.state} — ${who}${own}${price}${s.deal.packageName ? `, пакет «${safeText(s.deal.packageName)}»` : ''}`)
   }
 
   /* Бюджет — та же формула, что у GET …/budget: доля от общего + обязательства по сделкам + ручные статьи. */
@@ -154,7 +182,7 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
     spentAll += spent
     const planned = Math.round(total * c.share)
     const share = planned > 0 ? ` (${Math.round((spent / planned) * 100)}% плана)` : ''
-    lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}, факт ${rub(spent)}${share}${manual.length ? `; ручные статьи: ${manual.map((i) => `${i.title} ${rub(i.amount)}`).join(', ')}` : ''}`)
+    lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}, факт ${rub(spent)}${share}${manual.length ? `; ручные статьи: ${manual.map((i) => `${safeText(i.title)} ${rub(i.amount)}`).join(', ')}` : ''}`)
   }
   lines.push(`Итого обязательств: ${rub(spentAll)}${total ? ` из ${rub(total)}; резерв на непредвиденное — 10% (${rub(Math.round(total * 0.1))})` : ''}`)
 
@@ -168,7 +196,7 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   lines.push('', `## Задачи чек-листа (сделано ${doneCount}, открыто ${open.length})`)
   for (const t of open.slice(0, 40)) {
     const overdue = t.due && t.due < today ? ' — ПРОСРОЧЕНО' : ''
-    lines.push(`- ${t.title}${t.due ? ` (срок ${t.due})` : ' (без срока)'}${overdue}`)
+    lines.push(`- ${safeText(t.title)}${t.due ? ` (срок ${t.due})` : ' (без срока)'}${overdue}`)
   }
   if (open.length > 40) lines.push(`… и ещё ${open.length - 40}`)
 
@@ -181,11 +209,11 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   if (!events.length) lines.push('Тайминг ещё не составлен')
   for (const e of events) {
     const till = e.ends_at ? `–${timeIn(e.ends_at, tz)}` : ''
-    lines.push(`- ${timeIn(e.starts_at, tz)}${till} ${e.name}${e.location ? ` (${e.location})` : ''}${e.for_guests ? '' : ' [только команда]'}`)
+    lines.push(`- ${timeIn(e.starts_at, tz)}${till} ${safeText(e.name)}${e.location ? ` (${safeText(e.location)})` : ''}${e.for_guests ? '' : ' [только команда]'}`)
   }
 
   lines.push('', '## План Б')
-  lines.push(wedding.planb_at ? `Активирован ${wedding.planb_at.toISOString().slice(0, 10)}: сценарий «${wedding.planb_scenario ?? ''}»` : 'Не активирован')
+  lines.push(wedding.planb_at ? `Активирован ${wedding.planb_at.toISOString().slice(0, 10)}: сценарий «${safeText(wedding.planb_scenario)}»` : 'Не активирован')
 
   return { text: lines.join('\n'), tz }
 }

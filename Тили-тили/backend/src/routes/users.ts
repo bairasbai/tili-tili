@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
+import { REFRESH_TTL_SECONDS } from '../auth/tokens.js'
 import { knownTimeZone } from '../notify/quiet.js'
 
 interface ProfileRow {
@@ -278,10 +279,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── сессии и устройства ──────────────────────────────────────────── */
   app.get('/users/me/sessions', { preHandler: app.requireConsent }, async (request) => {
+    /* Сессия, не обновлявшаяся дольше срока refresh-токена (30 дней), уже
+     * мертва — `POST /auth/refresh` по ней отвечает 401 и гасит её. В списке
+     * устройств она стояла бы «живой» до первого такого обмена (ревью 015). */
     const { rows } = await db().query<{ id: string; device: string | null; created_at: Date }>(
       `select id, device, created_at from sessions
-        where user_id = $1 and revoked_at is null order by created_at desc`,
-      [request.caller!.userId],
+        where user_id = $1 and revoked_at is null
+          and last_used_at > now() - make_interval(secs => $2)
+        order by created_at desc`,
+      [request.caller!.userId, REFRESH_TTL_SECONDS],
     )
     return rows.map((r) => ({
       id: r.id,
@@ -397,7 +403,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
          from wedding_members m
          join weddings w on w.id = m.wedding_id
          left join cities c on c.id = w.city_id
-        where m.user_id = $1
+        where m.user_id = $1 and m.role in ('couple', 'helper', 'coordinator')
         order by m.joined_at`,
       [userId],
     )
@@ -421,12 +427,22 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }
     const allIds = [...coupleIds, ...otherIds]
 
-    const guests = await byWeddings(
-      allIds,
-      `select wedding_id, name, phone, rsvp, plus_one, group_name, diet, diet_note,
-              transfer, comment, created_at
-         from guests where wedding_id = any($1) order by created_at`,
-    )
+    /* Телефон и комментарий гостя читает только пара (`toGuest`, фича 005/014):
+     * помощнику и координатору они не показываются в списке — и выгрузка не
+     * должна становиться обходом (ревью 015, тот же класс, что ERR-0026). */
+    const guests = [
+      ...(await byWeddings(
+        coupleIds,
+        `select wedding_id, name, phone, rsvp, plus_one, group_name, diet, diet_note,
+                transfer, comment, created_at
+           from guests where wedding_id = any($1) order by created_at`,
+      )),
+      ...(await byWeddings(
+        otherIds,
+        `select wedding_id, name, rsvp, plus_one, group_name, diet, diet_note, transfer, created_at
+           from guests where wedding_id = any($1) order by created_at`,
+      )),
+    ]
     const deals = [
       ...(await byWeddings(
         coupleIds,
@@ -458,19 +474,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       `select wedding_id, title, category_id, amount::text as amount, currency, created_at
          from budget_items where wedding_id = any($1) order by created_at`,
     )
-    const gifts = [
-      ...(await byWeddings(
-        coupleIds,
-        `select wedding_id, name, descr, price::text as price, currency, is_group,
-                funded::text as funded, created_at
-           from gifts where wedding_id = any($1) order by created_at`,
-      )),
-      ...(await byWeddings(
-        otherIds,
-        `select wedding_id, name, descr, is_group, created_at
-           from gifts where wedding_id = any($1) order by created_at`,
-      )),
-    ]
+    // Вишлист закрыт для помощника и координатора матрицей (ONLY_COUPLE) — и в выгрузке его нет (ревью 015).
+    const gifts = await byWeddings(
+      coupleIds,
+      `select wedding_id, name, descr, price::text as price, currency, is_group,
+              funded::text as funded, created_at
+         from gifts where wedding_id = any($1) order by created_at`,
+    )
     const tasks = await byWeddings(
       allIds,
       `select wedding_id, title, period, due::text as due, done_at, source
@@ -580,12 +590,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const vendorBusyDates = await byVendor(
       `select date::text as date from vendor_busy_dates where vendor_id = $1 and source <> 'deal' order by date`,
     )
-    // Отзывы, написанные им как парой. Отзывы гостей о нём — чужие.
+    /* Отзывы, написанные им как парой (`m.role = 'couple'` — помощник отзыв не
+     * писал и чужой не получает). Отзывы гостей о нём — чужие. Отзыв по
+     * убранной свадьбе (`deal_id` → null после уборки, фича 014) автора не
+     * помнит — его в выгрузке нет. */
     const { rows: reviews } = await db().query(
       `select r.vendor_id, r.stars, r.text, r.created_at
          from reviews r
          join deals d on d.id = r.deal_id
-         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $1
+         join wedding_members m on m.wedding_id = d.wedding_id and m.user_id = $1 and m.role = 'couple'
         where r.source = 'couple' order by r.created_at`,
       [userId],
     )

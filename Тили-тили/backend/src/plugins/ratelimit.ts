@@ -21,6 +21,13 @@ const WINDOW_SECONDS = 1
 
 /** Проверки здоровья считает балансировщик — им ограничение только мешает. */
 const SKIP = /^\/health/
+/**
+ * Во сколько раз потолок по адресу на гостевых путях выше личного: за одним
+ * адресом на площадке сидит вся свадьба (Wi-Fi банкетного зала), и общий
+ * лимит «как у одного человека» резал бы гостей разом; а без потолка вовсе
+ * токен без подписи обходил бы ограничитель.
+ */
+const GUEST_IP_FACTOR = 10
 
 /** Путь, где гостевой токен что-то значит: в адресе или в списке гостевых путей свадьбы. */
 function isGuestRoute(request: FastifyRequest): boolean {
@@ -45,7 +52,10 @@ export async function rateLimitKey(request: FastifyRequest, secret: string | nul
   /* Гость ходит по токену в адресе — но только на СВОИХ путях. Токен гостя
    * подписи не имеет и проверяется лишь по базе, поэтому здесь он берётся
    * на веру; чтобы `?guestToken=мусор` не заводил новый счётчик на входе по
-   * SMS или обмене токенов, вне гостевых путей он не считается вовсе. */
+   * SMS или обмене токенов, вне гостевых путей он не считается вовсе. На
+   * гостевых путях счётчик по токену — не единственный: рядом считается адрес
+   * с потолком в `GUEST_IP_FACTOR` раз выше (`registerRateLimit`), иначе тысяча
+   * случайных токенов с одного адреса — тысяча свежих счётчиков (ревью 015). */
   const guest = readGuestToken(request)
   if (guest && isGuestRoute(request)) return `g:${createHash('sha256').update(guest).digest('base64url').slice(0, 22)}`
 
@@ -72,23 +82,28 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
   app.addHook('onRequest', async (request) => {
     if (SKIP.test(request.url)) return
     const caller = await rateLimitKey(request, config.jwtAccessSecret ?? null)
-    const key = `rl:${caller}:${Math.floor(Date.now() / 1000 / WINDOW_SECONDS)}`
+    const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS)
+    /* Гостевой токен не подписан — рядом с его счётчиком считается адрес,
+     * с потолком выше (см. `GUEST_IP_FACTOR`). */
+    const checks: { key: string; max: number }[] = [{ key: `rl:${caller}:${window}`, max: limit }]
+    if (caller.startsWith('g:')) checks.push({ key: `rl:ip:${request.ip}:${window}`, max: limit * GUEST_IP_FACTOR })
 
-    let count: number
-    try {
-      count = await withRedisTimeout(app.redis!.incr(key))
-      // Срок ставим только на первом запросе окна: лишний EXPIRE на каждый
-      // запрос — лишний поход в Redis без всякой пользы.
-      if (count === 1) await withRedisTimeout(app.redis!.expire(key, WINDOW_SECONDS + 1))
-    } catch (err) {
-      // Redis прилёг — пропускаем. Ограничитель защищает от перегрузки,
-      // а не наоборот: превращать его сбой в отказ всему сервису нельзя.
-      app.log.error({ err }, 'ограничитель частоты недоступен')
-      return
-    }
-
-    if (count > limit) {
-      throw new TooManyRequests(WINDOW_SECONDS, `Не больше ${limit} запросов в секунду`, 'rate_limited')
+    for (const { key, max } of checks) {
+      let count: number
+      try {
+        count = await withRedisTimeout(app.redis!.incr(key))
+        // Срок ставим только на первом запросе окна: лишний EXPIRE на каждый
+        // запрос — лишний поход в Redis без всякой пользы.
+        if (count === 1) await withRedisTimeout(app.redis!.expire(key, WINDOW_SECONDS + 1))
+      } catch (err) {
+        // Redis прилёг — пропускаем. Ограничитель защищает от перегрузки,
+        // а не наоборот: превращать его сбой в отказ всему сервису нельзя.
+        app.log.error({ err }, 'ограничитель частоты недоступен')
+        return
+      }
+      if (count > max) {
+        throw new TooManyRequests(WINDOW_SECONDS, `Не больше ${max} запросов в секунду`, 'rate_limited')
+      }
     }
   })
 }

@@ -2,7 +2,7 @@ import { PAID_SUM } from '../deals/repo.js'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, conflict, forbidden, notFound, validationFailed } from '../errors.js'
-import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { buildPage, encodeCursor, parsePageQuery, timestampKey } from '../pagination.js'
 import { VENDOR_COLUMNS, toVendor, type VendorRow } from '../catalog/vendors.js'
 import { recomputeRating } from '../reviews/rating.js'
 import { notify } from '../notify/notify.js'
@@ -179,7 +179,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return userId
   }
 
-  async function audit(actorId: string, action: string, entity: string, entityId: string, diff: unknown, client: Queryable = db()) {
+  /** `entityId` пуст у действий над списком (чтение очереди): колонка — uuid, строки-имени в неё не положить. */
+  async function audit(actorId: string, action: string, entity: string, entityId: string | null, diff: unknown, client: Queryable = db()) {
     await client.query('insert into audit_log (actor_id, action, entity, entity_id, diff) values ($1,$2,$3,$4,$5)', [
       actorId,
       action,
@@ -202,24 +203,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
      *
      * `published_at` выбирается отдельно от `VENDOR_COLUMNS`: очередь
      * показывает дату публикации, а не заведения — у анкеты, пролежавшей
-     * месяц в черновике, это разные дни, и срок проверки идёт от первой. */
-    const { rows } = await db().query<VendorRow & { created_at: Date; published_at: Date }>(
-      `select ${VENDOR_COLUMNS}, v.published_at
+     * месяц в черновике, это разные дни, и срок проверки идёт от первой.
+     * По ней же очередь и упорядочена: до ревью 015 сортировка шла по дате
+     * заведения, и черновик, опубликованный сегодня, вставал впереди анкеты,
+     * ждущей проверки неделю. Ключ курсора — с микросекундами (`timestampKey`). */
+    const { rows } = await db().query<VendorRow & { created_at: Date; published_at: Date; key: string }>(
+      `select ${VENDOR_COLUMNS}, v.published_at, ${timestampKey('v.published_at')} as key
          ${MODERATION_QUEUE_FROM}
-          and ($1::text is null or (v.created_at, v.id) > ($1::timestamptz, $2::uuid))
-        order by v.created_at asc, v.id asc
+          and ($1::text is null or (v.published_at, v.id) > ($1::timestamptz, $2::uuid))
+        order by v.published_at asc, v.id asc
         limit $3`,
       [page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
     )
-    return buildPage(
-      rows.map((r) => ({
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.key, r.id))
+    return {
+      items: paged.items.map((r) => ({
         ...toVendor(r),
         createdAt: r.created_at.toISOString(),
         publishedAt: r.published_at.toISOString(),
       })),
-      page.limit,
-      (v) => encodeCursor(v.createdAt, v.id),
-    )
+      nextCursor: paged.nextCursor,
+    }
   })
 
   app.post(
@@ -257,14 +261,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         approve: 'moderated_at = now()',
         // Снята с публикации: анкета не удаляется — мастер её поправит.
         reject: 'moderated_at = now(), published_at = null',
-        // Галочка «проверен». Документы при этом наружу не выходят.
-        verify: 'moderated_at = now(), verified_at = now()',
+        /* Галочка «проверен». Документы при этом наружу не выходят. `coalesce`
+         * — как у решения по заявке (`POST /admin/verifications/{id}`): дата
+         * первой проверки не переписывается повторным `verify` (ревью 015). */
+        verify: 'moderated_at = now(), verified_at = coalesce(verified_at, now())',
       }[body.action]
 
       /* Решение по анкете, статус заявки на проверку и запись в журнал —
        * одна транзакция (R-122): галочка «проверен» без закрытой заявки
        * оставляла бы её «на проверке» в кабинете навсегда. */
-      await db().tx(async (client) => {
+      const { wasVerified } = await db().tx(async (client) => {
         /* Решение принимается только по ЖИВОЙ анкете — той, что сейчас
          * в каталоге: `published_at is not null and blocked_at is null`,
          * ровно условие `VENDOR_LIVE_JOIN`.
@@ -279,8 +285,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
          * `moderated_at` в условие не входит: одобрить уже проверенную живую
          * анкету — то же самое решение, и второй модератор вправе его
          * подтвердить. */
-        const { rows: state } = await client.query<{ published_at: Date | null; blocked_at: Date | null }>(
-          'select published_at, blocked_at from vendors where id = $1 for update',
+        const { rows: state } = await client.query<{ published_at: Date | null; blocked_at: Date | null; verified_at: Date | null }>(
+          'select published_at, blocked_at, verified_at from vendors where id = $1 for update',
           [vendorId],
         )
         if (state.length === 0) throw notFound('Анкета не найдена')
@@ -308,12 +314,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         }
 
         await audit(staffId, `vendor.${body.action}`, 'vendor', vendorId, { reason: body.reason ?? null }, client)
+        return { wasVerified: current.verified_at !== null }
       })
 
       const { rows: owner } = await db().query<{ user_id: string }>('select user_id from vendors where id = $1', [
         vendorId,
       ])
-      if (owner[0]) {
+      /* Второй `verify` по уже проверенной анкете — то же решение, а не новость:
+       * «Вы проверены» второй раз читалось бы как сбой (ревью 015; так же
+       * молчит повторное одобрение заявки ниже). */
+      if (owner[0] && !(body.action === 'verify' && wasVerified)) {
         /* Новость — следствие решения, а не его часть: решение уже записано
          * и откату не подлежит. 500 из-за упавшего уведомления сказал бы
          * модератору «не принято», и он принял бы то же решение второй раз —
@@ -355,17 +365,21 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       kind: string
       has_file: boolean
       created_at: Date
+      key: string
     }>(
       `select r.id, r.vendor_id, v.name as vendor_name, r.kind, r.created_at,
-              (r.file_url is not null and r.file_url <> '') as has_file
+              (r.file_url is not null and r.file_url <> '') as has_file,
+              ${timestampKey('r.created_at')} as key
          ${VERIFICATION_QUEUE_FROM}
           and ($1::text is null or (r.created_at, r.id) > ($1::timestamptz, $2::uuid))
         order by r.created_at asc, r.id asc
         limit $3`,
       [page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
     )
-    return buildPage(
-      rows.map((r) => ({
+    // Ключ курсора — с микросекундами (`timestampKey`, ревью 015): усечённый пропускал заявки той же миллисекунды.
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.key, r.id))
+    return {
+      items: paged.items.map((r) => ({
         id: r.id,
         vendorId: r.vendor_id,
         vendorName: r.vendor_name,
@@ -373,9 +387,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         hasFile: r.has_file,
         createdAt: r.created_at.toISOString(),
       })),
-      page.limit,
-      (v) => encodeCursor(v.createdAt, v.id),
-    )
+      nextCursor: paged.nextCursor,
+    }
   })
 
   app.get('/admin/verifications/:requestId', { preHandler: app.requireConsent }, async (request) => {
@@ -562,8 +575,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       text: string | null
       status: string
       created_at: Date
+      key: string
     }>(
-      `select id, target_kind, target_id, category, text, status, created_at
+      `select id, target_kind, target_id, category, text, status, created_at, ${timestampKey('created_at')} as key
          from complaints
         where status = 'new'
           and ($1::text is null or (created_at, id) > ($1::timestamptz, $2::uuid))
@@ -571,8 +585,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         limit $3`,
       [page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
     )
-    return buildPage(
-      rows.map((r) => ({
+    // Ключ курсора — с микросекундами (`timestampKey`, ревью 015).
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.key, r.id))
+    return {
+      items: paged.items.map((r) => ({
         id: r.id,
         targetKind: r.target_kind,
         targetId: r.target_id,
@@ -581,9 +597,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         status: r.status,
         createdAt: r.created_at.toISOString(),
       })),
-      page.limit,
-      (c) => encodeCursor(c.createdAt, c.id),
-    )
+      nextCursor: paged.nextCursor,
+    }
   })
 
   app.post(
@@ -698,6 +713,128 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         }
       }
       return { complaintId, action: body.action }
+    },
+  )
+
+  /* ── очередь заявок консьержу (ревью 015, V5) ─────────────────────── */
+  /*
+   * Заявки «подобрать вручную» (`POST /catalog/concierge`, План §18.12)
+   * копились в базе со статусом `new`, и разобрать их было неоткуда: ни
+   * очереди, ни решения. Открытые (`new`, `in_progress`), старейшие сверху —
+   * обещание «свяжемся в течение суток» считается от подачи.
+   *
+   * Телефон пары — в строке: она сама попросила связаться, и сотрудник
+   * звонит по нему. Чтение очереди — в журнал действий, как открытие
+   * документов верификации: телефоны раздаются страницами, и «кто смотрел»
+   * должно оставаться проверяемым.
+   */
+  app.get('/admin/concierge', { preHandler: app.requireConsent }, async (request) => {
+    const staffId = await requireStaff(request)
+    const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
+    const { rows } = await db().query<{
+      id: string
+      status: string
+      category_id: string
+      category_name: string
+      city: string | null
+      budget: string | null
+      currency: string
+      comment: string | null
+      phone: string
+      name: string | null
+      created_at: Date
+      key: string
+    }>(
+      `select r.id, r.status, r.category_id, cat.name as category_name, c.name as city,
+              r.budget::text as budget, r.currency, r.comment, u.phone, u.name, r.created_at,
+              ${timestampKey('r.created_at')} as key
+         from concierge_requests r
+         join users u on u.id = r.user_id and u.deleted_at is null
+         join categories cat on cat.id = r.category_id
+         left join cities c on c.id = r.city_id
+        where r.status in ('new', 'in_progress')
+          and ($1::text is null or (r.created_at, r.id) > ($1::timestamptz, $2::uuid))
+        order by r.created_at asc, r.id asc
+        limit $3`,
+      [page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+    )
+    await audit(staffId, 'concierge.queue.view', 'concierge', null, { cursor: page.cursor?.id ?? null, rows: rows.length })
+    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.key, r.id))
+    return {
+      items: paged.items.map((r) => ({
+        id: r.id,
+        status: r.status,
+        categoryId: r.category_id,
+        categoryName: r.category_name,
+        city: r.city,
+        budget: r.budget === null ? null : { amount: Number(r.budget), currency: r.currency.trim() },
+        comment: r.comment,
+        phone: r.phone,
+        name: r.name,
+        createdAt: r.created_at.toISOString(),
+      })),
+      nextCursor: paged.nextCursor,
+    }
+  })
+
+  app.post(
+    '/admin/concierge/:requestId',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['status'],
+          additionalProperties: false,
+          properties: { status: { type: 'string', enum: ['in_progress', 'done', 'cancelled'] } },
+        },
+      },
+    },
+    async (request) => {
+      const staffId = await requireStaff(request)
+      const { requestId } = request.params as { requestId: string }
+      if (!isUuid(requestId)) throw notFound('Заявка не найдена')
+      const { status } = request.body as { status: 'in_progress' | 'done' | 'cancelled' }
+
+      /* Состояние — под замком строки и в одной транзакции с журналом:
+       * двое сотрудников, закрывающих одну заявку, иначе оба слали бы паре
+       * «подобрали» (тот же класс, что у решений по анкете и заявке). Закрытую
+       * заново не открывают — 409: новая просьба пары — новая заявка. */
+      const decided = await db().tx(async (client) => {
+        const { rows } = await client.query<{ status: string; user_id: string; category_name: string }>(
+          `select r.status, r.user_id, cat.name as category_name
+             from concierge_requests r join categories cat on cat.id = r.category_id
+            where r.id = $1 for update of r`,
+          [requestId],
+        )
+        if (rows.length === 0) throw notFound('Заявка не найдена')
+        const current = rows[0]!
+        if (current.status === 'done' || current.status === 'cancelled') {
+          throw conflict('concierge_closed', 'Заявка уже закрыта — новая просьба пары придёт новой заявкой')
+        }
+        await client.query('update concierge_requests set status = $2 where id = $1', [requestId, status])
+        await audit(staffId, `concierge.${status}`, 'concierge', requestId, { from: current.status }, client)
+        return { userId: current.user_id, categoryName: current.category_name, was: current.status }
+      })
+
+      /* Новость паре — следствие решения, а не его часть (как у анкеты):
+       * решение записано, и упавшее уведомление его не откатывает. Только
+       * по `done`: «взята в работу» — внутренняя кухня, паре обещаны сутки. */
+      if (status === 'done') {
+        try {
+          await notify(db(), {
+            userId: decided.userId,
+            kind: 'system',
+            title: 'Консьерж подобрал варианты',
+            body: `Категория «${decided.categoryName}»: мы связались с вами или свяжемся в ближайшее время`,
+            link: '/search',
+            critical: false,
+          })
+        } catch (err) {
+          request.log.warn({ err, requestId }, 'заявка консьержу закрыта, уведомление не ушло')
+        }
+      }
+      return { requestId, status }
     },
   )
 

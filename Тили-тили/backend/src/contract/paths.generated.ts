@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.37.0).
- * Операций: 170. Путей: 126. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.38.0).
+ * Операций: 172. Путей: 128. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -19,6 +19,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PUT","openapi":"/admin/categories","url":"/admin/categories","operationId":null,"summary":"Изменить категории и словарь синонимов","tag":"admin"},
   {"method":"GET","openapi":"/admin/complaints","url":"/admin/complaints","operationId":null,"summary":"Очередь жалоб","tag":"admin"},
   {"method":"POST","openapi":"/admin/complaints/{complaintId}","url":"/admin/complaints/:complaintId","operationId":null,"summary":"Решение по жалобе","tag":"admin"},
+  {"method":"GET","openapi":"/admin/concierge","url":"/admin/concierge","operationId":null,"summary":"Очередь заявок консьержу","tag":"admin"},
+  {"method":"POST","openapi":"/admin/concierge/{requestId}","url":"/admin/concierge/:requestId","operationId":null,"summary":"Состояние заявки консьержу","tag":"admin"},
   {"method":"GET","openapi":"/admin/metrics","url":"/admin/metrics","operationId":null,"summary":"Дашборд платформы","tag":"admin"},
   {"method":"GET","openapi":"/admin/moderation/vendors","url":"/admin/moderation/vendors","operationId":null,"summary":"Очередь пост-модерации анкет","tag":"admin"},
   {"method":"POST","openapi":"/admin/moderation/vendors/{vendorId}","url":"/admin/moderation/vendors/:vendorId","operationId":null,"summary":"Решение по анкете","tag":"admin"},
@@ -161,7 +163,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
-  {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) плюс добавленные парой","tag":"bookings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца) плюс добавленные парой","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Добавить слот категории в мозаику","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/book","url":"/weddings/:weddingId/slots/:slotId/book","operationId":null,"summary":"Забронировать подрядчика в слот («Добавить в свадьбу»)","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/cancel","url":"/weddings/:weddingId/slots/:slotId/cancel","operationId":null,"summary":"Отменить бронь (слот → free, бюджет минус)","tag":"bookings"},

@@ -73,31 +73,40 @@ export async function replayOrClaim(
   // его же. Индекс по created_at делает удаление дешёвым.
   await db.query("delete from idempotency_keys where created_at < now() - interval '1 day'")
 
-  const claimed = await db.query<{ status: number | null; body: unknown; request_hash: string }>(
-    `insert into idempotency_keys (key, user_id, route, request_hash)
-     values ($1, $2, $3, $4)
-     on conflict (key) do nothing
-     returning status, body, request_hash`,
-    [key, userId, route, hash],
-  )
-  if (claimed.rowCount === 1) return null // ключ наш, действие выполняем
+  /* Захват и чтение — в цикле: между «вставка не прошла» и «читаем чужую
+   * строку» первый запрос мог упасть и освободить ключ (`releaseKey`).
+   * Раньше пустое чтение возвращало `null` — «выполняем», но БЕЗ строки
+   * ключа: ответ записывать было некуда, и следующий повтор выполнял
+   * действие ещё раз (ревью 015, D4). Теперь пустое чтение — новая попытка
+   * захвата; три подряд не сходятся только при чужой гонке на том же ключе. */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const claimed = await db.query<{ status: number | null; body: unknown; request_hash: string }>(
+      `insert into idempotency_keys (key, user_id, route, request_hash)
+       values ($1, $2, $3, $4)
+       on conflict (key) do nothing
+       returning status, body, request_hash`,
+      [key, userId, route, hash],
+    )
+    if (claimed.rowCount === 1) return null // ключ наш, действие выполняем
 
-  const { rows } = await db.query<{ status: number | null; body: unknown; request_hash: string }>(
-    'select status, body, request_hash from idempotency_keys where key = $1',
-    [key],
-  )
-  const seen = rows[0]
-  if (!seen) return null
+    const { rows } = await db.query<{ status: number | null; body: unknown; request_hash: string }>(
+      'select status, body, request_hash from idempotency_keys where key = $1',
+      [key],
+    )
+    const seen = rows[0]
+    if (!seen) continue
 
-  if (seen.request_hash !== hash) {
-    throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого запроса')
+    if (seen.request_hash !== hash) {
+      throw new AppError(409, 'idempotency_key_reused', 'Этот Idempotency-Key уже использован для другого запроса')
+    }
+    if (seen.status === null) {
+      // Первый запрос ещё выполняется. Повтор в этот момент — не отказ, а
+      // «подожди»: два одновременных исполнения одного действия хуже задержки.
+      throw new AppError(409, 'idempotency_in_progress', 'Запрос с этим ключом ещё выполняется — повторите через секунду')
+    }
+    return { status: seen.status, body: seen.body }
   }
-  if (seen.status === null) {
-    // Первый запрос ещё выполняется. Повтор в этот момент — не отказ, а
-    // «подожди»: два одновременных исполнения одного действия хуже задержки.
-    throw new AppError(409, 'idempotency_in_progress', 'Запрос с этим ключом ещё выполняется — повторите через секунду')
-  }
-  return { status: seen.status, body: seen.body }
+  throw new AppError(409, 'idempotency_in_progress', 'Запрос с этим ключом ещё выполняется — повторите через секунду')
 }
 
 export async function saveResult(

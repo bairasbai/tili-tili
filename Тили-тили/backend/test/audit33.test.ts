@@ -625,7 +625,8 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const w = await newWedding()
     const helper = await joinAs(w, 'helper')
     const coordinator = await joinAs(w, 'coordinator')
-    const phone = `+7999${RUN}77`
+    // Одиннадцать цифр: с ревью 015 телефон в форме пары нормализуется, двенадцатизначный — 422.
+    const phone = `+7999${RUN}7`
     const olga = await newGuest(w, 'Ольга', false, phone)
     const marat = await newGuest(w, 'Марат')
     expect((await rsvp(olga.token, { status: 'yes', comment: 'Буду с тортом' })).statusCode).toBe(200)
@@ -664,7 +665,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       method: 'POST',
       url: `/weddings/${w.weddingId}/guests`,
       headers: auth(w.token),
-      payload: { name: 'Ольга', phone: `+7999${RUN}78` },
+      payload: { name: 'Ольга', phone: `+7999${RUN}8` },
     })
     expect(created.statusCode, created.body.slice(0, 200)).toBe(201)
     const link = await app.inject({
@@ -682,7 +683,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     // Отказ приходит ДО захвата суточного окна: пара после него рассылает как ни в чём не бывало.
     const own = await remind(w.token)
     expect(own.statusCode, own.body.slice(0, 200)).toBe(200)
-    expect(own.json()).toEqual({ sent: 1, skippedNoPhone: 0, skippedLinkUsed: 0 })
+    expect(own.json()).toEqual({ sent: 1, skippedNoPhone: 0, skippedLinkUsed: 0, failed: 0 })
   })
 
   /* ── гость: mine у отелей, tz у команды ───────────────────────────── */

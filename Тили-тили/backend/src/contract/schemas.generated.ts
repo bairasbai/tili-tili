@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 61. */
+ * Схем: 64. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -635,6 +635,109 @@ export const CONTRACT_SCHEMAS = {
                       "downrank",
                       "block"
                   ]
+              }
+          }
+      },
+      "ConciergeDecision": {
+          "type": "object",
+          "description": "Что записано по заявке консьержу.",
+          "properties": {
+              "requestId": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "in_progress",
+                      "done",
+                      "cancelled"
+                  ]
+              }
+          }
+      },
+      "ConciergePage": {
+          "type": "object",
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ConciergeRequest"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "ConciergeRequest": {
+          "type": "object",
+          "description": "Заявка консьержу в очереди панели: что искать, где, на какой бюджет и кому перезвонить.",
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "new",
+                      "in_progress",
+                      "done",
+                      "cancelled"
+                  ]
+              },
+              "categoryId": {
+                  "type": "string"
+              },
+              "categoryName": {
+                  "type": "string",
+                  "description": "название категории из справочника"
+              },
+              "city": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "город поиска; пусто — заявка без города"
+              },
+              "budget": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "comment": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "phone": {
+                  "type": "string",
+                  "description": "номер входа пары — она попросила связаться; сотрудник звонит по нему"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "имя пары из профиля"
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "когда подана — от неё считаются сутки"
               }
           }
       },
@@ -2526,6 +2629,9 @@ export type ContractSchemaName =
   | "CityRef"
   | "Complaint"
   | "ComplaintDecision"
+  | "ConciergeDecision"
+  | "ConciergePage"
+  | "ConciergeRequest"
   | "DayXBroadcast"
   | "Deal"
   | "DealState"

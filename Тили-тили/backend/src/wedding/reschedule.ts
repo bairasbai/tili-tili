@@ -55,7 +55,13 @@ export async function rescheduleWedding(
    *
    * Занятость проверяется по подрядчику, а не по сделке: у фотографа, который
    * снимает ещё и видео, две сделки и ОДНА строка занятости (ERR-0037) —
-   * вторая сделка не должна видеть её как чужую. */
+   * вторая сделка не должна видеть её как чужую.
+   *
+   * Открытые брони — `for update of d`: отмена или оплата сделки
+   * (`PATCH /deals`, `POST …/cancel`) идут под замком её строки, и без замка
+   * здесь перенос двигал занятость сделки, которую в ту же секунду отменяли
+   * — дата подрядчика оставалась занятой отменённой сделкой (ревью 015, D3).
+   * Порядок «свадьба → сделки» — тот же, что у `PATCH /deals`. */
   const { rows: team } = await client.query<{
     deal_id: string
     vendor_id: string | null
@@ -72,7 +78,8 @@ export async function rescheduleWedding(
             ) as busy
        from deals d
        left join vendors ven on ven.id = d.vendor_id
-      where d.wedding_id = $1 and d.state = any($3)`,
+      where d.wedding_id = $1 and d.state = any($3)
+        for update of d`,
     [weddingId, date, OPEN_BOOKINGS],
   )
 

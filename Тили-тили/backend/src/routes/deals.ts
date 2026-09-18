@@ -14,6 +14,7 @@ import {
   type DealRow,
 } from '../deals/repo.js'
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
+import { releaseLead } from '../vendor/leads.js'
 
 /**
  * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
@@ -185,14 +186,29 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
       return withIdempotency(db(), request, reply, 'deals.patch', (tx) =>
         tx(async (client) => {
           const deal = await dealForCouple(client, dealId, userId)
+
+          /* Строка свадьбы — `for share` и ПЕРВОЙ: дата читается ниже, чтобы
+           * занять её у подрядчика, а перенос (`rescheduleWedding`) держит
+           * свадьбу `for update` и двигает занятость по открытым броням. Без
+           * замка переход в бронь между чтением даты и записью занимал у
+           * подрядчика день, которого у свадьбы уже нет (ревью 015, D2/D3).
+           * Порядок «свадьба → сделка» — тот же, что у переноса: обратный
+           * давал бы взаимную блокировку. */
+          const { rows: w } = await client.query<{ date: string | null }>(
+            'select date::text as date from weddings where id = $1 for share',
+            [deal.wedding_id],
+          )
           await expireHolds(client, deal.wedding_id)
 
           /* `for update`: два одновременных перехода читали одно состояние и
            * оба проходили `assertTransition` — две записи в журнале и два
            * уведомления об одном событии. Второй ждёт первого и видит уже
-           * новое состояние (R-49). */
-          const { rows: fresh } = await client.query<{ state: DealState }>(
-            'select state from deals where id = $1 for update',
+           * новое состояние (R-49). Цена — тем же чтением: `dealForCouple`
+           * читал её до замка, и две правки суммы подряд писали в журнал
+           * «изменена: 100 000 → 80 000» обе — вторая от той же старой
+           * суммы (ревью 015, D6). */
+          const { rows: fresh } = await client.query<{ state: DealState; price: string | null }>(
+            'select state, price::text as price from deals where id = $1 for update',
             [dealId],
           )
           const from = fresh[0]!.state
@@ -213,7 +229,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
              * «назначить 0 ₽» сделке без цены выглядело как «ничего не
              * изменилось» — ни записи, ни события, а в ответе так и стояло
              * `null` при том, что клиент просил ноль (D2-16, R-178). */
-            const was = deal.price === null ? null : Number(deal.price)
+            const was = fresh[0]!.price === null ? null : Number(fresh[0]!.price)
             if (was !== body.price.amount) {
               await client.query('update deals set price = $2 where id = $1', [dealId, body.price.amount])
               await client.query(
@@ -266,10 +282,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * дату на переговорах значит блокировать чужие свадьбы под
            * несуществующую договорённость. */
           if (COMMITTED.includes(body.state) && !COMMITTED.includes(from) && deal.vendor_id) {
-            const { rows: w } = await client.query<{ date: string | null }>(
-              'select date::text as date from weddings where id = $1',
-              [deal.wedding_id],
-            )
+            // Дата — из чтения под замком свадьбы выше.
             if (w[0]?.date) {
               await holdVendorDate(client, deal.vendor_id, w[0].date, dealId, deal.wedding_id)
             }
@@ -278,6 +291,8 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             await client.query('update slots set deal_id = null where deal_id = $1', [dealId])
             await releaseVendorDate(client, dealId)
             await detachBusRoutes(client, dealId)
+            // Лид подрядчика из `won` — обратно в работу (ревью 015).
+            await releaseLead(client, dealId)
             // Ссылка своего подрядчика гаснет любой дверью отмены (ERR-0242).
             await client.query(
               `update external_invites set revoked_at = now()

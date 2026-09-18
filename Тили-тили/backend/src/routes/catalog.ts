@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
@@ -279,10 +279,14 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
 
       // Ротация новичков — только на первой странице (см. rotateNewcomers).
       if (!page.cursor) {
+        /* Пониженная санкцией анкета (`downrank`, §18.2) в квоту новичков не
+         * идёт: основная выдача ставит её после всех, а ротация поднимала бы
+         * её на первую страницу как «новую» — санкция сводилась к нулю у
+         * анкеты без отзывов, то есть ровно у той, что понижена (ревью 015). */
         const { rows: fresh } = await db().query<VendorRow>(
           `select ${VENDOR_COLUMNS}, ${distanceSql} as distance_km
              from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
-            where ${where.join(' and ')} and v.reviews_count = 0
+            where ${where.join(' and ')} and v.reviews_count = 0 and v.downranked_at is null
             order by v.created_at desc
             limit ${page.limit}`,
           args.slice(0, -1),
@@ -314,12 +318,21 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
   app.get('/catalog/vendors/:vendorId', authed, async (request) => {
     const { vendorId } = request.params as { vendorId: string }
     if (!isUuid(vendorId)) throw notFound('Анкета не найдена')
-    const { rows } = await db().query<VendorRow & { about: string | null }>(
-      `select ${VENDOR_COLUMNS}, v.about
+    const { rows } = await db().query<VendorRow & { about: string | null; user_id: string }>(
+      `select ${VENDOR_COLUMNS}, v.about, v.user_id
          from vendors v ${VENDOR_LIVE_JOIN} left join cities c on c.id = v.city_id
         where v.id = $1 and v.published_at is not null`,
       [vendorId],
     )
+    if (rows[0] && rows[0].user_id === request.caller!.userId) {
+      /* Своя живая анкета — та же форма, что у своей неопубликованной ниже:
+       * с телефоном (он свой) и признаками `published`/`blocked`. До ревью 015
+       * владелец опубликованной анкеты проходил веткой пары: телефон
+       * прятался «до брони», признаков не было, и предпросмотр «глазами
+       * пары» отличался от предпросмотра черновика. Просмотр не считается —
+       * условие `user_id <> caller` у счётчика ниже. */
+      return { ...(await loadDetail(db(), vendorId, rows[0])), published: true, blocked: false }
+    }
     if (!rows[0]) {
       /* Своя анкета — владельцу и до публикации, и под блокировкой: так он
        * смотрит её «глазами пары» из кабинета (фича 007). Чужой черновик —
@@ -448,29 +461,39 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
       const { rows: cat } = await db().query('select 1 from categories where id = $1', [body.categoryId])
       if (cat.length === 0) throw notFound('Категория не найдена')
 
-      // Каждая заявка — ручная работа человека: он ищет подрядчика и звонит.
-      // Вторая открытая заявка по той же категории новой работы не создаёт,
-      // а только плодит очередь, за которую платит владелец.
-      const { rows: pending } = await db().query(
-        `select 1 from concierge_requests
-          where user_id = $1 and category_id = $2 and status in ('new','in_progress')`,
-        [request.caller!.userId, body.categoryId],
-      )
-      if (pending.length > 0) {
-        throw new AppError(409, 'concierge_pending', 'Заявка по этой категории уже в работе — мы свяжемся в течение суток')
-      }
-
+      /* Город — только из справочника: экран берёт его у свадьбы (фича 014),
+       * и неизвестное имя здесь — ошибка клиента, а не «без города».
+       * До ревью 015 такой город молча становился `null`, и консьерж искал
+       * подрядчика неизвестно где (класс ERR-0034). */
       let cityId: number | null = null
       if (body.city) {
         const { rows } = await db().query<{ id: number }>('select id from cities where name = $1 limit 1', [body.city])
-        cityId = rows[0]?.id ?? null
+        if (!rows[0]) throw validationFailed({ city: 'город не найден в справочнике' })
+        cityId = rows[0].id
       }
 
-      await db().query(
-        `insert into concierge_requests (id, user_id, category_id, city_id, budget, comment)
-         values ($1, $2, $3, $4, $5, $6)`,
-        [uuidv7(), request.caller!.userId, body.categoryId, cityId, body.budget?.amount ?? null, body.comment ?? null],
-      )
+      await db().tx(async (client) => {
+        /* Строка пользователя под замком: «одна открытая заявка на категорию»
+         * — правило, а не ограничение базы, и два одновременных нажатия иначе
+         * оба видели пустую очередь и заводили две (R-49; ревью 015, V6). */
+        await client.query('select 1 from users where id = $1 for update', [request.caller!.userId])
+        // Каждая заявка — ручная работа человека: он ищет подрядчика и звонит.
+        // Вторая открытая заявка по той же категории новой работы не создаёт,
+        // а только плодит очередь, за которую платит владелец.
+        const { rows: pending } = await client.query(
+          `select 1 from concierge_requests
+            where user_id = $1 and category_id = $2 and status in ('new','in_progress')`,
+          [request.caller!.userId, body.categoryId],
+        )
+        if (pending.length > 0) {
+          throw new AppError(409, 'concierge_pending', 'Заявка по этой категории уже в работе — мы свяжемся в течение суток')
+        }
+        await client.query(
+          `insert into concierge_requests (id, user_id, category_id, city_id, budget, comment)
+           values ($1, $2, $3, $4, $5, $6)`,
+          [uuidv7(), request.caller!.userId, body.categoryId, cityId, body.budget?.amount ?? null, body.comment ?? null],
+        )
+      })
       return reply.code(201).send()
     },
   )

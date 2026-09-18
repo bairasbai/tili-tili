@@ -37,6 +37,11 @@ export function registerSentry(app: FastifyInstance, config: Config): void {
         delete event.request.headers.cookie
       }
       if (event.request?.query_string) event.request.query_string = '***'
+      /* Тело запроса — тоже секрет: у `/auth/otp/verify` там номер и код, у
+       * `/auth/refresh` — refresh-токен, у любого пути — персональные данные.
+       * SDK кладёт его в отчёт сам (`request.data`); чистим целиком — для
+       * разбора падения хватает пути, маршрута и `request_id` (ревью 015). */
+      if (event.request?.data !== undefined) delete event.request.data
       return event
     },
   })

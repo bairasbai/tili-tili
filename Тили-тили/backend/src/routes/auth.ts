@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, TooManyRequests, unauthorized } from '../errors.js'
 import { uuidv7 } from '../ids.js'
@@ -27,8 +28,16 @@ interface Tokens {
   user: { id: string; name: string | null; phone: string }
 }
 
+/**
+ * Адрес клиента — только если это адрес. При `TRUST_PROXY` больше числа прокси
+ * Fastify берёт значение из `X-Forwarded-For` как есть, и мусор оттуда уходил
+ * в `::inet` — 500 вместо ответа, а лимиты по адресу обходились подставным
+ * адресом (ревью 015). Не адрес — считаем неизвестным: лимиты по номеру и общий
+ * потолок остаются.
+ */
 function clientIp(request: FastifyRequest): string | null {
-  return request.ip || null
+  const ip = request.ip
+  return ip && isIP(ip) ? ip : null
 }
 
 /**
@@ -227,15 +236,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const code = generateCode()
+      const codeId = uuidv7()
       await db().query(
         `insert into otp_codes (id, phone, code_hash, expires_at, ip)
          values ($1, $2, $3, now() + ($4 || ' seconds')::interval, $5)`,
-        [uuidv7(), phone, hashCode(otpSecret(), phone, code), String(CODE_TTL_SECONDS), ip],
+        [codeId, phone, hashCode(otpSecret(), phone, code), String(CODE_TTL_SECONDS), ip],
       )
 
       try {
         await app.sms.send(phone, codeMessage(code))
       } catch (error) {
+        /* SMS не ушла — строки кода быть не должно: иначе отказ провайдера
+         * считался бы отправкой в паузе между кодами и в лимитах на номер, и
+         * человек без единой SMS упирался бы в 429 (ревью 015). */
+        await db().query('delete from otp_codes where id = $1', [codeId]).catch(() => undefined)
         request.log.error({ err: error, phone: maskPhone(phone) }, 'не удалось отправить код')
         throw new AppError(502, 'sms_failed', 'Не удалось отправить SMS. Попробуйте ещё раз через минуту.')
       }
@@ -266,33 +280,47 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { phone: string; code: string; device?: string }
       const phone = normalizePhone(body.phone)
 
-      const { rows } = await db().query<{ id: string }>(
-        `select id
-           from otp_codes
-          where phone = $1 and consumed_at is null and expires_at > now()
-          order by created_at desc
-          limit 1`,
-        [phone],
+      /* Проверяются ВСЕ живые коды номера, а не только последний (ревью 015):
+       * посторонний, запросивший код на чужой номер через минуту после
+       * владельца, делал код владельца «неверным» — сверка шла с новейшим.
+       *
+       * Попытка засчитывается ДО сравнения и одним запросом с проверкой
+       * предела — на каждый живой код: раздельно «прочитал — сравнил —
+       * записал» восемь параллельных неверных кодов проходили порог, а шестой
+       * инкремент упирался в CHECK `attempts <= 5` — 500 вместо 429, и перебор
+       * получал больше пяти попыток на код (D1-07). Условие `attempts < 5` в
+       * UPDATE атомарно: код, исчерпавший попытки, из выборки выпадает. */
+      const entered = hashCode(otpSecret(), phone, body.code)
+      const { rows: alive } = await db().query<{ id: string; code_hash: string }>(
+        `update otp_codes set attempts = attempts + 1
+          where phone = $1 and consumed_at is null and expires_at > now() and attempts < $2
+          returning id, code_hash`,
+        [phone, MAX_ATTEMPTS],
       )
-      const otp = rows[0]
-      if (!otp) throw unauthorized('Код неверный или устарел. Запросите новый.')
-
-      /* Попытка засчитывается ДО сравнения и одним запросом с проверкой
-       * предела. Раздельно — `select attempts`, сравнение, `update +1` —
-       * восемь параллельных неверных кодов читали одно значение, все
-       * проходили порог, а шестой инкремент упирался в CHECK `attempts <= 5`:
-       * 500 в лог как падение сервера вместо 429, и перебор получал больше
-       * пяти попыток на код (D1-07). Условие `attempts < 5` в UPDATE
-       * атомарно: строку меняют по очереди, шестому не достаётся ничего. */
-      const attempt = await db().query<{ code_hash: string }>(
-        'update otp_codes set attempts = attempts + 1 where id = $1 and attempts < $2 returning code_hash',
-        [otp.id, MAX_ATTEMPTS],
-      )
-      if (attempt.rowCount === 0) throw new TooManyRequests(60, 'Слишком много попыток. Запросите новый код.')
-
-      if (hashCode(otpSecret(), phone, body.code) !== attempt.rows[0]!.code_hash) {
+      if (alive.length === 0) {
+        const { rows: exhausted } = await db().query(
+          'select 1 from otp_codes where phone = $1 and consumed_at is null and expires_at > now() limit 1',
+          [phone],
+        )
+        if (exhausted.length > 0) throw new TooManyRequests(60, 'Слишком много попыток. Запросите новый код.')
         throw unauthorized('Код неверный или устарел. Запросите новый.')
       }
+      const otp = alive.find((row) => row.code_hash === entered)
+      if (!otp) throw unauthorized('Код неверный или устарел. Запросите новый.')
+
+      /* Строка старше окна восстановления — стирается сразу, до входа
+       * (фича 014, A18). Уборка ежечасная, и до её прохода вход выдавал
+       * токены, с которыми каждый запрос отвечал 401 «Аккаунт удалён»: SMS
+       * потрачена, войти нельзя. Путь — тот же, что у уборки (`eraseUser`),
+       * в одной транзакции; ниже заводится новый аккаунт с чистой историей.
+       * Стирание — ДО гашения кода: сбой на большой свадьбе оставляет код
+       * живым, и повтор ввода не требует новой SMS (ревью 015). */
+      const { rows: stale } = await db().query<{ id: string }>(
+        `select id from users
+          where phone = $1 and deleted_at is not null and deleted_at <= now() - make_interval(days => $2::int)`,
+        [phone, RESTORE_WINDOW_DAYS],
+      )
+      if (stale[0]) await db().tx((client) => eraseUser(client, stale[0]!.id))
 
       // Гасим код до выдачи токенов: два одновременных запроса с одним кодом
       // не должны завести две сессии. Условие consumed_at is null делает
@@ -301,18 +329,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         otp.id,
       ])
       if (consumed.rowCount === 0) throw unauthorized('Код уже использован. Запросите новый.')
-
-      /* Строка старше окна восстановления — стирается сразу, до входа
-       * (фича 014, A18). Уборка ежечасная, и до её прохода вход выдавал
-       * токены, с которыми каждый запрос отвечал 401 «Аккаунт удалён»: SMS
-       * потрачена, войти нельзя. Путь — тот же, что у уборки (`eraseUser`),
-       * в одной транзакции; ниже заводится новый аккаунт с чистой историей. */
-      const { rows: stale } = await db().query<{ id: string }>(
-        `select id from users
-          where phone = $1 and deleted_at is not null and deleted_at <= now() - make_interval(days => $2::int)`,
-        [phone, RESTORE_WINDOW_DAYS],
-      )
-      if (stale[0]) await db().tx((client) => eraseUser(client, stale[0]!.id))
 
       // Регистрация и вход — одно и то же действие. Гонку закрывает
       // уникальность телефона в БД, а не проверка «а есть ли уже такой».

@@ -215,7 +215,7 @@ describe.skipIf(!live)('регрессии аудита, требующие ба
       const chatId = await openChat(couple, vendor.vendorId)
       const blocked = await send(vendor.token, chatId, 'Здравствуйте, предлагаю услуги')
       expect(blocked.statusCode).toBe(429)
-      expect(blocked.json().error.code).toBe('outreach_limit')
+      expect(blocked.json().error.code).toBe('cold_outreach_limit')
     })
   })
 })

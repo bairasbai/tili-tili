@@ -61,9 +61,12 @@ function momentOrNull(value: string | null | undefined, field: string): string |
  * внутри обработчика: правило одно, а дверей две.
  */
 async function carrierDeal(db: Queryable, weddingId: string, dealId: string): Promise<void> {
+  /* Строка сделки под замком: параллельная отмена (`PATCH /deals` →
+   * `detachBusRoutes`) иначе проходила между проверкой и записью маршрута,
+   * и маршрут оставался с отменённой сделкой (ревью 015). */
   const { rows } = await db.query<{ category_id: string; state: string }>(
     `select s.category_id, d.state from deals d join slots s on s.id = d.slot_id
-      where d.id = $1 and d.wedding_id = $2`,
+      where d.id = $1 and d.wedding_id = $2 for update of d`,
     [dealId, weddingId],
   )
   if (rows.length === 0) throw validationFailed({ dealId: 'сделка не найдена в этой свадьбе' })
@@ -476,7 +479,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             id: { type: 'string' },
             name: { type: 'string', minLength: 1, maxLength: 120 },
             from: { type: 'string', maxLength: 300 },
-            time: { type: 'string', pattern: '^[0-2][0-9]:[0-5][0-9]$' },
+            time: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
             seats: { type: 'integer', minimum: 1, maximum: 500 },
             taken: { type: 'integer' },
             // Сделка перевозчика уходит в колонку uuid; `null` — маршрут без перевозчика.
@@ -517,7 +520,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             name: { type: 'string', minLength: 1, maxLength: 120 },
             // Точку сбора и время можно снять (`null`) — «ещё не назначено», как у нового маршрута.
             from: { type: 'string', maxLength: 300, nullable: true },
-            time: { type: 'string', pattern: '^[0-2][0-9]:[0-5][0-9]$', nullable: true },
+            time: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', nullable: true },
             seats: { type: 'integer', minimum: 1, maximum: 500 },
             // `null` снимает перевозчика (R-17): пропуск и очистка — разные намерения.
             dealId: { ...UUID_ID, nullable: true },
@@ -960,10 +963,21 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          * «не придёт» рукой пары и посадка гостя в ту же секунду взаимно
          * ждали друг друга и одна из сторон получала 500 (RF-BE-06). */
         await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
-        /* Маршрут под блокировкой строки: два гостя, садящиеся на последнее
-         * место одновременно, иначе оба проходят подсчёт персон ниже (R-49). */
+        /* Маршруты под блокировкой строк — и целевой, и тот, откуда гость
+         * пересаживается, ОДНИМ запросом в порядке `id`: два гостя, меняющиеся
+         * автобусами навстречу, иначе брали замки в разном порядке (один —
+         * A потом B через триггер удаления брони, другой — B потом A) и
+         * упирались в deadlock — 500 одному из них (ревью 015). Заодно два
+         * гостя на последнее место проходят подсчёт персон по очереди (R-49). */
+        await client.query(
+          `select r.id from bus_routes r
+            where r.wedding_id = $2
+              and (r.id = $1 or r.id in (select b.bus_id from bus_bookings b where b.guest_id = $3))
+            order by r.id for update`,
+          [busId, guest.weddingId, guest.guestId],
+        )
         const { rows: bus } = await client.query<{ seats: number; taken: number }>(
-          'select seats, taken from bus_routes where id = $1 and wedding_id = $2 for update',
+          'select seats, taken from bus_routes where id = $1 and wedding_id = $2',
           [busId, guest.weddingId],
         )
         if (bus.length === 0) throw notFound('Маршрут не найден')
@@ -1041,6 +1055,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = await guestByToken(db(), guestToken)
 
       return db().tx(async (client) => {
+        /* Тот же порядок замков, что у автобуса: строка гостя, затем оба
+         * блока — целевой и прежний — в порядке `id` (ревью 015: у отелей
+         * замков не было вовсе, взаимный переезд двух гостей давал deadlock). */
+        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
+        await client.query(
+          `select h.id from hotel_blocks h
+            where h.wedding_id = $2
+              and (h.id = $1 or h.id in (select b.hotel_id from hotel_bookings b where b.guest_id = $3))
+            order by h.id for update`,
+          [hotelId, guest.weddingId, guest.guestId],
+        )
         /* Дедлайн блока — до какого дня отель держит номера по брони пары
          * (Бизнес-логика §12.1). День дедлайна ещё открыт, следующий — нет;
          * «сегодня» считается по поясу свадьбы, как дата свадьбы у отзывов

@@ -28,8 +28,15 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
         .header('upgrade', 'websocket')
         .send({ error: { code: 'upgrade_required', message: 'Этот путь работает только по WebSocket' } }),
     wsHandler: async (socket, request) => {
-    const { chatId } = request.params as { chatId: string }
+    /* Комната хаба — по строке, база сравнивает uuid без регистра: адрес с
+     * заглавными проходил проверки, а событий не получал (ревью 015). */
+    const chatId = (request.params as { chatId: string }).chatId.toLowerCase()
     const { token } = request.query as { token?: string }
+    /* Клиент мог закрыть сокет, пока шли проверки (три обращения к базе):
+     * `close` уже прозвучал, слушатель ниже его не услышит, и сокет остался
+     * бы в комнате навсегда — мёртвая рассылка на каждое сообщение (ревью 015). */
+    let closedEarly = false
+    socket.once('close', () => { closedEarly = true })
 
     try {
       if (!token) throw unauthorized('Нужен токен доступа в параметре token')
@@ -39,6 +46,7 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
       const { chat } = await chatForUser(db(), chatId, claims.sub)
       assertOpen(chat)
 
+      if (closedEarly) return
       // Хаб запоминает, чьё соединение: своё «печатает» автору не доставляется.
       app.realtime.join(chatId, socket, claims.sub)
 

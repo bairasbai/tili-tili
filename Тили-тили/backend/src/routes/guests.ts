@@ -136,6 +136,29 @@ export function normalizeRuPhone(raw: string | undefined): string | null | undef
   return null
 }
 
+/**
+ * Телефон из формы пары — к виду `+7XXXXXXXXXX` или 422 (ревью 015). Тот же
+ * `normalizeRuPhone`, что у импорта: иначе один и тот же номер жил в двух
+ * написаниях, дедупликация их не видела, а провайдер SMS получал сырую строку.
+ * `undefined` — поля не прислали.
+ */
+export function normalizedPhoneOr422(raw: string | undefined): string | null | undefined {
+  if (raw === undefined) return undefined
+  if (raw.trim() === '') return null
+  const phone = normalizeRuPhone(raw)
+  if (phone === null) throw new AppError(422, 'validation_failed', 'Телефон не распознан', { phone: 'ожидается российский номер, например +7 917 000-00-00' })
+  return phone
+}
+
+/** Сколько SMS уходит за одно нажатие «Напомнить»: список гостей не ограничен, а SMS — деньги. */
+export const REMIND_MAX_PER_CALL = 300
+
+/** Текст напоминания: имя гостя — одной строкой и коротко, оно набрано парой, а не нами. */
+export function remindText(name: string, code: string): string {
+  const who = name.replace(/\s+/g, ' ').trim().slice(0, 40)
+  return `${who}, напоминаем о свадьбе: ответьте, пожалуйста, придёте ли вы — https://tili-tili.ru/i/${code}`
+}
+
 /** Ключ имени для дедупликации: регистр и лишние пробелы — не другой гость. */
 export function guestNameKey(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -186,6 +209,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const body = request.body as { name: string; plusOne?: boolean; group?: string; phone?: string }
       assertPhoneByCouple(request.member!.role, body.phone !== undefined)
+      /* Телефон — к виду `+7XXXXXXXXXX`, как у импорта: сырой «8 917 000-55-66»
+       * не совпадал с нормализованным у дедупликации импорта и уходил
+       * провайдеру SMS как есть (ревью 015). Не российский или неполный — 422. */
+      const phone = normalizedPhoneOr422(body.phone)
       const id = uuidv7()
       await db().query(
         `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
@@ -196,7 +223,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           body.name,
           body.plusOne ?? false,
           body.group ?? null,
-          body.phone ?? null,
+          phone,
           newGuestToken(),
         ],
       )
@@ -324,6 +351,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       // снять значение (R-17): пропуск и очистка это разные намерения.
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
       assertPhoneByCouple(request.member!.role, has('phone'))
+      // Телефон — к одному виду (см. POST); `null` — стереть, как и было.
+      const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
 
       /* Правка гостя, посадка и освобождение мест — одна транзакция (R-122):
        * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,
@@ -338,14 +367,21 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         ])
         if (locked.length === 0) throw notFound('Гость не найден')
 
-        if (body.tableId) {
+        /* Вместимость стола проверяется и при пересадке, и при «+1» без
+         * пересадки: гость уже сидит, а «+1» добавляет за столом персону
+         * (ревью 015) — стол заявляется сразу с текущим `table_id`. */
+        const seatedAt = body.plusOne === true && !has('tableId')
+          ? (await client.query<{ table_id: string | null }>('select table_id from guests where id = $1', [guestId])).rows[0]?.table_id ?? null
+          : null
+        const tableToCheck = (body.tableId as string | undefined) ?? seatedAt ?? undefined
+        if (tableToCheck) {
           /* Стол обязан принадлежать этой же свадьбе: иначе гость садится
            * за чужой стол и портит чужую рассадку. Строка стола под
            * блокировкой: два одновременных «посадить» за последнее место
            * иначе оба прошли бы проверку вместимости (R-49). */
           const { rows: table } = await client.query<{ name: string; capacity: number }>(
             'select name, capacity from tables where id = $1 and wedding_id = $2 for update',
-            [body.tableId, weddingId],
+            [tableToCheck, weddingId],
           )
           if (table.length === 0) throw notFound('Стол не найден')
 
@@ -359,7 +395,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                     bool_or(o.plus_one) filter (where o.id = $3) as plus_one
                from guests o
               where o.wedding_id = $2 and (o.table_id = $1 or o.id = $3)`,
-            [body.tableId, weddingId, guestId],
+            [tableToCheck, weddingId, guestId],
           )
           if (seated[0]!.plus_one === null) throw notFound('Гость не найден')
           const plusOne = has('plusOne') ? Boolean(body.plusOne) : seated[0]!.plus_one
@@ -425,7 +461,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               has('transfer'),
               (body.transfer as string) ?? null,
               has('phone'),
-              (body.phone as string) ?? null,
+              phone,
             ],
           )
         } catch (error) {
@@ -522,25 +558,32 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     let sent = 0
     let skippedNoPhone = 0
     let skippedLinkUsed = 0
+    let failed = 0
+    /* Предел на одну рассылку: список гостей не ограничен, а SMS — наши
+     * деньги на чужие номера (ревью 015). Сверх предела — не шлём, и в ответе
+     * это видно как `failed`; на следующие сутки очередь дойдёт до остальных. */
     for (const guest of pending) {
       if (!guest.phone) {
         skippedNoPhone++
         continue
       }
       if (!guest.code) {
+        /* Ссылки у гостя нет вовсе (импорт списком, ссылку не выдавали) —
+         * напоминать не о чём, это не «ссылка открыта». */
         skippedLinkUsed++
         continue
       }
+      if (sent >= REMIND_MAX_PER_CALL) {
+        failed++
+        continue
+      }
       try {
-        await app.sms.send(
-          guest.phone,
-          `${guest.name}, напоминаем о свадьбе: ответьте, пожалуйста, придёте ли вы — https://tili-tili.ru/i/${guest.code}`,
-        )
+        await app.sms.send(guest.phone, remindText(guest.name, guest.code))
         sent++
       } catch {
         // Отказ провайдера на одном номере не должен ронять всю рассылку:
         // остальные гости не виноваты. Ошибка уже в логе отправителя.
-        skippedNoPhone++
+        failed++
       }
     }
 
@@ -549,7 +592,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * отметка либо пуста, либо старше суток — для правила это одно и то же. */
       await db().query('update weddings set guests_reminded_at = null where id = $1', [weddingId])
     }
-    return { sent, skippedNoPhone, skippedLinkUsed }
+    return { sent, skippedNoPhone, skippedLinkUsed, failed }
   })
 
   app.post('/weddings/:weddingId/guests/:guestId/invite-link', async (request) => {
@@ -564,14 +607,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       /* Прежний код гаснет: «выдать новую ссылку» означает, что старая
        * потеряна или ушла не туда.
        *
-       * Гаснет он сроком, а не только отметкой `used_at`: у обмена есть
-       * окно повтора (`REDEEM_RETRY_MINUTES`), в котором уже использованный
-       * код отдаёт токен ещё раз. Перевыпуск закрывает это окно у ВСЕХ
-       * прежних кодов гостя — и у неоткрытого, и у открытого минуту назад:
-       * ушедшая не туда ссылка не должна выдать ни старый, ни новый токен. */
+       * Гаснет он СРОКОМ, а не отметкой `used_at`: у обмена есть окно повтора
+       * (`REDEEM_RETRY_MINUTES`), в котором уже использованный код отдаёт
+       * токен ещё раз, — истёкший срок закрывает и его. Отметка «открыт» на
+       * неоткрытом коде врала бы паре `inviteUrlUsed: true` (ревью 015). */
       await client.query(
         `update guest_invite_codes
-            set used_at = coalesce(used_at, now()), expires_at = least(expires_at, now())
+            set expires_at = least(expires_at, now())
           where guest_id = $1 and expires_at > now()`,
         [guestId],
       )
@@ -626,11 +668,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
      * обмена отдаёт тот же токен: отметка `used_at` не двигается, окно
      * считается от неё. Позже окна — 410, как и раньше; перевыпуск ссылки
      * закрывает окно немедленно (см. `invite-link`). */
+    /* Свадьба отменена или убрана — ссылка мертва: обмен сжигал код и отдавал
+     * название, дату и площадку отменённой свадьбы с токеном, который дальше
+     * везде отвечал 401 (ревью 015). */
     const claimed = await db().query<{ guest_id: string }>(
-      `update guest_invite_codes set used_at = coalesce(used_at, now())
-        where code = $1 and expires_at > now()
-          and (used_at is null or used_at > now() - make_interval(mins => $2))
-        returning guest_id`,
+      `update guest_invite_codes c set used_at = coalesce(c.used_at, now())
+        from guests g join weddings w on w.id = g.wedding_id
+        where c.code = $1 and c.expires_at > now() and g.id = c.guest_id
+          and w.cancelled_at is null and w.archived_at is null
+          and (c.used_at is null or c.used_at > now() - make_interval(mins => $2))
+        returning c.guest_id`,
       [shareCode.toUpperCase(), REDEEM_RETRY_MINUTES],
     )
     if (claimed.rowCount === 0) {

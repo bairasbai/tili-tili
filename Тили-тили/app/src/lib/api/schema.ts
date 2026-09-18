@@ -97,8 +97,11 @@ export interface paths {
          *     при входе тем же номером восстанавливается: `deleted_at` снимается,
          *     в журнал аудита пишется `user.restored`, данные на месте. Отозванное
          *     при удалении согласие даётся заново — ответ несёт `consentRequired`
-         *     как у нового аккаунта. Старше 30 дней строка уже стёрта уборкой, и
-         *     вход заводит новый аккаунт (фича 005, В2).
+         *     как у нового аккаунта. Старше 30 дней строка стирается при входе (или
+         *     уборкой раньше), и вход заводит новый аккаунт (фичи 005/014). Код
+         *     сверяется со всеми живыми кодами номера: чужой запрос кода на ваш
+         *     номер ваш код не отменяет; попытки считаются, после пяти неверных —
+         *     429 (ревью 015).
          */
         post: {
             parameters: {
@@ -1376,7 +1379,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Слоты команды: 12 из шаблона (площадка, фото, видео, ведущий, декор, торт, музыка, платье, костюм, образ, транспорт, координатор) плюс добавленные парой */
+        /** Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца) плюс добавленные парой */
         get: {
             parameters: {
                 query?: never;
@@ -1577,6 +1580,12 @@ export interface paths {
          * @description Идемпотентно по `Idempotency-Key`. Статус → «Оплачено полностью».
          *     Эквайринга в MVP нет (План §3.2): запись в `payments` фиксирует факт,
          *     деньги ходят между парой и подрядчиком напрямую.
+         *
+         *     Без `amount` записывается ОСТАТОК — цена минус уже оплаченное (возвраты
+         *     с минусом, отменённые записи не считаются — та же формула, что `Deal.paid`);
+         *     сделка, оплаченная целиком, — 409 `overpay`. Сумма сверх остатка — 409
+         *     `overpay`; ноль — 422 `bad_amount`; сделка без цены — 409 `no_price`
+         *     (ревью 015).
          */
         post: {
             parameters: {
@@ -1612,6 +1621,7 @@ export interface paths {
                     };
                 };
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -2244,8 +2254,10 @@ export interface paths {
                             sent?: number;
                             /** @description не ответили, но телефона нет */
                             skippedNoPhone?: number;
-                            /** @description не ответили, но личная ссылка уже открыта — им ссылку выдают поштучно */
+                            /** @description не ответили, но живой личной ссылки нет — открыта или не выдавалась; им ссылку выдают поштучно */
                             skippedLinkUsed?: number;
+                            /** @description телефон и ссылка есть, а SMS не ушла: отказ провайдера или предел рассылки (300 за нажатие; остальные — в следующие сутки) */
+                            failed?: number;
                         };
                     };
                 };
@@ -2318,7 +2330,7 @@ export interface paths {
         };
         /**
          * Обменять одноразовый код на персональный токен гостя
-         * @description Вызывается браузером гостя при переходе по ссылке. Код гасится в этот момент. Токен возвращается один раз и дальше живёт в localStorage гостя; повторный вызов с тем же кодом отдаёт 410.
+         * @description Вызывается браузером гостя при переходе по ссылке. Код гасится в этот момент. Токен возвращается один раз и дальше живёт в localStorage гостя. Повторный вызов с тем же кодом в течение 10 минут после первого отдаёт тот же токен (ответ мог не дойти по мобильной сети — D3-07), позже — 410; 410 также у истёкшего и перевыпущенного парой кода и у кода отменённой или убранной свадьбы.
          */
         get: {
             parameters: {
@@ -2782,7 +2794,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Моя анкета подрядчика */
+        /**
+         * Моя анкета подрядчика
+         * @description Анкеты ещё нет — 404: по нему кабинет показывает «Анкеты ещё нет» с кнопкой
+         *     заполнить. Остальные пути `/vendor/*` без анкеты отвечают 403 (ревью 015).
+         */
         get: {
             parameters: {
                 query?: never;
@@ -2801,6 +2817,7 @@ export interface paths {
                         "application/json": components["schemas"]["VendorDetail"];
                     };
                 };
+                404: components["responses"]["NotFound"];
             };
         };
         /** Создать/обновить анкету (мастер: категория → пакеты → город → публикация) */
@@ -3032,9 +3049,11 @@ export interface paths {
                         /** @enum {string} */
                         action: "reply" | "hold" | "decline" | "reopen";
                         /**
-                         * @description Текст ответа паре — обязателен при `action=reply` (без него 422),
-                         *     у остальных действий не принимается. Уходит первым сообщением
-                         *     в чат пары с подрядчиком.
+                         * @description Сообщение паре в чат заявки. Обязателен при `action=reply` (без него 422);
+                         *     при `hold`/`decline`/`reopen` — по желанию: причина отказа или холда (§3.13,
+                         *     R-48). Уходит той же дверью, что `POST /chats/{chatId}/messages`:
+                         *     заблокированному подрядчику — 403 `vendor_blocked`, непроверенному сверх
+                         *     предела холодных обращений — 429 `cold_outreach_limit`.
                          */
                         text?: string;
                     };
@@ -3412,7 +3431,14 @@ export interface paths {
             };
         };
         put?: never;
-        /** Оставить отзыв (только после завершённой сделки) */
+        /**
+         * Оставить отзыв (только после завершённой сделки)
+         * @description Право на отзыв — завершённая (`done`) сделка этой пары с подрядчиком, ещё без
+         *     отзыва и не старше 14 дней после завершения: берётся свежайшая такая
+         *     (у фотографа с двумя слотами — вторая сделка получает свой отзыв, ревью 015).
+         *     Нет ни одной — 403; все завершённые уже с отзывом — 409 `review_exists`;
+         *     подрядчика с таким идентификатором нет — 404.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3438,6 +3464,8 @@ export interface paths {
                     };
                     content?: never;
                 };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -3989,7 +4017,9 @@ export interface paths {
         };
         /**
          * Удалить своего подрядчика
-         * @description Слот возвращается в empty, выданный гостевой токен аннулируется.
+         * @description Слот возвращается в empty, выданный гостевой токен аннулируется. В слоте нет
+         *     сделки или сделка каталожная (не свой подрядчик) — 404; выполненная работа
+         *     не снимается — 409 `bad_transition`.
          */
         delete: {
             parameters: {
@@ -4010,6 +4040,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -4030,6 +4061,9 @@ export interface paths {
         /**
          * Ссылка-приглашение для своего подрядчика
          * @description Одноразовый токен, scope guest_vendor, TTL 30 дней, привязан к слоту.
+         *     Только для своего подрядчика: в слоте с каталожной сделкой — 409
+         *     `not_external` (у каталожного есть кабинет и чат по анкете; ссылка
+         *     открывала бы слот и переписку постороннему — ревью 015). Пустой слот — 404.
          */
         post: {
             parameters: {
@@ -4058,6 +4092,8 @@ export interface paths {
                         };
                     };
                 };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -4095,10 +4131,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            /** Format: date */
-                            weddingDate?: string;
+                            /**
+                             * Format: date
+                             * @description пусто, пока пара не выбрала дату
+                             */
+                            weddingDate?: string | null;
                             slot?: components["schemas"]["Slot"];
                             chatId?: string;
+                            /** @description срок мягкой брони в часах (§18.3) — справочно, как у сделки */
+                            holdHours?: number;
                             /** @description Тайминг дня целиком (§11): подрядчику нужно знать, когда начинается церемония и когда его выход. Ни гостей, ни бюджета, ни остальной команды здесь нет. */
                             timeline?: components["schemas"]["TimelineEvent"][];
                         };
@@ -6800,7 +6841,7 @@ export interface paths {
                         categoryId: string;
                         budget?: components["schemas"]["Money"];
                         comment?: string;
-                        /** @description город поиска, если отличается от города свадьбы */
+                        /** @description город поиска, если отличается от города свадьбы; только из справочника — иначе 422 */
                         city?: string;
                     };
                 };
@@ -6814,6 +6855,7 @@ export interface paths {
                     content?: never;
                 };
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -7341,6 +7383,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/concierge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Очередь заявок консьержу
+         * @description Заявки «подобрать вручную» (`POST /catalog/concierge`, План §18.12): открытые
+         *     (`new`, `in_progress`), старейшие сверху — обещание «свяжемся в течение суток»
+         *     считается от подачи. До ревью 015 заявки копились в базе, и разобрать их было
+         *     неоткуда. Телефон пары — в заявке: она сама попросила связаться с ней, и
+         *     сотрудник звонит по нему; чтение очереди пишется в журнал действий
+         *     (`concierge.queue.view`), как открытие документов верификации.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    cursor?: components["parameters"]["Cursor"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConciergePage"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/concierge/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Состояние заявки консьержу
+         * @description `in_progress` — взята в работу; `done` — подрядчик подобран, пара получает
+         *     уведомление «Консьерж подобрал варианты»; `cancelled` — снята (пара передумала
+         *     или не отвечает). Закрытую (`done`/`cancelled`) не открывают заново — 409
+         *     `concierge_closed`: новая просьба — новая заявка. Чужой или несуществующий
+         *     идентификатор — 404. Решение — в журнал действий (`concierge.<status>`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "in_progress" | "done" | "cancelled";
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ConciergeDecision"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/categories": {
         parameters: {
             query?: never;
@@ -7380,8 +7529,8 @@ export interface paths {
          * Изменить категории и словарь синонимов
          * @description «тамада» = «ведущий», «сладкий стол» = «кондитер» (План §19.2).
          *     Категории добавляются и правятся, но не удаляются: на них ссылаются анкеты
-         *     и слоты, и исчезнувшая категория — это осиротевшая мозаика. `icon` со значением
-         *     `null` или пропущенный оставляет прежний значок. Словарь `synonyms` заменяется ЦЕЛИКОМ —
+         *     и слоты, и исчезнувшая категория — это осиротевшая мозаика. `icon` пропущенный
+         *     оставляет прежний значок, `null` — стирает (R-17, фича 014). Словарь `synonyms` заменяется ЦЕЛИКОМ —
          *     чего не прислали, того больше нет. Слово, ведущее на неизвестную категорию, —
          *     422 с полем `synonyms.<слово>`, и не меняется ничего.
          *
@@ -8587,6 +8736,38 @@ export interface components {
             complaintId?: string;
             /** @enum {string} */
             action?: "dismiss" | "warn" | "downrank" | "block";
+        };
+        /** @description Заявка консьержу в очереди панели: что искать, где, на какой бюджет и кому перезвонить. */
+        ConciergeRequest: {
+            id?: string;
+            /** @enum {string} */
+            status?: "new" | "in_progress" | "done" | "cancelled";
+            categoryId?: string;
+            /** @description название категории из справочника */
+            categoryName?: string;
+            /** @description город поиска; пусто — заявка без города */
+            city?: string | null;
+            budget?: components["schemas"]["Money"] | null;
+            comment?: string | null;
+            /** @description номер входа пары — она попросила связаться; сотрудник звонит по нему */
+            phone?: string;
+            /** @description имя пары из профиля */
+            name?: string | null;
+            /**
+             * Format: date-time
+             * @description когда подана — от неё считаются сутки
+             */
+            createdAt?: string;
+        };
+        ConciergePage: {
+            items?: components["schemas"]["ConciergeRequest"][];
+            nextCursor?: string | null;
+        };
+        /** @description Что записано по заявке консьержу. */
+        ConciergeDecision: {
+            requestId?: string;
+            /** @enum {string} */
+            status?: "in_progress" | "done" | "cancelled";
         };
         /**
          * @description Заявка в очереди. Ни ссылки на документ, ни ИНН здесь нет — только

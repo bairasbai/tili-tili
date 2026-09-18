@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { Db } from '../plugins/db.js'
+import type { Db, Queryable } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
 import { weddingContext } from './context.js'
 import { tillySystemPrompt } from './prompt.js'
@@ -59,6 +59,8 @@ declare module 'fastify' {
 
 export class TillyService {
   private readonly pending = new Set<Promise<void>>()
+  /** Отбой запросов к модели при остановке сервера — по одному на ответ в работе. */
+  private readonly inflight = new Set<AbortController>()
 
   constructor(
     private readonly app: FastifyInstance,
@@ -82,14 +84,23 @@ export class TillyService {
    * реплика человека, пустой — Тиля), не отдельный счётчик: счётчик
    * расходится с лентой на первой же уборке. Сутки — календарные по поясу
    * места, как окно чата дня; без пояса — Москва.
+   *
+   * Вопрос, на который модель не ответила (`tilly_usage.outcome = 'failed'`:
+   * отказ провайдера, таймаут, остановка сервера), в счёт не идёт — пара
+   * получила заглушку, а не ответ, и платить за это лимитом не должна
+   * (ревью 015, C11). Заглушка без модели (`stub`) считается: вопросы
+   * сохраняются и ждут ответа, и предел на них — тот же.
    */
-  async quota(db: Db, chatId: string, weddingId: string): Promise<TillyQuota> {
+  async quota(db: Queryable, chatId: string, weddingId: string): Promise<TillyQuota> {
     const { rows } = await db.query<{ used: string }>(
-      `select count(*)::text as used
-         from messages m
-        where m.chat_id = $1 and m.sender_id is not null
-          and (m.created_at at time zone coalesce((select tz from weddings where id = $2), 'Europe/Moscow'))::date
-              = (now() at time zone coalesce((select tz from weddings where id = $2), 'Europe/Moscow'))::date`,
+      `with day as (select coalesce((select tz from weddings where id = $2), 'Europe/Moscow') as tz)
+       select greatest(0,
+                (select count(*) from messages m, day
+                  where m.chat_id = $1 and m.sender_id is not null
+                    and (m.created_at at time zone day.tz)::date = (now() at time zone day.tz)::date)
+              - (select count(*) from tilly_usage u, day
+                  where u.chat_id = $1 and u.outcome = 'failed'
+                    and (u.created_at at time zone day.tz)::date = (now() at time zone day.tz)::date))::text as used`,
       [chatId, weddingId],
     )
     return { used: Number(rows[0]?.used ?? 0), limit: this.config.dailyLimit }
@@ -107,8 +118,25 @@ export class TillyService {
     void run.finally(() => this.pending.delete(run))
   }
 
-  /** Дождаться всех фоновых ответов. */
-  async settle(): Promise<void> {
+  /**
+   * Дождаться всех фоновых ответов — но не дольше `graceMs`.
+   *
+   * Сервер при остановке ждёт закрытия 20 с (`index.ts`), а модель может думать
+   * минуту: раньше ответ терялся вместе с процессом — «печатает…» обрывалось,
+   * вопрос оставался без ответа и без строки учёта навсегда (ревью 015).
+   * Теперь по истечении срока запросы к модели отбиваются, и каждый ответ в
+   * работе дописывается честной заглушкой «временно без ИИ» с исходом
+   * `failed` — пара видит, что случилось, и спрашивает ещё раз.
+   */
+  async settle(graceMs = 8_000): Promise<void> {
+    if (!this.pending.size) return
+    let timer: NodeJS.Timeout | undefined
+    const grace = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), graceMs)
+    })
+    const outcome = await Promise.race([Promise.allSettled([...this.pending]).then(() => 'done' as const), grace])
+    clearTimeout(timer)
+    if (outcome === 'timeout') for (const controller of this.inflight) controller.abort()
     while (this.pending.size) await Promise.allSettled([...this.pending])
   }
 
@@ -130,14 +158,16 @@ export class TillyService {
       let outcome: TillyOutcome = 'failed'
       let usage = { inputTokens: 0, outputTokens: 0 }
       let model = this.model.model
+      const controller = new AbortController()
+      this.inflight.add(controller)
       try {
         const answer = await this.model.complete({
           system: tillySystemPrompt(context.text),
           messages: history,
           maxTokens: this.config.maxTokens,
           temperature: this.config.temperature,
-          /* Общий предел на ответ: попытки клиента внутри него. */
-          signal: AbortSignal.timeout(this.config.timeoutMs * 2 + 5_000),
+          /* Общий предел на ответ: попытки клиента внутри него; плюс отбой при остановке сервера. */
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(this.config.timeoutMs * 2 + 5_000)]),
         })
         text = answer.text
         outcome = 'answered'
@@ -146,6 +176,8 @@ export class TillyService {
       } catch (err) {
         /* Ключ и адрес провайдера в лог не попадают: тут только ошибка и модель. */
         this.app.log.error({ err, provider: this.model.provider, model: this.model.model }, 'Тиль: модель не ответила')
+      } finally {
+        this.inflight.delete(controller)
       }
       await this.reply(db, input, text, {
         outcome,

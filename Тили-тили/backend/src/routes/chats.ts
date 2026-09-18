@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound, quotaExceeded } from '../errors.js'
+import { AppError, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { uuidv7, isUuid } from '../ids.js'
-import { buildPage, encodeCursor, parsePageQuery, type PageQuery } from '../pagination.js'
-import { assertOpen, chatForUser, rolesSeeing, type ChatKind } from '../chats/access.js'
-import { hasLink, looksLikePayoutBypass, PAYOUT_WARNING } from '../chats/guard.js'
-import { notify } from '../notify/notify.js'
+import { buildPage, encodeCursor, parsePageQuery, timestampKey, type PageQuery } from '../pagination.js'
+import { assertOpen, chatForUser, type ChatKind } from '../chats/access.js'
+import { sendChatMessage } from '../chats/post.js'
 import { openLead } from '../vendor/leads.js'
 
 const TITLE_BY_KIND: Record<Exclude<ChatKind, 'vendor' | 'external'>, string> = {
@@ -37,16 +36,12 @@ export interface MessageRow {
 }
 
 /**
- * Время реплики для курсора — текстом из базы, с микросекундами.
- *
- * Драйвер отдаёт `timestamptz` как `Date`, а у него миллисекунды: курсор
- * `(created_at, id) < ($cursor, $id)` с усечённым временем пропускал реплики,
- * записанные в те же миллисекунды после последней на странице — их
- * `created_at` больше усечённого ключа, и в следующую страницу они не
- * попадали (фича 014, D4-23). Формат — ISO с шестью знаками дроби, который
- * `decodeCursor` принимает и `::timestamptz` приводит без потерь.
+ * Время реплики для курсора — текстом из базы, с микросекундами
+ * (`timestampKey`, фича 014, D4-23): с усечённым до миллисекунд временем
+ * реплики, записанные в ту же миллисекунду после последней на странице,
+ * в следующую страницу не попадали.
  */
-export const CREATED_AT_US = `to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at_us`
+export const CREATED_AT_US = `${timestampKey('m.created_at')} as created_at_us`
 
 /**
  * Страница ленты от свежих к старым: открывая чат, человек видит последнее.
@@ -105,61 +100,9 @@ export function isMine(r: { sender_id: string | null; guest_id: string | null },
   return r.guest_id !== null && r.guest_id === viewer.guestId
 }
 
-/** Пояс свадьбы для тихих часов получателей без своего пояса. */
-async function weddingTz(db: Queryable, weddingId: string): Promise<string | null> {
-  const { rows } = await db.query<{ tz: string | null }>('select tz from weddings where id = $1', [weddingId])
-  return rows[0]?.tz ?? null
-}
-
-/**
- * Уведомление всем, кто в этом чате состоит, кроме автора.
- *
- * Общее для реплики участника и реплики гостя в чате дня X (фича 009,
- * `routes/day.ts`): у гостя аккаунта нет, `authorId` пуст — получают все,
- * кто чат видит. Свой список получателей для гостя разошёлся бы с этим при
- * первой же правке матрицы — как уже расходился (ERR-0099, ERR-0106).
- */
-export async function notifyOthers(
-  db: Queryable,
-  chatId: string,
-  weddingId: string,
-  kind: ChatKind,
-  authorId: string | null,
-  text: string,
-): Promise<void> {
-  if (kind === 'tilly') return
-  /* Получатели — те же, кто видит чат, и берутся они из ТОЙ ЖЕ матрицы,
-   * что и доступ (`rolesSeeing`). Здесь стоял свой список, и он учитывал
-   * ровно один случай — `crew` только координатору. Всё остальное уходило
-   * всем участникам свадьбы: помощник получал в теле уведомления первые
-   * 120 символов переписки с подрядчиком, хотя по матрице ему видны только
-   * `team` и `day`, а по ссылке его ждал 403 (ERR-0099). */
-  const { rows } = await db.query<{ user_id: string }>(
-    `select mem.user_id from wedding_members mem
-       where mem.wedding_id = $1 and mem.role = any($4)
-      union
-     select v.user_id from chats c join vendors v on v.id = c.vendor_id where c.id = $2
-      union
-     select mine.user_id from deals d join vendors mine on mine.id = d.vendor_id
-      where d.wedding_id = $1 and $3 in ('team','crew')
-        and d.state in ('booked','paid_deposit','done')`,
-    [weddingId, chatId, kind, rolesSeeing(kind)],
-  )
-  /* Тихие часы — по поясу свадьбы, если человек свой не назвал: самый
-   * частый push — «Новое сообщение» — шёл без него и считался по Москве
-   * (ревью фиксов, RF-BE-04). */
-  const tz = await weddingTz(db, weddingId)
-  for (const row of rows) {
-    if (row.user_id === authorId) continue
-    await notify(db, {
-      userId: row.user_id,
-      kind: 'chat',
-      title: 'Новое сообщение',
-      body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
-      link: `/chats/${chatId}`,
-    }, new Date(), tz)
-  }
-}
+/* Уведомление участникам чата — вместе с отправкой реплики в `chats/post.ts`;
+ * здесь реэкспорт для `routes/day.ts` (реплика гостя в чате дня X). */
+export { notifyOthers } from '../chats/post.js'
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -348,208 +291,20 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { chatId } = request.params as { chatId: string }
       const body = request.body as { text: string; attachmentUrl?: string }
-      const userId = request.caller!.userId
-      const { chat } = await chatForUser(db(), chatId, userId)
-      assertOpen(chat)
-      await assertNotClosed(chat)
-
-      await assertNotColdOutreach(chatId, chat.kind, userId)
-      /* Квота Тиля (План §18: 50 реплик в сутки на свадьбу, фича 010) —
-       * ДО записи: реплика сверх предела не сохраняется, иначе счётчик на
-       * экране и переписка расходились бы. 429 без Retry-After — это квота,
-       * а не частота: сбросится в полночь по поясу свадьбы, о чём и сказано. */
-      if (chat.kind === 'tilly') {
-        const quota = await app.tilly.quota(db(), chatId, chat.wedding_id)
-        if (quota.used >= quota.limit) {
-          throw quotaExceeded(
-            'tilly_daily_limit',
-            `На сегодня Тиль ответил ${quota.limit} раз — это предел на сутки. Счётчик обнулится в полночь по времени свадьбы, завтра продолжим`,
-          )
-        }
-      }
-      /* Свой подрядчик работает мимо платформы по определению: пара нашла
-       * его сама, комиссии с него нет. Предупреждать тут не о чем — оно
-       * читалось бы как обвинение на ровном месте. Заодно пустой отправитель
-       * в этом чате остаётся однозначным признаком подрядчика. */
-      const guardHere = chat.kind !== 'external'
-      await onFirstMessage(chatId, chat, userId, body.text)
-
-      const id = uuidv7()
-      const { rows } = await db().query<{ created_at: Date }>(
-        `insert into messages (id, chat_id, sender_id, text, attachments)
-         values ($1,$2,$3,$4,$5) returning created_at`,
-        [id, chatId, userId, body.text, body.attachmentUrl ? { url: body.attachmentUrl } : null],
-      )
-
-      const message = {
-        id,
+      /* Права, правила (закрытый чат, холодные обращения, ссылка в первом
+       * сообщении, сторож §18.2), квота Тиля и запись — в `sendChatMessage`:
+       * та же дверь, что у текста подрядчика из кабинета заявок (ревью 015). */
+      const { message, warning } = await sendChatMessage(app, {
         chatId,
-        senderId: userId,
+        userId: request.caller!.userId,
         text: body.text,
-        attachmentUrl: body.attachmentUrl ?? null,
-        sentAt: rows[0]!.created_at.toISOString(),
-        system: false,
-        // Реплика участника: имя гостя бывает только у реплик по ссылке гостя.
-        guestName: null,
-        // В живой канал уходит всем — своя ли она, каждый экран решает по `senderId`; автору в ответе — `true` ниже.
-        mine: null as boolean | null,
-      }
-      // Сначала живому каналу, потом уведомление: у кого чат открыт,
-      // тот увидит сообщение, а не значок о нём.
-      await app.realtime.publish({ chatId, type: 'message', actorId: userId, payload: { message } })
-      await notifyOthers(db(), chatId, chat.wedding_id, chat.kind, userId, body.text)
-      const warning = guardHere ? await warnAboutPayoutBypass(chatId, body.text) : null
-
-      /* Тиль отвечает в фоне (фича 010): 201 паре — сразу, ответ модели —
-       * отдельной репликой через живой канал и опрос, «печатает…» пока
-       * думает. Без модели — честная заглушка тем же путём; молчание
-       * выглядело бы как поломка, а «думаю…» без модели — как обман. */
-      if (chat.kind === 'tilly') app.tilly.answer({ chatId, weddingId: chat.wedding_id, userId })
-
+        ...(body.attachmentUrl ? { attachmentUrl: body.attachmentUrl } : {}),
+      })
       // Предупреждение едет вместе с ответом: клиенту не нужно перечитывать
       // историю, чтобы понять, что показать всплывающей плашкой.
-      return reply.code(201).send(warning ? { ...message, mine: true, warning } : { ...message, mine: true })
+      return reply.code(201).send(warning ? { ...message, warning } : message)
     },
   )
-
-  /**
-   * В закрытый чат своего подрядчика не пишут: его сделка отменена, ссылка
-   * погашена, и по ту сторону никого нет. Переписка остаётся паре для
-   * чтения (потому чат не удаляется вместе с подрядчиком), но сообщение
-   * в неё легло бы в никуда — 409, а не 201 с молчанием в ответ.
-   */
-  async function assertNotClosed(chat: { kind: ChatKind; deal_id: string | null }): Promise<void> {
-    if (chat.kind !== 'external' || !chat.deal_id) return
-    const { rows } = await db().query<{ cancelled: boolean }>(
-      `select (state = 'cancelled') as cancelled from deals where id = $1`,
-      [chat.deal_id],
-    )
-    if (rows[0]?.cancelled) {
-      throw conflict('chat_closed', 'Своего подрядчика в слоте больше нет — писать некому, переписка остаётся для чтения')
-    }
-  }
-
-  /**
-   * Первое сообщение в переписке решает две вещи сразу.
-   *
-   * Во-первых, текст пары становится текстом заявки: в кабинете подрядчика
-   * карточка заявки показывает, с чем к нему пришли, а пустая карточка
-   * не говорит ничего.
-   *
-   * Во-вторых, ссылка в ПЕРВОМ сообщении подрядчика уходит на модерацию
-   * (§19.4): так выглядит фишинг. Сообщение при этом доставляется —
-   * блокировка выгнала бы разговор в мессенджер, где нет ни договора,
-   * ни следа для разбирательства.
-   */
-  async function onFirstMessage(
-    chatId: string,
-    chat: { kind: ChatKind; wedding_id: string; vendor_id: string | null },
-    userId: string,
-    text: string,
-  ): Promise<void> {
-    if (chat.kind !== 'vendor' || !chat.vendor_id) return
-    const { rows } = await db().query<{ n: string; owner: string | null }>(
-      `select (select count(*)::text from messages m where m.chat_id = $1) as n,
-              (select v.user_id from vendors v where v.id = $2) as owner`,
-      [chatId, chat.vendor_id],
-    )
-    // Считаем ДО вставки, поэтому первое сообщение — это ноль предыдущих.
-    if (Number(rows[0]!.n) > 0) return
-    const fromVendor = rows[0]!.owner === userId
-
-    if (!fromVendor) {
-      await db().query('update leads set message = $3 where vendor_id = $1 and wedding_id = $2 and message is null', [
-        chat.vendor_id,
-        chat.wedding_id,
-        text,
-      ])
-      return
-    }
-
-    if (hasLink(text)) {
-      await db().query(
-        `insert into complaints (id, reporter_id, target_kind, target_id, category, text)
-         values ($1, null, 'vendor', $2, 'spam', $3)`,
-        [uuidv7(), chat.vendor_id, `Ссылка в первом сообщении: ${text.slice(0, 500)}`],
-      )
-    }
-  }
-
-  /**
-   * Разговор уходит мимо платформы — обеим сторонам мягкое предупреждение.
-   *
-   * Системное сообщение в самом чате, а не всплывашка одному: видеть его
-   * должны оба, и оно должно остаться в истории. Не чаще раза в сутки
-   * на чат — иначе оно превращается в шум и его перестают читать.
-   */
-  async function warnAboutPayoutBypass(chatId: string, text: string): Promise<string | null> {
-    if (!looksLikePayoutBypass(text)) return null
-    const { rows } = await db().query<{ n: string }>(
-      `select count(*)::text as n from messages
-        where chat_id = $1 and sender_id is null and text = $2 and created_at > now() - interval '1 day'`,
-      [chatId, PAYOUT_WARNING],
-    )
-    if (Number(rows[0]!.n) > 0) return PAYOUT_WARNING
-
-    await db().query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3)', [
-      uuidv7(),
-      chatId,
-      PAYOUT_WARNING,
-    ])
-    await app.realtime.publish({ chatId, type: 'message', actorId: 'system' })
-    return PAYOUT_WARNING
-  }
-
-  /**
-   * Непроверенный подрядчик — не больше пяти новых переписок в день.
-   *
-   * План §18.2 и §19.4: галочка «Проверен» стоит денег и времени, и до неё
-   * рассылать первые сообщения десяткам пар нельзя. Считаются именно ПЕРВЫЕ
-   * сообщения: ответ в уже начатой переписке ограничения не знает — иначе
-   * лимит бил бы по тем, кто нормально работает.
-   */
-  async function assertNotColdOutreach(chatId: string, kind: ChatKind, userId: string): Promise<void> {
-    if (kind !== 'vendor') return
-    const { rows } = await db().query<{ verified: boolean; mine: boolean; vendor_id: string }>(
-      `select (v.verified_at is not null) as verified, (v.user_id = $2) as mine, v.id as vendor_id
-         from chats c join vendors v on v.id = c.vendor_id where c.id = $1`,
-      [chatId, userId],
-    )
-    const vendor = rows[0]
-    if (!vendor || !vendor.mine || vendor.verified) return
-
-    /* Считаются переписки, которые НАЧАЛ он сам, — то есть те, где первое
-     * сообщение в чате его.
-     *
-     * Раньше считались все чаты, где он за сутки что-либо написал, включая
-     * ответы на входящие. Это ровно то, чего комментарий выше обещает не
-     * делать: подрядчику, которому за день написали пять пар и он всем
-     * ответил, шестая пара уже не могла получить ответ — он упирался в
-     * «не больше 5 новых переписок в день», не начав ни одной (ERR-0100).
-     *
-     * Чат заводит пара (`POST /chats/vendor/:vendorId` требует роль `couple`),
-     * поэтому холодное обращение здесь единственного вида: пара нажала
-     * «Написать», ушла не написав, а подрядчик пишет первым. */
-    const { rows: already } = await db().query<{ here: string; today: string }>(
-      `select (select count(*) from messages m where m.chat_id = $1 and m.sender_id = $2)::text as here,
-              (select count(*) from chats c
-                 cross join lateral (
-                   select m.sender_id, m.created_at from messages m
-                    where m.chat_id = c.id order by m.created_at, m.id limit 1
-                 ) first
-                where c.vendor_id = $3 and first.sender_id = $2
-                  and first.created_at > now() - interval '1 day')::text as today`,
-      [chatId, userId, vendor.vendor_id],
-    )
-    // В этой переписке он уже писал — она не новая, ограничение не про неё.
-    if (Number(already[0]!.here) > 0) return
-    if (Number(already[0]!.today) >= app.appConfig.coldOutreachPerDay) {
-      throw quotaExceeded(
-        'outreach_limit',
-        `До проверки анкеты — не больше ${app.appConfig.coldOutreachPerDay} новых переписок в день`,
-      )
-    }
-  }
 
   /* ── «печатает…» ──────────────────────────────────────────────────── */
   /* Кто когда последний раз сообщал о наборе. Хранится в памяти процесса
@@ -639,6 +394,8 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       kind: 'vendor',
       closed: false,
       openFrom: null,
+      // Квота Тиля — только у его чата; у остальных поле есть и пусто (контракт `Chat.tilly`).
+      tilly: null,
     }
   })
 }

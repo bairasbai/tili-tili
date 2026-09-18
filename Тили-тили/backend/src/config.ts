@@ -225,7 +225,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
   const config: Config = {
     env,
     port: parsePort(source.PORT),
-    host: source.HOST ?? '0.0.0.0',
+    host: envText(source.HOST) ?? '0.0.0.0',
     corsOrigins,
     // В production подключения обязательны: сервер без базы поднимется и будет
     // отдавать 200 на /health, притворяясь живым. Лучше не стартовать вовсе.
@@ -241,7 +241,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     // 152-ФЗ. Клиент присылает ту, которую показал человеку; если она разошлась
     // с серверной, согласие не принимается — иначе в базе окажется подпись
     // под текстом, которого пользователь не видел.
-    policyVersion: source.POLICY_VERSION ?? '2026-09-02',
+    /* `envText`, не `??`: `.env` из шаблона оставляет `POLICY_VERSION=` пустым,
+     * и пустая версия делала согласие невозможным — схема требует хотя бы
+     * один знак, а сравнение ждало пустую строку (ревью 015). */
+    policyVersion: envText(source.POLICY_VERSION) ?? '2026-09-02',
     otpMaxPerIpHour: envNumber(source.OTP_MAX_PER_IP_HOUR, MAX_SENDS_PER_HOUR_PER_IP),
     otpMaxPerHourTotal: envNumber(source.OTP_MAX_PER_HOUR_TOTAL, MAX_SENDS_PER_HOUR_TOTAL),
     otpMaxPerPhoneIpHour: envNumber(source.OTP_MAX_PER_PHONE_IP_HOUR, MAX_SENDS_PER_PHONE_IP_HOUR),
@@ -257,7 +260,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     sentryDsn: envText(source.SENTRY_DSN),
     vapidPublicKey: envText(source.VAPID_PUBLIC_KEY),
     vapidPrivateKey: envText(source.VAPID_PRIVATE_KEY),
-    vapidSubject: source.VAPID_SUBJECT ?? 'mailto:support@tili-tili.ru',
+    vapidSubject: envText(source.VAPID_SUBJECT) ?? 'mailto:support@tili-tili.ru',
     smsProvider: envText(source.SMS_PROVIDER),
     smsAeroEmail: envText(source.SMSAERO_EMAIL),
     smsAeroKey: envText(source.SMSAERO_KEY),
