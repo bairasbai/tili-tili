@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, forbidden, notFound } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery, timestampKey, type PageQuery } from '../pagination.js'
@@ -349,7 +349,19 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
         order by w.created_at desc limit 1`,
       [userId],
     )
-    if (mine.length === 0) throw notFound('Сначала заведите свадьбу')
+    if (mine.length === 0) {
+      /* Помощник и координатор — в свадьбе, но переписку с подрядчиками ведёт
+       * пара (чат = лид = сделка). Им отвечали «Сначала заведите свадьбу» —
+       * неправда: свадьба есть, нет права. Своему — 403 с причиной, а «нет
+       * свадьбы» остаётся тому, у кого её действительно нет (живой обход ролей). */
+      const { rows: team } = await db().query(
+        `select 1 from wedding_members m join weddings w on w.id = m.wedding_id
+          where m.user_id = $1 and w.archived_at is null and w.cancelled_at is null limit 1`,
+        [userId],
+      )
+      if (team.length > 0) throw forbidden('Переписку с подрядчиками ведёт пара — у вашей роли к ней доступа нет')
+      throw notFound('Сначала заведите свадьбу')
+    }
     const weddingId = mine[0]!.wedding_id
 
     /* Заблокированная анкета — тот же «не найден», что у снятой с публикации:
