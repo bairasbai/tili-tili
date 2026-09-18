@@ -252,7 +252,11 @@ input[type="range"] { accent-color: var(--rose-deep); }
      него оставлял слева мёртвые 232px и уводил контент вправо от центра экрана.
      Ширина колонки та же (1180 - 232), меняется только выключка. */
   .app-shell.no-tab { max-width: 948px; padding-left: 0; }
-  .glass-tab {
+  /* Сайдбаром становится только таб-бар (`nav` в chrome.tsx). Стекло `.glass-tab`
+     носят ещё шапка и строка ввода чата, панель «Написать / Добавить в свадьбу»
+     анкеты: с голым селектором они на десктопе уезжали в колонку 216px за левый
+     край — чат открывался пустым, кнопки брони лежали под сайдбаром (ERR-0263). */
+  nav.glass-tab {
     top: 0 !important; bottom: 0 !important;
     left: 50% !important; right: auto !important;
     transform: translateX(-590px) !important;
@@ -263,20 +267,20 @@ input[type="range"] { accent-color: var(--rose-deep); }
     display: flex; align-items: center;
     border-radius: 0;
   }
-  .glass-tab > div {
+  nav.glass-tab > div {
     flex-direction: column; align-items: stretch; justify-content: center;
     gap: 4px; width: 100%; padding: 24px 12px;
   }
-  .glass-tab > div > button {
+  nav.glass-tab > div > button {
     width: 100% !important; flex-direction: row; align-items: center;
     gap: 12px; padding: 11px 14px; border-radius: 14px;
   }
-  .glass-tab > div > button > span { font-size: 12.5px !important; }
-  .glass-tab > div > button.halo {
+  nav.glass-tab > div > button > span { font-size: 12.5px !important; }
+  nav.glass-tab > div > button.halo {
     margin: 4px 0 4px 0 !important; width: 46px !important; height: 46px !important;
     min-width: 46px; border-width: 3px; align-self: center;
   }
-  .glass-tab .tab-dot { display: none; }
+  nav.glass-tab .tab-dot { display: none; }
 }
 /* Тёмная тема включается ТОЛЬКО тумблером в настройках (см. §16.1 карты экранов).
    Здесь стоял @media (prefers-color-scheme: dark) для экранов от 900px: приложение
@@ -286,5 +290,5 @@ input[type="range"] { accent-color: var(--rose-deep); }
 .halo-label { display: none; }
 @media (min-width: 900px) {
   .halo-label { display: block; position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 600; color: var(--soft); white-space: nowrap; }
-  .glass-tab > div > button.halo { margin-bottom: 26px !important; }
+  nav.glass-tab > div > button.halo { margin-bottom: 26px !important; }
 }

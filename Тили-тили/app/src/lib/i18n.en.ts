@@ -1931,3 +1931,8 @@ Object.assign(EN, {
   'Укажите число номеров в блоке': 'Enter the number of rooms in the block',
   'Стиль запишется в свадьбу — Тиль учитывает его в подсказках': 'The style is saved to the wedding — Tilly takes it into account in tips',
 })
+
+/* Живая проверка ревью 015 (2026-09-18): запрос без токена после смерти сессии. */
+Object.assign(EN, {
+  'Войдите, чтобы продолжить': 'Sign in to continue',
+})

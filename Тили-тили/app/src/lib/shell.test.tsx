@@ -125,6 +125,22 @@ describe('тема', () => {
   })
 })
 
+describe('десктоп-раскладка (≥900px)', () => {
+  it('сайдбаром становится только nav.glass-tab — шапка и строка ввода чата, панель брони анкеты остаются на месте', () => {
+    /* ERR-0263: голый `.glass-tab` в десктопных правилах уносил шапку и строку
+       ввода чата в колонку 216px за левый край (чат открывался пустым), а панель
+       «Написать / Добавить в свадьбу» анкеты ложилась под сайдбар. */
+    const desktop = [...css.matchAll(/@media \(min-width: 900px\)\s*\{([\s\S]*?)\n\}/g)]
+      .map(m => m[1]!.replace(/\/\*[\s\S]*?\*\//g, ''))
+    expect(desktop.length).toBeGreaterThan(0)
+    for (const block of desktop) {
+      const bare = [...block.matchAll(/(^|[^\w.-])\.glass-tab\b/gm)].map(m => m[0])
+      expect(bare).toEqual([])
+    }
+    expect(desktop.join('\n')).toMatch(/nav\.glass-tab\s*\{/)
+  })
+})
+
 describe('шрифты подключены до бандла стилей', () => {
   it('в CSS больше нет @import шрифтов', () => {
     expect(css).not.toMatch(/@import url\('https:\/\/fonts/)

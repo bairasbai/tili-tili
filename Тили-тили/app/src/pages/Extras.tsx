@@ -7,7 +7,7 @@ import { getCategories, getFavorites } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { ApiError } from '@/lib/api/client'
 import { Tile, TopBar, VendorCard } from '@/components/chrome'
-import { AsyncState, ready } from '@/components/AsyncState'
+import { AsyncState, ErrorState, ready } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
 import { t, getI18nLang } from '@/lib/i18n'
 import { useStore } from '@/lib/store'
@@ -28,12 +28,7 @@ export function Favorites() {
       <TopBar back title={t('Избранное')} sub={ready(favs) ? `${list.length}${t(' отложено · сравните и выберите')}` : undefined} />
       <div className="px-5 mt-3 space-y-3.5 stagger">
         {favs.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>}
-        {favs.error && (
-          <div className="py-6 text-center">
-            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{favs.error}</p>
-            <button onClick={() => { favs.reload(); cats.reload() }} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
-          </div>
-        )}
+        {favs.error && <ErrorState error={favs.error} retry={() => { favs.reload(); cats.reload() }} />}
         {list.map(v => (
           <VendorCard key={v.id} v={v}
             categoryTitle={catOf(v.categoryId)?.title}

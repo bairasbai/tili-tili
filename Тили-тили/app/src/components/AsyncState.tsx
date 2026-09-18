@@ -5,7 +5,7 @@
    поведение приложения (тот же случай, что `lib/store.tsx`). */
 import { useNavigate } from 'react-router'
 import { t } from '@/lib/i18n'
-import { SESSION_EXPIRED } from '@/lib/api/client'
+import { SESSION_EXPIRED, SIGN_IN_REQUIRED } from '@/lib/api/client'
 import { NO_WEDDING, SIGN_IN_FIRST, type AsyncData } from '@/lib/api/useApi'
 
 /*
@@ -27,33 +27,51 @@ import { NO_WEDDING, SIGN_IN_FIRST, type AsyncData } from '@/lib/api/useApi'
  * (`SESSION_EXPIRED`): `AsyncData` кода ошибки не несёт.
  */
 export function AsyncState({ q, forbiddenText }: { q: AsyncData<unknown>; forbiddenText?: string }) {
-  const nav = useNavigate()
   if (q.loading) return <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>
   if (q.forbidden) return (
     <p className="text-[12px] text-[var(--soft)] py-6 text-center leading-relaxed px-6">
       {forbiddenText ?? t('Этот раздел ведёт пара — у вашей роли к нему доступа нет.')}
     </p>
   )
-  if (q.error === SESSION_EXPIRED || q.error === t(SIGN_IN_FIRST)) return (
+  if (q.error) return <ErrorState error={q.error} retry={q.reload} />
+  return null
+}
+
+/**
+ * Отказ запроса с выходом из него: «войдите» ведёт на вход, «свадьбы нет» — в
+ * квиз, остальное — «Повторить». Отдельно от `AsyncState` ради экранов с
+ * несколькими запросами (каталог: категории + выдача, анкета + категории), где
+ * повтор перечитывает оба, а состояние загрузки — своё. До живой проверки
+ * 2026-09-18 у них стоял свой блок с одним «Повторить», и после смерти сессии
+ * человек читал «Сессия истекла» и «Нужен заголовок Authorization: Bearer» с
+ * кнопкой повтора — той же дырой, что D6-09 закрывал здесь.
+ *
+ * `error` уже переведён (`explainError` → `t()`), поэтому и ключи сравниваются
+ * через `t()`: с голым `SESSION_EXPIRED` в EN ветка не срабатывала, и вместо
+ * «Sign in» человек видел «Retry». `SIGN_IN_REQUIRED` — запрос без токена
+ * (после смерти сессии или по прямой ссылке без входа), тот же выход — войти.
+ */
+export function ErrorState({ error, retry }: { error: string; retry: () => void }) {
+  const nav = useNavigate()
+  if (error === t(SESSION_EXPIRED) || error === t(SIGN_IN_FIRST) || error === t(SIGN_IN_REQUIRED)) return (
     <div className="py-6 text-center">
-      <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{q.error === SESSION_EXPIRED ? t(SESSION_EXPIRED) : q.error}</p>
+      <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{error}</p>
       <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
     </div>
   )
   /* Свадьбы нет — не поломка и не «пусто»: повторять нечего, заводить — в квизе (ревью 015, FB6). */
-  if (q.error === t(NO_WEDDING)) return (
+  if (error === t(NO_WEDDING)) return (
     <div className="py-6 text-center">
       <p className="text-[12px] text-[var(--soft)] leading-relaxed px-6">{t(NO_WEDDING)}</p>
       <button onClick={() => nav('/quiz')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Завести свадьбу')}</button>
     </div>
   )
-  if (q.error) return (
+  return (
     <div className="py-6 text-center">
-      <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{q.error}</p>
-      <button onClick={q.reload} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
+      <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{error}</p>
+      <button onClick={retry} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
     </div>
   )
-  return null
 }
 
 /** Показывать ли содержимое: данные есть и ни одно из трёх состояний не активно. */

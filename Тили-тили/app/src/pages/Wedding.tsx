@@ -4,7 +4,7 @@ import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armc
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
-import { useApi, explainError, noWedding } from '@/lib/api/useApi'
+import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
@@ -138,7 +138,11 @@ export function WeddingTeam() {
           {slotsState === 'ready' && <Bar pct={pct(booked, slots.length)} />}
           <div className="flex justify-between text-[12px] mb-1.5 mt-4"><span className="text-[var(--soft)]">{t('Забронировано на сумму')}</span><b className="tabular">{slotsState === 'ready' ? fmt(committedTotal(slots)) : '—'}</b></div>
           {slotsState === 'ready' && ready(budget) && budgetTotal > 0 && <Bar pct={pct(committedTotal(slots), budgetTotal)} />}
-          {budget.error && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{budget.error}</p>}
+          {/* Свадьбы нет — те же слова и кнопка в квиз, что у остальных разделов
+              (FB6): красной строкой без выхода это читалось как поломка. */}
+          {budget.error === t(NO_WEDDING)
+            ? <AsyncState q={budget} />
+            : budget.error && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{budget.error}</p>}
         </div>
       </div>
     </div>

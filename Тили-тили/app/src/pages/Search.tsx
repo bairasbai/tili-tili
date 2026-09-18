@@ -7,7 +7,7 @@ import { getAvailability, getCategories, getVendors, getVendor, requestConcierge
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
-import { AsyncState, ready } from '@/components/AsyncState'
+import { AsyncState, ErrorState, ready } from '@/components/AsyncState'
 import { getVendorReviews } from '@/lib/api/reviews'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { getWedding } from '@/lib/api/weddingData'
@@ -51,12 +51,7 @@ export function SearchCategories() {
         </div>
       </div>
       {cats.loading && <p className="px-5 mt-6 text-[12px] text-[var(--soft)]">{t('Загружаем каталог…')}</p>}
-      {cats.error && (
-        <div className="px-5 mt-6">
-          <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{cats.error}</p>
-          <button onClick={cats.reload} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
-        </div>
-      )}
+      {cats.error && <ErrorState error={cats.error} retry={cats.reload} />}
       <div className="px-5 grid grid-cols-3 gap-2.5 mt-4 stagger">
         {list.map(c => {
           const st = stateOf(c.id ?? '')
@@ -241,13 +236,10 @@ export function VendorList() {
       </div>}
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {list.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем каталог…')}</p>}
+        {/* Перезапрашиваем оба: при недоступном сервере падает и список, и
+            справочник категорий, а без второго у экрана нет даже названия. */}
         {(list.error || cats.error) && (
-          <div className="py-6 text-center">
-            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed">{list.error ?? cats.error}</p>
-            {/* Перезапрашиваем оба: при недоступном сервере падает и список, и
-                справочник категорий, а без второго у экрана нет даже названия. */}
-            <button onClick={() => { list.reload(); cats.reload() }} className="press mt-3 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
-          </div>
+          <ErrorState error={(list.error ?? cats.error)!} retry={() => { list.reload(); cats.reload() }} />
         )}
         {shown.map(v => (
           <VendorCard key={v.id} v={v}
@@ -470,12 +462,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       <TopBar back title={t('Анкета подрядчика')} sub={city} />
       <div className="px-5 mt-8 text-center fade-up">
         {detail.loading && <p className="text-[12.5px] text-[var(--soft)]">{t('Загружаем анкету…')}</p>}
-        {detail.error && (
-          <>
-            <p role="alert" className="text-[12.5px] text-[var(--rose-ink)] leading-relaxed">{detail.error}</p>
-            <button onClick={() => { detail.reload(); cats.reload() }} className="press mt-4 px-5 h-[40px] rounded-full card-s text-[12px] font-semibold">{t('Повторить')}</button>
-          </>
-        )}
+        {detail.error && <ErrorState error={detail.error} retry={() => { detail.reload(); cats.reload() }} />}
         {!detail.loading && !detail.error && <p className="text-[12.5px] text-[var(--soft)]">{t('Анкета не найдена')}</p>}
       </div>
     </div>

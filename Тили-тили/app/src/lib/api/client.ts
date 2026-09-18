@@ -144,6 +144,20 @@ export class ApiError extends Error {
  */
 export const SESSION_EXPIRED = 'Сессия истекла — войдите снова'
 
+/**
+ * Запрос ушёл БЕЗ токена и получил 401 «Нужен заголовок Authorization: Bearer»
+ * (`bearer()` в `plugins/auth.ts` бэкенда — единственный источник этого текста).
+ * Так бывает после смерти сессии (ревью 015, FA1): стор забыл свадьбу, экраны
+ * перечитали данные уже без токена — и человек читал служебный текст про
+ * заголовок с кнопкой «Повторить» (тот же класс, что D6-09; живая проверка
+ * 2026-09-18, анкета подрядчика). Здесь — свои слова, `AsyncState` ведёт на вход.
+ * Код `unauthorized` и статус 401 остаются: экраны, которые по ним ведут на вход
+ * (`Team.tsx`, `Join.tsx`), работают как раньше. Остальные 401 без токена —
+ * «Код неверный или устарел» у входа, токен гостя — идут как есть.
+ */
+export const SIGN_IN_REQUIRED = 'Войдите, чтобы продолжить'
+const NO_BEARER = 'Нужен заголовок Authorization: Bearer'
+
 /*
  * Кто узнаёт о смерти сессии (ревью 015, FA1).
  *
@@ -362,6 +376,12 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
       /* Сервер не смог обменять токен — это его недоступность, не конец входа. */
       throw refreshed.error
     }
+  }
+
+  /* 401 без токена на руках: служебное «нужен заголовок» — своими словами (см. SIGN_IN_REQUIRED). */
+  if (res.status === 401 && !tokens) {
+    const err = await errorFrom(res)
+    throw err.message === NO_BEARER ? new ApiError('http', 401, 'unauthorized', SIGN_IN_REQUIRED) : err
   }
 
   if (!res.ok) throw await errorFrom(res)

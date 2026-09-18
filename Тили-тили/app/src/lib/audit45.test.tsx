@@ -103,6 +103,42 @@ describe('ревью 015: сессия и выход (FA1, FA2)', () => {
     expect(localStorage.getItem('tt_auth')).toBeNull()
   })
 
+  it('FA1: экран, не зависящий от свадьбы, после смерти сессии — «войдите», а не «Нужен заголовок Authorization» (живая проверка 2026-09-18)', async () => {
+    /* Анкета подрядчика: сервер отверг токен и refresh — стор снял токены, экран
+       перечитал анкету уже без заголовка. Служебный текст сервера про заголовок
+       не должен доходить до человека; кнопка — «Войти», не «Повторить». */
+    const noBearer = withStatus(401, 'unauthorized', 'Нужен заголовок Authorization: Bearer')
+    serve(base({
+      '/catalog/vendors/v1': () => (localStorage.getItem('tt_auth') ? withStatus(401, 'token_expired', 'Токен истёк') : noBearer),
+      '/catalog/vendors/v1/availability': noBearer,
+      '/catalog/vendors/v1/reviews': noBearer,
+      '/catalog/vendors': noBearer,
+      '/auth/refresh': withStatus(401, 'refresh_expired', 'Сессия истекла'),
+    }))
+    /* Первый ответ — «сессия истекла» (refresh отвергнут); перечитанный без
+       токена — «войдите, чтобы продолжить». Оба ведут на вход, ни один не
+       предлагает повтор. */
+    const r = await open('/vendor/v1', 'Войти')
+    expect(text(r)).toMatch(/Сессия истекла — войдите снова|Войдите, чтобы продолжить/)
+    expect(text(r)).not.toContain('Нужен заголовок')
+    expect(text(r)).not.toContain('Повторить')
+    expect(localStorage.getItem('tt_auth')).toBeNull()
+  })
+
+  it('FA1: запрос без токена — «Нужен заголовок Authorization» становится «Войдите, чтобы продолжить», другие 401 идут как есть', async () => {
+    localStorage.removeItem('tt_auth')
+    serve(base({
+      '/catalog/vendors/v1': withStatus(401, 'unauthorized', 'Нужен заголовок Authorization: Bearer'),
+      '/auth/otp/verify': withStatus(401, 'unauthorized', 'Код неверный или устарел. Запросите новый.'),
+    }))
+    const { api, ApiError, SIGN_IN_REQUIRED, url } = await import('@/lib/api/client')
+    const bare = await api.get(url('/catalog/vendors/{vendorId}', { vendorId: 'v1' })).catch((e: unknown) => e) as InstanceType<typeof ApiError>
+    expect(bare).toBeInstanceOf(ApiError)
+    expect([bare.status, bare.code, bare.message]).toEqual([401, 'unauthorized', SIGN_IN_REQUIRED])
+    const otp = await api.post('/auth/otp/verify', { phone: '+79990000000', code: '0000', device: 'test' }).catch((e: unknown) => e) as InstanceType<typeof ApiError>
+    expect(otp.message).toBe('Код неверный или устарел. Запросите новый.')
+  })
+
   it('FA2: отказ сервера на «Выйти со всех устройств» — словами, токены остаются', async () => {
     serve(base({
       '/users/me/sessions': (c: Call) => (c.method === 'DELETE'
@@ -161,6 +197,15 @@ describe('ревью 015: анкета подрядчика (FB1, FB2) и экр
     const r = await open('/wedding/guests', 'Свадьбы пока нет — заведите её')
     expect(text(r)).toContain('Завести свадьбу')
     expect(text(r)).not.toMatch(/\b0 гостей|Гостей: 0/)
+  })
+
+  it('FB6: мозаика без свадьбы — та же кнопка «Завести свадьбу», а не красная строка (живая проверка 2026-09-18)', async () => {
+    localStorage.removeItem('tt_wedding_id')
+    localStorage.removeItem('tt_wedding_date')
+    serve(base({ '/weddings': [] }))
+    const r = await open('/wedding', 'Свадьбы пока нет — заведите её')
+    expect(screen.getByText('Завести свадьбу')).toBeTruthy()
+    expect(r.container.querySelector('[role="alert"]')).toBeNull()
   })
 })
 
