@@ -327,6 +327,9 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const [err, setErr] = useState<string | null>(null)
   /* Жалоба на анкету (§18.2) — своя шторка, `POST /complaints`. */
   const [complaint, setComplaint] = useState(false)
+  /* «Поделиться» без Web Share (десктоп) копирует текст молча — как и в
+     других местах, подтверждаем словом (живой обход ролей). */
+  const [shared, setShared] = useState(false)
 
   const detail = useApi(() => id ? getVendor(id) : Promise.resolve(null), [id])
   const cats = useApi(() => getCategories(), [])
@@ -404,6 +407,11 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const own = useApi(() => getVendorProfile().catch(() => null), [])
   const mine = !!v?.id && ((!!own.data?.id && own.data.id === v.id) || v.published !== undefined || v.blocked !== undefined)
   const slot = slots.find(s => s.categoryId === v?.categoryId)
+  /* Этот подрядчик уже в слоте свадьбы (кандидат, бронь, оплата): кнопка
+     «Добавить в свадьбу» вела бы в 409 `slot_taken` с советом «сначала
+     отмените сделку» — про сделку с ним же. Вместо неё — путь к сделке
+     (живой обход ролей). Занят ли слот другим — решает сервер, как и раньше. */
+  const dealHere = slot && slot.state !== 'empty' && slot.vendorId === v?.id && slot.dealId ? slot.dealId : null
   /* Телефон показывается только тому, кто этого подрядчика забронировал
    * (решение владельца 2026-09-03). До брони разговор идёт в чате: номер
    * в открытом каталоге — это готовая база для обзвона.
@@ -486,8 +494,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         <button onClick={() => {
           const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${cat?.title ?? ''} · ${t(city)}${v.priceFrom?.amount != null ? `${t(' · от ')}${fmt(v.priceFrom.amount)}` : ''}`, url: location.href }
           if (navigator.share) navigator.share(data).catch(() => {})
-          else { copyText(`${data.title}\n${data.text}\n${data.url}`) }
-        }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('Поделиться')}</button>
+          else { copyText(`${data.title}\n${data.text}\n${data.url}`); setShared(true); setTimeout(() => setShared(false), 1500) }
+        }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{shared ? t('Скопировано') : t('Поделиться')}</button>
       } />
       {/* Что видят пары на самом деле: `published`/`blocked` приходят только
           владельцу, и его надо предупредить прежде, чем он начнёт проверять
@@ -753,9 +761,13 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             нём показывается словами: плавающий промис без catch молча не
             делал ничего при 401/403/429 и обрыве сети (ревью D5-15). */}
         <button disabled={chatBusy} onClick={openChat} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: 'var(--shadow)' }}>{chatBusy ? t('Открываем чат…') : t('Написать')}</button>
+        {dealHere && !added ? (
+          <button onClick={() => nav(`/deal/${dealHere}`)} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('✓ В моей свадьбе · открыть сделку')}</button>
+        ) : (
         <button onClick={add} disabled={busy || added} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
         </button>
+        )}
       </div>
       )}
       {err && (

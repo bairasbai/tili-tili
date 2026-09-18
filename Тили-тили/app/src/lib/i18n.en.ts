@@ -840,6 +840,7 @@ Object.assign(EN, {
   'Начать': 'Start',
   'Создать мою свадьбу ✨': 'Create my wedding ✨',
   '✓ В моей свадьбе!': '✓ In my wedding!',
+  '✓ В моей свадьбе · открыть сделку': '✓ In my wedding · open the deal',
   'Добавить в свадьбу': 'Add to wedding',
   'Бронируем…': 'Booking…',
   'Бронь держится 72 часа': 'Hold lasts 72 hours',

@@ -24,8 +24,8 @@ export default function Onboarding() {
   const last = i === scenes.length - 1
   return (
     <div className="min-h-dvh flex flex-col relative overflow-hidden">
-      <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full opacity-40 blur-3xl" style={{ background: 'var(--rose-soft)' }} />
-      <div className="absolute -bottom-20 -left-20 w-72 h-72 rounded-full opacity-40 blur-3xl" style={{ background: 'var(--sage-soft)' }} />
+      <div aria-hidden className="absolute -top-24 -right-24 w-72 h-72 rounded-full opacity-40 blur-3xl pointer-events-none" style={{ background: 'var(--rose-soft)' }} />
+      <div aria-hidden className="absolute -bottom-20 -left-20 w-72 h-72 rounded-full opacity-40 blur-3xl pointer-events-none" style={{ background: 'var(--sage-soft)' }} />
 
       <div className="flex justify-between items-center px-6 pt-8">
         <span className="font-serif-d text-[20px]">{t('Тили-')}<em className="grad-text not-italic font-semibold">{t('тили')}</em></span>

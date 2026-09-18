@@ -225,7 +225,9 @@ export default function Home() {
               {budgetTotal ? <div className="mt-3"><Bar pct={budgetPct} /></div> : null}
             </>
           ) : (
-            <p className="text-[11px] text-[var(--soft)] mt-1.5">{tr('Бюджет не загрузился')}</p>
+            /* Помощнику и координатору бюджет закрыт матрицей доступа (403) —
+                это не сбой загрузки, а правило: говорим, чьё это поле. */
+            <p className="text-[11px] text-[var(--soft)] mt-1.5">{bq.forbidden ? tr('Бюджет ведёт пара — у вашей роли к нему доступа нет.') : bq.loading ? tr('Загружаем…') : tr('Бюджет не загрузился')}</p>
           )}
         </button>
       </div>}
