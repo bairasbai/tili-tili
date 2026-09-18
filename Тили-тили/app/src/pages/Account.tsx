@@ -12,8 +12,8 @@ import { api, ApiError, saveTokens } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { deleteAllPushSubscriptions, endSession, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
-import { getNotifications, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
+import { deleteAllPushSubscriptions, endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
+import { getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
@@ -76,6 +76,10 @@ export function Auth() {
    * номером, а не под устройством.
    */
   const [consent, setConsent] = useState(false)
+  /* «Мне есть 18 лет» — отдельная галочка (план бэкенда §7, 152-ФЗ): версия
+     документа покрывает текст, возраст текстом не покрывается. Уходит
+     в `POST /users/me/consent` как `adult`. */
+  const [adult, setAdult] = useState(false)
   /*
    * Токены и согласие уже на месте, осталось решить, куда идти. Отдельное
    * состояние нужно на случай отказа `GET /weddings`: код из SMS одноразовый,
@@ -114,7 +118,7 @@ export function Auth() {
       : t('Что-то пошло не так')
 
   const requestCode = async () => {
-    if (phone.length !== 10 || !consent || busy) return
+    if (phone.length !== 10 || !consent || !adult || busy) return
     setBusy(true); setErr(null)
     try {
       const r = await api.post('/auth/otp', { phone: `+7${phone}` })
@@ -196,7 +200,7 @@ export function Auth() {
        */
       if (consent) {
         try {
-          await api.post('/users/me/consent', { policyVersion: LEGAL_TEXT_VERSION })
+          await api.post('/users/me/consent', { policyVersion: LEGAL_TEXT_VERSION, adult })
         } catch (e) {
           saveTokens(null)
           throw e
@@ -222,7 +226,7 @@ export function Auth() {
   /* Назад с шага кода — на шаг номера; согласие при этом снимается (D1-12). */
   const back = () => {
     if (step === 0) { nav('/'); return }
-    setConsent(false)
+    setConsent(false); setAdult(false)
     setStep((step - 1) as 0 | 1)
   }
   /* Смена уже набранного номера снимает галочку: подпись стояла под другим
@@ -230,7 +234,7 @@ export function Auth() {
      не наказывается — это один и тот же человек и одно действие. */
   const changePhone = (value: string) => {
     const digits = value.replace(/[^\d]/g, '').slice(0, 10)
-    if (consent && phone.length === 10 && digits !== phone) setConsent(false)
+    if (consent && phone.length === 10 && digits !== phone) { setConsent(false); setAdult(false) }
     /* Срок из 429 относится к набранному номеру (лимиты — по номеру и паре
        номер+адрес): другой номер — другой запрос, ждать за него нечего. */
     if (step === 0 && digits !== phone) setSec(0)
@@ -242,7 +246,7 @@ export function Auth() {
   }
   /* Вошли, но не узнали, куда идти (список свадеб не пришёл): кнопка
      повторяет только этот шаг — код из SMS уже погашен. */
-  const primaryLocked = busy || (signedIn ? false : step === 0 ? !consent || phone.length !== 10 || sec > 0 : code.join('').length !== 4)
+  const primaryLocked = busy || (signedIn ? false : step === 0 ? !consent || !adult || phone.length !== 10 || sec > 0 : code.join('').length !== 4)
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -287,6 +291,19 @@ export function Auth() {
                 </span>
               )}
             </span>
+          </button>
+          <button
+            onClick={() => canConsent && setAdult(!adult)}
+            disabled={!canConsent}
+            className="press w-full flex items-start gap-3 mt-3 text-left disabled:opacity-60"
+            role="checkbox"
+            aria-checked={adult}
+            aria-label={t('Мне есть 18 лет')}
+          >
+            <span className={cn('w-[22px] h-[22px] rounded-[7px] shrink-0 flex items-center justify-center mt-0.5 border-[1.5px]', adult ? 'grad border-transparent' : 'border-[var(--line)] bg-[var(--card)]')}>
+              {adult && <Check size={13} className="text-[var(--on-grad)]" />}
+            </span>
+            <span className="text-[11px] text-[var(--ink2)] leading-relaxed">{t('Мне есть 18 лет')}</span>
           </button>
           {versionMismatch && (
             <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mt-2.5">
@@ -428,28 +445,25 @@ export function Notifications() {
     void markNotificationRead(id).catch(() => setReadNow(r => r.filter(x => x !== id)))
   }
 
-  /* Массовой отметки в контракте нет — идём по непрочитанным поштучно.
-     На двух десятках уведомлений это допустимо; путь `read-all` отмечен
-     в плане миграции как незакрытая дыра.
+  /* «Прочитать все» — один запрос `POST /notifications/read-all` (план
+     миграции §2.3; до сверки планов 2026-09-18 список обходился поштучно, и
+     обрыв посередине оставлял половину непрочитанной).
 
-     Отказ на любой из отметок — точка возвращается и причина называется:
-     до ревью 015 `catch(() => undefined)` глотал отказ, точки гасли навсегда,
-     а на сервере уведомления оставались непрочитанными (FA3). */
+     Отказ — точки возвращаются и причина называется: до ревью 015
+     `catch(() => undefined)` глотал отказ, точки гасли навсегда, а на сервере
+     уведомления оставались непрочитанными (FA3). */
   const [markErr, setMarkErr] = useState<string | null>(null)
+  const [marking, setMarking] = useState(false)
   const markAll = () => {
     const rest = items.filter(n => !isRead(n)).map(n => n.id).filter((x): x is string => !!x)
-    if (!rest.length) return
+    if (!rest.length || marking) return
     setMarkErr(null)
+    setMarking(true)
     setReadNow(r => [...r, ...rest])
-    void Promise.allSettled(rest.map(id => markNotificationRead(id).then(() => id))).then(results => {
-      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
-      if (failed.length) {
-        const ok = new Set(results.filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled').map(r => r.value))
-        setReadNow(r => r.filter(id => !rest.includes(id) || ok.has(id)))
-        setMarkErr(explainError(failed[0]!.reason))
-      }
-      q.reload()
-    })
+    void markAllNotificationsRead()
+      .then(() => q.reload())
+      .catch(e => { setReadNow(r => r.filter(id => !rest.includes(id))); setMarkErr(explainError(e)) })
+      .finally(() => setMarking(false))
   }
 
   /* Время снимается один раз при монтировании: конструктор даты без аргументов
@@ -474,7 +488,7 @@ export function Notifications() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Уведомления')} right={unread > 0 ? (
-        <button onClick={markAll} className="press text-[11px] font-bold text-[var(--rose-deep)]">{t('Прочитать все')}</button>
+        <button onClick={markAll} disabled={marking} className="press text-[11px] font-bold text-[var(--rose-deep)] disabled:opacity-50">{t('Прочитать все')}</button>
       ) : undefined} />
       <AsyncState q={q} />
       {markErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-6 mt-3">{markErr}</p>}
@@ -735,6 +749,29 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
     save({ name: v }, p => ({ ...p, name: v }))
   }
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportErr, setExportErr] = useState<string | null>(null)
+  const exportData = async () => {
+    if (exporting) return
+    setExporting(true); setExportErr(null)
+    try {
+      const data = await exportMyData()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      /* Обработчик, не рендер: дата в имени файла снимается в момент нажатия (D4-22 — про тело компонента). */
+      a.download = `tili-tili-${new Date(Date.now()).toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(href)
+    } catch (e) {
+      setExportErr(explainError(e))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   /*
    * Выход и удаление идут на сервер, а не чистят хранилище.
@@ -1070,6 +1107,14 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
             {cancelErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-ink)] mt-2">{cancelErr}</p>}
           </div>
         ) : null}
+        {/* Копия своих данных одним файлом (152-ФЗ, `GET /users/me/export`).
+            Путь жил на сервере с этапа 9, а кнопки не было — право существовало
+            только в контракте (сверка планов 2026-09-18). Файл собирается на
+            устройстве из ответа: сервер отдаёт JSON, не ссылку. */}
+        <button disabled={exporting} onClick={() => void exportData()} className="press w-full py-3 text-[11.5px] font-semibold text-[var(--soft2)] disabled:opacity-50">
+          {exporting ? t('Собираем файл…') : t('Выгрузить мои данные')}
+        </button>
+        {exportErr && <p role="alert" className="text-[11px] text-center text-[var(--rose-deep)]">{exportErr}</p>}
         {confirmDelete ? (
           <button onClick={() => void deleteAccount()} className="press w-full py-3 text-[12px] font-bold text-[var(--rose-deep)]">{t('Подтвердить удаление — данные сотрутся')}</button>
         ) : (

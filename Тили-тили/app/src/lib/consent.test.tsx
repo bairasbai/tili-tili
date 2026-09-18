@@ -19,7 +19,7 @@ import { projectFile } from '@/test/projectFiles'
  */
 const { serverPolicy, transport } = vi.hoisted(() => ({
   serverPolicy: { version: '' },
-  transport: { consentFails: false, tokens: null as unknown, calls: [] as string[] },
+  transport: { consentFails: false, tokens: null as unknown, calls: [] as string[], consentBody: null as unknown },
 }))
 vi.mock('@/lib/api/legal', () => ({
   getPolicy: async () => ({ policyVersion: serverPolicy.version }),
@@ -35,8 +35,9 @@ vi.mock('@/lib/api/client', async (orig) => ({
   saveTokens: (v: unknown) => { transport.tokens = v },
   api: {
     get: async () => undefined,
-    post: async (path: string) => {
+    post: async (path: string, body?: unknown) => {
       transport.calls.push(path)
+      if (path === '/users/me/consent') transport.consentBody = body
       if (path === '/auth/otp') return { resendAfter: 60 }
       if (path === '/auth/otp/verify') return { accessToken: 'a', refreshToken: 'r' }
       if (path === '/users/me/consent') {
@@ -58,10 +59,15 @@ const { LEGAL_TEXT_VERSION } = await import('./legal')
 const wrap = (node: React.ReactNode) =>
   render(<MemoryRouter><StoreProvider>{node}</StoreProvider></MemoryRouter>)
 
+/* Две галочки (152-ФЗ, план бэкенда §7): согласие на обработку и «мне есть 18 лет».
+   Ищутся по имени — `getByRole('checkbox')` без имени с двумя элементами падает. */
+const consentBox = () => screen.getByRole('checkbox', { name: /обработку персональных данных/ })
+const adultBox = () => screen.getByRole('checkbox', { name: 'Мне есть 18 лет' })
+
 /** Экран входа с загруженной редакцией: до неё галочка недоступна. */
 const authReady = async () => {
   wrap(<Auth />)
-  await waitFor(() => expect(screen.getByRole('checkbox').hasAttribute('disabled')).toBe(false))
+  await waitFor(() => expect(consentBox().hasAttribute('disabled')).toBe(false))
 }
 
 beforeEach(() => {
@@ -70,13 +76,14 @@ beforeEach(() => {
   transport.consentFails = false
   transport.tokens = null
   transport.calls.length = 0
+  transport.consentBody = null
 })
 afterEach(cleanup)
 
 describe('согласие на обработку данных', () => {
   it('галочка не стоит заранее', async () => {
     await authReady()
-    expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false')
+    expect(consentBox().getAttribute('aria-checked')).toBe('false')
     expect(localStorage.getItem('tt_consent')).toBeNull()
   })
 
@@ -87,8 +94,12 @@ describe('согласие на обработку данных', () => {
 
   it('согласие даётся нажатием и живёт только на экране', async () => {
     await authReady()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(consentBox())
+    expect(consentBox().getAttribute('aria-checked')).toBe('true')
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
+    /* Возраст — отдельная галочка (план бэкенда §7): без неё код не запросить. */
+    expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(adultBox())
     /* Кнопка ждёт ещё и телефон: код запрашивается у сервера, и запрос без
        номера отправлять некуда. Согласие — необходимое условие, не достаточное. */
     fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
@@ -101,22 +112,22 @@ describe('согласие на обработку данных', () => {
 
   it('одного согласия мало — без телефона код не запросить', async () => {
     await authReady()
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(consentBox())
     expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
   })
 
   it('неполный номер кнопку не открывает', async () => {
     await authReady()
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(consentBox())
     fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '91712345' } })
     expect(screen.getByText('Получить код').closest('button')!.hasAttribute('disabled')).toBe(true)
   })
 
   it('согласие можно снять', async () => {
     await authReady()
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(consentBox())
+    fireEvent.click(consentBox())
+    expect(consentBox().getAttribute('aria-checked')).toBe('false')
     expect(JSON.parse(localStorage.getItem('tt_consent')!)).toBeNull()
   })
 })
@@ -137,18 +148,18 @@ describe('редакция документов: подпись под тем, �
   it('до ответа сервера согласие дать нельзя', () => {
     wrap(<Auth />)
     /* Не «пока грузится, разрешим»: редакция неизвестна, подписывать нечего. */
-    expect(screen.getByRole('checkbox').hasAttribute('disabled')).toBe(true)
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
   })
 
   it('редакция сервера разошлась с текстом сборки — галочка закрыта', async () => {
     serverPolicy.version = '2027-01-01'
     wrap(<Auth />)
     await waitFor(() => expect(screen.getByText(/Документы обновились/)).toBeTruthy())
-    expect(screen.getByRole('checkbox').hasAttribute('disabled')).toBe(true)
+    expect(consentBox().hasAttribute('disabled')).toBe(true)
 
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(consentBox())
     /* Даже нажатием: подписаться под текстом, которого не видел, нельзя. */
-    expect(screen.getByRole('checkbox').getAttribute('aria-checked')).toBe('false')
+    expect(consentBox().getAttribute('aria-checked')).toBe('false')
     expect(localStorage.getItem('tt_consent')).toBeNull()
   })
 })
@@ -172,7 +183,8 @@ describe('редакция документов: подпись под тем, �
 describe('согласие не зафиксировано — значит и вход не состоялся', () => {
   const signIn = async () => {
     await authReady()
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(consentBox())
+    fireEvent.click(adultBox())
     fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
     fireEvent.click(screen.getByText('Получить код').closest('button')!)
     await waitFor(() => expect(transport.calls).toContain('/auth/otp'))
@@ -190,10 +202,22 @@ describe('согласие не зафиксировано — значит и �
     await waitFor(() => expect(transport.tokens).toBeNull())
   })
 
-  it('согласие принято — токены остаются', async () => {
+  it('согласие принято — токены остаются, «мне есть 18» уходит в теле как adult: true', async () => {
     await signIn()
     await waitFor(() => expect(transport.calls).toContain('/users/me/consent'))
     expect(transport.tokens).toEqual({ accessToken: 'a', refreshToken: 'r' })
+    expect(transport.consentBody).toMatchObject({ adult: true })
+  })
+
+  it('«мне есть 18» не стоит заранее и снимается вместе с согласием при смене номера', async () => {
+    await authReady()
+    expect(adultBox().getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(consentBox())
+    fireEvent.click(adultBox())
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
+    fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234560' } })
+    expect(consentBox().getAttribute('aria-checked')).toBe('false')
+    expect(adultBox().getAttribute('aria-checked')).toBe('false')
   })
 })
 

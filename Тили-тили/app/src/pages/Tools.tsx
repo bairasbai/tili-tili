@@ -9,6 +9,7 @@ import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
+import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
@@ -135,6 +136,7 @@ function DealView({ s }: { s: Slot }) {
   const { paySlot, cancelBooking, advanceDealTo } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [dispute, setDispute] = useState(false)
   /* Занятость — по ответу сервера, а не по таймеру `useBusy` (700 мс): отмена
      на медленной сети идёт дольше, и второй тап уходил вторым запросом
      (ревью 015, FB7). */
@@ -292,11 +294,14 @@ function DealView({ s }: { s: Slot }) {
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Защита сделки')}</span>
           <div className="mt-3 space-y-2.5 text-[12px] text-[var(--soft)] leading-relaxed">
-            <p>💸 <b className="text-[var(--ink)]">{t('Оплата:')}</b> {t('деньги идут напрямую подрядчику — приложение фиксирует факт оплаты, но не держит их у себя. Эскроу появится позже.')}</p>
+            <p>💸 <b className="text-[var(--ink)]">{t('Оплата:')}</b> {t('деньги идут напрямую подрядчику — приложение фиксирует факт оплаты, но не держит их у себя.')}</p>
             <p>📅 <b className="text-[var(--ink)]">{t('Отмена:')}</b> {t('условия возврата — в договоре со сторонами. Отмена освобождает вашу дату в календаре подрядчика сразу.')}</p>
-            <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('напишите в поддержку — переписка и договор останутся в приложении и будут приложены к обращению.')}</p>
+            <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('откройте спор — жалоба уйдёт модерации, а переписка и договор останутся в приложении.')}</p>
           </div>
-          <button onClick={() => nav('/support')} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Написать в поддержку')}</button>
+          {/* Спор — жалоба на сделку (`POST /complaints`, §18.2): раньше кнопка вела
+              на почту поддержки, и очередь модерации спора не видела. */}
+          <button onClick={() => setDispute(true)} className="press mt-3 w-full h-11 rounded-full bg-[var(--bg)] text-[12px] font-semibold">{t('Открыть спор')}</button>
+          {dispute && s.dealId && <ComplaintSheet target="deal" targetId={s.dealId} title={`${t('Сделка')}: ${s.label}`} onClose={() => setDispute(false)} />}
         </div>
         {/* Правила «30 дней» и «блокировки до решения модерации» в коде нет:
             отзыв о сделке принимается только по завершённой, отменённую не

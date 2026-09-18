@@ -139,7 +139,8 @@ const DEFAULT_INVITE_TEXT = 'Мы хотим разделить с вами са
  * что очистил. После сброса они снимаются ещё раз — устройство после выхода
  * должно быть пустым, а не помнить «свадьбы нет» под ключом свадьбы.
  */
-const SESSION_KEYS = ['tt_wedding_id', 'tt_wedding_date', 'tt_quiz'] as const
+/* `tt_dayx_offline` — офлайн-копия дня X (`lib/offlineDay.ts`): личные данные свадьбы, уходят вместе с сессией. */
+const SESSION_KEYS = ['tt_wedding_id', 'tt_wedding_date', 'tt_quiz', 'tt_dayx_offline'] as const
 
 const Ctx = createContext<Store | null>(null)
 

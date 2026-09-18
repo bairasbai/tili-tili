@@ -149,6 +149,13 @@ export async function signOutHere(): Promise<void> {
  */
 export const withdrawConsent = () => api.delete('/users/me/consent')
 
+/**
+ * Выгрузка своих данных одним файлом (152-ФЗ, `GET /users/me/export`).
+ * Путь на сервере жил с этапа 9, а кнопки в приложении не было (сверка планов
+ * 2026-09-18): право на копию данных существовало только в контракте.
+ */
+export const exportMyData = () => api.get('/users/me/export')
+
 /** Применить чужой реферальный код: один раз на аккаунт, 404 — кода нет, 409 — уже применён или свой. */
 export const applyReferralCode = (code: string) =>
   api.post(url('/referral/{code}/apply', { code }))

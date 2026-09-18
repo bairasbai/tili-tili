@@ -25,6 +25,12 @@ export interface VendorDraft {
   /** Цена «от» в копейках. */
   priceFrom?: number
   packages?: { name: string; price: number }[]
+  /**
+   * Права на фото и видео портфолио и согласие снятых (152-ФЗ, план бэкенда §7).
+   * Только `true` что-то значит — сервер ставит момент и не снимает его;
+   * `false` не отправляем: подтверждение не отзывается сохранением имени.
+   */
+  mediaRights?: boolean
 }
 
 export const saveVendorProfile = (draft: VendorDraft) =>
@@ -35,6 +41,7 @@ export const saveVendorProfile = (draft: VendorDraft) =>
     ...(draft.about ? { about: draft.about } : {}),
     ...(draft.phone ? { phone: draft.phone } : {}),
     ...(draft.priceFrom ? { priceFrom: { amount: draft.priceFrom, currency: 'RUB' } } : {}),
+    ...(draft.mediaRights ? { mediaRights: true } : {}),
     /* Пакеты отправляем всегда, даже пустым списком: правило сервера —
        «поля нет, значит не трогай». Без этого удалённый последний пакет
        остался бы жить в анкете. Портфолио, наоборот, не отправляем вовсе —

@@ -8,6 +8,7 @@ import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
 import { TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ErrorState, ready } from '@/components/AsyncState'
+import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { getVendorReviews } from '@/lib/api/reviews'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { getWedding } from '@/lib/api/weddingData'
@@ -26,7 +27,10 @@ export function SearchCategories() {
   const [q, setQ] = useState('')
   const stateOf = (id: string) => slots.find(s => s.categoryId === id)?.state
 
-  const cats = useApi(() => getCategories(), [])
+  /* С городом свадьбы: под категорией — сколько опубликованных анкет в нём
+     (план миграции §2.7). Раньше число было выдумкой мока, потом его сняли;
+     теперь его считает сервер, и без ответа строки нет (R-178). */
+  const cats = useApi(() => getCategories(city), [city])
   /* Подрядчиков ищем на сервере, а не фильтруем загруженное: в базе их
      полторы тысячи, и «показать всех, потом отфильтровать» здесь не работает.
      Спрашиваем от двух символов — на одном выдача бессмысленна. */
@@ -59,6 +63,9 @@ export function SearchCategories() {
             <button key={c.id} onClick={() => nav(`/search/${c.id}`)} className="press card-s p-3 text-center fade-up">
               <div className={cn('w-11 h-11 rounded-[14px] mx-auto flex items-center justify-center text-[19px]', CATEGORY_TILE[c.id ?? ''] ?? DEFAULT_TILE)}>{c.icon}</div>
               <b className="text-[11px] block mt-2 leading-tight">{c.title}</b>
+              {typeof c.vendorsCount === 'number' && c.vendorsCount > 0 && (
+                <span className="block text-[9.5px] text-[var(--soft)] mt-0.5 tabular">{c.vendorsCount} {t('рядом')}</span>
+              )}
               {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] mt-1.5">{t('✓ Есть')}</span>}
               {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] mt-1.5">{t('⏳ Ищем')}</span>}
             </button>
@@ -315,6 +322,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const [busy, setBusy] = useState(false)
   const [chatBusy, setChatBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /* Жалоба на анкету (§18.2) — своя шторка, `POST /complaints`. */
+  const [complaint, setComplaint] = useState(false)
 
   const detail = useApi(() => id ? getVendor(id) : Promise.resolve(null), [id])
   const cats = useApi(() => getCategories(), [])
@@ -684,6 +693,14 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             </div>
           ))}
         </div>
+        {/* Жалоба на анкету: чужую и опубликованную — свою и черновик
+            модерации показывать незачем. */}
+        {!mine && v.published !== false && !v.blocked && (
+          <button onClick={() => setComplaint(true)} className="press mt-4 text-[11px] font-semibold text-[var(--soft)] underline underline-offset-2">
+            {t('Пожаловаться на анкету')}
+          </button>
+        )}
+        {complaint && <ComplaintSheet target="vendor" targetId={v.id ?? ''} title={v.name ?? t('Анкета подрядчика')} onClose={() => setComplaint(false)} />}
         {/* Пока сервер отдаёт курсор, лента не дочитана — кнопка стоит. */}
         {ready(reviews) && reviewsCursor && (
           <div className="text-center mt-3">

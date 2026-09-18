@@ -18,6 +18,9 @@ export const getNotifications = () => api.get('/notifications')
 export const markNotificationRead = (id: string) =>
   api.post(url('/notifications/{id}/read', { id }), {})
 
+/** «Прочитать все» одним запросом (план миграции §2.3): ответ — сколько стало прочитанными. */
+export const markAllNotificationsRead = () => api.post('/notifications/read-all', {})
+
 /**
  * Куда ведёт уведомление.
  *
@@ -53,6 +56,12 @@ export function notificationRoute(link?: string | null, opts: { vendor?: boolean
   if (/^\/vendor-app\/[\w/-]+$/.test(link)) return link
   // Консьерж подобрал варианты — в поиск, откуда заявка и ушла (ревью 015, V5).
   if (link === '/search') return vendor ? null : '/search'
+  /* Фоновые задачи «после свадьбы» и сводка кейтерингу (план бэкенда §5,
+     сверка планов 2026-09-18) называют разделы коротко, как `/guests`. */
+  if (link === '/after') return vendor ? null : '/after'
+  if (link === '/album') return vendor ? null : '/wedding/album'
+  if (link === '/catering') return vendor ? null : '/wedding/catering'
+  if (link === '/home') return vendor ? '/vendor-app' : '/home'
   /* `/deal` без идентификатора приходит от старых записей: конкретную сделку
      по нему не открыть, поэтому ведём в мозаику — там все сделки видны. */
   if (link === '/deal') return vendor ? '/vendor-app/deals' : '/wedding'

@@ -110,3 +110,7 @@ export const getAlbum = (weddingId: string) =>
 /** Одобрить или скрыть кадр. Скрытый виден только паре. */
 export const setPhotoApproved = (weddingId: string, photoId: string, approved: boolean) =>
   api.patch(url('/weddings/{weddingId}/album/{photoId}', { weddingId, photoId }), { approved })
+
+/** Все кадры разом одним запросом (план миграции §2.3): ответ — сколько сменили состояние. */
+export const setAlbumApproved = (weddingId: string, approved: boolean) =>
+  api.patch(url('/weddings/{weddingId}/album', { weddingId }), { approved })

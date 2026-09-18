@@ -413,6 +413,9 @@ export function VendorProfileWizard() {
       phone: p?.phone ?? '',
       priceFrom: p?.priceFrom?.amount,
       packages: (p?.packages ?? []).map(x => ({ name: x.name ?? '', price: x.price?.amount ?? 0 })),
+      /* Права на фото и согласие снятых (152-ФЗ, план бэкенда §7): подтверждение
+         одноразовое — уже данное сервер помнит, и галочка не спрашивается заново. */
+      mediaRights: !!p?.mediaRights,
     })
   }
 
@@ -441,10 +444,16 @@ export function VendorProfileWizard() {
   /* Сохранение и публикация — одна операция для человека, значит и один
      признак занятости: раньше `saveAnd` снимал его, не дождавшись публикации,
      и второе нажатие уходило на сервер. */
-  const publish = () => saveAnd(async () => {
-    await publishVendorProfile()
-    setPublishedNow(true)
-  })
+  const publish = () => {
+    if (!form?.mediaRights) {
+      setErr(t('Подтвердите права на фото и видео — без этого анкету не опубликовать'))
+      return
+    }
+    saveAnd(async () => {
+      await publishVendorProfile()
+      setPublishedNow(true)
+    })
+  }
 
   const addPkg = () => {
     const rubles = parseInt(pkgPrice.replace(/\D/g, ''), 10)
@@ -588,6 +597,23 @@ export function VendorProfileWizard() {
               {form.priceFrom ? <p className="text-[12px] mt-1.5">{t('от')} <b className="tabular">{fmt(form.priceFrom)}</b></p> : null}
               <p className="text-[11.5px] text-[var(--ink2)] mt-2 leading-relaxed">{form.about || t('Рассказа о себе пока нет')}</p>
             </div>
+            {/* Права на публикуемое (152-ФЗ, план бэкенда §7): подтверждение
+                уходит в анкету моментом и не спрашивается второй раз. Без него
+                публикация закрыта — модерация чужих фото начинается здесь. */}
+            {!p?.mediaRights && (
+              <button
+                onClick={() => set({ mediaRights: !form.mediaRights })}
+                className="press w-full card p-4 flex items-start gap-3 text-left"
+                role="checkbox"
+                aria-checked={!!form.mediaRights}
+                aria-label={t('Подтверждаю права на фото и видео и согласие снятых людей на публикацию')}
+              >
+                <span className={cn('w-[22px] h-[22px] rounded-[7px] shrink-0 flex items-center justify-center mt-0.5 border-[1.5px]', form.mediaRights ? 'grad border-transparent' : 'border-[var(--line)] bg-[var(--bg)]')}>
+                  {form.mediaRights && <Check size={13} className="text-[var(--on-grad)]" />}
+                </span>
+                <span className="text-[11.5px] text-[var(--ink2)] leading-relaxed">{t('Подтверждаю права на фото и видео и согласие снятых людей на публикацию')}</span>
+              </button>
+            )}
             {/* Заблокированной анкете публикация закрыта (409): кнопка ниже только
                 сохраняет, а причина названа здесь, а не отказом после нажатия. */}
             <p className="text-[11px] text-[var(--soft)] leading-relaxed px-1">

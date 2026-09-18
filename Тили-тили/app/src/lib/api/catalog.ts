@@ -87,7 +87,13 @@ function query(f: VendorFilters): string {
   return p.toString()
 }
 
-export const getCategories = () => api.get('/catalog/categories')
+/**
+ * Справочник категорий. С `city` каждая несёт `vendorsCount` — сколько
+ * опубликованных анкет в этом городе (план миграции §2.7): довод «здесь есть
+ * из кого выбирать» на `/search`. Без города — счётчик по всей базе.
+ */
+export const getCategories = (city?: string) =>
+  api.get((city ? `/catalog/categories?city=${encodeURIComponent(city)}` : '/catalog/categories') as '/catalog/categories')
 
 export function getVendors(f: VendorFilters) {
   /* Адрес собирается вручную, а не через `url()`: тот подставляет значения в

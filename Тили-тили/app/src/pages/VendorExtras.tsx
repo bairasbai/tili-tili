@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
+import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorLeads, getVendorProfile, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
 import { cn, pct, plural } from '@/lib/utils'
@@ -162,6 +163,8 @@ export function VendorReviews() {
   const [answering, setAnswering] = useState<string | null>(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  /* Жалоба на отзыв (§18.2): чужие фото, оскорбление, отзыв не про эту работу. */
+  const [complaint, setComplaint] = useState<{ id: string; author: string } | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   const answered = reviews.filter(r => r.reply).length
@@ -232,9 +235,11 @@ export function VendorReviews() {
               ) : (
                 <button onClick={() => { setAnswering(r.id ?? null); setText('') }} className="press mt-2.5 text-[11px] font-bold text-[var(--sage-deep)]">{t('Ответить →')}</button>
               )}
+              <button onClick={() => setComplaint({ id: r.id ?? '', author: r.authorName ?? '' })} className="press block mt-2 text-[10.5px] font-semibold text-[var(--soft)] underline underline-offset-2">{t('Пожаловаться на отзыв')}</button>
             </div>
           ))}
         </div>
+        {complaint && <ComplaintSheet target="review" targetId={complaint.id} title={`${t('Отзыв')}: ${complaint.author}`} onClose={() => setComplaint(null)} />}
       </div>
     </div>
   )

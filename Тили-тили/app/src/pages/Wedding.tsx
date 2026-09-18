@@ -8,7 +8,7 @@ import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
-import { getAlbum, setPhotoApproved } from '@/lib/api/gifts'
+import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
@@ -1501,11 +1501,11 @@ export function Album() {
     if (!weddingId) return
     setBusyId('all')
     setErr(null)
-    /* Перечитываем в любом случае: если одобрение сорвалось на середине,
-       часть кадров уже одобрена — экран, оставшийся на старых данных, покажет
-       на модерации то, чего там больше нет. */
+    /* Один запрос на все кадры (`PATCH …/album`, план миграции §2.3): цикл по
+       кадру был сотней запросов на альбом из сотни фото, и обрыв посередине
+       оставлял альбом наполовину одобренным. Перечитываем в любом случае. */
     try {
-      for (const p of photos.filter(x => !x.approved)) await setPhotoApproved(weddingId, p.id ?? '', true)
+      await setAlbumApproved(weddingId, true)
     } catch (e) { setErr(explainError(e)) } finally { setBusyId(null); q.reload() }
   })()
 

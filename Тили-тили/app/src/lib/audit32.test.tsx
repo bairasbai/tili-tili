@@ -610,9 +610,11 @@ describe('T8: настройки — список push-подписок из GET
       '/auth/otp': withStatus(429, 'too_many_requests', 'Слишком часто — подождите', { 'retry-after': '120' }),
     })
     const r = renderAt('/auth', <Route path="/auth" element={<Auth />} />)
-    await waitFor(() => expect(screen.getByRole('checkbox').hasAttribute('disabled')).toBe(false), { timeout: 4000 })
+    const consentBox = () => screen.getByRole('checkbox', { name: /обработку персональных данных/ })
+    await waitFor(() => expect(consentBox().hasAttribute('disabled')).toBe(false), { timeout: 4000 })
     fireEvent.change(screen.getByPlaceholderText('917 123-45-67'), { target: { value: '9171234567' } })
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(consentBox())
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Мне есть 18 лет' }))
     fireEvent.click(button('Получить код'))
     await waitFor(() => expect(text(r)).toContain('Слишком часто — подождите'), { timeout: 4000 })
     expect(text(r), 'срок из Retry-After не показан на «Получить код»').toMatch(/Получить код · [12]:\d\d/)

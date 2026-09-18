@@ -46,3 +46,17 @@ export const getVendorReviews = (vendorId: string, limit = 10, cursor?: string |
  */
 export const sendCoupleReview = (vendorId: string, rating: number, text: string) =>
   api.post(url('/catalog/vendors/{vendorId}/reviews', { vendorId }), { rating, text })
+
+/** На что жалуются (§18.2): анкета, отзыв, сообщение в чате, сделка (спор). */
+export type ComplaintTarget = 'vendor' | 'review' | 'message' | 'deal'
+/** Причина — из четырёх, которые знает модерация; свободный текст — отдельно. */
+export type ComplaintCategory = 'fraud' | 'content' | 'no_show' | 'spam'
+
+/**
+ * Жалоба модерации (`POST /complaints`, §18.2). Сервер отвечает 201 и на
+ * повтор по той же цели: человек нажал ещё раз, а не подал вторую жалобу.
+ * До сверки планов 2026-09-18 путь был на сервере, а кнопки в приложении не
+ * было ни одной — очередь `/admin/complaints` стояла без источника.
+ */
+export const sendComplaint = (targetKind: ComplaintTarget, targetId: string, category: ComplaintCategory, text?: string) =>
+  api.post('/complaints', { targetKind, targetId, category, ...(text?.trim() ? { text: text.trim() } : {}) })

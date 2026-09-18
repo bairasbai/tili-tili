@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, CloudRain, Zap, Heart } from 'lucide-react'
 
@@ -10,6 +10,7 @@ import { getGuests, getPlanB, getSlots, getTimeline, getWedding } from '@/lib/ap
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { activatePlanB, setTaskDone, shiftTimeline, type DayXBroadcast } from '@/lib/api/weddingWrite'
+import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { getAvailability, getCategories, getFavorites, getVendors, reviewsPendingRating } from '@/lib/api/catalog'
 import { cn, goBack, plural } from '@/lib/utils'
@@ -255,13 +256,22 @@ export function DayX() {
 
   const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
   const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId])
-  const events = q.data ?? []
   /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
      включённый сценарий, а экран «План Б» рядом писал «активирован»: два
      экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
      команде и гостям повторную рассылку. */
   const pb = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId])
-  const planBOn = !!pb.data?.activatedAt
+  /*
+   * Офлайн-копия (План §3.1, §12): на площадке сеть пропадает, а тайминг и
+   * телефоны команды нужны именно там. Воркер API не кэширует — копия одна,
+   * явная, только для этого экрана (`lib/offlineDay.ts`). Показывается лишь
+   * когда сервер НЕ ОТВЕТИЛ (ошибка без данных), и всегда с меткой «на HH:MM»:
+   * человек видит, чему верит. Пока ответ есть — копия молча обновляется.
+   */
+  const snapshot = useMemo(() => recallDay(weddingId), [weddingId])
+  const offline = !q.data && !!q.error && snapshot ? snapshot : null
+  const events = q.data ?? offline?.timeline ?? []
+  const planBOn = !!pb.data?.activatedAt || (!pb.data && !!pb.error && !!offline?.planBActivatedAt)
   const reloadTimeline = q.reload
   const reloadPlanB = pb.reload
 
@@ -288,7 +298,22 @@ export function DayX() {
   const current = started[started.length - 1]
   const next = events.find(e => e.startsAt && new Date(e.startsAt) > now)
 
-  const team = slots.filter(s => s.vendor && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
+  const liveTeam = slots.filter(s => s.vendor && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
+  const team = slotsState === 'error' && offline ? offline.team : liveTeam
+  /* Копия снимается с живого ответа целиком — тайминг, план Б и команда
+     вместе, чтобы не смешивать вчерашних подрядчиков с сегодняшними часами. */
+  useEffect(() => {
+    if (!weddingId || !q.data || pb.loading || pb.error || slotsState !== 'ready') return
+    rememberDay({
+      weddingId,
+      /* Эффект, не рендер: момент снятия копии (сторож D4-22 — про тело компонента). */
+      savedAt: new Date(Date.now()).toISOString(),
+      timeline: q.data,
+      planBActivatedAt: pb.data?.activatedAt ?? null,
+      team: liveTeam.map(t => ({ id: t.id, label: t.label, vendor: t.vendor, vendorId: t.vendorId, phone: t.phone })),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- liveTeam выводится из slots; slotsState покрывает их смену
+  }, [weddingId, q.data, pb.data, pb.loading, pb.error, slotsState])
 
   /*
    * Чем кончилось действие — словами из ответа (`DayXBroadcast`, фича 005):
@@ -352,6 +377,11 @@ export function DayX() {
         </div>
         <div className="w-10" />
       </div>
+      {offline && (
+        <p role="status" className="mx-5 mt-3 rounded-2xl px-4 py-2.5 text-[11.5px] leading-relaxed bg-[var(--card)] opacity-90">
+          {t('Сервер не отвечает — показана копия с этого телефона')}: {t('тайминг на')} {time(offline.savedAt)}. {t('Сдвиг и план Б без сети не сработают.')}
+        </p>
+      )}
 
       <div className="px-5 mt-5">
         <div className="rounded-[26px] p-5 bg-[var(--card)]">
@@ -373,9 +403,9 @@ export function DayX() {
                   словами, чем показывать «идёт фотосессия». */}
               {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
                   экран дня X говорил координатору, что программы нет. */}
-              <b className="font-serif-d text-[21px] block mt-1">{next ? next.name : ready(q) ? t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
+              <b className="font-serif-d text-[21px] block mt-1">{next ? next.name : ready(q) || offline ? t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
               <p className="text-[11px] opacity-60 mt-0.5">
-                {next ? `${t('начало в')} ${time(next.startsAt)}` : ready(q) ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? '')}
+                {next ? `${t('начало в')} ${time(next.startsAt)}` : ready(q) || offline ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? '')}
               </p>
             </div>
           )}
@@ -395,7 +425,7 @@ export function DayX() {
         {outcome && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
 
         <div className="mt-4 relative pl-6">
-          <AsyncState q={q} />
+          {!offline && <AsyncState q={q} />}
           <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px] opacity-50" style={{ background: 'linear-gradient(var(--dark-gold), transparent)' }} />
           {events.map(e => (
             <div key={e.id} className="relative mb-4">
@@ -405,7 +435,7 @@ export function DayX() {
               {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
           ))}
-          {!events.length && ready(q) && (
+          {!events.length && (ready(q) || offline) && (
             <p className="text-[11.5px] opacity-60">{t('Тайминг ещё не собран. Его можно собрать на экране «Тайминг дня».')}</p>
           )}
         </div>
@@ -420,10 +450,19 @@ export function DayX() {
           {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{slotsState === 'ready' ? t('Забронированных подрядчиков пока нет') : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : t('Загружаем…')}</p>}
           <div className="flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
             {team.map(s => (
+              /* Без сети чат не открыть — из копии остаётся телефон (виден
+                 паре после брони), и в день свадьбы он важнее переписки. */
+              offline && slotsState === 'error' ? (
+                <a key={s.id} href={s.phone ? `tel:${s.phone}` : undefined} aria-disabled={!s.phone} className={cn('press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)]', !s.phone && 'opacity-50')}>
+                  <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
+                  {`${s.vendor} · ${t(s.label)}`}{s.phone ? ` · ${s.phone}` : ` · ${t('телефона нет')}`}
+                </a>
+              ) : (
               <button key={s.id} disabled={chatBusy === `chat:${s.id}`} onClick={() => openChat('crew', `chat:${s.id}`, () => chatRouteForVendor(s.vendorId))} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)] disabled:opacity-50">
                 <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
                 {chatBusy === `chat:${s.id}` ? t('Открываем чат…') : `${s.vendor} · ${t(s.label)}`}
               </button>
+              )
             ))}
           </div>
           {chatErrAt('crew')}

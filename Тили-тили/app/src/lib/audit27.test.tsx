@@ -338,7 +338,9 @@ function JoinProbe() {
   return <p>ПРИЁМ ПРИГЛАШЕНИЯ {code}</p>
 }
 
-const checkbox = () => screen.getByRole('checkbox')
+const checkbox = () => screen.getByRole('checkbox', { name: /обработку персональных данных/ })
+/* «Мне есть 18 лет» — вторая галочка (план бэкенда §7); без неё «Получить код» закрыта. */
+const adultBox = () => screen.getByRole('checkbox', { name: 'Мне есть 18 лет' })
 const phoneInput = () => screen.getByPlaceholderText('917 123-45-67')
 
 /** Сеть для входа: редакция, код, проверка, согласие, профиль. Свадьбы — параметром. */
@@ -358,7 +360,7 @@ const authRoutes = (weddings: unknown[]): Routes => ({
 async function signInThrough() {
   await waitFor(() => expect(checkbox().hasAttribute('disabled')).toBe(false))
   fireEvent.change(phoneInput(), { target: { value: '9171234567' } })
-  fireEvent.click(checkbox())
+  fireEvent.click(checkbox()); fireEvent.click(adultBox())
   fireEvent.click(screen.getByText('Получить код').closest('button')!)
   await waitFor(() => expect(document.getElementById('otp-0')).toBeTruthy())
   for (let k = 0; k < 4; k++) fireEvent.change(document.getElementById(`otp-${k}`)!, { target: { value: String(k + 1) } })
@@ -380,7 +382,7 @@ describe('D1-12: согласие — состояние экрана, не хр
     await openAuth(authRoutes([]))
     await waitFor(() => expect(checkbox().hasAttribute('disabled')).toBe(false))
     fireEvent.change(phoneInput(), { target: { value: '9171234567' } })
-    fireEvent.click(checkbox())
+    fireEvent.click(checkbox()); fireEvent.click(adultBox())
     expect(checkbox().getAttribute('aria-checked')).toBe('true')
     expect(localStorage.getItem('tt_consent'), 'согласие легло в localStorage').toBeNull()
     fireEvent.change(phoneInput(), { target: { value: '9170000000' } })
@@ -391,7 +393,7 @@ describe('D1-12: согласие — состояние экрана, не хр
     await openAuth(authRoutes([]))
     await waitFor(() => expect(checkbox().hasAttribute('disabled')).toBe(false))
     fireEvent.change(phoneInput(), { target: { value: '9171234567' } })
-    fireEvent.click(checkbox())
+    fireEvent.click(checkbox()); fireEvent.click(adultBox())
     fireEvent.click(screen.getByText('Получить код').closest('button')!)
     await waitFor(() => expect(document.getElementById('otp-0')).toBeTruthy())
     fireEvent.click(screen.getByLabelText('Назад'))
@@ -496,7 +498,7 @@ describe('D6-13: таймер повторной отправки — от Retry
     })
     await waitFor(() => expect(checkbox().hasAttribute('disabled')).toBe(false))
     fireEvent.change(phoneInput(), { target: { value: '9171234567' } })
-    fireEvent.click(checkbox())
+    fireEvent.click(checkbox()); fireEvent.click(adultBox())
     fireEvent.click(screen.getByText('Получить код').closest('button')!)
     await waitFor(() => expect(screen.getByText('Отправить код повторно')).toBeTruthy())
     fireEvent.click(screen.getByText('Отправить код повторно'))

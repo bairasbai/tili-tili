@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, Send, Settings, Globe, Bell, Shield, ShieldCheck, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows } from 'lucide-react'
+import { ChevronLeft, Send, Settings, Globe, Bell, Shield, ShieldCheck, LogOut, FileText, LifeBuoy, Store, PartyPopper, GitCompareArrows, Flag } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
 import { cn, copyText, goBack } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
+import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { api, ApiError, url } from '@/lib/api/client'
 import { getChats, getMessages, openChatSocket, sendMessage, sendTyping } from '@/lib/api/chats'
@@ -439,6 +440,10 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
 
   const me = useApi(() => getMe(), [])
   const myId = me.data?.id
+  /* Жалоба на собеседника (§18.2) — по его последней реплике: модератор откроет
+     этот чат по идентификатору сообщения. На свои, системные и реплики Тиля
+     жаловаться не на кого. */
+  const [complaint, setComplaint] = useState(false)
   /* Для обработчика канала: он создаётся один раз на чат, а свой идентификатор
      приходит позже. */
   const myIdRef = useRef<string | undefined>(undefined)
@@ -530,6 +535,10 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
     </div>
   )
 
+  /* Последняя реплика собеседника — цель жалобы; в чате Тиля жаловаться не на кого. */
+  const reportable = chat && chat.kind !== 'tilly'
+    ? [...messages].reverse().find(m => !m.system && m.senderId !== null && m.senderId !== myId)?.id ?? null
+    : null
   return (
     <div className="h-dvh flex flex-col">
       <div className="glass-tab border-t-0 border-b px-4 pt-6 pb-3 flex items-center gap-3 z-10">
@@ -554,7 +563,15 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
             </span>
           )}
         </div>
+        {reportable && (
+          <button onClick={() => setComplaint(true)} className="press w-9 h-9 rounded-full bg-[var(--card)] flex items-center justify-center shrink-0" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Пожаловаться на собеседника')}>
+            <Flag size={15} />
+          </button>
+        )}
       </div>
+      {complaint && reportable && (
+        <ComplaintSheet target="message" targetId={reportable} title={chat?.title ?? t('Чат')} onClose={() => setComplaint(false)} />
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2.5">
         {closedToMe ? (

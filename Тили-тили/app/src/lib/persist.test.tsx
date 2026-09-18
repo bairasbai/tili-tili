@@ -79,6 +79,13 @@ vi.mock('@/lib/api/notifications', async (orig) => ({
     const n = notifications.find(x => x.id === id)
     if (n) n.read = true
   },
+  /* «Прочитать все» — один запрос (план миграции §2.3): мок отмечает все
+     непрочитанные разом, как сервер. */
+  markAllNotificationsRead: async () => {
+    const unread = notifications.filter(x => !x.read)
+    for (const n of unread) { readNotifications.push(String(n.id)); n.read = true }
+    return { marked: unread.length }
+  },
 }))
 
 vi.mock('@/lib/api/weddingWrite', async (orig) => ({

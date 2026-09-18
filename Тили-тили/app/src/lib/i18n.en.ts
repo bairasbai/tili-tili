@@ -1936,3 +1936,37 @@ Object.assign(EN, {
 Object.assign(EN, {
   'Войдите, чтобы продолжить': 'Sign in to continue',
 })
+
+/* Хвосты планов (2026-09-18): жалобы, 18+, права на портфолио, выгрузка, счётчик категорий, офлайн день X. */
+Object.assign(EN, {
+  'Пожаловаться': 'Report',
+  'Причина': 'Reason',
+  'Обман или вымогательство': 'Fraud or extortion',
+  'просят оплату мимо договора, требуют лишнее, обещают то, чего нет': 'asking to pay outside the contract, demanding extras, promising what does not exist',
+  'Не пришёл или не выполнил': 'Did not show up or did not deliver',
+  'сорвал дату, не сделал оговорённое': 'missed the date, did not do what was agreed',
+  'Неприемлемое содержание': 'Inappropriate content',
+  'оскорбления, чужие фото, недостоверная анкета или отзыв': 'insults, someone else’s photos, a misleading profile or review',
+  'Спам': 'Spam',
+  'реклама, массовые сообщения, навязывание услуг': 'advertising, mass messages, pushing services',
+  'Что случилось — по желанию': 'What happened — optional',
+  'Отправить жалобу': 'Send the report',
+  'Жалоба принята': 'Report received',
+  'Модерация её рассмотрит. Переписка и сделка остаются в приложении — им есть на что опереться.': 'Moderation will review it. The chat and the deal stay in the app — there is something to rely on.',
+  'Пожаловаться на анкету': 'Report this profile',
+  'Пожаловаться на отзыв': 'Report this review',
+  'Пожаловаться на собеседника': 'Report this person',
+  'Отзыв': 'Review',
+  'Открыть спор': 'Open a dispute',
+  'откройте спор — жалоба уйдёт модерации, а переписка и договор останутся в приложении.': 'open a dispute — the report goes to moderation, and the chat and contract stay in the app.',
+  'деньги идут напрямую подрядчику — приложение фиксирует факт оплаты, но не держит их у себя.': 'money goes directly to the vendor — the app records the payment but does not hold it.',
+  'Мне есть 18 лет': 'I am 18 or older',
+  'Подтверждаю права на фото и видео и согласие снятых людей на публикацию': 'I confirm the rights to the photos and videos and the consent of the people in them to publication',
+  'Подтвердите права на фото и видео — без этого анкету не опубликовать': 'Confirm the rights to the photos and videos — the profile cannot be published without it',
+  'Собираем файл…': 'Preparing the file…',
+  'Выгрузить мои данные': 'Download my data',
+  'Сервер не отвечает — показана копия с этого телефона': 'The server is not responding — showing a copy from this phone',
+  'тайминг на': 'timeline as of',
+  'Сдвиг и план Б без сети не сработают.': 'Shifting and plan B will not work without a connection.',
+  'телефона нет': 'no phone',
+})
