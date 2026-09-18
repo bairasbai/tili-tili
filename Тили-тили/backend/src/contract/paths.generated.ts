@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.38.0).
- * Операций: 172. Путей: 128. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.39.0).
+ * Операций: 174. Путей: 129. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -86,6 +86,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/media/upload-url","url":"/media/upload-url","operationId":null,"summary":"Ссылка для прямой загрузки файла","tag":"media"},
   {"method":"GET","openapi":"/notifications","url":"/notifications","operationId":null,"summary":"Уведомления пользователя","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/{id}/read","url":"/notifications/:id/read","operationId":null,"summary":"Отметить прочитанным","tag":"notifications"},
+  {"method":"POST","openapi":"/notifications/read-all","url":"/notifications/read-all","operationId":null,"summary":"Отметить прочитанными все","tag":"notifications"},
   {"method":"POST","openapi":"/referral/{code}/apply","url":"/referral/:code/apply","operationId":null,"summary":"Применить чужой реферальный код","tag":"auth"},
   {"method":"GET","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Публичная страница гостя (из ссылки в приглашении)","tag":"guests"},
   {"method":"POST","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Ответ гостя (RSVP)","tag":"guests"},
@@ -122,6 +123,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Карточка свадьбы (данные для Home)","tag":"weddings"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Обновить (дата, город, бюджет, стиль)","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Общий фотоальбом гостей","tag":"album"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Одобрить или скрыть все кадры разом","tag":"album"},
   {"method":"POST","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Гость добавляет фото","tag":"album"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/album/{photoId}","url":"/weddings/:weddingId/album/:photoId","operationId":null,"summary":"Одобрить или скрыть кадр","tag":"album"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/anti-gifts","url":"/weddings/:weddingId/anti-gifts","operationId":null,"summary":"Список «просим не дарить»","tag":"wishlist"},

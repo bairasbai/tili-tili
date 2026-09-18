@@ -975,10 +975,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Категории подрядчиков (площадки, фото, декор…) */
+        /**
+         * Категории подрядчиков (площадки, фото, декор…)
+         * @description С `city` каждая категория несёт `vendorsCount` — сколько опубликованных
+         *     анкет в этом городе (план миграции §2.7: экран `/search` держится на
+         *     доводе «здесь есть из кого выбирать»); без `city` — по всей базе.
+         */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    city?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -3547,6 +3554,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отметить прочитанными все
+         * @description «Прочитать все» одним запросом (план миграции §2.3): до этого экран
+         *     обходил список поштучно — сотня уведомлений, сотня запросов на один тап,
+         *     и обрыв посередине оставлял половину непрочитанной. Повтор пустой:
+         *     время прочтения не двигается.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description сколько уведомлений стало прочитанными этим запросом */
+                            marked?: number;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/wishlist": {
         parameters: {
             query?: never;
@@ -5341,6 +5394,10 @@ export interface paths {
          * Зафиксировать согласие на обработку персональных данных
          * @description 152-ФЗ: согласие даётся явным действием. Сохраняются версия документа,
          *     дата и IP — это и есть подтверждение. Предустановленная галочка согласием не является.
+         *
+         *     `adult` — отдельная галочка «мне есть 18 лет» (план бэкенда §7): версия
+         *     документа покрывает текст, возраст текстом не покрывается. Пишется в
+         *     `consents.adult` как есть; клиент не даёт зафиксировать согласие без неё.
          */
         post: {
             parameters: {
@@ -5354,6 +5411,8 @@ export interface paths {
                     "application/json": {
                         /** @example 2026-09-02 */
                         policyVersion: string;
+                        /** @description подтверждение «мне есть 18 лет»; поля нет — false */
+                        adult?: boolean;
                     };
                 };
             };
@@ -6522,7 +6581,43 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Одобрить или скрыть все кадры разом
+         * @description «Одобрить все» одним запросом (план миграции §2.3): по кадру — это сотня
+         *     запросов на альбом из сотни фото, и обрыв посередине оставлял альбом
+         *     наполовину одобренным. Ответ — сколько кадров сменили состояние.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        approved: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            updated?: number;
+                        };
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+            };
+        };
         trace?: never;
     };
     "/weddings/{weddingId}/album/{photoId}": {
@@ -7890,13 +7985,15 @@ export interface components {
             expiresAt?: string;
             used?: boolean;
         };
-        /** @description Справочник категорий подрядчиков. Список фиксированный — 35 записей, сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится намеренно: добавление категории не должно требовать выката новой версии контракта. Изменять список может только админ через PUT /admin/categories. */
+        /** @description Справочник категорий подрядчиков. Список фиксированный — 35 записей, сид-данные лежат в миграции seed_categories; фронт берёт его только отсюда (моков `lib/data.ts` нет с 2026-09-06). Enum здесь не ставится намеренно: добавление категории не должно требовать выката новой версии контракта. Изменять список может только админ через PUT /admin/categories. */
         Category: {
             /** @example photo */
             id?: string;
             /** @example Фотограф */
             title?: string;
             icon?: string;
+            /** @description опубликованных анкет: в городе `city`, если он передан, иначе по всей базе */
+            vendorsCount?: number;
         };
         Vendor: {
             id?: string;
@@ -7965,6 +8062,13 @@ export interface components {
              *     с кнопкой, которая не сработает (D5-23).
              */
             blocked?: boolean;
+            /**
+             * @description Подрядчик подтвердил права на фото и видео портфолио и согласие
+             *     снятых на публикацию (152-ФЗ, план бэкенда §7). Только владельцу.
+             *     Ставится один раз через `mediaRights: true` в `PUT /vendor/profile`
+             *     и не снимается; мастер анкеты не публикует без него.
+             */
+            mediaRights?: boolean;
             /** @description Ссылки на фотографии — совместимость с прежней формой ответа. */
             gallery?: string[];
             media?: {
@@ -8006,6 +8110,13 @@ export interface components {
             /** @description Рабочий телефон для пар, которые уже забронировали. Формат свободный: люди пишут +7, 8, со скобками и без — навязывать один вид значит ловить отказы на живых номерах. */
             phone?: string | null;
             priceFrom?: components["schemas"]["Money"];
+            /**
+             * @description `true` — подрядчик подтверждает права на фото и видео портфолио и
+             *     согласие снятых людей на публикацию. Записывается моментом
+             *     (`vendors.media_rights_at`) и не снимается; `false` и отсутствие
+             *     поля прежнее подтверждение не трогают.
+             */
+            mediaRights?: boolean;
             packages?: {
                 name?: string;
                 price?: components["schemas"]["Money"];

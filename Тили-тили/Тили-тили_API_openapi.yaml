@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.38.0
+  version: 0.39.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -566,6 +566,15 @@ paths:
     get:
       tags: [catalog]
       summary: Категории подрядчиков (площадки, фото, декор…)
+      description: |
+        С `city` каждая категория несёт `vendorsCount` — сколько опубликованных
+        анкет в этом городе (план миграции §2.7: экран `/search` держится на
+        доводе «здесь есть из кого выбирать»); без `city` — по всей базе.
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema: { type: string, maxLength: 80 }
       responses:
         '200':
           description: OK
@@ -1984,6 +1993,26 @@ paths:
           schema: { type: string }
       responses:
         '204': { description: OK }
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      summary: Отметить прочитанными все
+      description: |
+        «Прочитать все» одним запросом (план миграции §2.3): до этого экран
+        обходил список поштучно — сотня уведомлений, сотня запросов на один тап,
+        и обрыв посередине оставлял половину непрочитанной. Повтор пустой:
+        время прочтения не двигается.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  marked: { type: integer, description: 'сколько уведомлений стало прочитанными этим запросом' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
 
   # ───────────────────────── WISHLIST (пара) ─────────────────────────
@@ -2875,6 +2904,10 @@ paths:
       description: |
         152-ФЗ: согласие даётся явным действием. Сохраняются версия документа,
         дата и IP — это и есть подтверждение. Предустановленная галочка согласием не является.
+
+        `adult` — отдельная галочка «мне есть 18 лет» (план бэкенда §7): версия
+        документа покрывает текст, возраст текстом не покрывается. Пишется в
+        `consents.adult` как есть; клиент не даёт зафиксировать согласие без неё.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2885,6 +2918,7 @@ paths:
               required: [policyVersion]
               properties:
                 policyVersion: { type: string, example: '2026-09-02' }
+                adult: { type: boolean, description: 'подтверждение «мне есть 18 лет»; поля нет — false' }
       responses:
         '201': { description: Зафиксировано }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -3441,6 +3475,34 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AlbumPhoto' }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
+    patch:
+      tags: [album]
+      summary: Одобрить или скрыть все кадры разом
+      description: |
+        «Одобрить все» одним запросом (план миграции §2.3): по кадру — это сотня
+        запросов на альбом из сотни фото, и обрыв посередине оставлял альбом
+        наполовину одобренным. Ответ — сколько кадров сменили состояние.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /weddings/{weddingId}/album/{photoId}:
     patch:
       tags: [album]
@@ -4356,14 +4418,17 @@ components:
       type: object
       description: >
         Справочник категорий подрядчиков. Список фиксированный — 35 записей,
-        сид-данные лежат в миграции seed_categories и совпадают с CATEGORIES
-        во фронте (Тили-тили/app/src/lib/data.ts). Enum здесь не ставится
+        сид-данные лежат в миграции seed_categories; фронт берёт его только
+        отсюда (моков `lib/data.ts` нет с 2026-09-06). Enum здесь не ставится
         намеренно: добавление категории не должно требовать выката новой версии
         контракта. Изменять список может только админ через PUT /admin/categories.
       properties:
         id: { type: string, example: photo }
         title: { type: string, example: Фотограф }
         icon: { type: string }
+        vendorsCount:
+          type: integer
+          description: 'опубликованных анкет: в городе `city`, если он передан, иначе по всей базе'
     Vendor:
       type: object
       properties:
@@ -4444,6 +4509,13 @@ components:
                 владельцу: в каталоге её нет, публикация отвечает 409, и
                 кабинет обязан сказать почему, а не показывать «не опубликована»
                 с кнопкой, которая не сработает (D5-23).
+            mediaRights:
+              type: boolean
+              description: |
+                Подрядчик подтвердил права на фото и видео портфолио и согласие
+                снятых на публикацию (152-ФЗ, план бэкенда §7). Только владельцу.
+                Ставится один раз через `mediaRights: true` в `PUT /vendor/profile`
+                и не снимается; мастер анкеты не публикует без него.
             gallery:
               type: array
               description: Ссылки на фотографии — совместимость с прежней формой ответа.
@@ -4502,6 +4574,13 @@ components:
             люди пишут +7, 8, со скобками и без — навязывать один вид значит
             ловить отказы на живых номерах.
         priceFrom: { $ref: '#/components/schemas/Money' }
+        mediaRights:
+          type: boolean
+          description: |
+            `true` — подрядчик подтверждает права на фото и видео портфолио и
+            согласие снятых людей на публикацию. Записывается моментом
+            (`vendors.media_rights_at`) и не снимается; `false` и отсутствие
+            поля прежнее подтверждение не трогают.
         packages:
           type: array
           items:

@@ -49,6 +49,16 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(204).send()
   })
 
+  /* «Прочитать все» одним запросом (план миграции §2.3): поштучный обход —
+   * сотня запросов на тап, и обрыв посередине оставлял половину непрочитанной.
+   * Повтор пустой: уже прочитанные не трогаются, время прочтения не двигается. */
+  app.post('/notifications/read-all', { preHandler: app.requireConsent }, async (request) => {
+    const res = await db().query('update notifications set read_at = now() where user_id = $1 and read_at is null', [
+      request.caller!.userId,
+    ])
+    return { marked: res.rowCount ?? 0 }
+  })
+
   /* ── подписки Web Push ────────────────────────────────────────────── */
 
   app.post(

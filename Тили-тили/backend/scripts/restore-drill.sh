@@ -25,8 +25,11 @@ echo "1/4 снимаю копию"
 pg_dump --format=custom --no-owner --no-privileges --file="$DUMP" "$DATABASE_URL"
 
 echo "2/4 создаю чистую базу $DRILL_DB"
-psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$DRILL_DB\"" >/dev/null
-psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DRILL_DB\"" >/dev/null
+# Опции — ДО адреса базы: psql на Windows не переставляет аргументы, и опции
+# после адреса молча отбрасываются («лишний аргумент игнорируется»); на Linux
+# порядок безразличен. Роли базы нужен CREATEDB — или ADMIN_URL суперпользователя.
+psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS \"$DRILL_DB\"" "$ADMIN_URL" >/dev/null
+psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DRILL_DB\"" "$ADMIN_URL" >/dev/null
 
 echo "3/4 разворачиваю копию"
 TARGET_URL="$(printf '%s' "$DATABASE_URL" | sed "s#/[^/?]*\(?\|$\)#/$DRILL_DB\1#")"
@@ -34,9 +37,9 @@ TARGET_URL="$(printf '%s' "$DATABASE_URL" | sed "s#/[^/?]*\(?\|$\)#/$DRILL_DB\1#
 pg_restore --dbname="$TARGET_URL" --no-owner --no-privileges --exit-on-error "$DUMP"
 
 echo "4/4 сверяю"
-TABLES="$(psql "$TARGET_URL" -tAc "select count(*) from information_schema.tables where table_schema='public'")"
-MIGRATIONS="$(psql "$TARGET_URL" -tAc "select count(*) from pgmigrations")"
-USERS="$(psql "$TARGET_URL" -tAc "select count(*) from users")"
+TABLES="$(psql -tAc "select count(*) from information_schema.tables where table_schema='public'" "$TARGET_URL")"
+MIGRATIONS="$(psql -tAc "select count(*) from pgmigrations" "$TARGET_URL")"
+USERS="$(psql -tAc "select count(*) from users" "$TARGET_URL")"
 
 ELAPSED=$(( $(date +%s) - START ))
 echo "таблиц: $TABLES · миграций: $MIGRATIONS · пользователей: $USERS · время: ${ELAPSED}с"

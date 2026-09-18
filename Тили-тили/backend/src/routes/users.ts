@@ -85,12 +85,18 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         body: {
           type: 'object',
           required: ['policyVersion'],
-          properties: { policyVersion: { type: 'string', minLength: 1, maxLength: 40 } },
+          properties: {
+            policyVersion: { type: 'string', minLength: 1, maxLength: 40 },
+            /* «Мне есть 18 лет» — отдельная галочка (план §7): версия документа
+             * покрывает текст, возраст — нет. Пишется как есть; отсутствие поля
+             * — «не подтверждал», а не отказ: старые клиенты поля не знают. */
+            adult: { type: 'boolean' },
+          },
         },
       },
     },
     async (request, reply) => {
-      const { policyVersion } = request.body as { policyVersion: string }
+      const { policyVersion, adult = false } = request.body as { policyVersion: string; adult?: boolean }
       if (policyVersion !== app.appConfig.policyVersion) {
         // Иначе в базе окажется подпись под редакцией, которой человек не видел.
         throw new AppError(
@@ -100,13 +106,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         )
       }
       await db().query(
-        'insert into consents (id, user_id, policy_version, ip) values ($1, $2, $3, $4)',
-        [uuidv7(), request.caller!.userId, policyVersion, request.ip || null],
+        'insert into consents (id, user_id, policy_version, ip, adult) values ($1, $2, $3, $4, $5)',
+        [uuidv7(), request.caller!.userId, policyVersion, request.ip || null, adult],
       )
       await db().query(
         `insert into audit_log (actor_id, action, entity, entity_id, diff)
          values ($1, 'consent.given', 'user', $1, $2)`,
-        [request.caller!.userId, JSON.stringify({ policyVersion })],
+        [request.caller!.userId, JSON.stringify({ policyVersion, adult })],
       )
       return reply.code(201).send()
     },

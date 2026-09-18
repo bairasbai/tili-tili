@@ -35,6 +35,8 @@ interface UpsertBody {
   about?: string
   phone?: string | null
   priceFrom?: { amount: number }
+  /** Права на фото и видео портфолио и согласие снятых (152-ФЗ, план §7): `true` ставит момент, не снимается. */
+  mediaRights?: boolean
   packages?: { name: string; price?: { amount: number }; includes?: string[] }[]
   portfolioUrls?: string[]
   media?: { kind: 'photo' | 'video'; url: string; durationS?: number | null }[]
@@ -80,7 +82,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       published_at: Date | null
       moderated_at: Date | null
       blocked_at: Date | null
-    }>('select published_at, moderated_at, blocked_at from vendors where id = $1', [vendorId])
+      media_rights_at: Date | null
+    }>('select published_at, moderated_at, blocked_at, media_rights_at from vendors where id = $1', [vendorId])
     return {
       ...detail,
       /* Регион отдаём владельцу: город в ответе — одна строка, и без региона
@@ -93,6 +96,9 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
          а не показывать «не опубликована» с кнопкой, которая не сработает
          (D5-23, фича 005). Чужому читателю вопрос не стоит — он её не видит. */
       blocked: state[0]!.blocked_at !== null,
+      /* Подтверждение прав на портфолио (152-ФЗ, план §7) — только владельцу:
+         мастер по нему решает, показывать ли галочку заново. */
+      mediaRights: state[0]!.media_rights_at !== null,
     }
   }
 
@@ -130,6 +136,10 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
              * согласия нет, поэтому поле отдельное. */
             phone: { type: 'string', nullable: true, minLength: 5, maxLength: 32 },
             priceFrom: MONEY_SCHEMA,
+            /* Права на фото и согласие снятых (152-ФЗ, план §7). `true` пишет
+             * момент подтверждения; `false` и отсутствие поля прежнее не трогают —
+             * подтверждение не снимается сохранением имени. */
+            mediaRights: { type: 'boolean' },
             packages: {
               type: 'array',
               maxItems: 20,
@@ -257,6 +267,11 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           ],
         )
         const id = saved[0]!.id
+
+        // Подтверждение прав — событие с датой, ставится один раз (152-ФЗ, план §7).
+        if (body.mediaRights === true) {
+          await client.query('update vendors set media_rights_at = coalesce(media_rights_at, now()) where id = $1', [id])
+        }
 
         // Присланный список заменяет прежний целиком: дописывание оставило бы
         // удалённые позиции. Не присланный — не трогается вовсе.

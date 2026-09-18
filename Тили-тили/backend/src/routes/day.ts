@@ -1495,6 +1495,32 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /* «Одобрить все» одним запросом (план миграции §2.3): по кадру — сотня
+   * запросов на альбом из сотни фото, и обрыв посередине оставлял альбом
+   * наполовину одобренным. Считаем только те, что сменили состояние: повтор
+   * отвечает нулём, а не «сто одобрено» заново. */
+  app.patch(
+    '/weddings/:weddingId/album',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['approved'],
+          additionalProperties: false,
+          properties: { approved: { type: 'boolean' } },
+        },
+      },
+    },
+    async (request) => {
+      const { approved } = request.body as { approved: boolean }
+      const res = await db().query('update album_photos set approved = $2 where wedding_id = $1 and approved <> $2', [
+        request.member!.weddingId,
+        approved,
+      ])
+      return { updated: res.rowCount ?? 0 }
+    },
+  )
+
   app.patch(
     '/weddings/:weddingId/album/:photoId',
     {

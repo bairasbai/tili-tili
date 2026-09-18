@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { PAYOUT_WARNING } from '../src/chats/guard.js'
 import { hashCode } from '../src/auth/otp.js'
 import { recomputeAllRatings, weightedRating, SOURCE_WEIGHT } from '../src/reviews/rating.js'
 
@@ -431,9 +432,10 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
       payload: { text: 'Давайте без договора, переведи на карту — так дешевле' },
     })
     // Сообщение ДОСТАВЛЕНО: блокировка выгнала бы разговор в мессенджер,
-    // где нет ни договора, ни эскроу, ни следа для разбирательства.
+    // где нет ни договора, ни следа для разбирательства. Текст — по константе:
+    // слово «эскроу» из него ушло (обещание без кода, R-174; сверка планов 2026-09-18).
     expect(sent.statusCode).toBe(201)
-    expect(sent.json().warning).toContain('эскроу')
+    expect(sent.json().warning).toBe(PAYOUT_WARNING)
 
     const history = await app.inject({
       method: 'GET',
@@ -442,7 +444,7 @@ describe.skipIf(!live)('перепроверка этапа 8', () => {
     })
     const items = history.json().items as { senderId: string | null; text: string }[]
     // Предупреждение видно обеим сторонам и остаётся в истории.
-    expect(items.some((m) => m.senderId === null && m.text.includes('эскроу'))).toBe(true)
+    expect(items.some((m) => m.senderId === null && m.text === PAYOUT_WARNING)).toBe(true)
 
     // Повтор в те же сутки второго предупреждения не добавляет: иначе оно
     // превращается в шум и его перестают читать.

@@ -7,6 +7,7 @@ import { recomputeAllRatings } from '../reviews/rating.js'
 import { reportJobFailure } from '../plugins/sentry.js'
 import { uuidv7 } from '../ids.js'
 import { plural } from '../text/plural.js'
+import { personCount } from '../routes/guests.js'
 
 /**
  * Фоновые задачи — BullMQ на том же Redis (раздел 5 плана).
@@ -591,6 +592,176 @@ export async function rsvpDigest(app: FastifyInstance): Promise<number> {
   return rows.length
 }
 
+/**
+ * Ключ задачи раздела 5 (`after:{weddingId}:{step}`, `catering:{weddingId}:{date}`).
+ * Первый, кто вставил ключ, и рассылает; повтор задачи получает `false` и
+ * молчит — тот же приём, что `digest_sent`, только одна таблица на все ключи.
+ */
+async function claimJobKey(db: Queryable, key: string): Promise<boolean> {
+  const res = await db.query('insert into job_marks (key) values ($1) on conflict do nothing', [key])
+  return (res.rowCount ?? 0) > 0
+}
+
+/**
+ * «После свадьбы» (раздел 5, План §18.5): отзывы на +1…+7, альбом на +3…+7
+ * (только когда гости что-то прислали — напоминать о пустом альбоме нечем),
+ * итоги на +14…+21, годовщина — в тот же день каждый год.
+ *
+ * Окна, а не точные дни: воркер мог стоять сутки (стенд без Redis, деплой),
+ * и «ровно +1» пропал бы навсегда. Ключ шага держит один раз на свадьбу.
+ * Получатель — пара: отзывы и итоги пишет она (§6, деньги и оценки — не
+ * помощнику).
+ */
+export async function afterWedding(app: FastifyInstance): Promise<number> {
+  const db = app.db!
+  const { rows } = await db.query<{
+    id: string
+    days: number
+    years: number
+    same_day: boolean
+    deals: string
+    photos: string
+  }>(
+    `select w.id,
+            (current_date - w.date)::int as days,
+            extract(year from age(current_date, w.date))::int as years,
+            (to_char(current_date, 'MM-DD') = to_char(w.date, 'MM-DD')) as same_day,
+            (select count(*)::text from deals d where d.wedding_id = w.id and d.state in ('booked','paid_deposit','done')) as deals,
+            (select count(*)::text from album_photos p where p.wedding_id = w.id) as photos
+       from weddings w
+      where w.date is not null and w.date < current_date
+        and w.archived_at is null and w.cancelled_at is null`,
+  )
+  const pass = startPass('after')
+  let sent = 0
+  for (const w of rows) {
+    const steps: { step: string; item: Parameters<typeof notifyWedding>[3] }[] = []
+    if (w.days >= 1 && w.days <= 7 && Number(w.deals) > 0) {
+      steps.push({
+        step: 'reviews',
+        item: {
+          kind: 'system',
+          title: 'Свадьба прошла — оцените команду',
+          body: 'Закройте сделки и оставьте отзывы подрядчикам: их увидят следующие пары',
+          link: '/after',
+        },
+      })
+    }
+    if (w.days >= 3 && w.days <= 7 && Number(w.photos) > 0) {
+      const n = Number(w.photos)
+      steps.push({
+        step: 'album',
+        item: {
+          kind: 'guest',
+          title: 'Гости прислали кадры',
+          body: `В альбоме ${n} ${plural(n, 'кадр', 'кадра', 'кадров')} — одобрите, что показывать всем`,
+          link: '/album',
+        },
+      })
+    }
+    if (w.days >= 14 && w.days <= 21) {
+      steps.push({
+        step: 'results',
+        item: {
+          kind: 'system',
+          title: 'Итоги свадьбы',
+          body: 'Что получилось, сколько потрачено и кого стоит порекомендовать — всё собрано на одном экране',
+          link: '/after',
+        },
+      })
+    }
+    if (w.same_day && w.years >= 1) {
+      steps.push({
+        step: `anniversary:${w.years}`,
+        item: {
+          kind: 'system',
+          title: `С годовщиной — ${w.years} ${plural(w.years, 'год', 'года', 'лет')}!`,
+          body: 'Ваша свадьба и её альбом по-прежнему здесь',
+          link: '/home',
+        },
+      })
+    }
+    for (const s of steps) {
+      const ok = await isolated(app, pass, { weddingId: w.id, step: s.step }, 'не удалось отправить шаг «после свадьбы»', async () => {
+        if (!(await claimJobKey(db, `after:${w.id}:${s.step}`))) return false
+        await notifyWedding(db, w.id, null, s.item, new Date(), false, ['couple'])
+        return true
+      })
+      if (ok) sent += 1
+    }
+  }
+  reportPass(app, pass)
+  return sent
+}
+
+/**
+ * Сводка кейтерингу (раздел 5): за 14 и за 7 дней до даты — порции, блюда
+ * по опросу, диеты и трансфер. План обещал вебхук или письмо кейтерингу;
+ * ни отправителя писем (№13), ни адресов кейтерингов у нас нет — сводка
+ * уходит паре и координатору уведомлением со ссылкой на экран меню, откуда
+ * её и передают. Второй срез (−7) — «новая версия сводки» из плана: ответы
+ * гостей к тому времени меняются.
+ */
+export async function cateringSummary(app: FastifyInstance): Promise<number> {
+  const db = app.db!
+  const { rows } = await db.query<{ id: string; date: string; days: number }>(
+    `select w.id, to_char(w.date, 'YYYY-MM-DD') as date, (w.date - current_date)::int as days
+       from weddings w
+      where w.date in (current_date + 14, current_date + 7)
+        and w.archived_at is null and w.cancelled_at is null`,
+  )
+  const pass = startPass('catering')
+  let sent = 0
+  for (const w of rows) {
+    const ok = await isolated(app, pass, { weddingId: w.id }, 'не удалось отправить сводку кейтерингу', async () => {
+      if (!(await claimJobKey(db, `catering:${w.id}:${w.date}:${w.days}`))) return false
+      const { rows: guests } = await db.query<{
+        status: string
+        plus_one: boolean
+        diet: string | null
+        transfer: string | null
+      }>('select rsvp as status, plus_one, diet, transfer from guests where wedding_id = $1', [w.id])
+      const portions = personCount(guests.map((g) => ({ status: g.status, plusOne: g.plus_one })))
+      const { rows: options } = await db.query<{ name: string; votes: string }>(
+        `select o.name, (select count(*)::text from menu_votes v where v.option_id = o.id) as votes
+           from menu_options o where o.wedding_id = $1 order by o.sort, o.name`,
+        [w.id],
+      )
+      const coming = guests.filter((g) => g.status === 'yes')
+      const diets = coming.filter((g) => g.diet).length
+      const transfer = coming.filter((g) => g.transfer === 'need').length
+      const dishes = options
+        .filter((o) => Number(o.votes) > 0)
+        .map((o) => `${o.name} — ${o.votes}`)
+        .join(', ')
+      const parts = [
+        `Порций: ${portions}`,
+        dishes ? `по опросу: ${dishes}` : 'опрос меню без ответов',
+        `особое питание: ${diets}`,
+        `трансфер нужен: ${transfer}`,
+      ]
+      await notifyWedding(
+        db,
+        w.id,
+        null,
+        {
+          kind: 'system',
+          title: w.days === 14 ? 'Сводка для кейтеринга' : 'Сводка для кейтеринга — свежая версия',
+          body: `${parts.join(' · ')}. Передайте кейтерингу с экрана меню`,
+          link: '/catering',
+        },
+        new Date(),
+        false,
+        ['couple', 'coordinator'],
+      )
+      return true
+    })
+    if (ok) sent += 1
+  }
+  reportPass(app, pass)
+  return sent
+}
+
 async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (!app.db) return { skipped: 'нет базы' }
   if (name === 'push') return sendDuePushes(app.db, app.appConfig)
@@ -601,6 +772,8 @@ async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (name === 'deal-events') return announceDealEvents(app)
   if (name === 'rsvp-digest') return rsvpDigest(app)
   if (name === 'ratings') return recomputeAllRatings(app.db)
+  if (name === 'after') return afterWedding(app)
+  if (name === 'catering') return cateringSummary(app)
   return { skipped: name }
 }
 
@@ -629,6 +802,10 @@ const SCHEDULE: { name: string; every?: number; pattern?: string }[] = [
   // Понедельник, 10:00 — по времени сервера: у дайджеста нет получателя
   // в единственном числе, а значит и «его» таймзоны.
   { name: 'digest', pattern: '0 10 * * 1' },
+  // «После свадьбы» — 00:05, как записано в разделе 5; окна шагов прощают простой воркера.
+  { name: 'after', pattern: '5 0 * * *' },
+  // Сводка кейтерингу — 09:00: паре читать её утром, а не ночью.
+  { name: 'catering', pattern: '0 9 * * *' },
 ]
 
 export async function registerJobs(app: FastifyInstance): Promise<void> {
