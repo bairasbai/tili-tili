@@ -81,10 +81,16 @@ function parseLine(raw: string, index: number): ParsedGuest {
     if (tail) { row.plusOne = true; row.name = field.slice(0, tail.index).trim() }
     else row.name = field
   }
-  /* Без имени строка не уйдёт в любом случае — эта ошибка главнее телефона. */
-  if (guestNameKey(row.name).length < 2) row.error = 'name'
+  /* Без имени строка не уйдёт в любом случае — эта ошибка главнее телефона.
+     Имя длиннее предела сервера (120 знаков) — та же ошибка строки, а не 422
+     на весь список: одна вставленная заметка на абзац иначе роняла импорт
+     целиком (ревью 015). */
+  if (guestNameKey(row.name).length < 2 || row.name.length > NAME_MAX) row.error = 'name'
   return row
 }
+
+/** Предел имени гостя — как у сервера (`maxLength: 120` в схеме импорта). */
+export const NAME_MAX = 120
 
 /**
  * Текст → строки гостей. Строка = гость; пустые строки и строки из пробелов

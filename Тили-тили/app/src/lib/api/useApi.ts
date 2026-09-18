@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError } from './client'
+import { ApiError, isAuthorized } from './client'
 import { t } from '../i18n'
 
 /*
@@ -32,8 +32,29 @@ export interface AsyncData<T> {
 
 /** Сообщение для человека: «сервер лежит» и «сервер отказал» — разные вещи. */
 export function explainError(e: unknown): string {
-  if (e instanceof ApiError) return e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message
+  /* Текст сервера — через словарь: известные отказы («Слот уже занят»…)
+     переводятся, неизвестные остаются как есть (ревью 015). */
+  if (e instanceof ApiError) return e.isDown ? t('Сервер недоступен. Попробуйте позже') : t(e.message)
   return t('Что-то пошло не так')
+}
+
+/*
+ * Экран свадьбы без свадьбы (ревью 015, FB6).
+ *
+ * У вошедшего свадьбы может не быть: подрядчик, новый аккаунт, партнёр
+ * отменил. Запросы бюджета, гостей, тайминга, маршрутов и вишлиста раньше
+ * отвечали на это `Promise.resolve([])` — и экран показывал «0 гостей»,
+ * «0 ₽» как факт (инвариант 13: ноль — не «неизвестно»). Теперь это отказ
+ * со своими словами; `AsyncState` узнаёт его по коду и ведёт в квиз.
+ * Ключ словаря — русская строка, перевод при показе.
+ */
+export const NO_WEDDING = 'Свадьбы пока нет — заведите её, и здесь появятся данные'
+export const NO_WEDDING_CODE = 'no_wedding'
+/** Без входа свадьбы нет по другой причине — и ответ другой: «войдите», а не «заведите». */
+export const SIGN_IN_FIRST = 'Войдите, чтобы увидеть свою свадьбу'
+export function noWedding<T = never>(): Promise<T> {
+  if (!isAuthorized()) return Promise.reject(new ApiError('http', 401, 'unauthorized', t(SIGN_IN_FIRST)))
+  return Promise.reject(new ApiError('http', 0, NO_WEDDING_CODE, t(NO_WEDDING)))
 }
 
 /**

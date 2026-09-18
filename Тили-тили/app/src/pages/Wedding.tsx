@@ -4,7 +4,7 @@ import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armc
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
-import { useApi, explainError } from '@/lib/api/useApi'
+import { useApi, explainError, noWedding } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getWedding } from '@/lib/api/weddingData'
@@ -65,7 +65,7 @@ export function WeddingTeam() {
   /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
-  const budget = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
+  const budget = useApi(() => weddingId ? getBudget(weddingId) : noWedding(), [weddingId])
   /* Ноль здесь — «итог не задан», а не сумма: полоса «от нуля» была бы
      процентом от неизвестного (R-178, ревью D2-09). */
   const budgetTotal = budget.data?.total?.amount ?? 0
@@ -215,9 +215,16 @@ function SlotView({ s }: { s: Slot }) {
   /* Любое действие здесь уходит на сервер и меняет чужой календарь. Ошибку
      показываем словами, а не глотаем: «сделали вид, что получилось» на
      необратимом действии дороже честного отказа. */
+  /* Пока действие в пути — второго нет: «Точно отменить?» по двойному тапу на
+     медленной сети уходил дважды, второй получал 409 и строку ошибки под
+     только что отменённой бронью (ревью 015, FB7). Флаг — по ответу, а не по
+     таймеру `useBusy`: запрос может идти дольше 700 мс. */
+  const [acting, setActing] = useState(false)
   const guard = async (fn: () => Promise<unknown>) => {
+    if (acting) return
+    setActing(true)
     setErr(null)
-    try { await fn() } catch (e) { setErr(explainError(e)) }
+    try { await fn() } catch (e) { setErr(explainError(e)) } finally { setActing(false) }
   }
 
   /* Адрес переписки выдаёт сервер, и он может отказать (429, истёкшая сессия,
@@ -317,7 +324,7 @@ function SlotView({ s }: { s: Slot }) {
                 <button onClick={() => { copyText(inviteLink); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 1500) }} className="press text-[11px] font-bold px-3.5 py-2.5 rounded-[12px] grad text-[var(--on-grad)]">{linkCopied ? '✓' : t('Копия')}</button>
               </div>
             ) : (
-              <button onClick={() => void guard(async () => setInviteLink(await inviteExternal(s.id)))} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold">{t('Создать ссылку-приглашение')}</button>
+              <button disabled={acting} onClick={() => void guard(async () => setInviteLink(await inviteExternal(s.id)))} className="press mt-3 w-full py-3 rounded-[16px] grad text-[var(--on-grad)] text-[12.5px] font-bold disabled:opacity-50">{t('Создать ссылку-приглашение')}</button>
             )}
           </div>
         )}
@@ -336,12 +343,12 @@ function SlotView({ s }: { s: Slot }) {
           {s.dealState === 'done' ? (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Работа выполнена')}</div>
           ) : !canCancel ? null : confirmCancel ? (
-            <button onClick={() => void guard(async () => {
+            <button disabled={acting} onClick={() => void guard(async () => {
               /* У своего подрядчика удаление, а не отмена: только оно гасит
                  выданную ему ссылку-приглашение. */
               await (s.external ? removeExternalVendor(s.id) : cancelBooking(s.id))
               nav('/wedding')
-            })} className="press card-s py-3.5 text-[13px] font-bold bg-[var(--rose-deep)] text-[var(--card)]">{t('Точно отменить?')}</button>
+            })} className="press card-s py-3.5 text-[13px] font-bold bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{acting ? t('Отменяем…') : t('Точно отменить?')}</button>
           ) : (
             <button onClick={() => setConfirmCancel(true)} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)]">{s.external ? t('Удалить подрядчика') : t('Отменить бронь')}</button>
           )}
@@ -419,7 +426,7 @@ export function Budget() {
    * сервера, но повторяет его лишь до первой оплаты — дальше «потрачено»
    * расходится с тем, что реально ушло подрядчикам.
    */
-  const q = useApi(() => weddingId ? getBudget(weddingId) : Promise.resolve(null), [weddingId])
+  const q = useApi(() => weddingId ? getBudget(weddingId) : noWedding(), [weddingId])
   const server = q.data
   /*
    * Общий бюджет может быть не задан: квиз с «пока не знаем» оставляет
@@ -471,6 +478,7 @@ export function Budget() {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — бюджет живёт в ней')); return }
+    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
@@ -629,7 +637,7 @@ export function Checklist() {
   /* Чек-лист приходит с сервера: он собирается там при создании свадьбы вместе
      с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
      `tt_tasks_done` были заменой этому, пока сервера не было. */
-  const q = useApi(() => weddingId ? getTasks(weddingId) : Promise.resolve([]), [weddingId])
+  const q = useApi(() => weddingId ? getTasks(weddingId) : noWedding(), [weddingId])
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -665,6 +673,7 @@ export function Checklist() {
     /* Без свадьбы записывать некуда — и молчать об этом нельзя: кнопка, которая
        ничего не делает и ничего не говорит, читается как поломка. */
     if (!weddingId) { setErr({ id, text: t('Сначала создайте свадьбу — задачи живут в ней') }); return }
+    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr({ id, text: explainError(e) }) } finally { setBusyId(null) }
@@ -834,11 +843,11 @@ export function Timeline() {
   /* Тайминг с сервера. Раньше он жил в `useState` и терялся при перезагрузке:
      добавленное событие исчезало вместе с вкладкой (единственный экран, где
      это было так). */
-  const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId])
+  const q = useApi(() => weddingId ? getTimeline(weddingId) : noWedding(), [weddingId])
   /* Часовой пояс места свадьбы, а не зрителя: по нему живёт день X. Пара может
      смотреть тайминг из другого города, и «13:00» должно означать 13:00 на
      площадке. */
-  const wq = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
+  const wq = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
   const tz = wq.data?.tz
   const raw = q.data ?? []
   const events = raw.map(e => ({
@@ -870,18 +879,22 @@ export function Timeline() {
    * контракт не знает. Значит, отправлять надо всё, что пришло, — пропущенный
    * блок сервер понял бы как удалённый.
    */
-  const save = (next: TimelineDraft[]) => void (async () => {
+  /* Возвращает, принял ли сервер список: форма нового блока очищается только
+     по «да» — иначе отказ (сеть, 422) стирал набранное название и время
+     (ревью 015). */
+  const save = async (next: TimelineDraft[]): Promise<boolean> => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
-    if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return }
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return false }
     setBusy(true)
     setErr(null)
     try {
       await putTimeline(weddingId, next)
       setSent({ weddingId, list: next, shown: q.data })
       q.reload()
-    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
-  })()
+      return true
+    } catch (e) { setErr(explainError(e)); return false } finally { setBusy(false) }
+  }
 
   const accepted = sent && sent.weddingId === weddingId && (sent.shown === q.data || q.data === null) ? sent.list : null
   const asDraft = (): TimelineDraft[] => {
@@ -901,22 +914,25 @@ export function Timeline() {
      прежнему списку откатила бы предыдущую. Закрыты и когда списка нет
      вовсе — первый GET упал и принятой копии нет: пустой экран здесь значит
      «не знаю», а не «пусто» (инвариант 13), и PUT из него стёр бы тайминг. */
-  const locked = busy || q.refreshing || (q.data === null && !accepted)
+  /* И пока не пришёл пояс площадки: время блока считается в нём, и до ответа
+     «13:00» легло бы в чужой пояс (ревью 015, FB3). */
+  const locked = busy || q.refreshing || (q.data === null && !accepted) || !ready(wq)
 
-  const addEvent = () => {
+  const addEvent = () => void (async () => {
     if (!name.trim() || !weddingDate) return
     const startsAt = isoAtWeddingTime(weddingDate, from, tz)
     if (!startsAt) { setErr(t('Укажите время в формате 19:00')); return }
     const endsAt = till ? isoAtWeddingTime(weddingDate, till, tz) : null
-    save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}), forGuests: forGuestsNew }])
+    const ok = await save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}), forGuests: forGuestsNew }])
+    if (!ok) return
     setName(''); setFrom(''); setTill(''); setForGuestsNew(true); setEditing(false)
-  }
+  })()
 
-  const removeEvent = (id: string) => save(asDraft().filter(e => e.id !== id))
+  const removeEvent = (id: string) => void save(asDraft().filter(e => e.id !== id))
   /* Галочка — тот же PUT всего списка, что крестик: отдельного пути «показать
      гостям» контракт не знает. Список — из принятого сервером (`asDraft`), а
      не с экрана: иначе галочка сразу после крестика вернула бы убранный блок. */
-  const toggleForGuests = (id: string) => save(asDraft().map(e => (e.id === id ? { ...e, forGuests: !e.forGuests } : e)))
+  const toggleForGuests = (id: string) => void save(asDraft().map(e => (e.id === id ? { ...e, forGuests: !e.forGuests } : e)))
 
   /*
    * Автоплан сервер отдаёт предпросмотром и сам ничего не меняет — так же
@@ -948,7 +964,7 @@ export function Timeline() {
 
   const applyDraft = () => {
     if (!draft) return
-    save(draft)
+    void save(draft)
     setDraft(null)
     setConflicts(null)
   }
@@ -983,6 +999,7 @@ export function Timeline() {
               {t('Показывать гостям')}
             </label>
             {!weddingDate && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Сначала выберите дату свадьбы — без неё у события нет дня.')}</p>}
+            {weddingDate && !ready(wq) && <p className="text-[11px] text-[var(--soft)] mt-2">{wq.loading ? t('Загружаем часовой пояс площадки…') : t('Часовой пояс площадки не загрузился — время блока считать не в чем')}</p>}
             <button disabled={locked || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
         )}
@@ -1108,7 +1125,7 @@ const RSVP_NEXT: Record<GuestRow['status'], 'yes' | 'no' | 'pending'> = { yes: '
 export function Guests() {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  const q = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const q = useApi(() => weddingId ? getGuests(weddingId) : noWedding(), [weddingId])
 
   /* Приводим ответ сервера к тому, что рисует экран: у него `plusOne` вместо
      `plus` и `pending` вместо `wait`. Подмены моком нет — пустой список это
@@ -1174,6 +1191,9 @@ export function Guests() {
   const importList = async () => {
     /* Без свадьбы записывать некуда — те же слова, что у добавления одного. */
     if (!weddingId) { setBulkErr(t('Сначала создайте свадьбу — гости живут в ней')); return }
+    /* Предел сервера — 300 строк за раз (`maxItems`): длиннее — 422 на весь
+       список без единого добавленного; лучше сказать до запроса (ревью 015). */
+    if (clean.length > 300) { setBulkErr(t('За один раз — не больше 300 гостей: вставьте список частями')); return }
     setBusyId('import')
     setBulkErr(null)
     setBulkResult(null)
@@ -1201,15 +1221,22 @@ export function Guests() {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — гости живут в ней')); return }
+    // Enter в поле по второму разу не шлёт второй запрос, пока идёт первый (ревью 015).
+    if (busyId) return
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
   }
-  const add = () => void write('new', async () => {
+  const add = () => {
     if (!name.trim()) return
-    await addGuest(weddingId!, { name: name.trim(), plusOne: plus, ...(phone.length === PHONE_DIGITS ? { phone: `+7${phone}` } : {}) })
-    setName(''); setPlus(false); setPhone(''); setAdding(false)
-  })
+    /* Недобранный номер — не «без телефона»: раньше семь цифр молча
+       выбрасывались, и гость заводился без SMS-напоминания (ревью 015). */
+    if (phone.length > 0 && phone.length !== PHONE_DIGITS) { setErr(t('Телефон — десять цифр после +7, или оставьте поле пустым')); return }
+    void write('new', async () => {
+      await addGuest(weddingId!, { name: name.trim(), plusOne: plus, ...(phone.length === PHONE_DIGITS ? { phone: `+7${phone}` } : {}) })
+      setName(''); setPlus(false); setPhone(''); setAdding(false)
+    })
+  }
   /* Пустое поле стирает номер (`null`): контракт различает «не трогать» и «убрать». */
   const savePhone = (g: GuestRow) => void write(g.id, async () => {
     await patchGuest(weddingId!, g.id, { phone: phoneDraft.length === PHONE_DIGITS ? `+7${phoneDraft}` : null })
@@ -1455,7 +1482,7 @@ export function Album() {
    * «Загрузить фото (демо)», которая добавляла эмодзи из списка. Гость,
    * снявший что-то на свадьбе, до пары не доходил вовсе.
    */
-  const q = useApi(() => weddingId ? getAlbum(weddingId) : Promise.resolve([]), [weddingId])
+  const q = useApi(() => weddingId ? getAlbum(weddingId) : noWedding(), [weddingId])
   const photos = q.data ?? []
   const pending = photos.filter(p => !p.approved).length
 
@@ -1546,7 +1573,7 @@ export function Documents() {
      пути подписи нет, и заголовок «Подписанные» над ними утверждал статус,
      которого не бывает (ревью D2-14, R-174). Шаблоны договоров остаются
      локальными: это заготовки текста, а не данные свадьбы. */
-  const q = useApi(() => weddingId ? getDocuments(weddingId) : Promise.resolve([]), [weddingId])
+  const q = useApi(() => weddingId ? getDocuments(weddingId) : noWedding(), [weddingId])
   return (
     <div className="pb-28">
       <TopBar back title={t('Документы')} sub={t('Договоры из шаблонов — за 2 минуты')} />

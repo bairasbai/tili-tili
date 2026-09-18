@@ -5,7 +5,7 @@ import { fmt } from '@/lib/money'
 import { rub } from '@/lib/money'
 import { Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
-import { useApi, explainError } from '@/lib/api/useApi'
+import { useApi, explainError, noWedding } from '@/lib/api/useApi'
 import { addFund, addGift as addGiftApi, contributeToFund, deleteFund, deleteGift as deleteGiftApi, fundGift, getGuestGifts, getWishlist, putAntiGifts, releaseGift, reserveGift } from '@/lib/api/gifts'
 import { getGuestTeam, guestToken, sendGuestReview } from '@/lib/api/guest'
 import { todayIn } from '@/lib/weddingDate'
@@ -35,13 +35,14 @@ export function WishlistManage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
-  const q = useApi(() => weddingId ? getWishlist(weddingId) : Promise.resolve(null), [weddingId])
+  const q = useApi(() => weddingId ? getWishlist(weddingId) : noWedding(), [weddingId])
   const gifts = q.data?.gifts ?? []
   const funds = q.data?.funds ?? []
   const anti = q.data?.antiGifts ?? []
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — список желаний живёт в ней')); return }
+    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
@@ -318,6 +319,7 @@ export function GiftPick() {
 
   const write = async (id: string, fn: () => Promise<unknown>) => {
     if (!token) return
+    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusyId(id)
     setErr(null)
     try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
@@ -348,7 +350,8 @@ export function GiftPick() {
 
   return (
     <div className="pb-28">
-      <TopBar back title={t('Подарки')} sub={t('анонимно · резерв виден только вам')} />
+      {/* «Назад» — к приглашению: сюда гость приходит с него (ревью 015, FB5). */}
+      <TopBar back fallback="/invite" title={t('Подарки')} sub={t('анонимно · резерв виден только вам')} />
       <AsyncState q={q} />
       <div className="px-5 mt-3">
         <div className="card p-4 flex gap-3 items-start">

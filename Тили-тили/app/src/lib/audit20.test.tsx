@@ -32,7 +32,11 @@ describe('ссылки уведомлений → маршруты прилож�
     expect(notificationRoute('/wedding', { vendor: true })).toBe('/vendor-app')
     expect(notificationRoute('/dayx', { vendor: true })).toBe('/vendor-app')
     expect(notificationRoute('/guests', { vendor: true })).toBeNull()
-    expect(notificationRoute('/chats/c1', { vendor: true })).toBe('/us/chats/c1')
+    /* Переписка подрядчика — в кабинете (фича 007), а не на экранах пары (ревью 015). */
+    expect(notificationRoute('/chats/c1', { vendor: true })).toBe('/vendor-app/chats/c1')
+    expect(notificationRoute('/vendor-app/verification', { vendor: true })).toBe('/vendor-app/verification')
+    expect(notificationRoute('/search', { vendor: true })).toBeNull()
+    expect(notificationRoute('/search')).toBe('/search')
   })
   it('незнакомая ссылка — никуда', () => {
     expect(notificationRoute('/nowhere')).toBeNull()

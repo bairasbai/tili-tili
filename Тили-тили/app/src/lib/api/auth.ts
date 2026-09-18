@@ -1,4 +1,4 @@
-import { api, saveTokens, url } from './client'
+import { api, ApiError, saveTokens, url } from './client'
 import { disableDevicePush } from '../push'
 
 /*
@@ -102,10 +102,19 @@ export async function signOutEverywhere(): Promise<void> {
     await api.delete('/users/me/sessions')
     const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
     if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
-  } catch {
-    /* см. шаг 3 */
+  } catch (e) {
+    /* см. шаг 3 — но только когда сервер НЕ СМОГ ответить. Отказ по делу
+       (4xx, кроме 401 — сессия уже мертва) — не выход: токены остаются, а
+       причина уходит экрану словами; иначе кнопка молча делала вид, что
+       вышла, при живой сессии (ревью 015, FA2). */
+    if (refusedOnPurpose(e)) throw e
   }
   forgetLocally()
+}
+
+/** Сервер ответил отказом по делу, а не упал: 4xx, кроме 401 (сессии уже нет — уходить есть от чего). */
+function refusedOnPurpose(e: unknown): boolean {
+  return e instanceof ApiError && e.kind === 'http' && e.status !== 401 && e.status < 500
 }
 
 /**
@@ -123,8 +132,9 @@ export async function signOutHere(): Promise<void> {
     await disableDevicePush().catch(() => undefined)
     const mine = (await api.get('/users/me/sessions'))?.find(x => x.current)
     if (mine?.id) await api.delete(url('/users/me/sessions/{sessionId}', { sessionId: mine.id }))
-  } catch {
-    /* см. шаг 3 у signOutEverywhere */
+  } catch (e) {
+    /* см. шаг 3 у signOutEverywhere; отказ по делу — наружу (FA2) */
+    if (refusedOnPurpose(e)) throw e
   }
   forgetLocally()
 }

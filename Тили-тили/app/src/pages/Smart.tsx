@@ -309,7 +309,13 @@ export function DayX() {
         setOutcome(`${name === 'shift' ? t('Сдвиг принят') : t('План Б включён')} · ${t('касается гостей:')} ${affected} — ${t('сообщите им сами, приложение гостям не пишет')}`)
       }
       reloadTimeline(); reloadPlanB()
-    } catch (e) { setErr(explainError(e)) } finally { setBusy(null) }
+    } catch (e) {
+      setErr(explainError(e))
+      /* Подтверждение снимается и при отказе: иначе кнопка оставалась в
+         «Подтвердить», и следующий тап включал план Б без второго вопроса
+         (ревью 015, FA5). */
+      setConfirmPlanB(false)
+    } finally { setBusy(null) }
   })()
   /*
    * Сдвиг и план Б — неповторимые действия: каждый вызов двигает все будущие

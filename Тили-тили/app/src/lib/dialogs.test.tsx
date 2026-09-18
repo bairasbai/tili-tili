@@ -13,6 +13,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 vi.mock('@/lib/api/client', () => ({
   ApiError: class ApiError extends Error { kind = 'http'; status = 0; code = ''; get isDown() { return false } },
   saveTokens: () => {},
+  onSessionExpired: () => () => {},
   SESSION_EXPIRED: 'Сессия истекла — войдите снова',
   isAuthorized: () => true,
   url: (tpl: string, p: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => p[k]),

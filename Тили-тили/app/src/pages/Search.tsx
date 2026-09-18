@@ -304,8 +304,18 @@ export function VendorList() {
 }
 
 /* Анкета подрядчика */
+/*
+ * Обёртка с `key` по идентификатору: состояние экрана — выбранный пакет,
+ * «в моей свадьбе», ошибка, хвост отзывов — принадлежит одной анкете. Переход
+ * с анкеты на похожую снизу менял только `id`, и галочка «добавлен» с ошибкой
+ * прежнего подрядчика оставались на новом (ревью 015).
+ */
 export function VendorDetail() {
   const { id } = useParams()
+  return <VendorDetailView key={id ?? ''} id={id} />
+}
+
+function VendorDetailView({ id }: { id: string | undefined }) {
   const nav = useNavigate()
   const { slots, bookVendor, city, weddingDate, weddingId } = useStore()
   const [pkg, setPkg] = useState(0)
@@ -322,10 +332,14 @@ export function VendorDetail() {
      даты рисовались формулой от строки: календарь выглядел настоящим и врал. */
   const month = (weddingDate ?? '').slice(0, 7)
   const avail = useApi(
-    () => id && month ? getAvailability(id, month) : Promise.resolve({ busyDates: [] as string[] }),
+    () => id && month ? getAvailability(id, month) : Promise.resolve({ busyDates: [] as string[], holdDates: [] as string[] }),
     [id, month],
   )
   const busyDates = avail.data?.busyDates ?? []
+  /* Мягкая бронь другой пары (`holdDates`, План §18.3): дата не занята и не
+     свободна — переговоры идут. До ревью 015 экран смотрел только на занятые
+     и ставил «Свободен на вашу дату» под днём, который вот-вот уйдёт (FB2). */
+  const holdDates = avail.data?.holdDates ?? []
   /* Длина месяца и его первый день недели: тридцать клеток подряд врали в
      феврале и в месяцах на 31 день. */
   const grid = monthGrid(month)
@@ -333,7 +347,8 @@ export function VendorDetail() {
      занятых дней при отказе сервера превращался в зелёный значок и «дата
      свободна» — по нему бронируют. */
   const availKnown = ready(avail)
-  const freeOnDate = availKnown && !!weddingDate && !busyDates.includes(weddingDate)
+  const heldOnDate = availKnown && !!weddingDate && holdDates.includes(weddingDate)
+  const freeOnDate = availKnown && !!weddingDate && !busyDates.includes(weddingDate) && !heldOnDate
   /* Отзывы — публичная лента этого подрядчика, а не общая заготовка. */
   const reviews = useApi(() => id ? getVendorReviews(id) : Promise.resolve(null), [id])
   /*
@@ -367,9 +382,11 @@ export function VendorDetail() {
     }
   }
 
+  /* Похожие — свободные на дату свадьбы: подпись под календарём обещает
+     «похожих свободных ниже», а список без даты показывал и занятых (ревью 015). */
   const similar = useApi(
-    () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, limit: 6 }) : Promise.resolve({ items: [] }),
-    [v?.categoryId, city],
+    () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, date: weddingDate, limit: 6 }) : Promise.resolve({ items: [] }),
+    [v?.categoryId, city, weddingDate],
   )
   /*
    * Своя анкета глазами пары (фича 007). Владельца сервер пускает и к
@@ -411,7 +428,10 @@ export function VendorDetail() {
     setBusy(true)
     try {
       const slotId = slot?.id ?? (await ensureSlotForCategory(weddingId, v.categoryId))
-      await bookVendor(slotId, v.id, price)
+      /* Выбранный пакет уходит в бронь: сделка помнит, что именно продано
+         (`Deal.packageName`, фича 005). До ревью 015 цена бралась из пакета,
+         а сам пакет — нет, и в кабинете подрядчика стояло «без пакета» (FB1). */
+      await bookVendor(slotId, v.id, price, v.packages?.[pkg]?.id)
       setAdded(true)
     } catch (e) {
       setErr(explainError(e))
@@ -627,16 +647,17 @@ export function VendorDetail() {
               const iso = month ? `${month}-${String(day).padStart(2, '0')}` : ''
               const isWedding = !!weddingDate && iso === weddingDate
               const busy = busyDates.includes(iso)
+              const held = !busy && holdDates.includes(iso)
               return (
                 <div key={day} className={cn('aspect-square rounded-xl flex items-center justify-center text-[11.5px] font-medium',
-                  isWedding && !busy ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-ink)] font-bold' : 'text-[var(--ink)]')}>
+                  isWedding && !busy && !held ? 'grad text-[var(--on-grad)] font-bold' : busy ? 'bg-[var(--rose-soft)] text-[var(--rose-ink)] line-through' : held ? 'bg-[var(--honey)] text-[var(--honey-ink)]' : isWedding ? 'ring-2 ring-[#C98A8A] text-[var(--rose-ink)] font-bold' : 'text-[var(--ink)]')}>
                   {day}
                 </div>
               )
             })}
           </div>
           )}
-          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни месяца') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни месяца') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
         </div>
       </div>
 

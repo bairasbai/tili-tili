@@ -61,8 +61,11 @@ export function VendorDashboard() {
   const days = calendar.data ?? []
   const unread = (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0)
 
-  /* Заполненность — подсказка, а не оценка: показываем, чего не хватает. */
-  const filled = [!!p?.name, !!p?.categoryId, !!p?.city, !!p?.about, !!p?.phone, !!(p?.packages?.length), !!(p?.gallery?.length)]
+  /* Заполненность — подсказка, а не оценка: показываем, чего не хватает.
+     Фотографии не считаются, пока нет хранилища (RELEASE-BLOCKERS №3): иначе
+     «не хватает: фотографий» и 86 % стояли бы у каждой анкеты навсегда — так
+     же считает и панель (фича 012; ревью 015). */
+  const filled = [!!p?.name, !!p?.categoryId, !!p?.city, !!p?.about, !!p?.phone, !!(p?.packages?.length)]
   const donePct = Math.round(filled.filter(Boolean).length / filled.length * 100)
 
   /* Оценка — серверная, та же, что в каталоге: взвешенная, с затуханием и
@@ -78,6 +81,19 @@ export function VendorDashboard() {
     setBusyErr(null)
     try { await setVendorBusy([date], busy ? 'free' : 'busy'); calendar.reload() }
     catch (e) { setBusyErr(explainError(e)) } finally { setSaving(null) }
+  })()
+
+  /* «Учтено»: кнопка гаснет на время запроса, отказ — словами под списком.
+     До ревью 015 отказ летел в консоль, карточка оставалась, а второй тап
+     слал второй запрос (FA4). */
+  const [acking, setAcking] = useState<string | null>(null)
+  const [ackErr, setAckErr] = useState<string | null>(null)
+  const ack = (id: string) => void (async () => {
+    if (!id || acking) return
+    setAcking(id)
+    setAckErr(null)
+    try { await ackVendorUpdate(id); updates.reload() }
+    catch (e) { setAckErr(explainError(e)) } finally { setAcking(null) }
   })()
 
   /* Пока анкета не пришла, кабинет не рисуем: иначе на секунду показываются
@@ -104,7 +120,7 @@ export function VendorDashboard() {
             /* Называем недостающее поле, а не советуем «добавить видео» вообще:
                прежняя подсказка стояла константой и не зависела от анкеты. */
             <p className="text-[10.5px] text-[var(--soft)] mt-2.5">
-              {t('Не хватает:')} {[!p?.about && t('рассказа о себе'), !p?.phone && t('рабочего телефона'), !p?.packages?.length && t('пакетов услуг'), !p?.gallery?.length && t('фотографий')].filter(Boolean).join(', ')}
+              {t('Не хватает:')} {[!p?.about && t('рассказа о себе'), !p?.phone && t('рабочего телефона'), !p?.packages?.length && t('пакетов услуг')].filter(Boolean).join(', ')}
             </p>
           )}
           {/* Опубликована или нет — главный факт кабинета: пока нет, заявок
@@ -155,10 +171,11 @@ export function VendorDashboard() {
                   <p className="text-[9.5px] font-bold text-[var(--soft2)] uppercase tracking-wide">{u.wedding}{u.weddingDate ? ` · ${shortWeddingDate(u.weddingDate)}` : ''}</p>
                   <p className="text-[11.5px] mt-0.5">{u.text}</p>
                 </div>
-                <button onClick={() => void (async () => { await ackVendorUpdate(u.id ?? ''); updates.reload() })()} className="press text-[9.5px] font-bold text-[var(--sage-deep)] shrink-0 pt-0.5">{t('Учтено')}</button>
+                <button onClick={() => ack(u.id ?? '')} disabled={acking !== null} className="press text-[9.5px] font-bold text-[var(--sage-deep)] shrink-0 pt-0.5 disabled:opacity-50">{acking === u.id ? t('Секунду…') : t('Учтено')}</button>
               </div>
             ))}
           </div>
+          {ackErr && <p role="alert" className="text-[11px] text-[var(--rose-ink)] leading-relaxed mt-2">{ackErr}</p>}
         </div>
 
         {/* Чаты с парами (фича 007): переписка по заявкам и общие чаты

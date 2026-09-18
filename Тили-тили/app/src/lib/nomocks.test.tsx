@@ -44,7 +44,7 @@ const ROUTES = [
   '/vendor-app/chats', '/vendor-app/chats/c1', '/vendor-app/settings',
   '/admin', '/admin/moderation', '/admin/moderation/v1',
   '/admin/verifications', '/admin/verifications/r1',
-  '/admin/complaints', '/admin/categories', '/admin/wedding',
+  '/admin/complaints', '/admin/concierge', '/admin/categories', '/admin/wedding',
 ]
 
 /*
@@ -119,6 +119,8 @@ const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
      заявке, которой с сервера не пришло. */
   '/admin/verifications/r1': ['Документ не приложен', 'ИНН не указан', 'Анкета не опубликована'],
   '/admin/complaints': ['Нерассмотренных жалоб нет', 'просрочено'],
+  /* Очередь консьержа (ревью 015, V5): «заявок нет» без ответа — пара ждёт звонка, которого не будет. */
+  '/admin/concierge': ['Открытых заявок нет', 'просрочено'],
   '/admin/categories': ['Словарь пуст — поиск ищет только по названиям'],
   /* «Загружаем…» навсегда — тоже неправда: экран обещает то, чего не будет. */
   '/wedding/slot/s1': ['Загружаем…'],

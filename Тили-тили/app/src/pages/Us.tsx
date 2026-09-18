@@ -53,10 +53,19 @@ export function Us() {
      перезагружает страницу, и без сброса мозаика с телефонами подрядчиков
      открывалась «Назад» без токена. */
   const [leaving, setLeaving] = useState(false)
+  /* Отказ сервера по делу — словами под кнопкой, токены на месте (ревью 015, FA2). */
+  const [leaveErr, setLeaveErr] = useState<string | null>(null)
   const signOut = async () => {
     if (leaving) return
     setLeaving(true)
-    await signOutEverywhere()
+    setLeaveErr(null)
+    try {
+      await signOutEverywhere()
+    } catch (e) {
+      setLeaveErr(explainError(e))
+      setLeaving(false)
+      return
+    }
     forgetSession()
     nav('/auth')
   }
@@ -192,6 +201,7 @@ export function Us() {
         <button onClick={() => void signOut()} disabled={leaving} className="press w-full card-s mt-4 py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50">
           <LogOut size={15} /> {leaving ? t('Секунду…') : t('Выйти из аккаунта')}
         </button>
+        {leaveErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mt-2 px-1">{leaveErr}</p>}
         <p className="text-center text-[10px] text-[var(--soft2)] mt-4">{t('Тили-тили v0.1 · MVP · сделано с любовью в Уфе')}</p>
       </div>
 
@@ -593,7 +603,9 @@ export function Chat({ home }: { home?: '/vendor-app' }) {
                  Без этого признака «автобус задерживается» от Марины рисовалось
                  бы «Участник вышел». */
               const guest = !system && !!m.guestName
-              const anonymous = !system && !guest && m.senderId === null && chat?.kind !== 'external' && chat?.kind !== 'tilly'
+              /* Только когда вид чата известен: без ответа `GET /chats` реплики
+                 своего подрядчика и Тиля подписывались «Участник вышел» (ревью 015). */
+              const anonymous = !system && !guest && m.senderId === null && !!chat && chat.kind !== 'external' && chat.kind !== 'tilly'
               if (system) return (
                 <p key={m.id} className="text-center text-[11px] text-[var(--soft)] leading-relaxed px-6 py-2">
                   ⚠ {m.text}

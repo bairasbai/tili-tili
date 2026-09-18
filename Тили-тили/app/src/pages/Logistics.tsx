@@ -10,7 +10,7 @@ import { rub } from '@/lib/money'
 import { useStore } from '@/lib/store'
 import type { Slot } from '@/lib/types'
 import type { components } from '@/lib/api/schema'
-import { useApi, explainError } from '@/lib/api/useApi'
+import { useApi, explainError, noWedding } from '@/lib/api/useApi'
 import { getBuses, getGuests, getHotels, getMenuPoll } from '@/lib/api/weddingData'
 import { addBus, addHotel, deleteBus, deleteHotel, notifyPickup, patchBus, putMenuPoll, remindMenuPoll, type BroadcastResult, type MenuOptionDraft } from '@/lib/api/weddingWrite'
 import { shortWeddingDate } from '@/lib/weddingDate'
@@ -118,23 +118,30 @@ export function Logistics() {
      (ревью D3-22); пустая строка удаляется сразу. */
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
-  const busesQ = useApi(() => weddingId ? getBuses(weddingId) : Promise.resolve([]), [weddingId])
-  const hotelsQ = useApi(() => weddingId ? getHotels(weddingId) : Promise.resolve([]), [weddingId])
+  const busesQ = useApi(() => weddingId ? getBuses(weddingId) : noWedding(), [weddingId])
+  const hotelsQ = useApi(() => weddingId ? getHotels(weddingId) : noWedding(), [weddingId])
   const buses = busesQ.data ?? []
   const hotels = hotelsQ.data ?? []
 
   const write = async (fn: () => Promise<unknown>) => {
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — логистика живёт в ней')); return }
+    if (busy) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusy(true)
     setErr(null)
     try { await fn(); busesQ.reload(); hotelsQ.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   }
 
-  const addBusRoute = () => void write(async () => {
+  /* Число мест — обязательно и словами: пустое поле молча становилось «20»,
+     и гости записывались в автобус, которого таких размеров нет (ревью 015). */
+  const addBusRoute = () => {
     if (!draft.name.trim()) return
-    await addBus(weddingId!, draft.name.trim(), draft.from.trim(), draft.time.trim(), Math.max(1, parseInt(draft.seats, 10) || 20), draft.dealId || null)
-    setDraft({ ...EMPTY_BUS, dealId: preDeal ?? '' }); setBusForm(false)
-  })
+    const seats = parseInt(draft.seats, 10)
+    if (!(seats >= 1)) { setErr(t('Укажите число мест в автобусе')); return }
+    void write(async () => {
+      await addBus(weddingId!, draft.name.trim(), draft.from.trim(), draft.time.trim(), seats, draft.dealId || null)
+      setDraft({ ...EMPTY_BUS, dealId: preDeal ?? '' }); setBusForm(false)
+    })
+  }
   const removeBus = (busId: string) => void write(async () => { await deleteBus(weddingId!, busId); setConfirmDel(null) })
 
   /*
@@ -155,10 +162,12 @@ export function Logistics() {
     setEditErr(null)
     void write(async () => {
       try {
+        /* Очищенные точка сбора и время уходят `null` — «снять» (контракт,
+           R-17): пропуск поля оставлял прежнее, и стереть их было нельзя (ревью 015). */
         await patchBus(weddingId!, b.id!, {
           name,
-          ...(editDraft.from.trim() ? { from: editDraft.from.trim() } : {}),
-          ...(editDraft.time ? { time: editDraft.time } : {}),
+          from: editDraft.from.trim() || null,
+          time: editDraft.time || null,
           /* Пустое или испорченное число мест — оставить как было, а не «1»:
              сервер ответил бы 409 на маршрут, где уже сидят гости. */
           seats: parseInt(editDraft.seats, 10) || (b.seats ?? 1),
@@ -169,20 +178,25 @@ export function Logistics() {
     })
   }
 
-  const addHotelBlock = () => void write(async () => {
+  const addHotelBlock = () => {
     if (!hn.trim()) return
+    // Число номеров — обязательно, а не «10» по умолчанию (ревью 015).
+    const rooms = parseInt(hr, 10)
+    if (!(rooms >= 1)) { setErr(t('Укажите число номеров в блоке')); return }
+    void write(async () => {
     // поле «₽/ночь» — рубли, на сервер уходят копейки
     const price = parseInt(hp, 10)
     await addHotel(
       weddingId!,
       hn.trim(),
-      Math.max(1, parseInt(hr, 10) || 10),
+      rooms,
       price ? rub(price) : undefined,
       hd || undefined,
       hc.trim() || undefined,
     )
     setHn(''); setHr(''); setHp(''); setHd(''); setHc(''); setHotelForm(false)
-  })
+    })
+  }
   const removeHotel = (hotelId: string) => void write(async () => { await deleteHotel(weddingId!, hotelId); setConfirmDel(null) })
 
   /*
@@ -385,7 +399,7 @@ export function Catering() {
    * блюдами и готовыми голосами (4 / 2 / 1). Гость голосовал у себя, пара
    * видела свои цифры — два разных ответа на один вопрос, и оба неверные.
    */
-  const q = useApi(() => weddingId ? getMenuPoll(weddingId) : Promise.resolve(null), [weddingId])
+  const q = useApi(() => weddingId ? getMenuPoll(weddingId) : noWedding(), [weddingId])
   const poll = q.data
   const options = poll?.options ?? []
   const answered = options.reduce((a, o) => a + (o.votes ?? 0), 0)
@@ -400,7 +414,7 @@ export function Catering() {
    * ждёт кейтеринг.
    */
   const portions = poll?.expectedPortions ?? 0
-  const gq = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const gq = useApi(() => weddingId ? getGuests(weddingId) : noWedding(), [weddingId])
   const attending = (gq.data ?? []).filter(g => g.status === 'yes').length
   const pending = Math.max(0, attending - answered)
 

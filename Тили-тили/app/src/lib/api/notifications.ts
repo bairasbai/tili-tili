@@ -33,7 +33,9 @@ export function notificationRoute(link?: string | null, opts: { vendor?: boolean
   if (!link) return null
   const vendor = !!opts.vendor
   const chat = /^\/chats\/([\w-]+)$/.exec(link)
-  if (chat) return `/us/chats/${chat[1]}`
+  /* У подрядчика переписка живёт в кабинете (`/vendor-app/chats`, фича 007):
+     маршрут пары открывал ему экран с чужой навигацией (ревью 015). */
+  if (chat) return vendor ? `/vendor-app/chats/${chat[1]}` : `/us/chats/${chat[1]}`
   /* У подрядчика экрана одной сделки нет — его сделки списком в кабинете.
      Раньше подрядчика вели на `/deal/{id}` пары, где ему показывалось
      «сделка не найдена» (аудит 2026-09-07, блок 8). */
@@ -46,6 +48,11 @@ export function notificationRoute(link?: string | null, opts: { vendor?: boolean
      шлёт с блока 2 — без перевода уведомление некуда было вести. */
   if (link === '/wedding') return vendor ? '/vendor-app' : '/wedding'
   if (link === '/vendor-app') return '/vendor-app'
+  /* Решение по документам (`/vendor-app/verification`) и другие экраны
+     кабинета сервер называет своими маршрутами — они и есть адреса. */
+  if (/^\/vendor-app\/[\w/-]+$/.test(link)) return link
+  // Консьерж подобрал варианты — в поиск, откуда заявка и ушла (ревью 015, V5).
+  if (link === '/search') return vendor ? null : '/search'
   /* `/deal` без идентификатора приходит от старых записей: конкретную сделку
      по нему не открыть, поэтому ведём в мозаику — там все сделки видны. */
   if (link === '/deal') return vendor ? '/vendor-app/deals' : '/wedding'

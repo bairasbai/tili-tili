@@ -51,23 +51,31 @@ const CITY_STEP = 1
    прежних ответов, на которые опирается сборка `collected`. */
 const NAME_STEP = 8
 
+/*
+ * Ключи — русские строки, перевод только при отрисовке (`t()` в разметке).
+ * До ревью 015 варианты переводились здесь, при загрузке модуля: в ответах
+ * квиза и в свадьбе на сервере оседали английские строки, и «Классика» на
+ * другом языке становилась другим ответом (инвариант R-07, FB4). Текст про
+ * стиль — честный: каталог по стилю не фильтрует, его учитывает Тиль (R-174).
+ */
+const NOT_DECIDED = 'Ещё не решили'
 const steps: Step[] = [
-  { q: t('Когда ваша свадьба?'), hint: t('Дату можно изменить позже'), opts: [] },
-  { q: t('Сколько гостей?'), opts: [t('До 30'), '30–60', '60–100', '100+'] },
-  { q: t('Общий бюджет?'), hint: t('Можно примерно — поможем распределить'), opts: [t('До 500 тыс ₽'), t('500 тыс — 1 млн ₽'), t('1–2 млн ₽'), t('2 млн+ ₽'), t('Пока не знаем')] },
-  { q: t('Какой формат?'), opts: [t('Классика: ЗАГС + банкет'), t('Выездная церемония'), t('Камерная свадьба'), t('Банкет+ на 2 дня')] },
+  { q: 'Когда ваша свадьба?', hint: 'Дату можно изменить позже', opts: [] },
+  { q: 'Сколько гостей?', opts: ['До 30', '30–60', '60–100', '100+'] },
+  { q: 'Общий бюджет?', hint: 'Можно примерно — поможем распределить', opts: ['До 500 тыс ₽', '500 тыс — 1 млн ₽', '1–2 млн ₽', '2 млн+ ₽', 'Пока не знаем'] },
+  { q: 'Какой формат?', opts: ['Классика: ЗАГС + банкет', 'Выездная церемония', 'Камерная свадьба', 'Банкет+ на 2 дня'] },
   {
-    q: t('Стиль и настроение?'),
-    hint: t('Стиль задаёт выдачу каталога — под него подбираются подрядчики'),
-    opts: STYLES.map(([name]) => t(name)),
-    desc: Object.fromEntries(STYLES.map(([name, about]) => [t(name), t(about)])),
+    q: 'Стиль и настроение?',
+    hint: 'Стиль запишется в свадьбу — Тиль учитывает его в подсказках',
+    opts: STYLES.map(([name]) => name),
+    desc: Object.fromEntries(STYLES),
   },
-  { q: t('Кто планирует?'), opts: [t('Сами'), t('С помощью агентства'), t('Ищем координатора')] },
-  { q: t('Что уже забронировано?'), multi: true, opts: [t('Площадка'), t('Фотограф'), t('Видеограф'), t('Ведущий'), t('Пока ничего')] },
+  { q: 'Кто планирует?', opts: ['Сами', 'С помощью агентства', 'Ищем координатора'] },
+  { q: 'Что уже забронировано?', multi: true, opts: ['Площадка', 'Фотограф', 'Видеограф', 'Ведущий', 'Пока ничего'] },
   /* Имя партнёра спрашивается последним и обязательно: из него складывается
      название свадьбы («Алина ♥ Тимур»), и без него сервер её не создаст.
      В Плане ч. 6 этого шага нет — расхождение вынесено владельцу. */
-  { q: t('Как зовут вашего партнёра?'), hint: t('Из имён сложится название вашей свадьбы'), opts: [] },
+  { q: 'Как зовут вашего партнёра?', hint: 'Из имён сложится название вашей свадьбы', opts: [] },
 ]
 
 export default function Quiz() {
@@ -90,7 +98,7 @@ export default function Quiz() {
   const sel = answers[i] ?? []
   const last = i === total - 1
   // На шаге даты «дальше» открыт и без даты: «ещё не решили» — тоже ответ.
-  const canNext = i === DATE_STEP ? date !== null || sel.includes(t('Ещё не решили')) : i === CITY_STEP ? cityDone : i === NAME_STEP ? partner.trim().length > 0 : sel.length > 0
+  const canNext = i === DATE_STEP ? date !== null || sel.includes(NOT_DECIDED) : i === CITY_STEP ? cityDone : i === NAME_STEP ? partner.trim().length > 0 : sel.length > 0
 
   const pick = (o: string) => {
     setAnswers(a => {
@@ -187,7 +195,7 @@ export default function Quiz() {
 
       {i === DATE_STEP ? (
         <div key="date" className="flex-1 px-6 pt-8 fade-up">
-          <h1 className="font-serif-d text-[30px] leading-tight">{steps[DATE_STEP]!.q}</h1>
+          <h1 className="font-serif-d text-[30px] leading-tight">{t(steps[DATE_STEP]!.q)}</h1>
           <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('Дату можно изменить позже')}</p>
           <button onClick={() => setDatePicker(true)} className="press w-full mt-6 card-s p-4 flex items-center gap-3 text-left">
             <CalendarDays size={16} className="text-[var(--soft2)]" />
@@ -198,14 +206,14 @@ export default function Quiz() {
             )}
           </button>
           <button
-            onClick={() => { setDate(null); setAnswers(a => ({ ...a, [DATE_STEP]: [t('Ещё не решили')] })) }}
+            onClick={() => { setDate(null); setAnswers(a => ({ ...a, [DATE_STEP]: [NOT_DECIDED] })) }}
             className={cn('press w-full mt-2.5 card-s p-4 flex items-center justify-between text-left text-[14px]',
-              !date && sel.includes(t('Ещё не решили')) && 'ring-2 ring-[#C98A8A]')}
+              !date && sel.includes(NOT_DECIDED) && 'ring-2 ring-[#C98A8A]')}
           >
             <span className="font-medium">{t('Ещё не решили')}</span>
             <span className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all',
-              !date && sel.includes(t('Ещё не решили')) ? 'bg-[#C98A8A] border-[#C98A8A]' : 'border-[#EAD9CF]')}>
-              {!date && sel.includes(t('Ещё не решили')) && <Check size={13} color="#fff" strokeWidth={3} />}
+              !date && sel.includes(NOT_DECIDED) ? 'bg-[#C98A8A] border-[#C98A8A]' : 'border-[#EAD9CF]')}>
+              {!date && sel.includes(NOT_DECIDED) && <Check size={13} color="#fff" strokeWidth={3} />}
             </span>
           </button>
           <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">
@@ -260,8 +268,8 @@ export default function Quiz() {
         </div>
       ) : (
       <div key={i} className="flex-1 px-6 pt-8 fade-up">
-        <h1 className="font-serif-d text-[30px] leading-tight">{s.q}</h1>
-        {s.hint && <p className="text-[12.5px] text-[var(--soft)] mt-2">{s.hint}</p>}
+        <h1 className="font-serif-d text-[30px] leading-tight">{t(s.q)}</h1>
+        {s.hint && <p className="text-[12.5px] text-[var(--soft)] mt-2">{t(s.hint)}</p>}
         {s.multi && <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('Можно выбрать несколько')}</p>}
         <div className="mt-6 space-y-2.5 stagger">
           {s.opts.map(o => {
@@ -269,11 +277,11 @@ export default function Quiz() {
             return (
               <button key={o} onClick={() => pick(o)} className={cn('press w-full card-s p-4 flex items-center justify-between gap-3 text-left text-[14px] fade-up', on && 'ring-2 ring-[#C98A8A]')}>
                 <span className="min-w-0">
-                  <span className="font-medium block">{o}</span>
+                  <span className="font-medium block">{t(o)}</span>
                   {/* Объяснение всегда видно: раскрывать его тапом значит просить
                       действие ровно там, где человек и так не понимает выбора. */}
                   {s.desc?.[o] && (
-                    <span className="block text-[11.5px] text-[var(--soft)] leading-snug mt-1">{s.desc[o]}</span>
+                    <span className="block text-[11.5px] text-[var(--soft)] leading-snug mt-1">{t(s.desc[o])}</span>
                   )}
                 </span>
                 <span className={cn('w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all', on ? 'bg-[#C98A8A] border-[#C98A8A]' : 'border-[#EAD9CF]')}>

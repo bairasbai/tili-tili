@@ -7,7 +7,6 @@ import { fmt } from '@/lib/money'
 import type { DealState, Slot } from '@/lib/types'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useStore } from '@/lib/store'
-import { useBusy } from '@/lib/useBusy'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -136,7 +135,15 @@ function DealView({ s }: { s: Slot }) {
   const { paySlot, cancelBooking, advanceDealTo } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [busy, run] = useBusy()
+  /* Занятость — по ответу сервера, а не по таймеру `useBusy` (700 мс): отмена
+     на медленной сети идёт дольше, и второй тап уходил вторым запросом
+     (ревью 015, FB7). */
+  const [busy, setBusy] = useState(false)
+  const run = (fn: () => Promise<unknown>) => void (async () => {
+    if (busy) return
+    setBusy(true)
+    try { await fn() } finally { setBusy(false) }
+  })()
 
   const at = DEAL_STEPS.findIndex(x => x.state === s.dealState)
   const next = at >= 0 ? DEAL_STEPS[at + 1] : undefined
@@ -652,6 +659,7 @@ export function Seating() {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — рассадка живёт в ней')); return }
+    if (busy) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusy(true)
     setErr(null)
     try { await fn(); guestsQ.reload(); tablesQ.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
@@ -834,7 +842,11 @@ export function InviteEditor() {
      сервер не говорил. */
   const dressId = dress ?? (ready(wq) ? (wq.data?.dressCode ?? 'd1') : null)
   const dressText = dressNote ?? wq.data?.dressNote ?? ''
-  const [saved, setSaved] = useState(false)
+  /* «Сохранено ✓» — пока оформление совпадает с тем, что ушло на сервер: после
+     правки текста или темы галочка гаснет, а не висит навсегда (ревью 015). */
+  const [savedSnap, setSavedSnap] = useState<string | null>(null)
+  const designSnap = JSON.stringify([inviteText, inviteThemes.indexOf(th), dressId ?? 'd1', dressText])
+  const saved = savedSnap === designSnap
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   /* Ссылки, выданные в этом сеансе: сервер отдаёт их и в списке гостей
@@ -864,6 +876,7 @@ export function InviteEditor() {
 
   const run = async (id: string, fn: () => Promise<unknown>) => {
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — приглашения живут в ней')); return }
+    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusyId(id)
     setErr(null)
     try { await fn() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
@@ -875,7 +888,7 @@ export function InviteEditor() {
   const saveDesign = () => void run('design', async () => {
     await saveInviteDesign(weddingId!, inviteText, inviteThemes.indexOf(th), dressId ?? 'd1', dressText)
     wq.reload()
-    setSaved(true)
+    setSavedSnap(designSnap)
   })
 
   /*

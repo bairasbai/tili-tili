@@ -26,6 +26,7 @@ vi.mock('@/lib/api/client', () => ({
     get isDown() { return this.kind !== 'http' || this.status >= 500 }
   },
   saveTokens: () => { calls.push('saveTokens(null)') },
+  onSessionExpired: () => () => {},
   SESSION_EXPIRED: 'Сессия истекла — войдите снова',
   isAuthorized: () => true,
   url: (tpl: string, p: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => p[k]),

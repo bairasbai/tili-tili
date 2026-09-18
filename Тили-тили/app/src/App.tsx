@@ -104,6 +104,7 @@ const AdminVendorDecision = lazy(() => load.admin().then(m => ({ default: m.Admi
 const AdminVerifications = lazy(() => load.admin().then(m => ({ default: m.AdminVerifications })))
 const AdminVerification = lazy(() => load.admin().then(m => ({ default: m.AdminVerification })))
 const AdminComplaints = lazy(() => load.admin().then(m => ({ default: m.AdminComplaints })))
+const AdminConcierge = lazy(() => load.admin().then(m => ({ default: m.AdminConcierge })))
 const AdminCategories = lazy(() => load.admin().then(m => ({ default: m.AdminCategories })))
 const AdminWedding = lazy(() => load.admin().then(m => ({ default: m.AdminWedding })))
 
@@ -222,6 +223,7 @@ function Shell() {
           <Route path="/admin/verifications" element={<AdminVerifications />} />
           <Route path="/admin/verifications/:requestId" element={<AdminVerification />} />
           <Route path="/admin/complaints" element={<AdminComplaints />} />
+          <Route path="/admin/concierge" element={<AdminConcierge />} />
           <Route path="/admin/categories" element={<AdminCategories />} />
           <Route path="/admin/wedding" element={<AdminWedding />} />
           <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />

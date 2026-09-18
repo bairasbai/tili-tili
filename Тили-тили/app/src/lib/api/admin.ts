@@ -119,6 +119,24 @@ export const decideComplaint = (
   note?: string,
 ) => api.post(url('/admin/complaints/{complaintId}', { complaintId }), { action, ...(note ? { note } : {}) })
 
+/* ── очередь заявок консьержу (ревью 015, V5) ── */
+
+export type ConciergeRequest = components['schemas']['ConciergeRequest']
+
+/**
+ * Открытые заявки «подобрать вручную», старейшие сверху. Телефон пары — в
+ * строке: она сама попросила связаться; каждое чтение сервер пишет в журнал.
+ */
+export const getConcierge = (cursor?: string | null) =>
+  api.get(`/admin/concierge?${pageQuery(cursor)}` as '/admin/concierge')
+
+/**
+ * Состояние заявки: взята в работу, подобрано (паре уходит уведомление),
+ * снята. Закрытую заново не открыть — 409 `concierge_closed`.
+ */
+export const decideConcierge = (requestId: string, status: 'in_progress' | 'done' | 'cancelled') =>
+  api.post(url('/admin/concierge/{requestId}', { requestId }), { status })
+
 /* ── категории и словарь синонимов ── */
 
 /** Текущее состояние справочника: то, что заменит следующий `putAdminCategories`. */

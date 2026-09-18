@@ -215,7 +215,9 @@ describe('T1: «Добавить списком» — предпросмотр, 
     signedIn()
     const calls = serve({ '/weddings': [], '/me/favorites': [], '/users/me': ME })
     const r = openGuests()
-    await waitFor(() => expect(text(r)).toContain('Список пуст'), { timeout: 4000 })
+    /* Без свадьбы список — не «пуст», а «свадьбы нет» (ревью 015, FB6): ноль — не «неизвестно». */
+    await waitFor(() => expect(text(r)).toContain('Свадьбы пока нет — заведите её'), { timeout: 4000 })
+    expect(text(r)).not.toContain('Список пуст')
     fireEvent.click(screen.getByLabelText('Добавить списком'))
     fireEvent.change(screen.getByLabelText('Список гостей'), { target: { value: 'Анна' } })
     fireEvent.click(button('Добавить 1 гостя'))

@@ -169,6 +169,7 @@ export function VendorReviews() {
 
   const save = (reviewId: string) => void (async () => {
     if (!text.trim()) return
+    if (busy) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
     setBusy(true)
     setErr(null)
     try { await replyToReview(reviewId, text.trim()); setAnswering(null); setText(''); q.reload() }

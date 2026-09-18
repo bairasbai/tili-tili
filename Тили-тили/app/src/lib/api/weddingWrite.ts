@@ -191,7 +191,8 @@ export const addBus = (weddingId: string, name: string, from: string, time: stri
 export const patchBus = (
   weddingId: string,
   busId: string,
-  patch: { name?: string; from?: string; time?: string; seats?: number; dealId?: string | null },
+  /* `from`/`time` — `null` снимает (контракт: nullable, R-17), пропуск оставляет прежнее. */
+  patch: { name?: string; from?: string | null; time?: string | null; seats?: number; dealId?: string | null },
 ) => api.patch(url('/weddings/{weddingId}/logistics/buses/{busId}', { weddingId, busId }), patch)
 
 export const deleteBus = (weddingId: string, busId: string) =>

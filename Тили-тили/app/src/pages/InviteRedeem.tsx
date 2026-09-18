@@ -46,16 +46,20 @@ export default function InviteRedeem() {
     void redeemInvite(code)
       .then(() => nav('/invite', { replace: true }))
       .catch((e: unknown) => {
-        /* Токен уже есть — значит, по этой ссылке на этом устройстве уже
-           заходили, и вести надо на приглашение, а не в тупик. */
+        /* 410 — код погашен: на другом устройстве или давно на этом. Это не
+           ошибка приложения, а конец жизни одноразовой ссылки, и говорить о нём
+           надо словами гостя, а не кодом состояния. Токен на устройстве при этом
+           может быть ЧУЖИМ — сестры, открывавшей своё приглашение с этого же
+           телефона: до ревью 015 экран молча уводил на него, и гость читал чужое
+           приглашение как своё. Теперь — слова и кнопка «открыть то, что есть». */
+        if (e instanceof ApiError && e.status === 410) { setUsed(true); return }
+        /* Сеть, таймаут, 5xx при токене на руках — по этой ссылке на этом
+           устройстве уже заходили: ведём на приглашение, а не в тупик. */
         if (guestToken()) { nav('/invite', { replace: true }); return }
-        /* 410 без токена — код погашен на другом устройстве. Это не ошибка
-           приложения, а конец жизни одноразовой ссылки, и говорить о нём надо
-           словами гостя, а не кодом состояния. */
-        if (e instanceof ApiError && e.status === 410) setUsed(true)
-        else setErr(explainError(e))
+        setErr(explainError(e))
       })
   }, [code, nav])
+  const hasOther = used && !!guestToken()
 
   return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
@@ -66,6 +70,14 @@ export default function InviteRedeem() {
           <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
             {t('Каждая ссылка открывается один раз — так приглашение не уходит дальше по чатам. Попросите пару выслать новую.')}
           </p>
+          {hasOther && (
+            <>
+              <p className="text-[12.5px] text-[var(--soft)] mt-3 leading-relaxed">
+                {t('На этом устройстве уже открыто приглашение — возможно, ваше, по прежней ссылке.')}
+              </p>
+              <button onClick={() => nav('/invite', { replace: true })} className="press mt-4 px-5 h-[42px] rounded-full card-s text-[12.5px] font-semibold">{t('Открыть его')}</button>
+            </>
+          )}
         </>
       )}
       {err && (

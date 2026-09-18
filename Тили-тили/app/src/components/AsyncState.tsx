@@ -6,7 +6,7 @@
 import { useNavigate } from 'react-router'
 import { t } from '@/lib/i18n'
 import { SESSION_EXPIRED } from '@/lib/api/client'
-import type { AsyncData } from '@/lib/api/useApi'
+import { NO_WEDDING, SIGN_IN_FIRST, type AsyncData } from '@/lib/api/useApi'
 
 /*
  * Три состояния запроса на экране: грузится, закрыто правами, не дошло.
@@ -34,10 +34,17 @@ export function AsyncState({ q, forbiddenText }: { q: AsyncData<unknown>; forbid
       {forbiddenText ?? t('Этот раздел ведёт пара — у вашей роли к нему доступа нет.')}
     </p>
   )
-  if (q.error === SESSION_EXPIRED) return (
+  if (q.error === SESSION_EXPIRED || q.error === t(SIGN_IN_FIRST)) return (
     <div className="py-6 text-center">
-      <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{t(SESSION_EXPIRED)}</p>
+      <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{q.error === SESSION_EXPIRED ? t(SESSION_EXPIRED) : q.error}</p>
       <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
+    </div>
+  )
+  /* Свадьбы нет — не поломка и не «пусто»: повторять нечего, заводить — в квизе (ревью 015, FB6). */
+  if (q.error === t(NO_WEDDING)) return (
+    <div className="py-6 text-center">
+      <p className="text-[12px] text-[var(--soft)] leading-relaxed px-6">{t(NO_WEDDING)}</p>
+      <button onClick={() => nav('/quiz')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Завести свадьбу')}</button>
     </div>
   )
   if (q.error) return (

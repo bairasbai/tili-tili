@@ -4,7 +4,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
 import type { Slot, SlotState } from './types'
 import { setI18nLang, type Lang } from './i18n'
-import { isAuthorized } from './api/client'
+import { isAuthorized, onSessionExpired } from './api/client'
 import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
 import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, type ServerSlot } from './api/slots'
@@ -85,7 +85,8 @@ interface Store {
    */
   slotsState: 'idle' | 'loading' | 'ready' | 'error'
   /** Забронировать подрядчика из каталога. Второй аргумент — идентификатор, а не имя: сервер бронирует по нему. */
-  bookVendor: (slotId: string, vendorId: string, price: number) => Promise<void>
+  /** `packageId` — выбранный пакет: сделка помнит, что продано (`Deal.packageName`); без него — бронь без пакета. */
+  bookVendor: (slotId: string, vendorId: string, price: number, packageId?: string) => Promise<void>
   bookExternal: (slotId: string, vendorName: string, price: number, phone?: string) => Promise<void>
   /** Позвать своего подрядчика: возвращает ссылку, выданную сервером. */
   inviteExternal: (slotId: string) => Promise<string | null>
@@ -350,9 +351,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   })
 
   /* Избранное с сервера при запуске: на новом устройстве локальный список
-     пуст, а аккаунт свой список помнит. */
+     пуст, а аккаунт свой список помнит. И после входа без перезагрузки —
+     по `weddingsState === 'ready'`, которое ставит `adoptWeddings` при входе:
+     до ревью 015 эффект шёл один раз на монтировании, и вошедший видел
+     сердечки прежнего гостя до перезагрузки страницы. */
   useEffect(() => {
-    if (!isAuthorized()) return
+    if (!isAuthorized() || weddingsState !== 'ready') return
     let alive = true
     void getFavorites()
       .then(list => {
@@ -365,7 +369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => { /* offline — остаётся локальная копия */ })
     return () => { alive = false }
-  }, [])
+  }, [weddingsState])
   const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
   const [inviteTpl, setInviteTplState] = useState(() => Number(safeGet('tt_invite_tpl') ?? 0))
@@ -405,6 +409,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try { localStorage.removeItem(key) } catch { /* приватный режим */ }
     }
   }, [forgotten])
+  /* Смерть сессии (сервер отверг refresh: выход с другого устройства, 30 дней
+     бездействия) — та же уборка памяти, что и выход кнопкой: до ревью 015 слой
+     запросов стирал токены, а свадьба и мозаика жили в памяти до перезагрузки
+     (FA1). Экран сам покажет «войдите снова» по `session_expired`. */
+  useEffect(() => onSessionExpired(forgetSession), [forgetSession])
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -446,8 +455,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * вид, что получилось» здесь опаснее честного отказа. Экран узнаёт о ней
      * из проброшенного исключения.
      */
-    bookVendor: async (slotId, vendorId, price) => {
-      await bookSlot(needWedding(), slotId, vendorId, price)
+    bookVendor: async (slotId, vendorId, price, packageId) => {
+      await bookSlot(needWedding(), slotId, vendorId, price, packageId)
       refreshSlots()
     },
     cancelBooking: async (slotId) => {
@@ -500,9 +509,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setFavorites(next)
       safeSet('tt_fav', JSON.stringify(next))
       if (!isAuthorized()) return
+      /* Откат — только этого сердечка, а не всего списка на момент нажатия:
+         два быстрых тапа по разным анкетам иначе откатывали и второе, если
+         первый запрос не прошёл (ревью 015). */
       void (wasFav ? removeFavorite(id) : addFavorite(id)).catch(() => {
-        setFavorites(favorites)
-        safeSet('tt_fav', JSON.stringify(favorites))
+        setFavorites(cur => {
+          const rolled = wasFav ? (cur.includes(id) ? cur : [...cur, id]) : cur.filter(x => x !== id)
+          safeSet('tt_fav', JSON.stringify(rolled))
+          return rolled
+        })
       })
     },
     lang,

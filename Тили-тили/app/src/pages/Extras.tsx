@@ -5,6 +5,7 @@ import { fmt, rub } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getCategories, getFavorites } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
+import { ApiError } from '@/lib/api/client'
 import { Tile, TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
@@ -88,6 +89,9 @@ export function Notes() {
       q.reload()
     } catch (e) {
       setErr(explainError(e))
+      /* Заметки уже нет (партнёр удалил её раньше) — список перечитывается,
+         иначе строка оставалась бы с крестиком, который отвечает 404 (ревью 015). */
+      if (e instanceof ApiError && e.status === 404) q.reload()
     } finally {
       setBusy(null)
     }

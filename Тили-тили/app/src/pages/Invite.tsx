@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send } from 'lucide-react'
+import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { ApiError } from '@/lib/api/client'
@@ -239,6 +239,7 @@ function InviteView({
   /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
   refreshing: boolean
 }) {
+  const nav = useNavigate()
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
   const disp = T.serif ? 'font-serif-d' : ''
@@ -501,6 +502,16 @@ function InviteView({
           </>
         )}
 
+        {/* Подарки — с приглашения, а не по адресу, который гость должен
+            угадать: экран `/gifts` (резерв, складчина, «не дарить») жил без
+            единой ссылки на него (ревью 015, FB5). Виден и не ответившему:
+            выбрать подарок можно до «приду». */}
+        <div className="px-6 mt-6 relative z-10 rv">
+          <button onClick={() => nav('/gifts')} className="press w-full rounded-[24px] py-4 text-[13px] font-semibold flex items-center justify-center gap-2" style={{ background: T.card, boxShadow: shadow }}>
+            <Gift size={16} style={{ color: T.accent }} /> {t('Подарки и складчина')}
+          </button>
+        </div>
+
         {/* Календарь */}
         {w.date && (
           <div className="px-6 mt-6 relative z-10 rv">
@@ -599,7 +610,10 @@ function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: s
             const mine = q.data?.myBusId === r.id
             const full = (r.taken ?? 0) >= (r.seats ?? 0)
             return (
-              <button key={r.id} disabled={busy || (full && !mine)} onClick={() => join(r.id ?? '')} className="press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left disabled:opacity-50"
+              /* Свой автобус — состояние, а не действие: повторный тап слал тот же
+                 POST в никуда (R-176; ревью 015). Снять запись гость не может —
+                 контракт такого пути не даёт (вопрос владельцу). */
+              <button key={r.id} disabled={busy || mine || (full && !mine)} aria-pressed={mine} onClick={() => join(r.id ?? '')} className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
                 style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
                 <div className="flex-1 min-w-0">
                   <b className="text-[12.5px] block truncate">{r.carrier ? `${r.name} · ${r.carrier}` : r.name}</b>

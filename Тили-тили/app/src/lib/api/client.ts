@@ -144,6 +144,30 @@ export class ApiError extends Error {
  */
 export const SESSION_EXPIRED = 'Сессия истекла — войдите снова'
 
+/*
+ * Кто узнаёт о смерти сессии (ревью 015, FA1).
+ *
+ * Сервер отверг refresh — токены стёрты здесь, в слое запросов, а стор об
+ * этом не знал: свадьба, мозаика с телефонами подрядчиков и избранное жили
+ * в памяти до перезагрузки страницы, и «Назад» открывал их без токена — тот
+ * же класс, что RF-01 при выходе. Слой запросов о сторе не знает (он ниже),
+ * поэтому событие: стор подписывается при старте и зовёт `forgetSession`.
+ */
+type SessionListener = () => void
+const sessionListeners = new Set<SessionListener>()
+
+/** Подписка на смерть сессии; возвращает отписку. */
+export function onSessionExpired(listener: SessionListener): () => void {
+  sessionListeners.add(listener)
+  return () => { sessionListeners.delete(listener) }
+}
+
+function announceSessionExpired(): void {
+  for (const listener of sessionListeners) {
+    try { listener() } catch { /* слушатель не должен ронять запрос */ }
+  }
+}
+
 /** Секунды из `Retry-After`: число или HTTP-дата; нет заголовка — `null`. */
 function readRetryAfter(res: Response): number | null {
   const h = res.headers.get('retry-after')
@@ -250,6 +274,7 @@ async function refreshTokens(): Promise<RefreshResult> {
           if (later && later.refreshToken !== current.refreshToken) return { ok: true, tokens: later }
         }
         saveTokens(null)
+        announceSessionExpired()
         return { ok: false, why: 'expired' }
       }
       const body = (await res.json()) as Tokens

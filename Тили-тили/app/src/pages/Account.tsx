@@ -296,6 +296,9 @@ export function Auth() {
           {policy.error && (
             <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed mt-2.5">
               {t('Не удалось проверить редакцию документов. Без неё согласие не зафиксировать.')}
+              {/* Повтор — без перезагрузки экрана: до ревью 015 человек с
+                  обрывом сети на этом запросе был заперт на входе. */}
+              {' '}<button onClick={policy.reload} className="press font-semibold underline underline-offset-2">{t('Повторить')}</button>
             </p>
           )}
         </div>
@@ -427,12 +430,26 @@ export function Notifications() {
 
   /* Массовой отметки в контракте нет — идём по непрочитанным поштучно.
      На двух десятках уведомлений это допустимо; путь `read-all` отмечен
-     в плане миграции как незакрытая дыра. */
+     в плане миграции как незакрытая дыра.
+
+     Отказ на любой из отметок — точка возвращается и причина называется:
+     до ревью 015 `catch(() => undefined)` глотал отказ, точки гасли навсегда,
+     а на сервере уведомления оставались непрочитанными (FA3). */
+  const [markErr, setMarkErr] = useState<string | null>(null)
   const markAll = () => {
     const rest = items.filter(n => !isRead(n)).map(n => n.id).filter((x): x is string => !!x)
     if (!rest.length) return
+    setMarkErr(null)
     setReadNow(r => [...r, ...rest])
-    void Promise.all(rest.map(id => markNotificationRead(id).catch(() => undefined))).then(() => q.reload())
+    void Promise.allSettled(rest.map(id => markNotificationRead(id).then(() => id))).then(results => {
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (failed.length) {
+        const ok = new Set(results.filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled').map(r => r.value))
+        setReadNow(r => r.filter(id => !rest.includes(id) || ok.has(id)))
+        setMarkErr(explainError(failed[0]!.reason))
+      }
+      q.reload()
+    })
   }
 
   /* Время снимается один раз при монтировании: конструктор даты без аргументов
@@ -460,6 +477,7 @@ export function Notifications() {
         <button onClick={markAll} className="press text-[11px] font-bold text-[var(--rose-deep)]">{t('Прочитать все')}</button>
       ) : undefined} />
       <AsyncState q={q} />
+      {markErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-6 mt-3">{markErr}</p>}
       {ready(q) && !items.length && (
         <p className="text-[12px] text-[var(--soft)] text-center py-10 px-8 leading-relaxed">{t('Пока тихо. Здесь появятся новости по сделкам, задачам и гостям.')}</p>
       )}
@@ -589,10 +607,13 @@ function DevicePushRow({ top = true }: { top?: boolean }) {
     try {
       await disableDevicePush().catch(() => undefined)
       await deleteAllPushSubscriptions()
-      setConfirmAll(false)
       if (state === 'on' || state === 'unverified') setState('off')
       list.reload()
-    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    } catch (e) { setErr(explainError(e)) } finally {
+      setBusy(false)
+      // Подтверждение снимается и при отказе — следующий тап снова спрашивает (ревью 015, FA5).
+      setConfirmAll(false)
+    }
   })()
   const text = state === 'loading' ? t('Загружаем…')
     : state === 'unsupported' ? t('Этот браузер не умеет push — уведомления остаются в приложении')
@@ -733,8 +754,22 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
    * открывал «Назад» без токена. То же у удаления и отзыва согласия ниже.
    */
   const { forgetSession } = useStore()
+  /* Отказ сервера по делу (4xx) — словами под кнопками, токены на месте:
+     выход не состоялся, и делать вид, что состоялся, нельзя (ревью 015, FA2).
+     Сервер не ответил — `signOut*` уходит сам, см. `lib/api/auth.ts`. */
+  const [signOutErr, setSignOutErr] = useState<string | null>(null)
+  const [leaving, setLeaving] = useState(false)
   const signOut = async () => {
-    await signOutEverywhere()
+    if (leaving) return
+    setLeaving(true)
+    setSignOutErr(null)
+    try {
+      await signOutEverywhere()
+    } catch (e) {
+      setSignOutErr(explainError(e))
+      setLeaving(false)
+      return
+    }
     forgetSession()
     nav('/auth')
   }
@@ -743,7 +778,14 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
   const signOutThisDevice = async () => {
     if (leavingHere) return
     setLeavingHere(true)
-    await signOutHere()
+    setSignOutErr(null)
+    try {
+      await signOutHere()
+    } catch (e) {
+      setSignOutErr(explainError(e))
+      setLeavingHere(false)
+      return
+    }
     forgetSession()
     nav('/auth')
   }
@@ -767,6 +809,8 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
           : t('Что-то пошло не так'),
       )
       if (e instanceof ApiError && e.status === 409) setOfferWithdraw(true)
+      // Подтверждение снимается: второй тап должен снова спросить, а не стереть по инерции (ревью 015, FA5).
+      setConfirmDelete(false)
       return
     }
     /* Аккаунт помечен удалённым, сессии погашены — подписка push этого
@@ -993,7 +1037,8 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
         <button onClick={() => void signOutThisDevice()} disabled={leavingHere} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50">
           <LogOut size={15} />{leavingHere ? t('Секунду…') : vendor ? t('Выйти') : t('Выйти только с этого устройства')}
         </button>
-        <button onClick={() => void signOut()} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2"><LogOut size={15} />{t('Выйти со всех устройств')}</button>
+        <button onClick={() => void signOut()} disabled={leaving} className="press w-full card-s py-4 text-[13px] font-semibold text-[var(--rose-deep)] flex items-center justify-center gap-2 disabled:opacity-50"><LogOut size={15} />{leaving ? t('Секунду…') : t('Выйти со всех устройств')}</button>
+        {signOutErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed px-1">{signOutErr}</p>}
         {/* Отмена свадьбы: только паре и только по ответу сервера о роли. */}
         {cancelDone === 'cancelled' ? (
           <div className="card px-4 py-5 text-center">

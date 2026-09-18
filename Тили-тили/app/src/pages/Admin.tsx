@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
-import { ChevronRight, ClipboardCheck, Flag, Plus, Search, ShieldCheck, Tags, Trash2 } from 'lucide-react'
+import { ChevronRight, ClipboardCheck, ConciergeBell, Flag, Plus, Search, ShieldCheck, Tags, Trash2 } from 'lucide-react'
 import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -13,11 +13,13 @@ import { getCategories, getVendor } from '@/lib/api/catalog'
 import { getMe } from '@/lib/api/auth'
 import {
   decideComplaint,
+  decideConcierge,
   decideVendor,
   decideVerification,
   getAdminCategories,
   getAdminMetrics,
   getComplaints,
+  getConcierge,
   getModerationQueue,
   getVerification,
   getVerifications,
@@ -215,6 +217,7 @@ export function AdminHome() {
             { icon: ClipboardCheck, tile: 'bg-[var(--sage-soft)]', to: '/admin/moderation', label: t('Модерация анкет'), sub: t('Новые анкеты: одобрить, снять с публикации, отметить проверенным') },
             { icon: ShieldCheck, tile: 'bg-[var(--honey)]', to: '/admin/verifications', label: t('Верификация'), sub: t('Заявки на проверку документов: подтвердить или отклонить с причиной') },
             { icon: Flag, tile: 'bg-[var(--rose-soft)]', to: '/admin/complaints', label: t('Жалобы'), sub: t('Нерассмотренные жалобы и санкции') },
+            { icon: ConciergeBell, tile: 'bg-[var(--peach)]', to: '/admin/concierge', label: t('Консьерж'), sub: t('Заявки «подобрать вручную»: позвонить паре, отметить подобранное') },
             { icon: Tags, tile: 'bg-[var(--lav)]', to: '/admin/categories', label: t('Категории и синонимы'), sub: t('Названия, значки, порядок и словарь поиска') },
             { icon: Search, tile: 'bg-[var(--blue)]', to: '/admin/wedding', label: t('Карточка свадьбы'), sub: t('Просмотр по обращению пары — записывается в журнал') },
           ].map(it => (
@@ -854,6 +857,123 @@ export function AdminComplaints() {
                   {t('Иных санкций к сообщениям и сделкам сервер не применяет: их нельзя понизить в выдаче или заблокировать.')}
                 </p>
               )}
+            </div>
+          )
+        })}
+        {ready(q) && next && (
+          <div className="text-center pt-1">
+            <button disabled={busy === 'more'} onClick={more} className="press px-5 h-[40px] rounded-full card-s text-[12px] font-semibold disabled:opacity-50">
+              {busy === 'more' ? t('Загружаем…') : t('Показать ещё')}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ── 65а. Очередь заявок консьержу (ревью 015, V5) ───────────────────── */
+/*
+ * Заявки «подобрать вручную» из поиска (План §18.12) копились на сервере
+ * со статусом `new`, и разобрать их было неоткуда. Здесь — открытые,
+ * старейшие сверху: паре обещаны сутки, и срок считается от подачи.
+ * Телефон — в карточке, сотрудник звонит по нему; «Подобрано» шлёт паре
+ * уведомление. Страницы копятся, как у жалоб.
+ */
+type ConciergePage = Awaited<ReturnType<typeof getConcierge>>
+type ConciergeStatus = 'in_progress' | 'done' | 'cancelled'
+
+const conciergeStatusLabel = (status: string | undefined) =>
+  status === 'in_progress' ? t('в работе') : status === 'new' ? t('новая') : ''
+
+export function AdminConcierge() {
+  const q = useApi(() => getConcierge(), [])
+  const [now] = useState(() => Date.now())
+  const [pages, setPages] = useState<ConciergePage[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const items = [...(q.data?.items ?? []), ...pages.flatMap(p => p.items ?? [])]
+  const next = pages.length ? (pages[pages.length - 1]?.nextCursor ?? null) : (q.data?.nextCursor ?? null)
+  const overdue = (iso: string | undefined) => !!iso && now - Date.parse(iso) > OVERDUE_MS
+
+  const reload = () => { setPages([]); q.reload() }
+
+  const decide = (id: string, status: ConciergeStatus) => void (async () => {
+    setBusy(id)
+    setErr(null)
+    try {
+      await decideConcierge(id, status)
+      reload()
+    } catch (e) {
+      /* Двое сотрудников взяли одну заявку: второй видит, что опоздал. */
+      if (e instanceof ApiError && (e.status === 409 || e.status === 404)) { setErr(t('Заявка уже закрыта')); reload() }
+      else setErr(explainError(e))
+    } finally { setBusy(null) }
+  })()
+
+  const more = () => void (async () => {
+    if (!next) return
+    setBusy('more')
+    setErr(null)
+    try {
+      const page = await getConcierge(next)
+      setPages(p => [...p, page])
+    }
+    catch (e) { setErr(explainError(e)) }
+    finally { setBusy(null) }
+  })()
+
+  return (
+    <div className="pb-10">
+      <TopBar back fallback="/admin" title={t('Консьерж')} sub={t('Открытые заявки, старейшие сверху')} />
+      <div className="px-5 mt-3 space-y-2.5">
+        <AsyncState q={q} forbiddenText={denied()} />
+        {ready(q) && items.length === 0 && (
+          <p className="text-[12.5px] text-[var(--soft)] py-6 text-center">{t('Открытых заявок нет')}</p>
+        )}
+        {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {ready(q) && items.map(r => {
+          const id = r.id ?? ''
+          return (
+            <div key={id} className="card p-4">
+              <div className="flex items-start gap-2">
+                <b className="text-[13px] flex-1">{r.categoryName ?? r.categoryId}</b>
+                {overdue(r.createdAt) && (
+                  <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] shrink-0">{t('просрочено')}</span>
+                )}
+                <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] shrink-0">{conciergeStatusLabel(r.status)}</span>
+              </div>
+              <span className="text-[10.5px] text-[var(--soft)] block mt-0.5">
+                {[r.city, r.budget?.amount != null ? `${t('до')} ${fmt(r.budget.amount)}` : null, fmtDateTime(r.createdAt)].filter(Boolean).join(' · ')}
+              </span>
+              {r.comment && <p className="text-[12.5px] text-[var(--ink2)] leading-relaxed mt-2">{r.comment}</p>}
+
+              {/* Кому звонить: пара попросила связаться — номер здесь по делу,
+                  и чтение очереди сервер пишет в журнал. */}
+              <div className="flex items-center gap-3 mt-2.5">
+                <p className="text-[12.5px] flex-1 min-w-0 truncate">{r.name ? `${r.name} · ` : ''}<b className="tabular">{r.phone}</b></p>
+                {r.phone && (
+                  <a href={`tel:${r.phone}`} className="press shrink-0 px-4 h-[34px] rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold flex items-center">{t('Позвонить')}</a>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mt-2.5">
+                {([
+                  ['in_progress', t('В работу')],
+                  ['done', t('Подобрано')],
+                  ['cancelled', t('Снять')],
+                ] as Array<[ConciergeStatus, string]>).filter(([status]) => !(status === 'in_progress' && r.status === 'in_progress')).map(([status, label]) => (
+                  <button
+                    key={status}
+                    disabled={busy === id}
+                    onClick={() => decide(id, status)}
+                    className="press h-10 rounded-full card-s text-[11.5px] font-semibold disabled:opacity-50"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           )
         })}

@@ -200,7 +200,8 @@ describe('согласие не зафиксировано — значит и �
 describe('редакция текста и редакция сервера — одно число', () => {
   it('LEGAL_TEXT_VERSION совпадает с POLICY_VERSION бэкенда', () => {
     const config = projectFile('../backend/src/config.ts')
-    const fallback = /policyVersion:\s*source\.POLICY_VERSION\s*\?\?\s*'([^']+)'/.exec(config)
+    /* `envText(source.POLICY_VERSION)`: пустая строка из шаблона `.env` — не версия (ревью 015). */
+    const fallback = /policyVersion:\s*(?:envText\()?source\.POLICY_VERSION\)?\s*\?\?\s*'([^']+)'/.exec(config)
     /* Если умолчание перепишут иначе, тест обязан сломаться, а не тихо
        пропустить проверку: молчаливый пропуск здесь хуже отсутствия теста. */
     expect(fallback, 'умолчание POLICY_VERSION в backend/src/config.ts не найдено').toBeTruthy()
