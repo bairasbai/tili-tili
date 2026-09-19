@@ -1,4 +1,8 @@
 # Служебные папки и файлы инструментов
+.unlazy/
+.unlazy-hook-state.json
+GATES.md
+.claude/settings.local.json
 .claude-flow/
 .claude/locks/
 .claude/proven-config.json
