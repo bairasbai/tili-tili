@@ -429,11 +429,27 @@ const NOTIF_LOOK: Record<string, { icon: string; tile: string }> = {
 
 export function Notifications() {
   const nav = useNavigate()
-  /* Без своей свадьбы человек в приложении — подрядчик: ссылки уведомлений
-     переводятся в маршруты его кабинета, а не в экраны пары. */
-  const { weddingId } = useStore()
   const q = useApi(() => getNotifications(), [])
   const items = q.data ?? []
+  /*
+   * Роль решает ответ сервера, а не отсутствие свадьбы (ERR-0278/R-278):
+   * подрядчик без своей заявки и пара до квиза (или ещё не дождавшаяся
+   * /weddings) выглядели бы одинаково по `!weddingId`, а маршруты
+   * уведомлений у них разные — сделка подрядчика открывала бронь пары.
+   * Проба анкеты уже стоит у карточек подрядчика (Search.tsx, VendorApp.tsx)
+   * — тот же вызов, один раз на экран, а не на каждую строку списка.
+   *
+   * 404 — единственный ответ контракта (TR-1 §7 FL-8 (c)) за «не подрядчик»:
+   * любой другой отказ (403/5xx/сеть) — не факт «не подрядчик», а
+   * неизвестность, и `catch` её не проглатывает (fix round 1, G5-S3-1/
+   * G6-S3-1) — `ready(vendorProbe)` ниже держит маршрут за уведомлением,
+   * пока ответ не пришёл, вместо того чтобы читать «висит» как «пара».
+   */
+  const vendorProbe = useApi(() => getVendorProfile().catch(e => {
+    if (e instanceof ApiError && e.status === 404) return null
+    throw e
+  }), [])
+  const isVendor = !!vendorProbe.data
   /* Отметка уже ушла на сервер, но список перечитывается не мгновенно.
      Держим её здесь, чтобы точка гасла под пальцем, а не через круг. */
   const [readNow, setReadNow] = useState<string[]>([])
@@ -506,9 +522,14 @@ export function Notifications() {
               /* Сервер называет место смыслом (`/guests`, `/deal/{id}`), а
                  не маршрутом приложения — переводим. Незнакомое место никуда
                  не ведёт: уведомление просто отмечается прочитанным. */
-              const to = notificationRoute(n.link, { vendor: !weddingId })
+              const to = notificationRoute(n.link, { vendor: isVendor })
+              /* Пока проба анкеты не осела (`ready`, R-178) — маршрут не
+                 строим: до ответа «не подрядчик» неотличимо от «подрядчик,
+                 ответ ещё в пути», и клик уводил бы подрядчика в /deal пары
+                 (fix round 1, G5-S3-1/G6-S3-1). Отметка прочитанным от роли
+                 не зависит — уходит всегда. */
               return (
-                <button key={n.id} onClick={() => { markRead(n.id); if (to) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
+                <button key={n.id} onClick={() => { markRead(n.id); if (to && ready(vendorProbe)) nav(to) }} className="press w-full card-s p-4 flex gap-3 fade-up relative text-left">
                   {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[var(--rose)]" />}
                   <Tile icon={look.icon} tile={look.tile} size={42} />
                   <div className="min-w-0">

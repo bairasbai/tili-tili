@@ -152,6 +152,11 @@ describe('десктоп-раскладка (≥900px)', () => {
     for (const f of ['src/pages/VendorApp.tsx', 'src/pages/Tools.tsx']) {
       expect(projectFile(f), `${f}: корень мастера с pb-10 — кнопка под таб-баром`).not.toMatch(/min-h-dvh flex flex-col pb-10"/)
     }
+    // FL-5 · ERR-0275 / R-275: тот же список pb-10 покрывает и VendorExtras.tsx
+    // (VendorLead — заявка подрядчика), не трогая список/строки выше.
+    for (const f of ['src/pages/VendorExtras.tsx']) {
+      expect(projectFile(f), `${f}: корень заявки подрядчика с pb-10 — поле ответа под таб-баром кабинета`).not.toMatch(/min-h-dvh flex flex-col pb-10"/)
+    }
   })
 })
 

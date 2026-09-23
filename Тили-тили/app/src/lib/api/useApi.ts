@@ -27,6 +27,8 @@ export interface AsyncData<T> {
   error: string | null
   /** Отказ по правам: раздел закрыт роли. Повторять бессмысленно. */
   forbidden: boolean
+  /** Слова сервера при отказе по правам (403) — чем именно закрыт раздел (R-284). Нет отказа — `undefined`. */
+  forbiddenText?: string
   reload: () => void
 }
 
@@ -70,6 +72,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [forbidden, setForbidden] = useState(false)
+  const [forbiddenText, setForbiddenText] = useState<string | undefined>(undefined)
   const [tick, setTick] = useState(0)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,6 +113,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
     if (!settled.current) setLoading(true)
     setError(null)
     setForbidden(false)
+    setForbiddenText(undefined)
     run()
       .then(v => { if (alive) { settled.current = true; setData(v); setShown({ run, tick }); setLoading(false) } })
       .catch(e => {
@@ -119,7 +123,10 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
         settled.current = false
         setData(null)
         setShown(null)
-        if (e instanceof ApiError && e.status === 403) setForbidden(true)
+        /* Слова сервера, не только флаг: «Нужно согласие…» и «Кабинет доступен
+           только подрядчику» — разные отказы, и экран должен называть свой,
+           а не молчать под видом пустой выдачи (R-284). */
+        if (e instanceof ApiError && e.status === 403) { setForbidden(true); setForbiddenText(t(e.message)) }
         else setError(explainError(e))
         setLoading(false)
       })
@@ -129,5 +136,5 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   const reload = useCallback(() => setTick(n => n + 1), [])
   /* Показан ответ, но не на этот запрос: свежий ещё в пути. */
   const refreshing = shown !== null && (shown.run !== run || shown.tick !== tick)
-  return { data, loading, refreshing, error, forbidden, reload }
+  return { data, loading, refreshing, error, forbidden, forbiddenText, reload }
 }

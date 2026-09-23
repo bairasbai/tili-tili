@@ -57,6 +57,9 @@ const Invite = lazy(() => load.invite())
 /* Чат дня гостя живёт в том же чанке, что приглашение: гость приходит туда с `/invite`. */
 const GuestDayChat = lazy(() => load.invite().then(m => ({ default: m.GuestDayChat })))
 const InviteRedeem = lazy(() => import('@/pages/InviteRedeem'))
+/* Свой чанк, как у InviteRedeem: гость-подрядчик приходит по ссылке из вне,
+   догружать чужие бандлы (кабинет пары, каталог) ему незачем (SB-01, ERR-0272). */
+const GuestVendor = lazy(() => import('@/pages/GuestVendor'))
 
 const Deal = lazy(() => load.tools().then(m => ({ default: m.Deal })))
 const ContractWizard = lazy(() => load.tools().then(m => ({ default: m.ContractWizard })))
@@ -145,6 +148,9 @@ function Shell() {
     p.startsWith('/invite/') ||
     p.startsWith('/i/') ||
     p.startsWith('/join') ||
+    /* Гость-подрядчик: тот же класс, что гость дня X — своего аккаунта и
+       нижней навигации пары у него нет (SB-01, ERR-0272). */
+    p.startsWith('/guest-vendor/') ||
     p.startsWith('/us/chats/') ||
     (p.startsWith('/vendor-app') && !vendorTab) ||
     /* Панель платформы — не раздел пары: нижняя навигация здесь предлагала бы
@@ -164,6 +170,9 @@ function Shell() {
           {/* Ссылка из приглашения ведёт сюда: код меняется на токен гостя и
               гаснет, дальше гость живёт на /invite. */}
           <Route path="/i/:code" element={<InviteRedeem />} />
+          {/* Свой подрядчик слота по ссылке пары — без аккаунта, только токен
+              в URL (SB-01, ERR-0272): видит дату, тайминг дня и чат с парой. */}
+          <Route path="/guest-vendor/:token" element={<GuestVendor />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/join/:code" element={<Join />} />
           <Route path="/home" element={onboarded ? <Home /> : <Navigate to="/" replace />} />

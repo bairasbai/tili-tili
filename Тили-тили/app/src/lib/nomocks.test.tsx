@@ -29,6 +29,8 @@ const ROUTES = [
   '/', '/quiz', '/auth', '/invite', '/i/c1', '/join/c1',
   /* Фича 009: чат дня X глазами гостя — по токену, без аккаунта. */
   '/invite/day-chat',
+  /* SB-01 / ERR-0272 (review-016): гость-подрядчик — по токену, без аккаунта. */
+  '/guest-vendor/tok1',
   '/home', '/notifications', '/settings', '/support', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',

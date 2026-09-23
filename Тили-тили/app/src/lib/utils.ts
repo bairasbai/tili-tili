@@ -60,3 +60,21 @@ export function plural(n: number, one: string, few: string, many: string): strin
 export const pct = (part: number | undefined, total: number | undefined) =>
   total && total > 0 ? Math.round(((part ?? 0) / total) * 100) : 0
 
+/**
+ * Экранирование HTML для генераторов документов (R-273, CLAUDE.md §5.5:
+ * «генераторы документов интерполируют строки, а не вставляют код»).
+ *
+ * Значение может прийти из чужой анкеты (имя подрядчика — F-RL5-01) или из
+ * формы пользователя (ФИО, паспорт) и подставляется в HTML, который уходит в
+ * `document.write` или в файл — сток без автоэкранирования React. `&`
+ * заменяется первым: иначе `&lt;`, появившийся на следующем шаге, превратился
+ * бы в `&amp;lt;` при последующей замене `&`.
+ */
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}

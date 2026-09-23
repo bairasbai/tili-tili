@@ -413,7 +413,10 @@ export function VendorProfileWizard() {
       about: p?.about ?? '',
       phone: p?.phone ?? '',
       priceFrom: p?.priceFrom?.amount,
-      packages: (p?.packages ?? []).map(x => ({ name: x.name ?? '', price: x.price?.amount ?? 0 })),
+      /* Цена пакета — число, которое назвал подрядчик. Пакет без цены (заведён
+         вне мастера) остаётся без цены: `?? 0` делал из него «0 ₽» в каталоге
+         при первом же «Далее» (ERR-0281, R-281). */
+      packages: (p?.packages ?? []).map(x => ({ name: x.name ?? '', price: x.price?.amount ?? null })),
       /* Права на фото и согласие снятых (152-ФЗ, план бэкенда §7): подтверждение
          одноразовое — уже данное сервер помнит, и галочка не спрашивается заново. */
       mediaRights: !!p?.mediaRights,
@@ -456,9 +459,16 @@ export function VendorProfileWizard() {
     })
   }
 
+  /* Название и цена — обязательны и словами: «Добавить» с пустой или нулевой
+     ценой молчал, и подрядчик не узнавал, что пакет не добавлен (F-RL-8-03,
+     R-258 — тот же приём, что число мест в автобусе, `Logistics.tsx:139`). */
   const addPkg = () => {
     const rubles = parseInt(pkgPrice.replace(/\D/g, ''), 10)
-    if (!pkgName.trim() || !rubles) return
+    if (!pkgName.trim() || !(rubles > 0)) {
+      setErr(t('Укажите название и цену пакета — целое число рублей больше нуля'))
+      return
+    }
+    setErr(null)
     set({ packages: [...(form?.packages ?? []), { name: pkgName.trim(), price: rub(rubles) }] })
     setPkgName(''); setPkgPrice(''); setPkgForm(false)
   }
@@ -555,7 +565,7 @@ export function VendorProfileWizard() {
               <div key={`${pkg.name}-${k}`} className="card p-4 flex justify-between items-center">
                 <b className="text-[13px]">{pkg.name}</b>
                 <span className="flex items-center gap-2.5">
-                  <span className="font-serif-d text-[15px] text-[var(--rose-deep)] font-semibold tabular">{fmt(pkg.price)}</span>
+                  <span className="font-serif-d text-[15px] text-[var(--rose-deep)] font-semibold tabular">{pkg.price === null ? t('цена не названа') : fmt(pkg.price)}</span>
                   <button onClick={() => set({ packages: (form.packages ?? []).filter((_, i) => i !== k) })} className="press text-[var(--rose-deep)] text-[13px]" aria-label={t('Удалить')}>×</button>
                 </span>
               </div>

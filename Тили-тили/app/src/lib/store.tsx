@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import type { Slot, SlotState } from './types'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized, onSessionExpired } from './api/client'
+import { forgetLocally } from './api/auth'
 import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
 import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, type ServerSlot } from './api/slots'
@@ -103,10 +104,6 @@ interface Store {
   toggleFav: (id: string) => void
   lang: 'ru' | 'en'
   setLang: (l: 'ru' | 'en') => void
-  inviteTpl: number
-  setInviteTpl: (t: number) => void
-  inviteText: string
-  setInviteText: (t: string) => void
   city: string
   cityRegion: string
   setCity: (name: string, region: string) => void
@@ -129,9 +126,6 @@ const DEAL_LABEL: Record<string, string | undefined> = {
 type SlotsSnapshot = { weddingId: string; list: ServerSlot[]; state: 'ready' | 'error' }
 /* Один и тот же пустой список, а не `[]` на каждую отрисовку: от него зависит `useMemo` мозаики. */
 const NO_SLOTS: ServerSlot[] = []
-
-/** Заготовка текста приглашения, пока пара не написала свой. */
-const DEFAULT_INVITE_TEXT = 'Мы хотим разделить с вами самый особенный день нашей жизни. Для нас будет честью видеть вас рядом в этот важный момент.'
 
 /*
  * Ключи, которые сеттеры `usePersist` пишут обратно при сбросе состояния:
@@ -373,8 +367,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [weddingsState])
   const [lang, setLangState] = useState<Lang>(() => (safeGet('tt_lang') === 'en' ? 'en' : 'ru'))
   setI18nLang(lang)
-  const [inviteTpl, setInviteTplState] = useState(() => Number(safeGet('tt_invite_tpl') ?? 0))
-  const [inviteText, setInviteTextState] = useState(() => safeGet('tt_invite_text') ?? DEFAULT_INVITE_TEXT)
   const [city, setCityState] = useState(() => safeGet('tt_city') ?? 'Уфа')
   const [cityRegion, setCityRegion] = useState(() => safeGet('tt_city_region') ?? 'Башкортостан')
   const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
@@ -395,8 +387,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSlotsSnap(null)
     setFavorites([])
     setOnboarded(false)
-    setInviteTplState(0)
-    setInviteTextState(DEFAULT_INVITE_TEXT)
     setWeddingsState('idle')
     /* Промис сверки — про прежний аккаунт: следующему входу он не годится. */
     myWeddings.current = null
@@ -410,11 +400,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try { localStorage.removeItem(key) } catch { /* приватный режим */ }
     }
   }, [forgotten])
-  /* Смерть сессии (сервер отверг refresh: выход с другого устройства, 30 дней
-     бездействия) — та же уборка памяти, что и выход кнопкой: до ревью 015 слой
-     запросов стирал токены, а свадьба и мозаика жили в памяти до перезагрузки
-     (FA1). Экран сам покажет «войдите снова» по `session_expired`. */
-  useEffect(() => onSessionExpired(forgetSession), [forgetSession])
+  /*
+   * Смерть сессии (сервер отверг refresh: выход с другого устройства, 30 дней
+   * бездействия) — та же уборка, что и кнопка «Выйти»: сначала устройство
+   * (`forgetLocally()` — токены и всё, кроме темы/языка/города), потом память
+   * (`forgetSession()`). До ERR-0277/R-277 здесь звалась только память —
+   * `tt_fav`, `tt_onboarded` и гостевой токен переживали отказ refresh и
+   * всплывали снова после перезагрузки; свадьба и мозаика с телефонами
+   * подрядчиков жили в памяти до неё же (тот же класс, что RF-01/FA1, только
+   * на этой из трёх дверей выхода). Экран сам покажет «войдите снова» по
+   * `session_expired`.
+   */
+  useEffect(() => onSessionExpired(() => { forgetLocally(); forgetSession() }), [forgetSession])
+  /*
+   * Выход в соседней вкладке того же браузера (ERR-0277/R-277, третья дверь).
+   *
+   * `storage` — событие только ЧУЖИХ документов того же источника: своя
+   * вкладка его никогда не получает (стандарт), поэтому кнопка «Выйти» и
+   * отказ refresh в этой же вкладке идут своими путями выше и повторно сюда
+   * не заходят. `forgetLocally()` здесь не нужен — устройство уже пусто (его
+   * очистила чужая вкладка, хранилище общее на источник); не хватает только
+   * сброса памяти: без него мозаика, свадьба и телефоны подрядчиков
+   * оставались на экране этой вкладки до `F5`. `key === null` — чужая вкладка
+   * вызвала `localStorage.clear()` целиком (кнопка «Выйти»); `key === 'tt_auth'`
+   * — точечное снятие токена (смерть сессии в той вкладке). Проверка
+   * `!isAuthorized()` — на случай постороннего события с тем же именем ключа:
+   * своя вкладка убирает память, только если сама уже не авторизована.
+   */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if ((e.key === null || e.key === 'tt_auth') && !isAuthorized()) forgetSession()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [forgetSession])
 
   const value = useMemo<Store>(() => ({
     onboarded,
@@ -523,10 +542,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     lang,
     setLang: (l: Lang) => { safeSet('tt_lang', l); setI18nLang(l); setLangState(l) },
-    inviteTpl,
-    setInviteTpl: (t: number) => { safeSet('tt_invite_tpl', String(t)); setInviteTplState(t) },
-    inviteText,
-    setInviteText: (t: string) => { safeSet('tt_invite_text', t); setInviteTextState(t) },
     city, cityRegion,
     theme,
     setTheme: (t) => { safeSet('tt_theme', t); setThemeState(t) },
@@ -540,7 +555,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
      * и два гостя спокойно занимали одну вещь, каждый в своей копии списка.
      * Экраны подарков ходят на сервер напрямую (`lib/api/gifts.ts`).
      */
-  }), [onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, inviteTpl, inviteText, city, cityRegion, theme])
+  }), [onboarded, weddingId, setWeddingIdState, weddingsState, adoptWeddings, forgetSession, weddingDate, setWeddingDateState, quiz, setQuiz, slots, slotsPhase, refreshSlots, needWedding, favorites, lang, city, cityRegion, theme])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

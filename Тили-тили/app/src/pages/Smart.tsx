@@ -4,7 +4,7 @@ import { ChevronLeft, CloudRain, Zap, Heart } from 'lucide-react'
 
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
-import { explainError, useApi } from '@/lib/api/useApi'
+import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getGuests, getPlanB, getSlots, getTimeline, getWedding } from '@/lib/api/weddingData'
 import { getAlbum } from '@/lib/api/gifts'
@@ -254,13 +254,13 @@ export function DayX() {
   // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
   const [now, setNow] = useState(() => new Date())
 
-  const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
-  const q = useApi(() => weddingId ? getTimeline(weddingId) : Promise.resolve([]), [weddingId])
+  const w = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
+  const q = useApi(() => weddingId ? getTimeline(weddingId) : noWedding(), [weddingId])
   /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
      включённый сценарий, а экран «План Б» рядом писал «активирован»: два
      экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
      команде и гостям повторную рассылку. */
-  const pb = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId])
+  const pb = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
   /*
    * Офлайн-копия (План §3.1, §12): на площадке сеть пропадает, а тайминг и
    * телефоны команды нужны именно там. Воркер API не кэширует — копия одна,
@@ -539,13 +539,13 @@ function SectionHeadSm({ title, sub }: { title: string; sub?: string }) {
  */
 export function After() {
   const { weddingId } = useStore()
-  const w = useApi(() => weddingId ? getWedding(weddingId) : Promise.resolve(null), [weddingId])
-  const guests = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
-  const album = useApi(() => weddingId ? getAlbum(weddingId) : Promise.resolve([]), [weddingId])
-  const reviews = useApi(() => weddingId ? getGuestReviews(weddingId) : Promise.resolve([]), [weddingId])
+  const w = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
+  const guests = useApi(() => weddingId ? getGuests(weddingId) : noWedding(), [weddingId])
+  const album = useApi(() => weddingId ? getAlbum(weddingId) : noWedding(), [weddingId])
+  const reviews = useApi(() => weddingId ? getGuestReviews(weddingId) : noWedding(), [weddingId])
   /* Мозаика читается здесь своим запросом, а не из стора: у слота в сторе
      нет даты завершения сделки, а окно отзыва считается от неё (`doneAt`). */
-  const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : Promise.resolve([]), [weddingId])
+  const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : noWedding(), [weddingId])
   const [rating, setRating] = useState(false)
   // Сегодняшний день — один раз за монтирование: в теле компонента время не берут (R-04).
   const [today] = useState(() => new Date().toISOString().slice(0, 10))
@@ -781,7 +781,7 @@ export function PlanB() {
    * Пункты плана Б — обычные задачи вида `planb`, поэтому и отмечаются через
    * `PATCH …/tasks/{taskId}`: отдельного пути у контракта нет намеренно.
    */
-  const q = useApi(() => weddingId ? getPlanB(weddingId) : Promise.resolve(null), [weddingId])
+  const q = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
   const checklist = q.data?.checklist ?? []
   /* Галочка отзывается сразу, запрос уходит следом. Отказ возвращает её
      обратно: показывать отмеченным то, чего сервер не принял, нельзя. */
@@ -870,7 +870,10 @@ export function PlanB() {
                   {r.action === 'search' && (
                     <button onClick={() => nav('/search')} className="press mt-3 h-10 px-5 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Найти горячую замену →')}</button>
                   )}
-                  {r.action === 'rain' && !activated && (
+                  {/* Без ответа сервера «не активирован» — догадка, не факт
+                      (R-178): без свадьбы `q.error` держит эту кнопку скрытой,
+                      так же как «0%» выше — ERR-0278/R-278. */}
+                  {r.action === 'rain' && !activated && ready(q) && (
                     <button disabled={busy} onClick={() => (confirmRain ? activate() : setConfirmRain(true))} className={cn('press mt-3 h-10 px-5 rounded-full text-[12px] font-semibold disabled:opacity-50', confirmRain ? 'bg-[var(--rose-deep)] text-[var(--card)]' : 'grad text-[var(--on-grad)]')}>
                       {busy ? t('Включаем…') : confirmRain ? t('Подтвердить: команде уйдёт уведомление') : t('Активировать план «дождь»')}
                     </button>

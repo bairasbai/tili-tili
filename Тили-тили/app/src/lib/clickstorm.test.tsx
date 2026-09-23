@@ -28,6 +28,8 @@ import App from '@/App'
 
 const ROUTES = [
   '/', '/quiz', '/invite', '/auth', '/join/ДРУГ-7F3K', '/invite/day-chat',
+  /* SB-01 / ERR-0272 (review-016): гость-подрядчик — по токену, без аккаунта. */
+  '/guest-vendor/tok1',
   '/home', '/notifications', '/settings', '/support',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',

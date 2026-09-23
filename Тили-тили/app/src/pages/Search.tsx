@@ -56,6 +56,12 @@ export function SearchCategories() {
       </div>
       {cats.loading && <p className="px-5 mt-6 text-[12px] text-[var(--soft)]">{t('Загружаем каталог…')}</p>}
       {cats.error && <ErrorState error={cats.error} retry={cats.reload} />}
+      {cats.forbidden && (
+        <div className="py-6 text-center">
+          <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{cats.forbiddenText}</p>
+          <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
+        </div>
+      )}
       <div className="px-5 grid grid-cols-3 gap-2.5 mt-4 stagger">
         {list.map(c => {
           const st = stateOf(c.id ?? '')
@@ -75,7 +81,13 @@ export function SearchCategories() {
       {/* Поиск по имени — отдельный запрос со своими состояниями: раньше отказ
           на нём выглядел как «никого не нашлось». */}
       {search.length >= 2 && found.loading && <p className="px-5 mt-4 text-[12px] text-[var(--soft)]">{t('Ищем подрядчиков…')}</p>}
-      {found.error && <p role="alert" className="px-5 mt-4 text-[12px] text-[var(--rose-ink)] leading-relaxed">{found.error}</p>}
+      {found.error && <ErrorState error={found.error} retry={found.reload} />}
+      {found.forbidden && (
+        <div className="py-6 text-center">
+          <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{found.forbiddenText}</p>
+          <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
+        </div>
+      )}
       {foundVendors.length > 0 && (
         <div className="px-5 mt-5">
           <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold px-1">{t('Подрядчики')}</span>
@@ -86,7 +98,7 @@ export function SearchCategories() {
           </div>
         </div>
       )}
-      {!cats.loading && !cats.error && list.length === 0 && !foundVendors.length && (
+      {!cats.loading && !cats.error && !cats.forbidden && !found.forbidden && list.length === 0 && !foundVendors.length && (
         <div className="px-5 mt-10 text-center fade-up">
           <div className="w-16 h-16 rounded-[22px] bg-[var(--rose-soft)] mx-auto flex items-center justify-center text-[26px]">🔍</div>
           <b className="text-[15px] block mt-4">{t('Ничего не нашлось')}</b>
@@ -251,6 +263,12 @@ export function VendorList() {
         {(list.error || cats.error) && (
           <ErrorState error={(list.error ?? cats.error)!} retry={() => { list.reload(); cats.reload() }} />
         )}
+        {(list.forbidden || cats.forbidden) && (
+          <div className="py-6 text-center">
+            <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-6">{list.forbiddenText ?? cats.forbiddenText}</p>
+            <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
+          </div>
+        )}
         {shown.map(v => (
           <VendorCard key={v.id} v={v}
             categoryTitle={cat?.title}
@@ -268,7 +286,7 @@ export function VendorList() {
             </button>
           </div>
         )}
-        {!list.loading && !list.error && !cats.error && shown.length === 0 && (
+        {!list.loading && !list.error && !cats.error && !list.forbidden && !cats.forbidden && shown.length === 0 && (
           <div className="text-center py-10 fade-up">
             <b className="text-[14px]">{t('Под фильтр никто не подходит')}</b>
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Смягчите условия — или спросите Тиля, он расширит поиск')}</p>
@@ -483,7 +501,13 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       <div className="px-5 mt-8 text-center fade-up">
         {detail.loading && <p className="text-[12.5px] text-[var(--soft)]">{t('Загружаем анкету…')}</p>}
         {detail.error && <ErrorState error={detail.error} retry={() => { detail.reload(); cats.reload() }} />}
-        {!detail.loading && !detail.error && <p className="text-[12.5px] text-[var(--soft)]">{t('Анкета не найдена')}</p>}
+        {detail.forbidden && (
+          <>
+            <p role="alert" className="text-[12.5px] text-[var(--rose-ink)] leading-relaxed">{detail.forbiddenText}</p>
+            <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
+          </>
+        )}
+        {!detail.loading && !detail.error && !detail.forbidden && <p className="text-[12.5px] text-[var(--soft)]">{t('Анкета не найдена')}</p>}
       </div>
     </div>
   )
@@ -728,7 +752,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Похожие специалисты')}</h2>
         {/* Пустая полоса без объяснения одинаково выглядела при отказе сервера
             и при единственном подрядчике в городе. */}
-        {similar.error && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] px-1 leading-relaxed">{similar.error}</p>}
+        {similar.error && <ErrorState error={similar.error} retry={similar.reload} />}
         {ready(similar) && !(similar.data?.items ?? []).some(x => x.id !== v.id) && (
           <p className="text-[11.5px] text-[var(--soft)] px-1 leading-relaxed">{t('Похожих в вашем городе пока нет')}</p>
         )}

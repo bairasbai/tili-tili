@@ -6,7 +6,7 @@ import { AsyncState } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
 import { t } from '@/lib/i18n'
-import { api, ApiError, url } from '@/lib/api/client'
+import { api, ApiError, isAuthorized, url } from '@/lib/api/client'
 import { getMe, JOIN_CODE_KEY } from '@/lib/api/auth'
 import { findMyWedding, listMyWeddings } from '@/lib/api/wedding'
 import { useApi } from '@/lib/api/useApi'
@@ -191,13 +191,20 @@ export function Team() {
       <TopBar back title={t('Наша команда')} sub={`${t('единое пространство · ')}${city}`} />
       <div className="px-5 mt-3 space-y-3.5">
         {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] leading-relaxed px-1">{err}</p>}
-        {/* Без свадьбы приглашать некуда. Молчащая кнопка хуже объяснения:
-            человек жмёт и не понимает, почему ничего не происходит (R-05). */}
-        {!weddingId && (
+        {/* Без свадьбы приглашать некуда — но «свадьбы нет» не факт о вышедшем
+            человеке (ERR-0278/R-278): не вошёл — зовём войти, а не заводить
+            свадьбу заново. Молчащая кнопка хуже объяснения: человек жмёт и не
+            понимает, почему ничего не происходит (R-05). */}
+        {!weddingId && (isAuthorized() ? (
           <p className="text-[12px] text-[var(--soft)] leading-relaxed px-1">
             {t('Сначала создайте свадьбу — пройдите короткий опрос, и команду можно будет собирать.')}
           </p>
-        )}
+        ) : (
+          <div className="text-center px-1">
+            <p className="text-[12px] text-[var(--soft)] leading-relaxed">{t('Войдите, чтобы собрать команду')}</p>
+            <button onClick={() => nav('/auth')} className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold">{t('Войти')}</button>
+          </div>
+        ))}
         {/* Кто уже внутри */}
         <div className="card px-4 py-1.5">
           {/* Утверждение о составе команды — только когда состав известен.

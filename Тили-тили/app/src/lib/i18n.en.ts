@@ -1986,3 +1986,20 @@ Object.assign(EN, {
   'Пара написала': 'The couple wrote',
   'Мягкая бронь': 'Soft hold',
 })
+
+/* Кабинет гостя-подрядчика по ссылке /guest-vendor/{token} (SB-01, ERR-0272, review-016). */
+Object.assign(EN, {
+  'ч': 'h',
+  'Пара ещё не выбрала дату': 'The couple has not chosen a date yet',
+  'Обновите страницу, чтобы увидеть новые сообщения': 'Refresh the page to see new messages',
+})
+
+/* «Нет свадьбы» — не факт о человеке (ERR-0278, R-278, review-016). */
+Object.assign(EN, {
+  'Войдите, чтобы собрать команду': 'Sign in to build your team',
+})
+
+/* Цена пакета — число, которое называет подрядчик (ERR-0281, R-281, review-016). */
+Object.assign(EN, {
+  'Укажите название и цену пакета — целое число рублей больше нуля': 'Enter the package name and price — a whole number of roubles above zero',
+})

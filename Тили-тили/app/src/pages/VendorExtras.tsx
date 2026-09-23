@@ -174,7 +174,7 @@ export function VendorLead() {
   ]
 
   return (
-    <div className="min-h-dvh flex flex-col pb-10">
+    <div className="min-h-dvh flex flex-col pb-28">
       <TopBar back title={lead.coupleName ?? t('Заявка')} sub={lead.weddingDate ? formatWeddingDate(lead.weddingDate) : t('дата не назначена')} />
       <div className="flex-1 px-5 mt-3 space-y-3">
         <div className="card p-4">

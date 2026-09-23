@@ -255,10 +255,10 @@ export default function Quiz() {
             <MapPin size={15} className="text-[var(--rose-deep)]" />
           </button>
           <div className="flex flex-wrap gap-2 mt-4">
-            {[t('Уфа'), t('Сибай'), t('Баймак'), t('Стерлитамак'), t('Москва'), t('Казань')].map(n => (
+            {['Уфа', 'Сибай', 'Баймак', 'Стерлитамак', 'Москва', 'Казань'].map(n => (
               <button key={n} onClick={() => { setCity(n, n === 'Москва' ? 'Москва' : n === 'Казань' ? 'Татарстан' : 'Башкортостан'); setAnswers(a => ({ ...a, [i]: [n] })) }}
                 className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', sel.includes(n) ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--ink2)]')}
-                style={{ boxShadow: 'var(--shadow)' }}>{n}</button>
+                style={{ boxShadow: 'var(--shadow)' }}>{t(n)}</button>
             ))}
           </div>
           {/* Каталог ищет по городу свадьбы: радиус и отметка «выезд» были

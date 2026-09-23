@@ -24,7 +24,10 @@ export interface VendorDraft {
   phone?: string
   /** Цена «от» в копейках. */
   priceFrom?: number
-  packages?: { name: string; price: number }[]
+  /** Пакеты услуг. Цена — копейки; `null` — цена не названа (пакет заведён вне
+   *  мастера: сервер хранит и отдаёт его без цены). Мастер `null` не подменяет
+   *  нулём и сам пакет без цены не заводит (ERR-0281, R-281). */
+  packages?: { name: string; price: number | null }[]
   /**
    * Права на фото и видео портфолио и согласие снятых (152-ФЗ, план бэкенда §7).
    * Только `true` что-то значит — сервер ставит момент и не снимает его;
@@ -46,7 +49,15 @@ export const saveVendorProfile = (draft: VendorDraft) =>
        «поля нет, значит не трогай». Без этого удалённый последний пакет
        остался бы жить в анкете. Портфолио, наоборот, не отправляем вовсе —
        мастер им не занимается, и стирать его нечем. */
-    packages: (draft.packages ?? []).map(p => ({ name: p.name, price: { amount: p.price, currency: 'RUB' } })),
+    /* Пакет без цены уходит без поля `price`: контракт `VendorUpsert` знает
+       только отсутствие цены (`price?: Money`, openapi.yaml:4652), а `null`
+       сервер отвергает 422 (`MONEY_SCHEMA` без `nullable`, routes/vendor.ts:22-30).
+       Отсутствующее поле он хранит как `null` (routes/vendor.ts:293) — цена
+       остаётся не названной, а не становится «0 ₽» (ERR-0281, R-281). */
+    packages: (draft.packages ?? []).map(p => ({
+      name: p.name,
+      ...(p.price === null ? {} : { price: { amount: p.price, currency: 'RUB' } }),
+    })),
   })
 
 /** Публикация: анкета появляется в каталоге, модерация идёт следом (пост-модерация). */

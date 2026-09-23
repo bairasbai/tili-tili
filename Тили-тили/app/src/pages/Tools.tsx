@@ -20,7 +20,7 @@ import { ready } from '@/components/AsyncState'
 import { getBuses, getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, deleteTable, getTables, patchGuest, patchTable } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
-import { cn, copyText, pct } from '@/lib/utils'
+import { cn, copyText, escapeHtml, pct } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 
@@ -407,10 +407,13 @@ function contractHTML(name: string, f: ContractFacts) {
     t('3. Ответственность сторон и форс-мажор — по ГК РФ.'),
     t('4. Сформировано в приложении «Тили-тили» (tili-tili.ru).'),
   ]
+  // f.vendor — чужая анкета (имя подрядчика), f.customer/f.passport — форма
+  // пользователя: оба идут в HTML не как код, а как экранированная строка
+  // (R-273, F-RL5-01 — document.write отдавал их разметке без экранирования).
   const customer = f.passport ? `${f.customer}, ${f.passport}` : f.customer
-  return `<h1>${name}</h1><p>${f.city}${new Date().toLocaleDateString('ru-RU')}</p>
-  <p><b>${cust}</b> ${customer}<br><b>${exec}</b> ${f.vendor}</p>
-  <p>${subject}${f.date}.</p><p>${price}${f.amount}.</p><p>${p3}</p><p>${p4}</p>`
+  return `<h1>${escapeHtml(name)}</h1><p>${escapeHtml(f.city)}${new Date().toLocaleDateString('ru-RU')}</p>
+  <p><b>${cust}</b> ${escapeHtml(customer)}<br><b>${exec}</b> ${escapeHtml(f.vendor)}</p>
+  <p>${subject}${escapeHtml(f.date)}.</p><p>${price}${escapeHtml(f.amount)}.</p><p>${p3}</p><p>${p4}</p>`
 }
 
 /*
@@ -435,7 +438,7 @@ function downloadDocx(name: string, f: ContractFacts) {
 function downloadPdf(name: string, f: ContractFacts) {
   const w = window.open('', '_blank')
   if (!w) return
-  w.document.write(`<html><head><meta charset="utf-8"><title>${name}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name, f)}<script>window.onload=()=>window.print()${'<'}/script></body></html>`)
+  w.document.write(`<html><head><meta charset="utf-8"><title>${escapeHtml(name)}</title></head><body style="font-family:Georgia,serif;max-width:640px;margin:40px auto;line-height:1.6">${contractHTML(name, f)}<script>window.onload=()=>window.print()${'<'}/script></body></html>`)
   w.document.close()
 }
 
