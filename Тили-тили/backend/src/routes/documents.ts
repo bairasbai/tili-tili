@@ -126,13 +126,6 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
           throw new AppError(422, 'fields_missing', `Не заполнены поля договора: ${missing.join(', ')}`)
         }
 
-        // Версия растёт: договор переоформляют, и старая редакция остаётся
-        // в истории — по ней могли уже договориться.
-        const { rows: prev } = await db().query<{ version: number }>(
-          'select coalesce(max(version), 0) as version from documents where deal_id = $1',
-          [dealId],
-        )
-
         const fields = {
           ...(body.fields ?? {}),
           weddingTitle: deal.wedding_title,
@@ -147,14 +140,27 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
             'Перед подписанием проверьте условия с юристом.',
         }
 
+        /* Версия растёт: договор переоформляют, и старая редакция остаётся
+         * в истории — по ней могли уже договориться. Счёт максимума и
+         * вставка — в одной транзакции под замком строки сделки ПЕРВОЙ
+         * (класс ERR-0271/R-271, сиблинг SA-04): иначе два параллельных
+         * запроса оба читают «максимум N» и оба вставляют версию N+1 —
+         * история переговоров расходится с тем, что подписано. */
         const id = uuidv7()
-        await db().query(
-          `insert into documents (id, deal_id, template_code, version, fields, status)
-           values ($1, $2, $3, $4, $5, 'draft')`,
-          [id, dealId, body.templateCode, prev[0]!.version + 1, JSON.stringify(fields)],
-        )
-        const { rows: saved } = await db().query('select * from documents where id = $1', [id])
-          return { status: 201, body: toDocument(saved[0] as never) }
+        const { rows: saved } = await db().tx(async (client) => {
+          await client.query('select id from deals where id = $1 for update', [dealId])
+          const { rows: prev } = await client.query<{ version: number }>(
+            'select coalesce(max(version), 0) as version from documents where deal_id = $1',
+            [dealId],
+          )
+          await client.query(
+            `insert into documents (id, deal_id, template_code, version, fields, status)
+             values ($1, $2, $3, $4, $5, 'draft')`,
+            [id, dealId, body.templateCode, prev[0]!.version + 1, JSON.stringify(fields)],
+          )
+          return client.query('select * from documents where id = $1', [id])
+        })
+        return { status: 201, body: toDocument(saved[0] as never) }
         },
         false,
       )

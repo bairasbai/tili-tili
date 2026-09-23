@@ -1,5 +1,6 @@
 import { AppError } from './errors.js'
 import { UUID_RE } from './ids.js'
+import { isRealDate } from './wedding/dates.js'
 
 /**
  * Пагинация по курсору, а не по offset.
@@ -67,8 +68,40 @@ const CURSOR_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-
 /** Числовой ключ. Своё, а не `Number()`: тот принимает `0x10` и ` 12 `, база — нет. */
 const CURSOR_NUMBER = /^-?\d+(\.\d+)?$/
 
-function badCursor(): never {
+export function badCursor(): never {
   throw new AppError(400, 'bad_cursor', 'Курсор испорчен. Начните листать заново, без параметра cursor.')
+}
+
+/**
+ * Курсор по времени — календарная дата, час и смещение пояса в пределах,
+ * которые PostgreSQL действительно принимает.
+ *
+ * `CURSOR_TIMESTAMP` и `Date.parse` проверяют только форму: 30 февраля,
+ * 31 апреля и год 0000 форму ISO проходят, и `Date.parse` их молча переносит
+ * на соседние календарные даты вместо `NaN`; смещение пояса шире ±16:00
+ * `Date.parse` тоже принимает (вплоть до ±23:59) — а `'…'::timestamptz` в
+ * PostgreSQL 16 на обоих падает ошибкой приведения — 500 вместо 400
+ * (ERR-0221 / ERR-0276). Час ≥ 25 форму ISO не проходит по смыслу, но и
+ * отдельно: `Date.parse` в этой реализации V8 уже даёт на нём `NaN` — проверка
+ * часа ниже не обходит существующую дыру, а задаёт явный контракт для часа,
+ * ровно равного 24. Курсоры мы выдаём сами (`timestampKey`, смещение всегда
+ * `Z`), поэтому «широкий» пришедший обратно — подделка, а не наш формат.
+ *
+ * `24:00:00` — законная запись PostgreSQL для полуночи конца суток
+ * (документированное поведение `timestamp`/`timestamptz`), и только она:
+ * любой другой час, равный 24, — уже не эта запись.
+ */
+/** PostgreSQL 16 отклоняет смещение пояса от ±16:00 («вне диапазона»); `Date.parse` рвётся только на ±24:00. */
+const MAX_ZONE_OFFSET_HOUR = 15
+
+function isRealTimestamp(sort: string): boolean {
+  if (!CURSOR_TIMESTAMP.test(sort) || Number.isNaN(Date.parse(sort))) return false
+  if (!isRealDate(sort.slice(0, 10))) return false
+  const zone = /[+-](\d{2}):\d{2}$/.exec(sort)
+  if (zone && Number(zone[1]) > MAX_ZONE_OFFSET_HOUR) return false
+  const hour = Number(sort.slice(11, 13))
+  if (hour < 24) return true
+  return hour === 24 && /^24:00:00(Z|[+-]\d{2}:\d{2})$/.test(sort.slice(11))
 }
 
 /**
@@ -94,7 +127,7 @@ export function decodeCursor(raw: string, kind: CursorSort = 'timestamp'): Curso
   // шире, база может не привести, и тогда это 500, а не 400.
   const sortOk =
     kind === 'timestamp'
-      ? CURSOR_TIMESTAMP.test(sort) && !Number.isNaN(Date.parse(sort))
+      ? isRealTimestamp(sort)
       : kind === 'number'
         ? CURSOR_NUMBER.test(sort)
         : kind.test(sort)

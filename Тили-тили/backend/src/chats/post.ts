@@ -178,37 +178,55 @@ async function warnAboutPayoutBypass(app: FastifyInstance, db: Db, chatId: strin
   return PAYOUT_WARNING
 }
 
+/** Подрядчик и его строка — цель проверки лимита холодных переписок (ниже). */
+interface ColdOutreachTarget {
+  vendorId: string
+}
+
 /**
- * Непроверенный подрядчик — не больше пяти новых переписок в день.
- *
- * План §18.2 и §19.4: галочка «Проверен» стоит денег и времени, и до неё
- * рассылать первые сообщения десяткам пар нельзя. Считаются именно ПЕРВЫЕ
- * сообщения: ответ в уже начатой переписке ограничения не знает — иначе
- * лимит бил бы по тем, кто нормально работает.
+ * Применим ли лимит холодных переписок к этому отправителю: подрядчик,
+ * свой чат, анкета ещё не проверена. Чтение — ДО транзакции: кто именно
+ * отправитель и проверена ли анкета, не часть гонки (план §18.2/§19.4).
+ * Сам счёт «сколько новых переписок сегодня» и порог — под замком строки
+ * подрядчика внутри одной транзакции со вставкой сообщения, см.
+ * `assertNotColdOutreach` ниже.
  */
-async function assertNotColdOutreach(app: FastifyInstance, db: Db, chatId: string, kind: ChatKind, userId: string): Promise<void> {
-  if (kind !== 'vendor') return
+async function resolveColdOutreachTarget(db: Queryable, chatId: string, kind: ChatKind, userId: string): Promise<ColdOutreachTarget | null> {
+  if (kind !== 'vendor') return null
   const { rows } = await db.query<{ verified: boolean; mine: boolean; vendor_id: string }>(
     `select (v.verified_at is not null) as verified, (v.user_id = $2) as mine, v.id as vendor_id
        from chats c join vendors v on v.id = c.vendor_id where c.id = $1`,
     [chatId, userId],
   )
   const vendor = rows[0]
-  if (!vendor || !vendor.mine || vendor.verified) return
+  if (!vendor || !vendor.mine || vendor.verified) return null
+  return { vendorId: vendor.vendor_id }
+}
 
-  /* Считаются переписки, которые НАЧАЛ он сам, — то есть те, где первое
-   * сообщение в чате его.
-   *
-   * Раньше считались все чаты, где он за сутки что-либо написал, включая
-   * ответы на входящие. Это ровно то, чего комментарий выше обещает не
-   * делать: подрядчику, которому за день написали пять пар и он всем
-   * ответил, шестая пара уже не могла получить ответ — он упирался в
-   * «не больше 5 новых переписок в день», не начав ни одной (ERR-0100).
-   *
-   * Чат заводит пара (`POST /chats/vendor/:vendorId` требует роль `couple`),
-   * поэтому холодное обращение здесь единственного вида: пара нажала
-   * «Написать», ушла не написав, а подрядчик пишет первым. */
-  const { rows: already } = await db.query<{ here: string; today: string }>(
+/**
+ * Непроверенный подрядчик — не больше N новых переписок в день (план §18.2,
+ * §19.4). Считается и проверяется под замком строки подрядчика ПЕРВОЙ,
+ * внутри ОДНОЙ транзакции со вставкой реплики (класс ERR-0271/R-271,
+ * сиблинг SA-03): иначе параллельный залп первых сообщений в разные чаты
+ * каждый видит одно и то же «меньше предела» и проходит весь разом —
+ * ровно как гонка выдачи кода в `routes/auth.ts` (FL-01).
+ *
+ * Считаются переписки, которые НАЧАЛ он сам, — то есть те, где первое
+ * сообщение в чате его.
+ *
+ * Раньше считались все чаты, где он за сутки что-либо написал, включая
+ * ответы на входящие. Это ровно то, чего комментарий выше обещает не
+ * делать: подрядчику, которому за день написали пять пар и он всем
+ * ответил, шестая пара уже не могла получить ответ — он упирался в
+ * «не больше 5 новых переписок в день», не начав ни одной (ERR-0100).
+ *
+ * Чат заводит пара (`POST /chats/vendor/:vendorId` требует роль `couple`),
+ * поэтому холодное обращение здесь единственного вида: пара нажала
+ * «Написать», ушла не написав, а подрядчик пишет первым.
+ */
+async function assertNotColdOutreach(client: Queryable, chatId: string, userId: string, target: ColdOutreachTarget, limit: number): Promise<void> {
+  await client.query('select id from vendors where id = $1 for update', [target.vendorId])
+  const { rows: already } = await client.query<{ here: string; today: string }>(
     `select (select count(*) from messages m where m.chat_id = $1 and m.sender_id = $2)::text as here,
             (select count(*) from chats c
                cross join lateral (
@@ -217,15 +235,12 @@ async function assertNotColdOutreach(app: FastifyInstance, db: Db, chatId: strin
                ) first
               where c.vendor_id = $3 and first.sender_id = $2
                 and first.created_at > now() - interval '1 day')::text as today`,
-    [chatId, userId, vendor.vendor_id],
+    [chatId, userId, target.vendorId],
   )
   // В этой переписке он уже писал — она не новая, ограничение не про неё.
   if (Number(already[0]!.here) > 0) return
-  if (Number(already[0]!.today) >= app.appConfig.coldOutreachPerDay) {
-    throw quotaExceeded(
-      'cold_outreach_limit',
-      `До проверки анкеты — не больше ${app.appConfig.coldOutreachPerDay} новых переписок в день`,
-    )
+  if (Number(already[0]!.today) >= limit) {
+    throw quotaExceeded('cold_outreach_limit', `До проверки анкеты — не больше ${limit} новых переписок в день`)
   }
 }
 
@@ -241,7 +256,7 @@ export async function sendChatMessage(app: FastifyInstance, input: SendInput): P
   const { chat } = await chatForUser(db, chatId, userId)
   assertOpen(chat)
   await assertNotClosed(db, chat)
-  await assertNotColdOutreach(app, db, chatId, chat.kind, userId)
+  const coldOutreachTarget = await resolveColdOutreachTarget(db, chatId, chat.kind, userId)
 
   /* Свой подрядчик работает мимо платформы по определению: пара нашла
    * его сама, комиссии с него нет. Предупреждать тут не о чем — оно
@@ -263,6 +278,9 @@ export async function sendChatMessage(app: FastifyInstance, input: SendInput): P
    * 429 без Retry-After — это квота, а не частота: сбросится в полночь
    * по поясу свадьбы, о чём и сказано. */
   const { rows } = await db.tx(async (client) => {
+    if (coldOutreachTarget) {
+      await assertNotColdOutreach(client, chatId, userId, coldOutreachTarget, app.appConfig.coldOutreachPerDay)
+    }
     if (chat.kind === 'tilly') {
       await client.query('select id from chats where id = $1 for update', [chatId])
       const quota = await app.tilly.quota(client, chatId, chat.wedding_id)

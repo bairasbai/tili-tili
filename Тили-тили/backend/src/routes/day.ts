@@ -1472,25 +1472,31 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = request.guest
       if (!guest) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
 
-      // Каждый кадр — файл в хранилище и работа модератора. Без предела
-      // один человек забивает альбом и счёт за хранение.
-      const { rows: mine } = await db().query<{ n: string }>(
-        'select count(*)::text as n from album_photos where wedding_id = $1 and uploaded_by = $2',
-        [guest.weddingId, guest.guestId],
-      )
-      if (Number(mine[0]!.n) >= app.appConfig.albumMaxPerGuest) {
-        throw quotaExceeded('album_limit', `Больше ${app.appConfig.albumMaxPerGuest} кадров от одного гостя не принимаем`)
-      }
       // Согласие на публикацию — явное действие, а не предустановленная
       // галочка: кадр попадёт в чужой альбом.
       if (!body.consent) throw new AppError(422, 'consent_required', 'Нужно согласие на публикацию кадра в альбоме')
 
+      /* Строка гостя под замком — ПЕРВОЙ, как у резерва подарка (`gifts.ts`,
+       * R-49/R-271): предел кадров на гостя иначе «читаем — сравниваем —
+       * пишем», и параллельный залп вставок одного гостя каждая видит
+       * «меньше предела» и проходит вся разом (класс ERR-0271/R-271,
+       * сиблинг SA-02). */
       const id = uuidv7()
-      await db().query(
-        'insert into album_photos (id, wedding_id, url, approved, uploaded_by) values ($1,$2,$3,false,$4)',
-        [id, guest.weddingId, body.fileUrl, guest.guestId],
-      )
-      const { rows } = await db().query('select id, url, approved, created_at from album_photos where id = $1', [id])
+      const { rows } = await db().tx(async (client) => {
+        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
+        const { rows: mine } = await client.query<{ n: string }>(
+          'select count(*)::text as n from album_photos where wedding_id = $1 and uploaded_by = $2',
+          [guest.weddingId, guest.guestId],
+        )
+        if (Number(mine[0]!.n) >= app.appConfig.albumMaxPerGuest) {
+          throw quotaExceeded('album_limit', `Больше ${app.appConfig.albumMaxPerGuest} кадров от одного гостя не принимаем`)
+        }
+        await client.query(
+          'insert into album_photos (id, wedding_id, url, approved, uploaded_by) values ($1,$2,$3,false,$4)',
+          [id, guest.weddingId, body.fileUrl, guest.guestId],
+        )
+        return client.query('select id, url, approved, created_at from album_photos where id = $1', [id])
+      })
       return reply.code(201).send(toPhoto(rows[0] as never))
     },
   )

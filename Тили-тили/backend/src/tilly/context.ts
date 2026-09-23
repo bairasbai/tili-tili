@@ -201,15 +201,21 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   if (open.length > 40) lines.push(`… и ещё ${open.length - 40}`)
 
   /* Тайминг дня — блоки во времени площадки. */
-  const { rows: events } = await db.query<{ name: string; location: string | null; starts_at: Date; ends_at: Date | null; for_guests: boolean }>(
+  const { rows: events } = await db.query<{ name: string; location: string | null; starts_at: Date | null; ends_at: Date | null; for_guests: boolean }>(
     'select name, location, starts_at, ends_at, for_guests from timeline_events where wedding_id = $1 order by sort, starts_at',
     [weddingId],
   )
   lines.push('', '## Тайминг дня')
   if (!events.length) lines.push('Тайминг ещё не составлен')
+  /* Свадьба без даты: блоки заведены (`routes/weddings.ts`), но их
+   * `starts_at`/`ends_at` — `NULL` по design, время посчитать не из чего.
+   * `timeIn(null, …)` никогда не вызывается — `Intl.DateTimeFormat` не
+   * бросает исключение на `null`, а тихо печатает эпоху (R-174/R-178). */
+  if (events.length && !wedding.date) lines.push('Тайминг без времени: дата свадьбы ещё не выбрана')
   for (const e of events) {
+    const start = e.starts_at === null ? '(время не задано)' : timeIn(e.starts_at, tz)
     const till = e.ends_at ? `–${timeIn(e.ends_at, tz)}` : ''
-    lines.push(`- ${timeIn(e.starts_at, tz)}${till} ${safeText(e.name)}${e.location ? ` (${safeText(e.location)})` : ''}${e.for_guests ? '' : ' [только команда]'}`)
+    lines.push(`- ${start}${till} ${safeText(e.name)}${e.location ? ` (${safeText(e.location)})` : ''}${e.for_guests ? '' : ' [только команда]'}`)
   }
 
   lines.push('', '## План Б')

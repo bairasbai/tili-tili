@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
-import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
+import { badCursor, buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { MIN_REVIEWS_TO_SHOW } from '../reviews/rating.js'
 import { holdDatesOf } from '../catalog/holds.js'
 import { assertRealDate } from '../wedding/dates.js'
@@ -48,6 +48,29 @@ const SORTS = {
 } as const
 
 type SortName = keyof typeof SORTS
+
+/*
+ * Ключ курсора приводится SQL-ом к типу колонки его сортировки — `::int`
+ * (`popular`) или `::bigint` (`price_asc`/`price_desc`); `INTEGER_KEY`
+ * проверяет только «цифры», не диапазон, и число за пределами типа роняет
+ * запрос ошибкой приведения (500, тот же класс ERR-0221 / ERR-0276, что и
+ * подделанный курсор по времени — `pagination.ts`). `rating` приводится к
+ * `::numeric`, диапазон не сужается — правило не трогает эту сортировку.
+ */
+const INT32_MAX = 2_147_483_647
+const INT64_MIN = -(2n ** 63n)
+const INT64_MAX = 2n ** 63n - 1n
+
+function keyInRange(sortName: SortName, key: string): boolean {
+  if (sortName === 'popular') {
+    const n = Number(key)
+    return Number.isInteger(n) && n >= 0 && n <= INT32_MAX
+  }
+  if (sortName === 'price_asc' || sortName === 'price_desc') {
+    return BigInt(key) >= INT64_MIN && BigInt(key) <= INT64_MAX
+  }
+  return true
+}
 
 /** Пониженная санкцией анкета идёт после всех непониженных (ERR-0071). */
 const DOWNRANKED = '(v.downranked_at is not null)::int'
@@ -179,6 +202,7 @@ export async function catalogRoutes(app: FastifyInstance): Promise<void> {
             'Курсор от другой сортировки. Начните листать заново, без параметра cursor.',
           )
         }
+        if (!keyInRange(sortName, key)) badCursor()
         after = { down: Number(down), key, id: page.cursor.id }
       }
 

@@ -35,7 +35,7 @@ interface Tokens {
  * адресом (ревью 015). Не адрес — считаем неизвестным: лимиты по номеру и общий
  * потолок остаются.
  */
-function clientIp(request: FastifyRequest): string | null {
+export function clientIp(request: FastifyRequest): string | null {
   const ip = request.ip
   return ip && isIP(ip) ? ip : null
 }
@@ -62,6 +62,21 @@ export function windowFreesIn(ages: number[], windowSeconds: number, max: number
   const blocking = ages[Math.max(0, Math.min(max, ages.length) - 1)] ?? 0
   return Math.max(1, Math.ceil(windowSeconds - blocking))
 }
+
+/**
+ * Ключ advisory-блокировки выдачи кода (ревью 016, R-271) — замок на номер,
+ * а не на таблицу: параллельный залп на один номер иначе проходит окно
+ * лимитов целиком до первой вставки (шесть запросов — шесть SMS).
+ *
+ * Двухключевая форма (`$1::int, hashtext(phone)`) — чтобы этот замок
+ * никогда не столкнулся с одноключевым `CATEGORIES_LOCK` (`routes/admin.ts`):
+ * у одноключевой формы 64-битный ключ делится пополам, а здесь оба
+ * 32-битных ключа свои.
+ *
+ * Advisory, а не `select … for update`: у незарегистрированного номера нет
+ * строки в `otp_codes`, которую можно запереть.
+ */
+const OTP_PHONE_LOCK = 4_210_002
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -159,89 +174,108 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
        * обязан назвать секунды до освобождения окна по `created_at`, а часы
        * сервера с часами базы для этого лучше не смешивать. Строк на номер
        * за сутки — не больше суточного потолка, выборка маленькая. */
-      const { rows: sends } = await db().query<{ age_s: string; same_ip: boolean | null }>(
-        `select extract(epoch from (now() - created_at))::text as age_s, (ip = $2::inet) as same_ip
-           from otp_codes
-          where phone = $1 and created_at > now() - interval '24 hours'
-          order by created_at desc`,
-        [phone, ip],
-      )
-      const ages = sends.map((r) => ({ age: Number(r.age_s), sameIp: r.same_ip === true }))
+      /*
+       * Окно лимитов, потолки и вставка — одной транзакцией под замком на
+       * номер (ревью 016, R-271): иначе шесть параллельных запросов видят
+       * одно и то же пустое окно и все шесть проходят до вставки — шесть
+       * SMS и шесть живых кодов на один номер разом (счёт наш, а «неверных»
+       * попыток при проверке впятеро больше положенного). Общий потолок и
+       * потолок по адресу остаются мягкими проверками внутри той же
+       * транзакции: у разных номеров разные замки, поэтому бурст на разные
+       * номера с одного адреса их всё ещё может обойти — это сигнал массовой
+       * рассылки, а не защита конкретной жертвы, и здесь не расширяется.
+       */
+      const { code, codeId } = await db().tx(async (client) => {
+        // Замок на конкретный номер, не на таблицу: бурст на другой номер
+        // под этот замок не попадает и не ждёт. Ключ — hashtext(phone), а
+        // не сам номер: аргумент advisory-блокировки — int, а не text.
+        await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [OTP_PHONE_LOCK, phone])
 
-      const newest = ages[0]
-      if (newest && newest.age < RESEND_AFTER_SECONDS) {
-        throw new TooManyRequests(Math.ceil(RESEND_AFTER_SECONDS - newest.age), 'Код уже отправлен. Подождите немного.')
-      }
+        const { rows: sends } = await client.query<{ age_s: string; same_ip: boolean | null }>(
+          `select extract(epoch from (now() - created_at))::text as age_s, (ip = $2::inet) as same_ip
+             from otp_codes
+            where phone = $1 and created_at > now() - interval '24 hours'
+            order by created_at desc`,
+          [phone, ip],
+        )
+        const ages = sends.map((r) => ({ age: Number(r.age_s), sameIp: r.same_ip === true }))
 
-      const HOUR = 3600
-      const DAY = 24 * HOUR
-      const windows = [
-        {
-          seconds: HOUR,
-          max: app.appConfig.otpMaxPerPhoneIpHour,
-          ages: ages.filter((a) => a.sameIp && a.age < HOUR),
-          message: 'Слишком много запросов кода на этот номер с вашего адреса. Попробуйте позже.',
-        },
-        {
-          seconds: HOUR,
-          max: app.appConfig.otpMaxPerPhoneHour,
-          ages: ages.filter((a) => a.age < HOUR),
-          message: 'Слишком много запросов кода на этот номер. Попробуйте позже.',
-        },
-        {
-          seconds: DAY,
-          max: app.appConfig.otpMaxPerPhoneDay,
-          ages,
-          message: 'Слишком много запросов кода на этот номер за сутки. Попробуйте позже.',
-        },
-      ]
-      for (const w of windows) {
-        if (w.ages.length >= w.max) {
-          throw new TooManyRequests(
-            windowFreesIn(
-              w.ages.map((a) => a.age),
-              w.seconds,
-              w.max,
-            ),
-            w.message,
+        const newest = ages[0]
+        if (newest && newest.age < RESEND_AFTER_SECONDS) {
+          throw new TooManyRequests(Math.ceil(RESEND_AFTER_SECONDS - newest.age), 'Код уже отправлен. Подождите немного.')
+        }
+
+        const HOUR = 3600
+        const DAY = 24 * HOUR
+        const windows = [
+          {
+            seconds: HOUR,
+            max: app.appConfig.otpMaxPerPhoneIpHour,
+            ages: ages.filter((a) => a.sameIp && a.age < HOUR),
+            message: 'Слишком много запросов кода на этот номер с вашего адреса. Попробуйте позже.',
+          },
+          {
+            seconds: HOUR,
+            max: app.appConfig.otpMaxPerPhoneHour,
+            ages: ages.filter((a) => a.age < HOUR),
+            message: 'Слишком много запросов кода на этот номер. Попробуйте позже.',
+          },
+          {
+            seconds: DAY,
+            max: app.appConfig.otpMaxPerPhoneDay,
+            ages,
+            message: 'Слишком много запросов кода на этот номер за сутки. Попробуйте позже.',
+          },
+        ]
+        for (const w of windows) {
+          if (w.ages.length >= w.max) {
+            throw new TooManyRequests(
+              windowFreesIn(
+                w.ages.map((a) => a.age),
+                w.seconds,
+                w.max,
+              ),
+              w.message,
+            )
+          }
+        }
+
+        // Потолок на все отправки: лимиты на номер и на адрес обходятся списком
+        // номеров и ботнетом, а счёт за SMS приходит нам. Срабатывание — авария,
+        // а не обычный отказ: в норме до него не доходит.
+        const { rows: total } = await client.query<{ sends: string }>(
+          `select count(*)::text as sends from otp_codes where created_at > now() - interval '1 hour'`,
+        )
+        if (Number(total[0]?.sends ?? 0) >= app.appConfig.otpMaxPerHourTotal) {
+          request.log.error(
+            { sends: Number(total[0]!.sends), limit: app.appConfig.otpMaxPerHourTotal },
+            'достигнут часовой потолок отправки кодов — похоже на перебор номеров',
           )
+          throw new TooManyRequests(3600, 'Сервис временно не отправляет коды. Попробуйте позже.')
         }
-      }
 
-      // Потолок на все отправки: лимиты на номер и на адрес обходятся списком
-      // номеров и ботнетом, а счёт за SMS приходит нам. Срабатывание — авария,
-      // а не обычный отказ: в норме до него не доходит.
-      const { rows: total } = await db().query<{ sends: string }>(
-        `select count(*)::text as sends from otp_codes where created_at > now() - interval '1 hour'`,
-      )
-      if (Number(total[0]?.sends ?? 0) >= app.appConfig.otpMaxPerHourTotal) {
-        request.log.error(
-          { sends: Number(total[0]!.sends), limit: app.appConfig.otpMaxPerHourTotal },
-          'достигнут часовой потолок отправки кодов — похоже на перебор номеров',
-        )
-        throw new TooManyRequests(3600, 'Сервис временно не отправляет коды. Попробуйте позже.')
-      }
-
-      if (ip) {
-        // Лимит на номер не мешает перебирать номера: по одному коду на тысячу
-        // чужих телефонов. Платим мы, а сообщения получают незнакомые люди.
-        const { rows: byIp } = await db().query<{ sends: string }>(
-          `select count(*)::text as sends from otp_codes
-            where ip = $1 and created_at > now() - interval '1 hour'`,
-          [ip],
-        )
-        if (Number(byIp[0]?.sends ?? 0) >= app.appConfig.otpMaxPerIpHour) {
-          throw new TooManyRequests(3600, 'Слишком много запросов кода. Попробуйте через час.')
+        if (ip) {
+          // Лимит на номер не мешает перебирать номера: по одному коду на тысячу
+          // чужих телефонов. Платим мы, а сообщения получают незнакомые люди.
+          const { rows: byIp } = await client.query<{ sends: string }>(
+            `select count(*)::text as sends from otp_codes
+              where ip = $1 and created_at > now() - interval '1 hour'`,
+            [ip],
+          )
+          if (Number(byIp[0]?.sends ?? 0) >= app.appConfig.otpMaxPerIpHour) {
+            throw new TooManyRequests(3600, 'Слишком много запросов кода. Попробуйте через час.')
+          }
         }
-      }
 
-      const code = generateCode()
-      const codeId = uuidv7()
-      await db().query(
-        `insert into otp_codes (id, phone, code_hash, expires_at, ip)
-         values ($1, $2, $3, now() + ($4 || ' seconds')::interval, $5)`,
-        [codeId, phone, hashCode(otpSecret(), phone, code), String(CODE_TTL_SECONDS), ip],
-      )
+        const code = generateCode()
+        const codeId = uuidv7()
+        await client.query(
+          `insert into otp_codes (id, phone, code_hash, expires_at, ip)
+           values ($1, $2, $3, now() + ($4 || ' seconds')::interval, $5)`,
+          [codeId, phone, hashCode(otpSecret(), phone, code), String(CODE_TTL_SECONDS), ip],
+        )
+        return { code, codeId }
+      })
 
       try {
         await app.sms.send(phone, codeMessage(code))

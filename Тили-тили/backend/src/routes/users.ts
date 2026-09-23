@@ -3,6 +3,7 @@ import { AppError, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { REFRESH_TTL_SECONDS } from '../auth/tokens.js'
 import { knownTimeZone } from '../notify/quiet.js'
+import { clientIp } from './auth.js'
 
 interface ProfileRow {
   id: string
@@ -107,7 +108,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       }
       await db().query(
         'insert into consents (id, user_id, policy_version, ip, adult) values ($1, $2, $3, $4, $5)',
-        [uuidv7(), request.caller!.userId, policyVersion, request.ip || null, adult],
+        [uuidv7(), request.caller!.userId, policyVersion, clientIp(request), adult],
       )
       await db().query(
         `insert into audit_log (actor_id, action, entity, entity_id, diff)
@@ -246,33 +247,49 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
      * оставляя подрядчику дату, занятую призраком. Сделки свадьбы принадлежат
      * свадьбе, а не человеку: партнёр, уходящий вторым из пары, свадьбу
      * не бросает — держит только последний из «пары». */
-    const { rows: active } = await db().query<{ side: string; title: string }>(
-      `select 'vendor' as side, w.title
-         from deals d join vendors v on v.id = d.vendor_id join weddings w on w.id = d.wedding_id
-        where v.user_id = $1 and d.state in ('booked', 'paid_deposit')
-       union all
-       select 'couple' as side, coalesce(v.name, d.external_name, '')
-         from deals d join weddings w on w.id = d.wedding_id
-         left join vendors v on v.id = d.vendor_id
-        where d.state in ('booked', 'paid_deposit')
-          and w.archived_at is null
-          and exists (select 1 from wedding_members m where m.wedding_id = w.id and m.user_id = $1 and m.role = 'couple')
-          and not exists (select 1 from wedding_members m2 join users u2 on u2.id = m2.user_id
-                           where m2.wedding_id = w.id and m2.user_id <> $1 and m2.role = 'couple' and u2.deleted_at is null)`,
-      [userId],
-    )
-    if (active.length > 0) {
-      const names = active.map((r) => r.title).filter(Boolean).slice(0, 5).join(', ')
-      throw new AppError(
-        409,
-        'active_deals',
-        `Сначала завершите или отмените сделки (${active.length}): ${names || 'см. раздел «Свадьба»'}`,
-      )
-    }
     // Мягкое удаление на 30 дней (План §19.1): человек передумывает чаще,
     // чем кажется, а восстановить стёртую свадьбу неоткуда.
-    // Три шага — одна транзакция, как у отзыва согласия (ERR-0108, R-122).
+    /* Проверка активных сделок — ВНУТРИ этой транзакции, за замком строк
+     * `weddings` пары (SA-05, TR-1 §7 FL-9 mechanism (b), ERR-0271 сиблинг):
+     * бронь (`POST …/slots/{slotId}/book`, `slots.ts` `weddingDate()`) читает
+     * дату свадьбы `for share` внутри своей транзакции — тем же порядком
+     * «свадьба → сделка», что и здесь. Раньше проверка шла отдельным чтением
+     * ДО транзакции удаления, без единого замка: бронь успевала завестись
+     * между проверкой и `update users`, и пара уходила (204) с только что
+     * забронированной сделкой на удалённый аккаунт — не увидев её вовсе.
+     * `for update` здесь ставит проверку и бронь в очередь друг за другом;
+     * READ COMMITTED даёт каждому запросу транзакции свежий снимок, так что
+     * проверка, дождавшись своей очереди, видит уже зафиксированную бронь. */
     await db().tx(async (client) => {
+      await client.query(
+        `select id from weddings
+          where id in (select wedding_id from wedding_members where user_id = $1 and role = 'couple')
+          for update`,
+        [userId],
+      )
+      const { rows: active } = await client.query<{ side: string; title: string }>(
+        `select 'vendor' as side, w.title
+           from deals d join vendors v on v.id = d.vendor_id join weddings w on w.id = d.wedding_id
+          where v.user_id = $1 and d.state in ('booked', 'paid_deposit')
+         union all
+         select 'couple' as side, coalesce(v.name, d.external_name, '')
+           from deals d join weddings w on w.id = d.wedding_id
+           left join vendors v on v.id = d.vendor_id
+          where d.state in ('booked', 'paid_deposit')
+            and w.archived_at is null
+            and exists (select 1 from wedding_members m where m.wedding_id = w.id and m.user_id = $1 and m.role = 'couple')
+            and not exists (select 1 from wedding_members m2 join users u2 on u2.id = m2.user_id
+                             where m2.wedding_id = w.id and m2.user_id <> $1 and m2.role = 'couple' and u2.deleted_at is null)`,
+        [userId],
+      )
+      if (active.length > 0) {
+        const names = active.map((r) => r.title).filter(Boolean).slice(0, 5).join(', ')
+        throw new AppError(
+          409,
+          'active_deals',
+          `Сначала завершите или отмените сделки (${active.length}): ${names || 'см. раздел «Свадьба»'}`,
+        )
+      }
       await client.query('update users set deleted_at = now() where id = $1 and deleted_at is null', [userId])
       await client.query('update sessions set revoked_at = now() where user_id = $1 and revoked_at is null', [userId])
       await client.query(

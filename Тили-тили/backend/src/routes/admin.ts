@@ -270,7 +270,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       /* Решение по анкете, статус заявки на проверку и запись в журнал —
        * одна транзакция (R-122): галочка «проверен» без закрытой заявки
        * оставляла бы её «на проверке» в кабинете навсегда. */
-      const { wasVerified } = await db().tx(async (client) => {
+      const { wasVerified, wasModerated } = await db().tx(async (client) => {
         /* Решение принимается только по ЖИВОЙ анкете — той, что сейчас
          * в каталоге: `published_at is not null and blocked_at is null`,
          * ровно условие `VENDOR_LIVE_JOIN`.
@@ -285,8 +285,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
          * `moderated_at` в условие не входит: одобрить уже проверенную живую
          * анкету — то же самое решение, и второй модератор вправе его
          * подтвердить. */
-        const { rows: state } = await client.query<{ published_at: Date | null; blocked_at: Date | null; verified_at: Date | null }>(
-          'select published_at, blocked_at, verified_at from vendors where id = $1 for update',
+        const { rows: state } = await client.query<{
+          published_at: Date | null
+          blocked_at: Date | null
+          verified_at: Date | null
+          moderated_at: Date | null
+        }>(
+          'select published_at, blocked_at, verified_at, moderated_at from vendors where id = $1 for update',
           [vendorId],
         )
         if (state.length === 0) throw notFound('Анкета не найдена')
@@ -314,7 +319,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         }
 
         await audit(staffId, `vendor.${body.action}`, 'vendor', vendorId, { reason: body.reason ?? null }, client)
-        return { wasVerified: current.verified_at !== null }
+        return { wasVerified: current.verified_at !== null, wasModerated: current.moderated_at !== null }
       })
 
       const { rows: owner } = await db().query<{ user_id: string }>('select user_id from vendors where id = $1', [
@@ -322,8 +327,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       ])
       /* Второй `verify` по уже проверенной анкете — то же решение, а не новость:
        * «Вы проверены» второй раз читалось бы как сбой (ревью 015; так же
-       * молчит повторное одобрение заявки ниже). */
-      if (owner[0] && !(body.action === 'verify' && wasVerified)) {
+       * молчит повторное одобрение заявки ниже). Второй `approve` живой
+       * анкеты — то же самое: `moderated_at` уже стоял до этого решения,
+       * значит «Анкета проверена» подрядчик уже получил, и вторая такая же
+       * новость читалась бы как сбой точно так же (ревью 016, F-RL7-03,
+       * R-282). */
+      if (owner[0] && !(body.action === 'verify' && wasVerified) && !(body.action === 'approve' && wasModerated)) {
         /* Новость — следствие решения, а не его часть: решение уже записано
          * и откату не подлежит. 500 из-за упавшего уведомления сказал бы
          * модератору «не принято», и он принял бы то же решение второй раз —
