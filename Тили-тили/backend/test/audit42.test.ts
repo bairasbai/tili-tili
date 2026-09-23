@@ -35,7 +35,11 @@ type SupportDeal = {
 describe.skipIf(!live)('фича 013: сделки свадьбы для поддержки', () => {
   let app: FastifyInstance
   let counter = 0
-  const RUN = String(randomInt(100_000, 1_000_000))
+  /* Префикс телефонов прогона. В дев-базе десятки тысяч тестовых номеров
+   * `+79RRRRRRNNN` от прежних прогонов, и случайный RUN раз в несколько
+   * сотен прогонов совпадает с уже занятым — «у вас уже есть свадьба» на
+   * свежем номере. Поэтому префикс перебирается до свободного (R-259). */
+  let RUN = String(randomInt(100_000, 1_000_000))
   const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
   const EXTERNAL_PHONE = '+79170004455'
 
@@ -52,6 +56,11 @@ describe.skipIf(!live)('фича 013: сделки свадьбы для под�
       otpMaxPerIpHour: 1_000_000,
     })
     await app.ready()
+    for (let i = 0; i < 20; i++) {
+      const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
+      if (rows.length === 0) break
+      RUN = String(randomInt(100_000, 1_000_000))
+    }
   })
 
   afterAll(async () => {

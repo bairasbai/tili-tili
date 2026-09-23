@@ -129,7 +129,7 @@ describe('FL-8 · ERR-0278 / R-278: отсутствие свадьбы — не
     signedInNoWedding()
     serve({ '/weddings': [], '/chats': [] })
     const r = await open('/after', t('После свадьбы'))
-    expect(text(r)).toContain(t(NO_WEDDING))
+    await waitFor(() => expect(text(r)).toContain(t(NO_WEDDING)), { timeout: 4000 })
     const statsGrid = r.container.querySelector('.grid.grid-cols-2')
     expect(statsGrid?.textContent ?? '').not.toMatch(/\d/)
   })
@@ -138,7 +138,7 @@ describe('FL-8 · ERR-0278 / R-278: отсутствие свадьбы — не
     signedInNoWedding()
     serve({ '/weddings': [], '/chats': [] })
     const r = await open('/wedding/planb', t('План Б'))
-    expect(text(r)).toContain(t(NO_WEDDING))
+    await waitFor(() => expect(text(r)).toContain(t(NO_WEDDING)), { timeout: 4000 })
     expect(text(r)).not.toContain('0%')
     /* Кнопка стоит внутри `open === i` (Smart.tsx:867) — строку нужно
        раскрыть, иначе `queryByText` не находит её ни при каком коде (fix
@@ -171,7 +171,7 @@ describe('FL-8 · ERR-0278 / R-278: отсутствие свадьбы — не
     signedInNoWedding()
     serve({ '/weddings': [], '/chats': [] })
     const r = await open('/dayx', t('День X'))
-    expect(text(r)).toContain(t(NO_WEDDING))
+    await waitFor(() => expect(text(r)).toContain(t(NO_WEDDING)), { timeout: 4000 })
     expect(text(r)).not.toContain(t('Тайминг пуст'))
   })
 

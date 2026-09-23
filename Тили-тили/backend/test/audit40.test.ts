@@ -24,7 +24,11 @@ type Vendor = { id: string; name: string; city: string | null; distanceKm?: numb
 describe.skipIf(!live)('фича 011: радиус поиска и расстояние до города анкеты', () => {
   let app: FastifyInstance
   let counter = 0
-  const RUN = String(randomInt(100_000, 1_000_000))
+  /* Префикс телефонов прогона перебирается до свободного (R-259): в общей
+   * дев-базе сотня тысяч номеров `+79RRRRRRNNN` от прежних
+   * прогонов, и случайный RUN иногда совпадает с занятым — тогда на
+   * свежем номере прилетает 409 «wedding_exists». */
+  let RUN = String(randomInt(100_000, 1_000_000))
   const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
   const CATEGORY = 'cake'
   const names = { ufa: `Торты Уфа ${RUN}`, birsk: `Торты Бирск ${RUN}`, sterl: `Торты Стерлитамак ${RUN}` }
@@ -42,6 +46,11 @@ describe.skipIf(!live)('фича 011: радиус поиска и рассто�
       otpMaxPerIpHour: 1_000_000,
     })
     await app.ready()
+    for (let i = 0; i < 20; i++) {
+      const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
+      if (rows.length === 0) break
+      RUN = String(randomInt(100_000, 1_000_000))
+    }
   })
 
   afterAll(async () => {

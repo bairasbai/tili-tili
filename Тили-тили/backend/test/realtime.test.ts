@@ -87,7 +87,11 @@ describe.skipIf(!live)('живой канал против поднятого с
   let app: FastifyInstance
   let base: string
   let counter = 0
-  const RUN = String(randomInt(100_000, 1_000_000))
+  /* Префикс телефонов прогона перебирается до свободного (R-259): в общей
+   * дев-базе сотня тысяч номеров `+79RRRRRRNNN` от прежних
+   * прогонов, и случайный RUN иногда совпадает с занятым — тогда на
+   * свежем номере прилетает 409 «wedding_exists». */
+  let RUN = String(randomInt(100_000, 1_000_000))
   const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
 
   beforeAll(async () => {
@@ -105,6 +109,11 @@ describe.skipIf(!live)('живой канал против поднятого с
     await app.listen({ port: 0, host: '127.0.0.1' })
     const address = app.server.address()
     base = typeof address === 'object' && address ? `127.0.0.1:${address.port}` : '127.0.0.1:0'
+    for (let i = 0; i < 20; i++) {
+      const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
+      if (rows.length === 0) break
+      RUN = String(randomInt(100_000, 1_000_000))
+    }
   })
 
   afterAll(async () => {
