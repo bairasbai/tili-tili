@@ -15,7 +15,7 @@
  * в момент вызова, это и есть правильное место.
  *
  * ── Про список KNOWN ниже ──────────────────────────────────────────────────
- * Девять констант нарушают правило с давних пор. Просто снять с них `t()`
+ * Девять констант нарушали правило с давних пор. Просто снять с них `t()`
  * нельзя: ни один их потребитель не переводит строку в месте показа
  * (проверено 2026-09-24), и такая правка молча оставила бы английский
  * интерфейс с русскими словами — а словарный сторож этого НЕ ловит, потому
@@ -32,14 +32,11 @@ import { projectFile } from '@/test/projectFiles'
 
 /** Известный долг: файл → имена констант. Список только сокращается. */
 const KNOWN: Record<string, string[]> = {
-  'src/components/chrome.tsx': ['tabs', 'vendorTabs'],
   'src/lib/contractTemplates.ts': ['contractTemplates'],
   'src/lib/dressPalettes.ts': ['dressPalettes'],
   'src/lib/inviteThemes.ts': ['inviteThemes'],
   'src/pages/Discover.tsx': ['STORIES'],
-  'src/pages/Onboarding.tsx': ['scenes'],
   'src/pages/Smart.tsx': ['planBRisks'],
-  'src/pages/Team.tsx': ['ROLES', 'ROLE_NAME'],
   'src/pages/Wedding.tsx': ['CONTRACT_TITLE'],
 }
 
@@ -106,7 +103,7 @@ describe('R-257: словарь не вызывается при загрузк�
     expect(actual).toEqual(expected)
   })
 
-  it('список известного долга не растёт: девять констант, больше не заводим', () => {
-    expect(Object.keys(KNOWN)).toHaveLength(9)
+  it('список известного долга не растёт: шесть файлов, больше не заводим', () => {
+    expect(Object.keys(KNOWN)).toHaveLength(6)
   })
 })

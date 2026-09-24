@@ -5,7 +5,7 @@ import { Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
 import { cn, copyText } from '@/lib/utils'
-import { t } from '@/lib/i18n'
+import { t, key } from '@/lib/i18n'
 import { api, ApiError, isAuthorized, url } from '@/lib/api/client'
 import { getMe, JOIN_CODE_KEY } from '@/lib/api/auth'
 import { findMyWedding, listMyWeddings } from '@/lib/api/wedding'
@@ -16,11 +16,14 @@ import { useEscape } from '@/lib/useEscape'
  * Бэкенд-модель: Wedding 1—n Member(userId, role: couple|helper|vendor|guest, joinedAt).
  * Приглашение: POST /weddings/:id/invites { role } → { code, url, expiresAt: now+7d }.
  * Принятие: POST /invites/:code/accept { userId } → member создан, код погашен (одноразовый). */
+/* Ключи лежат под `key()`, перевод — в каждом месте показа (R-257).
+   Подпись приглашения уходит на сервер тоже переведённой — как и было до правки,
+   она в языке того, кто приглашает. */
 const ROLES = [
-  { id: 'partner', icon: '💞', tile: 'bg-[var(--rose-soft)]', name: t('Партнёр'), desc: t('Полный доступ: бюджет, сделки, документы, команда — всё как у вас.'), rights: [t('Бюджет и сделки'), t('Команда и документы'), t('Гости и приглашения'), t('Чек-лист и тайминг')] },
-  { id: 'helper', icon: '🤝', tile: 'bg-[var(--sage-soft)]', name: t('Помощник'), desc: t('Свидетель, мама, подруга. Организация без финансов.'), rights: [t('Чек-лист и тайминг'), t('Гости и рассадка'), t('Заметки'), t('Без бюджета и сделок')] },
-  { id: 'coordinator', icon: '🎖', tile: 'bg-[var(--honey)]', name: t('Координатор'), desc: t('Главный по дню X: командует подрядчиками в чате команды, правит тайминг. Финансы — только у пары.'), rights: [t('Тайминг и план Б'), t('Чаты с подрядчиками'), t('Чек-лист и гости'), t('Без бюджета и оплат')] },
-  { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: t('Подрядчик'), desc: t('Видит только свои сделки, чаты с вами и вашу дату в календаре.'), rights: [t('Свои сделки'), t('Чат с парой'), t('Календарь даты')] },
+  { id: 'partner', icon: '💞', tile: 'bg-[var(--rose-soft)]', name: key('Партнёр'), desc: key('Полный доступ: бюджет, сделки, документы, команда — всё как у вас.'), rights: [key('Бюджет и сделки'), key('Команда и документы'), key('Гости и приглашения'), key('Чек-лист и тайминг')] },
+  { id: 'helper', icon: '🤝', tile: 'bg-[var(--sage-soft)]', name: key('Помощник'), desc: key('Свидетель, мама, подруга. Организация без финансов.'), rights: [key('Чек-лист и тайминг'), key('Гости и рассадка'), key('Заметки'), key('Без бюджета и сделок')] },
+  { id: 'coordinator', icon: '🎖', tile: 'bg-[var(--honey)]', name: key('Координатор'), desc: key('Главный по дню X: командует подрядчиками в чате команды, правит тайминг. Финансы — только у пары.'), rights: [key('Тайминг и план Б'), key('Чаты с подрядчиками'), key('Чек-лист и гости'), key('Без бюджета и оплат')] },
+  { id: 'vendor', icon: '📸', tile: 'bg-[var(--blue)]', name: key('Подрядчик'), desc: key('Видит только свои сделки, чаты с вами и вашу дату в календаре.'), rights: [key('Свои сделки'), key('Чат с парой'), key('Календарь даты')] },
 ] as const
 
 /*
@@ -42,7 +45,7 @@ type Member = { user?: { id?: string; name?: string | null }; role?: string }
 type Invite = { code?: string; url?: string; role?: string; label?: string | null; expiresAt?: string; used?: boolean }
 
 const ROLE_NAME: Record<string, string> = {
-  couple: t('Пара'), helper: t('Помощник'), coordinator: t('Координатор'), vendor: t('Подрядчик'),
+  couple: key('Пара'), helper: key('Помощник'), coordinator: key('Координатор'), vendor: key('Подрядчик'),
 }
 const ROLE_TILE: Record<string, string> = {
   couple: 'bg-[var(--rose-soft)]', helper: 'bg-[var(--sage-soft)]',
@@ -168,7 +171,7 @@ export function Team() {
     cancelled.current = false
     try {
       const created = await api.post(url('/weddings/{weddingId}/invites', { weddingId }), {
-        role: SERVER_ROLE[r.id], label: r.name,
+        role: SERVER_ROLE[r.id], label: t(r.name),
       })
       void load()
       if (cancelled.current) return
@@ -226,7 +229,7 @@ export function Team() {
                   <Tile icon={ROLE_ICON[m.role ?? 'helper'] ?? '🤝'} tile={ROLE_TILE[m.role ?? 'helper'] ?? 'bg-[var(--sage-soft)]'} size={42} />
                   <div className="flex-1 min-w-0">
                     <b className="text-[13px]">{m.user?.name || t('Без имени')}</b>
-                    <p className="text-[10px] text-[var(--soft)]">{ROLE_NAME[m.role ?? ''] ?? m.role}</p>
+                    <p className="text-[10px] text-[var(--soft)]">{t(ROLE_NAME[m.role ?? ''] ?? m.role)}</p>
                   </div>
                   {m.role === 'couple' && <Crown size={14} className="text-[var(--gold-soft)]" />}
                   {actions && (
@@ -240,7 +243,7 @@ export function Team() {
                   <div className="flex flex-wrap gap-1.5 mt-2.5 pl-[54px]">
                     {ASSIGNABLE_ROLES.filter(r => r !== m.role).map(r => (
                       <button key={r} onClick={() => void changeRole(uid, r)} disabled={memberBusy} className="press text-[10.5px] font-semibold px-3 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] disabled:opacity-50" style={{ boxShadow: 'var(--shadow)' }}>
-                        {ROLE_NAME[r]}
+                        {t(ROLE_NAME[r])}
                       </button>
                     ))}
                   </div>
@@ -281,8 +284,8 @@ export function Team() {
               <button key={r.id} onClick={() => void openInvite(r)} disabled={!weddingId || busy} className={cn('press w-full card p-4 flex items-center gap-3.5 text-left', (!weddingId || busy) && 'opacity-40')}>
                 <Tile icon={r.icon} tile={r.tile} size={46} />
                 <div className="flex-1">
-                  <b className="text-[14px]">{r.name}</b>
-                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5 leading-snug">{r.desc}</p>
+                  <b className="text-[14px]">{t(r.name)}</b>
+                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5 leading-snug">{t(r.desc)}</p>
                 </div>
                 <ChevronRight size={16} className="text-[var(--soft)]" />
               </button>
@@ -306,7 +309,7 @@ export function Team() {
               <Link2 size={15} className="text-[var(--sage-deep)] shrink-0" />
               <div className="flex-1 min-w-0">
                 {/* Код сервер отдаёт только паре; остальным — роль и срок. */}
-                <b className="text-[12.5px] tabular">{iv.code ?? (ROLE_NAME[iv.role ?? ''] ?? iv.role)}</b>
+                <b className="text-[12.5px] tabular">{iv.code ?? t(ROLE_NAME[iv.role ?? ''] ?? iv.role)}</b>
                 <p className="text-[10px] text-[var(--soft)]">{iv.code ? `${ROLE_NAME[iv.role ?? ''] ?? iv.role} · ` : ''}{daysLeft(iv.expiresAt, openedAt)}</p>
               </div>
               {/* Копировать и отзывать может только тот, кому сервер отдал код. */}
@@ -340,7 +343,7 @@ export function Team() {
             </div>
             <div className="flex flex-wrap gap-1.5 mt-4">
               {invite.rights.map(r => (
-                <span key={r} className="text-[10px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] flex items-center gap-1"><Check size={10} className="text-[var(--sage-deep)]" />{r}</span>
+                <span key={r} className="text-[10px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)] text-[var(--ink2)] flex items-center gap-1"><Check size={10} className="text-[var(--sage-deep)]" />{t(r)}</span>
               ))}
             </div>
             {/* Значок QR отсюда убран вместе с обещанием «покажите QR»:
@@ -454,12 +457,12 @@ export function Join() {
       <h1 className="font-serif-d text-[26px] mt-6">
         {preview?.weddingTitle ? <>{preview.weddingTitle}<br />{t('приглашают вас')}</> : t('Приглашение')}
       </h1>
-      {preview && <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[var(--rose-ink)]">{role.name.toLowerCase()}</b></p>}
+      {preview && <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('как')} <b className="text-[var(--rose-ink)]">{t(role.name).toLowerCase()}</b></p>}
       {err && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-3 leading-relaxed">{err}</p>}
       <div className="card p-4 mt-6 w-full text-left">
         <span className="text-[10px] tracking-[.16em] uppercase text-[var(--soft)] font-semibold">{t('Вам будет доступно')}</span>
         <div className="mt-2.5 space-y-1.5">
-          {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[var(--sage-deep)]" />{r}</p>)}
+          {role.rights.map(r => <p key={r} className="text-[12px] text-[var(--ink2)] flex items-center gap-2"><Check size={12} className="text-[var(--sage-deep)]" />{t(r)}</p>)}
         </div>
       </div>
       <button onClick={() => void accept()} disabled={busy || !preview} className={cn('press w-full h-[54px] rounded-full grad text-[var(--on-grad)] font-semibold text-[14px] mt-5', (busy || !preview) && 'opacity-40')} style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{busy ? t('Секунду…') : t('Принять приглашение')}</button>

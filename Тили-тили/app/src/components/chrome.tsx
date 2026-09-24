@@ -2,7 +2,7 @@ import { createElement, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Briefcase, Heart, Home, MessageCircle, Search, Settings as SettingsIcon, Store, User, Sparkles } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import { useStore } from '@/lib/store'
-import { t } from '@/lib/i18n'
+import { t, key } from '@/lib/i18n'
 import { reviewsPendingRating, type Vendor as ServerVendor } from '@/lib/api/catalog'
 import { getChats } from '@/lib/api/chats'
 import { useServerHealth } from '@/lib/api/health'
@@ -40,13 +40,17 @@ export function TopBar({ title, sub, back, right, fallback }: { title: string; s
   )
 }
 
-/* Нижняя стеклянная навигация */
+/* Нижняя стеклянная навигация.
+ * Подписи лежат русскими ключами под `key()` и переводятся в месте показа
+ * через `tt()` (R-257). Раньше здесь стоял `t()`: язык застывал на моменте
+ * импорта, а `tt()` переводил уже переведённое — работало только потому,
+ * что смена языка идёт через перезагрузку. */
 const tabs = [
-  { to: '/home', label: t('Главная'), icon: Home },
-  { to: '/search', label: t('Поиск'), icon: Search },
+  { to: '/home', label: key('Главная'), icon: Home },
+  { to: '/search', label: key('Поиск'), icon: Search },
   { to: '/wedding', label: '', icon: null }, // центральная кнопка
-  { to: '/us/chats', label: t('Чаты'), icon: Sparkles },
-  { to: '/us', label: t('Мы'), icon: User },
+  { to: '/us/chats', label: key('Чаты'), icon: Sparkles },
+  { to: '/us', label: key('Мы'), icon: User },
 ]
 
 export function TabBar() {
@@ -93,10 +97,10 @@ export function TabBar() {
  * переходе между экранами кабинета.
  */
 const vendorTabs = [
-  { to: '/vendor-app', label: t('Кабинет'), icon: Store },
-  { to: '/vendor-app/deals', label: t('Сделки'), icon: Briefcase },
-  { to: '/vendor-app/chats', label: t('Чаты'), icon: MessageCircle },
-  { to: '/vendor-app/settings', label: t('Настройки'), icon: SettingsIcon },
+  { to: '/vendor-app', label: key('Кабинет'), icon: Store },
+  { to: '/vendor-app/deals', label: key('Сделки'), icon: Briefcase },
+  { to: '/vendor-app/chats', label: key('Чаты'), icon: MessageCircle },
+  { to: '/vendor-app/settings', label: key('Настройки'), icon: SettingsIcon },
 ]
 
 export function VendorTabBar() {

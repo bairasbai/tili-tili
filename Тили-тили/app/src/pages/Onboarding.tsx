@@ -2,18 +2,18 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { t, reloadToRoot } from '@/lib/i18n'
+import { t, reloadToRoot, key } from '@/lib/i18n'
 import { useStore } from '@/lib/store'
 
 /* Сцены онбординга: кольца → торт → букет → зал */
 const scenes = [
-  { icon: '💍', title: t('Все специалисты'), text: t('Фотографы, декораторы, кондитеры — 35 категорий рядом с вами, в одном приложении.'), tile: 'bg-[var(--rose-soft)]' },
+  { icon: '💍', title: key('Все специалисты'), text: key('Фотографы, декораторы, кондитеры — 35 категорий рядом с вами, в одном приложении.'), tile: 'bg-[var(--rose-soft)]' },
   /* Обещания — только про то, что есть в коде (R-174): сдвиг тайминга уходит
      уведомлением команде (гостям — когда подключат SMS), а «ИИ-координатора»
      нет — помощник пока собирает вопросы и честно об этом говорит. */
-  { icon: '🎂', title: t('Один день'), text: t('Тайминг, план Б на дождь и live-режим: «+15 минут задержка» — и вся команда узнаёт сразу.'), tile: 'bg-[var(--honey)]' },
-  { icon: '💐', title: t('Гости без хаоса'), text: t('Именные приглашения, RSVP, рассадка и чат дня X. Мама справится за три тапа.'), tile: 'bg-[var(--sage-soft)]' },
-  { icon: '🏛️', title: t('Одно приложение'), text: t('Договоры из шаблонов, бюджет с лимитами и чек-лист, который помнит сроки за вас.'), tile: 'bg-[var(--lav)]' },
+  { icon: '🎂', title: key('Один день'), text: key('Тайминг, план Б на дождь и live-режим: «+15 минут задержка» — и вся команда узнаёт сразу.'), tile: 'bg-[var(--honey)]' },
+  { icon: '💐', title: key('Гости без хаоса'), text: key('Именные приглашения, RSVP, рассадка и чат дня X. Мама справится за три тапа.'), tile: 'bg-[var(--sage-soft)]' },
+  { icon: '🏛️', title: key('Одно приложение'), text: key('Договоры из шаблонов, бюджет с лимитами и чек-лист, который помнит сроки за вас.'), tile: 'bg-[var(--lav)]' },
 ]
 
 export default function Onboarding() {
@@ -40,8 +40,8 @@ export default function Onboarding() {
         <div className={cn('w-[150px] h-[150px] rounded-[44px] flex items-center justify-center text-[64px] pop', s.tile)} style={{ boxShadow: 'var(--shadow)' }}>
           {s.icon}
         </div>
-        <h1 className="font-serif-d text-[34px] mt-9 leading-tight">{s.title}</h1>
-        <p className="text-[14px] text-[var(--soft)] leading-relaxed mt-4 max-w-[300px] font-light">{s.text}</p>
+        <h1 className="font-serif-d text-[34px] mt-9 leading-tight">{t(s.title)}</h1>
+        <p className="text-[14px] text-[var(--soft)] leading-relaxed mt-4 max-w-[300px] font-light">{t(s.text)}</p>
       </div>
 
       <div className="px-6 pb-[max(32px,env(safe-area-inset-bottom))]">

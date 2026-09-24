@@ -13,7 +13,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { TabBar } from '@/components/chrome'
+import { TabBar, VendorTabBar } from '@/components/chrome'
+import { setI18nLang } from '@/lib/i18n'
 import { StoreProvider } from '@/lib/store'
 
 const ACTIVE = 'text-[var(--rose-deep)]'
@@ -58,5 +59,48 @@ describe('F-RL-8-05: нижняя навигация пары подсвечив
 
   it('на подэкране свадьбы ни одна вкладка не горит — там центральная кнопка', () => {
     expect(litTabs('/wedding/planb')).toHaveLength(0)
+  })
+})
+
+/*
+ * R-257 для `chrome.tsx`: подписи вкладок хранятся русскими ключами под `key()`,
+ * а перевод делает место показа через `tt()`. Сеть под эту правку:
+ * если кто-то уберёт `tt()` из разметки, англоязычный человек увидит
+ * русские слова, а словарный сторож этого НЕ поймает: ключи размечены,
+ * переводы в словаре лежат — просто никто ими не воспользовался.
+ */
+describe('R-257: в английском интерфейсе в навигации нет русских ключей', () => {
+  /* StoreProvider при монтировании сам читает tt_lang и зовёт setI18nLang —
+     поэтому язык ставим в хранилище, иначе его перебьёт обратно на русский. */
+  afterEach(() => {
+    cleanup()
+    localStorage.removeItem('tt_lang')
+    setI18nLang('ru')
+  })
+
+  const textOf = (node: React.ReactElement, path: string): string => {
+    localStorage.setItem('tt_lang', 'en')
+    setI18nLang('en')
+    const r = render(
+      <MemoryRouter initialEntries={[path]}>
+        <StoreProvider>{node}</StoreProvider>
+      </MemoryRouter>,
+    )
+    return r.container.textContent ?? ''
+  }
+
+  it('навигация пары: ключи ушли, перевод виден', () => {
+    const text = textOf(<TabBar />, '/home')
+    for (const ru of ['Главная', 'Поиск', 'Чаты', 'Мы']) {
+      expect(text, 'в EN остался русский ключ «' + ru + '»').not.toContain(ru)
+    }
+    for (const en of ['Home', 'Search', 'Chats', 'Us']) expect(text).toContain(en)
+  })
+
+  it('навигация кабинета: ключи ушли, перевод виден', () => {
+    const text = textOf(<VendorTabBar />, '/vendor-app')
+    for (const ru of ['Кабинет', 'Сделки', 'Чаты', 'Настройки']) {
+      expect(text, 'в EN остался русский ключ «' + ru + '»').not.toContain(ru)
+    }
   })
 })
