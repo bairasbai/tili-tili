@@ -22,7 +22,7 @@ import {
 } from '@/lib/api/vendor'
 import { getCategories } from '@/lib/api/catalog'
 import { getChats } from '@/lib/api/chats'
-import { cn, plural } from '@/lib/utils'
+import { cn, currentMonth, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, rub } from '@/lib/money'
 import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/lib/weddingDate'
@@ -41,7 +41,7 @@ import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/li
  */
 export function VendorDashboard() {
   const nav = useNavigate()
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [month, setMonth] = useState(() => currentMonth())
   const [busyErr, setBusyErr] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
 
