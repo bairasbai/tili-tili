@@ -16,5 +16,16 @@ export default mergeConfig(base, defineConfig({
        окружении, а фронтовые читают исходники через projectFile() от текущего
        каталога, то есть чужие файлы. Прогон становится красным на ровном месте. */
     exclude: [...configDefaults.exclude, '**/.claude/**'],
+    /* Покрытие всего своего кода (см. такой же блок у бэкенда).
+       Исключены: `components/ui` — вендоренный shadcn (CLAUDE.md §9),
+       `lib/api/schema.ts` — сгенерированный типовой файл на 384 КБ,
+       `test/` — сама оснастка тестов. */
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/test/**', 'src/components/ui/**', 'src/lib/api/schema.ts', 'src/main.tsx'],
+      reporter: ['text-summary', 'json-summary', 'html'],
+      reportsDirectory: 'coverage',
+    },
   },
 }))

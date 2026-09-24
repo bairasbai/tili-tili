@@ -17,6 +17,19 @@ DRILL_DB="${DRILL_DB:-tili_drill}"
 ADMIN_URL="${ADMIN_URL:-$DATABASE_URL}"
 WORK="${WORK:-/tmp/tili-drill}"
 
+# Проверка прав ДО съёма копии: без неё репетиция падала на шаге 2,
+# потратив минуты на 86 МБ дампа, и оставляла оператора разбираться с ошибкой
+# прав в аварийном режиме (RELEASE-BLOCKERS №31). Лечится одной командой
+# суперпользователя, один раз на машину.
+CAN_CREATE="$(psql -tAc "select rolcreatedb or rolsuper from pg_roles where rolname = current_user" "$ADMIN_URL" 2>/dev/null || echo f)"
+if [ "$CAN_CREATE" != "t" ]; then
+  echo "ОСТАНОВКА: роль без права CREATE DATABASE — шаг 2 невозможен." >&2
+  echo "Выдать право (один раз, от суперпользователя):" >&2
+  echo "  psql -U postgres -c 'ALTER ROLE tili CREATEDB'" >&2
+  echo "Либо передать адрес суперпользователя: ADMIN_URL=postgres://postgres:...@localhost:5432/postgres" >&2
+  exit 2
+fi
+
 START="$(date +%s)"
 mkdir -p "$WORK"
 DUMP="$WORK/drill.dump"

@@ -11,6 +11,7 @@ GATES.md
 # Сборка приложения (продублировано в Тили-тили/app/.gitignore)
 node_modules/
 dist/
+coverage/
 
 # Артефакты браузерных прогонов
 .playwright-mcp/

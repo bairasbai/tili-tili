@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "verify": "tsc -b && vitest run && eslint src/lib src/pages src/App.tsx src/main.tsx src/components/chrome.tsx src/components/ErrorBoundary.tsx src/components/CityPicker.tsx && vite build"
   },
   "dependencies": {
@@ -69,6 +70,7 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.23",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",

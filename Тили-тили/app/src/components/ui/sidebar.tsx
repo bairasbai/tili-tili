@@ -606,10 +606,18 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<"div"> & {
   showIcon?: boolean
 }) {
-  // Random width between 50 to 90%.
+  /* Ширина 50-90 %, разная у соседних заглушек, но устойчивая между
+     перерисовками. В поставке shadcn здесь стоял `Math.random()` прямо в рендере —
+     нарушение чистоты (CLAUDE.md §5 п. 4, линт `react-hooks/purity`) и единственная
+     настоящая из восьми ошибок, из-за которых `eslint .` в CI был красным по
+     построению. `useId()` даёт тот же разброс без случайности: строка
+     уникальна на экземпляр и одинакова на сервере и клиенте. */
+  const id = React.useId()
   const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+    let hash = 0
+    for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0
+    return `${(Math.abs(hash) % 40) + 50}%`
+  }, [id])
 
   return (
     <div

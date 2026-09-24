@@ -19,9 +19,12 @@ node node_modules/typescript/bin/tsc -b
 echo "== фронт: тесты"
 node node_modules/vitest/vitest.mjs run
 
-echo "== фронт: линт (свой код; components/ui — вендоренный shadcn)"
-node node_modules/eslint/bin/eslint.js src/lib src/pages src/App.tsx src/main.tsx \
-  src/components/chrome.tsx src/components/ErrorBoundary.tsx src/components/CityPicker.tsx
+# Та же команда, что в CI (`.github/workflows/ci.yml`): раньше гейт линтовал
+# список файлов, а CI — всё дерево, и CI был красным по построению на
+# вендоренном shadcn (SB-04, ревью 016). Граница теперь живёт в
+# `eslint.config.js`, а не в аргументах двух разных команд.
+echo "== фронт: линт (всё дерево, как в CI)"
+node node_modules/eslint/bin/eslint.js .
 
 echo "== фронт: сборка"
 node node_modules/vite/bin/vite.js build
