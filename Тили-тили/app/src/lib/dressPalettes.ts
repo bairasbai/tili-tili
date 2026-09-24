@@ -1,4 +1,4 @@
-import { t } from './i18n'
+import { key } from './i18n'
 
 /*
  * Палитры дресс-кода. Пара выбирает одну, гость видит её в приглашении —
@@ -6,8 +6,8 @@ import { t } from './i18n'
  * здесь: это оформление, а не данные.
  */
 export const dressPalettes = [
-  { id: 'd1', name: t('Пудровая классика'), colors: ['#E8C4C4', '#D9A8A0', '#C98A8A', '#8FB08A', '#EFE9DF'] },
-  { id: 'd2', name: t('Шалфей и сливки'), colors: ['#A9BCA0', '#DCE5D4', '#EFE9DF', '#C9B458', '#5F7A56'] },
-  { id: 'd3', name: t('Лавандовый вечер'), colors: ['#D9CCE3', '#B9A7CC', '#8E7AA6', '#EFE9DF', '#3A322B'] },
-  { id: 'd4', name: t('Медовый закат'), colors: ['#E3C892', '#D4A96A', '#B98A2F', '#F0DCB8', '#3A322B'] },
+  { id: 'd1', name: key('Пудровая классика'), colors: ['#E8C4C4', '#D9A8A0', '#C98A8A', '#8FB08A', '#EFE9DF'] },
+  { id: 'd2', name: key('Шалфей и сливки'), colors: ['#A9BCA0', '#DCE5D4', '#EFE9DF', '#C9B458', '#5F7A56'] },
+  { id: 'd3', name: key('Лавандовый вечер'), colors: ['#D9CCE3', '#B9A7CC', '#8E7AA6', '#EFE9DF', '#3A322B'] },
+  { id: 'd4', name: key('Медовый закат'), colors: ['#E3C892', '#D4A96A', '#B98A2F', '#F0DCB8', '#3A322B'] },
 ]

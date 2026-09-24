@@ -515,11 +515,11 @@ export function ContractWizard() {
           с хранилищем, а «загрузите скан в сделку» обещало загрузку, которой
           нет. Скачать текст можно отсюда — он собран из тех же данных. */}
       <p className="text-[13px] text-[var(--soft)] mt-3 font-light leading-relaxed">
-        «{ctpl.name}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик записан в документы свадьбы. Скачайте текст и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}
+        «{t(ctpl.name)}»{created.version != null ? ` · ${t('версия')} ${created.version}` : ''}{t(' — черновик записан в документы свадьбы. Скачайте текст и подпишите с подрядчиком — загрузка сканов появится вместе с файловым хранилищем.')}
       </p>
       <div className="flex gap-2.5 mt-8 w-full">
-        <button onClick={() => downloadPdf(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
-        <button onClick={() => downloadDocx(ctpl.name, facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
+        <button onClick={() => downloadPdf(t(ctpl.name), facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> PDF</button>
+        <button onClick={() => downloadDocx(t(ctpl.name), facts)} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13px] flex items-center justify-center gap-2" style={{ boxShadow: 'var(--shadow)' }}><Download size={15} /> DOCX</button>
       </div>
       <button onClick={() => nav('/wedding/documents')} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] mt-2.5" style={{ boxShadow: 'var(--shadow-lift)' }}>{t('Открыть «Документы»')}</button>
     </div>
@@ -563,7 +563,7 @@ export function ContractWizard() {
           {contractTemplates.map((c, k) => (
             <button key={c.id} onClick={() => setTpl(k)} className={cn('press w-full card-s p-4 flex items-center gap-3 text-left fade-up', tpl === k && 'ring-2 ring-[var(--rose)]')}>
               <Tile icon={c.icon} tile={c.tile} size={42} />
-              <div className="flex-1"><b className="text-[13px]">{c.name}</b><p className="text-[10.5px] text-[var(--soft)]">{c.desc}</p></div>
+              <div className="flex-1"><b className="text-[13px]">{t(c.name)}</b><p className="text-[10.5px] text-[var(--soft)]">{t(c.desc)}</p></div>
               <span className={cn('w-5 h-5 rounded-full border-2', tpl === k ? 'bg-[var(--rose)] border-[var(--rose)]' : 'border-[var(--line)]')} />
             </button>
           ))}
@@ -968,8 +968,8 @@ export function InviteEditor() {
           {inviteThemes.map((x, k) => (
             <button key={x.id} onClick={() => setThemeDraft(k)} className={cn('press rounded-[20px] p-2 text-left bg-[var(--card)]', th === x && 'ring-2 ring-[var(--rose)]')} style={{ boxShadow: 'var(--shadow)' }}>
               <div className="h-[64px] rounded-[14px] flex items-center justify-center text-[22px]" style={{ background: x.overlay }}>{x.emoji}</div>
-              <b className="text-[11.5px] block mt-2 px-1">«{x.name}»</b>
-              <span className="text-[9px] text-[var(--soft)] block px-1 pb-1 leading-tight">{x.desc}</span>
+              <b className="text-[11.5px] block mt-2 px-1">«{t(x.name)}»</b>
+              <span className="text-[9px] text-[var(--soft)] block px-1 pb-1 leading-tight">{t(x.desc)}</span>
             </button>
           ))}
         </div>
@@ -983,7 +983,7 @@ export function InviteEditor() {
                 <span className="flex -space-x-1.5">
                   {p.colors.map(c => <span key={c} className="w-6 h-6 rounded-full border-2 border-[var(--card)]" style={{ background: c }} />)}
                 </span>
-                <span className="text-[12px] font-medium flex-1">{p.name}</span>
+                <span className="text-[12px] font-medium flex-1">{t(p.name)}</span>
                 {dressId === p.id && <span className="text-[var(--sage-deep)] text-[13px]">✓</span>}
               </button>
             ))}

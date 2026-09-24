@@ -9,7 +9,7 @@ import { isAuthorized } from '@/lib/api/client'
 import { useApi } from '@/lib/api/useApi'
 import { cn } from '@/lib/utils'
 import { fmt, rub } from '@/lib/money'
-import { t } from '@/lib/i18n'
+import { t, key } from '@/lib/i18n'
 import { useEscape } from '@/lib/useEscape'
 
 /*
@@ -32,14 +32,14 @@ import { useEscape } from '@/lib/useEscape'
  */
 type Story = { id: string; pair: string; style: string; styleName: string; place: string; guests: number; budget: number; photo: string; tip: string; grad: string; split: [string, number][]; season: string }
 const STORIES: Story[] = [
-  { id: 'w1', pair: t('Дина и Руслан'), style: 'boho', styleName: t('🌾 Бохо'), place: t('Шатёр у реки · Стерлитамак'), guests: 60, budget: rub(950000), photo: '🌾', season: t('Август 2025'), tip: t('Сэкономили на площадке — вложились в декор и живую музыку'), grad: 'from-[#A9BCA0] to-[#7E9A74]', split: [[t('Площадка и кейтеринг'), 42], [t('Декор и флористика'), 18], [t('Фото и видео'), 16], [t('Музыка и ведущий'), 12], [t('Образы и детали'), 12]] },
-  { id: 'w2', pair: t('Регина и Артур'), style: 'classic', styleName: t('🤍 Классика'), place: t('Банкетный зал «Маркони» · Уфа'), guests: 120, budget: rub(1800000), photo: '🤍', season: t('Июнь 2025'), tip: t('Первый танец с дымом — гости до сих пор вспоминают'), grad: 'from-[#D9A8A0] to-[#C98A8A]', split: [[t('Площадка и кейтеринг'), 50], [t('Декор и флористика'), 14], [t('Фото и видео'), 12], [t('Музыка и ведущий'), 12], [t('Образы и детали'), 12]] },
-  { id: 'w3', pair: t('Алсу и Марат'), style: 'minimal', styleName: t('◻️ Минимализм'), place: t('Лофт «Этажи» · Уфа'), guests: 40, budget: rub(620000), photo: '◻️', season: t('Сентябрь 2025'), tip: t('Камерный формат: только самые близкие, ноль лишнего'), grad: 'from-[var(--soft2)] to-[var(--soft)]', split: [[t('Площадка и кейтеринг'), 45], [t('Декор и флористика'), 10], [t('Фото и видео'), 20], [t('Музыка и ведущий'), 10], [t('Образы и детали'), 15]] },
-  { id: 'w4', pair: t('Гузель и Ильяс'), style: 'boho', styleName: t('🌿 Рустик'), place: t('База отдыха · Караидельский район'), guests: 80, budget: rub(780000), photo: '🌿', season: t('Июль 2025'), tip: t('Выездная церемония на закате — фото получились космос'), grad: 'from-[#7E9A74] to-[var(--ink2)]', split: [[t('Площадка и кейтеринг'), 38], [t('Декор и флористика'), 22], [t('Фото и видео'), 15], [t('Музыка и ведущий'), 13], [t('Образы и детали'), 12]] },
-  { id: 'w5', pair: t('Лейсан и Тимур'), style: 'classic', styleName: t('🏛 Палаты'), place: t('Ресторан «Белая речка» · Сибай'), guests: 90, budget: rub(1150000), photo: '🏛', season: t('Май 2026'), tip: t('Национальные мотивы в декоре — бабушки плакали от счастья'), grad: 'from-[#C9A96A] to-[#B57171]', split: [[t('Площадка и кейтеринг'), 48], [t('Декор и флористика'), 16], [t('Фото и видео'), 13], [t('Музыка и ведущий'), 12], [t('Образы и детали'), 11]] },
-  { id: 'w6', pair: t('Влада и Егор'), style: 'minimal', styleName: t('🌆 Урбан'), place: t('Смотровая площадка · Баймак'), guests: 30, budget: rub(480000), photo: '🌆', season: t('Август 2026'), tip: t('Церемония на рассвете над степью — 30 гостей и ни одного лишнего'), grad: 'from-[var(--blue)] to-[var(--soft)]', split: [[t('Площадка и кейтеринг'), 35], [t('Декор и флористика'), 8], [t('Фото и видео'), 25], [t('Музыка и ведущий'), 12], [t('Образы и детали'), 20]] },
-  { id: 'w7', pair: t('Айгуль и Данис'), style: 'boho', styleName: t('🍇 Усадьба'), place: t('Усадьба «Липовый сад» · Уфа'), guests: 150, budget: rub(2400000), photo: '🍇', season: t('Июнь 2026'), tip: t('Два дня праздника: первый — семья, второй — друзья'), grad: 'from-[var(--lav)] to-[#B57171]', split: [[t('Площадка и кейтеринг'), 52], [t('Декор и флористика'), 15], [t('Фото и видео'), 12], [t('Музыка и ведущий'), 11], [t('Образы и детали'), 10]] },
-  { id: 'w8', pair: t('Камилла и Арслан'), style: 'classic', styleName: t('🕯 Вечерняя'), place: t('Шатёр «Речной берег» · Уфа'), guests: 70, budget: rub(890000), photo: '🕯', season: t('Сентябрь 2026'), tip: t('Свадьба при свечах после заката — без единого прожектора'), grad: 'from-[var(--ink2)] to-[var(--ink)]', split: [[t('Площадка и кейтеринг'), 44], [t('Декор и флористика'), 20], [t('Фото и видео'), 14], [t('Музыка и ведущий'), 12], [t('Образы и детали'), 10]] },
+  { id: 'w1', pair: key('Дина и Руслан'), style: 'boho', styleName: key('🌾 Бохо'), place: key('Шатёр у реки · Стерлитамак'), guests: 60, budget: rub(950000), photo: '🌾', season: key('Август 2025'), tip: key('Сэкономили на площадке — вложились в декор и живую музыку'), grad: 'from-[#A9BCA0] to-[#7E9A74]', split: [[key('Площадка и кейтеринг'), 42], [key('Декор и флористика'), 18], [key('Фото и видео'), 16], [key('Музыка и ведущий'), 12], [key('Образы и детали'), 12]] },
+  { id: 'w2', pair: key('Регина и Артур'), style: 'classic', styleName: key('🤍 Классика'), place: key('Банкетный зал «Маркони» · Уфа'), guests: 120, budget: rub(1800000), photo: '🤍', season: key('Июнь 2025'), tip: key('Первый танец с дымом — гости до сих пор вспоминают'), grad: 'from-[#D9A8A0] to-[#C98A8A]', split: [[key('Площадка и кейтеринг'), 50], [key('Декор и флористика'), 14], [key('Фото и видео'), 12], [key('Музыка и ведущий'), 12], [key('Образы и детали'), 12]] },
+  { id: 'w3', pair: key('Алсу и Марат'), style: 'minimal', styleName: key('◻️ Минимализм'), place: key('Лофт «Этажи» · Уфа'), guests: 40, budget: rub(620000), photo: '◻️', season: key('Сентябрь 2025'), tip: key('Камерный формат: только самые близкие, ноль лишнего'), grad: 'from-[var(--soft2)] to-[var(--soft)]', split: [[key('Площадка и кейтеринг'), 45], [key('Декор и флористика'), 10], [key('Фото и видео'), 20], [key('Музыка и ведущий'), 10], [key('Образы и детали'), 15]] },
+  { id: 'w4', pair: key('Гузель и Ильяс'), style: 'boho', styleName: key('🌿 Рустик'), place: key('База отдыха · Караидельский район'), guests: 80, budget: rub(780000), photo: '🌿', season: key('Июль 2025'), tip: key('Выездная церемония на закате — фото получились космос'), grad: 'from-[#7E9A74] to-[var(--ink2)]', split: [[key('Площадка и кейтеринг'), 38], [key('Декор и флористика'), 22], [key('Фото и видео'), 15], [key('Музыка и ведущий'), 13], [key('Образы и детали'), 12]] },
+  { id: 'w5', pair: key('Лейсан и Тимур'), style: 'classic', styleName: key('🏛 Палаты'), place: key('Ресторан «Белая речка» · Сибай'), guests: 90, budget: rub(1150000), photo: '🏛', season: key('Май 2026'), tip: key('Национальные мотивы в декоре — бабушки плакали от счастья'), grad: 'from-[#C9A96A] to-[#B57171]', split: [[key('Площадка и кейтеринг'), 48], [key('Декор и флористика'), 16], [key('Фото и видео'), 13], [key('Музыка и ведущий'), 12], [key('Образы и детали'), 11]] },
+  { id: 'w6', pair: key('Влада и Егор'), style: 'minimal', styleName: key('🌆 Урбан'), place: key('Смотровая площадка · Баймак'), guests: 30, budget: rub(480000), photo: '🌆', season: key('Август 2026'), tip: key('Церемония на рассвете над степью — 30 гостей и ни одного лишнего'), grad: 'from-[var(--blue)] to-[var(--soft)]', split: [[key('Площадка и кейтеринг'), 35], [key('Декор и флористика'), 8], [key('Фото и видео'), 25], [key('Музыка и ведущий'), 12], [key('Образы и детали'), 20]] },
+  { id: 'w7', pair: key('Айгуль и Данис'), style: 'boho', styleName: key('🍇 Усадьба'), place: key('Усадьба «Липовый сад» · Уфа'), guests: 150, budget: rub(2400000), photo: '🍇', season: key('Июнь 2026'), tip: key('Два дня праздника: первый — семья, второй — друзья'), grad: 'from-[var(--lav)] to-[#B57171]', split: [[key('Площадка и кейтеринг'), 52], [key('Декор и флористика'), 15], [key('Фото и видео'), 12], [key('Музыка и ведущий'), 11], [key('Образы и детали'), 10]] },
+  { id: 'w8', pair: key('Камилла и Арслан'), style: 'classic', styleName: key('🕯 Вечерняя'), place: key('Шатёр «Речной берег» · Уфа'), guests: 70, budget: rub(890000), photo: '🕯', season: key('Сентябрь 2026'), tip: key('Свадьба при свечах после заката — без единого прожектора'), grad: 'from-[var(--ink2)] to-[var(--ink)]', split: [[key('Площадка и кейтеринг'), 44], [key('Декор и флористика'), 20], [key('Фото и видео'), 14], [key('Музыка и ведущий'), 12], [key('Образы и детали'), 10]] },
 ]
 
 export function Inspiration() {
@@ -92,14 +92,14 @@ export function Inspiration() {
             <button className="w-full text-left" onClick={() => setOpen(s)}>
               <div className={cn('h-36 bg-gradient-to-br flex items-center justify-center text-[54px] relative', s.grad)}>
                 {s.photo}
-                <span className="absolute bottom-2.5 right-3 text-[9px] font-bold px-2.5 py-1 rounded-full bg-black/30 text-white backdrop-blur-sm">{s.season}</span>
+                <span className="absolute bottom-2.5 right-3 text-[9px] font-bold px-2.5 py-1 rounded-full bg-black/30 text-white backdrop-blur-sm">{t(s.season)}</span>
               </div>
             </button>
             <div className="p-4">
               <div className="flex items-start justify-between">
                 <button className="text-left" onClick={() => setOpen(s)}>
-                  <b className="font-serif-d text-[17px]">{s.pair}</b>
-                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5 flex items-center gap-1"><MapPin size={10} /> {s.place}</p>
+                  <b className="font-serif-d text-[17px]">{t(s.pair)}</b>
+                  <p className="text-[10.5px] text-[var(--soft)] mt-0.5 flex items-center gap-1"><MapPin size={10} /> {t(s.place)}</p>
                 </button>
                 <button onClick={() => toggleLike(s.id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center" aria-label={t('Нравится')}>
                   <Heart size={15} className={liked(s.id) ? 'text-[var(--rose-deep)] fill-[#C98A8A]' : 'text-[var(--soft2)]'} />
@@ -108,9 +108,9 @@ export function Inspiration() {
               <div className="flex gap-2 mt-3 flex-wrap">
                 <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--bg)] flex items-center gap-1"><Users size={10} /> {s.guests} {t('гостей')}</span>
                 <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--bg)] flex items-center gap-1"><Wallet size={10} /> {fmt(s.budget)}</span>
-                <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--bg)]">{s.styleName}</span>
+                <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--bg)]">{t(s.styleName)}</span>
               </div>
-              <p className="text-[11.5px] text-[var(--ink2)] mt-3 leading-relaxed font-light">💡 {s.tip}</p>
+              <p className="text-[11.5px] text-[var(--ink2)] mt-3 leading-relaxed font-light">💡 {t(s.tip)}</p>
               <div className="flex items-center justify-between mt-3">
                 <button onClick={() => setOpen(s)} className="press text-[11px] font-bold text-[var(--ink)] flex items-center gap-1">{t('Разбор бюджета')}<ChevronRight size={12} /></button>
                 <button onClick={() => nav('/search/venue')} className="press text-[11px] font-bold text-[var(--rose-deep)] flex items-center gap-1">{t('Похожая площадка')}<ChevronRight size={12} /></button>
@@ -131,21 +131,21 @@ export function Inspiration() {
           <div className="relative w-full max-w-[430px] bg-[var(--bg)] rounded-t-[28px] p-6 pb-10 pop max-h-[85dvh] overflow-y-auto no-scrollbar" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 rounded-full bg-[var(--line)] mx-auto mb-4" />
             <div className={cn('h-28 rounded-[20px] bg-gradient-to-br flex items-center justify-center text-[46px]', open.grad)}>{open.photo}</div>
-            <b className="font-serif-d text-[20px] block mt-3">{open.pair}</b>
-            <p className="text-[11px] text-[var(--soft)] mt-0.5">{open.place} · {open.season}</p>
+            <b className="font-serif-d text-[20px] block mt-3">{t(open.pair)}</b>
+            <p className="text-[11px] text-[var(--soft)] mt-0.5">{t(open.place)} · {t(open.season)}</p>
             <div className="flex gap-2 mt-3">
               <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)]"><Users size={10} className="inline" /> {open.guests}</span>
               <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)]"><Wallet size={10} className="inline" /> {fmt(open.budget)}</span>
-              <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)]">{open.styleName}</span>
+              <span className="text-[9.5px] font-semibold px-2.5 py-1.5 rounded-full bg-[var(--card)]">{t(open.styleName)}</span>
             </div>
             <h3 className="font-serif-d text-[15px] mt-5 mb-3">{t('Куда ушёл бюджет')}</h3>
             {open.split.map(([label, pct]) => (
               <div key={label} className="mb-2.5">
-                <div className="flex justify-between text-[11px] mb-1"><span className="text-[var(--ink2)]">{label}</span><b className="tabular">{pct}% · {fmt(Math.round(open.budget * pct / 100))}</b></div>
+                <div className="flex justify-between text-[11px] mb-1"><span className="text-[var(--ink2)]">{t(label)}</span><b className="tabular">{pct}% · {fmt(Math.round(open.budget * pct / 100))}</b></div>
                 <div className="h-1.5 rounded-full bg-[var(--track)] overflow-hidden"><div className="h-full rounded-full grad" style={{ width: `${pct}%` }} /></div>
               </div>
             ))}
-            <p className="text-[11.5px] text-[var(--ink2)] mt-4 leading-relaxed font-light">💡 {open.tip}</p>
+            <p className="text-[11.5px] text-[var(--ink2)] mt-4 leading-relaxed font-light">💡 {t(open.tip)}</p>
             <button onClick={() => nav('/search')} className="press sheen w-full mt-5 py-4 rounded-full grad text-[var(--on-grad)] font-semibold text-[13px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('Собрать такую же команду ✨')}</button>
           </div>
         </div>

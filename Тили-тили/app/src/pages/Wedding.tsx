@@ -21,7 +21,7 @@ import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { isAuthorized } from '@/lib/api/client'
-import { t } from '@/lib/i18n'
+import { t, key } from '@/lib/i18n'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
@@ -1571,10 +1571,10 @@ export function Album() {
 /* Код шаблона сервера → название карточки: список показывал «photographer»
    вместо «Договор с фотографом» (ERR-0241). Ключи — те же строки словаря. */
 const CONTRACT_TITLE: Record<string, string> = {
-  photographer: t('Договор с фотографом'),
-  venue: t('Аренда площадки'),
-  host: t('Договор с ведущим'),
-  universal: t('Универсальный договор услуг'),
+  photographer: key('Договор с фотографом'),
+  venue: key('Аренда площадки'),
+  host: key('Договор с ведущим'),
+  universal: key('Универсальный договор услуг'),
 }
 
 export function Documents() {
@@ -1597,7 +1597,7 @@ export function Documents() {
             {(q.data ?? []).map((d, k) => (
               <div key={d.id ?? k} className="card-s p-3.5 flex items-center gap-3">
                 <FileText size={15} className="text-[var(--sage-deep)] shrink-0" />
-                <b className="text-[12.5px] flex-1 truncate">{(d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? t('Договор')}</b>
+                <b className="text-[12.5px] flex-1 truncate">{t((d.templateCode && CONTRACT_TITLE[d.templateCode]) ?? d.templateCode ?? key('Договор'))}</b>
                 <span className="text-[10px] text-[var(--soft)] shrink-0">{d.status === 'signed' ? t('подписан') : d.status === 'sent' ? t('отправлен') : t('черновик')}</span>
               </div>
             ))}
@@ -1609,8 +1609,8 @@ export function Documents() {
           <button key={c.id} onClick={() => nav('/wedding/documents/new')} className="press w-full card-s p-4 flex items-center gap-3 text-left fade-up">
             <Tile icon={c.icon} tile={c.tile} />
             <div className="flex-1 min-w-0">
-              <b className="text-[13.5px] block">{c.name}</b>
-              <span className="text-[10.5px] text-[var(--soft)]">{c.desc}</span>
+              <b className="text-[13.5px] block">{t(c.name)}</b>
+              <span className="text-[10.5px] text-[var(--soft)]">{t(c.desc)}</span>
             </div>
             <span className="text-[10px] font-bold px-3 py-1.5 rounded-full grad text-[var(--on-grad)] shrink-0">{t('Создать')}</span>
           </button>
