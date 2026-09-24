@@ -1,6 +1,10 @@
 /*
- * Хвост ревью 016 — фронт, F-RL-8-06: дашборд подрядчика открывался на
- * месяце по UTC, а не по местному календарю.
+ * Хвост ревью 016 — фронт.
+ *
+ * F-RL-8-06: дашборд подрядчика открывался на месяце по UTC, а не по
+ * местному календарю.
+ *
+ * F-RL-8-05: на `/us/chats` горели сразу две вкладки нижней навигации.
  *
  * Первого числа ночью подрядчик в Москве видел выручку и занятые даты ЗА
  * ПРОШЛЫЙ месяц, в Камчатке — почти весь первый день. Ошибка тихая: цифры
@@ -13,7 +17,7 @@
  * увидев дефекта, — но ложно упасть он не может ни при каком поясе.
  */
 import { describe, it, expect } from 'vitest'
-import { currentMonth } from './utils'
+import { activeTab, currentMonth } from './utils'
 
 describe('F-RL-8-06: месяц дашборда подрядчика — местный, не UTC', () => {
   it('полночь первого числа по местному времени — это уже новый месяц', () => {
@@ -32,5 +36,46 @@ describe('F-RL-8-06: месяц дашборда подрядчика — мес
   it('без аргумента берёт текущий момент и совпадает с местным календарём', () => {
     const now = new Date()
     expect(currentMonth()).toBe(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+  })
+})
+
+const COUPLE = [{ to: '/home' }, { to: '/search' }, { to: '/wedding' }, { to: '/us/chats' }, { to: '/us' }] as const
+const VENDOR = [
+  { to: '/vendor-app' },
+  { to: '/vendor-app/deals' },
+  { to: '/vendor-app/chats' },
+  { to: '/vendor-app/settings' },
+] as const
+
+describe('F-RL-8-05: подсвечена ровно одна вкладка — самая точная', () => {
+  it('на /us/chats горят «Чаты», а не «Чаты» и «Мы» разом', () => {
+    expect(activeTab(COUPLE, '/us/chats')).toBe('/us/chats')
+  })
+
+  it('внутри переписки — та же вкладка «Чаты»', () => {
+    expect(activeTab(COUPLE, '/us/chats/ch1')).toBe('/us/chats')
+  })
+
+  it('на /us и его прочих подэкранах — «Мы»', () => {
+    expect(activeTab(COUPLE, '/us')).toBe('/us')
+    expect(activeTab(COUPLE, '/us/settings')).toBe('/us')
+  })
+
+  it('совпадение по границе сегмента: /uslugi — не /us', () => {
+    expect(activeTab(COUPLE, '/uslugi')).toBeNull()
+  })
+
+  it('подэкраны свадьбы отдаются центральной кнопке, а не вкладке', () => {
+    expect(activeTab(COUPLE, '/wedding/planb')).toBe('/wedding')
+  })
+
+  it('кабинет подрядчика: подэкран без своей вкладки остаётся за «Кабинетом»', () => {
+    expect(activeTab(VENDOR, '/vendor-app')).toBe('/vendor-app')
+    expect(activeTab(VENDOR, '/vendor-app/profile')).toBe('/vendor-app')
+    expect(activeTab(VENDOR, '/vendor-app/chats/ch1')).toBe('/vendor-app/chats')
+  })
+
+  it('незнакомый путь не подсвечивает ничего', () => {
+    expect(activeTab(COUPLE, '/dayx')).toBeNull()
   })
 })

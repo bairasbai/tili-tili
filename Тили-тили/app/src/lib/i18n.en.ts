@@ -989,6 +989,7 @@ Object.assign(EN, {
   'Загружаем анкету…': 'Loading the profile…',
   'Анкета не найдена': 'Profile not found',
   'Дата свадьбы не выбрана — показаны занятые дни месяца': 'No wedding date chosen - showing the busy days of the month',
+  'Дата свадьбы не выбрана — показаны занятые дни текущего месяца': 'No wedding date chosen - showing the busy days of the current month',
   'Ваша дата свободна · зачёркнуты занятые': 'Your date is free · busy ones are struck through',
   'Ваша дата занята — посмотрите похожих свободных ниже': 'Your date is taken - see similar available ones below',
   'Забронировать': 'Book now',

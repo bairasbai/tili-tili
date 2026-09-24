@@ -94,3 +94,24 @@ export function escapeHtml(s: string): string {
 export function currentMonth(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
+
+/**
+ * Какая вкладка подсвечена: ОДНА, самая точная из подходящих (F-RL-8-05).
+ *
+ * Нижняя навигация пары сравнивала путь через `startsWith`, а `/us/chats`
+ * лежит внутри `/us` — на экране чатов горели сразу две вкладки, «Чаты» и
+ * «Мы», и человек не видел, где он на самом деле. Навигация кабинета
+ * подрядчика обходила то же самое отдельным условием только для своей
+ * корневой вкладки — теперь правило одно на обе навигации.
+ *
+ * Совпадение — по границе сегмента (`/us` не подсвечивается на `/uslugi`),
+ * побеждает самый длинный префикс.
+ */
+export function activeTab(tabs: readonly { to: string }[], pathname: string): string | null {
+  let best: string | null = null
+  for (const tb of tabs) {
+    if (pathname !== tb.to && !pathname.startsWith(`${tb.to}/`)) continue
+    if (best === null || tb.to.length > best.length) best = tb.to
+  }
+  return best
+}

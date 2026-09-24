@@ -850,7 +850,7 @@ export function VendorVerification() {
               <div className="card p-4">
                 <p className="text-[13px] font-semibold text-[var(--rose-ink)]">{t('Документы не подтверждены')} {fmtRequestDate(st.data?.checkedAt)}</p>
                 <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-1.5">{t('Причина — в уведомлениях.')}</p>
-                <button onClick={() => nav('/notifications')} className="press w-full h-[44px] rounded-full card-s text-[12.5px] font-semibold mt-3">{t('Открыть уведомления')}</button>
+                <button onClick={() => nav('/vendor-app/notifications')} className="press w-full h-[44px] rounded-full card-s text-[12.5px] font-semibold mt-3">{t('Открыть уведомления')}</button>
               </div>
             )}
             <div className="card p-4">

@@ -15,7 +15,7 @@ import { getWedding } from '@/lib/api/weddingData'
 import { ensureSlotForCategory } from '@/lib/api/slots'
 import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
-import { cn, copyText, plural } from '@/lib/utils'
+import { cn, copyText, currentMonth, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { isAuthorized } from '@/lib/api/client'
 import { t } from '@/lib/i18n'
@@ -355,7 +355,12 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   const cat = (cats.data ?? []).find(c => c.id === v?.categoryId)
   /* Занятость — с сервера, а не из хеша по идентификатору. Раньше «занятые»
      даты рисовались формулой от строки: календарь выглядел настоящим и врал. */
-  const month = (weddingDate ?? '').slice(0, 7)
+  /* Без даты свадьбы календарь показывает ТЕКУЩИЙ месяц — и занятость за
+     него действительно запрашивается. Раньше `month` был пустой строкой:
+     заголовок пустой, сетка в ноль клеток, запроса нет вовсе — а подпись под
+     карточкой обещала «показаны занятые дни месяца». Обещание без данных
+     (R-174/R-178, F-RL-8-09). Месяц — местный (R-293). */
+  const month = weddingDate ? weddingDate.slice(0, 7) : currentMonth()
   const avail = useApi(
     () => id && month ? getAvailability(id, month) : Promise.resolve({ busyDates: [] as string[], holdDates: [] as string[] }),
     [id, month],
@@ -663,7 +668,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
           </div>
           {/* Сетка — только с пришедшей занятостью: без неё каждый день
               выглядит свободным, а это и есть решение, которое здесь принимают. */}
-          {!availKnown && month ? <AsyncState q={avail} /> : (
+          {!availKnown ? <AsyncState q={avail} /> : (
           <div className="grid grid-cols-7 gap-1">
             {/* Занятость приходит с сервера. Раньше «занятые» дни считались
                 формулой от идентификатора: календарь выглядел настоящим и
@@ -688,7 +693,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             })}
           </div>
           )}
-          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни месяца') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : !weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни текущего месяца') : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
         </div>
       </div>
 

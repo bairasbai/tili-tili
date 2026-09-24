@@ -222,6 +222,12 @@ function Shell() {
           <Route path="/vendor-app/chats" element={<Chats home="/vendor-app" />} />
           <Route path="/vendor-app/chats/:id" element={<Chat home="/vendor-app" />} />
           <Route path="/vendor-app/settings" element={<Settings vendor />} />
+          {/* Двойник уведомлений в кабинете (F-RL-8-10): страница та же, но
+              обрамление выбирается по пути, и подрядчик на `/notifications`
+              получал нижнюю навигацию ПАРЫ: «Свадьба» вела в состояние без
+              свадьбы, «Чаты» — в чужие чаты пары. Тот же приём, что у
+              `/vendor-app/chats` и `/vendor-app/settings`. */}
+          <Route path="/vendor-app/notifications" element={<Notifications />} />
           <Route path="/us" element={<Us />} />
           <Route path="/us/team" element={<Team />} />
           <Route path="/inspiration" element={<Inspiration />} />

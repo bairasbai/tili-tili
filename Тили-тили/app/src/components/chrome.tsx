@@ -10,7 +10,7 @@ import { useApi } from '@/lib/api/useApi'
 import { ready } from '@/components/AsyncState'
 import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
-import { cn, goBack } from '@/lib/utils'
+import { activeTab, cn, goBack } from '@/lib/utils'
 import { catIcon } from '@/lib/icons'
 
 /* Верхняя шапка страницы */
@@ -53,7 +53,7 @@ export function TabBar() {
   const nav = useNavigate()
   const loc = useLocation()
   const tt = useT()
-  const active = (to: string) => (to === '/wedding' ? loc.pathname.startsWith('/wedding') : loc.pathname.startsWith(to))
+  const activeTo = activeTab(tabs, loc.pathname)
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab z-40">
       <div className="flex items-end justify-around px-2 pt-2 pb-[max(14px,env(safe-area-inset-bottom))]">
@@ -66,7 +66,7 @@ export function TabBar() {
               </button>
             )
           const Icon = tb.icon
-          const on = active(tb.to)
+          const on = tb.to === activeTo
           return (
             <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[var(--rose-deep)]' : 'text-[var(--soft)]')}>
               <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
@@ -119,16 +119,15 @@ export function VendorTabBar() {
   }, [loc.pathname])
   const unread = ready(chats) ? (chats.data ?? []).reduce((sum, c) => sum + (c.unread ?? 0), 0) : 0
   /* «Кабинет» подсвечен и на его подэкранах — анкете, заявке, отзывах,
-     аналитике, верификации: своей вкладки у них нет. */
-  const active = (to: string) => to === '/vendor-app'
-    ? !vendorTabs.some(x => x.to !== '/vendor-app' && loc.pathname.startsWith(x.to))
-    : loc.pathname.startsWith(to)
+     Раньше это было отдельным условием только здесь; теперь то же правило
+     работает и у навигации пары (F-RL-8-05). */
+  const activeTo = activeTab(vendorTabs, loc.pathname)
   return (
     <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] glass-tab z-40" aria-label={t('Навигация кабинета')}>
       <div className="flex items-end justify-around px-2 pt-2 pb-[max(14px,env(safe-area-inset-bottom))]">
         {vendorTabs.map(tb => {
           const Icon = tb.icon
-          const on = active(tb.to)
+          const on = tb.to === activeTo
           return (
             <button key={tb.to} onClick={() => nav(tb.to)} className={cn('press flex flex-col items-center gap-1 w-16 py-1', on ? 'text-[var(--rose-deep)]' : 'text-[var(--soft)]')}>
               <span className="relative">
