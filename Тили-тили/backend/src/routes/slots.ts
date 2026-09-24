@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound } from '../errors.js'
+import { AppError, conflict, notFound, unauthorized } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
@@ -132,6 +132,27 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     return rows[0]?.date ?? null
   }
 
+  /**
+   * Заявитель ещё жив — проверка внутри транзакции брони, под замком `for
+   * share` его строки `users` (SA-05, сиблинг ERR-0271 / R-271).
+   *
+   * `preHandler` (`plugins/auth.ts` `assertLiveSession`) видит `deleted_at`
+   * на входе, но между ним и этой транзакцией помещается целое удаление
+   * аккаунта: `DELETE /users/me` коммитился, а уже пропущенная бронь
+   * заводила сделку на стёртый аккаунт — подрядчику доставалась дата,
+   * занятая призраком, а пара её не видела. `for update` на своей строке
+   * в удалении и `for share` здесь ставят их в очередь: удаление первым —
+   * тут виден `deleted_at` и 401; бронь первой — проверка живых сделок в
+   * удалении видит сделку и отвечает 409.
+   */
+  async function assertCallerLive(client: Queryable, userId: string): Promise<void> {
+    const { rows } = await client.query<{ deleted_at: Date | null }>(
+      'select deleted_at from users where id = $1 for share',
+      [userId],
+    )
+    if (!rows[0] || rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
+  }
+
   /* ── мозаика ──────────────────────────────────────────────────────── */
   app.get('/weddings/:weddingId/slots', async (request) =>
     loadSlots(db(), request.member!.weddingId, seesMoney(request.member!.role)),
@@ -232,6 +253,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         tx(async (client) => {
           // Свадьба (её дата — под замком) прежде слота: порядок замков как у переноса.
           const date = await weddingDate(client, weddingId)
+          // Затем своя строка `users` — тем же порядком, что и удаление аккаунта.
+          await assertCallerLive(client, request.caller!.userId)
           await slotOf(client, weddingId, slotId)
 
           /* Живая анкета: опубликована и не заблокирована модератором — та же
@@ -241,9 +264,14 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
            * мошенничество, получал сделку и дату. Категорию анкеты со слотом
            * нарочно не сверяем: фотограф, который снимает и видео, занимает
            * два слота одной анкетой (ERR-0037) — слот выбирает пара. */
+          /* `for share of u`: без замка на строке подрядчика эта проверка
+            * ничего не сериализует — удаление его аккаунта не трогает свадьбу,
+            * где его бронируют, и оба порядка проходили насквозь (SA-05,
+            * сторона подрядчика). */
           const { rows: vendor } = await client.query<{ id: string }>(
             `select v.id from vendors v join users u on u.id = v.user_id and u.deleted_at is null
-              where v.id = $1 and v.published_at is not null and v.blocked_at is null`,
+              where v.id = $1 and v.published_at is not null and v.blocked_at is null
+              for share of u`,
             [body.vendorId],
           )
           if (!vendor[0]) throw notFound('Подрядчик не найден')
@@ -435,6 +463,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       assertPositivePrice(body.price.amount)
 
       return db().tx(async (client) => {
+        // Свой подрядчик — такая же сделка, и дверь такая же (SA-05).
+        await assertCallerLive(client, request.caller!.userId)
         await slotOf(client, weddingId, slotId)
         // Прежние ссылки слота гаснут до новой сделки: страховка от любого
         // пути отмены, который их не отозвал (ERR-0242).

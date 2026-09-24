@@ -267,6 +267,16 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
           for update`,
         [userId],
       )
+      /* Своя строка `users` — следом за свадьбами, тем же порядком, что берёт
+       * бронь (SA-05, хвост FL-9). Замка на свадьбах хватало только для
+       * стороны пары и только в одном порядке: если удаление успевало
+       * зафиксироваться первым, уже аутентифицированная бронь всё равно
+       * заводила сделку — `slots.ts` не перепроверял `deleted_at` заявителя
+       * после `preHandler`. Сторона подрядчика не сериализовалась вовсе:
+       * удаление подрядчика вообще не трогает свадьбу, где его бронируют.
+       * Порядок «свадьбы → users» одинаков в обеих транзакциях — цикла
+       * ожидания нет. */
+      await client.query('select 1 from users where id = $1 for update', [userId])
       const { rows: active } = await client.query<{ side: string; title: string }>(
         `select 'vendor' as side, w.title
            from deals d join vendors v on v.id = d.vendor_id join weddings w on w.id = d.wedding_id
