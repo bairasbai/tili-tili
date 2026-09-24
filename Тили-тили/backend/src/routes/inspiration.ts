@@ -15,6 +15,9 @@ import { AppError, quotaExceeded } from '../errors.js'
  */
 const MAX_LIKES = 500
 
+/** Замок потолка лайков — по человеку (класс R-271), двухключевая форма. */
+const LIKES_LOCK = 4_210_006
+
 export async function inspirationRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
@@ -44,20 +47,30 @@ export async function inspirationRoutes(app: FastifyInstance): Promise<void> {
       const { storyId } = request.params as { storyId: string }
       const userId = request.caller!.userId
 
-      const { rows } = await db().query<{ n: string }>(
-        'select count(*)::text as n from inspiration_likes where user_id = $1',
-        [userId],
-      )
-      // Лайк дешёвый, и это его свойство: без потолка список растёт
-      // ровно столько, сколько у кого-то хватит терпения нажимать.
-      if (Number(rows[0]!.n) >= MAX_LIKES) {
-        throw quotaExceeded('likes_limit', `В избранном не больше ${MAX_LIKES} историй`)
-      }
-      // Повторное нажатие — то же самое состояние, а не ошибка.
-      await db().query(
-        'insert into inspiration_likes (user_id, story_id) values ($1,$2) on conflict do nothing',
-        [userId, storyId],
-      )
+      /*
+       * Счёт и вставка — в одной транзакции за замком по человеку (F-RL7-08,
+       * класс ERR-0271 / R-271). Раньше это были два отдельных запроса: залп
+       * нажатий у потолка проходил весь — все видели `n < MAX_LIKES`, и в
+       * избранном оказывалось больше пятисот историй. Замок advisory:
+       * запирать нечего, строки ещё нет, ключ — сам человек.
+       */
+      await db().tx(async (client) => {
+        await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [LIKES_LOCK, userId])
+        const { rows } = await client.query<{ n: string }>(
+          'select count(*)::text as n from inspiration_likes where user_id = $1',
+          [userId],
+        )
+        // Лайк дешёвый, и это его свойство: без потолка список растёт
+        // ровно столько, сколько у кого-то хватит терпения нажимать.
+        if (Number(rows[0]!.n) >= MAX_LIKES) {
+          throw quotaExceeded('likes_limit', `В избранном не больше ${MAX_LIKES} историй`)
+        }
+        // Повторное нажатие — то же самое состояние, а не ошибка.
+        await client.query(
+          'insert into inspiration_likes (user_id, story_id) values ($1,$2) on conflict do nothing',
+          [userId, storyId],
+        )
+      })
       return reply.code(204).send()
     },
   )

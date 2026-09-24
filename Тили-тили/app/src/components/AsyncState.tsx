@@ -3,6 +3,7 @@
    сервера» (R-178) в трёх формах, и разносить их по файлам значило бы
    разносить правило. Само правило линта — про скорость hot-reload, не про
    поведение приложения (тот же случай, что `lib/store.tsx`). */
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { t } from '@/lib/i18n'
 import { SESSION_EXPIRED, SIGN_IN_REQUIRED } from '@/lib/api/client'
@@ -26,15 +27,48 @@ import { NO_WEDDING, SIGN_IN_FIRST, type AsyncData } from '@/lib/api/useApi'
  * человек. Здесь вместо повтора — «Войти». Узнаём случай по словам клиента
  * (`SESSION_EXPIRED`): `AsyncData` кода ошибки не несёт.
  */
-export function AsyncState({ q, forbiddenText }: { q: AsyncData<unknown>; forbiddenText?: string }) {
+export function AsyncState({ q, forbiddenText, denied }: { q: AsyncData<unknown>; forbiddenText?: string; denied?: ReactNode }) {
   if (q.loading) return <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем…')}</p>
-  if (q.forbidden) return (
+  /* Отказ со своим выходом (`denied`) — для случаев, где человеку есть что
+     сделать: кабинет без анкеты открывается заполнением анкеты. Обычный
+     отказ по роли кнопки не получает и сейчас: делать там нечего. */
+  if (q.forbidden) return denied ?? (
     <p className="text-[12px] text-[var(--soft)] py-6 text-center leading-relaxed px-6">
       {forbiddenText ?? t('Этот раздел ведёт пара — у вашей роли к нему доступа нет.')}
     </p>
   )
   if (q.error) return <ErrorState error={q.error} retry={q.reload} />
   return null
+}
+
+/**
+ * Кабинет без анкеты — один отказ на пять экранов (FL-17 / F-RL-8-12).
+ *
+ * Пара попадает в кабинет в два тапа: «Мы» → «Кабинет подрядчика» → «Сделки».
+ * Вход законный — это воронка, через неё пара и становится подрядчиком. Но
+ * сервер отвечал 403 «нужна анкета», а экран печатал умолчальный текст про
+ * роль: «Этот раздел ведёт пара — у вашей роли к нему доступа нет». Причина
+ * неверная для того, кто спросил (R-270), и раздел предлагал себя, имея
+ * единственным исходом отказ (R-176).
+ *
+ * Дашборд кабинета это состояние обрабатывал (`VendorNoProfile`), остальные
+ * пять экранов — нет. Один компонент на все пять: верная причина и выход.
+ */
+export function CabinetDenied() {
+  const nav = useNavigate()
+  return (
+    <div className="py-6 text-center">
+      <p className="text-[12px] text-[var(--soft)] leading-relaxed px-6">
+        {t('Кабинет доступен только подрядчику с анкетой — заполните её')}
+      </p>
+      <button
+        onClick={() => nav('/vendor-app/profile')}
+        className="press mt-3 px-5 h-[40px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold"
+      >
+        {t('Заполнить анкету')}
+      </button>
+    </div>
+  )
 }
 
 /**

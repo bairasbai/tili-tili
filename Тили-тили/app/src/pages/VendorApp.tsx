@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
-import { AsyncState, num, ready } from '@/components/AsyncState'
+import { AsyncState, CabinetDenied, num, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
 import { ApiError } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
@@ -675,7 +675,7 @@ export function VendorDeals() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Сделки')} sub={t('Активные и архив')} />
-      <AsyncState q={q} />
+      <AsyncState q={q} denied={<CabinetDenied />} />
       {/* Плитки — только по ответу сервера. «0 ₽ ожидается по сделкам» рядом
           с «Сервер недоступен» подрядчик читает как «денег не будет». */}
       {ready(q) && (
@@ -823,6 +823,8 @@ export function VendorVerification() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Верификация')} sub={proven ? t('пройдена') : t('галочка «Проверен» в каталоге')} />
+      {/* Без `denied`: анкету этот экран читает через `catch(noProfile)` и 404
+          ловит сам, до `AsyncState` — отказа по правам здесь не бывает (FL-17). */}
       <AsyncState q={q} />
       {/* Пока анкета не пришла, «пройти верификацию» не предлагаем: без ответа
           «не проверен» — догадка. */}

@@ -1,4 +1,4 @@
-import type { Queryable } from '../plugins/db.js'
+import type { Db, Queryable } from '../plugins/db.js'
 import { uuidv7 } from '../ids.js'
 import { deliverAfter, knownTimeZone, localDayBounds } from './quiet.js'
 
@@ -55,6 +55,15 @@ interface Prefs {
  *                   запасного вся страна жила по Москве: паре во Владивостоке
  *                   push молчали весь рабочий день и звонили в два ночи (D4-04).
  */
+/**
+ * Замок дневного лимита push — по человеку (класс R-271). Двухключевая форма,
+ * как `OTP_PHONE_LOCK`: строки, которую можно запереть, ещё нет.
+ */
+const NOTIFY_LIMIT_LOCK = 4_210_005
+
+/** Пул умеет `tx`, клиент внутри транзакции — нет. Отличаем по этому. */
+const hasTx = (db: Queryable): db is Db => typeof (db as Partial<Db>).tx === 'function'
+
 export async function notify(
   db: Queryable,
   item: NewNotification,
@@ -92,53 +101,78 @@ export async function notify(
   /* В день X тишины и лимита нет вовсе (План §18.6): свадьба идёт прямо
    * сейчас, и «разбудим утром» тут значит «уже неважно». */
   const unlimited = item.critical || prefs.wedding_today
-  let after = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, unlimited)
-  // Нашлось ли место для push в ближайшие две недели.
-  let placed = true
+  const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, unlimited)
 
-  if (!unlimited) {
-    /* Лимит считается по УЖЕ ЗАПЛАНИРОВАННЫМ на эти сутки, а не по
-     * отправленным: иначе три уведомления, отложенные до утра, утром
-     * разбудят человека все три сразу и лимит окажется бумажным.
-     *
-     * Ищем ближайший день, где место есть, а не переносим на сутки один раз:
-     * при десяти новостях единственный сдвиг сложил бы семь из них в один
-     * следующий день, и лимит там был бы нарушен ровно так же.
-     *
-     * Сутки — МЕСТНЫЕ, как и тихие часы строкой выше. Раньше границу резал
-     * `date_trunc('day')` по таймзоне сессии базы, то есть по UTC, и на
-     * Камчатке лимит разрешал шесть push за местный день вместо трёх. */
-    placed = false
-    for (let day = 0; day < PUSH_SPILL_DAYS; day++) {
-      const bounds = localDayBounds(after, tz)
-      const { rows: planned } = await db.query<{ n: string }>(
-        `select count(*)::text as n from notifications
-          where user_id = $1 and deliver_after >= $2 and deliver_after < $3`,
-        [item.userId, bounds.from, bounds.to],
-      )
-      // Свыше лимита — не выбрасываем, а переносим: непрочитанное
-      // в приложении всё равно видно сразу.
-      if (Number(planned[0]!.n) < PUSH_LIMIT_PER_DAY) {
-        placed = true
-        break
+  /*
+   * Поиск места и вставка — В ОДНОЙ транзакции за замком по человеку
+   * (F-RL3-04, класс ERR-0271 / R-271). Раньше это были «посчитал» и
+   * «вставил» двумя отдельными запросами: две новости, пришедшие
+   * одновременно, обе видели `planned < PUSH_LIMIT_PER_DAY` и обе
+   * вставлялись — дневной лимит существовал только на бумаге, а человек
+   * получал лишние звонки ровно в тот день, когда новостей и так много.
+   *
+   * Замок advisory: строки, которую можно было бы запереть, ещё нет —
+   * запирается сам человек как ключ. При `unlimited` (день X, критичное)
+   * лимита нет вовсе, считать нечего — замок не берём, чтобы не
+   * сериализовать залп новостей в самый горячий день.
+   */
+  const place = async (client: Queryable): Promise<string> => {
+    let after = startAt
+    let placed = true
+    if (!unlimited) {
+      await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [NOTIFY_LIMIT_LOCK, item.userId])
+      /* Лимит считается по УЖЕ ЗАПЛАНИРОВАННЫМ на эти сутки, а не по
+       * отправленным: иначе три уведомления, отложенные до утра, утром
+       * разбудят человека все три сразу и лимит окажется бумажным.
+       *
+       * Ищем ближайший день, где место есть, а не переносим на сутки один
+       * раз: при десяти новостях единственный сдвиг сложил бы семь из них в
+       * один следующий день, и лимит там был бы нарушен ровно так же.
+       *
+       * Сутки — МЕСТНЫЕ, как и тихие часы выше. Раньше границу резал
+       * `date_trunc('day')` по таймзоне сессии базы, то есть по UTC, и на
+       * Камчатке лимит разрешал шесть push за местный день вместо трёх. */
+      placed = false
+      for (let day = 0; day < PUSH_SPILL_DAYS; day++) {
+        const bounds = localDayBounds(after, tz)
+        const { rows: planned } = await client.query<{ n: string }>(
+          `select count(*)::text as n from notifications
+            where user_id = $1 and deliver_after >= $2 and deliver_after < $3`,
+          [item.userId, bounds.from, bounds.to],
+        )
+        // Свыше лимита — не выбрасываем, а переносим: непрочитанное
+        // в приложении всё равно видно сразу.
+        if (Number(planned[0]!.n) < PUSH_LIMIT_PER_DAY) {
+          placed = true
+          break
+        }
+        after = new Date(after.getTime() + 86_400_000)
       }
-      after = new Date(after.getTime() + 86_400_000)
     }
+
+    /* Места нет на две недели вперёд — push не будет вовсе: строка помечается
+     * доставленной сразу. Раньше она вставлялась с `deliver_after` на +14
+     * суток, и через две недели человеку звонили о новости двухнедельной
+     * давности — при живой переписке каждый день по три таких (D4-16).
+     * В приложении уведомление видно сразу, как и все остальные. */
+    if (!placed) after = now
+    const id = uuidv7()
+    await client.query(
+      `insert into notifications (id, user_id, kind, title, body, link, deliver_after, pushed_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after, placed ? null : now],
+    )
+    return id
   }
 
-  /* Места нет на две недели вперёд — push не будет вовсе: строка помечается
-   * доставленной сразу. Раньше она вставлялась с `deliver_after` на +14
-   * суток, и через две недели человеку звонили о новости двухнедельной
-   * давности — при живой переписке каждый день по три таких (D4-16).
-   * В приложении уведомление видно сразу, как и все остальные. */
-  if (!placed) after = now
-  const id = uuidv7()
-  await db.query(
-    `insert into notifications (id, user_id, kind, title, body, link, deliver_after, pushed_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after, placed ? null : now],
-  )
-  return id
+  /*
+   * Вызывают `notify()` и с пулом, и (в будущем) изнутри чужой транзакции.
+   * С пулом открываем свою — иначе `pg_advisory_xact_lock` освободится сразу
+   * же, в конце собственного запроса, и не защитит ничего. Изнутри чужой
+   * транзакции клиент `.tx` не имеет: там замок берётся прямо на нём и живёт
+   * до конца ТОЙ транзакции — то, что и нужно. Ни один вызывающий не меняется.
+   */
+  return hasTx(db) ? db.tx(place) : place(db)
 }
 
 /**

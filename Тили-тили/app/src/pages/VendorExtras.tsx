@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
-import { AsyncState, ready } from '@/components/AsyncState'
+import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorDeals, getVendorLeads, getVendorProfile, getVendorReviews, leadAction, replyToReview } from '@/lib/api/vendor'
@@ -62,7 +62,7 @@ export function VendorDealCard() {
     <div className="pb-28">
       <TopBar back fallback="/vendor-app/deals" title={d?.coupleName ?? t('Сделка')} sub={d?.weddingDate ? formatWeddingDate(d.weddingDate) : undefined} />
       <div className="px-5 mt-3 space-y-3">
-        <AsyncState q={q} />
+        <AsyncState q={q} denied={<CabinetDenied />} />
         {ready(q) && !d && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Сделка не найдена')}</p>}
         {d && (
           <>
@@ -161,7 +161,7 @@ export function VendorLead() {
   if (!lead) return (
     <div className="pb-28">
       <TopBar back title={t('Заявка')} />
-      <AsyncState q={q} />
+      <AsyncState q={q} denied={<CabinetDenied />} />
       {ready(q) && <p className="px-5 mt-6 text-[13px] text-[var(--soft)]">{t('Заявка не найдена')}</p>}
     </div>
   )
@@ -296,7 +296,7 @@ export function VendorReviews() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Отзывы')} sub={reviews.length ? `${reviews.length} ${plural(reviews.length, t('отзыв'), t('отзыва'), t('отзывов'))} · ${t('отвечено')} ${answered}` : ''} />
-      <AsyncState q={q} />
+      <AsyncState q={q} denied={<CabinetDenied />} />
       <div className="px-5 mt-3">
         {!reviews.length && ready(q) && (
           <p className="text-[12px] text-[var(--soft)] py-3">{t('Отзывов пока нет. Их оставляют пары после завершённой сделки и гости — после свадьбы.')}</p>
@@ -384,7 +384,7 @@ export function VendorAnalytics() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Аналитика')} sub={t(PERIOD_LABEL[period])} />
-      <AsyncState q={q} />
+      <AsyncState q={q} denied={<CabinetDenied />} />
       <div className="px-5 mt-3">
         <div className="flex gap-2">
           {(['month', 'season', 'year'] as const).map(x => (
