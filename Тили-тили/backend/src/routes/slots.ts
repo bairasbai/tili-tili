@@ -567,6 +567,19 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /* ── кабинет своего подрядчика ────────────────────────────────────── */
+  /**
+   * «Ссылка своего подрядчика жива» — одна формулировка на оба пути.
+   *
+   * Было два предиката, и они расходились: чтение (`GET /guest-vendor/{token}`)
+   * не проверяло `archived_at`, а запись (`inviteByToken`) проверяла — гость-подрядчик
+   * заархивированной свадьбы открывал живой экран, а любое действие с него
+   * получало 410. На HEAD разницы не видно — архивация обычно отзывает
+   * ссылки, но два определения одного и того же расходятся со временем
+   * всегда (F-RL-2-04, ревью 016).
+   */
+  const LIVE_INVITE = `i.revoked_at is null and i.expires_at > now()
+          and w.cancelled_at is null and w.archived_at is null`
+
   app.get('/guest-vendor/:token', async (request) => {
     const { token } = request.params as { token: string }
     const { rows } = await db().query<{ slot_id: string; wedding_id: string; deal_id: string | null; date: string | null }>(
@@ -574,7 +587,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
          from external_invites i
          join weddings w on w.id = i.wedding_id
          join slots s on s.id = i.slot_id
-        where i.token = $1 and i.revoked_at is null and i.expires_at > now() and w.cancelled_at is null`,
+        where i.token = $1 and ${LIVE_INVITE}`,
       [token],
     )
     const invite = rows[0]
@@ -713,8 +726,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
          from external_invites i
          join weddings w on w.id = i.wedding_id
          join slots s on s.id = i.slot_id
-        where i.token = $1 and i.revoked_at is null and i.expires_at > now()
-          and w.cancelled_at is null and w.archived_at is null`,
+        where i.token = $1 and ${LIVE_INVITE}`,
       [token],
     )
     if (!rows[0]) throw new AppError(410, 'gone', 'Ссылка недействительна: истекла или отозвана')

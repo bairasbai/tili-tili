@@ -18,6 +18,7 @@ import {
   REFRESH_TTL_SECONDS,
   createRefreshToken,
   hashRefreshToken,
+  safeEqual,
   signAccessToken,
 } from '../auth/tokens.js'
 
@@ -37,7 +38,16 @@ interface Tokens {
  */
 export function clientIp(request: FastifyRequest): string | null {
   const ip = request.ip
-  return ip && isIP(ip) ? ip : null
+  if (!ip) return null
+  /* Зона интерфейса отрезается до проверки: `net.isIP` считает
+   * `fe80::1%eth0` валидным IPv6 (возвращает 6), а PostgreSQL тип `inet`
+   * такую строку не принимает и отвечает 22P02 — заголовок
+   * `X-Forwarded-For` с таким значением давал 500 на `POST /auth/otp` и
+   * на записи согласия (F-RL-1-01, ревью 016). Сам адрес без зоны —
+   * ровно то, что нужно для счётчика лимитов; остаток без адреса — не адрес. */
+  const zone = ip.indexOf('%')
+  const bare = zone === -1 ? ip : ip.slice(0, zone)
+  return isIP(bare) ? bare : null
 }
 
 /**
@@ -339,7 +349,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         if (exhausted.length > 0) throw new TooManyRequests(60, 'Слишком много попыток. Запросите новый код.')
         throw unauthorized('Код неверный или устарел. Запросите новый.')
       }
-      const otp = alive.find((row) => row.code_hash === entered)
+      /* Сравнение дайджестов — `safeEqual` (постоянное время), а не `===`.
+       * Эксплуатации здесь нет — дайджест ключевой (HMAC на секрете), и
+       * попыток всего пять, но функция для того и написана, а лежала
+       * неиспользованной (F-RL-1-04, ревью 016): сравнение секретов через
+       * `===` — привычка, которая рано или поздно переедет туда, где она стоит денег. */
+      const otp = alive.find((row) => safeEqual(row.code_hash, entered))
       if (!otp) throw unauthorized('Код неверный или устарел. Запросите новый.')
 
       /* Строка старше окна восстановления — стирается сразу, до входа

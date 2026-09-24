@@ -578,15 +578,21 @@ export async function rsvpDigest(app: FastifyInstance): Promise<number> {
       group by w.id`,
   )
   const pass = startPass('rsvp-digest')
+  /* Ключ задачи на свадьбу и сутки: без него два одновременных прохода
+   * фоновых задач (перезапуск, два экземпляра сервера) рассылают одну и ту же
+   * сводку дважды — всей команде свадьбы (F-RL3-03, ревью 016). Тот же
+   * приём, что у `after:` и `catering:` ниже: первый вставивший ключ и шлёт. */
+  const day = new Date().toISOString().slice(0, 10)
   for (const row of rows) {
-    await isolated(app, pass, { weddingId: row.wedding_id }, 'не удалось отправить сводку ответов гостей', () =>
-      notifyWedding(db, row.wedding_id, null, {
+    await isolated(app, pass, { weddingId: row.wedding_id }, 'не удалось отправить сводку ответов гостей', async () => {
+      if (!(await claimJobKey(db, `rsvp:${row.wedding_id}:${day}`))) return false
+      return notifyWedding(db, row.wedding_id, null, {
         kind: 'guest',
         title: 'Ответы гостей за сутки',
         body: `Придут: ${row.yes}. Не смогут: ${row.no}.`,
         link: '/guests',
-      }),
-    )
+      })
+    })
   }
   reportPass(app, pass)
   return rows.length

@@ -234,7 +234,16 @@ export function rotateNewcomers<T extends { reviewsCount: number }>(
   const have = items.filter((v) => v.reviewsCount === 0).length
   if (have >= need || pool.length === 0) return { items, keptFromMain: items.length }
 
-  const missing = Math.min(need - have, pool.length)
+  /* Хотя бы одна строка основной выдачи обязана остаться. Курсор следующей
+   * страницы берётся по последней ОСТАВШЕЙСЯ (`routes/catalog.ts`, `anchor`), и
+   * при пустом остатке якоря нет — курсор съезжает на исходный, и вытесненная
+   * анкета не попадает ни на эту страницу, ни на следующую, то есть пропадает
+   * из каталога совсем (F-RL7-04, ревью 016). Видно при `limit=1`: приложение
+   * шлёт 30, прямой клиент API может прислать сколько угодно. Пустая основная
+   * выдача — отдельный случай: терять там нечего, новички идут целиком. */
+  const room = items.length === 0 ? pool.length : items.length - 1
+  const missing = Math.min(need - have, pool.length, room)
+  if (missing <= 0) return { items, keptFromMain: items.length }
   const known = new Set(items.map((v) => (v as unknown as { id: string }).id))
   const additions = pool.filter((v) => !known.has((v as unknown as { id: string }).id)).slice(0, missing)
   if (additions.length === 0) return { items, keptFromMain: items.length }
