@@ -164,17 +164,37 @@ async function onFirstMessage(
  * должны оба, и оно должно остаться в истории. Не чаще раза в сутки
  * на чат — иначе оно превращается в шум и его перестают читать.
  */
+/**
+ * Замок на чат для «раз в сутки» (класс R-271). Строки, которую можно
+ * запереть, здесь нет: предупреждения ещё не существует — поэтому advisory,
+ * двухключевой формы, как `OTP_PHONE_LOCK`.
+ */
+const PAYOUT_WARNING_LOCK = 4_210_003
+
 async function warnAboutPayoutBypass(app: FastifyInstance, db: Db, chatId: string, text: string): Promise<string | null> {
   if (!looksLikePayoutBypass(text)) return null
-  const { rows } = await db.query<{ n: string }>(
-    `select count(*)::text as n from messages
-      where chat_id = $1 and sender_id is null and text = $2 and created_at > now() - interval '1 day'`,
-    [chatId, PAYOUT_WARNING],
-  )
-  if (Number(rows[0]!.n) > 0) return PAYOUT_WARNING
-
-  await db.query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3)', [uuidv7(), chatId, PAYOUT_WARNING])
-  await app.realtime.publish({ chatId, type: 'message', actorId: 'system' })
+  /* Счёт и вставка — в одной транзакции за замком чата (F-RL3-05,
+   * класс ERR-0271 / R-271). Раньше два сообщения с признаками выплаты мимо
+   * эскроу, отправленные одновременно, оба видели пустой счётчик и оба вставляли
+   * предупреждение — правило «не чаще раза в сутки» оказывалось бумажным именно
+   * в тот момент, когда разговор реально уходит мимо платформы. Живой канал —
+   * после фиксации: сообщать о строке до коммита значит показать то, чего может не быть. */
+  const inserted = await db.tx(async (client) => {
+    await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [PAYOUT_WARNING_LOCK, chatId])
+    const { rows } = await client.query<{ n: string }>(
+      `select count(*)::text as n from messages
+        where chat_id = $1 and sender_id is null and text = $2 and created_at > now() - interval '1 day'`,
+      [chatId, PAYOUT_WARNING],
+    )
+    if (Number(rows[0]!.n) > 0) return false
+    await client.query('insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3)', [
+      uuidv7(),
+      chatId,
+      PAYOUT_WARNING,
+    ])
+    return true
+  })
+  if (inserted) await app.realtime.publish({ chatId, type: 'message', actorId: 'system' })
   return PAYOUT_WARNING
 }
 

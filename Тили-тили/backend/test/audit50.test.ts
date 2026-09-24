@@ -15,7 +15,7 @@
  *     команде свадьбы. Проверка с живой базой.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { randomInt } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { clientIp } from '../src/routes/auth.js'
@@ -179,5 +179,161 @@ describe.skipIf(!live)('T3 · F-RL3-03: сводка ответов гостей
     // Второй проход — перезапуск задач или второй экземпляр сервера.
     await rsvpDigest(app)
     expect(await titled(), 'сводка ушла дважды — ключ задачи не держит').toBe(1)
+  })
+})
+
+describe.skipIf(!live)('T4/T5 · F-RL3-05, F-RL3-06: предупреждение о выплате и дебаунс рассылки — под замком', () => {
+  let app: FastifyInstance
+  let counter = 0
+  /* Префикс телефонов прогона перебирается до свободного (R-259). */
+  let RUN = String(randomInt(100_000, 1_000_000))
+  const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
+
+  beforeAll(async () => {
+    app = await buildApp({
+      env: 'test',
+      databaseUrl: DB ?? null,
+      redisUrl: null,
+      corsOrigins: [],
+      jwtAccessSecret: SECRET_A,
+      jwtRefreshSecret: SECRET_R,
+      policyVersion: '2026-09-02',
+      otpMaxPerHourTotal: 1_000_000,
+      otpMaxPerIpHour: 1_000_000,
+    })
+    await app.ready()
+    for (let i = 0; i < 20; i++) {
+      const { rows } = await app.db!.query('select 1 from users where phone like $1 limit 1', [`+79${RUN}%`])
+      if (rows.length === 0) break
+      RUN = String(randomInt(100_000, 1_000_000))
+    }
+  })
+
+  afterAll(async () => {
+    await app?.close()
+  })
+
+  const auth = (token: string) => ({ authorization: `Bearer ${token}` })
+  const key = () => ({ 'idempotency-key': randomUUID() })
+
+  /* Гонка видна только на прогретом пуле: холодный сам сериализует залп. */
+  const warmPool = () => Promise.all(Array.from({ length: 10 }, () => app.db!.query('select pg_sleep(0.2)')))
+
+  async function readCode(phone: string): Promise<string> {
+    const { rows } = await app.db!.query<{ code_hash: string }>(
+      'select code_hash from otp_codes where phone = $1 and consumed_at is null order by created_at desc limit 1',
+      [phone],
+    )
+    for (let i = 0; i < 10000; i++) {
+      const c = String(i).padStart(4, '0')
+      if (hashCode(SECRET_R, phone, c) === rows[0]!.code_hash) return c
+    }
+    throw new Error('код не подобрался')
+  }
+
+  async function newUser() {
+    const phone = `+79${RUN}${String(++counter).padStart(3, '0')}`
+    await app.inject({ method: 'POST', url: '/auth/otp', payload: { phone }, remoteAddress: IP })
+    const v = await app.inject({ method: 'POST', url: '/auth/otp/verify', payload: { phone, code: await readCode(phone) } })
+    const body = v.json() as { accessToken: string; user: { id: string } }
+    await app.inject({
+      method: 'POST',
+      url: '/users/me/consent',
+      headers: auth(body.accessToken),
+      payload: { policyVersion: '2026-09-02' },
+    })
+    return { token: body.accessToken, userId: body.user.id }
+  }
+
+  async function newWedding() {
+    const user = await newUser()
+    const w = await app.inject({
+      method: 'POST',
+      url: '/weddings',
+      headers: auth(user.token),
+      payload: {
+        partnerName: 'Тимур',
+        date: '2027-06-14',
+        city: { name: 'Уфа', region: 'Башкортостан' },
+        budgetTotal: { amount: 100_000_000, currency: 'RUB' },
+      },
+    })
+    expect(w.statusCode, w.body.slice(0, 200)).toBe(201)
+    return { ...user, weddingId: w.json().id as string }
+  }
+
+  async function publishedVendor() {
+    const owner = await newUser()
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/vendor/profile',
+      headers: auth(owner.token),
+      payload: {
+        name: `Студия ${RUN}-${counter}`,
+        categoryId: 'photo',
+        city: { name: 'Уфа', region: 'Башкортостан' },
+        priceFrom: { amount: 4_000_000, currency: 'RUB' },
+      },
+    })
+    expect(put.statusCode, put.body.slice(0, 200)).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(owner.token) })).statusCode).toBe(200)
+    return { ...owner, vendorId: put.json().id as string }
+  }
+
+  it('T4: залп из 12 сообщений с признаками выплаты мимо договора даёт ОДНО предупреждение', async () => {
+    const w = await newWedding()
+    const vendor = await publishedVendor()
+    const chat = await app.inject({ method: 'POST', url: `/chats/vendor/${vendor.vendorId}`, headers: auth(w.token) })
+    expect(chat.statusCode, chat.body.slice(0, 200)).toBe(200)
+    const chatId = chat.json().id as string
+
+    const say = (text: string) =>
+      app.inject({ method: 'POST', url: `/chats/${chatId}/messages`, headers: { ...auth(w.token), ...key() }, payload: { text } })
+
+    await warmPool()
+    /* Размер залпа — часть условия воспроизведения, как у FL-01. Проверено
+       отрицательным контролем на снятом замке: два запроса и даже шесть
+       успевают сериализоваться сами и зеленеют без фикса; двенадцать дают
+       три предупреждения вместо одного. Путь до счётчика длинный (вставка
+       сообщения, уведомления, живой канал), и окно гонки узкое. */
+    const baits = [
+      `Скиньте номер карты, переведу ${RUN}`,
+      `Давайте без договора, так дешевле ${RUN}`,
+      `Переведите на карту сегодня ${RUN}`,
+      `Номер карты пришлю в личку ${RUN}`,
+      `Без договора быстрее ${RUN}`,
+      `Переведи на карту половину ${RUN}`,
+    ]
+    const both = await Promise.all([...baits, ...baits].map(say))
+    for (const r of both) expect(r.statusCode, r.body.slice(0, 200)).toBe(201)
+
+    const { rows } = await app.db!.query<{ n: string }>(
+      `select count(*)::text as n from messages where chat_id = $1 and sender_id is null`,
+      [chatId],
+    )
+    expect(Number(rows[0]!.n), 'предупреждение задвоилось — «не чаще раза в сутки» бумажное').toBe(1)
+  })
+
+  it('T5: залп из 6 нажатий «уведомить о точках сбора» даёт ОДНУ рассылку', async () => {
+    const w = await newWedding()
+    const fire = () =>
+      app.inject({
+        method: 'POST',
+        url: `/weddings/${w.weddingId}/logistics/notify-pickup`,
+        headers: { ...auth(w.token), ...key() },
+      })
+
+    await warmPool()
+    // Шесть нажатий залпом — см. пояснение в T4 про размер залпа.
+    const both = await Promise.all(Array.from({ length: 6 }, fire))
+    for (const r of both) expect(r.statusCode, r.body.slice(0, 200)).toBe(202)
+
+    const { rows } = await app.db!.query<{ n: string }>(
+      `select count(*)::text as n from broadcasts where wedding_id = $1 and action = 'notify-pickup'`,
+      [w.weddingId],
+    )
+    expect(Number(rows[0]!.n), 'рассылка задвоилась — дебаунс 30 секунд не держит гонку').toBe(1)
+    const debounced = both.filter((r) => (r.json() as { debounced: boolean }).debounced === true)
+    expect(debounced, 'ровно одно нажатие рассылает, остальные — «уже разослано»').toHaveLength(5)
   })
 })

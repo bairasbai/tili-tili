@@ -16,6 +16,10 @@ import { COMMITTED, type DealState } from '../deals/state.js'
 /** Повтор рассылки в это окно считается тем же нажатием. */
 const DEBOUNCE_SECONDS = 30
 
+/* Замок на пару «свадьба + действие» для дебаунса рассылки (класс R-271):
+ * строки, которую можно запереть, ещё нет — именно её отсутствие и проверяется. */
+const BROADCAST_LOCK = 4_210_004
+
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 
 /** Дата-время тайминга: `2027-06-14T09:00:00.000Z` или со смещением `+03:00`. */
@@ -724,21 +728,35 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     // таблица растёт от каждого нажатия и сама себя не чистит.
     await db().query("delete from broadcasts where created_at < now() - interval '90 days'")
 
-    const { rows } = await db().query<{ id: string; created_at: Date }>(
-      `select id, created_at from broadcasts
-        where wedding_id = $1 and action = $2 and created_at > now() - ($3 || ' seconds')::interval
-        order by created_at desc limit 1`,
-      [weddingId, action, String(DEBOUNCE_SECONDS)],
-    )
-    if (rows[0]) return { broadcastId: rows[0].id, recipients, notified: 0, debounced: true }
-
-    const id = uuidv7()
-    await db().query('insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)', [
-      id,
-      weddingId,
-      action,
-      recipients,
-    ])
+    /* Счёт предыдущей рассылки и вставка новой — в одной транзакции за замком
+     * пары «свадьба + действие» (F-RL3-06, класс ERR-0271 / R-271). Два нажатия
+     * «Разослать» подряд — обычное дело в день X, и оба видели пустой журнал:
+     * гости получали две одинаковые рассылки, а дебаунс в 30 секунд был бумажным.
+     * Уведомление команды — после фиксации, чтобы не держать замок на время разбора
+     * получателей и не обещать строку, которой может не быть. */
+    const claimed = await db().tx(async (client) => {
+      await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [
+        BROADCAST_LOCK,
+        `${weddingId}:${action}`,
+      ])
+      const { rows } = await client.query<{ id: string }>(
+        `select id from broadcasts
+          where wedding_id = $1 and action = $2 and created_at > now() - ($3 || ' seconds')::interval
+          order by created_at desc limit 1`,
+        [weddingId, action, String(DEBOUNCE_SECONDS)],
+      )
+      if (rows[0]) return { id: rows[0].id, fresh: false }
+      const fresh = uuidv7()
+      await client.query('insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)', [
+        fresh,
+        weddingId,
+        action,
+        recipients,
+      ])
+      return { id: fresh, fresh: true }
+    })
+    if (!claimed.fresh) return { broadcastId: claimed.id, recipients, notified: 0, debounced: true }
+    const id = claimed.id
     /* Команда узнаёт сразу: это её работа — встретить гостей на точке
      * сбора и добрать голоса за меню. Автор нажатия себе не пишет. */
     const notified = await notifyWedding(db(), weddingId, actorId, {
