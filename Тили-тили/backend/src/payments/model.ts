@@ -45,8 +45,8 @@ export interface InstallmentRow {
 /** Выборка этапа. Требует `deals d` в запросе: цена и оплаты сделки берутся оттуда. */
 export const INSTALLMENT_SELECT = `i.id,i.deal_id,i.title,i.amount::text as amount,i.due::text as due,
   i.version,i.cancelled_at,i.cancel_reason,
-  (select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
-     from payments p where p.installment_id=i.id and p.status <> 'cancelled')::text as paid,
+  -- Сумму привязанных отметок ведёт триггер, CHECK держит её в [0; amount] (ревью 018, M-02).
+  i.paid::text as paid,
   d.price::text as deal_price,${PAID_SUM}::text as deal_paid`
 /** Порядок этапов: по сроку, затем по созданию. Им же неразнесённые деньги ложатся на этапы. */
 export const INSTALLMENT_ORDER = 'i.due,i.created_at,i.id'

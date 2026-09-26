@@ -1040,6 +1040,10 @@ paths:
     get:
       tags: [budget]
       summary: Бюджет (статьи + автосуммы из слотов)
+      description: |
+        Коды: 409 money_out_of_range (итог оплат вне точного диапазона — цены сделок порядка
+        10¹⁶ копеек), financial_history_too_large (больше 10 000 строк истории оплат). Сводка
+        оплат считается вместе с бюджетом, и её отказ — отказ всего ответа (ревью 018, M-06).
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       responses:
@@ -1048,6 +1052,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Budget' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /weddings/{weddingId}/budget/settings:
     patch:
       tags: [budget]
@@ -5436,24 +5441,26 @@ components:
           type: integer
           minimum: 1
           maximum: 2147483647
-        status:
-          type: string
-          enum:
-          - pending
-          - partial
-          - paid
-          - covered
-          - cancelled
-          description: |
-            paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
-            сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
-            ничего; cancelled — этап отменён.
+        status: { $ref: '#/components/schemas/PaymentInstallmentStatus' }
         overdue:
           type: boolean
           description: 'Срок прошёл, а `remaining` больше нуля.'
         cancelReason:
           type: string
           nullable: true
+    PaymentInstallmentStatus:
+      type: string
+      enum:
+      - pending
+      - partial
+      - paid
+      - covered
+      - cancelled
+      description: |
+        paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
+        сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
+        ничего; cancelled — этап отменён. Одна схема на этап и на его строку в
+        `PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).
     PaymentRecord:
       type: object
       required:
@@ -5631,15 +5638,7 @@ components:
                 format: uuid
               title:
                 type: string
-              status:
-                type: string
-                description: 'Те же значения, что у `PaymentInstallment.status`, включая `covered` (ревью 018, M-01).'
-                enum:
-                - pending
-                - partial
-                - paid
-                - covered
-                - cancelled
+              status: { $ref: '#/components/schemas/PaymentInstallmentStatus' }
               remaining:
                 $ref: '#/components/schemas/Money'
     PaymentHistoryExport:

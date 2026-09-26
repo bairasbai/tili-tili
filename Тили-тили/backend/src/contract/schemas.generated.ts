@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 79. */
+ * Схем: 80. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1748,15 +1748,7 @@ export const CONTRACT_SCHEMAS = {
                   "maximum": 2147483647
               },
               "status": {
-                  "type": "string",
-                  "enum": [
-                      "pending",
-                      "partial",
-                      "paid",
-                      "covered",
-                      "cancelled"
-                  ],
-                  "description": "paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами\nсделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —\nничего; cancelled — этап отменён.\n"
+                  "$ref": "contract#/definitions/PaymentInstallmentStatus"
               },
               "overdue": {
                   "type": "boolean",
@@ -1855,6 +1847,17 @@ export const CONTRACT_SCHEMAS = {
               }
           },
           "additionalProperties": false
+      },
+      "PaymentInstallmentStatus": {
+          "type": "string",
+          "enum": [
+              "pending",
+              "partial",
+              "paid",
+              "covered",
+              "cancelled"
+          ],
+          "description": "paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами\nсделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —\nничего; cancelled — этап отменён. Одна схема на этап и на его строку в\n`PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).\n"
       },
       "PaymentPlanLink": {
           "type": "object",
@@ -2052,15 +2055,7 @@ export const CONTRACT_SCHEMAS = {
                               "type": "string"
                           },
                           "status": {
-                              "type": "string",
-                              "description": "Те же значения, что у `PaymentInstallment.status`, включая `covered` (ревью 018, M-01).",
-                              "enum": [
-                                  "pending",
-                                  "partial",
-                                  "paid",
-                                  "covered",
-                                  "cancelled"
-                              ]
+                              "$ref": "contract#/definitions/PaymentInstallmentStatus"
                           },
                           "remaining": {
                               "$ref": "contract#/definitions/Money"
@@ -3491,6 +3486,7 @@ export type ContractSchemaName =
   | "PaymentInstallmentCreate"
   | "PaymentInstallmentPatch"
   | "PaymentInstallmentPay"
+  | "PaymentInstallmentStatus"
   | "PaymentPlanLink"
   | "PaymentRecord"
   | "PaymentSchedule"
