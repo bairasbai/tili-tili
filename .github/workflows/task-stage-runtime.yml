@@ -1,45 +1,11 @@
-name: Task stage disposable runtime
+name: Task stage disposable runtime (completed)
 on:
-  push:
-    branches: [feature/product-improvements-stage1-tasks]
-    paths: [.github/workflows/task-stage-runtime.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  export:
-    if: github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
+  completed:
+    if: false
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
-      - name: Package test executables, not database contents
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/task-runtime"
-          docker run --rm --entrypoint sh -v "$RUNNER_TEMP/task-runtime:/out" postgres:16-bookworm -ec '
-            mkdir -p /out/usr/lib/postgresql/16 /out/usr/share/postgresql /out/deps
-            cp -a /usr/lib/postgresql/16/bin /usr/lib/postgresql/16/lib /out/usr/lib/postgresql/16/
-            cp -a /usr/share/postgresql/16 /out/usr/share/postgresql/
-            for f in /usr/lib/postgresql/16/bin/* /usr/lib/postgresql/16/lib/pgcrypto.so /usr/lib/postgresql/16/lib/citext.so /usr/lib/postgresql/16/lib/plpgsql.so; do
-              ldd "$f" 2>/dev/null || true
-            done | grep -oE "/[^ ]+" | sort -u | while read -r lib; do
-              case "$lib" in */ld-linux*|*/libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) test -f "$lib" && cp -L "$lib" /out/deps/ ;; esac
-            done
-            test -f /out/deps/libicuuc.so.72
-            test -f /out/deps/libldap-2.5.so.0
-            LD_LIBRARY_PATH=/out/deps /out/usr/lib/postgresql/16/bin/postgres --version
-          '
-          docker run --rm --entrypoint sh -v "$RUNNER_TEMP/task-runtime:/out" redis:7-bookworm -ec '
-            mkdir -p /out/bin /out/deps
-            cp /usr/local/bin/redis-server /usr/local/bin/redis-cli /out/bin/
-            ldd /usr/local/bin/redis-server | grep -oE "/[^ ]+" | while read -r lib; do
-              case "$lib" in */ld-linux*|*/libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) test -f "$lib" && cp -L "$lib" /out/deps/ ;; esac
-            done
-          '
-          tar -czf "$RUNNER_TEMP/task-runtime.tar.gz" -C "$RUNNER_TEMP/task-runtime" .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: task-stage-runtime
-          path: ${{ runner.temp }}/task-runtime.tar.gz
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
+      - run: echo 'One-time runtime export is complete.'
