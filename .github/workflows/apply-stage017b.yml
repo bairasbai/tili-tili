@@ -161,10 +161,22 @@ jobs:
           (cd 'Тили-тили/backend' && node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
           (cd 'Тили-тили/app' && node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000) > "$RUNNER_TEMP/task-vite.log" 2>&1 & ui=$!
           trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
+          ready=0
           for attempt in $(seq 1 60); do
-            if test -f "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health/ready >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then break; fi
+            if ! kill -0 "$api" 2>/dev/null; then
+              echo 'Fixture API exited before becoming ready'
+              cp "$RUNNER_TEMP/task-api.log" "$E2E_RESULT_DIR/task-api.log" || true
+              exit 1
+            fi
+            if test -f "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health/ready >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
             sleep 1
           done
+          if test "$ready" != 1; then
+            echo 'Browser fixture did not become ready in 60 seconds'
+            cp "$RUNNER_TEMP/task-api.log" "$E2E_RESULT_DIR/task-api.log" || true
+            cp "$RUNNER_TEMP/task-vite.log" "$E2E_RESULT_DIR/task-vite.log" || true
+            exit 1
+          fi
           python 'Тили-тили/backend/scripts/task-e2e-browser.py'
           python - <<'PY'
           import json,os,pathlib
