@@ -61,6 +61,17 @@ export interface Config {
   coldOutreachPerDay: number
   /** Сколько дней отменённая свадьба лежит в архиве, прежде чем уборка сотрёт её. */
   weddingArchiveDays: number
+  /**
+   * Где лежат приватные подтверждения оплат (018-B). `db` — файл до 512 КБ в
+   * самой базе; пусто — загрузка новых выключена и отвечает 501
+   * `storage_not_configured`, а список, скачивание и удаление уже загруженных
+   * работают. По умолчанию выключено: файлы в базе раздувают её и резервные
+   * копии, и включает их владелец, а не выкладка (ревью 018, BB-01).
+   */
+  receiptsStorage: 'db' | null
+  /** Квоты подтверждений на свадьбу: файлов и байт всего (ревью 018, BB-01). */
+  receiptsMaxPerWedding: number
+  receiptsMaxBytesPerWedding: number
   /** Куда слать неожиданные ошибки. Пусто — не слать никуда и сказать об этом. */
   sentryDsn: string | null
   /** Ключи Web Push. Пока их нет, подписка отвечает 501 — см. routes/notifications. */
@@ -156,6 +167,14 @@ function envText(raw: string | undefined): string | null {
  */
 function parseArchiveDays(raw: string | undefined): number {
   return Math.max(30, Math.round(envNumber(raw, 365)))
+}
+
+/** `RECEIPTS_STORAGE`: `db` или пусто. Опечатка — ошибка на старте, а не тихо выключенная загрузка. */
+function parseReceiptsStorage(raw: string | undefined): 'db' | null {
+  const value = envText(raw)
+  if (value === null) return null
+  if (value.trim() === 'db') return 'db'
+  throw new ConfigError(`RECEIPTS_STORAGE — db или пусто (загрузка подтверждений оплат выключена). Получено: ${JSON.stringify(raw)}`)
 }
 
 const TILLY_PROVIDERS: readonly TillyProvider[] = ['openrouter', 'ollama', 'openai']
@@ -257,6 +276,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     rateLimitPerSecond: envNumber(source.RATE_LIMIT_PER_SECOND, 10),
     coldOutreachPerDay: envNumber(source.COLD_OUTREACH_PER_DAY, 5),
     weddingArchiveDays: parseArchiveDays(source.WEDDING_ARCHIVE_DAYS),
+    receiptsStorage: parseReceiptsStorage(source.RECEIPTS_STORAGE),
+    receiptsMaxPerWedding: Math.max(1, Math.round(envNumber(source.RECEIPTS_MAX_PER_WEDDING, 50))),
+    receiptsMaxBytesPerWedding: Math.max(524_288, Math.round(envNumber(source.RECEIPTS_MAX_BYTES_PER_WEDDING, 25 * 1024 * 1024))),
     sentryDsn: envText(source.SENTRY_DSN),
     vapidPublicKey: envText(source.VAPID_PUBLIC_KEY),
     vapidPrivateKey: envText(source.VAPID_PRIVATE_KEY),

@@ -2036,10 +2036,12 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "status": {
                               "type": "string",
+                              "description": "Те же значения, что у `PaymentInstallment.status`, включая `covered` (ревью 018, M-01).",
                               "enum": [
                                   "pending",
                                   "partial",
                                   "paid",
+                                  "covered",
                                   "cancelled"
                               ]
                           },

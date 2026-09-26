@@ -171,7 +171,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
   }
 
   describe("T1 · сторож схемы: каждая таблица с currency несёт проверенную CHECK currency = 'RUB'", () => {
-    it('информационная схема: ровно 14 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
+    it('информационная схема: ровно 15 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
       const { rows: tables } = await app.db!.query<{ table_name: string }>(
         `select table_name
            from information_schema.columns
@@ -182,7 +182,8 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
       // таблицу. Но количество — часть проверки: молчаливое появление 14-й
       // обязано остановить тест, а не проскочить незамеченным.
       // 14-я — payment_installments (018-A, ревью 018 P-10): сумма этапа — деньги, как и остальные.
-      expect(tables.map((r) => r.table_name)).toHaveLength(14)
+      // 15-я — budget_category_limits (018-B, ревью 018): лимит категории — сумма, а сумма без валюты — не деньги.
+      expect(tables.map((r) => r.table_name)).toHaveLength(15)
 
       const EXACT_DEF = "CHECK ((currency = 'RUB'::bpchar))"
       const { rows: allChecks } = await app.db!.query<{
@@ -309,7 +310,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
     })
   })
 
-  describe('T3 · поведение на всех 13: минимальный INSERT с валютой ≠ RUB — своя CHECK, ничего не остаётся', () => {
+  describe('T3 · поведение на всех 15: минимальный INSERT с валютой ≠ RUB — своя CHECK, ничего не остаётся', () => {
     /**
      * Одна минимальная строка на каждую из 13 таблиц: `currency` сразу
      * 'USD', остальные колонки — ровно то, что нужно, чтобы упасть могла
@@ -390,12 +391,23 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
           sql: `insert into vendor_packages (id, vendor_id, name, currency) values ($1, $2, 'F2 probe', 'USD')`,
           params: [id(), id()],
         },
+        // 018-A и 018-B: этап графика и лимит категории — тоже деньги.
+        {
+          table: 'payment_installments',
+          sql: `insert into payment_installments (id, deal_id, title, amount, currency, due) values ($1, $2, 'F2 probe', 100, 'USD', '2027-01-01')`,
+          params: [id(), id()],
+        },
+        {
+          table: 'budget_category_limits',
+          sql: `insert into budget_category_limits (wedding_id, category_id, amount, currency) values ($1, 'b4', 100, 'USD')`,
+          params: [id()],
+        },
       ]
     }
 
-    it('на каждой из 13 таблиц — 23514 и своя CHECK, вся транзакция откатывается', async () => {
+    it('на каждой из 15 таблиц — 23514 и своя CHECK, вся транзакция откатывается', async () => {
       const list = probes()
-      expect(list).toHaveLength(13)
+      expect(list).toHaveLength(15)
       const rollbackSentinel = new Error('audit52: intentional rollback (T3)')
       const results: Array<{ table: string; result: PgError }> = []
       try {
