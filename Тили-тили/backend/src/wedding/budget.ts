@@ -12,7 +12,7 @@ const rub = (amount: number) => ({ amount, currency: 'RUB' })
  * собой, и резерв внутри них означал бы, что часть сметы просто уменьшили.
  * Доля считается на сервере — иначе два экрана посчитают её по-разному.
  */
-const RESERVE_SHARE = 0.1
+const DEFAULT_RESERVE_BPS = 1000
 
 /**
  * Бюджет свадьбы целиком — одна функция для `GET …/budget` и для подсказок
@@ -26,6 +26,18 @@ export async function loadBudget(db: Queryable, weddingId: string) {
       [weddingId],
     )
     const total = Number(wedding[0]?.budget_total ?? 0)
+    const { rows: settings } = await db.query<{ reserve_bps: number; version: number }>(
+      'select reserve_bps, version from wedding_budget_settings where wedding_id = $1', [weddingId],
+    )
+    const reserveBps = settings[0]?.reserve_bps ?? DEFAULT_RESERVE_BPS
+    const settingsVersion = settings[0]?.version ?? 0
+    const { rows: savedLimits } = await db.query<{ category_id: string; amount: string; version: number; is_custom: boolean }>(
+      'select category_id, amount::text as amount, version, is_custom from budget_category_limits where wedding_id = $1', [weddingId],
+    )
+    // Keep reset rows as version tombstones: deleting them would allow an old version=0 client
+    // to write again after a custom -> auto cycle (ABA). Only is_custom rows override the auto limit.
+    const limitStates = new Map(savedLimits.map(row => [row.category_id, row]))
+    const limits = new Map(savedLimits.filter(row => row.is_custom).map(row => [row.category_id, row]))
 
     // Мягкая бронь входит в обязательства: пара назвала сумму и держит дату.
     const { rows: deals } = await db.query<{ category_id: string; amount: string; vendor: string }>(
@@ -68,7 +80,9 @@ export async function loadBudget(db: Queryable, weddingId: string) {
         color: c.color,
         // План — доля от общего бюджета пары: лимиты мока заданы под свадьбу
         // за 1,5 млн, а у каждой пары бюджет свой.
-        planned: rub(Math.round(total * c.share)),
+        planned: rub(limits.has(c.id) ? Number(limits.get(c.id)!.amount) : Math.round(total * c.share)),
+        limitCustom: limits.has(c.id),
+        limitVersion: limitStates.get(c.id)?.version ?? 0,
         fromSlots: auto,
         live: liveNames.get(c.id)?.join(' · ') ?? null,
         items: mine.map((i) => ({
@@ -85,6 +99,10 @@ export async function loadBudget(db: Queryable, weddingId: string) {
       [...fromSlots.values()].reduce((a, b) => a + b, 0) + items.reduce((a, i) => a + Number(i.amount), 0)
 
     const { summary: paymentSummary } = await paymentOverview(db, weddingId)
-    return { paymentSummary, total: rub(total), spent: rub(spent), reserve: rub(Math.round(total * RESERVE_SHARE)), categories }
+    return {
+      paymentSummary, total: rub(total), spent: rub(spent),
+      reserve: rub(Math.round(total * reserveBps / 10000)),
+      reserveBps, settingsVersion, categories,
+    }
 }
 

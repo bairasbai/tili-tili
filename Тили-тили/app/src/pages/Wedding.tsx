@@ -9,7 +9,7 @@ import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } fro
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { rub } from '@/lib/money'
@@ -219,6 +219,8 @@ function SlotView({ s }: { s: Slot }) {
      и кнопка честно выпишет новую. */
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [reserveDraft, setReserveDraft] = useState('')
+  const [limitDrafts, setLimitDrafts] = useState<Record<string,string>>({})
   const [ownBusy, runOwn] = useBusy()
   /* Деньги сделки видит только пара — и только она отменяет бронь. У
      помощника и координатора в ответе нет ни `price`, ни `paid`. */
@@ -471,6 +473,8 @@ export function Budget() {
          `spent` статьи считает — считаем и здесь. */
       amount: (c.fromSlots ?? 0) + items.reduce((a, it) => a + it.amount, 0),
       limit: c.planned?.amount ?? 0,
+      limitCustom: !!c.limitCustom,
+      limitVersion: c.limitVersion ?? 0,
       color: c.color ?? 'var(--lav)',
       /* `live` в контракте — имена забронированной команды через разделитель,
          а не флаг: экран показывает их подписью «из команды». */
@@ -515,6 +519,21 @@ export function Budget() {
     setName(''); setAmount(''); setAdding(false)
   })
   const removeItem = (id: string) => void write(id, () => deleteBudgetItem(weddingId!, id))
+  const saveReserve = () => void write('reserve', async () => {
+    const percent = Number((reserveDraft || String((server?.reserveBps ?? 1000) / 100)).replace(',', '.'))
+    if (!Number.isFinite(percent) || percent < 0 || percent > 50) { setErr(t('Резерв должен быть от 0 до 50%')); return }
+    await setBudgetReserve(weddingId!, Math.round(percent * 100), server?.settingsVersion ?? 0)
+    setReserveDraft('')
+  })
+  const saveLimit = (categoryId: string, version: number) => void write(`limit-${categoryId}`, async () => {
+    const raw = (limitDrafts[categoryId] ?? '').replace(/[^0-9]/g, '')
+    if (!raw) { setErr(t('Введите лимит категории в рублях')); return }
+    const rubles = Number(raw)
+    if (!Number.isSafeInteger(rubles) || rubles < 0) { setErr(t('Введите лимит категории в рублях')); return }
+    await setBudgetCategoryLimit(weddingId!, categoryId, rub(rubles), version)
+    setLimitDrafts(v => ({ ...v, [categoryId]: '' }))
+  })
+  const resetLimit = (categoryId: string, version: number) => void write(`limit-${categoryId}`, () => resetBudgetCategoryLimit(weddingId!, categoryId, version))
 
   return (
     <div className="pb-28">
@@ -548,15 +567,11 @@ export function Budget() {
               <p className="text-[10px] text-[var(--soft2)] mt-2 leading-relaxed">{t('Лимиты категорий и резерв появятся, когда задан общий бюджет.')}</p>
             </div>
           )}
-          {reserve > 0 && (
-            /* Отдельной строкой, а не категорией: категории делят сто процентов
-               между собой, и резерв внутри них означал бы, что часть сметы
-               просто уменьшили. */
-            <div className="flex justify-between items-center mt-3 pt-3 border-t border-[var(--track)]">
-              <span className="text-[11.5px] text-[var(--soft)]">🛟 {t('Резерв на непредвиденное (10%)')}</span>
-              <b className="text-[12.5px] tabular">{fmt(reserve)}</b>
-            </div>
-          )}
+          {hasTotal && <div className="mt-3 pt-3 border-t border-[var(--track)] space-y-2">
+            <div className="flex justify-between items-center"><span className="text-[11.5px] text-[var(--soft)]">🛟 {t('Резерв на непредвиденное')}</span><b className="text-[12.5px] tabular">{fmt(reserve)}</b></div>
+            <div className="flex gap-2 items-center"><input aria-label={t('Резерв, %')} value={reserveDraft} onChange={e => setReserveDraft(e.target.value)} inputMode="decimal" placeholder={String((server?.reserveBps ?? 1000) / 100)} className="w-24 bg-[var(--bg)] rounded-lg px-3 py-2 text-xs" /><span className="text-xs">%</span><button disabled={busyId === 'reserve'} onClick={saveReserve} className="press px-3 py-2 rounded-lg bg-[var(--bg)] text-xs font-semibold disabled:opacity-50">{t('Сохранить')}</button></div>
+            <p className="text-[10px] text-[var(--soft2)]">{t('Можно выбрать от 0 до 50%. Резерв не увеличивает категории и не считается расходом.')}</p>
+          </div>}
           {reserve > 0 && total > budgetTotal - reserve && (
             <p className="text-[10.5px] text-[var(--rose-ink)] mt-1.5">{t('Обязательства уже съели резерв — на неожиданности запаса нет')}</p>
           )}
@@ -568,6 +583,7 @@ export function Budget() {
                   {/* Лимит категории — доля общего бюджета: без итога его нет,
                       и «/ 0К» с пустой полосой выдавали бы ноль за лимит. */}
                   <b className="tabular">{thousands(b.amount)}{t('К')}{hasTotal && <span className="text-[var(--soft)] font-normal text-[10.5px]">/ {thousands(b.limit)}{t('К')}</span>}</b>
+                  {hasTotal && <div className="flex gap-1 items-center mt-1"><input aria-label={`${b.name} ${t('лимит, ₽')}`} value={limitDrafts[b.id] ?? ''} onChange={e => setLimitDrafts(v => ({...v,[b.id]:e.target.value}))} inputMode="numeric" placeholder={String(Math.round(b.limit / 100))} className="w-24 bg-[var(--bg)] rounded-lg px-2 py-1.5 text-[10px]" /><button disabled={busyId === `limit-${b.id}`} onClick={() => saveLimit(b.id,b.limitVersion)} className="press px-2 py-1.5 rounded-lg bg-[var(--bg)] text-[10px]">{t('Лимит')}</button>{b.limitCustom && <button disabled={busyId === `limit-${b.id}`} onClick={() => resetLimit(b.id,b.limitVersion)} className="press px-2 py-1.5 rounded-lg text-[10px] underline">{t('Авто')}</button>}</div>}
                 </div>
                 {hasTotal && (
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">

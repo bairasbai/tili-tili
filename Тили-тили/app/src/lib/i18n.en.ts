@@ -2110,3 +2110,23 @@ Object.assign(EN, {
   'Время напоминания': 'Reminder time',
   'По часовому поясу ответственного; тихие часы и настройка уведомлений учитываются': 'In the assignee’s time zone; quiet hours and notification preferences apply',
 })
+
+/* 018-B: управляемый бюджет и приватные подтверждения оплат. */
+Object.assign(EN, {
+  'Резерв на непредвиденное': 'Contingency reserve',
+  'Резерв, %': 'Reserve, %',
+  'Можно выбрать от 0 до 50%. Резерв не увеличивает категории и не считается расходом.': 'Choose 0–50%. The reserve does not increase category limits and is not counted as spending.',
+  'Резерв должен быть от 0 до 50%': 'Reserve must be between 0 and 50%',
+  'Введите лимит категории в рублях': 'Enter the category limit in roubles',
+  'лимит, ₽': 'limit, ₽',
+  'Лимит': 'Limit',
+  'Авто': 'Auto',
+  'Подтверждения оплаты': 'Payment evidence',
+  'Прикрепить файл': 'Attach file',
+  'Загрузка…': 'Uploading…',
+  'Только для пары · до 512 КБ · максимум 5 файлов': 'Couple only · up to 512 KB · maximum 5 files',
+  'Файл должен быть не больше 512 КБ': 'File must be no larger than 512 KB',
+  'Разрешены PDF, JPEG, PNG и WebP': 'PDF, JPEG, PNG and WebP are allowed',
+  'Скачать': 'Download',
+  'Удалить': 'Delete',
+})

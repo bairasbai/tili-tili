@@ -1,16 +1,20 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, notFound } from '../errors.js'
+import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { expireHolds } from '../deals/repo.js'
 import { computeTips } from '../wedding/tips.js'
 import { BUDGET_CATEGORIES } from '../wedding/templates.js'
 import { loadBudget } from '../wedding/budget.js'
+import { weddingAccessHook } from '../wedding/access.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const rub = (amount: number) => ({ amount, currency: 'RUB' })
 
 
 export async function budgetRoutes(app: FastifyInstance): Promise<void> {
+  // Financial routes authorize before schema validation so a restricted role cannot
+  // use 400-vs-403 differences to probe the shape of private write APIs.
+  app.addHook('preValidation', weddingAccessHook(app))
   const db = () => {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
@@ -37,6 +41,74 @@ export async function budgetRoutes(app: FastifyInstance): Promise<void> {
     await expireHolds(db(), weddingId)
     return { items: await computeTips(db(), weddingId) }
   })
+
+  app.patch('/weddings/:weddingId/budget/settings', {
+    schema: { body: { type: 'object', required: ['reserveBps', 'version'], additionalProperties: false, properties: {
+      reserveBps: { type: 'integer', minimum: 0, maximum: 5000 }, version: { type: 'integer', minimum: 0 },
+    } } },
+  }, async request => db().tx(async tx => {
+    const weddingId = request.member!.weddingId
+    const body = request.body as { reserveBps: number; version: number }
+    await tx.query('select id from weddings where id=$1 for update', [weddingId])
+    const { rows } = await tx.query<{ reserve_bps: number; version: number }>(
+      'select reserve_bps,version from wedding_budget_settings where wedding_id=$1 for update', [weddingId])
+    const current = rows[0]
+    const currentVersion = current?.version ?? 0
+    if (body.version !== currentVersion) throw conflict('stale_budget_settings', 'Настройки бюджета уже изменены на другом устройстве')
+    const nextVersion = currentVersion + 1
+    await tx.query(`insert into wedding_budget_settings(wedding_id,reserve_bps,version) values($1,$2,$3)
+      on conflict(wedding_id) do update set reserve_bps=excluded.reserve_bps,version=excluded.version,updated_at=now()`,
+      [weddingId, body.reserveBps, nextVersion])
+    return { reserveBps: body.reserveBps, version: nextVersion }
+  }))
+
+  app.put('/weddings/:weddingId/budget/categories/:categoryId/limit', {
+    schema: { body: { type: 'object', required: ['amount', 'version'], additionalProperties: false, properties: {
+      amount: { type: 'object', required: ['amount','currency'], additionalProperties: false, properties: {
+        amount: { type: 'integer', minimum: 0, maximum: MONEY_MAX }, currency: { type: 'string', enum: ['RUB'] },
+      } }, version: { type: 'integer', minimum: 0 },
+    } } },
+  }, async request => db().tx(async tx => {
+    const weddingId = request.member!.weddingId
+    const { categoryId } = request.params as { categoryId: string }
+    const body = request.body as { amount: { amount: number; currency: string }; version: number }
+    if (!BUDGET_CATEGORIES.some(c => c.id === categoryId)) throw validationFailed({ categoryId: 'Неизвестная категория бюджета' })
+    await tx.query('select id from weddings where id=$1 for update', [weddingId])
+    const { rows } = await tx.query<{ version: number }>(
+      'select version from budget_category_limits where wedding_id=$1 and category_id=$2 for update', [weddingId, categoryId])
+    const currentVersion = rows[0]?.version ?? 0
+    if (body.version !== currentVersion) throw conflict('stale_budget_limit', 'Лимит категории уже изменён на другом устройстве')
+    const nextVersion = currentVersion + 1
+    await tx.query(`insert into budget_category_limits(wedding_id,category_id,amount,version) values($1,$2,$3,$4)
+      on conflict(wedding_id,category_id) do update set amount=excluded.amount,version=excluded.version,is_custom=true,updated_at=now()`,
+      [weddingId, categoryId, body.amount.amount, nextVersion])
+    return { categoryId, amount: rub(body.amount.amount), custom: true, version: nextVersion }
+  }))
+
+  app.patch('/weddings/:weddingId/budget/categories/:categoryId/limit', {
+    schema: { body: { type: 'object', required: ['reset', 'version'], additionalProperties: false, properties: {
+      reset: { type: 'boolean', const: true }, version: { type: 'integer', minimum: 1 },
+    } } },
+  }, async (request, reply) => db().tx(async tx => {
+    const weddingId = request.member!.weddingId
+    const { categoryId } = request.params as { categoryId: string }
+    const body = request.body as { reset: true; version: number }
+    if (!BUDGET_CATEGORIES.some(c => c.id === categoryId)) throw notFound('Категория не найдена')
+    await tx.query('select id from weddings where id=$1 for update', [weddingId])
+    const { rows } = await tx.query<{ version: number }>(
+      'select version from budget_category_limits where wedding_id=$1 and category_id=$2 for update', [weddingId, categoryId])
+    if (!rows[0]) {
+      if (body.version !== 0) throw conflict('stale_budget_limit', 'Лимит категории уже изменён на другом устройстве')
+      return reply.code(204).send()
+    }
+    if (rows[0].version !== body.version) throw conflict('stale_budget_limit', 'Лимит категории уже изменён на другом устройстве')
+    // Do not delete the row: its incremented version is a tombstone preventing ABA writes
+    // from clients that still hold version=0 from before a custom -> auto cycle.
+    await tx.query('update budget_category_limits set is_custom=false,version=version+1,updated_at=now() where wedding_id=$1 and category_id=$2', [weddingId, categoryId])
+    return reply.code(204).send()
+  }))
+
+
 
   app.post(
     '/weddings/:weddingId/budget/items',

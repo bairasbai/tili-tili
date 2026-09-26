@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.44.0
+  version: 0.45.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1048,6 +1048,86 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Budget' }
+  /weddings/{weddingId}/budget/settings:
+    patch:
+      tags: [budget]
+      summary: Изменить резерв бюджета
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reserveBps, version]
+              properties:
+                reserveBps: { type: integer, minimum: 0, maximum: 5000 }
+                version: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reserveBps, version]
+                properties:
+                  reserveBps: { type: integer }
+                  version: { type: integer }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /weddings/{weddingId}/budget/categories/{categoryId}/limit:
+    put:
+      tags: [budget]
+      summary: Задать пользовательский лимит категории
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: categoryId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, version]
+              properties:
+                amount: { $ref: '#/components/schemas/Money' }
+                version: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Сохранено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [categoryId, amount, custom, version]
+                properties:
+                  categoryId: { type: string }
+                  amount: { $ref: '#/components/schemas/Money' }
+                  custom: { type: boolean }
+                  version: { type: integer }
+        '409': { $ref: '#/components/responses/Conflict' }
+    patch:
+      tags: [budget]
+      summary: Вернуть автоматический лимит категории с проверкой версии
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: categoryId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reset, version]
+              properties:
+                reset: { type: boolean, enum: [true] }
+                version: { type: integer, minimum: 1 }
+      responses:
+        '204': { description: Автоматический лимит восстановлен }
+        '409': { $ref: '#/components/responses/Conflict' }
   /weddings/{weddingId}/tips:
     get:
       tags: [wedding]
@@ -1076,6 +1156,97 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /weddings/{weddingId}/payments/{paymentId}/receipts:
+    get:
+      tags: [payments]
+      summary: Приватные подтверждения оплаты
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, filename, mimeType, sizeBytes, createdAt]
+                      properties:
+                        id: { type: string, format: uuid }
+                        filename: { type: string }
+                        mimeType: { type: string }
+                        sizeBytes: { type: integer }
+                        createdAt: { type: string, format: date-time }
+    post:
+      tags: [payments]
+      summary: Прикрепить приватное подтверждение оплаты
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, mimeType, contentBase64]
+              properties:
+                filename: { type: string, minLength: 1, maxLength: 180 }
+                mimeType: { type: string, enum: [application/pdf, image/jpeg, image/png, image/webp] }
+                contentBase64: { type: string, maxLength: 720000 }
+      responses:
+        '201':
+          description: Создано
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, filename, mimeType, sizeBytes]
+                properties:
+                  id: { type: string, format: uuid }
+                  filename: { type: string }
+                  mimeType: { type: string }
+                  sizeBytes: { type: integer }
+  /weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content:
+    get:
+      tags: [payments]
+      summary: Скачать приватное подтверждение оплаты
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Base64-содержимое файла
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [filename, mimeType, contentBase64]
+                properties:
+                  filename: { type: string }
+                  mimeType: { type: string }
+                  contentBase64: { type: string }
+  /weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}:
+    delete:
+      tags: [payments]
+      summary: Удалить приватное подтверждение оплаты
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { '204': { description: Удалено } }
   /weddings/{weddingId}/budget/items:
     post:
       tags: [budget]
@@ -5882,6 +6053,8 @@ components:
         paymentSummary: { $ref: '#/components/schemas/PaymentSummary' }
         total: { $ref: '#/components/schemas/Money' }  # example: 1500000
         spent: { $ref: '#/components/schemas/Money' }  # example: 560000
+        reserveBps: { type: integer, minimum: 0, maximum: 5000 }
+        settingsVersion: { type: integer, minimum: 0 }
         reserve:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           description: |
@@ -5899,6 +6072,8 @@ components:
               id: { type: string }
               title: { type: string }
               planned: { $ref: '#/components/schemas/Money' }
+              limitCustom: { type: boolean }
+              limitVersion: { type: integer, minimum: 0 }
               fromSlots: { type: integer, description: 'автосумма из броней' }
               color:
                 type: string

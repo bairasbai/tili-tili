@@ -9,7 +9,7 @@ import { fmt } from '@/lib/money'
 import { noWedding, useApi, explainError } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { parsePaymentRubles, paymentRubles } from '@/lib/paymentAmount'
-import { createPaymentInstallment, exportPaymentHistory, getPaymentSchedule, linkPaymentPlan, payInstallment,
+import { addPaymentReceipt, createPaymentInstallment, deletePaymentReceipt, exportPaymentHistory, getPaymentReceipt, getPaymentSchedule, linkPaymentPlan, listPaymentReceipts, payInstallment,
   updatePaymentInstallment, type PaymentInstallment, type PaymentRecord, type PaymentScheduleData, type ScheduleFilter } from '@/lib/api/paymentSchedule'
 
 const field = 'mt-1 w-full min-w-0 rounded-xl bg-[var(--bg)] px-3 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--rose)]'
@@ -164,6 +164,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
             <p className="text-xs text-[var(--soft)]">{p.createdAt.slice(0,10)} · {t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Отмечено')}</p>
             <p className="text-xs">{data.allInstallments.find(i => i.id === p.installmentId)?.title ?? t('Без привязки')}</p>
             {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={() => open({ mode: 'link', payment: p })}>{t('Привязать оплату')}</button>}
+            <ReceiptPanel weddingId={weddingId!} paymentId={p.id} disabled={disabled} />
           </div>)}
         </details>
         <Link className="block text-sm underline py-2" to="/wedding/budget">{t('К бюджету свадьбы')}</Link>
@@ -191,4 +192,44 @@ function Filters({ data, busy, apply }: { data: PaymentScheduleData; busy: boole
     <label className="flex gap-2 items-center text-sm"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)} disabled={busy} />{t('Показать отменённые')}</label>
     <div className="flex flex-wrap justify-between items-center gap-2"><span className="text-xs text-[var(--soft)]">{data.range.timeZone}</span><button className={button} disabled={busy} type="submit">{t('Применить период')}</button></div>
   </form>
+}
+
+function ReceiptPanel({ weddingId, paymentId, disabled }: { weddingId: string; paymentId: string; disabled: boolean }) {
+  const q = useApi(() => listPaymentReceipts(weddingId, paymentId), [weddingId, paymentId])
+  const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null)
+  const items = ready(q) ? q.data.items : []
+  const upload = async (file: File | undefined) => {
+    if (!file || busy || disabled) return
+    setError(null)
+    if (file.size > 524288) { setError(t('Файл должен быть не больше 512 КБ')); return }
+    const allowed = ['application/pdf','image/jpeg','image/png','image/webp'] as const
+    if (!allowed.includes(file.type as typeof allowed[number])) { setError(t('Разрешены PDF, JPEG, PNG и WebP')); return }
+    setBusy(true)
+    try {
+      const raw = new Uint8Array(await file.arrayBuffer())
+      let binary = ''; for (let i=0;i<raw.length;i+=0x8000) binary += String.fromCharCode(...raw.subarray(i,i+0x8000))
+      // Deterministic per payment+content: if the response is lost and the same file is selected again,
+      // the server replays the first result instead of storing a duplicate receipt.
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', raw))
+      const fingerprint = Array.from(digest, b => b.toString(16).padStart(2, '0')).join('')
+      await addPaymentReceipt(weddingId,paymentId,{filename:file.name,mimeType:file.type as typeof allowed[number],contentBase64:btoa(binary)},`receipt-${paymentId}-${fingerprint}`)
+      q.reload()
+    } catch(e) { setError(explainError(e)) } finally { setBusy(false) }
+  }
+  const download = async (id: string) => {
+    if (busy) return; setBusy(true); setError(null)
+    try {
+      const file=await getPaymentReceipt(weddingId,paymentId,id), binary=atob(file.contentBase64)
+      const bytes=new Uint8Array(binary.length); for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i)
+      const href=URL.createObjectURL(new Blob([bytes],{type:file.mimeType}))
+      const a=document.createElement('a');a.href=href;a.download=file.filename;a.click();URL.revokeObjectURL(href)
+    } catch(e){setError(explainError(e))} finally{setBusy(false)}
+  }
+  const remove = async(id:string) => { if(busy)return;setBusy(true);setError(null);try{await deletePaymentReceipt(weddingId,paymentId,id);q.reload()}catch(e){setError(explainError(e))}finally{setBusy(false)} }
+  return <details className="mt-2"><summary className="text-xs cursor-pointer">{t('Подтверждения оплаты')} · {items.length}</summary>
+    <div className="mt-2 space-y-2"><label className={button+' inline-flex items-center cursor-pointer bg-[var(--bg)]'}>{t(busy?'Загрузка…':'Прикрепить файл')}<input className="sr-only" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={disabled||busy||items.length>=5} onChange={e=>void upload(e.target.files?.[0])}/></label>
+      <p className="text-[10px] text-[var(--soft)]">{t('Только для пары · до 512 КБ · максимум 5 файлов')}</p>
+      {items.map(r=><div key={r.id} className="flex gap-2 items-center text-xs"><span className="min-w-0 flex-1 truncate">{r.filename}</span><button className="underline" disabled={busy} onClick={()=>void download(r.id)}>{t('Скачать')}</button><button className="underline text-[var(--rose-deep)]" disabled={busy} onClick={()=>void remove(r.id)}>{t('Удалить')}</button></div>)}
+      {error&&<p role="alert" className="text-xs text-[var(--rose-deep)]">{error}</p>}
+    </div></details>
 }

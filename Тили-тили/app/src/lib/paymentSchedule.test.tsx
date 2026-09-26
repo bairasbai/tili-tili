@@ -11,6 +11,7 @@ let state: PaymentScheduleData
 let status = 200, failSave = false, stale = false
 let writes: { path: string; body: Record<string, unknown>; key: string | null }[]
 let reads: string[]
+let receipts: { id: string; filename: string; mimeType: string; sizeBytes: number; createdAt: string }[]
 let release: (() => void) | null = null
 let delayWrite = false
 const json = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { 'content-type': 'application/json' } })
@@ -19,10 +20,14 @@ function serve() {
     const path = String(input).replace(/^\/api/, '')
     if (!init?.method || init.method === 'GET') {
       reads.push(path)
+      if (path.endsWith('/payments/p1/receipts')) return json({ items: receipts })
+      if (path.includes('/payments/p1/receipts/') && path.endsWith('/content')) return json({ filename: 'чек.png', mimeType: 'image/png', contentBase64: 'iVBORw0KGgo=' })
       return status === 200 ? json(state) : json({ error: { code: status === 403 ? 'forbidden' : 'db_unavailable', message: 'Нет доступа или сервер недоступен' } }, status)
     }
-    const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>
+    const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
     writes.push({ path, body, key: new Headers(init.headers).get('Idempotency-Key') })
+    if (path.includes('/payments/p1/receipts/') && init.method === 'DELETE') { receipts = receipts.filter(x => !path.includes(x.id)); return new Response(null, { status: 204 }) }
+    if (path.endsWith('/payments/p1/receipts') && init.method === 'POST') { receipts.push({ id: 'r2', filename: String(body.filename), mimeType: String(body.mimeType), sizeBytes: 9, createdAt: '2027-01-01T12:00:00.000Z' }); return json(receipts.at(-1), 201) }
     if (delayWrite) await new Promise<void>(resolve => { release = resolve })
     if (stale) return json({ error: { code: 'stale_payment_plan', message: 'График изменился' } }, 409)
     if (failSave) return json({ error: { code: 'validation_failed', message: 'Сумма отклонена' } }, 422)
@@ -47,7 +52,7 @@ beforeEach(() => {
     deals: [{ id: 'd1', slotId: 's1', name: 'Фотограф', state: 'booked', price: money(1000000), recorded: money(100000), remaining: money(900000), planned: money(400000), unallocated: money(100000), needsReview: false, active: true, canPlan: true }],
     allInstallments: [{ id: 'i1', dealId: 'd1', title: 'Аванс', status: 'pending', remaining: money(400000) }],
     payments: [{ id: 'p1', dealId: 'd1', kind: 'deposit', amount: money(100000), status: 'recorded', createdAt: '2027-01-01T12:00:00.000Z', installmentId: null, version: 2 }] }
-  status = 200; failSave = false; stale = false; writes = []; reads = []; delayWrite = false; release = null; serve()
+  status = 200; failSave = false; stale = false; writes = []; reads = []; receipts = [{ id: 'r1', filename: 'аванс.pdf', mimeType: 'application/pdf', sizeBytes: 1200, createdAt: '2027-01-01T12:00:00.000Z' }]; delayWrite = false; release = null; serve()
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 describe('018-A: график платежей в интерфейсе', () => {
@@ -119,4 +124,20 @@ describe('018-A: график платежей в интерфейсе', () => {
     fireEvent.click(within(form).getByLabelText('Добавить просроченные')); fireEvent.submit(form)
     await waitFor(() => expect(reads.some(p => p.includes('from=2027-04-01') && p.includes('includeOverdue=false'))).toBe(true))
   })
+  it('показывает приватные подтверждения и удаляет их через scoped API', async () => {
+    open(); await screen.findByText('аванс.pdf')
+    const row = screen.getByText('аванс.pdf').parentElement!
+    fireEvent.click(within(row).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(writes.some(x => x.path === '/weddings/w1/payments/p1/receipts/r1')).toBe(true))
+    await waitFor(() => expect(screen.queryByText('аванс.pdf')).toBeNull())
+  })
+  it('не отправляет неподдерживаемый тип подтверждения', async () => {
+    open(); await screen.findByText('аванс.pdf')
+    const input = document.querySelector('input[type=file]') as HTMLInputElement
+    const file = new File(['text'], 'note.txt', { type: 'text/plain' })
+    fireEvent.change(input, { target: { files: [file] } })
+    await screen.findByText('Разрешены PDF, JPEG, PNG и WebP')
+    expect(writes.filter(x => x.path.endsWith('/receipts'))).toHaveLength(0)
+  })
+
 })

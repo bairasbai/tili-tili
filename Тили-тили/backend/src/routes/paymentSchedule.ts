@@ -118,6 +118,70 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
         version:p.plan_version+(p.installment_id===body.installmentId?0:1),kind:p.kind,amount:asMoney(p.amount),status:p.status,createdAt:p.created_at.toISOString()}}
     }))
   })
+  app.get('/weddings/:weddingId/payments/:paymentId/receipts', async request => {
+    const wid=request.member!.weddingId,id=(request.params as {paymentId:string}).paymentId
+    if(!isUuid(id))throw notFound('Оплата не найдена')
+    const {rows: payment}=await db().query(`select 1 from payments p join deals d on d.id=p.deal_id where p.id=$1 and d.wedding_id=$2`,[id,wid])
+    if(!payment[0])throw notFound('Оплата не найдена')
+    const {rows}=await db().query<{id:string;filename:string;mime_type:string;size_bytes:number;created_at:Date}>(
+      'select id,filename,mime_type,size_bytes,created_at from payment_receipts where wedding_id=$1 and payment_id=$2 order by created_at,id',[wid,id])
+    return {items:rows.map(r=>({id:r.id,filename:r.filename,mimeType:r.mime_type,sizeBytes:r.size_bytes,createdAt:r.created_at.toISOString()}))}
+  })
+
+  app.post('/weddings/:weddingId/payments/:paymentId/receipts', {
+    schema:{body:{type:'object',required:['filename','mimeType','contentBase64'],additionalProperties:false,properties:{
+      filename:{type:'string',minLength:1,maxLength:180},
+      mimeType:{type:'string',enum:['application/pdf','image/jpeg','image/png','image/webp']},
+      contentBase64:{type:'string',minLength:4,maxLength:720000,pattern:'^[A-Za-z0-9+/]+={0,2}$'},
+    }}},
+  }, async(request,reply)=>withIdempotency(db(),request,reply,'payment-receipt.add',tx=>tx(async client=>{
+    const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {paymentId:string}).paymentId
+    if(!isUuid(id))throw notFound('Оплата не найдена')
+    const body=request.body as {filename:string;mimeType:string;contentBase64:string}
+    const filename=body.filename.trim().replace(/[\\/\u0000-\u001f\u007f]/g,'_')
+    if(!filename)throw validationFailed({filename:'Введите имя файла'})
+    const content=Buffer.from(body.contentBase64,'base64')
+    if(content.length===0||content.length>524288)throw validationFailed({contentBase64:'Файл должен быть не больше 512 КБ'})
+    if(content.toString('base64').replace(/=+$/,'')!==body.contentBase64.replace(/=+$/,''))throw validationFailed({contentBase64:'Некорректный base64'})
+    if(!matchesMime(content,body.mimeType))throw validationFailed({mimeType:'Содержимое файла не соответствует указанному типу'})
+    const {rows: payment}=await client.query(`select 1 from payments p join deals d on d.id=p.deal_id where p.id=$1 and d.wedding_id=$2 for update of p`,[id,wid])
+    if(!payment[0])throw notFound('Оплата не найдена')
+    const {rows: count}=await client.query<{n:number}>('select count(*)::int as n from payment_receipts where payment_id=$1',[id])
+    if(count[0]!.n>=5)throw conflict('receipt_limit','К одной оплате можно прикрепить не больше 5 файлов')
+    const receiptId=uuidv7()
+    await client.query(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
+      values($1,$2,$3,$4,$5,$6,$7,$8)`,[receiptId,wid,id,filename,body.mimeType,content.length,content,uid])
+    await audit(client,uid,receiptId,'payment.receipt_added',{paymentId:id,mimeType:body.mimeType,sizeBytes:content.length})
+    return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length}}
+  })))
+
+  app.get('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content', async(request,reply)=>{
+    const wid=request.member!.weddingId,{paymentId,receiptId}=request.params as {paymentId:string;receiptId:string}
+    if(!isUuid(paymentId)||!isUuid(receiptId))throw notFound('Файл не найден')
+    const {rows}=await db().query<{filename:string;mime_type:string;content:Buffer}>(
+      `select r.filename,r.mime_type,r.content from payment_receipts r join payments p on p.id=r.payment_id join deals d on d.id=p.deal_id
+        where r.id=$1 and r.payment_id=$2 and r.wedding_id=$3 and d.wedding_id=$3`,[receiptId,paymentId,wid])
+    const file=rows[0];if(!file)throw notFound('Файл не найден')
+    reply.header('Cache-Control','private, no-store')
+    return {filename:file.filename,mimeType:file.mime_type,contentBase64:file.content.toString('base64')}
+  })
+
+  app.delete('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId', async(request,reply)=>db().tx(async tx=>{
+    const wid=request.member!.weddingId,uid=request.caller!.userId,{paymentId,receiptId}=request.params as {paymentId:string;receiptId:string}
+    if(!isUuid(paymentId)||!isUuid(receiptId))throw notFound('Файл не найден')
+    const res=await tx.query('delete from payment_receipts where id=$1 and payment_id=$2 and wedding_id=$3',[receiptId,paymentId,wid])
+    if(!res.rowCount)throw notFound('Файл не найден')
+    await audit(tx,uid,receiptId,'payment.receipt_deleted',{paymentId})
+    return reply.code(204).send()
+  }))
+}
+
+function matchesMime(content:Buffer,mime:string):boolean {
+  if(mime==='application/pdf')return content.subarray(0,5).toString('ascii')==='%PDF-'
+  if(mime==='image/png')return content.length>=8&&content.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+  if(mime==='image/jpeg')return content.length>=3&&content[0]===0xff&&content[1]===0xd8&&content[2]===0xff
+  if(mime==='image/webp')return content.length>=12&&content.subarray(0,4).toString('ascii')==='RIFF'&&content.subarray(8,12).toString('ascii')==='WEBP'
+  return false
 }
 async function audit(tx:Queryable,uid:string,id:string,action:string,diff:object){
   await tx.query('insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,$2,$3,$4,$5)',[uid,action,'payment_schedule',id,JSON.stringify(diff)])
