@@ -52,39 +52,47 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Verify and apply the exact locally tested source patch
+      - name: Verify and apply exact source and navigation regression repair
         run: |
           python - <<'PY'
-          import base64, hashlib, json, lzma, os, pathlib, subprocess
+          import base64,hashlib,json,lzma,os,pathlib,subprocess
           root=pathlib.Path.cwd()
-          encoded=''.join((root/f'tasks/.transfer-stage017b/part{i}.b64').read_text() for i in range(3))
-          raw=lzma.decompress(base64.b64decode(encoded,validate=True))
-          assert len(raw)<1000000
-          assert hashlib.sha256(raw).hexdigest()=='6c96f7903a7c66feae9735cee29e811ed8db934cf167faabd10aa3b86a7548eb'
-          payload=json.loads(raw)
+          def unpack(encoded,digest):
+              raw=lzma.decompress(base64.b64decode(encoded,validate=True))
+              assert len(raw)<1000000 and hashlib.sha256(raw).hexdigest()==digest
+              return json.loads(raw)
+          source_sha='6c96f7903a7c66feae9735cee29e811ed8db934cf167faabd10aa3b86a7548eb'
+          payload=unpack(''.join((root/f'tasks/.transfer-stage017b/part{i}.b64').read_text() for i in range(3)),source_sha)
           assert payload['base']=='059454c039bf4fa45201998182d1de1ae67e2dca'
           subprocess.run(['git','merge-base','--is-ancestor',payload['base'],'HEAD'],check=True)
-          assert len(payload['files'])==33
-          for f in payload['files']:
-              p=pathlib.PurePosixPath(f['path'])
-              assert not p.is_absolute() and '..' not in p.parts
-              assert not any(v.startswith('.env') or v in ('.git','.github','node_modules','__pycache__') for v in p.parts)
-              target=root/p
-              assert not target.is_symlink()
-              if f['before'] is None: assert not target.exists(),str(p)
-              else:
-                  actual=subprocess.check_output(['git','hash-object',str(target)],text=True).strip()
-                  assert actual==f['before'],f"Original differs: {p} {actual}"
-          subprocess.run(['git','apply','--check','--binary','-'],input=payload['patch'].encode(),check=True)
-          subprocess.run(['git','apply','--binary','-'],input=payload['patch'].encode(),check=True)
-          for f in payload['files']:
-              actual=subprocess.check_output(['git','hash-object',f['path']],text=True).strip()
-              assert actual==f['after'],f"Applied differs: {f['path']}"
+          assert len(payload['files'])==33 and len({f['path'] for f in payload['files']})==33
+          def apply(data):
+              for f in data['files']:
+                  p=pathlib.PurePosixPath(f['path'])
+                  assert not p.is_absolute() and '..' not in p.parts
+                  assert not any(v.startswith('.env') or v in ('.git','.github','node_modules','__pycache__') for v in p.parts)
+                  target=root/p
+                  assert not target.is_symlink()
+                  if f['before'] is None: assert not target.exists(),str(p)
+                  else: assert subprocess.check_output(['git','hash-object',str(target)],text=True).strip()==f['before'],str(p)
+              subprocess.run(['git','apply','--check','--binary','-'],input=data['patch'].encode(),check=True)
+              subprocess.run(['git','apply','--binary','-'],input=data['patch'].encode(),check=True)
+              for f in data['files']:
+                  assert subprocess.check_output(['git','hash-object',f['path']],text=True).strip()==f['after'],f['path']
+          apply(payload)
+          repair=unpack((root/'tasks/.transfer-stage017b/navigation.b64').read_text(),'0076bef89677e3a653b7bf24c4a74d245934df6343a425a1b39c8b766befe95d')
+          assert repair['sourcePayloadSha256']==source_sha
+          assert {f['path'] for f in repair['files']}=={'Тили-тили/app/src/pages/Wedding.tsx','Тили-тили/app/src/lib/taskPlanning.test.tsx','Тили-тили/backend/scripts/task-e2e-browser.py'}
+          apply(repair)
+          by_path={f['path']:f for f in payload['files']}
+          for f in repair['files']:
+              assert by_path[f['path']]['after']==f['before']
+              by_path[f['path']]['after']=f['after']
           manifest=pathlib.Path(os.environ['RUNNER_TEMP'])/'stage017b-manifest.json'
           manifest.write_text(json.dumps(payload['files'],ensure_ascii=False))
           out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
           (out/'source-manifest.json').write_text(json.dumps(payload['files'],ensure_ascii=False,indent=2))
-          print('Verified 33 original and resulting Git blob hashes')
+          print('Verified all 33 source files and three navigation repairs by Git blob hashes')
           PY
       - name: Install frozen dependencies and regenerate contracts
         run: |
@@ -102,7 +110,7 @@ jobs:
           import json,os,pathlib,subprocess
           for f in json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'stage017b-manifest.json').read_text()):
               assert subprocess.check_output(['git','hash-object',f['path']],text=True).strip()==f['after'],f['path']
-          print('Generators match the locally tested manifest')
+          print('Generated contracts exactly match the reviewed manifest')
           PY
       - name: Check full frontend
         working-directory: Тили-тили/app
@@ -121,30 +129,27 @@ jobs:
           node node_modules/vitest/vitest.mjs run --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/backend-tests.json"
           node node_modules/eslint/bin/eslint.js .
           node node_modules/typescript/bin/tsc -p tsconfig.json
-      - name: Preserve exact test outcomes without fixtures or credentials
+      - name: Preserve non-secret test results
         if: always()
         run: |
           python - <<'PY'
-          import json,os,pathlib,re,subprocess
+          import json,os,pathlib
           out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
-          results={'run':os.environ['GITHUB_RUN_ID'],'head':os.environ['GITHUB_SHA']}
-          for component in ('frontend','backend'):
-              p=pathlib.Path(os.environ['RUNNER_TEMP'])/(component+'-tests.json')
-              if not p.exists():
-                  results[component]={'status':'not-run'};continue
+          result={'run':os.environ['GITHUB_RUN_ID'],'head':os.environ['GITHUB_SHA']}
+          for name in ('frontend','backend'):
+              p=pathlib.Path(os.environ['RUNNER_TEMP'])/(name+'-tests.json')
+              if not p.exists():result[name]={'status':'not-run'};continue
               raw=json.loads(p.read_text())
-              selected={k:raw.get(k) for k in ('success','numTotalTests','numPassedTests','numFailedTests','numPendingTests','numTotalTestSuites','numPassedTestSuites','numFailedTestSuites')}
-              selected['failed']=[]
-              for suite in raw.get('testResults',[]):
-                  for test in suite.get('assertionResults',[]):
-                      if test.get('status')!='failed':continue
-                      errors='\n'.join(test.get('failureMessages',[]))
-                      errors=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]',errors)
-                      selected['failed'].append({'file':suite.get('name','').split('/tili-tili/')[-1],'test':test.get('fullName'),'error':errors[:1800]})
-              results[component]=selected
-          (out/'test-results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
-          print(json.dumps(results,ensure_ascii=False))
+              result[name]={k:raw.get(k) for k in ('success','numTotalTests','numPassedTests','numFailedTests','numPendingTests')}
+          (out/'test-results.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result))
           PY
+      - name: Rehearse latest migration down and up on disposable database
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations down 1
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
       - name: Install isolated browser tooling
         run: |
           python -m pip install playwright==1.57.0
@@ -164,9 +169,9 @@ jobs:
           python - <<'PY'
           import json,os,pathlib
           r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
-          assert len(r['passed'])==14 and not r['page_errors']
+          assert len(r['passed'])==14 and not r['page_errors'] and 'error' not in r
           PY
-      - name: Commit only verified files and remove this one-time bridge
+      - name: Commit verified files only and remove one-time transfer
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -179,7 +184,7 @@ jobs:
           paths=[f['path'] for f in manifest]
           for f in manifest:
               assert subprocess.check_output(['git','hash-object',f['path']],text=True).strip()==f['after'],f['path']
-          bridge=['.github/workflows/apply-stage017b.yml','.github/workflows/stage017b-review-export.yml']+[f'tasks/.transfer-stage017b/part{i}.b64' for i in range(3)]
+          bridge=['.github/workflows/apply-stage017b.yml','.github/workflows/stage017b-review-export.yml','tasks/.transfer-stage017b/navigation.b64']+[f'tasks/.transfer-stage017b/part{i}.b64' for i in range(3)]
           subprocess.run(['git','add','--',*paths],check=True)
           subprocess.run(['git','rm','--',*bridge],check=True)
           staged=set(subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0'))
@@ -187,7 +192,7 @@ jobs:
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(tasks): 017-B assignment notifications and configurable reminders'
+          git commit -m 'feat(tasks): 017-B reminders, assignment notifications and navigation regression'
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$BRANCH"
@@ -197,7 +202,7 @@ jobs:
           (pathlib.Path(os.environ['E2E_RESULT_DIR'])/'publication.json').write_text(json.dumps(r,indent=2))
           print(json.dumps(r))
           PY
-      - name: Save only non-secret evidence
+      - name: Save non-secret evidence only
         uses: actions/upload-artifact@v4
         if: always()
         with:
