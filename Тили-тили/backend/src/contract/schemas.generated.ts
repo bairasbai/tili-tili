@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 65. */
+ * Схем: 67. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1807,7 +1807,10 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string"
               },
               "period": {
-                  "type": "string"
+                  "type": [
+                      "string",
+                      "null"
+                  ]
               },
               "done": {
                   "type": "boolean"
@@ -1821,7 +1824,112 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "format": "date",
-                  "description": "Срок задачи, посчитанный от даты свадьбы («за 9 месяцев» → сентябрь\n2026 для свадьбы 14 июня 2027). Null — у свадьбы ещё нет даты, и\nтогда срока нет ни у одной задачи. Сервер считает его сам и\nпересчитывает при переносе: клиент вычислять его не должен, иначе\nчек-лист на телефоне и напоминания в фоне разойдутся.\n"
+                  "description": "Срок задачи. Relative двигается вместе с датой свадьбы; fixed сохраняет выбранную дату, в том числе отсутствие срока."
+              },
+              "dueMode": {
+                  "type": "string",
+                  "enum": [
+                      "relative",
+                      "fixed"
+                  ]
+              },
+              "assignee": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "properties": {
+                      "userId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "TaskCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "title",
+              "period"
+          ],
+          "properties": {
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+              },
+              "period": {
+                  "type": "string",
+                  "maxLength": 40,
+                  "description": "Число месяцев 0–120 до свадьбы или произвольная подпись периода без вычисленного срока."
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "dueMode": {
+                  "type": "string",
+                  "enum": [
+                      "relative",
+                      "fixed"
+                  ],
+                  "description": "Без явной даты — relative; с явной датой или null — fixed по умолчанию. Relative с точной датой требует даты свадьбы."
+              },
+              "assigneeId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          }
+      },
+      "TaskPatch": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+              },
+              "done": {
+                  "type": "boolean"
+              },
+              "due": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Пропуск сохраняет срок; null снимает срок. Явное значение без dueMode переключает в fixed."
+              },
+              "dueMode": {
+                  "type": "string",
+                  "enum": [
+                      "relative",
+                      "fixed"
+                  ],
+                  "description": "Relative без due пересчитывает срок по периоду и дате свадьбы; fixed без due сохраняет дату."
+              },
+              "assigneeId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "description": "Живой участник этой свадьбы с ролью couple/helper/coordinator. Null снимает назначение; пропуск сохраняет."
               }
           }
       },
@@ -2739,6 +2847,8 @@ export type ContractSchemaName =
   | "SupportDeal"
   | "Table"
   | "Task"
+  | "TaskCreate"
+  | "TaskPatch"
   | "TimelineEvent"
   | "Tip"
   | "User"

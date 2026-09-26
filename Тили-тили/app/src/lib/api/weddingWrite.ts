@@ -16,22 +16,14 @@ import type { components } from './schema'
 
 /* ── Чек-лист ── */
 
-export interface TaskDraft {
-  title: string
-  period: string
-  due?: string
-  dueMode?: 'relative' | 'fixed'
-  assigneeId?: string | null
-}
+export type TaskDraft = components['schemas']['TaskCreate']
+export type TaskPatch = components['schemas']['TaskPatch']
 
 export const addTask = (weddingId: string, draft: TaskDraft) =>
-  api.post(url('/weddings/{weddingId}/tasks', { weddingId }), draft as never)
+  api.post(url('/weddings/{weddingId}/tasks', { weddingId }), draft)
 
-export const patchTask = (
-  weddingId: string,
-  taskId: string,
-  patch: { title?: string; done?: boolean; due?: string | null; dueMode?: 'relative' | 'fixed'; assigneeId?: string | null },
-) => api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch as never)
+export const patchTask = (weddingId: string, taskId: string, patch: TaskPatch) =>
+  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch)
 
 export const setTaskDone = (weddingId: string, taskId: string, done: boolean) =>
   patchTask(weddingId, taskId, { done })

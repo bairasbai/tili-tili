@@ -458,8 +458,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.41.0 (F5-14)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.41.0')
+  it('версия контракта — 0.42.0 (017; F5-14 сохранён)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.42.0')
   })
 
   describe('G-a: идемпотентность — 400 и правильный Idempotency-Key у операций, чей обработчик её читает', () => {

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.41.0
+  version: 0.42.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -267,12 +267,7 @@ paths:
       tags: [weddings]
       summary: Карточка свадьбы (данные для Home)
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { $ref: '#/components/parameters/WeddingId' }
-        - name: mine
-          in: query
-          schema: { type: boolean, default: false }
-          description: Только задачи, назначенные текущему пользователю.
+      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       responses:
         '200':
           description: OK
@@ -1514,7 +1509,12 @@ paths:
       tags: [tasks]
       summary: Чек-лист (шаблонные + свои задачи)
       security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: mine
+          in: query
+          schema: { type: boolean, default: false }
+          description: Только задачи текущего пользователя в этой свадьбе; права раздела не меняются.
       responses:
         '200':
           description: OK
@@ -1532,21 +1532,18 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [title, period]
-              properties:
-                title: { type: string }
-                period: { type: string, example: '3–1 месяц' }
-                due: { type: string, format: date }
-                dueMode: { type: string, enum: [relative, fixed] }
-                assigneeId: { type: string, format: uuid, nullable: true }
+            schema: { $ref: '#/components/schemas/TaskCreate' }
       responses:
         '201':
-          description: OK
+          description: Создана
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Task' }
+        '422':
+          description: Неверная дата, период или ответственный; относительная точная дата без даты свадьбы.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/tasks/{taskId}:
     patch:
       tags: [tasks]
@@ -1559,22 +1556,26 @@ paths:
           required: true
           schema: { type: string }
       requestBody:
+        required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                done: { type: boolean }
-                title: { type: string }
-                due: { type: string, format: date, nullable: true }
-                dueMode: { type: string, enum: [relative, fixed] }
-                assigneeId: { type: string, format: uuid, nullable: true }
+            schema: { $ref: '#/components/schemas/TaskPatch' }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Task' }
+        '404':
+          description: Задача не найдена в доступной свадьбе.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Неверная дата или ответственный; планирование задач плана Б не поддерживается.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [tasks]
       summary: Удалить свою задачу
@@ -5268,22 +5269,56 @@ components:
         name: { type: string }
         capacity: { type: integer, default: 8 }
         guestIds: { type: array, items: { type: string } }
+    TaskCreate:
+      type: object
+      additionalProperties: false
+      required: [title, period]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        period:
+          type: string
+          maxLength: 40
+          description: Число месяцев 0–120 до свадьбы или произвольная подпись периода без вычисленного срока.
+        due: { type: string, format: date, nullable: true }
+        dueMode:
+          type: string
+          enum: [relative, fixed]
+          description: Без явной даты — relative; с явной датой или null — fixed по умолчанию. Relative с точной датой требует даты свадьбы.
+        assigneeId: { type: string, format: uuid, nullable: true }
+    TaskPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        done: { type: boolean }
+        due:
+          type: string
+          format: date
+          nullable: true
+          description: Пропуск сохраняет срок; null снимает срок. Явное значение без dueMode переключает в fixed.
+        dueMode:
+          type: string
+          enum: [relative, fixed]
+          description: Relative без due пересчитывает срок по периоду и дате свадьбы; fixed без due сохраняет дату.
+        assigneeId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Живой участник этой свадьбы с ролью couple/helper/coordinator. Null снимает назначение; пропуск сохраняет.
     Task:
       type: object
       properties:
         id: { type: string }
         title: { type: string }
-        period: { type: string }
+        period: { type: string, nullable: true }
         done: { type: boolean }
         custom: { type: boolean }
         due:
           type: string
           format: date
           nullable: true
-          description: Срок задачи. Relative двигается вместе с датой свадьбы; fixed сохраняет выбранную дату.
-        dueMode:
-          type: string
-          enum: [relative, fixed]
+          description: Срок задачи. Relative двигается вместе с датой свадьбы; fixed сохраняет выбранную дату, в том числе отсутствие срока.
+        dueMode: { type: string, enum: [relative, fixed] }
         assignee:
           type: object
           nullable: true

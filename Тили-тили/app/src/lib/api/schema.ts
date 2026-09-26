@@ -357,10 +357,7 @@ export interface paths {
         /** Карточка свадьбы (данные для Home) */
         get: {
             parameters: {
-                query?: {
-                    /** @description Только задачи, назначенные текущему пользователю. */
-                    mine?: boolean;
-                };
+                query?: never;
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -2563,7 +2560,10 @@ export interface paths {
         /** Чек-лист (шаблонные + свои задачи) */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Только задачи текущего пользователя в этой свадьбе; права раздела не меняются. */
+                    mine?: boolean;
+                };
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -2596,26 +2596,26 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        title: string;
-                        /** @example 3–1 месяц */
-                        period: string;
-                        /** Format: date */
-                        due?: string;
-                        dueMode?: "relative" | "fixed";
-                        /** Format: uuid */
-                        assigneeId?: string | null;
-                    };
+                    "application/json": components["schemas"]["TaskCreate"];
                 };
             };
             responses: {
-                /** @description OK */
+                /** @description Создана */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Неверная дата, период или ответственный; относительная точная дата без даты свадьбы. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -2683,17 +2683,9 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
-                    "application/json": {
-                        done?: boolean;
-                        title?: string;
-                        /** Format: date */
-                        due?: string | null;
-                        dueMode?: "relative" | "fixed";
-                        /** Format: uuid */
-                        assigneeId?: string | null;
-                    };
+                    "application/json": components["schemas"]["TaskPatch"];
                 };
             };
             responses: {
@@ -2704,6 +2696,24 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Задача не найдена в доступной свадьбе. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверная дата или ответственный; планирование задач плана Б не поддерживается. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -9120,14 +9130,51 @@ export interface components {
             capacity: number;
             guestIds?: string[];
         };
+        TaskCreate: {
+            title: string;
+            /** @description Число месяцев 0–120 до свадьбы или произвольная подпись периода без вычисленного срока. */
+            period: string;
+            /** Format: date */
+            due?: string | null;
+            /**
+             * @description Без явной даты — relative; с явной датой или null — fixed по умолчанию. Relative с точной датой требует даты свадьбы.
+             * @enum {string}
+             */
+            dueMode?: "relative" | "fixed";
+            /** Format: uuid */
+            assigneeId?: string | null;
+        };
+        TaskPatch: {
+            title?: string;
+            done?: boolean;
+            /**
+             * Format: date
+             * @description Пропуск сохраняет срок; null снимает срок. Явное значение без dueMode переключает в fixed.
+             */
+            due?: string | null;
+            /**
+             * @description Relative без due пересчитывает срок по периоду и дате свадьбы; fixed без due сохраняет дату.
+             * @enum {string}
+             */
+            dueMode?: "relative" | "fixed";
+            /**
+             * Format: uuid
+             * @description Живой участник этой свадьбы с ролью couple/helper/coordinator. Null снимает назначение; пропуск сохраняет.
+             */
+            assigneeId?: string | null;
+        };
         Task: {
             id?: string;
             title?: string;
-            period?: string;
+            period?: string | null;
             done?: boolean;
             custom?: boolean;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description Срок задачи. Relative двигается вместе с датой свадьбы; fixed сохраняет выбранную дату, в том числе отсутствие срока.
+             */
             due?: string | null;
+            /** @enum {string} */
             dueMode?: "relative" | "fixed";
             assignee?: {
                 /** Format: uuid */

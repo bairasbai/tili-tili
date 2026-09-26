@@ -1,4 +1,4 @@
-import { createElement, useMemo, useState } from 'react'
+import { createElement, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -7,7 +7,7 @@ import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getMe, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
@@ -22,6 +22,8 @@ import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
 import { isAuthorized } from '@/lib/api/client'
 import { t, key } from '@/lib/i18n'
+import { getMe } from '@/lib/api/auth'
+import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '@/components/TaskPlanning'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
@@ -623,19 +625,6 @@ export function Budget() {
             <select value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <div className="grid grid-cols-1 gap-2.5 mt-2.5">
-              <select value={newAssignee} onChange={e => setNewAssignee(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[12px] outline-none">
-                <option value="">{t('Без ответственного')}</option>
-                {members.map(m => <option key={m.user?.id ?? ''} value={m.user?.id ?? ''}>{m.user?.name || t('Участник')} · {m.role}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)} className="bg-[var(--bg)] rounded-xl px-3 py-3 text-[12px] outline-none" />
-                <select value={newDueMode} onChange={e => setNewDueMode(e.target.value as 'relative' | 'fixed')} disabled={!newDue} className="bg-[var(--bg)] rounded-xl px-3 py-3 text-[12px] outline-none disabled:opacity-50">
-                  <option value="relative">{t('Следует за свадьбой')}</option>
-                  <option value="fixed">{t('Фиксированная дата')}</option>
-                </select>
-              </div>
-            </div>
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
               <button disabled={busyId === 'new' || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
@@ -659,9 +648,10 @@ export function Checklist() {
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
-  const [newDue, setNewDue] = useState('')
-  const [newDueMode, setNewDueMode] = useState<'relative' | 'fixed'>('relative')
-  const [newAssignee, setNewAssignee] = useState('')
+  const [newPlan, setNewPlan] = useState<TaskPlanningValue>({ assigneeId: '', due: '', dueMode: 'relative' })
+  const [planningId, setPlanningId] = useState<string | null>(null)
+  const [unassignedOnly, setUnassignedOnly] = useState(false)
+  const writing = useRef(false)
 
   /* Чек-лист приходит с сервера: он собирается там при создании свадьбы вместе
      с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
@@ -670,6 +660,8 @@ export function Checklist() {
   const meQ = useApi(() => getMe(), [])
   const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
   const members = membersQ.data ?? []
+  const membersReady = ready(membersQ) && !membersQ.refreshing
+  const meReady = ready(meQ) && !!meQ.data?.id
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -694,24 +686,28 @@ export function Checklist() {
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
     due: x.due ?? null,
-    dueMode: ((x as typeof x & { dueMode?: 'relative' | 'fixed' }).dueMode ?? 'relative'),
-    assignee: (x as typeof x & { assignee?: { userId?: string; name?: string | null } | null }).assignee ?? null,
+    dueMode: x.dueMode ?? 'relative',
+    assignee: x.assignee ?? null,
   }))
-  const visibleTasks = mineOnly ? allTasks.filter(x => x.assignee?.userId === meQ.data?.id) : allTasks
-  const list = visibleTasks.filter(t => t.period === period)
+  const visibleTasks = mineOnly ? (meReady ? allTasks.filter(x => x.assignee?.userId === meQ.data!.id) : [])
+    : unassignedOnly ? allTasks.filter(x => !x.assignee) : allTasks
+  const list = visibleTasks.filter(task => period === 'all' || task.period === period)
   const done = allTasks.filter(t => t.done).map(t => t.id)
 
   /* Галочка — общая на пару: её ставит один, а видят оба. Поэтому она едет на
      сервер, а не в `tt_tasks_done` на этом телефоне, и список перечитывается
      ответом сервера, а не подкручивается на месте. */
-  const write = async (fn: () => Promise<unknown>, id: string) => {
+  const write = async (fn: () => Promise<unknown>, id: string): Promise<boolean> => {
     /* Без свадьбы записывать некуда — и молчать об этом нельзя: кнопка, которая
        ничего не делает и ничего не говорит, читается как поломка. */
-    if (!weddingId) { setErr({ id, text: t('Сначала создайте свадьбу — задачи живут в ней') }); return }
-    if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
+    if (!weddingId) { setErr({ id, text: t('Сначала создайте свадьбу — задачи живут в ней') }); return false }
+    if (writing.current || busyId || q.refreshing || !ready(q)) return false
+    writing.current = true
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload() } catch (e) { setErr({ id, text: explainError(e) }) } finally { setBusyId(null) }
+    try { await fn(); q.reload(); return true }
+    catch (e) { setErr({ id, text: explainError(e) }); return false }
+    finally { writing.current = false; setBusyId(null) }
   }
   const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
   /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт (409
@@ -731,11 +727,12 @@ export function Checklist() {
     if (!title.trim()) return
     await addTaskApi(weddingId!, {
       title: title.trim(),
-      period,
-      ...(newDue ? { due: newDue, dueMode: newDueMode } : {}),
-      ...(newAssignee ? { assigneeId: newAssignee } : {}),
+      period: period === 'all' ? '9' : period,
+      dueMode: newPlan.dueMode,
+      ...(newPlan.due ? { due: newPlan.due } : newPlan.dueMode === 'fixed' ? { due: null } : {}),
+      ...(membersReady && newPlan.assigneeId ? { assigneeId: newPlan.assigneeId } : {}),
     })
-    setTitle(''); setNewDue(''); setNewDueMode('relative'); setNewAssignee(''); setAdding(false)
+    setTitle(''); setNewPlan({ assigneeId: '', due: '', dueMode: 'relative' }); setAdding(false)
   }, 'new')
   // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
   // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
@@ -752,7 +749,7 @@ export function Checklist() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Чек-лист')} sub={t('Что уже сделано, что впереди')} right={
-        <button onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('+ Задача')}</button>
+        <button disabled={!ready(q) || q.refreshing || !!busyId} onClick={() => setAdding(true)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('+ Задача')}</button>
       } />
       <AsyncState q={q} />
       <div className="px-5 mt-3 space-y-3">
@@ -764,7 +761,7 @@ export function Checklist() {
           <div className="flex-1 min-w-0">
             <p className="text-[11px] text-[var(--soft)]">{t('Ваш этап сейчас:')} <b className="text-[var(--ink)]">{curPeriod === '9' ? t('За 9 мес') : curPeriod === '6' ? t('За 6 мес') : curPeriod === '3' ? t('За 3 мес') : t('За 1 мес')}</b></p>
             {nextTask && (
-              <button onClick={() => setPeriod(nextTask.period)} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
+              <button onClick={() => { setMineOnly(false); setUnassignedOnly(false); setPeriod(nextTask.period) }} className="press mt-2 w-full text-left bg-[var(--rose-soft)] rounded-xl px-3 py-2">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[var(--rose-ink)]">{t('Следующий шаг →')}</p>
                 <p className="text-[12px] font-semibold mt-0.5 truncate">{nextTask.title}</p>
               </button>
@@ -787,19 +784,23 @@ export function Checklist() {
         )}
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
-        <button onClick={() => setMineOnly(v => !v)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', mineOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{t('Мои задачи')}</button>
+        <button disabled={!meReady} aria-pressed={mineOnly} onClick={() => { setMineOnly(v => !v); setUnassignedOnly(false); setPeriod('all') }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap disabled:opacity-50', mineOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')}>{t('Мои задачи')}</button>
+        <button aria-pressed={unassignedOnly} onClick={() => { setUnassignedOnly(v => !v); setMineOnly(false); setPeriod('all') }} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', unassignedOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')}>{t('Без ответственного')}</button>
+        <button onClick={() => { setPeriod('all'); setMineOnly(false); setUnassignedOnly(false) }} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)]">{t('Все задачи')}</button>
         {[['9', t('За 9 мес')], ['6', t('За 6 мес')], ['3', t('За 3 мес')], ['1', t('За 1 мес')]].map(([id, l]) => (
           <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
       </div>
       <div className="px-5 mt-4">
         {adding && (
-          <div className="card p-4 mb-3.5 fade-up">
+          <div role="group" aria-label={t('Новая задача')} className="card p-4 mb-3.5 fade-up">
             <input value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTask()}
               placeholder={t('Новая задача…')} autoFocus className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)]" />
+            <TaskPlanningFields value={newPlan} onChange={setNewPlan} members={members} membersReady={membersReady}
+              hasWeddingDate={!!weddingDate} disabled={!!busyId || q.refreshing} />
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button disabled={busyId === 'new'} onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
+              <button disabled={!!busyId || q.refreshing || !title.trim()} onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         )}
@@ -813,13 +814,13 @@ export function Checklist() {
                   {/* Галочка и название — две кнопки, а не одна: кнопка внутри
                       кнопки невалидна, а тап по названию теперь раскрывает
                       строку, не отмечает задачу. */}
-                  <button disabled={busyId === task.id} onClick={() => toggle(task.id, isDone)} aria-label={isDone ? t('Снять отметку') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
+                  <button disabled={!!busyId || q.refreshing} onClick={() => toggle(task.id, isDone)} aria-label={isDone ? t('Снять отметку') : t('Отметить выполненной')} className="py-3.5 pr-2 shrink-0 disabled:opacity-60">
                     <span className={cn('w-[26px] h-[26px] rounded-[9px] flex items-center justify-center text-[12px] shrink-0 transition-all',
                       isDone ? 'bg-[var(--sage-soft)] text-[var(--sage-ink)]' : 'bg-[var(--card)] border-[1.5px] border-[var(--line)] text-[var(--rose-deep)] font-bold text-[11px]')}>
                       {isDone ? '✓' : i + 1}
                     </span>
                   </button>
-                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
+                  <button onClick={() => { setOpenId(open ? null : task.id); setRenaming(null); setConfirmDel(null); setPlanningId(null) }} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-3 py-3.5 text-left">
                     <span className={cn('flex-1 text-[13px]', isDone && 'text-[var(--soft)] line-through')}>{task.title}</span>
                     {/* Точка «важный срок» убрана: признака срочности в контракте
                         нет, и все точки были одного цвета при подписи о двух. */}
@@ -831,17 +832,15 @@ export function Checklist() {
                     {/* Срок считает сервер от даты свадьбы; без даты его нет ни у
                         одной задачи — и это говорится словами, не пустотой. */}
                     <p className="text-[11px] text-[var(--soft)]">
-                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('дата свадьбы не задана')} · {t(PERIOD_LABEL[task.period] ?? task.period)}
+                      {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('Срок не задан')} · {t(PERIOD_LABEL[task.period] ?? task.period)}
                       {task.due && <> · {task.dueMode === 'fixed' ? t('фиксированный') : t('следует за свадьбой')}</>}
                     </p>
                     <p className="text-[11px] text-[var(--soft)] mt-1">{t('Ответственный:')} {task.assignee?.name || t('не назначен')}</p>
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <select value={task.assignee?.userId ?? ''} disabled={busyId === task.id} onChange={e => void write(() => patchTask(weddingId!, task.id, { assigneeId: e.target.value || null }), task.id)} className="bg-[var(--bg)] rounded-lg px-2 py-2 text-[11px] outline-none disabled:opacity-50">
-                        <option value="">{t('Без ответственного')}</option>
-                        {members.map(m => <option key={m.user?.id ?? ''} value={m.user?.id ?? ''}>{m.user?.name || t('Участник')}</option>)}
-                      </select>
-                      <input type="date" value={task.due ?? ''} disabled={busyId === task.id} onChange={e => void write(() => patchTask(weddingId!, task.id, { due: e.target.value || null, dueMode: 'fixed' }), task.id)} className="bg-[var(--bg)] rounded-lg px-2 py-2 text-[11px] outline-none disabled:opacity-50" />
-                    </div>
+                    <button disabled={!!busyId || q.refreshing} onClick={() => setPlanningId(planningId === task.id ? null : task.id)}
+                      className="press text-[11px] font-semibold px-3 py-2 mt-2 rounded-full bg-[var(--bg)] disabled:opacity-50">{t('Ответственный и срок')}</button>
+                    {planningId === task.id && <TaskPlanningEditor key={task.id} task={task} members={members} membersReady={membersReady}
+                      hasWeddingDate={!!weddingDate} disabled={!!busyId || q.refreshing}
+                      onSave={patch => write(() => patchTask(weddingId!, task.id, patch), task.id)} onCancel={() => setPlanningId(null)} />}
                     {renaming === task.id ? (
                       <div className="flex items-center gap-2 mt-2">
                         <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && rename(task.id)} aria-label={t('Название задачи')}
@@ -854,7 +853,7 @@ export function Checklist() {
                         <button onClick={() => { setRenaming(task.id); setDraft(task.title); setConfirmDel(null) }} className="press text-[11px] font-semibold px-3 py-1.5 rounded-full bg-[var(--bg)]">{t('Переименовать')}</button>
                         {task.custom && (
                           confirmDel === task.id
-                            ? <button disabled={busyId === task.id} onClick={() => removeTask(task.id)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{busyId === task.id ? t('Удаляем…') : t('Удалить?')}</button>
+                            ? <button disabled={!!busyId || q.refreshing} onClick={() => removeTask(task.id)} className="press text-[11px] font-bold px-3 py-1.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{busyId === task.id ? t('Удаляем…') : t('Удалить?')}</button>
                             : <button onClick={() => setConfirmDel(task.id)} className="press text-[11px] font-semibold px-3 py-1.5 rounded-full bg-[var(--bg)] text-[var(--rose-ink)]">{t('Удалить')}</button>
                         )}
                       </div>
@@ -866,6 +865,8 @@ export function Checklist() {
             )
           })}
         </div>
+        {ready(q) && !list.length && (!mineOnly || meReady) && <p className="text-[12px] text-[var(--soft)] mt-3" role="status">{t('Нет задач по выбранному фильтру')}</p>}
+        {meQ.error && <p className="text-[11px] text-[var(--soft)] mt-3">{t('Профиль не загрузился — фильтр «Мои задачи» недоступен')}</p>}
         {/* Ошибка раскрытой задачи стоит под её строкой; остальные — здесь. */}
         {err && err.id !== openId && <p className="text-[12px] text-[var(--rose-ink)] text-center mt-3">{err.text}</p>}
       </div>
