@@ -21,15 +21,18 @@ jobs:
             cp -a /usr/share/postgresql/16 /out/usr/share/postgresql/
             for f in /usr/lib/postgresql/16/bin/* /usr/lib/postgresql/16/lib/pgcrypto.so /usr/lib/postgresql/16/lib/citext.so /usr/lib/postgresql/16/lib/plpgsql.so; do
               ldd "$f" 2>/dev/null || true
-            done | awk "/=> \\/ {print \$3}" | sort -u | while read -r lib; do
-              case "$lib" in */libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) cp -L "$lib" /out/deps/ ;; esac
+            done | grep -oE "/[^ ]+" | sort -u | while read -r lib; do
+              case "$lib" in */ld-linux*|*/libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) test -f "$lib" && cp -L "$lib" /out/deps/ ;; esac
             done
+            test -f /out/deps/libicuuc.so.72
+            test -f /out/deps/libldap-2.5.so.0
+            LD_LIBRARY_PATH=/out/deps /out/usr/lib/postgresql/16/bin/postgres --version
           '
           docker run --rm --entrypoint sh -v "$RUNNER_TEMP/task-runtime:/out" redis:7-bookworm -ec '
             mkdir -p /out/bin /out/deps
             cp /usr/local/bin/redis-server /usr/local/bin/redis-cli /out/bin/
-            ldd /usr/local/bin/redis-server | awk "/=> \\/ {print \$3}" | while read -r lib; do
-              case "$lib" in */libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) cp -L "$lib" /out/deps/ ;; esac
+            ldd /usr/local/bin/redis-server | grep -oE "/[^ ]+" | while read -r lib; do
+              case "$lib" in */ld-linux*|*/libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) test -f "$lib" && cp -L "$lib" /out/deps/ ;; esac
             done
           '
           tar -czf "$RUNNER_TEMP/task-runtime.tar.gz" -C "$RUNNER_TEMP/task-runtime" .
