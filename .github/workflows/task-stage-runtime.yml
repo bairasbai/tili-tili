@@ -1,0 +1,42 @@
+name: Task stage disposable runtime
+on:
+  push:
+    branches: [feature/product-improvements-stage1-tasks]
+    paths: [.github/workflows/task-stage-runtime.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Package test executables, not database contents
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/task-runtime"
+          docker run --rm --entrypoint sh -v "$RUNNER_TEMP/task-runtime:/out" postgres:16-bookworm -ec '
+            mkdir -p /out/usr/lib/postgresql/16 /out/usr/share/postgresql /out/deps
+            cp -a /usr/lib/postgresql/16/bin /usr/lib/postgresql/16/lib /out/usr/lib/postgresql/16/
+            cp -a /usr/share/postgresql/16 /out/usr/share/postgresql/
+            for f in /usr/lib/postgresql/16/bin/* /usr/lib/postgresql/16/lib/pgcrypto.so /usr/lib/postgresql/16/lib/citext.so /usr/lib/postgresql/16/lib/plpgsql.so; do
+              ldd "$f" 2>/dev/null || true
+            done | awk "/=> \\/ {print \$3}" | sort -u | while read -r lib; do
+              case "$lib" in */libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) cp -L "$lib" /out/deps/ ;; esac
+            done
+          '
+          docker run --rm --entrypoint sh -v "$RUNNER_TEMP/task-runtime:/out" redis:7-bookworm -ec '
+            mkdir -p /out/bin /out/deps
+            cp /usr/local/bin/redis-server /usr/local/bin/redis-cli /out/bin/
+            ldd /usr/local/bin/redis-server | awk "/=> \\/ {print \$3}" | while read -r lib; do
+              case "$lib" in */libc.so.*|*/libpthread.so.*|*/libdl.so.*|*/librt.so.*|*/libm.so.*) ;; *) cp -L "$lib" /out/deps/ ;; esac
+            done
+          '
+          tar -czf "$RUNNER_TEMP/task-runtime.tar.gz" -C "$RUNNER_TEMP/task-runtime" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: task-stage-runtime
+          path: ${{ runner.temp }}/task-runtime.tar.gz
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
