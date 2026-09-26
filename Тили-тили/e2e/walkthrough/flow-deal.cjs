@@ -2,7 +2,7 @@
 // Требует flow-vendor.ids.json (DJ), state-couple.json, state-dj.json.
 const fs = require('fs')
 const { chromium } = require(process.env.PW_CORE || 'playwright-core')
-const { run, D, FE } = require('./flow-lib.cjs')
+const { shimNoise, run, D, FE } = require('./flow-lib.cjs')
 const ids = JSON.parse(fs.readFileSync(`${D}/out/flow-vendor.ids.json`, 'utf8'))
 
 // Второй браузер под другую роль (state-файл): свои вкладки, сохранение state после.
@@ -11,7 +11,7 @@ async function asRole(role, fn, viewport = { width: 390, height: 844 }) {
   const c = await b.newContext({ viewport, locale: 'ru-RU', storageState: `${D}/state-${role}.json` })
   const p = await c.newPage()
   const bad = []
-  p.on('response', async (r) => { if (r.status() >= 400) { let t = ''; try { t = (await r.text()).slice(0, 120) } catch { /* нет тела */ } bad.push(`${r.request().method()} ${r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, '')} ${r.status()} ${t}`) } })
+  p.on('response', async (r) => { if (r.status() >= 400 && !shimNoise(r)) { let t = ''; try { t = (await r.text()).slice(0, 120) } catch { /* нет тела */ } bad.push(`${r.request().method()} ${r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, '')} ${r.status()} ${t}`) } })
   await p.addInitScript(() => { window.confirm = () => true })
   const h = {
     page: p, bad,
@@ -140,7 +140,7 @@ run('flow-deal', async (step, a) => {
     const c = await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU' })
     const p = await c.newPage()
     const bad = []
-    p.on('response', (r) => { if (r.status() >= 400) bad.push(`${r.request().method()} ${r.url().slice(-60)} ${r.status()}`) })
+    p.on('response', (r) => { if (r.status() >= 400 && !shimNoise(r)) bad.push(`${r.request().method()} ${r.url().slice(-60)} ${r.status()}`) })
     try {
       await p.goto(`${FE}/i/${guestCode}`, { waitUntil: 'domcontentloaded' })
       await p.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})

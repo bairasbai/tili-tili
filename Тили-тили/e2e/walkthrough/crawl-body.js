@@ -19,7 +19,8 @@ async (page) => {
     reqLog.push(r.method() + ' ' + u.slice(u.indexOf('/api/') + 4).replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ':id').split('?')[0])
   }
   const onResp = async (r) => {
-    if (r.status() < 400) return
+    // След deep-link шима прод-сборки: 404 на ./assets/* относительно глубокого адреса — без последствий (см. flow-lib.cjs).
+    if (r.status() < 400 || (r.status() === 404 && /^\/(?!assets\/)[^?#]+\/assets\/[^/?#]+\.(?:js|css)$/.test(new URL(r.url()).pathname))) return
     let body = ''
     try { body = (await r.text()).slice(0, 160) } catch { /* тело недоступно */ }
     report.bad.push({ at: current, m: r.request().method(), u: r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, ''), s: r.status(), b: body })

@@ -3,6 +3,9 @@ const fs = require('fs')
 const D = require('path').join((process.env.LIVE_DIR || (() => { throw new Error('LIVE_DIR не задан — см. README.md') })()), 'crawl')
 const { chromium } = require(process.env.PW_CORE || 'playwright-core')
 const FE = 'http://127.0.0.1:3000'
+// След deep-link шима прод-сборки (index.html, base: './'): пока шим уводит /deal/… на корень, браузер успевает
+// запросить ./assets/*.js относительно /deal/ — 404 без последствий. Настоящий 404 на /assets/ в корне не прячется.
+const shimNoise = (r) => r.status() === 404 && /^\/(?!assets\/)[^?#]+\/assets\/[^/?#]+\.(?:js|css)$/.test(new URL(r.url()).pathname)
 const S = 'http://127.0.0.1:3999'
 
 async function run(name, fn, opts = {}) {
@@ -12,7 +15,7 @@ async function run(name, fn, opts = {}) {
   const report = { name, steps: [], bad: [], errors: [], ok: true }
   let current = 'start'
   page.on('response', async (r) => {
-    if (r.status() < 400) return
+    if (r.status() < 400 || shimNoise(r)) return
     let body = ''
     try { body = (await r.text()).slice(0, 200) } catch { /* нет тела */ }
     report.bad.push({ at: current, m: r.request().method(), u: r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, ''), s: r.status(), b: body })
@@ -77,4 +80,4 @@ async function run(name, fn, opts = {}) {
 // сценария так и остаётся новым, даже если база уже видела прошлые прогоны.
 const ph = (suffix) => '9' + JSON.parse(fs.readFileSync(require('path').join(D, '..', 'fixtures-public.json'), 'utf8')).run + suffix
 
-module.exports = { run, D, FE, S, ph }
+module.exports = { run, D, FE, S, ph, shimNoise }

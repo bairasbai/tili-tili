@@ -50,6 +50,11 @@ jobs:
       POLICY_VERSION: '2026-09-02'
       OTP_MAX_PER_IP_HOUR: '100000'
       OTP_MAX_PER_HOUR_TOTAL: '100000'
+      # Сценарии входят под одним номером по нескольку раз (онбординг, отзыв согласия, удаление и вход заново),
+      # и все — с одного адреса: боевые потолки (3 кода на номер с адреса в час) здесь резали бы сам обход.
+      OTP_MAX_PER_PHONE_IP_HOUR: '100'
+      OTP_MAX_PER_PHONE_HOUR: '100'
+      OTP_MAX_PER_PHONE_DAY: '1000'
       RATE_LIMIT_PER_SECOND: '10'
       VAPID_SUBJECT: mailto:support@tili-tili.ru
       WALK_MAKE_STAFF: '1'

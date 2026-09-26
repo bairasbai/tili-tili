@@ -1,7 +1,7 @@
 // Сценарии: язык EN↔RU; модерация новой анкеты DJ в панели; выход с устройства (помощник 095) и мёртвый токен.
 const fs = require('fs')
 const { chromium } = require(process.env.PW_CORE || 'playwright-core')
-const { run, D, FE } = require('./flow-lib.cjs')
+const { shimNoise, run, D, FE } = require('./flow-lib.cjs')
 const ids = JSON.parse(fs.readFileSync(`${D}/out/flow-vendor.ids.json`, 'utf8'))
 const expect = (c, what) => { if (!c) throw new Error('ожидалось: ' + what) }
 
@@ -10,7 +10,7 @@ async function asRole(role, fn) {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU', storageState: `${D}/state-${role}.json` })
   const p = await c.newPage()
   const bad = []
-  p.on('response', async (r) => { if (r.status() >= 400) { let t = ''; try { t = (await r.text()).slice(0, 120) } catch { /* нет тела */ } bad.push(`${r.request().method()} ${r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, '')} ${r.status()} ${t}`) } })
+  p.on('response', async (r) => { if (r.status() >= 400 && !shimNoise(r)) { let t = ''; try { t = (await r.text()).slice(0, 120) } catch { /* нет тела */ } bad.push(`${r.request().method()} ${r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, '')} ${r.status()} ${t}`) } })
   await p.addInitScript(() => { window.confirm = () => true })
   const h = {
     page: p, bad,

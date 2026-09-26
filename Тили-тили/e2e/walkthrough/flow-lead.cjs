@@ -1,7 +1,7 @@
 // Сценарий заявки (лида): пара пишет видеографу → в кабинете заявка «новая» → «Ответить» → быстрый ответ → «Hold 72 ч» → «Отклонить» → «Вернуть в работу».
 const fs = require('fs')
 const { chromium } = require(process.env.PW_CORE || 'playwright-core')
-const { run, D, FE, S } = require('./flow-lib.cjs')
+const { shimNoise, run, D, FE, S } = require('./flow-lib.cjs')
 const pub = JSON.parse(fs.readFileSync(`${D}/../fixtures-public.json`, 'utf8'))
 const expect = (c, what) => { if (!c) throw new Error('ожидалось: ' + what) }
 
@@ -11,7 +11,7 @@ async function ctxFor(role, setupPhone) {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, locale: 'ru-RU', storageState: !setupPhone && fs.existsSync(stateFile) ? stateFile : undefined })
   const p = await c.newPage()
   const bad = []
-  p.on('response', async (r) => { if (r.status() >= 400) { let t = ''; try { t = (await r.text()).slice(0, 120) } catch { /* нет тела */ } bad.push(`${r.request().method()} ${r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, '')} ${r.status()} ${t}`) } })
+  p.on('response', async (r) => { if (r.status() >= 400 && !shimNoise(r)) { let t = ''; try { t = (await r.text()).slice(0, 120) } catch { /* нет тела */ } bad.push(`${r.request().method()} ${r.url().replace(/^http:\/\/127\.0\.0\.1:300[01](\/api)?/, '')} ${r.status()} ${t}`) } })
   const h = {
     page: p, bad,
     goto: async (path) => { await p.goto(FE + path, { waitUntil: 'domcontentloaded', timeout: 20000 }); await h.settle(500) },

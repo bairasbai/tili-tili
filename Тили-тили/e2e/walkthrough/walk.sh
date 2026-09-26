@@ -34,6 +34,8 @@ done
 RUN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).run)" "$LIVE_DIR/fixtures-public.json")
 node "$S/flow-onboard.cjs" "9${RUN}092" flow-onboard-092 > "$LIVE_DIR/crawl/out/flow-onboard-092.txt" 2>&1
 echo "flow-onboard-092 rc=$?"
+# Повторный код тому же номеру — не раньше чем через 60 с (RESEND_AFTER_SECONDS): онбординг только что входил под 092.
+sleep 65
 node "$S/flow-destructive.cjs" > "$LIVE_DIR/crawl/out/flow-destructive.txt" 2>&1
 echo "flow-destructive rc=$?"
 
