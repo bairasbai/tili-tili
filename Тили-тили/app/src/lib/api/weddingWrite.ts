@@ -16,11 +16,25 @@ import type { components } from './schema'
 
 /* ── Чек-лист ── */
 
-export const addTask = (weddingId: string, title: string, period: string) =>
-  api.post(url('/weddings/{weddingId}/tasks', { weddingId }), { title, period })
+export interface TaskDraft {
+  title: string
+  period: string
+  due?: string
+  dueMode?: 'relative' | 'fixed'
+  assigneeId?: string | null
+}
+
+export const addTask = (weddingId: string, draft: TaskDraft) =>
+  api.post(url('/weddings/{weddingId}/tasks', { weddingId }), draft as never)
+
+export const patchTask = (
+  weddingId: string,
+  taskId: string,
+  patch: { title?: string; done?: boolean; due?: string | null; dueMode?: 'relative' | 'fixed'; assigneeId?: string | null },
+) => api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), patch as never)
 
 export const setTaskDone = (weddingId: string, taskId: string, done: boolean) =>
-  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), { done })
+  patchTask(weddingId, taskId, { done })
 
 export const deleteTask = (weddingId: string, taskId: string) =>
   api.delete(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }))
@@ -34,7 +48,7 @@ export const deleteTask = (weddingId: string, taskId: string) =>
  * `system_task`), поэтому у них «Переименовать» есть, а «Удалить» нет.
  */
 export const renameTask = (weddingId: string, taskId: string, title: string) =>
-  api.patch(url('/weddings/{weddingId}/tasks/{taskId}', { weddingId, taskId }), { title })
+  patchTask(weddingId, taskId, { title })
 
 /* ── Гости ── */
 

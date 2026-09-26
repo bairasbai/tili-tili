@@ -7,9 +7,9 @@ import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getMe, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { rub } from '@/lib/money'
@@ -623,6 +623,19 @@ export function Budget() {
             <select value={cat || cats[0]?.id || ''} onChange={e => setCat(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[13px] outline-none mt-2.5">
               {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            <div className="grid grid-cols-1 gap-2.5 mt-2.5">
+              <select value={newAssignee} onChange={e => setNewAssignee(e.target.value)} className="w-full bg-[var(--bg)] rounded-xl px-4 py-3 text-[12px] outline-none">
+                <option value="">{t('Без ответственного')}</option>
+                {members.map(m => <option key={m.user?.id ?? ''} value={m.user?.id ?? ''}>{m.user?.name || t('Участник')} · {m.role}</option>)}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)} className="bg-[var(--bg)] rounded-xl px-3 py-3 text-[12px] outline-none" />
+                <select value={newDueMode} onChange={e => setNewDueMode(e.target.value as 'relative' | 'fixed')} disabled={!newDue} className="bg-[var(--bg)] rounded-xl px-3 py-3 text-[12px] outline-none disabled:opacity-50">
+                  <option value="relative">{t('Следует за свадьбой')}</option>
+                  <option value="fixed">{t('Фиксированная дата')}</option>
+                </select>
+              </div>
+            </div>
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[44px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
               <button disabled={busyId === 'new' || !cats.length} onClick={add} className="press flex-1 h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
@@ -645,11 +658,18 @@ export function Checklist() {
   const [period, setPeriod] = useState('9')
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
+  const [mineOnly, setMineOnly] = useState(false)
+  const [newDue, setNewDue] = useState('')
+  const [newDueMode, setNewDueMode] = useState<'relative' | 'fixed'>('relative')
+  const [newAssignee, setNewAssignee] = useState('')
 
   /* Чек-лист приходит с сервера: он собирается там при создании свадьбы вместе
      с мозаикой и таймингом, одной транзакцией. Локальные `tt_tasks_extra` и
      `tt_tasks_done` были заменой этому, пока сервера не было. */
   const q = useApi(() => weddingId ? getTasks(weddingId) : noWedding(), [weddingId])
+  const meQ = useApi(() => getMe(), [])
+  const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
+  const members = membersQ.data ?? []
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -674,8 +694,11 @@ export function Checklist() {
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
     due: x.due ?? null,
+    dueMode: ((x as typeof x & { dueMode?: 'relative' | 'fixed' }).dueMode ?? 'relative'),
+    assignee: (x as typeof x & { assignee?: { userId?: string; name?: string | null } | null }).assignee ?? null,
   }))
-  const list = allTasks.filter(t => t.period === period)
+  const visibleTasks = mineOnly ? allTasks.filter(x => x.assignee?.userId === meQ.data?.id) : allTasks
+  const list = visibleTasks.filter(t => t.period === period)
   const done = allTasks.filter(t => t.done).map(t => t.id)
 
   /* Галочка — общая на пару: её ставит один, а видят оба. Поэтому она едет на
@@ -706,8 +729,13 @@ export function Checklist() {
   }, id)
   const addTask = () => void write(async () => {
     if (!title.trim()) return
-    await addTaskApi(weddingId!, title.trim(), period)
-    setTitle(''); setAdding(false)
+    await addTaskApi(weddingId!, {
+      title: title.trim(),
+      period,
+      ...(newDue ? { due: newDue, dueMode: newDueMode } : {}),
+      ...(newAssignee ? { assigneeId: newAssignee } : {}),
+    })
+    setTitle(''); setNewDue(''); setNewDueMode('relative'); setNewAssignee(''); setAdding(false)
   }, 'new')
   // Персональный план от даты: обратный отсчёт, текущий этап, следующий шаг
   // «Сейчас» фиксируется на монтировании: Date.now() в теле рендера — нечистый вызов,
@@ -759,6 +787,7 @@ export function Checklist() {
         )}
       </div>
       <div className="px-5 flex gap-2 mt-3 overflow-x-auto no-scrollbar">
+        <button onClick={() => setMineOnly(v => !v)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', mineOnly ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{t('Мои задачи')}</button>
         {[['9', t('За 9 мес')], ['6', t('За 6 мес')], ['3', t('За 3 мес')], ['1', t('За 1 мес')]].map(([id, l]) => (
           <button key={id} onClick={() => setPeriod(id)} className={cn('press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap', period === id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)] text-[var(--soft)]')} style={{ boxShadow: 'var(--shadow)' }}>{l}</button>
         ))}
@@ -803,7 +832,16 @@ export function Checklist() {
                         одной задачи — и это говорится словами, не пустотой. */}
                     <p className="text-[11px] text-[var(--soft)]">
                       {t('Срок:')} {task.due ? formatWeddingDate(task.due) : t('дата свадьбы не задана')} · {t(PERIOD_LABEL[task.period] ?? task.period)}
+                      {task.due && <> · {task.dueMode === 'fixed' ? t('фиксированный') : t('следует за свадьбой')}</>}
                     </p>
+                    <p className="text-[11px] text-[var(--soft)] mt-1">{t('Ответственный:')} {task.assignee?.name || t('не назначен')}</p>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <select value={task.assignee?.userId ?? ''} disabled={busyId === task.id} onChange={e => void write(() => patchTask(weddingId!, task.id, { assigneeId: e.target.value || null }), task.id)} className="bg-[var(--bg)] rounded-lg px-2 py-2 text-[11px] outline-none disabled:opacity-50">
+                        <option value="">{t('Без ответственного')}</option>
+                        {members.map(m => <option key={m.user?.id ?? ''} value={m.user?.id ?? ''}>{m.user?.name || t('Участник')}</option>)}
+                      </select>
+                      <input type="date" value={task.due ?? ''} disabled={busyId === task.id} onChange={e => void write(() => patchTask(weddingId!, task.id, { due: e.target.value || null, dueMode: 'fixed' }), task.id)} className="bg-[var(--bg)] rounded-lg px-2 py-2 text-[11px] outline-none disabled:opacity-50" />
+                    </div>
                     {renaming === task.id ? (
                       <div className="flex items-center gap-2 mt-2">
                         <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && rename(task.id)} aria-label={t('Название задачи')}

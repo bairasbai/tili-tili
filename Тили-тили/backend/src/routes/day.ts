@@ -117,29 +117,65 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /* ── чек-лист ─────────────────────────────────────────────────────── */
-  const toTask = (r: { id: string; title: string; period: string | null; done_at: Date | null; source: string; due?: string | null }) => ({
-    id: r.id,
-    title: r.title,
-    period: r.period,
-    done: r.done_at !== null,
-    custom: r.source !== 'system',
-    /* Срок считает сервер от даты свадьбы и пересчитывает при переносе.
-       Пока даты нет — срока нет, и это честнее выдуманного «через месяц». */
-    due: r.due ?? null,
+  type TaskRow = {
+    id: string
+    title: string
+    period: string | null
+    done_at: Date | null
+    source: string
+    due: string | null
+    due_mode: 'relative' | 'fixed'
+    assignee_id: string | null
+    assignee_name: string | null
+  }
+  const TASK_SELECT = `t.id, t.title, t.period, t.done_at, t.source, t.due::text as due,
+    t.due_mode, t.assignee_id, u.name as assignee_name`
+  const toTask = (row: TaskRow) => ({
+    id: row.id,
+    title: row.title,
+    period: row.period,
+    done: row.done_at !== null,
+    custom: row.source !== 'system',
+    due: row.due,
+    dueMode: row.due_mode,
+    assignee: row.assignee_id ? { userId: row.assignee_id, name: row.assignee_name } : null,
   })
+  const taskById = async (taskId: string) => {
+    const { rows } = await db().query<TaskRow>(
+      `select ${TASK_SELECT} from tasks t
+        left join users u on u.id = t.assignee_id and u.deleted_at is null
+        where t.id = $1`,
+      [taskId],
+    )
+    return rows[0] ? toTask(rows[0]) : null
+  }
+  const assertAssignee = async (weddingId: string, assigneeId: string | null | undefined) => {
+    if (!assigneeId) return
+    const { rows } = await db().query(
+      `select 1 from wedding_members m join users u on u.id = m.user_id
+        where m.wedding_id = $1 and m.user_id = $2 and u.deleted_at is null`,
+      [weddingId, assigneeId],
+    )
+    if (!rows[0]) throw validationFailed({ assigneeId: 'ответственный должен быть участником этой свадьбы' })
+  }
 
-  app.get('/weddings/:weddingId/tasks', async (request) => {
-    const { rows } = await db().query<{
-      id: string
-      title: string
-      period: string | null
-      done_at: Date | null
-      source: string
-      due: string | null
-    }>(
-      `select id, title, period, done_at, source, due::text as due from tasks
-        where wedding_id = $1 and kind = 'checklist' order by sort, title`,
-      [request.member!.weddingId],
+  app.get('/weddings/:weddingId/tasks', {
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { mine: { type: 'boolean', default: false } },
+      },
+    },
+  }, async (request) => {
+    const { mine = false } = request.query as { mine?: boolean }
+    const { rows } = await db().query<TaskRow>(
+      `select ${TASK_SELECT} from tasks t
+        left join users u on u.id = t.assignee_id and u.deleted_at is null
+        where t.wedding_id = $1 and t.kind = 'checklist'
+          and (not $2::boolean or t.assignee_id = $3)
+        order by t.sort, t.title`,
+      [request.member!.weddingId, mine, request.caller!.userId],
     )
     return rows.map(toTask)
   })
@@ -155,34 +191,42 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             title: { type: 'string', minLength: 1, maxLength: 300 },
             period: { type: 'string', maxLength: 40 },
+            due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+            dueMode: { type: 'string', enum: ['relative', 'fixed'] },
+            assigneeId: { ...UUID_ID, nullable: true },
           },
         },
       },
     },
     async (request, reply) => {
-      const body = request.body as { title: string; period: string }
+      const weddingId = request.member!.weddingId
+      const body = request.body as {
+        title: string
+        period: string
+        due?: string
+        dueMode?: 'relative' | 'fixed'
+        assigneeId?: string | null
+      }
+      if (body.due !== undefined) assertRealDate(body.due, 'due')
+      await assertAssignee(weddingId, body.assigneeId)
       const id = uuidv7()
       const { rows: last } = await db().query<{ n: number }>(
         'select coalesce(max(sort), -1) + 1 as n from tasks where wedding_id = $1',
-        [request.member!.weddingId],
+        [weddingId],
       )
-      /* Срок своей задачи — по той же формуле, что у переноса даты и у
-       * шаблона: «за 3 месяца» от даты свадьбы через `make_interval`
-       * (31 мая − 3 мес = 28 февраля, а не 3 марта). Раньше своя задача
-       * заводилась без срока, и у свадьбы с датой «Заказать торт · За 3 мес»
-       * навсегда оставалась без дедлайна рядом с шаблонными (D2-19а). Период
-       * не числом («накануне») — срока нет, и это честнее выдуманного. */
       const months = /^\d+$/.test(body.period) ? Number(body.period) : null
+      const dueMode = body.dueMode ?? (body.due ? 'fixed' : 'relative')
       await db().query(
-        `insert into tasks (id, wedding_id, title, period, source, sort, due)
+        `insert into tasks (id, wedding_id, title, period, source, sort, due, due_mode, assignee_id)
          select $1, $2, $3, $4, 'user', $5,
-                case when $6::int is null then null
-                     else (w.date - make_interval(months => $6::int))::date end
+                case when $7::text is not null then $7::date
+                     when $8 = 'relative' and $6::int is not null then (w.date - make_interval(months => $6::int))::date
+                     else null end,
+                $8, $9
            from weddings w where w.id = $2`,
-        [id, request.member!.weddingId, body.title, body.period, last[0]!.n, months],
+        [id, weddingId, body.title, body.period, last[0]!.n, months, body.due ?? null, dueMode, body.assigneeId ?? null],
       )
-      const { rows } = await db().query('select id, title, period, done_at, source, due::text as due from tasks where id = $1', [id])
-      return reply.code(201).send(toTask(rows[0] as never))
+      return reply.code(201).send(await taskById(id))
     },
   )
 
@@ -193,37 +237,51 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         body: {
           type: 'object',
           additionalProperties: false,
-          properties: { done: { type: 'boolean' }, title: { type: 'string', minLength: 1, maxLength: 300 } },
+          properties: {
+            done: { type: 'boolean' },
+            title: { type: 'string', minLength: 1, maxLength: 300 },
+            due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', nullable: true },
+            dueMode: { type: 'string', enum: ['relative', 'fixed'] },
+            assigneeId: { ...UUID_ID, nullable: true },
+          },
         },
       },
     },
     async (request) => {
+      const weddingId = request.member!.weddingId
       const { taskId } = request.params as { taskId: string }
-      const body = request.body as { done?: boolean; title?: string }
+      const body = request.body as {
+        done?: boolean
+        title?: string
+        due?: string | null
+        dueMode?: 'relative' | 'fixed'
+        assigneeId?: string | null
+      }
       if (!isUuid(taskId)) throw notFound('Задача не найдена')
+      if (body.due) assertRealDate(body.due, 'due')
+      await assertAssignee(weddingId, body.assigneeId)
+      const hasDue = Object.prototype.hasOwnProperty.call(body, 'due')
+      const hasAssignee = Object.prototype.hasOwnProperty.call(body, 'assigneeId')
       const res = await db().query(
         `update tasks set
            title = coalesce($3, title),
            done_at = case when $4::boolean is null then done_at
-                          when $4 then coalesce(done_at, now()) else null end
+                          when $4 then coalesce(done_at, now()) else null end,
+           due = case when $5::boolean then $6::date else due end,
+           due_mode = coalesce($7, due_mode),
+           assignee_id = case when $8::boolean then $9::uuid else assignee_id end
          where id = $1 and wedding_id = $2`,
-        [taskId, request.member!.weddingId, body.title ?? null, body.done ?? null],
+        [taskId, weddingId, body.title ?? null, body.done ?? null, hasDue, body.due ?? null,
+         body.dueMode ?? null, hasAssignee, body.assigneeId ?? null],
       )
       if (res.rowCount === 0) throw notFound('Задача не найдена')
-      // Срок в ответе — контракт `Task.due` обещает его и здесь (ERR-0125 закрыл GET и POST, PATCH пропустили).
-      const { rows } = await db().query(
-        'select id, title, period, done_at, source, due::text as due from tasks where id = $1',
-        [taskId],
-      )
-      return toTask(rows[0] as never)
+      return taskById(taskId)
     },
   )
 
   app.delete('/weddings/:weddingId/tasks/:taskId', async (request, reply) => {
     const { taskId } = request.params as { taskId: string }
     if (!isUuid(taskId)) throw notFound('Задача не найдена')
-    // Системные задачи из шаблона не удаляются: чек-лист перестанет быть
-    // чек-листом, если из него можно вычеркнуть «забронировать площадку».
     const res = await db().query(
       `delete from tasks where id = $1 and wedding_id = $2 and source <> 'system'`,
       [taskId, request.member!.weddingId],

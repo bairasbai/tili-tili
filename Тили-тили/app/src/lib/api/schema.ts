@@ -357,7 +357,10 @@ export interface paths {
         /** Карточка свадьбы (данные для Home) */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Только задачи, назначенные текущему пользователю. */
+                    mine?: boolean;
+                };
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -2597,6 +2600,11 @@ export interface paths {
                         title: string;
                         /** @example 3–1 месяц */
                         period: string;
+                        /** Format: date */
+                        due?: string;
+                        dueMode?: "relative" | "fixed";
+                        /** Format: uuid */
+                        assigneeId?: string | null;
                     };
                 };
             };
@@ -2680,6 +2688,11 @@ export interface paths {
                     "application/json": {
                         done?: boolean;
                         title?: string;
+                        /** Format: date */
+                        due?: string | null;
+                        dueMode?: "relative" | "fixed";
+                        /** Format: uuid */
+                        assigneeId?: string | null;
                     };
                 };
             };
@@ -9113,15 +9126,14 @@ export interface components {
             period?: string;
             done?: boolean;
             custom?: boolean;
-            /**
-             * Format: date
-             * @description Срок задачи, посчитанный от даты свадьбы («за 9 месяцев» → сентябрь
-             *     2026 для свадьбы 14 июня 2027). Null — у свадьбы ещё нет даты, и
-             *     тогда срока нет ни у одной задачи. Сервер считает его сам и
-             *     пересчитывает при переносе: клиент вычислять его не должен, иначе
-             *     чек-лист на телефоне и напоминания в фоне разойдутся.
-             */
+            /** Format: date */
             due?: string | null;
+            dueMode?: "relative" | "fixed";
+            assignee?: {
+                /** Format: uuid */
+                userId?: string;
+                name?: string | null;
+            } | null;
         };
         Chat: {
             id?: string;

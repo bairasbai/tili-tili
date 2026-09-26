@@ -267,7 +267,12 @@ paths:
       tags: [weddings]
       summary: Карточка свадьбы (данные для Home)
       security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/WeddingId' }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: mine
+          in: query
+          schema: { type: boolean, default: false }
+          description: Только задачи, назначенные текущему пользователю.
       responses:
         '200':
           description: OK
@@ -1533,6 +1538,9 @@ paths:
               properties:
                 title: { type: string }
                 period: { type: string, example: '3–1 месяц' }
+                due: { type: string, format: date }
+                dueMode: { type: string, enum: [relative, fixed] }
+                assigneeId: { type: string, format: uuid, nullable: true }
       responses:
         '201':
           description: OK
@@ -1558,6 +1566,9 @@ paths:
               properties:
                 done: { type: boolean }
                 title: { type: string }
+                due: { type: string, format: date, nullable: true }
+                dueMode: { type: string, enum: [relative, fixed] }
+                assigneeId: { type: string, format: uuid, nullable: true }
       responses:
         '200':
           description: OK
@@ -5269,12 +5280,16 @@ components:
           type: string
           format: date
           nullable: true
-          description: |
-            Срок задачи, посчитанный от даты свадьбы («за 9 месяцев» → сентябрь
-            2026 для свадьбы 14 июня 2027). Null — у свадьбы ещё нет даты, и
-            тогда срока нет ни у одной задачи. Сервер считает его сам и
-            пересчитывает при переносе: клиент вычислять его не должен, иначе
-            чек-лист на телефоне и напоминания в фоне разойдутся.
+          description: Срок задачи. Relative двигается вместе с датой свадьбы; fixed сохраняет выбранную дату.
+        dueMode:
+          type: string
+          enum: [relative, fixed]
+        assignee:
+          type: object
+          nullable: true
+          properties:
+            userId: { type: string, format: uuid }
+            name: { type: string, nullable: true }
     Chat:
       type: object
       properties:

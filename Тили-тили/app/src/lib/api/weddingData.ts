@@ -23,6 +23,11 @@ export const getTips = (weddingId: string) =>
 export const getTasks = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/tasks', { weddingId }))
 
+export const getMe = () => api.get('/users/me')
+
+export const getMembers = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/members', { weddingId }))
+
 export const getGuests = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/guests', { weddingId }))
 
