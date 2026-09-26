@@ -4,6 +4,11 @@
  * Номер 1761310000000, а не 1761300000000: тот занят миграцией квиза из PR №2
  * (`1761300000000_quiz_answers_matter`) — два файла с одним префиксом упорядочиваются
  * по суффиксу, и выкладка зависела бы от порядка слияния (ревью 018, C-08).
+ *
+ * `paid` — сумма привязанных к этапу отметок (возвраты со знаком минус, отменённые не
+ * считаются); ведёт её триггер `payment_installment_version`, а CHECK держит её в
+ * [0; amount]. Раньше правило держал только код под замком сделки — любой писатель
+ * без `lockDeal` переплатил бы этап молча (инвариант 11; ревью 018, M-02/C-07).
  */
 exports.up = pgm => pgm.sql(`
   create table payment_installments (
@@ -16,6 +21,7 @@ exports.up = pgm => pgm.sql(`
     version integer not null default 1 check (version > 0),
     cancelled_at timestamptz,
     cancel_reason text check (cancel_reason is null or length(cancel_reason) <= 500),
+    paid bigint not null default 0 constraint payment_installments_paid_range check (paid between 0 and amount),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     unique(id,deal_id)
@@ -46,7 +52,10 @@ exports.up = pgm => pgm.sql(`
     if tg_op = 'UPDATE' and row(new.installment_id,new.amount,new.kind,new.status)
       is not distinct from row(old.installment_id,old.amount,old.kind,old.status) then return null; end if;
     for target in select id from payment_installments where id in (old_id,new_id) order by id loop
-      update payment_installments set version=version+1,updated_at=now() where id=target;
+      update payment_installments set version=version+1,updated_at=now(),
+        paid=(select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
+                from payments p where p.installment_id=target and p.status <> 'cancelled')
+        where id=target;
     end loop;
     return null;
   end $$;

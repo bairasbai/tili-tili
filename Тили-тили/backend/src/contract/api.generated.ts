@@ -2213,7 +2213,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Бюджет (статьи + автосуммы из слотов) */
+        /**
+         * Бюджет (статьи + автосуммы из слотов)
+         * @description Коды: 409 money_out_of_range (итог оплат вне точного диапазона — цены сделок порядка
+         *     10¹⁶ копеек), financial_history_too_large (больше 10 000 строк истории оплат). Сводка
+         *     оплат считается вместе с бюджетом, и её отказ — отказ всего ответа (ревью 018, M-06).
+         */
         get: {
             parameters: {
                 query?: never;
@@ -2234,6 +2239,7 @@ export interface paths {
                         "application/json": components["schemas"]["Budget"];
                     };
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         put?: never;
@@ -10257,17 +10263,19 @@ export interface components {
             /** Format: date */
             due: string;
             version: number;
-            /**
-             * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
-             *     сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
-             *     ничего; cancelled — этап отменён.
-             * @enum {string}
-             */
-            status: "pending" | "partial" | "paid" | "covered" | "cancelled";
+            status: components["schemas"]["PaymentInstallmentStatus"];
             /** @description Срок прошёл, а `remaining` больше нуля. */
             overdue: boolean;
             cancelReason: string | null;
         };
+        /**
+         * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
+         *     сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
+         *     ничего; cancelled — этап отменён. Одна схема на этап и на его строку в
+         *     `PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).
+         * @enum {string}
+         */
+        PaymentInstallmentStatus: "pending" | "partial" | "paid" | "covered" | "cancelled";
         PaymentRecord: {
             /** Format: uuid */
             id: string;
@@ -10328,11 +10336,7 @@ export interface components {
                 /** Format: uuid */
                 dealId: string;
                 title: string;
-                /**
-                 * @description Те же значения, что у `PaymentInstallment.status`, включая `covered` (ревью 018, M-01).
-                 * @enum {string}
-                 */
-                status: "pending" | "partial" | "paid" | "covered" | "cancelled";
+                status: components["schemas"]["PaymentInstallmentStatus"];
                 remaining: components["schemas"]["Money"];
             }[];
         };

@@ -765,4 +765,33 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect((await app.db!.query('select 1 from users where id=$1', [w.owner.id])).rowCount).toBe(0)
     expect(await financeRows(w)).toEqual({ installments: 2, payments: 4 })
   })
+
+  /* ── Ревью 018: «оплачено по этапу» держит база (инвариант 11, M-02/C-07) ── */
+  it('M-02: сумму привязанных отметок ведёт триггер, CHECK держит её в [0; сумма этапа] для любого писателя', async () => {
+    const w = await setup(), stage = (await create(w)).json() as { id: string }
+    const paidOf = async () => (await app.db!.query<{ paid: string }>('select paid::text as paid from payment_installments where id=$1', [stage.id])).rows[0]!.paid
+    expect((await pay(w, stage.id, 100000)).statusCode).toBe(200)
+    expect(await paidOf()).toBe('100000')
+    const pid = await paymentId(w)
+    /* Писатель без `lockDeal` и без проверок кода — прямой SQL, как будущая дверь или правка данных.
+     * До фикса база принимала переплату этапа молча. Транзакция откатывается в любом случае. */
+    const direct = async (sql: string, params: unknown[]) => {
+      const sentinel = new Error('rollback')
+      let code: string | undefined, constraint: string | undefined
+      try {
+        await app.db!.tx(async client => {
+          try { await client.query(sql, params) } catch (e) { code = (e as { code?: string }).code; constraint = (e as { constraint?: string }).constraint }
+          throw sentinel
+        })
+      } catch (e) { if (e !== sentinel) throw e }
+      return { code, constraint }
+    }
+    expect(await direct('update payments set amount=500000 where id=$1', [pid])).toEqual({ code: '23514', constraint: 'payment_installments_paid_range' })
+    expect(await direct(`insert into payments(id,deal_id,kind,amount,status,installment_id) values($1,$2,'refund',200000,'recorded',$3)`,
+      [randomUUID(), w.dealId, stage.id])).toEqual({ code: '23514', constraint: 'payment_installments_paid_range' })
+    expect(await paidOf()).toBe('100000')
+    // Отменённая отметка из суммы уходит — и из колонки тоже.
+    await app.db!.query("update payments set status='cancelled' where id=$1", [pid])
+    expect(await paidOf()).toBe('0')
+  })
 })
