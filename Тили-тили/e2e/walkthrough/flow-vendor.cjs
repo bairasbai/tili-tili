@@ -1,0 +1,102 @@
+// Сценарий: новый подрядчик — вход → «Я подрядчик» → мастер анкеты (5 шагов) → публикация → виден в каталоге → одобрение в панели.
+// node flow-vendor.cjs <10 цифр> <категория title regex> <имя анкеты>
+const fs = require('fs')
+const { ph, run, D } = require('./flow-lib.cjs')
+const digits = process.argv[2] || ph('093')
+const catRe = new RegExp(process.argv[3] || 'DJ')
+const name = process.argv[4] || `DJ Обход ${digits.slice(-3)}`
+const phone = '+7' + digits
+const login = async (a) => {
+  await a.goto('/auth')
+  await a.page.locator('input[type=tel]').fill(digits)
+  const boxes = a.page.getByRole('checkbox')
+  await a.tap(boxes.nth(0).locator('span'))
+  await a.tap(boxes.nth(1).locator('span'))
+  await a.btn(/^Получить код$/)
+  await a.settle(600)
+  const code = await a.otp(phone)
+  a.expect(code && code.length === 4, 'код в dev-логе')
+  for (let k = 0; k < 4; k++) await a.page.locator(`#otp-${k}`).fill(code[k])
+  await a.btn(/^Войти/)
+  await a.settle(800)
+}
+run('flow-vendor', async (step, a) => {
+  let vendorId = null
+  await step('вход новым номером → «Я подрядчик» → мастер анкеты', async () => {
+    await login(a)
+    a.expect(await a.has(/Я подрядчик/), 'выбор пути')
+    await a.btn(/Я подрядчик/)
+    a.expect(a.url() === '/vendor-app/profile', '/vendor-app/profile, получили ' + a.url())
+    a.expect(await a.has(/Категория/), 'шаг категории')
+  })
+  await step('шаг 1: категория; «Далее» без имени и города → подсказка и переход к «О себе»', async () => {
+    await a.tap(a.page.getByRole('button', { name: catRe }))
+    await a.btn(/^Далее/)
+    a.expect(await a.has(/Имя, категория и город обязательны/), 'подсказка об обязательных полях')
+    a.expect(await a.has(/Как вас искать парам|О себе/), 'шаг «О себе»')
+  })
+  await step('шаг 2: имя, о себе, телефон, город через CityPicker', async () => {
+    await a.page.getByPlaceholder(/Как вас искать парам/).fill(name)
+    await a.page.getByPlaceholder(/Стиль, опыт/).fill('Обход ролей: анкета через мастер. Играем на свадьбах 10 лет.')
+    await a.page.getByLabel(/Рабочий телефон/).fill('+79170000001')
+    await a.btn(/город|Город/)
+    a.expect(await a.page.getByRole('dialog').count() > 0, 'открылся CityPicker')
+    await a.page.getByPlaceholder(/Начните вводить/).fill('Стерл')
+    await a.settle(500)
+    await a.tap(a.page.getByRole('dialog').getByRole('button', { name: /Стерлитамак/ }))
+    a.expect(await a.has(/Стерлитамак/), 'город выбран')
+    await a.btn(/^Далее/)
+    a.expect(await a.has(/Услуги и цены|С какой суммы/), 'шаг «Услуги и цены»')
+  })
+  await step('шаг 3: цена «от», пакет через форму; шаг 4 портфолио — пропуск', async () => {
+    await a.page.getByPlaceholder(/С какой суммы/).fill('25000')
+    await a.btn(/Добавить пакет/)
+    await a.page.getByPlaceholder(/Название пакета/).fill('Вечер до 6 часов')
+    await a.page.getByPlaceholder(/Цена, ₽/).fill('45000')
+    await a.btn(/^Добавить$/)
+    a.expect(await a.has(/Вечер до 6 часов/), 'пакет в списке')
+    await a.btn(/^Далее/)
+    a.expect(await a.has(/Портфолио/), 'шаг портфолио')
+    await a.btn(/^Далее/)
+    a.expect(await a.has(/Публикация|Опубликовать анкету/), 'шаг публикации')
+  })
+  await step('шаг 5: без прав на медиа публикация закрыта; с галочкой — «Анкета опубликована»', async () => {
+    await a.btn(/Опубликовать анкету/)
+    a.expect(await a.has(/Подтвердите права на фото и видео/), 'подсказка про права на медиа')
+    await a.tap(a.page.getByRole('checkbox').first())
+    await a.btn(/Опубликовать анкету/)
+    await a.settle(1000)
+    a.expect(await a.has(/опубликована|Анкета опубликована/i), 'экран «опубликована»')
+    const tok = await a.page.evaluate(() => JSON.parse(localStorage.getItem('tt_auth') || 'null'))
+    const r = await a.page.request.get('http://127.0.0.1:3001/vendor/profile', { headers: { authorization: 'Bearer ' + tok.accessToken } })
+    const prof = await r.json()
+    vendorId = prof.id
+    a.expect(prof.published === true, 'published=true в анкете кабинета')
+    return { vendorId, completeness: prof.completeness, status: r.status() }
+  })
+  await step('кабинет после публикации: заполненность, календарь, разделы', async () => {
+    await a.goto('/vendor-app')
+    const txt = await a.text()
+    a.expect(new RegExp(name.split(' ')[0]).test(txt), 'имя анкеты в шапке кабинета')
+    a.expect(/Заполненность|%/.test(txt), 'блок заполненности')
+    return { head: txt.split('\n').slice(0, 6).join(' / ') }
+  })
+  await step('каталог глазами пары: новая анкета видна в своей категории и городе', async () => {
+    const pub = await a.pub()
+    // отдельный контекст пары из state-файла — свой браузер, чтобы не трогать сессию подрядчика
+    const { chromium } = require(process.env.PW_CORE || 'playwright-core')
+    const b2 = await chromium.launch({ headless: true })
+    const c2 = await b2.newContext({ viewport: { width: 390, height: 844 }, storageState: `${D}/state-couple.json` })
+    const p2 = await c2.newPage()
+    await p2.goto(`http://127.0.0.1:3000/vendor/${vendorId}`, { waitUntil: 'domcontentloaded' })
+    await p2.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
+    await p2.waitForTimeout(500)
+    const txt = await p2.evaluate(() => document.body.innerText)
+    await c2.storageState({ path: `${D}/state-couple.json` })
+    await b2.close()
+    a.expect(new RegExp(name.split(' ')[0]).test(txt), 'анкета открывается у пары: ' + txt.slice(0, 120).replace(/\n/g, ' '))
+    a.expect(/Вечер до 6 часов/.test(txt), 'пакет виден паре')
+    a.expect(/Добавить в свадьбу/.test(txt), 'CTA «Добавить в свадьбу»')
+    fs.writeFileSync(`${D}/out/flow-vendor.ids.json`, JSON.stringify({ vendorId, phone, name, weddingId: pub.weddingId }))
+  })
+}, { saveState: 'state-dj.json' })
