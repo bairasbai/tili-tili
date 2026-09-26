@@ -1769,32 +1769,167 @@ export interface paths {
         trace?: never;
     };
     "/weddings/{weddingId}/budget/settings": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
-        get?: never; put?: never; post?: never; delete?: never; options?: never; head?: never;
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить резерв бюджета
+         * @description Резерв — доля общего бюджета в базисных пунктах (0–5000, то есть 0–50 %), по
+         *     умолчанию 1000 (10 %). Резерв не расход и не часть категорий: он уменьшает
+         *     «свободно», а не увеличивает «потрачено» (018-B). Правит только пара.
+         *     `version` — из `Budget.settingsVersion` (0, пока резерв не меняли): чужая
+         *     правка между чтением и записью — 409 `stale_budget_settings`, ничего не
+         *     записано.
+         */
         patch: {
-            parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; }; cookie?: never; };
-            requestBody: { content: { "application/json": { reserveBps: number; version: number; }; }; };
-            responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { reserveBps?: number; version?: number; }; }; }; 409: components["responses"]["Conflict"]; };
-        }; trace?: never;
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reserveBps: number;
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            reserveBps: number;
+                            version: number;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
     };
     "/weddings/{weddingId}/budget/categories/{categoryId}/limit": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; get?: never; post?: never; options?: never; head?: never; trace?: never;
-        put: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; categoryId: string; }; cookie?: never; }; requestBody: { content: { "application/json": { amount: components["schemas"]["Money"]; version: number; }; }; }; responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { categoryId?: string; amount?: components["schemas"]["Money"]; custom?: boolean; version?: number; }; }; }; 409: components["responses"]["Conflict"]; }; };
-        patch: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; categoryId: string; }; cookie?: never; }; requestBody: { content: { "application/json": { reset: true; version: number; }; }; }; responses: { 204: { headers: { [name: string]: unknown; }; content?: never; }; 409: components["responses"]["Conflict"]; }; };
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Задать пользовательский лимит категории
+         * @description Лимит вместо автоматической доли общего бюджета (018-B). Категория — из
+         *     справочника бюджета: неизвестная — 422 `validation_failed` с полем
+         *     `categoryId`. `version` — из `Budget.categories[].limitVersion` (0 — лимит
+         *     ни разу не задавали); устаревшая — 409 `stale_budget_limit`. Правит только
+         *     пара.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    categoryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        amount: components["schemas"]["Money"];
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            categoryId: string;
+                            amount: components["schemas"]["Money"];
+                            custom: boolean;
+                            version: number;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
         delete?: never;
-    };
-    "/weddings/{weddingId}/payments/{paymentId}/receipts": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; put?: never; delete?: never; options?: never; head?: never; patch?: never; trace?: never;
-        get: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; }; cookie?: never; }; requestBody?: never; responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { items: { id: string; filename: string; mimeType: string; sizeBytes: number; createdAt: string; }[]; }; }; }; }; };
-        post: { parameters: { query?: never; header: { "Idempotency-Key": string; }; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; }; cookie?: never; }; requestBody: { content: { "application/json": { filename: string; mimeType: "application/pdf"|"image/jpeg"|"image/png"|"image/webp"; contentBase64: string; }; }; }; responses: { 201: { headers: { [name: string]: unknown; }; content: { "application/json": { id: string; filename: string; mimeType: string; sizeBytes: number; }; }; }; }; };
-    };
-    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; put?: never; post?: never; delete?: never; options?: never; head?: never; patch?: never; trace?: never;
-        get: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; receiptId: string; }; cookie?: never; }; requestBody?: never; responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { filename: string; mimeType: string; contentBase64: string; }; }; }; }; };
-    };
-    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}": {
-        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; get?: never; put?: never; post?: never; options?: never; head?: never; patch?: never; trace?: never;
-        delete: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; receiptId: string; }; cookie?: never; }; requestBody?: never; responses: { 204: { headers: { [name: string]: unknown; }; content?: never; }; }; };
+        options?: never;
+        head?: never;
+        /**
+         * Вернуть автоматический лимит категории с проверкой версии
+         * @description Снимает пользовательский лимит: категория снова получает долю общего
+         *     бюджета. Строка остаётся с `custom: false` и новой версией, поэтому клиент
+         *     со старой версией не «воскресит» снятый лимит — 409 `stale_budget_limit`.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    categoryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        reset: true;
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Автоматический лимит восстановлен */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
     };
     "/weddings/{weddingId}/tips": {
         parameters: {
@@ -1842,6 +1977,209 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Приватные подтверждения оплаты
+         * @description Список файлов к ручной отметке оплаты — без содержимого. Только пара.
+         *     Подтверждение — файл пары, а не проверка банка: приложение не сверяет его
+         *     с движением денег.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                id: string;
+                                filename: string;
+                                mimeType: string;
+                                sizeBytes: number;
+                                /** Format: date-time */
+                                createdAt: string;
+                            }[];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Прикрепить приватное подтверждение оплаты
+         * @description Файл PDF, JPEG, PNG или WebP до 512 КиБ в base64; тип проверяется по
+         *     содержимому, а не по `mimeType` браузера — несовпадение 422. К одной
+         *     оплате — не больше 5 файлов: шестой — 409 `receipt_limit`. Без
+         *     `Idempotency-Key` — 400 `idempotency_key_required`; тот же ключ с другим
+         *     телом — 409 `idempotency_key_reused`, первый запрос ещё идёт — 409
+         *     `idempotency_in_progress`. Только пара.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        filename: string;
+                        /** @enum {string} */
+                        mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
+                        contentBase64: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Создано */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            filename: string;
+                            mimeType: string;
+                            sizeBytes: number;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Скачать приватное подтверждение оплаты
+         * @description Содержимое файла в base64 внутри JSON, с `Cache-Control: no-store` (как все ответы API).
+         *     Публичной ссылки на файл нет. Только пара.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Base64-содержимое файла */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            filename: string;
+                            mimeType: string;
+                            contentBase64: string;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить приватное подтверждение оплаты */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Удалено */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -9540,11 +9878,11 @@ export interface components {
             readonly tileState?: "empty" | "candidate" | "hold" | "booked" | "paid";
         };
         Budget: {
-            reserveBps?: number;
-            settingsVersion?: number;
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
+            reserveBps?: number;
+            settingsVersion?: number;
             /**
              * @description Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).
              *     Отдельная строка, а не категория: категории делят сто процентов

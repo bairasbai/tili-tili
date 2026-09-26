@@ -2128,5 +2128,4 @@ Object.assign(EN, {
   'Файл должен быть не больше 512 КБ': 'File must be no larger than 512 KB',
   'Разрешены PDF, JPEG, PNG и WebP': 'PDF, JPEG, PNG and WebP are allowed',
   'Скачать': 'Download',
-  'Удалить': 'Delete',
 })

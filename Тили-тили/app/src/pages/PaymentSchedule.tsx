@@ -197,7 +197,9 @@ function Filters({ data, busy, apply }: { data: PaymentScheduleData; busy: boole
 function ReceiptPanel({ weddingId, paymentId, disabled }: { weddingId: string; paymentId: string; disabled: boolean }) {
   const q = useApi(() => listPaymentReceipts(weddingId, paymentId), [weddingId, paymentId])
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null)
-  const items = ready(q) ? q.data.items : []
+  /* Список — только из ответа сервера. Пока его нет, счётчика нет: «· 0» при
+     загрузке или ошибке читался бы как «подтверждений нет» (R-178). */
+  const items = ready(q) && q.data ? q.data.items : null
   const upload = async (file: File | undefined) => {
     if (!file || busy || disabled) return
     setError(null)
@@ -226,10 +228,11 @@ function ReceiptPanel({ weddingId, paymentId, disabled }: { weddingId: string; p
     } catch(e){setError(explainError(e))} finally{setBusy(false)}
   }
   const remove = async(id:string) => { if(busy)return;setBusy(true);setError(null);try{await deletePaymentReceipt(weddingId,paymentId,id);q.reload()}catch(e){setError(explainError(e))}finally{setBusy(false)} }
-  return <details className="mt-2"><summary className="text-xs cursor-pointer">{t('Подтверждения оплаты')} · {items.length}</summary>
-    <div className="mt-2 space-y-2"><label className={button+' inline-flex items-center cursor-pointer bg-[var(--bg)]'}>{t(busy?'Загрузка…':'Прикрепить файл')}<input className="sr-only" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={disabled||busy||items.length>=5} onChange={e=>void upload(e.target.files?.[0])}/></label>
+  return <details className="mt-2"><summary className="text-xs cursor-pointer">{t('Подтверждения оплаты')}{' '}{items ? `· ${items.length}` : ''}</summary>
+    <div className="mt-2 space-y-2"><label className={button+' inline-flex items-center cursor-pointer bg-[var(--bg)]'}>{busy ? t('Загрузка…') : t('Прикрепить файл')}<input className="sr-only" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={disabled||busy||!items||items.length>=5} onChange={e=>void upload(e.target.files?.[0])}/></label>
       <p className="text-[10px] text-[var(--soft)]">{t('Только для пары · до 512 КБ · максимум 5 файлов')}</p>
-      {items.map(r=><div key={r.id} className="flex gap-2 items-center text-xs"><span className="min-w-0 flex-1 truncate">{r.filename}</span><button className="underline" disabled={busy} onClick={()=>void download(r.id)}>{t('Скачать')}</button><button className="underline text-[var(--rose-deep)]" disabled={busy} onClick={()=>void remove(r.id)}>{t('Удалить')}</button></div>)}
+      <AsyncState q={q} />
+      {items?.map(r=><div key={r.id} className="flex gap-2 items-center text-xs"><span className="min-w-0 flex-1 truncate">{r.filename}</span><button className="underline" disabled={busy} onClick={()=>void download(r.id)}>{t('Скачать')}</button><button className="underline text-[var(--rose-deep)]" disabled={busy} onClick={()=>void remove(r.id)}>{t('Удалить')}</button></div>)}
       {error&&<p role="alert" className="text-xs text-[var(--rose-deep)]">{error}</p>}
     </div></details>
 }

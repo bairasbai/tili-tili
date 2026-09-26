@@ -1052,6 +1052,13 @@ paths:
     patch:
       tags: [budget]
       summary: Изменить резерв бюджета
+      description: |
+        Резерв — доля общего бюджета в базисных пунктах (0–5000, то есть 0–50 %), по
+        умолчанию 1000 (10 %). Резерв не расход и не часть категорий: он уменьшает
+        «свободно», а не увеличивает «потрачено» (018-B). Правит только пара.
+        `version` — из `Budget.settingsVersion` (0, пока резерв не меняли): чужая
+        правка между чтением и записью — 409 `stale_budget_settings`, ничего не
+        записано.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       requestBody:
@@ -1075,11 +1082,21 @@ paths:
                 properties:
                   reserveBps: { type: integer }
                   version: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/budget/categories/{categoryId}/limit:
     put:
       tags: [budget]
       summary: Задать пользовательский лимит категории
+      description: |
+        Лимит вместо автоматической доли общего бюджета (018-B). Категория — из
+        справочника бюджета: неизвестная — 422 `validation_failed` с полем
+        `categoryId`. `version` — из `Budget.categories[].limitVersion` (0 — лимит
+        ни разу не задавали); устаревшая — 409 `stale_budget_limit`. Правит только
+        пара.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1107,10 +1124,18 @@ paths:
                   amount: { $ref: '#/components/schemas/Money' }
                   custom: { type: boolean }
                   version: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
     patch:
       tags: [budget]
       summary: Вернуть автоматический лимит категории с проверкой версии
+      description: |
+        Снимает пользовательский лимит: категория снова получает долю общего
+        бюджета. Строка остаётся с `custom: false` и новой версией, поэтому клиент
+        со старой версией не «воскресит» снятый лимит — 409 `stale_budget_limit`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1127,7 +1152,11 @@ paths:
                 version: { type: integer, minimum: 1 }
       responses:
         '204': { description: Автоматический лимит восстановлен }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/tips:
     get:
       tags: [wedding]
@@ -1160,6 +1189,10 @@ paths:
     get:
       tags: [payments]
       summary: Приватные подтверждения оплаты
+      description: |
+        Список файлов к ручной отметке оплаты — без содержимого. Только пара.
+        Подтверждение — файл пары, а не проверка банка: приложение не сверяет его
+        с движением денег.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1184,9 +1217,19 @@ paths:
                         mimeType: { type: string }
                         sizeBytes: { type: integer }
                         createdAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [payments]
       summary: Прикрепить приватное подтверждение оплаты
+      description: |
+        Файл PDF, JPEG, PNG или WebP до 512 КиБ в base64; тип проверяется по
+        содержимому, а не по `mimeType` браузера — несовпадение 422. К одной
+        оплате — не больше 5 файлов: шестой — 409 `receipt_limit`. Без
+        `Idempotency-Key` — 400 `idempotency_key_required`; тот же ключ с другим
+        телом — 409 `idempotency_key_reused`, первый запрос ещё идёт — 409
+        `idempotency_in_progress`. Только пара.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1216,10 +1259,19 @@ paths:
                   filename: { type: string }
                   mimeType: { type: string }
                   sizeBytes: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content:
     get:
       tags: [payments]
       summary: Скачать приватное подтверждение оплаты
+      description: |
+        Содержимое файла в base64 внутри JSON, с `Cache-Control: no-store` (как все ответы API).
+        Публичной ссылки на файл нет. Только пара.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1237,6 +1289,9 @@ paths:
                   filename: { type: string }
                   mimeType: { type: string }
                   contentBase64: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}:
     delete:
       tags: [payments]
@@ -1246,7 +1301,11 @@ paths:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: paymentId, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: receiptId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses: { '204': { description: Удалено } }
+      responses:
+        '204': { description: Удалено }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /weddings/{weddingId}/budget/items:
     post:
       tags: [budget]

@@ -37,7 +37,9 @@ interface Rule {
  */
 const MATRIX: Rule[] = [
   // Деньги. helper и coordinator не видят их нигде — ни сумм, ни действий.
-  { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  /* PUT — пользовательский лимит категории (018-B): без него правило молча
+   * запрещало метод всем, и пара получала 403 на собственный бюджет. */
+  { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/slots\/[^/]+\//, by: { POST: ONLY_COUPLE, DELETE: ONLY_COUPLE, PATCH: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/wishlist/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/(anti-gifts|funds)/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, DELETE: ONLY_COUPLE } },

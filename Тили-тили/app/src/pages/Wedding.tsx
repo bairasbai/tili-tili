@@ -219,8 +219,6 @@ function SlotView({ s }: { s: Slot }) {
      и кнопка честно выпишет новую. */
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [reserveDraft, setReserveDraft] = useState('')
-  const [limitDrafts, setLimitDrafts] = useState<Record<string,string>>({})
   const [ownBusy, runOwn] = useBusy()
   /* Деньги сделки видит только пара — и только она отменяет бронь. У
      помощника и координатора в ответе нет ни `price`, ни `paid`. */
@@ -432,6 +430,8 @@ export function Budget() {
   const [cat, setCat] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [reserveDraft, setReserveDraft] = useState('')
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, string>>({})
 
   /*
    * Бюджет считает сервер, а не браузер.
@@ -530,7 +530,7 @@ export function Budget() {
     if (!raw) { setErr(t('Введите лимит категории в рублях')); return }
     const rubles = Number(raw)
     if (!Number.isSafeInteger(rubles) || rubles < 0) { setErr(t('Введите лимит категории в рублях')); return }
-    await setBudgetCategoryLimit(weddingId!, categoryId, rub(rubles), version)
+    await setBudgetCategoryLimit(weddingId!, categoryId, { amount: rub(rubles), currency: 'RUB' }, version)
     setLimitDrafts(v => ({ ...v, [categoryId]: '' }))
   })
   const resetLimit = (categoryId: string, version: number) => void write(`limit-${categoryId}`, () => resetBudgetCategoryLimit(weddingId!, categoryId, version))
