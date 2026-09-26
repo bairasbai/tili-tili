@@ -539,7 +539,7 @@ export function Budget() {
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
       {ready(q) && <div className="px-5 mt-3"><button className="press w-full card p-4 text-left font-semibold" onClick={() => nav('/wedding/payments')}>{t('График платежей')} →</button>
-        {server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}. {t('Плановые этапы не увеличивают смету.')}</p>}
+        {server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}{/* Сделка без цены в остаток не входит: без оговорки «0 ₽» читался как «всё оплачено» (ревью 018, F-04; R-178). */}{server.paymentSummary.unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {server.paymentSummary.unknownPrices})</>}. {t('Плановые этапы не увеличивают смету.')}</p>}
       </div>}
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">

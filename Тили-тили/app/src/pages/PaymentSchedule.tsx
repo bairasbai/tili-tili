@@ -1,10 +1,11 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { CalendarDays, Download, Plus, RefreshCw } from 'lucide-react'
 import { TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
-import { t } from '@/lib/i18n'
+import { getI18nLang, t } from '@/lib/i18n'
+import { formatWeddingDate } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { noWedding, useApi, explainError } from '@/lib/api/useApi'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
@@ -19,6 +20,11 @@ const statusText = { pending: 'Ожидается', partial: 'Частично �
 type Editor = { mode: 'new' } | { mode: 'edit' | 'pay' | 'cancel'; item: PaymentInstallment } | { mode: 'link'; payment: PaymentRecord }
 type Draft = { title: string; amount: string; due: string; dealId: string; installmentId: string; reason: string }
 const empty: Draft = { title: '', amount: '', due: '', dealId: '', installmentId: '', reason: '' }
+/* Дата отметки — в поясе свадьбы, а не срезом UTC: отметка в 02:00 по Москве
+   датировалась вчерашним днём (ревью 018, F-09; тот же класс, что ERR-0122). */
+const paymentDate = (iso: string, timeZone: string) => new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU',
+  { day: 'numeric', month: 'long', year: 'numeric', timeZone }).format(new Date(iso))
+const DAY = 86_400_000
 
 export default function PaymentSchedule() {
   const { weddingId } = useStore()
@@ -37,8 +43,21 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
   const [notice, setNotice] = useState<string | null>(null)
   const writing = useRef(false)
   const retries = useRef(new Map<string, string>())
+  /* Действия, получившие 409 «график изменился»: данные перечитаны, черновик остался в
+     форме, и следующая отправка идёт с версией из свежих данных — не по кругу со старой
+     (ревью 018, F-05). Пара видит обновлённую карточку до повторного «Сохранить». */
+  const staleSeen = useRef(new Set<string>())
+  const formRef = useRef<HTMLFormElement>(null)
   const data = ready(q) ? q.data : null
   const disabled = busy || q.refreshing || !data || data.readOnly
+  /* Форма рисуется над списком: без прокрутки «Отметить оплату» у нижней карточки
+     выглядело нерабочим (ревью 018, F-10). */
+  useEffect(() => {
+    if (!editor) return
+    const form = formRef.current
+    form?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+    form?.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true })
+  }, [editor])
   function open(next: Editor) {
     setError(null); setNotice(null); setEditor(next)
     if (next.mode === 'new') setDraft({ ...empty, dealId: data?.deals.find(d => d.canPlan)?.id ?? '', due: data?.range.from ?? '' })
@@ -47,6 +66,12 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
       amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount) })
   }
   const change = (key: keyof Draft, value: string) => setDraft(current => ({ ...current, [key]: value }))
+  /* «Сохранить» без изменений писал в журнал, поднимал версию и сообщал «сохранено»
+     (ревью 018, F-11). */
+  const unchanged = !!editor && (
+    (editor.mode === 'edit' && draft.title.trim() === editor.item.title && draft.due === editor.item.due
+      && parsePaymentRubles(draft.amount) === editor.item.amount.amount)
+    || (editor.mode === 'link' && (draft.installmentId || null) === editor.payment.installmentId))
   async function write(tag: string, body: unknown, action: (key: string) => Promise<unknown>) {
     if (writing.current || disabled || !weddingId) return
     writing.current = true; setBusy(true); setError(null); setNotice(null)
@@ -56,25 +81,33 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     try {
       await action(key)
       retries.current.delete(attempt)
-      if (editor && (editor.mode === 'new' || editor.mode === 'edit') && data && (draft.due < data.range.from || draft.due > data.range.to)) {
+      staleSeen.current.delete(tag)
+      /* Фильтр сужается, только если этап иначе пропадёт из вида: просроченный этап
+         виден и вне окна, пока включены просрочки (ревью 018, F-12). */
+      const visibleAnyway = !!data && data.range.includeOverdue && draft.due < data.range.today
+      if (editor && (editor.mode === 'new' || editor.mode === 'edit') && data && !visibleAnyway && (draft.due < data.range.from || draft.due > data.range.to)) {
         setFilter({ ...filter, from: draft.due, to: draft.due })
       }
       setEditor(null); setNotice(t('Изменение сохранено')); q.reload()
     } catch (e) {
-      setError(e instanceof ApiError && e.code === 'stale_payment_plan'
-        ? t('График изменился. Черновик сохранён: закройте форму, обновите данные и проверьте этап заново.')
-        : explainError(e))
+      if (e instanceof ApiError && e.code === 'stale_payment_plan') {
+        staleSeen.current.add(tag)
+        q.reload()
+        setError(t('График изменился — данные обновлены. Черновик остался в форме: проверьте этап и сохраните ещё раз.'))
+      } else setError(explainError(e))
     } finally { writing.current = false; setBusy(false) }
   }
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!editor || !weddingId || disabled) return
+    const stageVersion = (item: PaymentInstallment, tag: string) =>
+      staleSeen.current.has(tag) ? (data?.items.find(i => i.id === item.id)?.version ?? item.version) : item.version
     if (editor.mode === 'new' || editor.mode === 'edit' || editor.mode === 'pay') {
       const amount = parsePaymentRubles(draft.amount)
       if (amount === null) { setError(t('Введите сумму больше нуля, не более двух знаков после запятой')); return }
       const money = { amount, currency: 'RUB' as const }
       if (editor.mode === 'pay') {
-        const body = { version: editor.item.version, amount: money }
+        const body = { version: stageVersion(editor.item, 'pay:' + editor.item.id), amount: money }
         void write('pay:' + editor.item.id, body, key => payInstallment(weddingId, editor.item.id, body, key))
       } else {
         if (!draft.title.trim() || !draft.due || !draft.dealId) { setError(t('Заполните название, сумму, дату и сделку')); return }
@@ -82,15 +115,19 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           const body = { title: draft.title.trim(), due: draft.due, dealId: draft.dealId, amount: money }
           void write('new', body, key => createPaymentInstallment(weddingId, body, key))
         } else {
-          const body = { version: editor.item.version, title: draft.title.trim(), due: draft.due, amount: money }
+          const body = { version: stageVersion(editor.item, 'edit:' + editor.item.id), title: draft.title.trim(), due: draft.due, amount: money }
           void write('edit:' + editor.item.id, body, key => updatePaymentInstallment(weddingId, editor.item.id, body, key))
         }
       }
     } else if (editor.mode === 'cancel') {
-      const body = { version: editor.item.version, cancelled: true as const, reason: draft.reason.trim() }
+      // Пустую причину не шлём: в базе ей место — null, а не пустая строка (ревью 018, F-13).
+      const reason = draft.reason.trim()
+      const body = { version: stageVersion(editor.item, 'cancel:' + editor.item.id), cancelled: true as const, ...(reason ? { reason } : {}) }
       void write('cancel:' + editor.item.id, body, key => updatePaymentInstallment(weddingId, editor.item.id, body, key))
     } else if (editor.mode === 'link') {
-      const body = { version: editor.payment.version, installmentId: draft.installmentId || null }
+      const tag = 'link:' + editor.payment.id
+      const version = staleSeen.current.has(tag) ? (data?.payments.find(p => p.id === editor.payment.id)?.version ?? editor.payment.version) : editor.payment.version
+      const body = { version, installmentId: draft.installmentId || null }
       void write('link:' + editor.payment.id, body, key => linkPaymentPlan(weddingId, editor.payment.id, body, key))
     }
   }
@@ -105,9 +142,12 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     } catch (e) { setError(explainError(e)) } finally { writing.current = false; setBusy(false) }
   }
   return <div className="pb-28">
-    <TopBar back fallback="/wedding/budget" title={t('График платежей')} sub={t('Сроки отдельно, деньги — без дублей')} />
+    <TopBar back fallback="/wedding/budget" title={t('График платежей')} sub={t('Сроки платежей по сделкам')} />
     <div className="px-5 space-y-4 mt-3">
       <AsyncState q={q} forbiddenText={t('Финансовый раздел доступен только паре')} />
+      {/* Отказ по периоду прятал и сам фильтр — выбраться можно было только уходом с
+          экрана (ревью 018, F-02). */}
+      {!data && !q.loading && Object.keys(filter).length > 0 && <button className={button + ' bg-[var(--card)]'} onClick={() => setFilter({})}>{t('Сбросить период')}</button>}
       {data && <>
         <FinancialSummary data={data} />
         <p className="text-xs leading-relaxed text-[var(--soft)]">{t('Отметка оплаты — запись о вашем переводе, не банковская операция. Плановые этапы не увеличивают бюджет.')}</p>
@@ -120,7 +160,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
         {!data.deals.some(d => d.canPlan) && !data.readOnly && <p className="card p-4 text-sm">{t('Для графика нужна забронированная сделка с согласованной ценой.')} <Link to="/wedding" className="underline">{t('Команда подрядчиков')}</Link></p>}
         {data.summary.unallocated.amount !== 0 && <p role="status" className="card p-4 text-sm leading-relaxed">{t('Есть оплаты без активного этапа:')} <strong>{fmt(data.summary.unallocated.amount)}</strong>. {t('Привяжите их в истории, вместо того чтобы отмечать оплату повторно.')}</p>}
         {data.deals.filter(d => d.needsReview).map(d => <p role="status" key={d.id} className="card p-4 text-sm">{d.name}: {t('Цена сделки изменилась — проверьте суммы этапов. Автоматически они не уменьшены.')}</p>)}
-        {editor && <form onSubmit={submit} className="card p-4 space-y-3" aria-label={t('Редактор платежа')}>
+        {editor && <form ref={formRef} onSubmit={submit} className="card p-4 space-y-3" aria-label={t('Редактор платежа')}>
           <h2 className="font-bold text-base">{t(editor.mode === 'new' ? 'Новый этап' : editor.mode === 'pay' ? 'Отметить оплату' : editor.mode === 'link' ? 'Привязать оплату' : editor.mode === 'cancel' ? 'Отменить этап' : 'Изменить этап')}</h2>
           {(editor.mode === 'new' || editor.mode === 'edit') && <>
             <label className="block text-xs">{t('Сделка')}<select className={field} aria-label={t('Сделка')} value={draft.dealId} disabled={busy || editor.mode === 'edit'} onChange={e => change('dealId', e.target.value)} required>
@@ -134,9 +174,9 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           {editor.mode === 'pay' && <p className="text-xs leading-relaxed">{t('Отметьте только новый перевод. Прежние оплаты привязываются через историю. Можно внести часть суммы.')}</p>}
           {editor.mode === 'cancel' && <><p className="text-sm">{t('Отмена этапа убирает срок из графика, но не возвращает деньги и не удаляет оплаты.')}</p><label className="block text-xs">{t('Причина отмены')}<textarea className={field} value={draft.reason} maxLength={500} disabled={busy} onChange={e => change('reason', e.target.value)} /></label></>}
           {editor.mode === 'link' && <><p className="text-xs">{t('Одна отметка привязывается целиком к одному этапу своей сделки. Новая оплата не создаётся.')}</p><label className="block text-xs">{t('Этап платежа')}<select className={field} value={draft.installmentId} disabled={busy} onChange={e => change('installmentId', e.target.value)}>
-            <option value="">{t('Без привязки')}</option>{data.allInstallments.filter(i => i.dealId === editor.payment.dealId && (i.status !== 'cancelled' || i.id === editor.payment.installmentId)).map(i => <option key={i.id} value={i.id} disabled={i.status === 'cancelled'}>{i.title}{i.status === 'cancelled' ? ` · ${t('Отменён')}` : ''}</option>)}
+            <option value="">{t('Без привязки')}</option>{data.allInstallments.filter(i => i.dealId === editor.payment.dealId && (i.status !== 'cancelled' || i.id === editor.payment.installmentId)).map(i => <option key={i.id} value={i.id} disabled={i.status === 'cancelled'}>{i.title}{i.status === 'cancelled' ? ` · ${t('Отменён')}` : ` · ${t('остаток')} ${fmt(i.remaining.amount)}`}</option>)}
           </select></label></>}
-          <div className="flex gap-2"><button type="submit" disabled={disabled} className={button + ' grad text-[var(--on-grad)]'}>{t(busy ? 'Сохраняем…' : 'Сохранить')}</button><button type="button" disabled={busy} className={button} onClick={() => { setEditor(null); setError(null) }}>{t('Закрыть')}</button></div>
+          <div className="flex gap-2"><button type="submit" disabled={disabled || unchanged} className={button + ' grad text-[var(--on-grad)]'}>{busy ? t('Сохраняем…') : t('Сохранить')}</button><button type="button" disabled={busy} className={button} onClick={() => { setEditor(null); setError(null) }}>{t('Закрыть')}</button></div>
         </form>}
       </>}
       {error && <p role="alert" className="card p-4 text-sm text-[var(--rose-deep)]">{error}</p>}
@@ -144,17 +184,20 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
       {data && <>
         <Filters key={fingerprint + data.range.from + data.range.to} data={data} busy={busy || q.refreshing} apply={setFilter} />
         <div className="flex items-center justify-between gap-2"><h2 className="text-base font-bold flex items-center gap-2"><CalendarDays size={18} />{t('Платежи по датам')}</h2><span className="text-sm font-semibold tabular">{fmt(data.dueInWindow.amount)}</span></div>
-        <p className="text-xs text-[var(--soft)]">{t('Остаток выбранных этапов, включая включённые просрочки. Непривязанные оплаты здесь ещё не вычтены.')}</p>
+        <p className="text-xs text-[var(--soft)]">{t('Остаток этапов со сроком в выбранном периоде — с учётом всех отметок сделки, в том числе без привязки.')}</p>
+        {data.overdueRemaining.amount > 0 && <p role="status" className="text-xs font-semibold text-[var(--rose-deep)]">{t('Просрочено всего')}: <span className="tabular">{fmt(data.overdueRemaining.amount)}</span></p>}
         {!data.items.length && <p className="card p-5 text-sm">{t('Нет этапов по выбранному фильтру')}</p>}
         {data.items.map(item => <section className="card p-4 space-y-2" key={item.id} aria-label={item.title}>
-          <div className="flex justify-between items-start gap-3"><div className="min-w-0"><h3 className="font-bold break-words">{item.title}</h3><p className="text-xs text-[var(--soft)] break-words">{data.deals.find(d => d.id === item.dealId)?.name}</p></div><time className="text-xs whitespace-nowrap" dateTime={item.due}>{item.due}</time></div>
+          <div className="flex justify-between items-start gap-3"><div className="min-w-0"><h3 className="font-bold break-words">{item.title}</h3><p className="text-xs text-[var(--soft)] break-words">{data.deals.find(d => d.id === item.dealId)?.name}</p></div><time className="text-xs whitespace-nowrap" dateTime={item.due}>{formatWeddingDate(item.due)}</time></div>
           <p className="text-xs font-semibold text-[var(--rose-deep)]">{t(statusText[item.status])}{item.overdue ? ` · ${t('Просрочено')}` : ''}</p>
           <dl className="grid grid-cols-3 gap-2 text-xs"><div><dt>{t('План этапа')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.amount.amount)}</dd></div><div><dt>{t('Отмечено')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.paid.amount)}</dd></div><div><dt>{t('Остаток')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.remaining.amount)}</dd></div></dl>
-          {item.cancelReason && <p className="text-xs break-words">{item.cancelReason}</p>}
+          {item.allocated.amount > 0 && <p className="text-xs text-[var(--soft)]">{t('Покрыто отметками без привязки')}: <span className="tabular">{fmt(item.allocated.amount)}</span></p>}
+          {/* Системная причина («Сделка отменена» из триггера) — ключ словаря; своя — текст пары: t() вернёт его как есть. */}
+          {item.cancelReason && <p className="text-xs break-words">{t(item.cancelReason)}</p>}
           {item.status !== 'cancelled' && <div className="flex flex-wrap gap-1 pt-1">
-            <button className={button + ' bg-[var(--sage-soft)]'} disabled={disabled || item.remaining.amount <= 0} onClick={() => open({ mode: 'pay', item })}>{t('Отметить оплату')}</button>
-            <button className={button} disabled={disabled} onClick={() => open({ mode: 'edit', item })}>{t('Изменить')}</button>
-            <button className={button} disabled={disabled} onClick={() => open({ mode: 'cancel', item })}>{t('Отменить этап')}</button>
+            <button className={button + ' bg-[var(--sage-soft)]'} aria-label={`${t('Отметить оплату')}: ${item.title}`} disabled={disabled || item.remaining.amount <= 0} onClick={() => open({ mode: 'pay', item })}>{t('Отметить оплату')}</button>
+            <button className={button} aria-label={`${t('Изменить')}: ${item.title}`} disabled={disabled} onClick={() => open({ mode: 'edit', item })}>{t('Изменить')}</button>
+            <button className={button} aria-label={`${t('Отменить этап')}: ${item.title}`} disabled={disabled} onClick={() => open({ mode: 'cancel', item })}>{t('Отменить этап')}</button>
           </div>}
         </section>)}
         <details className="card p-4"><summary className="cursor-pointer font-bold py-1">{t('История оплат')} · {data.payments.length}</summary>
@@ -162,7 +205,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           {!data.payments.length && <p className="text-sm">{t('Отметок оплат пока нет')}</p>}
           {data.payments.map(p => <div key={p.id} className="border-t border-[var(--line)] py-3 space-y-1">
             <p className="text-sm font-semibold">{data.deals.find(d => d.id === p.dealId)?.name} · {p.kind === 'refund' ? '−' : ''}{fmt(p.amount.amount)}</p>
-            <p className="text-xs text-[var(--soft)]">{p.createdAt.slice(0,10)} · {t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Отмечено')}</p>
+            <p className="text-xs text-[var(--soft)]">{paymentDate(p.createdAt, data.range.timeZone)} · {t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Отмечено')}</p>
             <p className="text-xs">{data.allInstallments.find(i => i.id === p.installmentId)?.title ?? t('Без привязки')}</p>
             {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={() => open({ mode: 'link', payment: p })}>{t('Привязать оплату')}</button>}
             <ReceiptPanel weddingId={weddingId!} paymentId={p.id} disabled={disabled} />
@@ -178,7 +221,7 @@ function FinancialSummary({ data }: { data: PaymentScheduleData }) {
   return <section className="card p-4" aria-label={t('Итоги по активным сделкам')}>
     <h2 className="font-bold text-sm mb-3">{t('Итоги по активным сделкам')}</h2>
     <dl className="grid grid-cols-1 min-[360px]:grid-cols-3 gap-3 text-xs">
-      {[['Обязательства', data.summary.committed], ['Отмечено оплат', data.summary.recorded], ['Осталось по сделкам', data.summary.remaining]].map(([label, value]) => typeof value !== 'string' && <div key={String(label)}><dt className="text-[var(--soft)]">{t(String(label))}</dt><dd className="text-base font-bold mt-1 tabular break-words">{fmt(value.amount)}</dd></div>)}
+      {[['Цены активных сделок', data.summary.committed], ['Отмечено оплат', data.summary.recorded], ['Осталось по сделкам', data.summary.remaining]].map(([label, value]) => typeof value !== 'string' && <div key={String(label)}><dt className="text-[var(--soft)]">{t(String(label))}</dt><dd className="text-base font-bold mt-1 tabular break-words">{fmt(value.amount)}</dd></div>)}
     </dl>
     {data.summary.unknownPrices > 0 && <p className="text-xs mt-3">{t('Не все цены заданы — итог неполный:')} {data.summary.unknownPrices}</p>}
     {data.summary.inactiveDealRecorded.amount !== 0 && <p className="text-xs mt-3">{t('Нетто оплат по неактивным сделкам:')} {fmt(data.summary.inactiveDealRecorded.amount)}</p>}
@@ -187,11 +230,22 @@ function FinancialSummary({ data }: { data: PaymentScheduleData }) {
 function Filters({ data, busy, apply }: { data: PaymentScheduleData; busy: boolean; apply: (v: ScheduleFilter) => void }) {
   const [from, setFrom] = useState(data.range.from), [to, setTo] = useState(data.range.to)
   const [overdue, setOverdue] = useState(data.range.includeOverdue), [cancelled, setCancelled] = useState(data.range.includeCancelled)
-  return <form className="card p-4 space-y-3" aria-label={t('Период платежей')} onSubmit={event => { event.preventDefault(); apply({ from, to, includeOverdue: overdue, includeCancelled: cancelled }) }}>
+  const [invalid, setInvalid] = useState<string | null>(null)
+  /* Период проверяется до запроса: 422 от сервера прятал весь экран вместе с этим
+     фильтром (ревью 018, F-02). До 366 календарных дней — как на сервере. */
+  const submitFilter = (event: FormEvent) => {
+    event.preventDefault()
+    if (from > to) { setInvalid(t('Начало периода позже конца')); return }
+    if (Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z') > 365 * DAY) { setInvalid(t('Выберите период не длиннее 366 дней')); return }
+    setInvalid(null)
+    apply({ from, to, includeOverdue: overdue, includeCancelled: cancelled })
+  }
+  return <form className="card p-4 space-y-3" aria-label={t('Период платежей')} onSubmit={submitFilter}>
     <div className="grid grid-cols-2 gap-3"><label className="text-xs min-w-0">{t('С даты')}<input required className={field} type="date" value={from} onChange={e => setFrom(e.target.value)} disabled={busy} /></label><label className="text-xs min-w-0">{t('По дату')}<input required className={field} type="date" value={to} onChange={e => setTo(e.target.value)} disabled={busy} /></label></div>
     <label className="flex gap-2 items-center text-sm"><input type="checkbox" checked={overdue} onChange={e => setOverdue(e.target.checked)} disabled={busy} />{t('Добавить просроченные')}</label>
     <label className="flex gap-2 items-center text-sm"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)} disabled={busy} />{t('Показать отменённые')}</label>
-    <div className="flex flex-wrap justify-between items-center gap-2"><span className="text-xs text-[var(--soft)]">{data.range.timeZone}</span><button className={button} disabled={busy} type="submit">{t('Применить период')}</button></div>
+    <div className="flex flex-wrap justify-between items-center gap-2"><span className="text-xs text-[var(--soft)]">{t('Даты — по времени места свадьбы')}: {data.range.timeZone}</span><button className={button} disabled={busy} type="submit">{t('Применить период')}</button></div>
+    {invalid && <p role="alert" className="text-xs text-[var(--rose-deep)]">{invalid}</p>}
   </form>
 }
 
