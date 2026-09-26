@@ -168,3 +168,11 @@ export const applyReferralCode = (code: string) =>
  * «Копировать» честно клала человеку в буфер обмена.
  */
 export const getReferral = () => api.get('/users/me/referral')
+
+/**
+ * Состояние перехода на `/auth`, когда сессия умерла на гейте согласия
+ * (F4-F-G6r5-02): экран входа называет причину словами `SESSION_EXPIRED`
+ * (`client.ts`), а не открывается молча — после отзыва согласия человек
+ * иначе решил бы, что аккаунт удалён, хотя запрос не прошёл.
+ */
+export const SESSION_EXPIRED_STATE = { sessionExpired: true } as const

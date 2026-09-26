@@ -209,7 +209,7 @@ describe('F4-F: гейт устаревшего согласия', () => {
   it('F-T7a: «Выйти» — сессии гасятся, токены и флаг пусты, экран входа', async () => {
     withGate()
     /* Реалистичное состояние вошедшего аккаунта — как после настоящего входа
-       (`store.tsx:452` ставит его же при сверке свадеб), а не защита от гонки
+       (`finishOnboarding()` в `store.tsx` ставит его же), а не защита от гонки
        `/home` → `/`: она закрыта в `Consent.tsx` одним `startTransition`
        независимо от этого флага (F4-F-G5r5.txt, находка -03: без него тест
        тоже зелёный с фиксом — M5, а без фикса тем же путём краснел и F-T8,
@@ -413,6 +413,120 @@ describe('F4-F: гейт устаревшего согласия', () => {
     localStorage.removeItem('tt_consent_outdated')
     act(() => { window.dispatchEvent(new StorageEvent('storage', { key: 'tt_consent_outdated', newValue: null })) })
     await waitFor(() => expect(screen.queryByText(t('Мы обновили документы'))).toBeNull())
+  })
+})
+
+/*
+ * Гейт при мёртвой сессии (F4-F-G6r5-01/02, ревью 016 — хвост).
+ *
+ * Сессия жила, когда гейт открылся (проба `GET /users/me` — 403
+ * `consent_outdated`), и умерла, пока он стоял: access истёк, refresh
+ * отозван (выход с другого устройства). Любое действие гейта уходит в 401,
+ * обмен refresh не удаётся, `client.ts` объявляет смерть сессии — и стор
+ * убирает устройство и память. До фикса эта уборка шла обычным (не
+ * transition) обновлением: кадр со старым адресом `/home` и сброшенным
+ * `onboarded` рисовал `<Navigate to="/"/>`, и его переход ложился ПОСЛЕ
+ * `nav('/auth')` гейта — человек оказывался на онбординге, а «Сессия истекла
+ * — войдите снова» не показывалась ни разу. Старт — `/home` с
+ * `tt_onboarded`: именно этот маршрут уводит на `/` без онбординга.
+ */
+describe('F4-F: гейт при мёртвой сессии ведёт на вход и называет причину', () => {
+  const EXPIRED = withStatus(401, 'token_expired', 'Токен истёк')
+  const deadSession = (extra: Routes) => ({
+    '/legal/policy': POLICY,
+    '/users/me': withStatus(403, 'consent_outdated', 'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить'),
+    '/weddings': withStatus(403, 'consent_outdated', 'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить'),
+    '/auth/refresh': withStatus(401, 'refresh_expired', 'Сессия истекла'),
+    ...extra,
+  })
+  /* Экран входа — по его заголовку, а не только по адресу: адрес без экрана не доказывает, что человек видит вход. */
+  const authHeading = () => screen.queryByText(t('С возвращением'))
+
+  it('G6r5-01: «Выйти» при мёртвой сессии — экран входа, а не онбординг; устройство пусто', async () => {
+    withGate()
+    localStorage.setItem('tt_onboarded', '1')
+    const calls = serve(deadSession({ '/users/me/sessions': EXPIRED }))
+    const r = render(<MemoryRouter initialEntries={['/home']}><App /><LocationProbe /></MemoryRouter>)
+    await waitFor(() => expect(gateHeading()).toBeTruthy())
+    fireEvent.click(screen.getByText(t('Выйти')).closest('button')!)
+    await waitFor(() => expect(locOf(r)).toBe('/auth'))
+    expect(authHeading()).toBeTruthy()
+    expect(screen.queryByText(t('Мы обновили документы'))).toBeNull()
+    expect(localStorage.getItem('tt_auth')).toBeNull()
+    expect(localStorage.getItem('tt_consent_outdated')).toBeNull()
+    expect(localStorage.getItem('tt_onboarded')).toBeNull()
+    /* Сессия и правда умерла на обмене refresh, а не «вышли» локально мимо сервера. */
+    expect(calls.filter(c => c.method === 'POST' && c.path === '/auth/refresh')).toHaveLength(1)
+    /* Кадр со старым адресом не должен был успеть увести на онбординг и потом вернуться:
+       адрес держится на `/auth` и после того, как все переходы долетели. */
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(locOf(r)).toBe('/auth')
+  })
+
+  it('G6r5-02: 401 на «Принять» — экран входа и «Сессия истекла — войдите снова» на нём', async () => {
+    withGate()
+    localStorage.setItem('tt_onboarded', '1')
+    const calls = serve(deadSession({ '/users/me/consent': EXPIRED }))
+    const r = render(<MemoryRouter initialEntries={['/home']}><App /><LocationProbe /></MemoryRouter>)
+    await waitFor(() => expect(gateConsentBox().hasAttribute('disabled')).toBe(false))
+    fireEvent.click(gateConsentBox())
+    fireEvent.click(gateAdultBox())
+    fireEvent.click(screen.getByText(t('Принять')).closest('button')!)
+    await waitFor(() => expect(locOf(r)).toBe('/auth'))
+    expect(authHeading()).toBeTruthy()
+    expect(screen.getByText(t('Сессия истекла — войдите снова'))).toBeTruthy()
+    expect(localStorage.getItem('tt_auth')).toBeNull()
+    expect(localStorage.getItem('tt_consent_outdated')).toBeNull()
+    expect(calls.filter(c => c.method === 'POST' && c.path === '/users/me/consent')).toHaveLength(1)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(locOf(r)).toBe('/auth')
+    expect(screen.getByText(t('Сессия истекла — войдите снова'))).toBeTruthy()
+  })
+
+  it('G6r5-01b: «Подтвердить отзыв согласия» при мёртвой сессии — вход и причина: отзыв не прошёл, человек не должен думать, что аккаунт удалён', async () => {
+    withGate()
+    localStorage.setItem('tt_onboarded', '1')
+    const calls = serve(deadSession({ '/users/me/consent': EXPIRED }))
+    const r = render(<MemoryRouter initialEntries={['/home']}><App /><LocationProbe /></MemoryRouter>)
+    await waitFor(() => expect(gateHeading()).toBeTruthy())
+    fireEvent.click(screen.getByText(t('Не согласен — удалить аккаунт')).closest('button')!)
+    fireEvent.click(screen.getByText(t('Подтвердить отзыв согласия')).closest('button')!)
+    await waitFor(() => expect(locOf(r)).toBe('/auth'))
+    expect(authHeading()).toBeTruthy()
+    expect(screen.getByText(t('Сессия истекла — войдите снова'))).toBeTruthy()
+    expect(localStorage.getItem('tt_auth')).toBeNull()
+    expect(calls.filter(c => c.method === 'DELETE' && c.path === '/users/me/consent')).toHaveLength(1)
+  })
+
+  it('G6r5-probe: сессия мертва уже к открытию гейта — проба GET /users/me сама ведёт на вход с причиной, без нажатий', async () => {
+    withGate()
+    localStorage.setItem('tt_onboarded', '1')
+    serve(deadSession({ '/users/me': EXPIRED }))
+    const r = render(<MemoryRouter initialEntries={['/home']}><App /><LocationProbe /></MemoryRouter>)
+    await waitFor(() => expect(locOf(r)).toBe('/auth'))
+    expect(authHeading()).toBeTruthy()
+    expect(screen.getByText(t('Сессия истекла — войдите снова'))).toBeTruthy()
+    expect(localStorage.getItem('tt_auth')).toBeNull()
+  })
+
+  it('EN: причина на экране входа переведена', async () => {
+    localStorage.setItem('tt_lang', 'en')
+    setI18nLang('en')
+    withGate()
+    serve(deadSession({ '/users/me/consent': EXPIRED }))
+    try {
+      const r = render(<MemoryRouter initialEntries={['/home']}><App /><LocationProbe /></MemoryRouter>)
+      const consentBox = () => screen.getByRole('checkbox', { name: 'I consent to the processing of my personal data' })
+      await waitFor(() => expect(consentBox().hasAttribute('disabled')).toBe(false))
+      fireEvent.click(consentBox())
+      fireEvent.click(screen.getByRole('checkbox', { name: 'I am 18 or older' }))
+      fireEvent.click(screen.getByText('Accept').closest('button')!)
+      await waitFor(() => expect(locOf(r)).toBe('/auth'))
+      expect(screen.getByText('Your session has expired — sign in again')).toBeTruthy()
+      expect(screen.queryByText('Сессия истекла — войдите снова')).toBeNull()
+    } finally {
+      setI18nLang('ru')
+    }
   })
 })
 

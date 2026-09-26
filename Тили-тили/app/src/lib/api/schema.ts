@@ -1644,7 +1644,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `already_cancelled` — уже отменена; `slot_empty` — слот и так пуст; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                /** @description `bad_transition` — выполненная работа (`done`) не снимается; `already_cancelled` — уже отменена; `slot_empty` — слот и так пуст; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -6077,7 +6077,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description `policy_version_stale` — `policyVersion` старше действующей редакции */
+                /** @description `policy_version_stale` — `policyVersion` не совпадает с действующей редакцией */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -7596,11 +7596,13 @@ export interface paths {
          *
          *     Тот же перенос делает `PATCH /weddings/{weddingId}` с полем `date` —
          *     это один код, а не два похожих. Разница только в ответе: здесь
-         *     возвращается отчёт по команде, там — карточка свадьбы. Дата вне
-         *     допустимого диапазона — 422 `date_out_of_range`; календарная дата не
-         *     существует — 422 `bad_date`; занятая дата у своего же подрядчика —
-         *     409 `date_taken`. Обязательный `Idempotency-Key`: без него — 400
-         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     возвращается отчёт по команде, там — карточка свадьбы. Если кто-то из
+         *     забронированной команды занят на новую дату — 409 `team_busy` (имена
+         *     занятых — в тексте ошибки), и не меняется ничего: частичного переноса
+         *     нет. Дата вне допустимого диапазона — 422 `date_out_of_range`;
+         *     календарная дата не существует — 422 `bad_date`; занятая дата у своего
+         *     же подрядчика — 409 `date_taken`. Обязательный `Idempotency-Key`: без
+         *     него — 400 `idempotency_key_required`, длиннее 200 символов — 400
          *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
          *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
          *     `idempotency_in_progress`.
@@ -7638,7 +7640,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                /** @description `team_busy` — кто-то из забронированной команды занят на новую дату, не меняется ничего; `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -9944,6 +9946,10 @@ export interface components {
         /**
          * @description Доступ закрыт роли или стороне. Это нормальный ответ, а не поломка:
          *     помощник не видит денег, посторонний — чужой сделки (план §6).
+         *     Тот же статус — у отказа по согласию на обработку данных: `forbidden`,
+         *     если живого согласия нет вовсе, и `consent_outdated`, если согласие
+         *     дано под прежней редакцией политики — нужно подтвердить действующую
+         *     (`POST /users/me/consent`).
          */
         Forbidden: {
             headers: {

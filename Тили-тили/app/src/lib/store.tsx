@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components -- провайдер контекста и хук
    доступа к нему живут в одном файле: это стандартный паттерн React, а правило
    касается только скорости hot-reload, а не поведения приложения. */
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
+import { createContext, startTransition, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
 import type { Slot, SlotState } from './types'
 import { setI18nLang, type Lang } from './i18n'
 import { isAuthorized, onSessionExpired } from './api/client'
@@ -410,8 +410,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * подрядчиков жили в памяти до неё же (тот же класс, что RF-01/FA1, только
    * на этой из трёх дверей выхода). Экран сам покажет «войдите снова» по
    * `session_expired`.
+   *
+   * Память сбрасывается переходом (`startTransition`), а не обычным
+   * обновлением (F4-F-G6r5-01/02): тот, кто ведёт человека на вход после
+   * смерти сессии (гейт согласия, `pages/Consent.tsx`), подписан на то же
+   * событие, и его `nav('/auth')` в том же синхронном вызове попадает в тот же
+   * transition-кадр. Обычное обновление рисовалось раньше перехода роутера —
+   * кадром со старым адресом (`/home`) и сброшенным `onboarded`, и маршрут
+   * уводил на `/` поверх `/auth`. Устройство (`forgetLocally()`) чистится сразу.
    */
-  useEffect(() => onSessionExpired(() => { forgetLocally(); forgetSession() }), [forgetSession])
+  useEffect(() => onSessionExpired(() => {
+    forgetLocally()
+    startTransition(() => forgetSession())
+  }), [forgetSession])
   /*
    * Выход в соседней вкладке того же браузера (ERR-0277/R-277, третья дверь).
    *

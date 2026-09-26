@@ -152,7 +152,7 @@ function Shell() {
   const [, bump] = useReducer((n: number) => n + 1, 0)
   useEffect(() => onConsentOutdated(bump), [])
   /* Вторая вкладка приняла или вышла: `storage` — событие только чужих
-     документов того же источника (см. тот же приём в `store.tsx:430-436`). */
+     документов того же источника (см. тот же приём в `store.tsx`, подписка на `storage`). */
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === CONSENT_OUTDATED_KEY || e.key === null) bump()

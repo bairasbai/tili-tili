@@ -1,13 +1,13 @@
-import { startTransition, useEffect, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
-import { api, ApiError, clearConsentOutdated } from '@/lib/api/client'
+import { api, ApiError, clearConsentOutdated, onSessionExpired } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { getMe, signOutHere, withdrawConsent, forgetLocally } from '@/lib/api/auth'
+import { getMe, signOutHere, withdrawConsent, forgetLocally, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { disableDevicePush } from '@/lib/push'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { useStore } from '@/lib/store'
@@ -39,7 +39,7 @@ export function ConsentGate({ onDone }: { onDone: () => void }) {
 
   /*
    * Действующая редакция — с сервера, сверяется с той, что лежит в сборке
-   * (как на экране входа, `Account.tsx:100-104`). Расхождение — не отказ
+   * (как на экране входа, `Auth` в `Account.tsx`). Расхождение — не отказ
    * сети: подписываться под текстом, которого сборка не видела, нельзя.
    */
   const policy = useApi(() => getPolicy(), [])
@@ -64,6 +64,24 @@ export function ConsentGate({ onDone }: { onDone: () => void }) {
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /*
+   * Сессия умерла, пока гейт на экране (F4-F-G6r5-01/02): любое его действие
+   * получает 401, обмен refresh не удаётся, и `client.ts` объявляет смерть
+   * сессии. Стор чистит устройство и память переходом (`store.tsx`, тот же
+   * `onSessionExpired`), а вход открывается здесь, в том же синхронном вызове,
+   * — значит, в том же transition-кадре: без него кадр со старым адресом и
+   * сброшенным `onboarded` уводил на `/` поверх `/auth`, а текст ошибки гейта
+   * исчезал вместе с гейтом. Причину называет экран входа (`SESSION_EXPIRED_STATE`).
+   */
+  const sessionDied = useRef(false)
+  useEffect(() => onSessionExpired(() => {
+    sessionDied.current = true
+    startTransition(() => {
+      onDone()
+      nav('/auth', { replace: true, state: SESSION_EXPIRED_STATE })
+    })
+  }), [nav, onDone])
 
   const accept = async () => {
     if (!consent || !adult || busy) return
@@ -98,12 +116,14 @@ export function ConsentGate({ onDone }: { onDone: () => void }) {
       await signOutHere()
     } catch (e) {
       /* Отказ по делу — словами под кнопкой, токены на месте (как
-         `Account.tsx:836-849`, `signOutThisDevice`). */
+         `signOutThisDevice` в `Account.tsx`). */
       setSignOutErr(explainError(e))
       setBusy(false)
       return
     }
     setBusy(false)
+    /* Сессия умерла по дороге: на вход уже ведёт подписка выше, второй переход стёр бы причину. */
+    if (sessionDied.current) return
     /*
      * `forgetSession()` (сброс `onboarded` и памяти) и `nav('/auth')` — одним
      * переходом (F4-F-G5-07/G5r5): `<Router>` (`react-router` 7, `useTransitions`

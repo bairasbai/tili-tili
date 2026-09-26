@@ -454,10 +454,23 @@ describe('B-T11 доп.: сторож устойчив к переформули
   })
 
   it('не перепрыгивает через несвязанный JOIN дальше по файлу (негативный контроль)', () => {
-    const unrelatedJoinFarAway =
-      'select policy_version from consents where user_id = $1 order by given_at\n' +
+    /*
+     * F4B-R7-01: прежняя проба шла без JOIN сразу за `from consents` — JOIN_CLAUSE
+     * в ней не участвовал, и контроль был пустым: он зеленел и с неограниченным
+     * разрывом. Здесь JOIN стоит сразу за `from consents c`, а от его `on` до
+     * `where` с обоими предикатами ~250 символов: хвост первого запроса, чужой код
+     * и начало другого запроса по другой таблице. Предел JOIN_GAP (120 символов)
+     * не даёт дотянуться; без предела та же строка ловится — проверка ниже, и
+     * значит, проба упирается именно в предел.
+     */
+    const farWhere =
+      'select c.policy_version from consents c join sessions s on s.user_id = c.user_id order by c.given_at desc limit 1;\n' +
       `-- ${'padding '.repeat(20)}\n` +
-      'select 1 from sessions s join users u on u.id = s.user_id where s.revoked_at is null'
-    expect(matches(unrelatedJoinFarAway)).toBe(false)
+      'update consents_log c set seen = true where c.user_id = $1 and c.withdrawn_at is null'
+    expect(matches(farWhere)).toBe(false)
+    const parts = CONSENT_QUERY_PATTERN.source.split(JOIN_GAP)
+    expect(parts, 'JOIN_GAP должен входить в сторож дважды, иначе контроль ниже ничего не доказывает').toHaveLength(3)
+    const unbounded = new RegExp(parts.join(String.raw`[\s\S]+?`), CONSENT_QUERY_PATTERN.flags)
+    expect(unbounded.test(farWhere), 'без предела JOIN_GAP проба должна ловиться').toBe(true)
   })
 })

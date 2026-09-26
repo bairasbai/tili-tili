@@ -17,6 +17,9 @@ import { hashCode } from '../src/auth/otp.js'
  * `src/**\/*.ts` (кроме `*.generated.ts`) напрямую, без поднятия сервера —
  * контракт и код сверяются как тексты, а не через HTTP.
  *
+ * G-h и G-i — после общего ревью (F5-R7-02…05, F5-R7-08): откат F5-06/07/08
+ * и неполные списки 409 и тексты отказов больше не остаются зелёными.
+ *
  * Блок `describe.skipIf(!live)` — поведение живьём (L-1, L-2): PQ-2 (стол до
  * 100) и PQ-3 (гостевой токен: 410/401), под `TEST_DATABASE_URL`.
  *
@@ -632,6 +635,119 @@ describe('audit55 — контракт v0.41.0, единственный вла�
       expect(hasStatus(post, '422')).toBe(true)
     })
   })
+
+  /*
+   * G-h (F5-R7-08): три правки F5, откат которых G-a…G-g не замечали. Каждая
+   * проверка сверяет контракт с кодом обработчика — код источник правды, — и
+   * краснеет, если вернуть в контракт прежнюю форму.
+   */
+  describe('G-h: F5-06, F5-07, F5-08 — форма ответа совпадает с кодом', () => {
+    it('F5-06: потолок лайков — 429 квоты (QuotaExceeded), без обещания Retry-After: код бросает quotaExceeded, заголовок ставится только TooManyRequests', () => {
+      const op = findOp(ops, 'put', '/inspiration/likes/{storyId}')!
+      const slice = findHandlerSlice(op.fastifyPath, op.method)
+      expect(slice, 'обработчик PUT /inspiration/likes/:storyId не найден').toBeTruthy()
+      expect(slice).toMatch(/\bquotaExceeded\(\s*'likes_limit'/)
+      expect(slice).not.toMatch(/\bTooManyRequests\b/)
+      const r429 = op.item.responses?.['429']
+      expect(r429, '429 не объявлен').toBeTruthy()
+      expect(r429!.$ref).toBe('#/components/responses/QuotaExceeded')
+    })
+
+    const ADMIN_QUEUES = ['/admin/moderation/vendors', '/admin/verifications', '/admin/complaints', '/admin/concierge']
+
+    it('F5-07: четыре очереди панели — 400 BadRequest и ни одного 422: строку запроса разбирает parsePageQuery, схемы у неё нет', () => {
+      const violations: string[] = []
+      for (const p of ADMIN_QUEUES) {
+        const op = findOp(ops, 'get', p)
+        if (!op) {
+          violations.push(`GET ${p}: операция не найдена`)
+          continue
+        }
+        const slice = findHandlerSlice(op.fastifyPath, op.method) ?? ''
+        if (!/\bparsePageQuery\(/.test(slice)) violations.push(`GET ${p}: обработчик без parsePageQuery`)
+        if (/\bquerystring\s*:/.test(slice)) violations.push(`GET ${p}: у обработчика появилась схема строки запроса`)
+        if (hasStatus(op, '422')) violations.push(`GET ${p}: объявлен 422, которого код не выдаёт`)
+        if (op.item.responses?.['400']?.$ref !== '#/components/responses/BadRequest') {
+          violations.push(`GET ${p}: 400 не BadRequest`)
+        }
+      }
+      expect(violations).toEqual([])
+    })
+
+    const DICTIONARY_MISS: [method: string, openapiPath: string][] = [
+      ['POST', '/catalog/concierge'],
+      ['PUT', '/vendor/profile'],
+      ['POST', '/weddings'],
+      ['PATCH', '/weddings/{weddingId}'],
+    ]
+
+    it('F5-08: промах словаря (категория, город) — 404 объявлен у всех четырёх операций, чей обработчик бросает notFound', () => {
+      const violations: string[] = []
+      for (const [method, p] of DICTIONARY_MISS) {
+        const op = findOp(ops, method, p)
+        if (!op) {
+          violations.push(`${method} ${p}: операция не найдена`)
+          continue
+        }
+        const slice = findHandlerSlice(op.fastifyPath, op.method) ?? ''
+        if (!/\bnotFound\(/.test(slice)) violations.push(`${method} ${p}: обработчик не бросает notFound — сторож устарел`)
+        const r404 = op.item.responses?.['404']
+        if (!r404) {
+          violations.push(`${method} ${p}: нет 404`)
+          continue
+        }
+        const text = r404.$ref ? (resolveRef<{ description?: string }>(doc, r404.$ref).description ?? '') : (r404.description ?? '')
+        if (!/справочник/.test(text)) violations.push(`${method} ${p}: 404 не говорит о справочнике`)
+      }
+      expect(violations).toEqual([])
+    })
+  })
+
+  /*
+   * G-i (F5-R7-02…05): списки 409 и тексты отказов, которые общее ревью нашло
+   * расходящимися с кодом уже после F5. Каждая проверка сначала убеждается,
+   * что код по-прежнему делает то, о чём речь (иначе сторож устарел), и только
+   * потом читает контракт.
+   */
+  describe('G-i: F5-R7-02…05 — списки 409 и тексты отказов совпадают с кодом', () => {
+    const src = (rel: string) => fs.readFileSync(path.join(SRC_DIR, rel), 'utf8')
+    const r409 = (op: Op) => op.item.responses?.['409']?.description ?? ''
+
+    it('F5-R7-02: 409 переноса даты называет team_busy — главный отказ rescheduleWedding()', () => {
+      const op = findOp(ops, 'post', '/weddings/{weddingId}/reschedule')!
+      expect(findHandlerSlice(op.fastifyPath, op.method)).toMatch(/\brescheduleWedding\(/)
+      expect(src('wedding/reschedule.ts')).toMatch(/new AppError\(409, 'team_busy'/)
+      expect(namesCode(op.item.description ?? '', 'team_busy'), 'описание операции').toBe(true)
+      expect(namesCode(r409(op), 'team_busy'), 'список 409').toBe(true)
+    })
+
+    it('F5-R7-02: 409 отмены брони слота называет bad_transition — cancelDeal() не снимает выполненную работу', () => {
+      const op = findOp(ops, 'post', '/weddings/{weddingId}/slots/{slotId}/cancel')!
+      expect(findHandlerSlice(op.fastifyPath, op.method)).toMatch(/\bcancelDeal\(/)
+      expect(src('deals/cancel.ts')).toMatch(/\bassertTransition\(from, 'cancelled'\)/)
+      expect(src('deals/state.ts')).toMatch(/new AppError\(409, 'bad_transition'/)
+      expect(namesCode(r409(op), 'bad_transition'), 'список 409').toBe(true)
+    })
+
+    it('F5-R7-03: policy_version_stale — любое расхождение редакции («не совпадает»), как сравнивает обработчик, а не «старше»', () => {
+      const op = findOp(ops, 'post', '/users/me/consent')!
+      expect(findHandlerSlice(op.fastifyPath, op.method)).toMatch(/policyVersion !== /)
+      expect(r409(op)).toMatch(/не совпадает/)
+      expect(r409(op)).not.toMatch(/старше/)
+    })
+
+    it('F5-R7-04/05: forbidden — «согласия нет вовсе», consent_outdated — отдельный код и в общей таблице, и в ответе Forbidden', () => {
+      expect(src('auth/consent.ts')).toMatch(/if \(row\.any\) return 'outdated'/)
+      expect(src('plugins/auth.ts')).toMatch(/state === 'none'[\s\S]{0,300}throw forbidden\(/)
+      const table = (doc.info as { description: string }).description
+      const forbiddenRow = table.split('\n').find((l) => l.trimStart().startsWith('- `forbidden` (403)'))
+      expect(forbiddenRow, 'строки forbidden в общей таблице нет').toBeTruthy()
+      expect(forbiddenRow).not.toMatch(/нет согласия под действующей редакцией/)
+      expect(namesCode(forbiddenRow!, 'consent_outdated')).toBe(true)
+      const forbidden = resolveRef<{ description?: string }>(doc, '#/components/responses/Forbidden').description ?? ''
+      expect(namesCode(forbidden, 'consent_outdated'), 'ответ Forbidden').toBe(true)
+    })
+  })
 })
 
 // ───────────────────────── L-1 / L-2: поведение живьём ─────────────────────────
@@ -751,7 +867,7 @@ describe.skipIf(!live)('audit55 — L-1/L-2, поведение живьём (PQ
     return res
   }
 
-  const patchTable = (w: Wedding, tableId: string, payload: unknown) =>
+  const patchTable = (w: Wedding, tableId: string, payload: Record<string, unknown>) =>
     app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/tables/${tableId}`, headers: auth(w.token), payload })
 
   describe('L-1: PQ-2 живьём — стол до 100', () => {

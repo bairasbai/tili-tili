@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut, MapPin, MonitorSmartphone, Moon } from 'lucide-react'
 import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
@@ -8,11 +8,11 @@ import { useStore } from '@/lib/store'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t, reloadToRoot } from '@/lib/i18n'
-import { api, ApiError, saveTokens } from '@/lib/api/client'
+import { api, ApiError, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { deleteAllPushSubscriptions, endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY } from '@/lib/api/auth'
+import { deleteAllPushSubscriptions, endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
@@ -55,13 +55,15 @@ function takeJoinCode(): string | null {
 /* Вход: телефон → OTP → роль */
 export function Auth() {
   const nav = useNavigate()
+  const loc = useLocation()
   const { adoptWeddings, finishOnboarding } = useStore()
   const [step, setStep] = useState<0 | 1 | 2>(0)
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState(['', '', '', ''])
   const [sec, setSec] = useState(0)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  /* Сюда привёл гейт согласия после смерти сессии (F4-F-G6r5-02): причина — словами `ErrorState`, первое действие её сменит. */
+  const [err, setErr] = useState<string | null>(() => ((loc.state as Partial<typeof SESSION_EXPIRED_STATE> | null)?.sessionExpired ? t(SESSION_EXPIRED) : null))
   /*
    * 152-ФЗ: согласие даётся явным действием, галочка не может стоять заранее.
    *

@@ -45,7 +45,7 @@ info:
     Могут прийти у любой операции, если не сказано иное:
     - `unauthorized` (401) — любая операция за входом; у гостевых см. описание `GuestToken`.
     - `token_expired` (401) — просроченный access-токен; у живого канала — закрытие 4401.
-    - `forbidden` (403) — нет согласия под действующей редакцией, роли или стороны недостаточно.
+    - `forbidden` (403) — живого согласия нет вовсе (не давали или отозвали), роли или стороны недостаточно; согласие под прежней редакцией — не `forbidden`, а `consent_outdated`.
     - `consent_outdated` (403) — согласие есть, но под прежней редакцией политики: нужно подтвердить новую (см. `POST /users/me/consent`); у живого канала чата — закрытие 4403 с тем же кодом.
     - `not_found` (404) — чужой или несуществующий идентификатор, либо неизвестный адрес.
     - `validation_failed` (422) — нарушение схемы запроса; поле-виновник — в `error.fields`.
@@ -982,7 +982,7 @@ paths:
               schema: { $ref: '#/components/schemas/Slot' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '409':
-          description: '`already_cancelled` — уже отменена; `slot_empty` — слот и так пуст; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
+          description: '`bad_transition` — выполненная работа (`done`) не снимается; `already_cancelled` — уже отменена; `slot_empty` — слот и так пуст; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -3253,7 +3253,7 @@ paths:
       responses:
         '201': { description: Зафиксировано }
         '409':
-          description: '`policy_version_stale` — `policyVersion` старше действующей редакции'
+          description: '`policy_version_stale` — `policyVersion` не совпадает с действующей редакцией'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4030,11 +4030,13 @@ paths:
 
         Тот же перенос делает `PATCH /weddings/{weddingId}` с полем `date` —
         это один код, а не два похожих. Разница только в ответе: здесь
-        возвращается отчёт по команде, там — карточка свадьбы. Дата вне
-        допустимого диапазона — 422 `date_out_of_range`; календарная дата не
-        существует — 422 `bad_date`; занятая дата у своего же подрядчика —
-        409 `date_taken`. Обязательный `Idempotency-Key`: без него — 400
-        `idempotency_key_required`, длиннее 200 символов — 400
+        возвращается отчёт по команде, там — карточка свадьбы. Если кто-то из
+        забронированной команды занят на новую дату — 409 `team_busy` (имена
+        занятых — в тексте ошибки), и не меняется ничего: частичного переноса
+        нет. Дата вне допустимого диапазона — 422 `date_out_of_range`;
+        календарная дата не существует — 422 `bad_date`; занятая дата у своего
+        же подрядчика — 409 `date_taken`. Обязательный `Idempotency-Key`: без
+        него — 400 `idempotency_key_required`, длиннее 200 символов — 400
         `idempotency_key_too_long`, тот же ключ на другой запрос — 409
         `idempotency_key_reused`, тот же ключ ещё выполняется — 409
         `idempotency_in_progress`.
@@ -4063,7 +4065,7 @@ paths:
                   busy: { type: array, items: { type: string } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '409':
-          description: '`date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
+          description: '`team_busy` — кто-то из забронированной команды занят на новую дату, не меняется ничего; `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -4692,6 +4694,10 @@ components:
       description: |
         Доступ закрыт роли или стороне. Это нормальный ответ, а не поломка:
         помощник не видит денег, посторонний — чужой сделки (план §6).
+        Тот же статус — у отказа по согласию на обработку данных: `forbidden`,
+        если живого согласия нет вовсе, и `consent_outdated`, если согласие
+        дано под прежней редакцией политики — нужно подтвердить действующую
+        (`POST /users/me/consent`).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
