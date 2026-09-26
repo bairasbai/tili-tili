@@ -25,8 +25,8 @@ export const exportPaymentHistory = (weddingId: string) => api.get(url('/wedding
 
 export const listPaymentReceipts = (weddingId: string, paymentId: string) =>
   api.get(url('/weddings/{weddingId}/payments/{paymentId}/receipts', { weddingId, paymentId }))
-export const addPaymentReceipt = (weddingId: string, paymentId: string, body: { filename: string; mimeType: 'application/pdf'|'image/jpeg'|'image/png'|'image/webp'; contentBase64: string }, idempotencyKey: string) =>
-  api.post(url('/weddings/{weddingId}/payments/{paymentId}/receipts', { weddingId, paymentId }), body, { idempotencyKey })
+export const addPaymentReceipt = (weddingId: string, paymentId: string, body: { filename: string; mimeType: 'application/pdf'|'image/jpeg'|'image/png'|'image/webp'; contentBase64: string }, idempotencyKey: string, timeoutMs?: number) =>
+  api.post(url('/weddings/{weddingId}/payments/{paymentId}/receipts', { weddingId, paymentId }), body, { idempotencyKey, ...(timeoutMs ? { timeoutMs } : {}) })
 export const getPaymentReceipt = (weddingId: string, paymentId: string, receiptId: string) =>
   api.get(url('/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content', { weddingId, paymentId, receiptId }))
 export const deletePaymentReceipt = (weddingId: string, paymentId: string, receiptId: string) =>

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import PaymentSchedule from '@/pages/PaymentSchedule'
 import type { PaymentScheduleData } from './api/paymentSchedule'
@@ -14,20 +14,31 @@ let reads: string[]
 let receipts: { id: string; filename: string; mimeType: string; sizeBytes: number; createdAt: string }[]
 let release: (() => void) | null = null
 let delayWrite = false
+let uploadEnabled = true
+/* Ответ на загрузку чека: ok — 201; network — обрыв без ответа; поле — 422 с причиной сервера. */
+let receiptPost: 'ok' | 'network' | 'field' = 'ok'
+let receiptDelete: 204 | 404 = 204
 const json = (body: unknown, code = 200) => new Response(JSON.stringify(body), { status: code, headers: { 'content-type': 'application/json' } })
 function serve() {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '')
     if (!init?.method || init.method === 'GET') {
       reads.push(path)
-      if (path.endsWith('/payments/p1/receipts')) return json({ items: receipts })
+      if (path.endsWith('/payments/p1/receipts')) return json({ items: receipts, uploadEnabled })
       if (path.includes('/payments/p1/receipts/') && path.endsWith('/content')) return json({ filename: 'чек.png', mimeType: 'image/png', contentBase64: 'iVBORw0KGgo=' })
       return status === 200 ? json(state) : json({ error: { code: status === 403 ? 'forbidden' : 'db_unavailable', message: 'Нет доступа или сервер недоступен' } }, status)
     }
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
     writes.push({ path, body, key: new Headers(init.headers).get('Idempotency-Key') })
-    if (path.includes('/payments/p1/receipts/') && init.method === 'DELETE') { receipts = receipts.filter(x => !path.includes(x.id)); return new Response(null, { status: 204 }) }
-    if (path.endsWith('/payments/p1/receipts') && init.method === 'POST') { receipts.push({ id: 'r2', filename: String(body.filename), mimeType: String(body.mimeType), sizeBytes: 9, createdAt: '2027-01-01T12:00:00.000Z' }); return json(receipts.at(-1), 201) }
+    if (path.includes('/payments/p1/receipts/') && init.method === 'DELETE') {
+      if (receiptDelete === 404) return json({ error: { code: 'not_found', message: 'Файл не найден' } }, 404)
+      receipts = receipts.filter(x => !path.includes(x.id)); return new Response(null, { status: 204 })
+    }
+    if (path.endsWith('/payments/p1/receipts') && init.method === 'POST') {
+      if (receiptPost === 'network') { receiptPost = 'ok'; throw new TypeError('Failed to fetch') }
+      if (receiptPost === 'field') return json({ error: { code: 'validation_failed', message: 'Запрос не прошёл проверку', fields: { mimeType: 'Содержимое файла не соответствует указанному типу' } } }, 422)
+      receipts.push({ id: 'r' + (receipts.length + 2), filename: String(body.filename), mimeType: String(body.mimeType), sizeBytes: 9, createdAt: '2027-01-01T12:00:00.000Z' }); return json(receipts.at(-1), 201)
+    }
     if (delayWrite) await new Promise<void>(resolve => { release = resolve })
     if (stale) return json({ error: { code: 'stale_payment_plan', message: 'График изменился' } }, 409)
     if (failSave) return json({ error: { code: 'validation_failed', message: 'Сумма отклонена' } }, 422)
@@ -52,7 +63,8 @@ beforeEach(() => {
     deals: [{ id: 'd1', slotId: 's1', name: 'Фотограф', state: 'booked', price: money(1000000), recorded: money(100000), remaining: money(900000), planned: money(400000), unallocated: money(100000), needsReview: false, active: true, canPlan: true }],
     allInstallments: [{ id: 'i1', dealId: 'd1', title: 'Аванс', status: 'pending', remaining: money(400000) }],
     payments: [{ id: 'p1', dealId: 'd1', kind: 'deposit', amount: money(100000), status: 'recorded', createdAt: '2027-01-01T12:00:00.000Z', installmentId: null, version: 2 }] }
-  status = 200; failSave = false; stale = false; writes = []; reads = []; receipts = [{ id: 'r1', filename: 'аванс.pdf', mimeType: 'application/pdf', sizeBytes: 1200, createdAt: '2027-01-01T12:00:00.000Z' }]; delayWrite = false; release = null; serve()
+  status = 200; failSave = false; stale = false; writes = []; reads = []; receipts = [{ id: 'r1', filename: 'аванс.pdf', mimeType: 'application/pdf', sizeBytes: 1200, createdAt: '2027-01-01T12:00:00.000Z' }]; delayWrite = false; release = null
+  uploadEnabled = true; receiptPost = 'ok'; receiptDelete = 204; serve()
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 describe('018-A: график платежей в интерфейсе', () => {
@@ -176,20 +188,108 @@ describe('018-A: график платежей в интерфейсе', () => {
     fireEvent.click(within(form).getByLabelText('Добавить просроченные')); fireEvent.submit(form)
     await waitFor(() => expect(reads.some(p => p.includes('from=2027-04-01') && p.includes('includeOverdue=false'))).toBe(true))
   })
-  it('показывает приватные подтверждения и удаляет их через scoped API', async () => {
-    open(); await screen.findByText('аванс.pdf')
-    const row = screen.getByText('аванс.pdf').parentElement!
-    fireEvent.click(within(row).getByRole('button', { name: 'Удалить' }))
+  it('показывает приватные подтверждения и удаляет их через scoped API — со второго нажатия (ревью 018, BF-05)', async () => {
+    open(); await openReceipts()
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить: аванс.pdf' }))
+    expect(writes.filter(x => x.path.includes('/receipts/'))).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить? аванс.pdf' }))
     await waitFor(() => expect(writes.some(x => x.path === '/weddings/w1/payments/p1/receipts/r1')).toBe(true))
     await waitFor(() => expect(screen.queryByText('аванс.pdf')).toBeNull())
   })
   it('не отправляет неподдерживаемый тип подтверждения', async () => {
-    open(); await screen.findByText('аванс.pdf')
-    const input = document.querySelector('input[type=file]') as HTMLInputElement
-    const file = new File(['text'], 'note.txt', { type: 'text/plain' })
-    fireEvent.change(input, { target: { files: [file] } })
+    open(); await openReceipts()
+    choose(new File(['text'], 'note.txt', { type: 'text/plain' }))
     await screen.findByText('Разрешены PDF, JPEG, PNG и WebP')
     expect(writes.filter(x => x.path.endsWith('/receipts'))).toHaveLength(0)
   })
+})
 
+/* Ревью 018, 018-B: панель подтверждений оплаты. */
+async function openReceipts() {
+  const details = (await screen.findByText('Подтверждения оплаты')).closest('details')!
+  details.open = true
+  fireEvent(details, new Event('toggle'))
+  await screen.findByText('аванс.pdf')
+}
+const choose = (file: File) => fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [file] } })
+const png = (name = 'чек.png', lastModified = 1) => new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0])], name, { type: 'image/png', lastModified })
+const uploads = () => writes.filter(x => x.path === '/weddings/w1/payments/p1/receipts')
+describe('018-B: подтверждения оплаты в интерфейсе (ревью 018)', () => {
+  it('BF-03: список не грузится, пока панель закрыта; раскрытие — один запрос', async () => {
+    open(); await screen.findByRole('region', { name: 'Аванс' })
+    // Эффекты отрисовки истории — до конца: иначе проверка «запроса нет» прошла бы и при жадной загрузке.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(reads.filter(p => p.includes('/receipts'))).toEqual([])
+    await openReceipts()
+    expect(reads.filter(p => p.endsWith('/payments/p1/receipts'))).toHaveLength(1)
+    expect(screen.getByText(/прикреплено/).textContent).toContain('1')
+  })
+  it('BB-01: загрузка выключена на сервере — поля файла нет, объяснение есть, удалить можно', async () => {
+    uploadEnabled = false; open(); await openReceipts()
+    expect(document.querySelector('input[type=file]')).toBeNull()
+    screen.getByText(/Загрузка подтверждений пока не включена на сервере/)
+    expect((screen.getByRole('button', { name: 'Удалить: аванс.pdf' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+  it('BF-05: в свадьбе «только чтение» удалить и прикрепить нельзя, скачать можно', async () => {
+    state.readOnly = true; open(); await openReceipts()
+    expect((screen.getByRole('button', { name: 'Удалить: аванс.pdf' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Скачать: аванс.pdf' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((document.querySelector('input[type=file]') as HTMLInputElement).disabled).toBe(true)
+  })
+  it('BF-05: файла уже нет (404) — не ошибка, список перечитан', async () => {
+    receiptDelete = 404; open(); await openReceipts()
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить: аванс.pdf' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить? аванс.pdf' }))
+    await waitFor(() => expect(reads.filter(p => p.endsWith('/payments/p1/receipts'))).toHaveLength(2))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+  it('BF-01: ключ — на попытку: после обрыва тот же файл идёт с тем же ключом, после успеха — с новым', async () => {
+    receiptPost = 'network'; open(); await openReceipts()
+    choose(png())
+    await screen.findByRole('alert')
+    choose(png())
+    await waitFor(() => expect(uploads()).toHaveLength(2))
+    expect(uploads()[1].key).toBe(uploads()[0].key)
+    expect(uploads()[1].body).toEqual({ filename: 'чек.png', mimeType: 'image/png', contentBase64: 'iVBORw0KGgoA' })
+    await screen.findByText('чек.png')
+    choose(png())
+    await waitFor(() => expect(uploads()).toHaveLength(3))
+    expect(uploads()[2].key).not.toBe(uploads()[1].key)
+  })
+  it('BF-06: поле файла сбрасывается после выбора — тот же файл снова даёт событие', async () => {
+    open(); await openReceipts()
+    const input = document.querySelector('input[type=file]') as HTMLInputElement, cleared: string[] = []
+    // jsdom шлёт change на каждый fireEvent; браузер — только при новом значении. Проверяем сам сброс.
+    Object.defineProperty(input, 'value', { configurable: true, get: () => '', set: (v: string) => { cleared.push(v) } })
+    choose(png())
+    await waitFor(() => expect(uploads()).toHaveLength(1))
+    expect(cleared).toEqual([''])
+  })
+  it('BF-04: пустой файл, больше 512 КБ и имя длиннее 180 символов — отказ до запроса', async () => {
+    open(); await openReceipts()
+    choose(new File([], 'пусто.png', { type: 'image/png' }))
+    await screen.findByText('Файл пустой — выберите другой')
+    choose(new File([new Uint8Array(524289)], 'большой.png', { type: 'image/png' }))
+    await screen.findByText('Файл должен быть не больше 512 КБ')
+    choose(png('я'.repeat(181) + '.png'))
+    await screen.findByText('Имя файла длиннее 180 символов — переименуйте файл')
+    expect(uploads()).toHaveLength(0)
+  })
+  it('BF-04: отказ сервера по полю показывает его причину, а не общий текст', async () => {
+    receiptPost = 'field'; open(); await openReceipts()
+    choose(png())
+    await screen.findByText('Содержимое файла не соответствует указанному типу')
+  })
+  it('BF-07: скачивание — ссылкой в документе, адрес не отзывается сразу после нажатия', async () => {
+    const created: Blob[] = [], revoked: string[] = [], clicked: { download: string; connected: boolean }[] = []
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: (b: Blob) => { created.push(b); return 'blob:receipt' }, revokeObjectURL: (u: string) => { revoked.push(u) } }))
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push({ download: this.download, connected: this.isConnected }) })
+    try {
+      open(); await openReceipts()
+      fireEvent.click(screen.getByRole('button', { name: 'Скачать: аванс.pdf' }))
+      await waitFor(() => expect(clicked).toEqual([{ download: 'чек.png', connected: true }]))
+      expect(created[0]!.type).toBe('image/png')
+      expect(revoked).toEqual([])
+    } finally { click.mockRestore() }
+  })
 })

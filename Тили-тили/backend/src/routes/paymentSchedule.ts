@@ -180,11 +180,11 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       if(used!.files>=receiptsMaxPerWedding||BigInt(used!.bytes)+BigInt(content.length)>BigInt(receiptsMaxBytesPerWedding))
         throw conflict('receipt_quota','Место под подтверждения оплат у свадьбы закончилось — удалите ненужные файлы')
       const receiptId=uuidv7()
-      await client.query(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
-        values($1,$2,$3,$4,$5,$6,$7,$8)`,[receiptId,wid,id,filename,body.mimeType,content.length,content,uid])
+      const {rows:[saved]}=await client.query<{created_at:Date}>(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
+        values($1,$2,$3,$4,$5,$6,$7,$8) returning created_at`,[receiptId,wid,id,filename,body.mimeType,content.length,content,uid])
       // В журнале — что за файл, но не его имя: журнал переживает стирание аккаунта (ревью 018, BB-14).
       await financeAudit(client,uid,'payment_receipt',receiptId,'payment.receipt_added',{paymentId:id,mimeType:body.mimeType,sizeBytes:content.length,sha256})
-      return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length}}
+      return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length,createdAt:saved!.created_at.toISOString()}}
     }))
   })
 

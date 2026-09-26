@@ -155,8 +155,11 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
         kind: 'budget',
         categoryId: c.id,
         title: `«${c.title}» — ${pct} % лимита`,
+        /* Резерв пара может обнулить (018-B): «за счёт резерва» при 0 % — обещание
+         * денег, которых нет (ревью 018, BB-08). */
         body: committed > planned
-          ? `Обещано ${rubles(committed)} при плане ${rubles(planned)} — дальше только за счёт резерва`
+          ? `Обещано ${rubles(committed)} при плане ${rubles(planned)} — ${budget.reserveBps > 0
+            ? 'дальше только за счёт резерва' : 'резерв выключен, дальше — только за счёт других категорий'}`
           : `Обещано ${rubles(committed)} из ${rubles(planned)} — зафиксируйте состав, пока укладываетесь`,
         link: '/wedding/budget',
       })

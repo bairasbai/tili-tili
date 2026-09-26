@@ -25,6 +25,13 @@ const empty: Draft = { title: '', amount: '', due: '', dealId: '', installmentId
 const paymentDate = (iso: string, timeZone: string) => new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU',
   { day: 'numeric', month: 'long', year: 'numeric', timeZone }).format(new Date(iso))
 const DAY = 86_400_000
+/* Скачивание — ссылкой в документе, адрес отзывается позже: без вставки в DOM Firefox
+   ссылку не нажимает, а отзыв сразу после click() обрывает скачивание (ревью 018, BF-07). */
+function saveFile(blob: Blob, filename: string) {
+  const link = document.createElement('a'), objectUrl = URL.createObjectURL(blob)
+  link.href = objectUrl; link.download = filename; document.body.appendChild(link); link.click(); link.remove()
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
 
 export default function PaymentSchedule() {
   const { weddingId } = useStore()
@@ -136,9 +143,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     writing.current = true; setBusy(true); setError(null)
     try {
       const file = await exportPaymentHistory(weddingId)
-      const link = document.createElement('a'), objectUrl = URL.createObjectURL(new Blob([file.csv], { type: 'text/csv;charset=utf-8' }))
-      link.href = objectUrl; link.download = file.filename; document.body.appendChild(link); link.click(); link.remove()
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+      saveFile(new Blob([file.csv], { type: 'text/csv;charset=utf-8' }), file.filename)
     } catch (e) { setError(explainError(e)) } finally { writing.current = false; setBusy(false) }
   }
   return <div className="pb-28">
@@ -249,45 +254,102 @@ function Filters({ data, busy, apply }: { data: PaymentScheduleData; busy: boole
   </form>
 }
 
+/* Список чеков грузится, когда панель раскрыта: панель на каждую отметку сразу слала
+   N запросов одним пакетом, и ограничитель отвечал части из них 429 (ревью 018, BF-03). */
 function ReceiptPanel({ weddingId, paymentId, disabled }: { weddingId: string; paymentId: string; disabled: boolean }) {
+  const [open, setOpen] = useState(false)
+  return <details className="mt-2" onToggle={e => setOpen(e.currentTarget.open)}>
+    <summary className="text-xs cursor-pointer py-2">{t('Подтверждения оплаты')}</summary>
+    {open && <ReceiptList weddingId={weddingId} paymentId={paymentId} disabled={disabled} />}
+  </details>
+}
+
+const RECEIPT_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] as const
+type ReceiptType = typeof RECEIPT_TYPES[number]
+const RECEIPT_MAX_BYTES = 524288, RECEIPTS_PER_PAYMENT = 5, RECEIPT_NAME_MAX = 180
+/* Тело до ~700 КБ: под общими 15 секундами загрузка на медленной сети обрывалась бы
+   «сервер недоступен» (ревью 018, BF-13). */
+const RECEIPT_UPLOAD_TIMEOUT_MS = 60_000
+/* Причина отказа по полю — текст сервера (ключ словаря); без неё — общий текст (ревью 018, BF-04). */
+const receiptError = (e: unknown) => {
+  const reason = e instanceof ApiError && e.status === 422 ? e.field('mimeType') ?? e.field('contentBase64') ?? e.field('filename') : null
+  return reason ? t(reason) : explainError(e)
+}
+
+function ReceiptList({ weddingId, paymentId, disabled }: { weddingId: string; paymentId: string; disabled: boolean }) {
   const q = useApi(() => listPaymentReceipts(weddingId, paymentId), [weddingId, paymentId])
-  const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null)
-  /* Список — только из ответа сервера. Пока его нет, счётчика нет: «· 0» при
-     загрузке или ошибке читался бы как «подтверждений нет» (R-178). */
-  const items = ready(q) && q.data ? q.data.items : null
-  const upload = async (file: File | undefined) => {
-    if (!file || busy || disabled) return
+  const [busy, setBusy] = useState<string | null>(null), [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  /* Ключ — на попытку загрузки, а не на содержимое: ключ из хэша файла жил сутки, и тот
+     же файл после удаления «загружался» повтором старого ответа, а под другим именем
+     получал 409 (ревью 018, BF-01). Тот же файл после сбоя сети идёт с тем же ключом —
+     сервер вернёт первый ответ, а не запишет второй файл. */
+  const attempt = useRef<{ file: string; key: string } | null>(null)
+  /* Список — только из ответа сервера: пока его нет, счётчика нет (R-178). */
+  const data = ready(q) ? q.data : null
+  const items = data ? data.items : null
+  const full = !!items && items.length >= RECEIPTS_PER_PAYMENT
+  const canUpload = !!data?.uploadEnabled && !disabled && !full && !busy
+  const upload = async (input: HTMLInputElement) => {
+    const file = input.files?.[0]
+    input.value = '' // тот же файл, выбранный снова, — снова событие (ревью 018, BF-06)
+    if (!file || !canUpload) return
     setError(null)
-    if (file.size > 524288) { setError(t('Файл должен быть не больше 512 КБ')); return }
-    const allowed = ['application/pdf','image/jpeg','image/png','image/webp'] as const
-    if (!allowed.includes(file.type as typeof allowed[number])) { setError(t('Разрешены PDF, JPEG, PNG и WebP')); return }
-    setBusy(true)
+    if (file.size === 0) { setError(t('Файл пустой — выберите другой')); return }
+    if (file.size > RECEIPT_MAX_BYTES) { setError(t('Файл должен быть не больше 512 КБ')); return }
+    if (!RECEIPT_TYPES.includes(file.type as ReceiptType)) { setError(t('Разрешены PDF, JPEG, PNG и WebP')); return }
+    if (Array.from(file.name).length > RECEIPT_NAME_MAX) { setError(t('Имя файла длиннее 180 символов — переименуйте файл')); return }
+    const signature = [file.name, file.size, file.lastModified, file.type].join('\n')
+    if (attempt.current?.file !== signature) attempt.current = { file: signature, key: newIdempotencyKey() }
+    const key = attempt.current.key
+    setBusy('upload')
     try {
       const raw = new Uint8Array(await file.arrayBuffer())
-      let binary = ''; for (let i=0;i<raw.length;i+=0x8000) binary += String.fromCharCode(...raw.subarray(i,i+0x8000))
-      // Deterministic per payment+content: if the response is lost and the same file is selected again,
-      // the server replays the first result instead of storing a duplicate receipt.
-      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', raw))
-      const fingerprint = Array.from(digest, b => b.toString(16).padStart(2, '0')).join('')
-      await addPaymentReceipt(weddingId,paymentId,{filename:file.name,mimeType:file.type as typeof allowed[number],contentBase64:btoa(binary)},`receipt-${paymentId}-${fingerprint}`)
+      let binary = ''; for (let i = 0; i < raw.length; i += 0x8000) binary += String.fromCharCode(...raw.subarray(i, i + 0x8000))
+      await addPaymentReceipt(weddingId, paymentId, { filename: file.name, mimeType: file.type as ReceiptType, contentBase64: btoa(binary) },
+        key, RECEIPT_UPLOAD_TIMEOUT_MS)
+      attempt.current = null
       q.reload()
-    } catch(e) { setError(explainError(e)) } finally { setBusy(false) }
+    } catch (e) { setError(receiptError(e)) } finally { setBusy(null) }
   }
   const download = async (id: string) => {
-    if (busy) return; setBusy(true); setError(null)
+    if (busy) return
+    setBusy('download:' + id); setError(null)
     try {
-      const file=await getPaymentReceipt(weddingId,paymentId,id), binary=atob(file.contentBase64)
-      const bytes=new Uint8Array(binary.length); for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i)
-      const href=URL.createObjectURL(new Blob([bytes],{type:file.mimeType}))
-      const a=document.createElement('a');a.href=href;a.download=file.filename;a.click();URL.revokeObjectURL(href)
-    } catch(e){setError(explainError(e))} finally{setBusy(false)}
+      const file = await getPaymentReceipt(weddingId, paymentId, id), binary = atob(file.contentBase64)
+      const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      saveFile(new Blob([bytes], { type: file.mimeType }), file.filename)
+    } catch (e) { setError(explainError(e)) } finally { setBusy(null) }
   }
-  const remove = async(id:string) => { if(busy)return;setBusy(true);setError(null);try{await deletePaymentReceipt(weddingId,paymentId,id);q.reload()}catch(e){setError(explainError(e))}finally{setBusy(false)} }
-  return <details className="mt-2"><summary className="text-xs cursor-pointer">{t('Подтверждения оплаты')}{' '}{items ? `· ${items.length}` : ''}</summary>
-    <div className="mt-2 space-y-2"><label className={button+' inline-flex items-center cursor-pointer bg-[var(--bg)]'}>{busy ? t('Загрузка…') : t('Прикрепить файл')}<input className="sr-only" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" disabled={disabled||busy||!items||items.length>=5} onChange={e=>void upload(e.target.files?.[0])}/></label>
-      <p className="text-[10px] text-[var(--soft)]">{t('Только для пары · до 512 КБ · максимум 5 файлов')}</p>
-      <AsyncState q={q} />
-      {items?.map(r=><div key={r.id} className="flex gap-2 items-center text-xs"><span className="min-w-0 flex-1 truncate">{r.filename}</span><button className="underline" disabled={busy} onClick={()=>void download(r.id)}>{t('Скачать')}</button><button className="underline text-[var(--rose-deep)]" disabled={busy} onClick={()=>void remove(r.id)}>{t('Удалить')}</button></div>)}
-      {error&&<p role="alert" className="text-xs text-[var(--rose-deep)]">{error}</p>}
-    </div></details>
+  /* Удаление безвозвратно — со второго нажатия, как у задач; в свадьбе «только чтение»
+     кнопки нет в работе (ревью 018, BF-05). Файла уже нет (удалил партнёр, повтор после
+     обрыва) — не ошибка: список перечитывается. */
+  const remove = async (id: string) => {
+    if (busy || disabled) return
+    setBusy('delete:' + id); setError(null)
+    try { await deletePaymentReceipt(weddingId, paymentId, id) }
+    catch (e) { if (!(e instanceof ApiError && e.status === 404)) setError(explainError(e)) }
+    finally { setBusy(null); setConfirmDelete(null); q.reload() }
+  }
+  return <div className="mt-1 space-y-2">
+    <AsyncState q={q} />
+    {data && (data.uploadEnabled
+      ? <>
+        <label className={button + ' inline-flex items-center bg-[var(--bg)] focus-within:ring-2 focus-within:ring-[var(--rose)] ' + (canUpload ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed')}
+          aria-disabled={!canUpload}>
+          {busy === 'upload' ? t('Загружаем…') : t('Прикрепить файл')}
+          <input className="sr-only" type="file" accept={RECEIPT_TYPES.join(',')} disabled={!canUpload} onChange={e => void upload(e.currentTarget)} />
+        </label>
+        <p className="text-[10px] text-[var(--soft)]">{t('Только для пары · до 512 КБ · максимум 5 файлов')}{' '}{items && <>· {t('прикреплено')}: <span className="tabular">{items.length}</span></>}</p>
+      </>
+      : <p className="text-xs text-[var(--soft)]">{t('Загрузка подтверждений пока не включена на сервере — прикреплённые раньше файлы можно скачать и удалить.')}</p>)}
+    {items?.map(r => <div key={r.id} className="flex flex-wrap gap-x-3 gap-y-1 items-center text-xs">
+      <span className="min-w-0 flex-1 truncate">{r.filename}</span>
+      <button className="underline min-h-8" aria-label={`${t('Скачать')}: ${r.filename}`} disabled={!!busy} onClick={() => void download(r.id)}>{busy === 'download:' + r.id ? t('Скачиваем…') : t('Скачать')}</button>
+      {confirmDelete === r.id
+        ? <button className="underline font-bold text-[var(--rose-deep)] min-h-8" aria-label={`${t('Удалить?')} ${r.filename}`} disabled={!!busy || disabled} onClick={() => void remove(r.id)}>{busy === 'delete:' + r.id ? t('Удаляем…') : t('Удалить?')}</button>
+        : <button className="underline text-[var(--rose-deep)] min-h-8" aria-label={`${t('Удалить')}: ${r.filename}`} disabled={!!busy || disabled} onClick={() => setConfirmDelete(r.id)}>{t('Удалить')}</button>}
+    </div>)}
+    {error && <p role="alert" className="text-xs text-[var(--rose-deep)]">{error}</p>}
+  </div>
 }
