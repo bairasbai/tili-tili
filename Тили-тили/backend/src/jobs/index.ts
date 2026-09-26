@@ -2,6 +2,7 @@ import { Queue, Worker, type Job } from 'bullmq'
 import type { FastifyInstance } from 'fastify'
 import type { Queryable } from '../plugins/db.js'
 import { sendDuePushes } from '../notify/push.js'
+import { sendTaskReminders } from '../notify/task-notifications.js'
 import { notify, notifyWedding } from '../notify/notify.js'
 import { recomputeAllRatings } from '../reviews/rating.js'
 import { reportJobFailure } from '../plugins/sentry.js'
@@ -53,10 +54,11 @@ export async function cleanup(app: FastifyInstance): Promise<Record<string, numb
   /* Прочитанное уведомление старше 90 дней никому не нужно, а таблица
    * растёт от каждого сообщения в чате. Это ERR-0041 в другом месте:
    * журнал рассылок рос ровно так же. Непрочитанное не трогаем — человек
-   * его ещё не видел. */
+   * его ещё не видел. Отменённые task-уведомления тоже удаляются через
+   * 90 дней: они скрыты из inbox, но до этого сохраняют потраченный push-лимит. */
   await drop(
     'notifications',
-    "delete from notifications where read_at is not null and read_at < now() - interval '90 days'",
+    "delete from notifications where (read_at is not null and read_at < now() - interval '90 days') or cancelled_at < now() - interval '90 days'",
   )
   /* Архив отменённых свадеб — отдельным изолированным шагом.
    *
@@ -790,6 +792,7 @@ async function runTick(app: FastifyInstance, name: string): Promise<unknown> {
   if (name === 'holds') return { expired: await expireStaleHolds(app), reminded: await remindExpiringHolds(app) }
   if (name === 'dayx-open') return announceOpenedDayChats(app)
   if (name === 'digest') return weeklyDigest(app)
+  if (name === 'task-reminders') return sendTaskReminders(app)
   if (name === 'deal-events') return announceDealEvents(app)
   if (name === 'rsvp-digest') return rsvpDigest(app)
   if (name === 'ratings') return recomputeAllRatings(app.db)
@@ -809,6 +812,7 @@ const SCHEDULE: { name: string; every?: number; pattern?: string }[] = [
   // Созревшие push разъезжаются раз в минуту: откладывать дальше значит
   // превращать «сдвинули тайминг» в новость вчерашнего дня.
   { name: 'push', every: 60_000 },
+  { name: 'task-reminders', every: 60_000 },
   { name: 'cleanup', every: 60 * 60_000 },
   // Истечение брони и напоминание за 12 часов — один проход.
   { name: 'holds', every: 60 * 60_000 },

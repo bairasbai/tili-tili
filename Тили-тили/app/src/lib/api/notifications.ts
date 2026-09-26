@@ -35,6 +35,9 @@ export const markAllNotificationsRead = () => api.post('/notifications/read-all'
 export function notificationRoute(link?: string | null, opts: { vendor?: boolean } = {}): string | null {
   if (!link) return null
   const vendor = !!opts.vendor
+  const task = /^\/wedding\/checklist\?task=([0-9a-f-]{36})&wedding=([0-9a-f-]{36})$/i.exec(link)
+  // The target wedding is resolved by the task API's membership check, not by active UI mode.
+  if (task) return link
   const chat = /^\/chats\/([\w-]+)$/.exec(link)
   /* У подрядчика переписка живёт в кабинете (`/vendor-app/chats`, фича 007):
      маршрут пары открывал ему экран с чужой навигацией (ревью 015). */

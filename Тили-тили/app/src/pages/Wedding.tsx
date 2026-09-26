@@ -1,5 +1,5 @@
 import { createElement, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
@@ -643,8 +643,25 @@ export function Budget() {
 const PERIOD_LABEL: Record<string, string> = { '9': 'За 9 мес', '6': 'За 6 мес', '3': 'За 3 мес', '1': 'За 1 мес' }
 
 export function Checklist() {
-  const { weddingId, weddingDate } = useStore()
-  const [period, setPeriod] = useState('9')
+  const store = useStore()
+  const [params] = useSearchParams()
+  const linkedWedding = params.get('wedding')
+  const weddingId = linkedWedding && /^[0-9a-f-]{36}$/i.test(linkedWedding) ? linkedWedding : store.weddingId
+  const linkedTask = params.get('task')
+  // A second notification can change only the query string on this same route.
+  // Key the editor session by its target so filters and drafts cannot point at
+  // the previous task/wedding. Reloading the URL uses the same initial target.
+  return <ChecklistContent key={JSON.stringify([weddingId, linkedTask])}
+    weddingId={weddingId} linkedWedding={linkedWedding} linkedTask={linkedTask} />
+}
+
+function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
+  weddingId: string | null; linkedWedding: string | null; linkedTask: string | null
+}) {
+  const store = useStore()
+  const linkedQ = useApi(() => weddingId && linkedWedding ? getWedding(weddingId) : Promise.resolve(null), [weddingId, linkedWedding])
+  const weddingDate = linkedWedding ? linkedQ.data?.date ?? null : store.weddingDate
+  const [period, setPeriod] = useState(linkedTask ? 'all' : '9')
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
@@ -675,7 +692,7 @@ export function Checklist() {
    * маршрута нет: заметок у задачи в контракте нет, и экран из двух строк не
    * стоит перехода. Галочка при этом осталась галочкой — своей кнопкой слева.
    */
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(linkedTask)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   /* Поля контракта опциональны — приводим один раз здесь, чтобы дальше по
@@ -688,6 +705,7 @@ export function Checklist() {
     due: x.due ?? null,
     dueMode: x.dueMode ?? 'relative',
     assignee: x.assignee ?? null,
+    reminderDaysBefore: x.reminderDaysBefore ?? null, reminderTime: x.reminderTime ?? '09:00',
   }))
   const visibleTasks = mineOnly ? (meReady ? allTasks.filter(x => x.assignee?.userId === meQ.data!.id) : [])
     : unassignedOnly ? allTasks.filter(x => !x.assignee) : allTasks
@@ -724,11 +742,12 @@ export function Checklist() {
     setRenaming(null)
   }, id)
   const addTask = () => void write(async () => {
-    if (!title.trim()) return
+    if (!title.trim() || (newPlan.reminderDaysBefore != null && !newPlan.reminderTime)) return
     await addTaskApi(weddingId!, {
       title: title.trim(),
       period: period === 'all' ? '9' : period,
       dueMode: newPlan.dueMode,
+      ...(newPlan.reminderDaysBefore != null ? { reminderDaysBefore: newPlan.reminderDaysBefore, reminderTime: newPlan.reminderTime ?? '09:00' } : {}),
       ...(newPlan.due ? { due: newPlan.due } : newPlan.dueMode === 'fixed' ? { due: null } : {}),
       ...(membersReady && newPlan.assigneeId ? { assigneeId: newPlan.assigneeId } : {}),
     })
@@ -800,7 +819,7 @@ export function Checklist() {
               hasWeddingDate={!!weddingDate} disabled={!!busyId || q.refreshing} />
             <div className="flex gap-2.5 mt-3">
               <button onClick={() => setAdding(false)} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-              <button disabled={!!busyId || q.refreshing || !title.trim()} onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
+              <button disabled={!!busyId || q.refreshing || !title.trim() || (newPlan.reminderDaysBefore != null && !newPlan.reminderTime)} onClick={addTask} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
             </div>
           </div>
         )}

@@ -5,6 +5,7 @@ import type { Queryable } from '../plugins/db.js'
 import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { assertRealDate } from '../wedding/dates.js'
+import { notifyTaskAssignment } from '../notify/task-notifications.js'
 
 type TaskWrite = components['schemas']['TaskPatch']
 type TaskCreate = components['schemas']['TaskCreate']
@@ -13,13 +14,15 @@ interface TaskRow {
   id: string; title: string; period: string | null; done_at: Date | null; source: string
   kind: string; due: string | null; due_mode: DueMode
   assignee_id: string | null; assignee_name: string | null
+  reminder_days_before: number | null; reminder_time: string
 }
 const COLUMNS = `t.id, t.title, t.period, t.done_at, t.source, t.kind, t.due::text as due,
-  t.due_mode, t.assignee_id, u.name as assignee_name`
+  t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time`
 const toTask = (r: TaskRow) => ({
   id: r.id, title: r.title, period: r.period, done: r.done_at !== null,
   custom: r.source !== 'system', due: r.due, dueMode: r.due_mode,
   assignee: r.assignee_id ? { userId: r.assignee_id, name: r.assignee_name } : null,
+  reminderDaysBefore: r.reminder_days_before, reminderTime: r.reminder_time,
 })
 const has = (body: TaskWrite, field: keyof TaskWrite) => Object.prototype.hasOwnProperty.call(body, field)
 
@@ -114,10 +117,15 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       const plan = await deadline(client, { ...body, dueMode: body.dueMode ?? (has(body, 'due') ? 'fixed' : 'relative') }, date,
         { due: null, due_mode: 'relative', period: body.period })
       const id = uuidv7()
+      if (body.reminderDaysBefore != null && (!plan.due || !body.assigneeId)) {
+        throw validationFailed({ reminderDaysBefore: 'для напоминания нужны срок и ответственный' })
+      }
       await client.query(
-        `insert into tasks (id,wedding_id,title,period,source,sort,due,due_mode,assignee_id)
-         values ($1,$2,$3,$4,'user',(select coalesce(max(sort),-1)+1 from tasks where wedding_id=$2),$5::date,$6,$7)`,
-        [id, weddingId, title, body.period, plan.due, plan.mode, body.assigneeId ?? null])
+        `insert into tasks (id,wedding_id,title,period,source,sort,due,due_mode,assignee_id,reminder_days_before,reminder_time)
+         values ($1,$2,$3,$4,'user',(select coalesce(max(sort),-1)+1 from tasks where wedding_id=$2),$5::date,$6,$7,$8,$9::time)`,
+        [id, weddingId, title, body.period, plan.due, plan.mode, body.assigneeId ?? null,
+          body.reminderDaysBefore ?? null, body.reminderTime ?? '09:00'])
+      await notifyTaskAssignment(client, id, request.caller!.userId, null)
       return load(client, weddingId, id)
     })
     return reply.code(201).send(result)
@@ -131,19 +139,27 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       const weddingId = request.member!.weddingId
       const date = await lockContext(client, request, body.assigneeId)
       const { rows } = await client.query<TaskRow>(
-        'select id,kind,due::text as due,due_mode,period from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
+        'select id,kind,due::text as due,due_mode,period,assignee_id,reminder_days_before from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
       const previous = rows[0]
       if (!previous) throw notFound('Задача не найдена')
-      if (previous.kind !== 'checklist' && (has(body, 'due') || has(body, 'dueMode') || has(body, 'assigneeId'))) {
+      if (previous.kind !== 'checklist' && (has(body, 'due') || has(body, 'dueMode') || has(body, 'assigneeId') || has(body, 'reminderDaysBefore') || has(body, 'reminderTime'))) {
         throw validationFailed({ taskId: 'назначение и сроки доступны только задачам чек-листа' })
       }
       const plan = await deadline(client, body, date, previous)
+      const assignee = has(body, 'assigneeId') ? body.assigneeId : previous.assignee_id
+      if (body.reminderDaysBefore != null && (!plan.due || !assignee)) {
+        throw validationFailed({ reminderDaysBefore: 'для напоминания нужны срок и ответственный' })
+      }
       await client.query(
         `update tasks set title=coalesce($3,title),
            done_at=case when $4::boolean is null then done_at when $4 then coalesce(done_at,now()) else null end,
-           due=$5::date, due_mode=$6, assignee_id=case when $7::boolean then $8::uuid else assignee_id end
+           due=$5::date, due_mode=$6, assignee_id=case when $7::boolean then $8::uuid else assignee_id end,
+           reminder_days_before=case when $9::boolean then $10::smallint else reminder_days_before end,
+           reminder_time=coalesce($11::time,reminder_time)
          where id=$1 and wedding_id=$2`,
-        [taskId, weddingId, body.title?.trim() ?? null, body.done ?? null, plan.due, plan.mode, has(body, 'assigneeId'), body.assigneeId ?? null])
+        [taskId, weddingId, body.title?.trim() ?? null, body.done ?? null, plan.due, plan.mode, has(body, 'assigneeId'), body.assigneeId ?? null,
+          has(body, 'reminderDaysBefore'), body.reminderDaysBefore ?? null, body.reminderTime ?? null])
+      await notifyTaskAssignment(client, taskId, request.caller!.userId, previous.assignee_id)
       return load(client, weddingId, taskId)
     })
   })

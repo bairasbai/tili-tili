@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.42.0
+  version: 0.43.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -5285,6 +5285,16 @@ components:
           enum: [relative, fixed]
           description: Без явной даты — relative; с явной датой или null — fixed по умолчанию. Relative с точной датой требует даты свадьбы.
         assigneeId: { type: string, format: uuid, nullable: true }
+        reminderDaysBefore:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 30
+          description: Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание.
+        reminderTime:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          description: Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет.
     TaskPatch:
       type: object
       additionalProperties: false
@@ -5305,6 +5315,16 @@ components:
           format: uuid
           nullable: true
           description: Живой участник этой свадьбы с ролью couple/helper/coordinator. Null снимает назначение; пропуск сохраняет.
+        reminderDaysBefore:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 30
+          description: Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание.
+        reminderTime:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          description: Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет.
     Task:
       type: object
       properties:
@@ -5325,6 +5345,16 @@ components:
           properties:
             userId: { type: string, format: uuid }
             name: { type: string, nullable: true }
+        reminderDaysBefore:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 30
+          description: Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание.
+        reminderTime:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          description: Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет.
     Chat:
       type: object
       properties:

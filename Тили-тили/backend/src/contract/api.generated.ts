@@ -9143,6 +9143,10 @@ export interface components {
             dueMode?: "relative" | "fixed";
             /** Format: uuid */
             assigneeId?: string | null;
+            /** @description Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание. */
+            reminderDaysBefore?: number | null;
+            /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
+            reminderTime?: string;
         };
         TaskPatch: {
             title?: string;
@@ -9162,6 +9166,10 @@ export interface components {
              * @description Живой участник этой свадьбы с ролью couple/helper/coordinator. Null снимает назначение; пропуск сохраняет.
              */
             assigneeId?: string | null;
+            /** @description Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание. */
+            reminderDaysBefore?: number | null;
+            /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
+            reminderTime?: string;
         };
         Task: {
             id?: string;
@@ -9181,6 +9189,10 @@ export interface components {
                 userId?: string;
                 name?: string | null;
             } | null;
+            /** @description Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание. */
+            reminderDaysBefore?: number | null;
+            /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
+            reminderTime?: string;
         };
         Chat: {
             id?: string;

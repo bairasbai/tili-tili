@@ -2039,4 +2039,11 @@ Object.assign(EN, {
   'Обновить приложение': 'Update the app',
   'Не согласен — удалить аккаунт': 'I disagree — delete my account',
   'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить': 'We have updated our documents — confirm the new version to continue',
+  'Напомнить ответственному': 'Remind the assignee',
+  'Для напоминания нужны срок и ответственный': 'A deadline and an assignee are required for a reminder',
+  'За сколько дней до срока': 'Days before the deadline',
+  'В день срока': 'On the due date',
+  'дн. до срока': 'days before the deadline',
+  'Время напоминания': 'Reminder time',
+  'По часовому поясу ответственного; тихие часы и настройка уведомлений учитываются': 'In the assignee’s time zone; quiet hours and notification preferences apply',
 })
