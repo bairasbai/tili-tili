@@ -1,7 +1,6 @@
 import type { Db } from '../plugins/db.js'
 import { loadSlots } from '../deals/repo.js'
-import { COMMITTED_WITH_HOLD } from '../deals/state.js'
-import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_CATEGORIES, BUDGET_FALLBACK } from '../wedding/templates.js'
+import { loadBudget } from '../wedding/budget.js'
 
 /*
  * Контекст свадьбы для модели (фича 010, План §18 «в LLM уходят только данные
@@ -159,35 +158,21 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
     lines.push(`- ${safeText(s.label)}: ${STATE_RU[s.deal.state] ?? s.deal.state} — ${who}${own}${price}${s.deal.packageName ? `, пакет «${safeText(s.deal.packageName)}»` : ''}`)
   }
 
-  /* Бюджет — та же формула, что у GET …/budget: доля от общего + обязательства по сделкам + ручные статьи. */
-  const total = Number(wedding.budget_total ?? 0)
-  const { rows: committed } = await db.query<{ category_id: string; amount: string }>(
-    `select s.category_id, sum(d.price)::text as amount
-       from deals d join slots s on s.id = d.slot_id
-      where d.wedding_id = $1 and d.state = any($2) and d.price is not null
-      group by s.category_id`,
-    [weddingId, COMMITTED_WITH_HOLD],
-  )
-  const { rows: items } = await db.query<{ title: string; category_id: string; amount: string }>(
-    'select title, category_id, amount::text as amount from budget_items where wedding_id = $1 order by created_at',
-    [weddingId],
-  )
-  const fromSlots = new Map<string, number>()
-  for (const row of committed) {
-    const id = BUDGET_BY_VENDOR_CATEGORY[row.category_id] ?? BUDGET_FALLBACK
-    fromSlots.set(id, (fromSlots.get(id) ?? 0) + Number(row.amount))
-  }
+  /* The same budget and payment model feeds UI, tips and this context. */
+  const budget = await loadBudget(db, weddingId)
+  const total = budget.total.amount
   lines.push('', '## Бюджет по категориям (план — доля от общего; факт — сделки и ручные статьи)')
-  let spentAll = 0
-  for (const c of BUDGET_CATEGORIES) {
-    const manual = items.filter((i) => i.category_id === c.id)
-    const spent = (fromSlots.get(c.id) ?? 0) + manual.reduce((sum, i) => sum + Number(i.amount), 0)
-    spentAll += spent
-    const planned = Math.round(total * c.share)
+  for (const c of budget.categories) {
+    const spent = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
+    const planned = c.planned.amount
     const share = planned > 0 ? ` (${Math.round((spent / planned) * 100)}% плана)` : ''
-    lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}, факт ${rub(spent)}${share}${manual.length ? `; ручные статьи: ${manual.map((i) => `${safeText(i.title)} ${rub(i.amount)}`).join(', ')}` : ''}`)
+    lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}, факт ${rub(spent)}${share}${c.items.length ? `; ручные статьи: ${c.items.map((i) => `${safeText(i.title)} ${rub(i.amount.amount)}`).join(', ')}` : ''}`)
   }
-  lines.push(`Итого обязательств: ${rub(spentAll)}${total ? ` из ${rub(total)}; резерв на непредвиденное — 10% (${rub(Math.round(total * 0.1))})` : ''}`)
+  lines.push(`Итого обязательств: ${rub(budget.spent.amount)}${total ? ` из ${rub(total)}; резерв на непредвиденное — 10% (${rub(budget.reserve.amount)})` : ''}`)
+  const financial = budget.paymentSummary
+  lines.push(`По активным сделкам: обязательства ${rub(financial.committed.amount)}, отмечено оплат за вычетом возвратов ${rub(financial.recorded.amount)}, осталось ${rub(financial.remaining.amount)}.`)
+  lines.push(`Без привязки к активным этапам ${rub(financial.unallocated.amount)}; неизвестных цен: ${financial.unknownPrices}.`)
+  lines.push('Плановые этапы не являются расходами или доказательством перевода. Отмеченные оплаты — записи пользователя, не подтверждение банка. Ручные статьи бюджета не означают состоявшийся платёж.')
 
   /* Задачи — невыполненные со сроком; просроченные отмечены. */
   const { rows: tasks } = await db.query<{ title: string; due: string | null; done_at: Date | null; kind: string | null }>(

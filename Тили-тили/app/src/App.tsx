@@ -46,6 +46,7 @@ const VendorDetail = lazy(() => load.search().then(m => ({ default: m.VendorDeta
 
 const WeddingTeam = lazy(() => load.wedding().then(m => ({ default: m.WeddingTeam })))
 const SlotDetail = lazy(() => load.wedding().then(m => ({ default: m.SlotDetail })))
+const PaymentSchedule = lazy(() => import('./pages/PaymentSchedule'))
 const Budget = lazy(() => load.wedding().then(m => ({ default: m.Budget })))
 const Checklist = lazy(() => load.wedding().then(m => ({ default: m.Checklist })))
 const Timeline = lazy(() => load.wedding().then(m => ({ default: m.Timeline })))
@@ -236,6 +237,7 @@ function Shell() {
           <Route path="/wedding" element={<WeddingTeam />} />
           <Route path="/wedding/slot/:id" element={<SlotDetail />} />
           <Route path="/wedding/budget" element={<Budget />} />
+              <Route path="/wedding/payments" element={<PaymentSchedule />} />
           <Route path="/wedding/checklist" element={<Checklist />} />
           <Route path="/wedding/timeline" element={<Timeline />} />
           <Route path="/wedding/guests" element={<Guests />} />

@@ -11,6 +11,7 @@ import { registerSentry } from './plugins/sentry.js'
 import { CONTRACT_SCHEMAS } from './contract/schemas.generated.js'
 import { registerAuth } from './plugins/auth.js'
 import { authRoutes } from './routes/auth.js'
+import { paymentScheduleRoutes } from './routes/paymentSchedule.js'
 import { budgetRoutes } from './routes/budget.js'
 import { catalogRoutes } from './routes/catalog.js'
 import { dayRoutes } from './routes/day.js'
@@ -322,6 +323,7 @@ export async function buildApp(
   await app.register(offerRoutes)
   await app.register(dealRoutes)
   await app.register(budgetRoutes)
+  await app.register(paymentScheduleRoutes)
   await app.register(documentRoutes)
   await app.register(weddingLifecycleRoutes)
   await app.register(guestRoutes)

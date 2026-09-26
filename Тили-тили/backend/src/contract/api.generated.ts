@@ -9480,10 +9480,495 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/payment-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * График платежей, актуальные итоги и отметки оплат
+         * @description Только couple. Один согласованный снимок. from/to включительно (до 366 дней, по умолчанию сегодня +30); includeOverdue добавляет непогашенные просроченные этапы вне окна, includeCancelled — отменённые в окне. Максимум 10000 записей: при превышении 409 financial_history_too_large, а не тихое обрезание. Даты графика фиксированы и не сдвигаются при переносе свадьбы. Отметка пользователя не подтверждает перевод банком.
+         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    includeOverdue?: boolean;
+                    includeCancelled?: boolean;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentSchedule"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректные поля, дата или период */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Создать этап платежа
+         * @description Только couple. Этап не создаёт payment и не увеличивает смету. До 500 этапов на сделку; сумма активных этапов не выше цены. 409 stale_payment_plan / plan_over_price / payment_plan_limit. Обязателен Idempotency-Key.
+         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PaymentInstallmentCreate"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentInstallment"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректные поля, дата или период */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payment-schedule/{installmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить или отменить плановый этап
+         * @description Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой свадьбой запрещены.
+         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    installmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PaymentInstallmentPatch"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentInstallment"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректные поля, дата или период */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payment-schedule/{installmentId}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отметить полную или частичную оплату этапа
+         * @description Только couple. Та же таблица payments и предел общей цены, что у slots/pay. Idempotency-Key защищает повтор, version защищает устаревший экран. 409 stale_payment_plan, installment_overpay или overpay. Это ручная отметка, не банковская операция.
+         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    installmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PaymentInstallmentPay"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentInstallment"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректные поля, дата или период */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Привязать существующую оплату к этапу без новой записи
+         * @description Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой свадьбой запрещены.
+         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PaymentPlanLink"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentRecord"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректные поля, дата или период */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payment-schedule/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Выгрузить историю планов и оплат в CSV
+         * @description Только couple. JSON содержит имя файла и UTF-8 CSV с BOM и разделителем ;. Тип записи plan/payment различает обязательство и отметку; суммы в копейках. Возвраты со знаком минус; отменённые записи сохраняют статус. Формулы в текстовых ячейках экранируются. До 10000 записей, затем 409 без частичной выгрузки.
+         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentHistoryExport"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректные поля, дата или период */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются нулём. */
+        FinancialBalance: {
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+        };
+        /** @description Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке. */
+        PaymentSummary: {
+            committed: components["schemas"]["FinancialBalance"];
+            recorded: components["schemas"]["FinancialBalance"];
+            remaining: components["schemas"]["FinancialBalance"];
+            unallocated: components["schemas"]["FinancialBalance"];
+            inactiveDealRecorded: components["schemas"]["FinancialBalance"];
+            unknownPrices: number;
+        };
+        PaymentInstallment: {
+            /** Format: date-time */
+            cancelledAt?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dealId: string;
+            title: string;
+            amount: components["schemas"]["Money"];
+            paid: components["schemas"]["FinancialBalance"];
+            remaining: components["schemas"]["Money"];
+            /** Format: date */
+            due: string;
+            version: number;
+            /** @enum {string} */
+            status: "pending" | "partial" | "paid" | "cancelled";
+            overdue: boolean;
+            cancelReason: string | null;
+        };
+        PaymentRecord: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dealId: string;
+            /** @enum {string} */
+            kind: "deposit" | "balance" | "refund";
+            amount: components["schemas"]["Money"];
+            /** @enum {string} */
+            status: "recorded" | "confirmed" | "cancelled";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            installmentId: string | null;
+            version: number;
+        };
+        PaymentDeal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            slotId: string;
+            name: string;
+            /** @enum {string} */
+            state: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
+            price: components["schemas"]["Money"];
+            recorded: components["schemas"]["FinancialBalance"];
+            remaining: components["schemas"]["Money"];
+            planned: components["schemas"]["Money"];
+            unallocated: components["schemas"]["FinancialBalance"];
+            needsReview: boolean;
+            active: boolean;
+            canPlan: boolean;
+        };
+        PaymentSchedule: {
+            range: {
+                /** Format: date */
+                from: string;
+                /** Format: date */
+                to: string;
+                /** Format: date */
+                today: string;
+                timeZone: string;
+                includeOverdue: boolean;
+                includeCancelled: boolean;
+            };
+            readOnly: boolean;
+            summary: components["schemas"]["PaymentSummary"];
+            dueInWindow: components["schemas"]["Money"];
+            items: components["schemas"]["PaymentInstallment"][];
+            deals: components["schemas"]["PaymentDeal"][];
+            payments: components["schemas"]["PaymentRecord"][];
+            allInstallments: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                dealId: string;
+                title: string;
+                /** @enum {string} */
+                status: "pending" | "partial" | "paid" | "cancelled";
+                remaining: components["schemas"]["Money"];
+            }[];
+        };
+        PaymentHistoryExport: {
+            filename: string;
+            csv: string;
+            records: number;
+        };
+        PositivePaymentMoney: {
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+        };
+        PaymentInstallmentCreate: {
+            /** Format: uuid */
+            dealId: string;
+            title: string;
+            amount: components["schemas"]["PositivePaymentMoney"];
+            /** Format: date */
+            due: string;
+        };
+        /** @description Оптимистическая версия обязательна. Отмена допускает только version/cancelled/reason: она не меняет суммы и не создаёт возврат. После снижения цены несогласованный план исправляется явно; старый черновик получает 409. */
+        PaymentInstallmentPatch: {
+            version: number;
+            title?: string;
+            amount?: components["schemas"]["PositivePaymentMoney"];
+            /** Format: date */
+            due?: string;
+            /** @enum {boolean} */
+            cancelled?: true;
+            reason?: string;
+        };
+        PaymentInstallmentPay: {
+            version: number;
+            amount: components["schemas"]["PositivePaymentMoney"];
+        };
+        /** @description Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным. */
+        PaymentPlanLink: {
+            version: number;
+            /** Format: uuid */
+            installmentId: string | null;
+        };
         Readiness: {
             /** @enum {string} */
             status?: "ok" | "not_ready";
@@ -10045,6 +10530,7 @@ export interface components {
             readonly prebooked: boolean;
         };
         Budget: {
+            paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
             /**
