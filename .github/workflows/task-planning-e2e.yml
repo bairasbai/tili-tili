@@ -2,11 +2,11 @@ name: Task planning browser E2E
 permissions:
   contents: read
 concurrency:
-  group: task-browser-${{ github.event.pull_request.number }}
+  group: task-browser-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
   browser:
-    if: github.head_ref == 'feature/product-improvements-stage1-tasks'
+    if: github.head_ref == 'feature/product-improvements-stage1-tasks' || github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -94,6 +94,9 @@ jobs:
         retention-days: 7
         if-no-files-found: warn
 'on':
+  push:
+    branches:
+    - feature/product-improvements-stage1-tasks
   pull_request:
     branches:
     - main
