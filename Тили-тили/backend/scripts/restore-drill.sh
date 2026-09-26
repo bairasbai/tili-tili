@@ -6,16 +6,53 @@
 # время: цель RTO — четыре часа, и она проверяется, а не декларируется.
 #
 # Порядок ровно как в аварии:
-#   1. снять копию с боевой базы,
+#   1. взять копию — файл из $BACKUP_DIR (DUMP=…), а на плановой репетиции
+#      без DUMP — свежий дамп боевой базы,
 #   2. создать ЧИСТУЮ базу (не ту же самую — иначе проверка ничего не стоит),
 #   3. развернуть в неё копию,
 #   4. убедиться, что схема на месте и данные читаются.
+#
+#   DUMP="$BACKUP_DIR/tili-<время>.dump" DRILL_DB=tili_restore \
+#   ADMIN_URL=postgres://postgres:…@host:5432/postgres sh scripts/restore-drill.sh
 set -eu
 
 : "${DATABASE_URL:?нужен DATABASE_URL}"
 DRILL_DB="${DRILL_DB:-tili_drill}"
 ADMIN_URL="${ADMIN_URL:-$DATABASE_URL}"
 WORK="${WORK:-/tmp/tili-drill}"
+DUMP="${DUMP:-}"
+
+# Имя целевой базы — первым делом, до любого обращения к серверу: шаг 2 делает
+# DROP DATABASE, и DRILL_DB, совпавший с боевой базой, стёр бы её (FL-15,
+# ERR-0285). Служебные базы и имена не из [A-Za-z0-9_] (кавычки, пробелы,
+# точка с запятой попали бы в SQL) — туда же.
+SOURCE_DB="$(printf '%s' "$DATABASE_URL" | sed -e 's#^[^/]*//[^/]*/##' -e 's#[?].*$##')"
+case "$SOURCE_DB" in
+  '' | *[!A-Za-z0-9_-]*)
+    echo "ОСТАНОВКА: не разобрал имя боевой базы в DATABASE_URL (\"$SOURCE_DB\") — укажи его явно: …:5432/tili" >&2
+    exit 2
+    ;;
+esac
+case "$DRILL_DB" in
+  "$SOURCE_DB" | postgres | template0 | template1 | *[!A-Za-z0-9_]*)
+    echo "ОСТАНОВКА: DRILL_DB=\"$DRILL_DB\" — боевая ($SOURCE_DB), служебная база или недопустимое имя." >&2
+    echo "Копия разворачивается только в отдельную базу, например DRILL_DB=tili_restore" >&2
+    exit 2
+    ;;
+esac
+
+# Файл копии — тоже до проверки прав и до шага 2: не читается или не архив
+# pg_dump — останавливаемся, ничего не создав и не удалив.
+if [ -n "$DUMP" ]; then
+  if [ ! -r "$DUMP" ]; then
+    echo "ОСТАНОВКА: копия \"$DUMP\" не найдена или не читается." >&2
+    exit 2
+  fi
+  if ! pg_restore --list "$DUMP" >/dev/null; then
+    echo "ОСТАНОВКА: \"$DUMP\" — не архив pg_dump (нужен --format=custom, как у backup.sh)." >&2
+    exit 2
+  fi
+fi
 
 # Проверка прав ДО съёма копии: без неё репетиция падала на шаге 2,
 # потратив минуты на 86 МБ дампа, и оставляла оператора разбираться с ошибкой
@@ -31,11 +68,17 @@ if [ "$CAN_CREATE" != "t" ]; then
 fi
 
 START="$(date +%s)"
-mkdir -p "$WORK"
-DUMP="$WORK/drill.dump"
 
-echo "1/4 снимаю копию"
-pg_dump --format=custom --no-owner --no-privileges --file="$DUMP" "$DATABASE_URL"
+if [ -n "$DUMP" ]; then
+  echo "1/4 беру копию $DUMP"
+else
+  # Без DUMP — плановая репетиция на свежем дампе. В аварии указывай файл из
+  # $BACKUP_DIR: свежий дамп упавшей базы — не то, что нужно восстанавливать.
+  mkdir -p "$WORK"
+  DUMP="$WORK/drill.dump"
+  echo "1/4 снимаю свежую копию (DUMP не задан)"
+  pg_dump --format=custom --no-owner --no-privileges --file="$DUMP" "$DATABASE_URL"
+fi
 
 echo "2/4 создаю чистую базу $DRILL_DB"
 # Опции — ДО адреса базы: psql на Windows не переставляет аргументы, и опции
