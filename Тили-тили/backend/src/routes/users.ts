@@ -432,7 +432,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
      * без них было бы неправдой.
      */
     const { rows: weddingRows } = await db().query<{ id: string; role: string; budget_total: string | null }>(
-      `select w.id, w.title, w.date::text as date, w.tz, w.style, w.venue,
+      `select w.id, w.title, w.date::text as date, w.tz, w.style, w.venue, w.format, w.planner,
               w.guests_planned, w.budget_total::text as budget_total, w.currency,
               w.archived_at, w.cancelled_at,
               m.role, m.joined_at, c.name as city, c.region

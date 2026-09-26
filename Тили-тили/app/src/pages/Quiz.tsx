@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
-import { ChevronLeft, Check, MapPin, Search, CalendarDays, Heart } from 'lucide-react'
+import { ChevronLeft, Check, MapPin, Search, CalendarDays, Heart, UserRound } from 'lucide-react'
 import { useStore, EMPTY_QUIZ, type QuizAnswers } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { CityPicker } from '@/components/CityPicker'
 import { DatePicker } from '@/components/DatePicker'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
-import { ApiError } from '@/lib/api/client'
+import { ApiError, isAuthorized } from '@/lib/api/client'
+import { getMe, patchMe } from '@/lib/api/auth'
+import { useApi } from '@/lib/api/useApi'
+import type { components } from '@/lib/api/schema'
 import { budgetFromRange, createWedding, guestsFromRange, listMyWeddings } from '@/lib/api/wedding'
 
 interface Step {
@@ -50,6 +53,35 @@ const CITY_STEP = 1
 /* Шаг имени — последний: добавленный в конец, он не сдвигает индексы
    прежних ответов, на которые опирается сборка `collected`. */
 const NAME_STEP = 8
+/* Шаг «Что уже забронировано?» — единственный с выбором нескольких. */
+const BOOKED_STEP = 7
+
+/*
+ * Подпись варианта → код для сервера (фича 018). Сервер получает коды, а не
+ * русские строки: подпись — ключ словаря и переводится на экране, а по коду
+ * сервер меняет мозаику, тайминг и чек-лист новой свадьбы. Ключи — те же
+ * строки, что в `steps` ниже: переименовали вариант — поправьте и здесь,
+ * иначе ответ перестанет доходить (тест `quizAnswers.test.tsx`, К3).
+ */
+const FORMAT_CODE: Record<string, components['schemas']['WeddingFormat']> = {
+  'Классика: ЗАГС + банкет': 'classic',
+  'Выездная церемония': 'outdoor',
+  'Камерная свадьба': 'intimate',
+  'Банкет+ на 2 дня': 'two_day',
+}
+const PLANNER_CODE: Record<string, components['schemas']['WeddingPlanner']> = {
+  'Сами': 'self',
+  'С помощью агентства': 'agency',
+  'Ищем координатора': 'coordinator',
+}
+const PREBOOKED_CODE: Record<string, components['schemas']['PrebookedCategory']> = {
+  'Площадка': 'venue',
+  'Фотограф': 'photo',
+  'Видеограф': 'video',
+  'Ведущий': 'host',
+}
+/* «Пока ничего» — ответ, а не вариант брони: он исключает остальные, и они — его. */
+const NOTHING_BOOKED = 'Пока ничего'
 
 /*
  * Ключи — русские строки, перевод только при отрисовке (`t()` в разметке).
@@ -71,11 +103,12 @@ const steps: Step[] = [
     desc: Object.fromEntries(STYLES),
   },
   { q: 'Кто планирует?', opts: ['Сами', 'С помощью агентства', 'Ищем координатора'] },
-  { q: 'Что уже забронировано?', multi: true, opts: ['Площадка', 'Фотограф', 'Видеограф', 'Ведущий', 'Пока ничего'] },
-  /* Имя партнёра спрашивается последним и обязательно: из него складывается
-     название свадьбы («Алина ♥ Тимур»), и без него сервер её не создаст.
+  { q: 'Что уже забронировано?', multi: true, opts: ['Площадка', 'Фотограф', 'Видеограф', 'Ведущий', NOTHING_BOOKED] },
+  /* Имена спрашиваются последними и обязательно: из них складывается название
+     свадьбы («Алина ♥ Тимур»). Своё имя — тоже: после входа по SMS в профиле
+     его нет, и свадьба называлась бы одним именем партнёра (фича 018).
      В Плане ч. 6 этого шага нет — расхождение вынесено владельцу. */
-  { q: 'Как зовут вашего партнёра?', hint: 'Из имён сложится название вашей свадьбы', opts: [] },
+  { q: 'Как вас зовут?', hint: 'Из имён сложится название вашей свадьбы', opts: [] },
 ]
 
 export default function Quiz() {
@@ -87,6 +120,13 @@ export default function Quiz() {
   const [datePicker, setDatePicker] = useState(false)
   const [date, setDate] = useState<string | null>(null)
   const [partner, setPartner] = useState('')
+  /* Своё имя: пока его не трогали — то, что в профиле. Производная, а не эффект с
+     `setState`: профиль может прийти, когда человек уже печатает, и тогда
+     напечатанное важнее. */
+  const me = useApi(() => (isAuthorized() ? getMe() : Promise.resolve(null)), [])
+  const profileName = me.data?.name?.trim() ?? ''
+  const [ownEdit, setOwnEdit] = useState<string | null>(null)
+  const ownName = ownEdit ?? profileName
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /* «Сегодня» снимается один раз за жизнь экрана: время в теле компонента
@@ -98,13 +138,19 @@ export default function Quiz() {
   const sel = answers[i] ?? []
   const last = i === total - 1
   // На шаге даты «дальше» открыт и без даты: «ещё не решили» — тоже ответ.
-  const canNext = i === DATE_STEP ? date !== null || sel.includes(NOT_DECIDED) : i === CITY_STEP ? cityDone : i === NAME_STEP ? partner.trim().length > 0 : sel.length > 0
+  const canNext = i === DATE_STEP ? date !== null || sel.includes(NOT_DECIDED)
+    : i === CITY_STEP ? cityDone
+    : i === NAME_STEP ? ownName.trim().length > 0 && partner.trim().length > 0
+    : sel.length > 0
 
   const pick = (o: string) => {
     setAnswers(a => {
       const cur = a[i] ?? []
-      if (s?.multi) return { ...a, [i]: cur.includes(o) ? cur.filter(x => x !== o) : [...cur, o] }
-      return { ...a, [i]: [o] }
+      if (!s?.multi) return { ...a, [i]: [o] }
+      if (cur.includes(o)) return { ...a, [i]: cur.filter(x => x !== o) }
+      /* «Пока ничего» снимает выбранное, выбранное — «Пока ничего». */
+      if (o === NOTHING_BOOKED) return { ...a, [i]: [o] }
+      return { ...a, [i]: [...cur.filter(x => x !== NOTHING_BOOKED), o] }
     })
   }
   const next = () => {
@@ -136,10 +182,15 @@ export default function Quiz() {
       format: one(4),
       style: one(5),
       planner: one(6),
-      booked: answers[7] ?? [],
+      booked: answers[BOOKED_STEP] ?? [],
     }
     finishOnboarding(collected)
     try {
+      /* Название свадьбы сервер собирает из имени в профиле, поэтому имя уходит
+         туда первым — и только если в профиле его нет или его изменили. Не
+         сохранилось — свадьбу не заводим: она называлась бы одним партнёром. */
+      const own = ownName.trim()
+      if (own !== profileName) await patchMe({ name: own })
       const id = await createWedding({
         partnerName: partner.trim(),
         city: { name: city, region: cityRegion },
@@ -147,6 +198,10 @@ export default function Quiz() {
         guestsPlanned: guestsFromRange(collected.guests),
         budgetTotal: budgetFromRange(collected.budget),
         style: collected.style ?? undefined,
+        /* Коды, а не подписи (фича 018). Пропущенный вопрос не шлёт ничего — как старый клиент. */
+        format: collected.format ? FORMAT_CODE[collected.format] : undefined,
+        planner: collected.planner ? PLANNER_CODE[collected.planner] : undefined,
+        prebooked: answers[BOOKED_STEP] ? collected.booked.flatMap(b => PREBOOKED_CODE[b] ?? []) : undefined,
         quizAnswers: { ...collected },
       })
       setWeddingId(id)
@@ -222,20 +277,32 @@ export default function Quiz() {
         </div>
       ) : i === NAME_STEP ? (
         <div key="name" className="flex-1 px-6 pt-8 fade-up">
-          <h1 className="font-serif-d text-[30px] leading-tight">{t('Как зовут вашего партнёра?')}</h1>
+          <h1 className="font-serif-d text-[30px] leading-tight">{t('Как вас зовут?')}</h1>
           <p className="text-[12.5px] text-[var(--soft)] mt-2">{t('Из имён сложится название вашей свадьбы')}</p>
           <div className="card-s flex items-center gap-3 px-5 py-4 mt-6">
+            <UserRound size={16} className="text-[var(--rose-ink)]" />
+            <input
+              value={ownName}
+              onChange={e => setOwnEdit(e.target.value.slice(0, 120))}
+              autoComplete="given-name"
+              placeholder={t('Ваше имя')}
+              aria-label={t('Ваше имя')}
+              className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]"
+            />
+          </div>
+          <div className="card-s flex items-center gap-3 px-5 py-4 mt-2.5">
             <Heart size={16} className="text-[var(--rose-ink)]" />
             <input
               value={partner}
               onChange={e => setPartner(e.target.value.slice(0, 120))}
               autoComplete="off"
-              placeholder={t('Имя')}
+              placeholder={t('Имя партнёра')}
+              aria-label={t('Имя партнёра')}
               className="bg-transparent outline-none text-[15px] w-full placeholder:text-[var(--soft2)]"
             />
           </div>
           <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">
-            {t('💡 Ваше имя подставится из профиля — его можно изменить в настройках.')}
+            {t('💡 Ваше имя сохранится в профиле — его можно изменить в настройках.')}
           </p>
         </div>
       ) : i === CITY_STEP ? (

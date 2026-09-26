@@ -14,6 +14,7 @@ import {
   DEAL_COLUMNS,
   DEAL_JOINS,
   PAID_SUM,
+  SLOT_COLUMNS,
   holdVendorDate,
   loadSlot,
   loadSlots,
@@ -269,11 +270,13 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           )
           // Захват слота условием в UPDATE, а не «прочитали и записали»:
           // два одновременных «Забронировать» иначе оба видят пустой слот,
-          // оба вешают на него сделку, и бюджет считает обе.
-          const taken = await client.query('update slots set deal_id = $2 where id = $1 and deal_id is null', [
-            slotId,
-            dealId,
-          ])
+          // оба вешают на него сделку, и бюджет считает обе. Отметка «уже
+          // забронировано» (фича 018) снимается этим же UPDATE: сделка и
+          // отметка вместе запрещены CHECK базы.
+          const taken = await client.query(
+            'update slots set deal_id = $2, prebooked_at = null where id = $1 and deal_id is null',
+            [slotId, dealId],
+          )
           if (taken.rowCount === 0) {
             throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
           }
@@ -442,10 +445,11 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
            values ($1, $2, $3, $4, $5, 'booked', $6, 'RUB', now())`,
           [dealId, weddingId, slotId, body.vendorName, body.phone ?? null, body.price.amount],
         )
-        const taken = await client.query('update slots set deal_id = $2 where id = $1 and deal_id is null', [
-          slotId,
-          dealId,
-        ])
+        // Отметка «уже забронировано» снимается тем же UPDATE, что у брони из каталога (фича 018).
+        const taken = await client.query(
+          'update slots set deal_id = $2, prebooked_at = null where id = $1 and deal_id is null',
+          [slotId, dealId],
+        )
         if (taken.rowCount === 0) {
           throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
         }
@@ -493,6 +497,23 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
        * выполненная работа своего подрядчика снималась с плитки (D2-02). */
       await cancelDeal(client, slot.deal_id!, { actorId: request.caller!.userId })
     })
+    return reply.code(204).send()
+  })
+
+  /**
+   * «Нет, ещё ищем» — снять отметку «уже забронировано вне приложения» (фича 018).
+   *
+   * Пара ответила в квизе, что подрядчик найден, а потом передумала: слот
+   * становится обычным пустым. Идемпотентно — слот без отметки тоже 204:
+   * повтор нажатия на плохой связи не должен читаться как ошибка. Права — как
+   * у брони (матрица `slots/:slotId/…`, DELETE только паре); чужой слот — 404
+   * через `slotOf`, как у остальных дверей слота.
+   */
+  app.delete('/weddings/:weddingId/slots/:slotId/prebooked', async (request, reply) => {
+    const weddingId = request.member!.weddingId
+    const { slotId } = request.params as { slotId: string }
+    await slotOf(db(), weddingId, slotId)
+    await db().query('update slots set prebooked_at = null where id = $1 and wedding_id = $2', [slotId, weddingId])
     return reply.code(204).send()
   })
 
@@ -562,7 +583,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     await db().query('update external_invites set accepted_at = coalesce(accepted_at, now()) where token = $1', [token])
 
     const { rows: slotRows } = await db().query<SlotRow>(
-      `select s.id as slot_id, s.category_id, s.label, s.sort, s.deal_id, ${DEAL_COLUMNS}
+      `select ${SLOT_COLUMNS}, ${DEAL_COLUMNS}
          from slots s left join deals d on d.id = s.deal_id ${DEAL_JOINS}
         where s.id = $1`,
       [invite.slot_id],

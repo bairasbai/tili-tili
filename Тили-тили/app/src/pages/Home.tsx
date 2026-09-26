@@ -6,6 +6,8 @@ import { isAuthorized } from '@/lib/api/client'
 import { getBudget, getGuests, getTasks, getTips, getWedding } from '@/lib/api/weddingData'
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
+import { PrebookedSlotCard } from '@/components/PrebookedSlot'
+import { useIsCouple } from '@/lib/useIsCouple'
 import { useStore } from '@/lib/store'
 import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
@@ -22,6 +24,10 @@ export default function Home() {
   const [now] = useState(() => new Date())
   const left = countdownTo(weddingDate, now)
   const booked = slots.filter(s => s.state === 'booked')
+  /* «Уже забронировано вне приложения» из квиза (фича 018): для счётчика «команда» это
+     бронь, на экране — своя карточка с двумя действиями, которые доступны только паре. */
+  const prebooked = slots.filter(s => s.state === 'prebooked')
+  const isCouple = useIsCouple(prebooked.length > 0)
   /*
    * Без свадьбы главная говорит словами, что именно не так, а не рисует нули:
    * «0% готово · 0 гостей» после отмены или на новом телефоне пара читает как
@@ -134,7 +140,7 @@ export default function Home() {
               [weddingDate ? daysUntil(weddingDate, now) : '—', tr('дней до')],
               [weddingId && ready(tq) ? `${donePct}%` : '—', tr('готово')],
               [weddingId ? num(gq, persons('yes')) : '—', tr('гостей')],
-              [slotsState === 'ready' ? `${booked.length}/${slots.length}` : '—', tr('команда')],
+              [slotsState === 'ready' ? `${booked.length + prebooked.length}/${slots.length}` : '—', tr('команда')],
             ].map(([v, l]) => (
               <div key={String(l)} className="bg-[var(--card)]/25 rounded-2xl py-3 text-center backdrop-blur-sm">
                 <b className="text-[19px] block tabular">{v}</b>
@@ -311,9 +317,10 @@ export default function Home() {
               без них раздел без сервера выглядел просто пустым. */}
           {slotsState === 'loading' && <p className="text-[12px] text-[var(--soft)] py-3 text-center">{tr('Загружаем…')}</p>}
           {slotsState === 'error' && <p role="alert" className="text-[12px] text-[var(--rose-ink)] py-3 text-center">{tr('Сервер недоступен — команда не загрузилась')}</p>}
-          {slotsState === 'ready' && !booked.length && (
+          {slotsState === 'ready' && !booked.length && !prebooked.length && (
             <p className="text-[12px] text-[var(--soft)] py-3 text-center">{tr('Пока никто не забронирован — начните с площадки и фотографа')}</p>
           )}
+          {prebooked.map(s => <PrebookedSlotCard key={s.id} slot={s} canAct={isCouple} />)}
           {booked.map(s => (
             <button key={s.id} onClick={() => nav('/wedding')} className="press w-full card-s p-3.5 flex items-center gap-3 text-left fade-up">
               <Tile icon={s.icon} tile={s.tile} cat={s.categoryId} />

@@ -133,11 +133,14 @@ describe('квиз', () => {
     // Город: берём готовую подсказку, чтобы не открывать второй оверлей.
     fireEvent.click(screen.getByText('Уфа'))
     fireEvent.click(screen.getByText('Далее'))
-    /* Остальные шаги — первый вариант из списка. Последний шаг спрашивает имя
-       партнёра полем ввода, а не выбором: без него сервер свадьбу не создаст. */
+    /* Остальные шаги — первый вариант из списка. Последний шаг спрашивает оба
+       имени полями ввода, а не выбором: без них свадьбу не создать (фича 018). */
     for (let step = 0; step < 7; step++) {
-      const name = screen.queryByPlaceholderText('Имя')
-      if (name) fireEvent.change(name, { target: { value: 'Тимур' } })
+      const partner = screen.queryByPlaceholderText('Имя партнёра')
+      if (partner) {
+        fireEvent.change(screen.getByPlaceholderText('Ваше имя'), { target: { value: 'Аня' } })
+        fireEvent.change(partner, { target: { value: 'Тимур' } })
+      }
       else fireEvent.click(screen.getAllByRole('button').filter(b => b.className.includes('card-s'))[0]!)
       fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
     }
@@ -193,8 +196,11 @@ describe('стили в квизе', () => {
     fireEvent.click(screen.getByText('🍇 Усадьба'))
     fireEvent.click(screen.getByText('Далее'))
     for (let step = 0; step < 3; step++) {
-      const name = screen.queryByPlaceholderText('Имя')
-      if (name) fireEvent.change(name, { target: { value: 'Тимур' } })
+      const partner = screen.queryByPlaceholderText('Имя партнёра')
+      if (partner) {
+        fireEvent.change(screen.getByPlaceholderText('Ваше имя'), { target: { value: 'Аня' } })
+        fireEvent.change(partner, { target: { value: 'Тимур' } })
+      }
       else fireEvent.click(screen.getAllByRole('button').filter(b => b.className.includes('card-s'))[0]!)
       fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
     }

@@ -8,7 +8,7 @@ import { isAuthorized, onSessionExpired } from './api/client'
 import { forgetLocally } from './api/auth'
 import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
-import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, type ServerSlot } from './api/slots'
+import { advanceDeal, bookSlot, cancelSlot, paySlotAmount, addExternal, inviteExternalVendor, removeExternal, unmarkPrebookedSlot, type ServerSlot } from './api/slots'
 import { CATEGORY_TILE, DEFAULT_TILE } from './categoryTiles'
 import { addFavorite, getFavorites, removeFavorite } from './api/catalog'
 import { safeGet, safeSet, usePersist } from './usePersist'
@@ -96,6 +96,8 @@ interface Store {
   cancelBooking: (slotId: string) => Promise<void>
   /** Убрать своего подрядчика: гасит и выданную ему ссылку-приглашение. */
   removeExternalVendor: (slotId: string) => Promise<void>
+  /** «Нет, ещё ищем»: снять отметку «уже забронировано вне приложения» (фича 018). */
+  unmarkPrebooked: (slotId: string) => Promise<void>
   /** Зафиксировать оплату. Без суммы уходит вся цена сделки, как её понимает сервер. */
   paySlot: (slotId: string, amount?: number) => Promise<void>
   /** Перечитать мозаику: состояние плиток считает сервер. */
@@ -300,8 +302,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const d = s.deal
     /* Пять состояний сервера против четырёх на экране: `paid` показываем как
        `booked` с подписью об оплате — плитка «оплачено» в мозаике не
-       предусмотрена, а прятать факт оплаты нельзя. */
-    const state: SlotState = s.tileState === 'paid' ? 'booked'
+       предусмотрена, а прятать факт оплаты нельзя. Отметка «уже забронировано
+       вне приложения» (фича 018) бывает только у слота без сделки, у которого
+       `tileState` — `empty`: своё состояние, чтобы счётчики не считали его пустым. */
+    const state: SlotState = s.prebooked === true ? 'prebooked'
+      : s.tileState === 'paid' ? 'booked'
       : s.tileState === 'booked' ? 'booked'
       : s.tileState === 'hold' ? 'hold'
       : s.tileState === 'candidate' ? 'candidate'
@@ -507,6 +512,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     bookExternal: async (slotId, vendorName, price, phone) => {
       await addExternal(needWedding(), slotId, vendorName, price, phone)
+      refreshSlots()
+    },
+    unmarkPrebooked: async (slotId) => {
+      await unmarkPrebookedSlot(needWedding(), slotId)
       refreshSlots()
     },
     inviteExternal: async (slotId) => {

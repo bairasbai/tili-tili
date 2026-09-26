@@ -1,5 +1,5 @@
 import { createElement, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
@@ -14,6 +14,8 @@ import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImpo
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
+import { PrebookedSlotCard } from '@/components/PrebookedSlot'
+import { useIsCouple } from '@/lib/useIsCouple'
 import { useStore } from '@/lib/store'
 import { committedTotal } from '@/lib/budget'
 import { useBusy } from '@/lib/useBusy'
@@ -60,8 +62,11 @@ function WeddingNav() {
 export function WeddingTeam() {
   const nav = useNavigate()
   const { slots, slotsState, weddingId } = useStore()
-  const booked = slots.filter(s => s.state === 'booked').length
+  /* «Уже забронировано вне приложения» (фича 018) считается бронью: в подписи, в сводке
+     «Команда собрана» и мимо подсказки «Пустой слот» — пара сказала, что подрядчик есть. */
+  const booked = slots.filter(s => s.state === 'booked' || s.state === 'prebooked').length
   const progress = slots.filter(s => s.state !== 'empty').length
+  const isCouple = useIsCouple(slots.some(s => s.state === 'prebooked'))
   /* Общий бюджет — с сервера. Здесь стояло `couple.budgetTotal` из мока:
      полоса «забронировано на сумму» считалась от чужого миллиона двухсот и
      врала у каждой пары, кроме выдуманной. */
@@ -103,6 +108,8 @@ export function WeddingTeam() {
       <div className="px-5 mt-5">
         <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 stagger">
           {slots.map(s => {
+            /* Отметка из квиза — не плитка, а вопрос к паре с двумя ответами: во всю строку мозаики. */
+            if (s.state === 'prebooked') return <PrebookedSlotCard key={s.id} slot={s} canAct={isCouple} className="col-span-3 md:col-span-6" />
             return (
             <button
               key={s.id}
@@ -204,9 +211,12 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
    хуки нельзя объявлять после условного возврата. */
 function SlotView({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { cancelBooking, removeExternalVendor, bookExternal, inviteExternal } = useStore()
+  const location = useLocation()
+  const { cancelBooking, removeExternalVendor, bookExternal, inviteExternal, unmarkPrebooked } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [ownOpen, setOwnOpen] = useState(false)
+  /* «Добавить подрядчика» на карточке «Уже забронировано» (фича 018) ведёт сюда с открытой
+     формой своего подрядчика: пара уже сказала, что он есть, — искать его в каталоге незачем. */
+  const [ownOpen, setOwnOpen] = useState(() => (location.state as { own?: boolean } | null)?.own === true)
   const [ownName, setOwnName] = useState('')
   const [ownPrice, setOwnPrice] = useState('')
   const [ownPhone, setOwnPhone] = useState('')
@@ -221,6 +231,8 @@ function SlotView({ s }: { s: Slot }) {
   /* Деньги сделки видит только пара — и только она отменяет бронь. У
      помощника и координатора в ответе нет ни `price`, ни `paid`. */
   const canCancel = s.price !== undefined || s.paid !== undefined
+  /* У отметки «уже забронировано» сделки нет, и деньги роль не выдают — роль спрашивается. */
+  const isCouple = useIsCouple(s.state === 'prebooked')
 
   /* Любое действие здесь уходит на сервер и меняет чужой календарь. Ошибку
      показываем словами, а не глотаем: «сделали вид, что получилось» на
@@ -275,9 +287,11 @@ function SlotView({ s }: { s: Slot }) {
       ) : (
         <div className="space-y-2.5 mt-3 fade-up">
           <input autoFocus value={ownName} onChange={e => setOwnName(e.target.value)} placeholder={t('Имя / название (напр. Фотограф Ирек)')} className="w-full h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
+          {/* `min-w-0`: у поля ввода своя минимальная ширина (~20 знаков), и два поля в строке
+              раздували страницу до 449 px на экране 390 px (ERR-0309). */}
           <div className="flex gap-2">
-            <input value={ownPrice} onChange={e => setOwnPrice(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Цена, ₽')} className="flex-1 h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
-            <input value={ownPhone} onChange={e => setOwnPhone(e.target.value)} inputMode="tel" placeholder={t('Телефон')} className="flex-1 h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
+            <input value={ownPrice} onChange={e => setOwnPrice(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder={t('Цена, ₽')} className="flex-1 min-w-0 h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
+            <input value={ownPhone} onChange={e => setOwnPhone(e.target.value)} inputMode="tel" placeholder={t('Телефон')} className="flex-1 min-w-0 h-11 px-4 rounded-[14px] bg-[var(--track)] text-[13px] outline-none" />
           </div>
           <div className="flex gap-2">
             <button onClick={() => setOwnOpen(false)} className="press flex-1 card-s py-3 text-[12px] font-semibold">{t('Отмена')}</button>
@@ -288,6 +302,34 @@ function SlotView({ s }: { s: Slot }) {
       {errBlock}
     </div>
   )
+
+  /*
+   * «Уже забронировано вне приложения» из квиза (фича 018). Сделки нет, подрядчик найден без
+   * приложения. Два исхода, и за каждым запрос (R-176): вписать его своим подрядчиком (форма
+   * ниже — её кнопка шлёт `POST …/external`, бронь снимает отметку) или «Нет, ещё ищем»
+   * (`DELETE …/prebooked`, слот становится пустым). Оба — только паре (R-270).
+   */
+  if (s.state === 'prebooked') {
+    return (
+      <div className="pb-28">
+        <TopBar back title={s.label} sub={t('Слот команды')} />
+        <div className="px-5 mt-3">
+          <div className="card p-5 text-center">
+            <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}>{createElement(catIcon(s.categoryId), { size: 28, className: 'text-[var(--ink2)]' })}</div>
+            <b className="font-serif-d text-[19px] block mt-3">{t('Уже забронировано')}</b>
+            <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Вы отметили в квизе, что этот подрядчик уже есть. Добавьте его — он впишется в команду, бюджет и тайминг.')}</p>
+          </div>
+          {isCouple === true && ownBlock}
+          {isCouple === true && (
+            <button disabled={acting} onClick={() => void guard(() => unmarkPrebooked(s.id))} className="press w-full mt-3 card-s py-3.5 text-[13px] font-semibold text-[var(--rose-deep)] disabled:opacity-50">
+              {acting ? t('Снимаем отметку…') : t('Нет, ещё ищем')}
+            </button>
+          )}
+          {isCouple === false && <p className="text-[11.5px] text-[var(--soft)] mt-3 text-center">{t('Отметку ведёт пара')}</p>}
+        </div>
+      </div>
+    )
+  }
 
   if (s.state === 'empty') {
     return (

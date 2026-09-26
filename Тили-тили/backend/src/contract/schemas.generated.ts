@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 65. */
+ * Схем: 68. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1522,6 +1522,16 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "PrebookedCategory": {
+          "type": "string",
+          "enum": [
+              "venue",
+              "photo",
+              "video",
+              "host"
+          ],
+          "description": "Категория слота шаблона, подрядчик которой уже найден вне приложения (фича 018): площадка, фотограф, видеограф, ведущий."
+      },
       "Readiness": {
           "type": "object",
           "properties": {
@@ -1614,7 +1624,10 @@ export const CONTRACT_SCHEMAS = {
       },
       "Slot": {
           "type": "object",
-          "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой.\n",
+          "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой. Пустой слот может нести отметку `prebooked`\n(«уже забронировано вне приложения», фича 018) — она приходит всегда.\n",
+          "required": [
+              "prebooked"
+          ],
           "properties": {
               "id": {
                   "type": "string"
@@ -1654,6 +1667,11 @@ export const CONTRACT_SCHEMAS = {
                       "booked",
                       "paid"
                   ]
+              },
+              "prebooked": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "Пара ответила в квизе, что подрядчик этой категории уже найден вне\nприложения (`POST /weddings`, поле `prebooked`). Бывает только у\nслота без сделки — это держит ограничение базы: бронь из каталога и\nсвой подрядчик снимают отметку той же операцией. Снять вручную —\n`DELETE …/slots/{slotId}/prebooked`. Счётчики готовности считают\nтакой слот забронированным, а `tileState` остаётся производной от\nсделки — `empty`.\n"
               }
           }
       },
@@ -2551,6 +2569,38 @@ export const CONTRACT_SCHEMAS = {
               "style": {
                   "type": "string"
               },
+              "format": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/WeddingFormat"
+                      }
+                  ],
+                  "description": "формат из квиза (фича 018); null — не указан: вопрос пропущен или свадьба заведена раньше",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "planner": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/WeddingPlanner"
+                      }
+                  ],
+                  "description": "кто планирует (фича 018); null — не указано",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
               "tz": {
                   "type": "string",
                   "description": "таймзона места свадьбы. По ней открывается чат дня X и считаются напоминания — не по таймзоне пользователя"
@@ -2596,6 +2646,25 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           }
+      },
+      "WeddingFormat": {
+          "type": "string",
+          "enum": [
+              "classic",
+              "outdoor",
+              "intimate",
+              "two_day"
+          ],
+          "description": "Формат свадьбы из квиза (фича 018). Код, а не подпись варианта: подпись\nпереводится на экране, и «Классика» на другом языке стала бы другим\nответом.\n- `classic` — «Классика: ЗАГС + банкет»: 12 слотов шаблона; в тайминге\n  «Регистрация в ЗАГСе» 14:00–15:00 вместо «Выездной церемонии» 16:00–17:00.\n- `outdoor` — «Выездная церемония»: плюс слоты «Площадка выездной\n  церемонии» (`ceremony`) и «Церемониймейстер» (`registrar`); тайминг\n  шаблона.\n- `intimate` — «Камерная свадьба»: 12 слотов; «Ужин» 18:00–22:00 вместо\n  «Банкета», без «Салюта и финала».\n- `two_day` — «Банкет+ на 2 дня»: плюс слот «Отель для гостей» (`hotel`);\n  тайминг выездной и два блока на следующее число — «День 2: бранч»\n  12:00–14:00 и «День 2: продолжение праздника» 14:00–20:00. Перенос даты\n  двигает их вместе с первым днём.\n"
+      },
+      "WeddingPlanner": {
+          "type": "string",
+          "enum": [
+              "self",
+              "agency",
+              "coordinator"
+          ],
+          "description": "Кто планирует (фича 018): `agency` — плюс слот «Организатор» (`agency`), `coordinator` — плюс «Координатор дня» (`coordinator`), `self` — ничего."
       },
       "WeddingPublic": {
           "type": "object",
@@ -2732,6 +2801,7 @@ export type ContractSchemaName =
   | "Money"
   | "Note"
   | "Notification"
+  | "PrebookedCategory"
   | "Readiness"
   | "Review"
   | "Session"
@@ -2755,5 +2825,7 @@ export type ContractSchemaName =
   | "VerificationStatus"
   | "VerificationSubmit"
   | "Wedding"
+  | "WeddingFormat"
+  | "WeddingPlanner"
   | "WeddingPublic"
   | "WeddingSupportCard"

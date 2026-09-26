@@ -91,7 +91,17 @@ export interface SlotRow extends Partial<DealRow> {
   label: string
   sort: number
   deal_id: string | null
+  /** «Уже забронировано вне приложения» из квиза (фича 018). */
+  prebooked: boolean
 }
+
+/**
+ * Колонки слота для `toSlot` — одна строка на три выборки (мозаика, один слот,
+ * кабинет своего подрядчика). Ждёт псевдоним `s` у строки `slots`. Отметка
+ * `prebooked` — вычисляемая: три копии списка колонок разошлись бы на первом
+ * же новом поле, и ответ одной из дверей молча потерял бы его.
+ */
+export const SLOT_COLUMNS = 's.id as slot_id, s.category_id, s.label, s.sort, s.deal_id, (s.prebooked_at is not null) as prebooked'
 
 export function toSlot(r: SlotRow, seesMoney: boolean) {
   const deal = r.deal_id && r.state ? toDeal(r as DealRow, seesMoney) : null
@@ -101,6 +111,10 @@ export function toSlot(r: SlotRow, seesMoney: boolean) {
     label: r.label,
     deal,
     tileState: tileState(deal ? (r.state as DealState) : null),
+    /* Отметка живёт только у слота без сделки (CHECK миграции 1761300000000): плитка
+       остаётся производной от сделки — `empty`, а счётчики готовности считают слот
+       забронированным (фича 018). */
+    prebooked: r.prebooked,
   }
 }
 
@@ -134,7 +148,7 @@ export async function expireHolds(db: Queryable, weddingId: string): Promise<voi
 export async function loadSlots(db: Db, weddingId: string, seesMoney: boolean) {
   await expireHolds(db, weddingId)
   const { rows } = await db.query<SlotRow>(
-    `select s.id as slot_id, s.category_id, s.label, s.sort, s.deal_id, ${DEAL_COLUMNS}
+    `select ${SLOT_COLUMNS}, ${DEAL_COLUMNS}
        from slots s
        left join deals d on d.id = s.deal_id
        ${DEAL_JOINS}
@@ -147,7 +161,7 @@ export async function loadSlots(db: Db, weddingId: string, seesMoney: boolean) {
 
 export async function loadSlot(db: Queryable, slotId: string, seesMoney: boolean) {
   const { rows } = await db.query<SlotRow>(
-    `select s.id as slot_id, s.category_id, s.label, s.sort, s.deal_id, ${DEAL_COLUMNS}
+    `select ${SLOT_COLUMNS}, ${DEAL_COLUMNS}
        from slots s
        left join deals d on d.id = s.deal_id
        ${DEAL_JOINS}

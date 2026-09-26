@@ -7,7 +7,15 @@ import { rescheduleWedding } from '../wedding/reschedule.js'
 import { requireRole, type Role } from '../wedding/access.js'
 import { cancelRequestPending } from './weddingLifecycle.js'
 import { weddingCode } from '../wedding/codes.js'
-import { SLOT_TEMPLATE, TASK_TEMPLATE, TIMELINE_TEMPLATE } from '../wedding/templates.js'
+import { ref } from '../contract/schemas.generated.js'
+import {
+  TASK_TEMPLATE,
+  slotTemplate,
+  timelineTemplate,
+  type PrebookedCategory,
+  type WeddingFormat,
+  type WeddingPlanner,
+} from '../wedding/templates.js'
 
 interface WeddingRow {
   id: string
@@ -17,6 +25,8 @@ interface WeddingRow {
   city_region: string | null
   venue: string | null
   style: string | null
+  format: WeddingFormat | null
+  planner: WeddingPlanner | null
   guests_planned: number | null
   budget_total: string | null
   currency: string
@@ -82,6 +92,9 @@ export function toWedding(w: WeddingRow, members: MemberRow[], role: Role) {
     city: w.city_name ? { name: w.city_name, region: w.city_region } : null,
     venue: w.venue,
     style: w.style,
+    /* Ответы квиза кодами (фича 018): пусто — вопрос пропущен или свадьба заведена до фичи. */
+    format: w.format,
+    planner: w.planner,
     guestsPlanned: w.guests_planned,
     ...(seesMoney ? { budgetTotal: money(w.budget_total, w.currency) } : {}),
     /* Кто запросил отмену и когда — только паре, и только пока запрос жив.
@@ -130,7 +143,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
   const loadWedding = async (weddingId: string, role: Role) => {
     const { rows } = await db().query<WeddingRow>(
       `select w.id, w.title, w.date::text as date, c.name as city_name, c.region as city_region,
-              w.venue, w.style, w.guests_planned, w.budget_total::text as budget_total, w.currency,
+              w.venue, w.style, w.format, w.planner, w.guests_planned, w.budget_total::text as budget_total, w.currency,
               w.tz, w.invite_theme_id, w.invite_text, w.dress_code, w.dress_note,
               w.cancel_requested_by, w.cancel_requested_at
          from weddings w left join cities c on c.id = w.city_id
@@ -184,6 +197,11 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             budgetTotal: MONEY_SCHEMA,
             guestsPlanned: { type: 'integer', minimum: 0, maximum: 5000 },
             style: { type: 'string', maxLength: 120 },
+            /* Ответы квиза кодами (фича 018) — схемами контракта, а не второй копией списков:
+               неизвестный код — 422 с полем, как любое нарушение схемы. */
+            format: ref('WeddingFormat'),
+            planner: ref('WeddingPlanner'),
+            prebooked: { type: 'array', uniqueItems: true, maxItems: 4, items: ref('PrebookedCategory') },
             quizAnswers: { type: 'object', additionalProperties: true },
           },
         },
@@ -197,8 +215,16 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         budgetTotal?: { amount: number; currency: string }
         guestsPlanned?: number
         style?: string
+        format?: WeddingFormat
+        planner?: WeddingPlanner
+        prebooked?: PrebookedCategory[]
       }
       const userId = request.caller!.userId
+      const format = body.format ?? null
+      const planner = body.planner ?? null
+      /* «Уже забронировано вне приложения»: отметка на слоте этой категории и выполненная задача,
+         которая означает его бронь. Пустой список («Пока ничего») и пропуск вопроса — одно и то же. */
+      const prebooked = new Set<string>(body.prebooked ?? [])
 
       const { rows: owner } = await db().query<{ name: string | null }>('select name from users where id = $1', [userId])
       const ownName = owner[0]?.name?.trim()
@@ -224,7 +250,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
 
       /* Свадьба и её содержимое заводятся одной транзакцией.
        *
-       * Здесь больше тридцати вставок подряд: сама свадьба, пара, 12 слотов
+       * Здесь больше тридцати вставок подряд: сама свадьба, пара, 12–15 слотов
        * мозаики, чек-лист и тайминг. Раздельными запросами сбой на середине
        * оставлял свадьбу без части шаблона — например, с восемью слотами
        * вместо двенадцати, — и починить это человеку нечем: маршрута
@@ -250,8 +276,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
 
         await client.query(
           `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
-                                 budget_total, currency, invite_code, tz)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                                 budget_total, currency, invite_code, tz, format, planner)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [
             weddingId,
             userId,
@@ -264,6 +290,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             body.budgetTotal?.currency ?? 'RUB',
             weddingCode(),
             cityTz,
+            format,
+            planner,
           ],
         )
         await client.query(
@@ -272,11 +300,13 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         )
 
         // Мозаика, чек-лист и тайминг заводятся сразу: пустая свадьба без
-        // 12 слотов — это экран, на котором нечего делать.
-        for (const s of SLOT_TEMPLATE) {
+        // 12 слотов — это экран, на котором нечего делать. Состав — по
+        // формату и «кто планирует» из квиза (фича 018).
+        for (const s of slotTemplate(format, planner)) {
           await client.query(
-            'insert into slots (id, wedding_id, category_id, label, sort) values ($1, $2, $3, $4, $5)',
-            [uuidv7(), weddingId, s.categoryId, s.label, s.sort],
+            `insert into slots (id, wedding_id, category_id, label, sort, prebooked_at)
+             values ($1, $2, $3, $4, $5, case when $6::boolean then now() end)`,
+            [uuidv7(), weddingId, s.categoryId, s.label, s.sort, prebooked.has(s.categoryId)],
           )
         }
         for (const t of TASK_TEMPLATE) {
@@ -285,23 +315,35 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
            * от 31 мая давало 31 февраля → 3 марта, а первая дата через
            * перенос — 28 февраля. Одна свадьба получала разные сроки в
            * зависимости от того, назвали дату в квизе или позже (D2-11). */
+          /* Задача, чья бронь уже есть вне приложения, заводится выполненной (фича 018). */
           await client.query(
-            `insert into tasks (id, wedding_id, title, period, due, source, sort)
-             values ($1, $2, $3, $4, ($5::date - make_interval(months => $6::int))::date, 'system', $7)`,
-            [uuidv7(), weddingId, t.title, String(t.monthsBefore), date, t.monthsBefore, t.sort],
+            `insert into tasks (id, wedding_id, title, period, due, source, sort, done_at)
+             values ($1, $2, $3, $4, ($5::date - make_interval(months => $6::int))::date, 'system', $7,
+                     case when $8::boolean then now() end)`,
+            [
+              uuidv7(),
+              weddingId,
+              t.title,
+              String(t.monthsBefore),
+              date,
+              t.monthsBefore,
+              t.sort,
+              t.categoryId !== undefined && prebooked.has(t.categoryId),
+            ],
           )
         }
-        for (const e of TIMELINE_TEMPLATE) {
+        for (const e of timelineTemplate(format)) {
           // Время шаблона — местное на площадке, а не UTC. Собирали его строкой
           // `${date}T08:00:00Z`, и «сборы невесты в 08:00» в Уфе (+5) выходили
-          // на экране в 13:00 — ровно на разницу поясов.
+          // на экране в 13:00 — ровно на разницу поясов. Второй день
+          // двухдневной свадьбы — следующее число (`dayOffset`, фича 018).
           await client.query(
             `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort)
              values ($1, $2, $3,
-                     case when $4::date is null then null else (($4::date + $5::time) at time zone $8) end,
-                     case when $4::date is null then null else (($4::date + $6::time) at time zone $8) end,
+                     case when $4::date is null then null else ((($4::date + $10::int) + $5::time) at time zone $8) end,
+                     case when $4::date is null then null else ((($4::date + $10::int) + $6::time) at time zone $8) end,
                      $7, $9)`,
-            [uuidv7(), weddingId, e.name, date, e.startsAt, e.endsAt, e.icon, cityTz, e.sort],
+            [uuidv7(), weddingId, e.name, date, e.startsAt, e.endsAt, e.icon, cityTz, e.sort, e.dayOffset ?? 0],
           )
         }
         await client.query(
