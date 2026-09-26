@@ -20,7 +20,8 @@ export PW_CORE=/путь/к/node_modules/playwright-core   # если playwright
 mkdir -p "$LIVE_DIR"
 # бэк (лог нужен раздатчику — из него берутся dev-коды входа), фронт, раздатчик:
 (cd ../../backend && REDIS_URL=redis://127.0.0.1:6379 node node_modules/tsx/dist/cli.mjs src/index.ts > "$LIVE_DIR/be.log" 2>&1 &)
-(cd ../../app && node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort > "$LIVE_DIR/fe.log" 2>&1 &)
+# фронт — прод-сборкой: dev-версия React под StrictMode шлёт каждый запрос дважды и упирается в лимит частоты
+(cd ../../app && NODE_ENV=production node node_modules/vite/bin/vite.js build && node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 3000 --strictPort > "$LIVE_DIR/fe.log" 2>&1 &)
 node tok-server.mjs &
 WALK_STAFF_PHONE=+7XXXXXXXXXX bash walk.sh   # существующий сотрудник панели; на чистой базе — WALK_MAKE_STAFF=1
 ```

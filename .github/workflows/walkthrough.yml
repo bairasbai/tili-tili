@@ -86,8 +86,12 @@ jobs:
       - name: Миграции на чистой базе
         working-directory: Тили-тили/backend
         run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      # NODE_ENV=development выше — для сервера; сборка с ним вышла бы dev-версией React (StrictMode дважды
+      # запускает эффекты — каждый запрос уходил парой) и без service worker. Собираем как на проде.
       - name: Прод-сборка фронта
         working-directory: Тили-тили/app
+        env:
+          NODE_ENV: production
         run: node node_modules/vite/bin/vite.js build
       - name: Стенд — бэк, фронт (vite preview, прокси /api → 3001), раздатчик
         run: |

@@ -1,8 +1,10 @@
 // Сценарий: новая пара — онбординг → вход по SMS → квиз → свадьба создана → главная. node flow-onboard.cjs <10 цифр>
 const { ph, run } = require('./flow-lib.cjs')
 const digits = process.argv[2] || ph('090')
+// Имя отчёта: второй прогон онбординга (подготовка номера для разрушительных сценариев) не затирает основной.
+const name = process.argv[3] || 'flow-onboard'
 const phone = '+7' + digits
-run('flow-onboard', async (step, a) => {
+run(name, async (step, a) => {
   await step('онбординг: слайды → «Начать» → /auth', async () => {
     await a.goto('/')
     for (let i = 0; i < 6; i++) {
@@ -83,4 +85,4 @@ run('flow-onboard', async (step, a) => {
     await a.page.waitForURL('**/home', { timeout: 15000 })
     return { url: a.url() }
   })
-}, { saveState: 'state-newcouple.json' })
+}, { saveState: name === 'flow-onboard' ? 'state-newcouple.json' : undefined })

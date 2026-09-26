@@ -26,10 +26,16 @@ bash "$S/run.sh" couple-d couple 0 1 w=1280 /home /search /wedding /wedding/budg
 
 echo "== сценарии"
 # Порядок важен: vendor пишет flow-vendor.ids.json и state-dj.json для deal и misc; destructive — последним.
-for f in onboard vendor deal lead join misc destructive; do
+for f in onboard vendor deal lead join misc; do
   node "$S/flow-$f.cjs" > "$LIVE_DIR/crawl/out/flow-$f.txt" 2>&1
   echo "flow-$f rc=$?"
 done
+# 092 отменяет свадьбу в разрушительном сценарии — на чистой базе свадьбу ему заводит свой онбординг.
+RUN=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).run)" "$LIVE_DIR/fixtures-public.json")
+node "$S/flow-onboard.cjs" "9${RUN}092" flow-onboard-092 > "$LIVE_DIR/crawl/out/flow-onboard-092.txt" 2>&1
+echo "flow-onboard-092 rc=$?"
+node "$S/flow-destructive.cjs" > "$LIVE_DIR/crawl/out/flow-destructive.txt" 2>&1
+echo "flow-destructive rc=$?"
 
 echo "== сводка"
 node "$S/summary.mjs"

@@ -9,7 +9,7 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 const LIVE = process.env.LIVE_DIR || (() => { throw new Error('LIVE_DIR не задан — см. README.md') })()
 const D = `${LIVE}/crawl/out`
 const JOBS = ['couple-2', 'couple-3', 'couple-4', 'couple-5', 'couple-6', 'helper-1', 'coord-1', 'vendor-1', 'florist-1', 'staff-1', 'guest-1', 'couple-d']
-const FLOWS = ['flow-onboard', 'flow-vendor', 'flow-deal', 'flow-lead', 'flow-join', 'flow-misc', 'flow-destructive']
+const FLOWS = ['flow-onboard', 'flow-vendor', 'flow-deal', 'flow-lead', 'flow-join', 'flow-misc', 'flow-onboard-092', 'flow-destructive']
 const SHOW = 12 // строк находок на задание в сводке; остальное — в полном отчёте
 
 const out = []
