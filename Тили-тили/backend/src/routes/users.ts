@@ -501,9 +501,19 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     ]
     const payments = await byWeddings(
       coupleIds,
-      `select p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.created_at
+      `select p.id, p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.installment_id, p.created_at
          from payments p join deals d on d.id = p.deal_id
         where d.wedding_id = any($1) order by p.created_at`,
+    )
+    /* График платежей (018-A) — такие же деньги пары, как оплаты: только по свадьбам,
+     * где человек «пара». Без него выгрузка по 152-ФЗ теряла названия, суммы, сроки и
+     * причины отмены этапов (ревью 018, P-02). */
+    const paymentInstallments = await byWeddings(
+      coupleIds,
+      `select d.wedding_id, i.id, i.deal_id, i.title, i.amount::text as amount, i.currency, i.due::text as due,
+              i.cancelled_at, i.cancel_reason, i.created_at
+         from payment_installments i join deals d on d.id = i.deal_id
+        where d.wedding_id = any($1) order by i.created_at, i.id`,
     )
     const budget = await byWeddings(
       coupleIds,
@@ -648,6 +658,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       guests,
       deals,
       payments,
+      paymentInstallments,
       budget,
       gifts,
       tasks,

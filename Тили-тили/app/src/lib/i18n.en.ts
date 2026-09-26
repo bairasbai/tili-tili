@@ -49,6 +49,7 @@ export const EN: Record<string, string> = {
   'Ожидается': 'Pending',
   'Частично отмечено': 'Partially recorded',
   'Отмечено полностью': 'Fully recorded',
+  'Покрыто оплатами сделки': 'Covered by the deal’s payments',
   'Отменён': 'Cancelled',
   'План этапа': 'Scheduled',
   'Отмечено': 'Recorded',

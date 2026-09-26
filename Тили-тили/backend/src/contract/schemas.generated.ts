@@ -1675,7 +1675,9 @@ export const CONTRACT_SCHEMAS = {
               "version",
               "status",
               "overdue",
-              "cancelReason"
+              "cancelReason",
+              "cancelledAt",
+              "allocated"
           ],
           "properties": {
               "cancelledAt": {
@@ -1702,8 +1704,21 @@ export const CONTRACT_SCHEMAS = {
               "paid": {
                   "$ref": "contract#/definitions/FinancialBalance"
               },
+              "allocated": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на\nотменённом этапе), распределённых по этапам в порядке срока. Только для показа —\nпривязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной\nотметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной\nсделке (ревью 018, M-01).\n"
+              },
               "remaining": {
-                  "$ref": "contract#/definitions/Money"
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки."
               },
               "due": {
                   "type": "string",
@@ -1721,11 +1736,14 @@ export const CONTRACT_SCHEMAS = {
                       "pending",
                       "partial",
                       "paid",
+                      "covered",
                       "cancelled"
-                  ]
+                  ],
+                  "description": "paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами\nсделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —\nничего; cancelled — этап отменён.\n"
               },
               "overdue": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "Срок прошёл, а `remaining` больше нуля."
               },
               "cancelReason": {
                   "type": [
@@ -1909,6 +1927,7 @@ export const CONTRACT_SCHEMAS = {
               "readOnly",
               "summary",
               "dueInWindow",
+              "overdueRemaining",
               "items",
               "deals",
               "payments",
@@ -1959,7 +1978,12 @@ export const CONTRACT_SCHEMAS = {
                   "$ref": "contract#/definitions/PaymentSummary"
               },
               "dueInWindow": {
-                  "$ref": "contract#/definitions/Money"
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`."
               },
               "items": {
                   "type": "array",
@@ -1978,6 +2002,14 @@ export const CONTRACT_SCHEMAS = {
                   "items": {
                       "$ref": "contract#/definitions/PaymentRecord"
                   }
+              },
+              "overdueRemaining": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09)."
               },
               "allInstallments": {
                   "type": "array",

@@ -14,7 +14,8 @@ import { addPaymentReceipt, createPaymentInstallment, deletePaymentReceipt, expo
 
 const field = 'mt-1 w-full min-w-0 rounded-xl bg-[var(--bg)] px-3 py-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--rose)]'
 const button = 'press min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50'
-const statusText = { pending: 'Ожидается', partial: 'Частично отмечено', paid: 'Отмечено полностью', cancelled: 'Отменён' }
+/* covered — этап закрыт отметками сделки без привязки (ревью 018, M-01): деньги отмечены, но не к этому этапу. */
+const statusText = { pending: 'Ожидается', partial: 'Частично отмечено', paid: 'Отмечено полностью', covered: 'Покрыто оплатами сделки', cancelled: 'Отменён' }
 type Editor = { mode: 'new' } | { mode: 'edit' | 'pay' | 'cancel'; item: PaymentInstallment } | { mode: 'link'; payment: PaymentRecord }
 type Draft = { title: string; amount: string; due: string; dealId: string; installmentId: string; reason: string }
 const empty: Draft = { title: '', amount: '', due: '', dealId: '', installmentId: '', reason: '' }

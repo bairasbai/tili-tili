@@ -41,6 +41,9 @@ const MATRIX: Rule[] = [
    * запрещало метод всем, и пара получала 403 на собственный бюджет. */
   { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/slots\/[^/]+\//, by: { POST: ONLY_COUPLE, DELETE: ONLY_COUPLE, PATCH: ONLY_COUPLE } },
+  /* График платежей и оплаты (018): явно, а не запретом по умолчанию — новое правило
+   * ниже по списку не должно незаметно открыть их помощнику (ревью 018, P-05). */
+  { url: /^\/weddings\/:weddingId\/(payment-schedule|payments)(\/|$)/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/wishlist/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/(anti-gifts|funds)/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
 
@@ -140,6 +143,11 @@ export function weddingAccessHook(app: FastifyInstance) {
   return async function checkWeddingAccess(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const url = request.routeOptions?.url
     if (!url || !isWeddingScoped(url)) return
+    /* Денежные маршруты 018 проверяют доступ раньше — на preValidation, чтобы
+     * посторонний не узнал форму тела по 400 против 403. Второй проход того же
+     * хука (глобальный preHandler) повторял бы сессию, согласие и членство
+     * тремя запросами на каждый вызов (ревью 018, P-06). */
+    if (request.member || request.guest) return
 
     // Гость приходит на свою свадьбу по токену и аккаунта не имеет.
     // Пускаем его только на явно перечисленные пути и только на свою свадьбу.
