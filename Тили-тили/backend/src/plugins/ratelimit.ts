@@ -84,9 +84,12 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
     const caller = await rateLimitKey(request, config.jwtAccessSecret ?? null)
     const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS)
     /* Гостевой токен не подписан — рядом с его счётчиком считается адрес,
-     * с потолком выше (см. `GUEST_IP_FACTOR`). */
+     * с потолком выше (см. `GUEST_IP_FACTOR`). Префикс `gip` держит этот
+     * потолок отдельно от анонимного счётчика `ip`: общая строка ключа
+     * отдавала бы гостям на одном Wi-Fi чужой лимит адреса — вход по SMS,
+     * обмен токенов, каталог без входа — и наоборот (F-RL-1-03). */
     const checks: { key: string; max: number }[] = [{ key: `rl:${caller}:${window}`, max: limit }]
-    if (caller.startsWith('g:')) checks.push({ key: `rl:ip:${request.ip}:${window}`, max: limit * GUEST_IP_FACTOR })
+    if (caller.startsWith('g:')) checks.push({ key: `rl:gip:${request.ip}:${window}`, max: limit * GUEST_IP_FACTOR })
 
     for (const { key, max } of checks) {
       let count: number

@@ -258,7 +258,23 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
         expect(limited.redis).toBeNull()
         return
       }
+      // Подключение к Redis идёт параллельно старту приложения — дожидаемся
+      // его здесь, иначе первая пачка может застать момент 'connecting' и
+      // словить фиктивный пропуск лимитера через таймаут 250 мс, тот же
+      // риск, что и в ratelimit.test.ts (F3-b, см. :39-47 там).
+      await new Promise<void>((resolve, reject) => {
+        const redis = limited.redis!
+        if (redis.status === 'ready') return resolve()
+        const timer = setTimeout(() => reject(new Error('Redis не поднялся за 10 с')), 10_000)
+        redis.once('ready', () => {
+          clearTimeout(timer)
+          resolve()
+        })
+      })
       const token = `Bearer ${'z'.repeat(40)}-${randomInt(1, 1_000_000)}`
+      // Дождаться начала свежей секунды: пачка из 11 должна попасть целиком
+      // в одно окно лимитера, иначе тест мигает на границе окна (F3-b).
+      await new Promise((resolve) => setTimeout(resolve, 1000 - (Date.now() % 1000) + 20))
       const burst = await Promise.all(
         Array.from({ length: 11 }, () =>
           limited.inject({ method: 'GET', url: '/geo/cities?q=Ка', headers: { authorization: token } }),
