@@ -1,0 +1,27 @@
+name: Stage 017-B review snapshot
+on:
+  push:
+    branches: [feature/product-improvements-stage1-tasks]
+    paths: [.github/workflows/stage017b-review-export.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.repository == 'bairasbai/tili-tili' && github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Export tracked source only
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --output="$RUNNER_TEMP/stage017b-source.tar.gz" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage017b-review-source
+          path: ${{ runner.temp }}/stage017b-source.tar.gz
+          retention-days: 1
+          if-no-files-found: error
