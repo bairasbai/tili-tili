@@ -422,6 +422,7 @@ const thousands = (kopecks: number) => Math.round(kopecks / 100 / 1000)
 
 /* Бюджет */
 export function Budget() {
+  const nav = useNavigate()
   const { weddingId } = useStore()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -518,6 +519,9 @@ export function Budget() {
   return (
     <div className="pb-28">
       <TopBar back title={t('Бюджет')} sub={t('Распределение средств')} />
+      {ready(q) && <div className="px-5 mt-3"><button className="press w-full card p-4 text-left font-semibold" onClick={() => nav('/wedding/payments')}>{t('График платежей')} →</button>
+        {server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}. {t('Плановые этапы не увеличивают смету.')}</p>}
+      </div>}
       <AsyncState q={q} forbiddenText={t('Бюджет ведёт пара — у вашей роли к нему доступа нет.')} />
       <div className="px-5 mt-3">
         {/* Сводка — только когда бюджет пришёл. Без ответа здесь стояло

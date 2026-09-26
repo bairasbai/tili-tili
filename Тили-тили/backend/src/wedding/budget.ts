@@ -1,3 +1,4 @@
+import { paymentOverview } from '../payments/read.js'
 import type { Queryable } from '../plugins/db.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
 import { BUDGET_BY_VENDOR_CATEGORY, BUDGET_CATEGORIES, BUDGET_FALLBACK } from './templates.js'
@@ -34,6 +35,7 @@ export async function loadBudget(db: Queryable, weddingId: string) {
          join slots s on s.id = d.slot_id
          left join vendors ven on ven.id = d.vendor_id
         where d.wedding_id = $1 and d.state = any($2) and d.price is not null
+          and (d.state <> 'negotiating' or d.negotiating_until is null or d.negotiating_until > now())
         group by s.category_id`,
       [weddingId, COMMITTED_WITH_HOLD],
     )
@@ -82,6 +84,7 @@ export async function loadBudget(db: Queryable, weddingId: string) {
     const spent =
       [...fromSlots.values()].reduce((a, b) => a + b, 0) + items.reduce((a, i) => a + Number(i.amount), 0)
 
-    return { total: rub(total), spent: rub(spent), reserve: rub(Math.round(total * RESERVE_SHARE)), categories }
+    const { summary: paymentSummary } = await paymentOverview(db, weddingId)
+    return { paymentSummary, total: rub(total), spent: rub(spent), reserve: rub(Math.round(total * RESERVE_SHARE)), categories }
 }
 

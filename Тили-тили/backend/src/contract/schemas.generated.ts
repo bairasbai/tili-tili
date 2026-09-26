@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 67. */
+ * Схем: 79. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -284,6 +284,9 @@ export const CONTRACT_SCHEMAS = {
       "Budget": {
           "type": "object",
           "properties": {
+              "paymentSummary": {
+                  "$ref": "contract#/definitions/PaymentSummary"
+              },
               "total": {
                   "$ref": "contract#/definitions/Money"
               },
@@ -961,6 +964,27 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "FinancialBalance": {
+          "type": "object",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              }
+          },
+          "description": "Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются нулём."
+      },
       "Fund": {
           "type": "object",
           "properties": {
@@ -1521,6 +1545,517 @@ export const CONTRACT_SCHEMAS = {
                   "format": "date-time"
               }
           }
+      },
+      "PaymentDeal": {
+          "type": "object",
+          "required": [
+              "id",
+              "slotId",
+              "name",
+              "state",
+              "price",
+              "recorded",
+              "remaining",
+              "planned",
+              "unallocated",
+              "needsReview",
+              "active",
+              "canPlan"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "slotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "candidate",
+                      "contacted",
+                      "negotiating",
+                      "booked",
+                      "paid_deposit",
+                      "done",
+                      "cancelled"
+                  ]
+              },
+              "price": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      },
+                      {
+                          "type": "null"
+                      }
+                  ]
+              },
+              "recorded": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "remaining": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      },
+                      {
+                          "type": "null"
+                      }
+                  ]
+              },
+              "planned": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "unallocated": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "needsReview": {
+                  "type": "boolean"
+              },
+              "active": {
+                  "type": "boolean"
+              },
+              "canPlan": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "PaymentHistoryExport": {
+          "type": "object",
+          "required": [
+              "filename",
+              "csv",
+              "records"
+          ],
+          "properties": {
+              "filename": {
+                  "type": "string"
+              },
+              "csv": {
+                  "type": "string"
+              },
+              "records": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          }
+      },
+      "PaymentInstallment": {
+          "type": "object",
+          "required": [
+              "id",
+              "dealId",
+              "title",
+              "amount",
+              "paid",
+              "remaining",
+              "due",
+              "version",
+              "status",
+              "overdue",
+              "cancelReason"
+          ],
+          "properties": {
+              "cancelledAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "paid": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "remaining": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "partial",
+                      "paid",
+                      "cancelled"
+                  ]
+              },
+              "overdue": {
+                  "type": "boolean"
+              },
+              "cancelReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "PaymentInstallmentCreate": {
+          "type": "object",
+          "required": [
+              "dealId",
+              "title",
+              "amount",
+              "due"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              }
+          },
+          "additionalProperties": false
+      },
+      "PaymentInstallmentPatch": {
+          "type": "object",
+          "required": [
+              "version"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "cancelled": {
+                  "type": "boolean",
+                  "enum": [
+                      true
+                  ]
+              },
+              "reason": {
+                  "type": "string",
+                  "maxLength": 500
+              }
+          },
+          "additionalProperties": false,
+          "description": "Оптимистическая версия обязательна. Отмена допускает только version/cancelled/reason: она не меняет суммы и не создаёт возврат. После снижения цены несогласованный план исправляется явно; старый черновик получает 409.",
+          "minProperties": 2
+      },
+      "PaymentInstallmentPay": {
+          "type": "object",
+          "required": [
+              "version",
+              "amount"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              }
+          },
+          "additionalProperties": false
+      },
+      "PaymentPlanLink": {
+          "type": "object",
+          "required": [
+              "version",
+              "installmentId"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "installmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          },
+          "additionalProperties": false,
+          "description": "Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным."
+      },
+      "PaymentRecord": {
+          "type": "object",
+          "required": [
+              "id",
+              "dealId",
+              "kind",
+              "amount",
+              "status",
+              "createdAt",
+              "installmentId",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "deposit",
+                      "balance",
+                      "refund"
+                  ]
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "recorded",
+                      "confirmed",
+                      "cancelled"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "installmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              }
+          }
+      },
+      "PaymentSchedule": {
+          "type": "object",
+          "required": [
+              "range",
+              "readOnly",
+              "summary",
+              "dueInWindow",
+              "items",
+              "deals",
+              "payments",
+              "allInstallments"
+          ],
+          "properties": {
+              "range": {
+                  "type": "object",
+                  "required": [
+                      "from",
+                      "to",
+                      "today",
+                      "timeZone",
+                      "includeOverdue",
+                      "includeCancelled"
+                  ],
+                  "properties": {
+                      "from": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      "to": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      "today": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      "timeZone": {
+                          "type": "string"
+                      },
+                      "includeOverdue": {
+                          "type": "boolean"
+                      },
+                      "includeCancelled": {
+                          "type": "boolean"
+                      }
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "summary": {
+                  "$ref": "contract#/definitions/PaymentSummary"
+              },
+              "dueInWindow": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentInstallment"
+                  }
+              },
+              "deals": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentDeal"
+                  }
+              },
+              "payments": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentRecord"
+                  }
+              },
+              "allInstallments": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "dealId",
+                          "title",
+                          "status",
+                          "remaining"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "dealId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "title": {
+                              "type": "string"
+                          },
+                          "status": {
+                              "type": "string",
+                              "enum": [
+                                  "pending",
+                                  "partial",
+                                  "paid",
+                                  "cancelled"
+                              ]
+                          },
+                          "remaining": {
+                              "$ref": "contract#/definitions/Money"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "PaymentSummary": {
+          "type": "object",
+          "required": [
+              "committed",
+              "recorded",
+              "remaining",
+              "unallocated",
+              "inactiveDealRecorded",
+              "unknownPrices"
+          ],
+          "properties": {
+              "committed": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "recorded": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "remaining": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "unallocated": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "inactiveDealRecorded": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "unknownPrices": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          },
+          "description": "Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке."
+      },
+      "PositivePaymentMoney": {
+          "type": "object",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              }
+          },
+          "additionalProperties": false
       },
       "Readiness": {
           "type": "object",
@@ -2868,6 +3403,7 @@ export type ContractSchemaName =
   | "DealState"
   | "Document"
   | "Error"
+  | "FinancialBalance"
   | "Fund"
   | "Gift"
   | "Guest"
@@ -2882,6 +3418,17 @@ export type ContractSchemaName =
   | "Money"
   | "Note"
   | "Notification"
+  | "PaymentDeal"
+  | "PaymentHistoryExport"
+  | "PaymentInstallment"
+  | "PaymentInstallmentCreate"
+  | "PaymentInstallmentPatch"
+  | "PaymentInstallmentPay"
+  | "PaymentPlanLink"
+  | "PaymentRecord"
+  | "PaymentSchedule"
+  | "PaymentSummary"
+  | "PositivePaymentMoney"
   | "Readiness"
   | "Review"
   | "Session"

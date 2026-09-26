@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.43.0).
- * Операций: 175. Путей: 130. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.44.0).
+ * Операций: 181. Путей: 135. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -162,6 +162,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Заметки и идеи свадьбы","tag":"wedding"},
   {"method":"POST","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Добавить заметку","tag":"wedding"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/notes/{noteId}","url":"/weddings/:weddingId/notes/:noteId","operationId":null,"summary":"Удалить заметку","tag":"wedding"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"График платежей, актуальные итоги и отметки оплат","tag":"budget"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"Создать этап платежа","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}","url":"/weddings/:weddingId/payment-schedule/:installmentId","operationId":null,"summary":"Изменить или отменить плановый этап","tag":"budget"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}/pay","url":"/weddings/:weddingId/payment-schedule/:installmentId/pay","operationId":null,"summary":"Отметить полную или частичную оплату этапа","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule/export","url":"/weddings/:weddingId/payment-schedule/export","operationId":null,"summary":"Выгрузить историю планов и оплат в CSV","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/payments/{paymentId}/plan","url":"/weddings/:weddingId/payments/:paymentId/plan","operationId":null,"summary":"Привязать существующую оплату к этапу без новой записи","tag":"budget"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},

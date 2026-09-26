@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.43.0
+  version: 0.44.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -4625,6 +4625,325 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
+  # 018-A: obligations, installments and recorded payments are separate.
+  /weddings/{weddingId}/payment-schedule:
+    get:
+      tags:
+      - budget
+      summary: График платежей, актуальные итоги и отметки оплат
+      description: 'Только couple. Один согласованный снимок. from/to включительно (до 366 дней, по умолчанию
+        сегодня +30); includeOverdue добавляет непогашенные просроченные этапы вне окна, includeCancelled — отменённые
+        в окне. Максимум 10000 записей: при превышении 409 financial_history_too_large, а не тихое обрезание.
+        Даты графика фиксированы и не сдвигаются при переносе свадьбы. Отметка пользователя не подтверждает перевод
+        банком.
+
+        Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона),
+        plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка
+        отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+      - name: includeOverdue
+        in: query
+        schema:
+          type: boolean
+          default: true
+      - name: includeCancelled
+        in: query
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSchedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      tags:
+      - budget
+      summary: Создать этап платежа
+      description: 'Только couple. Этап не создаёт payment и не увеличивает смету. До 500 этапов на сделку; сумма
+        активных этапов не выше цены. 409 stale_payment_plan / plan_over_price / payment_plan_limit. Обязателен
+        Idempotency-Key.
+
+        Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона),
+        plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка
+        отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInstallment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInstallmentCreate'
+  /weddings/{weddingId}/payment-schedule/{installmentId}:
+    patch:
+      tags:
+      - budget
+      summary: Изменить или отменить плановый этап
+      description: 'Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия
+        с отменённой свадьбой запрещены.
+
+        Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона),
+        plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка
+        отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: installmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInstallment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInstallmentPatch'
+  /weddings/{weddingId}/payment-schedule/{installmentId}/pay:
+    post:
+      tags:
+      - budget
+      summary: Отметить полную или частичную оплату этапа
+      description: 'Только couple. Та же таблица payments и предел общей цены, что у slots/pay. Idempotency-Key
+        защищает повтор, version защищает устаревший экран. 409 stale_payment_plan, installment_overpay или overpay.
+        Это ручная отметка, не банковская операция.
+
+        Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона),
+        plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка
+        отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: installmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInstallment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInstallmentPay'
+  /weddings/{weddingId}/payments/{paymentId}/plan:
+    patch:
+      tags:
+      - budget
+      summary: Привязать существующую оплату к этапу без новой записи
+      description: 'Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия
+        с отменённой свадьбой запрещены.
+
+        Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона),
+        plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка
+        отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentPlanLink'
+  /weddings/{weddingId}/payment-schedule/export:
+    get:
+      tags:
+      - budget
+      summary: Выгрузить историю планов и оплат в CSV
+      description: 'Только couple. JSON содержит имя файла и UTF-8 CSV с BOM и разделителем ;. Тип записи plan/payment
+        различает обязательство и отметку; суммы в копейках. Возвраты со знаком минус; отменённые записи сохраняют
+        статус. Формулы в текстовых ячейках экранируются. До 10000 записей, затем 409 без частичной выгрузки.
+
+        Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона),
+        plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка
+        отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).'
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentHistoryExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -4778,6 +5097,392 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    FinancialBalance:
+      type: object
+      required:
+      - amount
+      - currency
+      properties:
+        amount:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        currency:
+          type: string
+          enum:
+          - RUB
+      description: Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются
+        нулём.
+    PaymentSummary:
+      type: object
+      required:
+      - committed
+      - recorded
+      - remaining
+      - unallocated
+      - inactiveDealRecorded
+      - unknownPrices
+      properties:
+        committed:
+          $ref: '#/components/schemas/FinancialBalance'
+        recorded:
+          $ref: '#/components/schemas/FinancialBalance'
+        remaining:
+          $ref: '#/components/schemas/FinancialBalance'
+        unallocated:
+          $ref: '#/components/schemas/FinancialBalance'
+        inactiveDealRecorded:
+          $ref: '#/components/schemas/FinancialBalance'
+        unknownPrices:
+          type: integer
+          minimum: 0
+      description: Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок
+        минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без
+        активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed
+        или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке.
+    PaymentInstallment:
+      type: object
+      required:
+      - id
+      - dealId
+      - title
+      - amount
+      - paid
+      - remaining
+      - due
+      - version
+      - status
+      - overdue
+      - cancelReason
+      properties:
+        cancelledAt: { type: string, format: date-time, nullable: true }
+        id:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+        paid:
+          $ref: '#/components/schemas/FinancialBalance'
+        remaining:
+          $ref: '#/components/schemas/Money'
+        due:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        version:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        status:
+          type: string
+          enum:
+          - pending
+          - partial
+          - paid
+          - cancelled
+        overdue:
+          type: boolean
+        cancelReason:
+          type: string
+          nullable: true
+    PaymentRecord:
+      type: object
+      required:
+      - id
+      - dealId
+      - kind
+      - amount
+      - status
+      - createdAt
+      - installmentId
+      - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+          - deposit
+          - balance
+          - refund
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum:
+          - recorded
+          - confirmed
+          - cancelled
+        createdAt:
+          type: string
+          format: date-time
+        installmentId:
+          type: string
+          format: uuid
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+    PaymentDeal:
+      type: object
+      required:
+      - id
+      - slotId
+      - name
+      - state
+      - price
+      - recorded
+      - remaining
+      - planned
+      - unallocated
+      - needsReview
+      - active
+      - canPlan
+      properties:
+        id:
+          type: string
+          format: uuid
+        slotId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        state:
+          type: string
+          enum:
+          - candidate
+          - contacted
+          - negotiating
+          - booked
+          - paid_deposit
+          - done
+          - cancelled
+        price:
+          $ref: '#/components/schemas/Money'
+          nullable: true
+        recorded:
+          $ref: '#/components/schemas/FinancialBalance'
+        remaining:
+          $ref: '#/components/schemas/Money'
+          nullable: true
+        planned:
+          $ref: '#/components/schemas/Money'
+        unallocated:
+          $ref: '#/components/schemas/FinancialBalance'
+        needsReview:
+          type: boolean
+        active:
+          type: boolean
+        canPlan:
+          type: boolean
+    PaymentSchedule:
+      type: object
+      required:
+      - range
+      - readOnly
+      - summary
+      - dueInWindow
+      - items
+      - deals
+      - payments
+      - allInstallments
+      properties:
+        range:
+          type: object
+          required:
+          - from
+          - to
+          - today
+          - timeZone
+          - includeOverdue
+          - includeCancelled
+          properties:
+            from:
+              type: string
+              format: date
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            to:
+              type: string
+              format: date
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            today:
+              type: string
+              format: date
+              pattern: ^\d{4}-\d{2}-\d{2}$
+            timeZone:
+              type: string
+            includeOverdue:
+              type: boolean
+            includeCancelled:
+              type: boolean
+        readOnly:
+          type: boolean
+        summary:
+          $ref: '#/components/schemas/PaymentSummary'
+        dueInWindow:
+          $ref: '#/components/schemas/Money'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentInstallment'
+        deals:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentDeal'
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentRecord'
+        allInstallments:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - dealId
+            - title
+            - status
+            - remaining
+            properties:
+              id:
+                type: string
+                format: uuid
+              dealId:
+                type: string
+                format: uuid
+              title:
+                type: string
+              status:
+                type: string
+                enum:
+                - pending
+                - partial
+                - paid
+                - cancelled
+              remaining:
+                $ref: '#/components/schemas/Money'
+    PaymentHistoryExport:
+      type: object
+      required:
+      - filename
+      - csv
+      - records
+      properties:
+        filename:
+          type: string
+        csv:
+          type: string
+        records:
+          type: integer
+          minimum: 0
+    PositivePaymentMoney:
+      type: object
+      required:
+      - amount
+      - currency
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        currency:
+          type: string
+          enum:
+          - RUB
+      additionalProperties: false
+    PaymentInstallmentCreate:
+      type: object
+      required:
+      - dealId
+      - title
+      - amount
+      - due
+      properties:
+        dealId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        amount:
+          $ref: '#/components/schemas/PositivePaymentMoney'
+        due:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+      additionalProperties: false
+    PaymentInstallmentPatch:
+      type: object
+      required:
+      - version
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        amount:
+          $ref: '#/components/schemas/PositivePaymentMoney'
+        due:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        cancelled:
+          type: boolean
+          enum:
+          - true
+        reason:
+          type: string
+          maxLength: 500
+      additionalProperties: false
+      description: 'Оптимистическая версия обязательна. Отмена допускает только version/cancelled/reason:
+        она не меняет суммы и не создаёт возврат. После снижения цены несогласованный
+        план исправляется явно; старый черновик получает 409.'
+      minProperties: 2
+    PaymentInstallmentPay:
+      type: object
+      required:
+      - version
+      - amount
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        amount:
+          $ref: '#/components/schemas/PositivePaymentMoney'
+      additionalProperties: false
+    PaymentPlanLink:
+      type: object
+      required:
+      - version
+      - installmentId
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        installmentId:
+          type: string
+          format: uuid
+          nullable: true
+      additionalProperties: false
+      description: Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не
+        создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным.
     Readiness:
       type: object
       properties:
@@ -5174,6 +5879,7 @@ components:
     Budget:
       type: object
       properties:
+        paymentSummary: { $ref: '#/components/schemas/PaymentSummary' }
         total: { $ref: '#/components/schemas/Money' }  # example: 1500000
         spent: { $ref: '#/components/schemas/Money' }  # example: 560000
         reserve:

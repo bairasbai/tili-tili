@@ -1,0 +1,87 @@
+# Stage 018-A browser acceptance. Prepared locally; remote execution is still required.
+name: Payment schedule browser E2E
+permissions:
+  contents: read
+concurrency:
+  group: payment-browser-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    if: github.head_ref == 'feature/product-improvements-stage1-tasks' || github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: payment_browser_test
+        ports:
+        - 5432:5432
+        options: --health-cmd "pg_isready -U tili -d payment_browser_test" --health-interval 5s --health-timeout 3s --health-retries
+          10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/payment_browser_test
+      E2E_FIXTURE_FILE: /tmp/payment-browser-fixture.private.json
+      E2E_RESULT_DIR: /tmp/payment-browser-evidence
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install locked application dependencies
+      run: "set -euo pipefail\ncorepack enable && corepack prepare pnpm@10.34.5 --activate\nfor dir in 'Тили-тили/app' 'Тили-тили/backend';\
+        \ do\n  (cd \"$dir\" && pnpm install --frozen-lockfile --node-linker=hoisted)\ndone\n"
+    - name: Install isolated browser test tooling
+      run: 'python -m pip install playwright==1.57.0
+
+        python -m playwright install --with-deps chromium
+
+        '
+    - name: Migrate disposable database
+      working-directory: Тили-тили/backend
+      run: DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+    - name: Exercise payments with two real browser sessions
+      run: "set -euo pipefail\nmkdir -p \"$E2E_RESULT_DIR\"\nrm -f \"$E2E_FIXTURE_FILE\"\n(cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs\
+        \ scripts/task-e2e-server.mts) > \"$RUNNER_TEMP/task-api.log\" 2>&1 & api=$!\n(cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js\
+        \ --host 127.0.0.1 --port 3000 --strictPort) > \"$RUNNER_TEMP/task-vite.log\" 2>&1 & ui=$!\ntrap 'kill \"$api\" \"$ui\" 2>/dev/null\
+        \ || true; rm -f \"$E2E_FIXTURE_FILE\"' EXIT\n# This fixture runs the real reminder function directly, without Redis.\n# Bootstrap\
+        \ SQL must finish (private fixture file), then HTTP must be live.\n# Production /health/ready semantics are intentionally unchanged.\n\
+        ready=0\nfor attempt in $(seq 1 60); do\n  if ! kill -0 \"$api\" 2>/dev/null || ! kill -0 \"$ui\" 2>/dev/null; then break; fi\n\
+        \  if test -s \"$E2E_FIXTURE_FILE\" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent\
+        \ http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi\n  sleep 1\n done\nif test \"$ready\" != 1; then\n  python - <<'PYCODE'\n\
+        import json,os,pathlib,re\nresult={'error':'Fixture services did not become ready','logs':{}}\nfor name in ('task-api','task-vite'):\n\
+        \    p=pathlib.Path(os.environ['RUNNER_TEMP'])/(name+'.log')\n    text=p.read_text(errors='replace')[-12000:] if p.exists()\
+        \ else 'No log created'\n    text=re.sub(r'eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+','[redacted-token]',text)\n \
+        \   text=re.sub(r'postgres(?:ql)?://[^\\s\"\\x27]+','[redacted-db]',text)\n    text=re.sub(r'\\+7\\d{10}','[redacted-phone]',text)\n\
+        \    result['logs'][name]=text\n(pathlib.Path(os.environ['E2E_RESULT_DIR'])/'startup-error.json').write_text(json.dumps(result,indent=2))\n\
+        print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')\nPYCODE\n  exit 1\nfi\npython 'Тили-тили/backend/scripts/payment-e2e-browser.py'\n\
+        python - <<'PYCODE'\nimport json,os,pathlib\nr=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'payment-browser-result.json').read_text())\n\
+        assert len(r['passed'])==12 and not r['page_errors'] and 'error' not in r\nPYCODE\n"
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: payment-schedule-browser-evidence
+        path: '${{ env.E2E_RESULT_DIR }}/*.png
+
+          ${{ env.E2E_RESULT_DIR }}/payment-browser-result.json
+
+          ${{ env.E2E_RESULT_DIR }}/payment-history.csv
+
+          ${{ env.E2E_RESULT_DIR }}/startup-error.json'
+        retention-days: 7
+        if-no-files-found: warn
+'on':
+  push:
+    branches:
+    - feature/product-improvements-stage1-tasks
+  pull_request:
+    branches:
+    - main
+  workflow_dispatch: {}
