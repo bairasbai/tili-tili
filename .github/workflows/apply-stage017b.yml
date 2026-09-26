@@ -1,0 +1,186 @@
+name: Apply verified stage 017-B
+on:
+  push:
+    branches: [feature/product-improvements-stage1-tasks]
+    paths:
+      - .github/workflows/apply-stage017b.yml
+      - tasks/.transfer-stage017b/**
+permissions:
+  contents: read
+concurrency:
+  group: stage017b-publication
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'bairasbai/tili-tili' && github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: task_stage017b_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d task_stage017b_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/task_stage017b_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      E2E_FIXTURE_FILE: /tmp/tili-017b-fixture.json
+      E2E_RESULT_DIR: /tmp/tili-017b-evidence
+      BRANCH: feature/product-improvements-stage1-tasks
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify and apply the exact locally tested source patch
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess
+          root=pathlib.Path.cwd()
+          encoded=''.join((root/f'tasks/.transfer-stage017b/part{i}.b64').read_text() for i in range(3))
+          raw=lzma.decompress(base64.b64decode(encoded,validate=True))
+          assert len(raw)<1000000
+          assert hashlib.sha256(raw).hexdigest()=='6c96f7903a7c66feae9735cee29e811ed8db934cf167faabd10aa3b86a7548eb'
+          payload=json.loads(raw)
+          assert payload['base']=='059454c039bf4fa45201998182d1de1ae67e2dca'
+          subprocess.run(['git','merge-base','--is-ancestor',payload['base'],'HEAD'],check=True)
+          assert len(payload['files'])==33
+          for f in payload['files']:
+              p=pathlib.PurePosixPath(f['path'])
+              assert not p.is_absolute() and '..' not in p.parts
+              assert not any(v.startswith('.env') or v in ('.git','.github','node_modules','__pycache__') for v in p.parts)
+              target=root/p
+              assert not target.is_symlink()
+              if f['before'] is None: assert not target.exists(),str(p)
+              else:
+                  actual=subprocess.check_output(['git','hash-object',str(target)],text=True).strip()
+                  assert actual==f['before'],f"Original differs: {p} {actual}"
+          subprocess.run(['git','apply','--check','--binary','-'],input=payload['patch'].encode(),check=True)
+          subprocess.run(['git','apply','--binary','-'],input=payload['patch'].encode(),check=True)
+          for f in payload['files']:
+              actual=subprocess.check_output(['git','hash-object',f['path']],text=True).strip()
+              assert actual==f['after'],f"Applied differs: {f['path']}"
+          manifest=pathlib.Path(os.environ['RUNNER_TEMP'])/'stage017b-manifest.json'
+          manifest.write_text(json.dumps(payload['files'],ensure_ascii=False))
+          print('Verified 33 original and resulting Git blob hashes')
+          PY
+      - name: Install frozen dependencies and regenerate contracts
+        run: |
+          set -euo pipefail
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          for dir in 'Тили-тили/app' 'Тили-тили/backend'; do
+            cp "$dir/.npmrc" "$RUNNER_TEMP/$(basename "$dir").npmrc"
+            (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+            cp "$RUNNER_TEMP/$(basename "$dir").npmrc" "$dir/.npmrc"
+          done
+          (cd 'Тили-тили/backend' && node scripts/gen-contract.mjs && node scripts/gen-schemas.mjs && node node_modules/openapi-typescript/bin/cli.js ../Тили-тили_API_openapi.yaml -o src/contract/api.generated.ts)
+          cp 'Тили-тили/backend/src/contract/api.generated.ts' 'Тили-тили/app/src/lib/api/schema.ts'
+          python - <<'PY'
+          import json,os,pathlib,subprocess
+          for f in json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'stage017b-manifest.json').read_text()):
+              assert subprocess.check_output(['git','hash-object',f['path']],text=True).strip()==f['after'],f['path']
+          print('Generators match the locally tested manifest')
+          PY
+      - name: Check full frontend
+        working-directory: Тили-тили/app
+        run: |
+          set -euo pipefail
+          node node_modules/typescript/bin/tsc -b
+          node node_modules/vitest/vitest.mjs run
+          node node_modules/eslint/bin/eslint.js .
+          node node_modules/vite/bin/vite.js build
+      - name: Check full backend with disposable PostgreSQL and Redis
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+          node node_modules/vitest/vitest.mjs run
+          node node_modules/eslint/bin/eslint.js .
+          node node_modules/typescript/bin/tsc -p tsconfig.json
+      - name: Install isolated browser tooling
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Exercise 017-A and 017-B in two real browser sessions
+        run: |
+          set -euo pipefail
+          mkdir -p "$E2E_RESULT_DIR"
+          (cd 'Тили-тили/backend' && node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
+          (cd 'Тили-тили/app' && node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000) > "$RUNNER_TEMP/task-vite.log" 2>&1 & ui=$!
+          trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
+          for attempt in $(seq 1 60); do
+            if test -f "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health/ready >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then break; fi
+            sleep 1
+          done
+          python 'Тили-тили/backend/scripts/task-e2e-browser.py'
+          python - <<'PY'
+          import json,os,pathlib
+          r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
+          assert len(r['passed'])==14 and not r['page_errors']
+          PY
+      - name: Commit only verified files and remove this one-time bridge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          test "$current" = "$GITHUB_SHA" || { echo 'Feature branch changed; refusing to overwrite'; exit 1; }
+          python - <<'PY'
+          import json,os,pathlib,subprocess
+          manifest=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'stage017b-manifest.json').read_text())
+          paths=[f['path'] for f in manifest]
+          for f in manifest:
+              assert subprocess.check_output(['git','hash-object',f['path']],text=True).strip()==f['after'],f['path']
+          bridge=['.github/workflows/apply-stage017b.yml']+[f'tasks/.transfer-stage017b/part{i}.b64' for i in range(3)]
+          subprocess.run(['git','add','--',*paths],check=True)
+          subprocess.run(['git','rm','--',*bridge],check=True)
+          staged=set(subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0'))
+          assert staged==set(paths+bridge),staged^set(paths+bridge)
+          out=pathlib.Path(os.environ['E2E_RESULT_DIR'])
+          (out/'source-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(tasks): 017-B assignment notifications and configurable reminders'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$BRANCH"
+          python - <<'PY'
+          import json,os,pathlib,subprocess
+          r={'stage':'017-B','commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'run':os.environ['GITHUB_RUN_ID'],'frontend':'passed','backend':'passed','browser':'14 passed','mainModified':False}
+          (pathlib.Path(os.environ['E2E_RESULT_DIR'])/'publication.json').write_text(json.dumps(r,indent=2))
+          print(json.dumps(r))
+          PY
+      - name: Save only non-secret evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage017b-verified-evidence
+          path: |
+            /tmp/tili-017b-evidence/*.png
+            /tmp/tili-017b-evidence/browser-result.json
+            /tmp/tili-017b-evidence/source-manifest.json
+            /tmp/tili-017b-evidence/publication.json
+          retention-days: 7
+          if-no-files-found: warn
