@@ -138,7 +138,10 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {paymentId:string}).paymentId
     if(!isUuid(id))throw notFound('Оплата не найдена')
     const body=request.body as {filename:string;mimeType:string;contentBase64:string}
-    const filename=body.filename.trim().replace(/[\\/\u0000-\u001f\u007f]/g,'_')
+    /* Разделители пути и управляющие символы — в «_»: имя уходит в заголовок
+       скачивания и в файловую систему пары. Посимвольно, без регулярки с
+       управляющими символами (линт no-control-regex). */
+    const filename=Array.from(body.filename.trim(),ch=>{const c=ch.codePointAt(0)!;return ch==='/'||ch==='\\'||c<0x20||c===0x7f?'_':ch}).join('')
     if(!filename)throw validationFailed({filename:'Введите имя файла'})
     const content=Buffer.from(body.contentBase64,'base64')
     if(content.length===0||content.length>524288)throw validationFailed({contentBase64:'Файл должен быть не больше 512 КБ'})
@@ -155,14 +158,14 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length}}
   })))
 
-  app.get('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content', async(request,reply)=>{
+  app.get('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content', async(request)=>{
     const wid=request.member!.weddingId,{paymentId,receiptId}=request.params as {paymentId:string;receiptId:string}
     if(!isUuid(paymentId)||!isUuid(receiptId))throw notFound('Файл не найден')
     const {rows}=await db().query<{filename:string;mime_type:string;content:Buffer}>(
       `select r.filename,r.mime_type,r.content from payment_receipts r join payments p on p.id=r.payment_id join deals d on d.id=p.deal_id
         where r.id=$1 and r.payment_id=$2 and r.wedding_id=$3 and d.wedding_id=$3`,[receiptId,paymentId,wid])
     const file=rows[0];if(!file)throw notFound('Файл не найден')
-    reply.header('Cache-Control','private, no-store')
+    // Cache-Control: no-store, nosniff и CSP ставит общий хук onSend (app.ts) — всем ответам.
     return {filename:file.filename,mimeType:file.mime_type,contentBase64:file.content.toString('base64')}
   })
 
