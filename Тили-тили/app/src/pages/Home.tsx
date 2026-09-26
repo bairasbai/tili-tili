@@ -53,7 +53,9 @@ export default function Home() {
   /* Правила §3.14 считает сервер (дефицит категории, блокирующий слот, лимит
      бюджета): первая подсказка — на главную. Помощнику они закрыты (403 —
      внутри суммы), тогда остаётся общая подсказка ниже. */
-  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId])
+  /* Подсказки считают отметку «уже забронировано» бронью (FR-017): снята — перечитать, а не ждать перезахода. */
+  const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
+  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : Promise.resolve({ items: [] }), [weddingId, prebookedKey])
   const serverTip = tipsQ.data?.items?.[0] ?? null
   /* Непрочитанные — для точки на колокольчике. Отдельного счётчика в
      контракте нет, поэтому считаем по списку. */

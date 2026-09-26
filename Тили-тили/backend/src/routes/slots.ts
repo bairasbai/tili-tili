@@ -119,6 +119,21 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     if (!rows[0] || rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
   }
 
+  /**
+   * Захват пустого слота — замком строки до вставки сделки, 409 если занят.
+   *
+   * Раньше слот захватывал условный UPDATE после вставки сделки. Но вставка
+   * берёт на строку слота `FOR KEY SHARE` (внешний ключ `deals.slot_id`), а
+   * UPDATE `deal_id` — `FOR UPDATE` (уникальный индекс `slots_deal_unique`):
+   * две брони, успевшие обе вставить сделку, ждали друг друга, и база убивала
+   * одну — 500 вместо 409 (ERR-0312). Под замком вторая бронь ждёт первую и
+   * видит слот уже занятым: условие перепроверяется на свежей версии строки.
+   */
+  async function lockFreeSlot(client: Queryable, slotId: string): Promise<void> {
+    const { rowCount } = await client.query('select 1 from slots where id = $1 and deal_id is null for update', [slotId])
+    if (rowCount === 0) throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
+  }
+
   /* ── мозаика ──────────────────────────────────────────────────────── */
   app.get('/weddings/:weddingId/slots', async (request) =>
     loadSlots(db(), request.member!.weddingId, seesMoney(request.member!.role)),
@@ -262,24 +277,16 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
             }
           }
 
+          await lockFreeSlot(client, slotId)
           const dealId = uuidv7()
           await client.query(
             `insert into deals (id, wedding_id, slot_id, vendor_id, state, price, currency, booked_at, package_id)
              values ($1, $2, $3, $4, 'booked', $5, 'RUB', now(), $6)`,
             [dealId, weddingId, slotId, body.vendorId, body.price.amount, body.packageId ?? null],
           )
-          // Захват слота условием в UPDATE, а не «прочитали и записали»:
-          // два одновременных «Забронировать» иначе оба видят пустой слот,
-          // оба вешают на него сделку, и бюджет считает обе. Отметка «уже
-          // забронировано» (фича 018) снимается этим же UPDATE: сделка и
-          // отметка вместе запрещены CHECK базы.
-          const taken = await client.query(
-            'update slots set deal_id = $2, prebooked_at = null where id = $1 and deal_id is null',
-            [slotId, dealId],
-          )
-          if (taken.rowCount === 0) {
-            throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
-          }
+          // Отметка «уже забронировано» (фича 018) снимается этим же UPDATE:
+          // сделка и отметка вместе запрещены CHECK базы.
+          await client.query('update slots set deal_id = $2, prebooked_at = null where id = $1', [slotId, dealId])
           await client.query(
             `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
              values ($1, $2, null, 'booked', $3)`,
@@ -437,6 +444,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         // Прежние ссылки слота гаснут до новой сделки: страховка от любого
         // пути отмены, который их не отозвал (ERR-0242).
         await revokeSlotInvites(client, slotId)
+        await lockFreeSlot(client, slotId)
         const dealId = uuidv7()
         // Свой подрядчик занимает слот, бюджет и тайминг наравне с каталожным,
         // но даты в чужом календаре не занимает: его календаря у нас нет.
@@ -446,13 +454,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           [dealId, weddingId, slotId, body.vendorName, body.phone ?? null, body.price.amount],
         )
         // Отметка «уже забронировано» снимается тем же UPDATE, что у брони из каталога (фича 018).
-        const taken = await client.query(
-          'update slots set deal_id = $2, prebooked_at = null where id = $1 and deal_id is null',
-          [slotId, dealId],
-        )
-        if (taken.rowCount === 0) {
-          throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
-        }
+        await client.query('update slots set deal_id = $2, prebooked_at = null where id = $1', [slotId, dealId])
         await client.query(
           `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
            values ($1, $2, null, 'booked', $3)`,

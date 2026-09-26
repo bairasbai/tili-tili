@@ -95,5 +95,8 @@ describe('фича 018 по-английски', () => {
     await waitFor(() => expect(text(slot)).toContain('You said in the quiz that this vendor is already booked'), { timeout: 4000 })
     await waitFor(() => expect(screen.getByRole('button', { name: 'No, still looking' })).toBeTruthy(), { timeout: 4000 })
     expect(text(slot)).not.toContain('Вы отметили в квизе')
+    /* Заголовок экрана — подпись слота переводом, как на карточке (D-06). */
+    expect(text(slot)).toContain('Venue')
+    expect(text(slot)).not.toContain('Площадка')
   })
 })

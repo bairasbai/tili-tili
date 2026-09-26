@@ -157,6 +157,13 @@ export default function Quiz() {
     if (!last) return setI(i + 1)
     void create()
   }
+  /* «Пропустить вопрос» — ответа нет: выбранный было вариант снимается, иначе его
+     код (формат, «кто планирует», «уже забронировано») ушёл бы на сервер (ревью PR
+     фичи 018). Дата и город живут своим состоянием — их пропуск не трогает, как раньше. */
+  const skip = () => {
+    if (i !== DATE_STEP && i !== CITY_STEP) setAnswers(a => { const rest = { ...a }; delete rest[i]; return rest })
+    next()
+  }
 
   /*
    * Свадьба заводится на сервере, а не только в состоянии.
@@ -371,7 +378,7 @@ export default function Quiz() {
         >
           {busy ? t('Создаём…') : last ? t('Создать мою свадьбу ✨') : t('Далее')}
         </button>
-        {!last && <button onClick={next} className="w-full text-center text-[12px] text-[var(--soft)] mt-3 press">{t('Пропустить вопрос')}</button>}
+        {!last && <button onClick={skip} className="w-full text-center text-[12px] text-[var(--soft)] mt-3 press">{t('Пропустить вопрос')}</button>}
       </div>
 
       {datePicker && (

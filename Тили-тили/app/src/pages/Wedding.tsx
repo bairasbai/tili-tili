@@ -74,7 +74,9 @@ export function WeddingTeam() {
   /* Дефицит категории и блокирующий слот (§3.14 п. 1–2) — с сервера: подсказка
      о пустом слоте ниже берёт их первыми, общее «подобрать свободных» — когда
      сервер поводов не назвал. */
-  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : noWedding(), [weddingId])
+  /* Отметка «уже забронировано» меняет ответ подсказок (FR-017): снята — перечитать. */
+  const prebookedKey = slots.filter(s => s.state === 'prebooked').map(s => s.id).join(',')
+  const tipsQ = useApi(() => weddingId ? getTips(weddingId) : noWedding(), [weddingId, prebookedKey])
   /* Ноль здесь — «итог не задан», а не сумма: полоса «от нуля» была бы
      процентом от неизвестного (R-178, ревью D2-09). */
   const budgetTotal = budget.data?.total?.amount ?? 0
@@ -312,7 +314,7 @@ function SlotView({ s }: { s: Slot }) {
   if (s.state === 'prebooked') {
     return (
       <div className="pb-28">
-        <TopBar back title={s.label} sub={t('Слот команды')} />
+        <TopBar back title={t(s.label)} sub={t('Слот команды')} />
         <div className="px-5 mt-3">
           <div className="card p-5 text-center">
             <div className={cn('w-16 h-16 rounded-[20px] mx-auto flex items-center justify-center', s.tile)}>{createElement(catIcon(s.categoryId), { size: 28, className: 'text-[var(--ink2)]' })}</div>

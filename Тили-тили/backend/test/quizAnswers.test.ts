@@ -675,6 +675,16 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       expect(blocking(tips, 'registrar')).toBe('«Выездная церемония» держится на слоте «Церемониймейстер» — он пуст')
     })
 
+    it('свадьба без формата, где пара сама добавила слот церемонии: пустой — назван под «Выездной церемонией» (намеренно)', async () => {
+      /* Побочный эффект карты (ревью PR): до фичи свадьбы заводились без формата, но с «Выездной церемонией»
+         в тайминге; слот `ceremony` пара могла добавить сама (фича 014). Пустой — теперь тоже подсказка. */
+      const w = await wedding()
+      const added = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token), payload: { categoryId: 'ceremony' } })
+      expect(added.statusCode, added.body.slice(0, 200)).toBe(201)
+      const tips = await tipsOf(w.token, w.weddingId)
+      expect(blocking(tips, 'ceremony')).toBe('«Выездная церемония» держится на слоте «Площадка выездной церемонии» — он пуст')
+    })
+
     it('камерная свадьба без выездной церемонии: «Ужин» держится на площадке, DJ ему не нужен', async () => {
       const w = await wedding({ format: 'intimate' })
       /* Пара убрала церемонию из тайминга — экран шлёт список целиком, как редактор тайминга. */

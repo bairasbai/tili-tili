@@ -53,6 +53,21 @@
       перегенерация
 - [x] T018 `bash init.sh` с базой и Redis, покрытие изменённых строк ≥ 95 %, живой обход, пуш
 
+## Фаза 7 — ревью PR (независимый ревьюер, 2026-09-26: блокеров нет, находки D-01…D-12)
+
+- [x] T019 Красные тесты фронта: К3 «вариант выбрали, а потом «Пропустить вопрос»» (D-03), П2 — подсказки перечитаны
+      после «Нет, ещё ищем» (D-09), EN — заголовок экрана слота с отметкой (D-06), П3 — помощник и координатор (D-11)
+      в `app/src/lib/quizAnswers.test.tsx`, `app/src/lib/quizAnswers.en.test.tsx`
+- [x] T020 `skip` в `app/src/pages/Quiz.tsx`; `prebookedKey` подсказок в `app/src/pages/Home.tsx` и
+      `app/src/pages/Wedding.tsx`; `t(s.label)` в `SlotView`; тест Т9 «старая свадьба со слотом церемонии» в
+      `backend/test/quizAnswers.test.ts`; обоснование «Ужина» в `backend/src/wedding/tips.ts`; процедура порядка миграций
+      с веткой 017 в комментарии `backend/migrations/1761300000000_quiz_answers_matter.cjs` (D-12)
+- [x] T021 Карты экранов и кнопок (журналы), `ERRORS.md` (ERR-0311), спека (допущения, FR-018, вопросы владельцу),
+      план Р6, `JOURNAL.md`, `tasks/todo.md` (D-02, D-05, D-07, D-08 — задачами), `session-handoff.md`
+- [x] T023 Взаимная блокировка брони слота, найденная прогоном с покрытием (ERR-0312): `lockFreeSlot` в обеих дверях
+      `backend/src/routes/slots.ts`, тест `backend/test/audit4.test.ts` с заданным чередованием, поправка `BACKEND-PLAN.md`
+- [x] T022 `bash init.sh` с базой и Redis, покрытие изменённых строк, пуш, CI
+
 ## Зависимости
 
 - Фаза 2 блокирует всё: без контракта и миграции нет ни типов фронта, ни колонок.

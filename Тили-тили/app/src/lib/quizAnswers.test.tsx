@@ -261,6 +261,27 @@ describe('К3: на сервер уходят коды, а не подписи',
     expect(body).not.toHaveProperty('planner')
     expect(body).not.toHaveProperty('prebooked')
   })
+
+  it('вариант выбрали, а потом «Пропустить вопрос» — ответа нет: коды не уходят (ревью PR, D-03)', async () => {
+    const calls = serve(quizRoutes({ id: 'u1', name: 'Алина' }))
+    const r = quizScreen()
+    click('Ещё не решили'); next()
+    click('Уфа'); next()
+    skip() // гости
+    skip() // бюджет
+    click('Классика: ЗАГС + банкет'); skip()
+    skip() // стиль
+    click('С помощью агентства'); skip()
+    click('Площадка'); skip()
+    await waitFor(() => expect(ownInput().value).toBe('Алина'), { timeout: 4000 })
+    type(partnerInput(), 'Тимур')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(text(r)).toContain('ГЛАВНАЯ'), { timeout: 4000 })
+    const body = postOf(calls)!.body as Record<string, unknown>
+    expect(body).not.toHaveProperty('format')
+    expect(body).not.toHaveProperty('planner')
+    expect(body).not.toHaveProperty('prebooked')
+  })
 })
 
 /* ── плитка «Уже забронировано» ───────────────────────────────────────── */
@@ -334,14 +355,17 @@ describe('П1–П3: главная — карточка «Уже заброни
     renderAt('/home', screens)
     await waitFor(() => expect(button('Нет, ещё ищем')).toBeTruthy(), { timeout: 4000 })
     const slotsBefore = calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots').length
+    const tipsBefore = calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/tips').length
     fireEvent.click(button('Нет, ещё ищем'))
     await waitFor(() => expect(screen.queryAllByTestId('prebooked-slot')).toHaveLength(0), { timeout: 4000 })
     expect(calls.filter(c => c.method === 'DELETE' && c.path === '/weddings/w1/slots/s-venue/prebooked')).toHaveLength(1)
     expect(calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots').length).toBeGreaterThan(slotsBefore)
+    /* Подсказки Тиля считают отметку бронью (FR-017): снята — перечитываем, иначе совет виден только после перезахода (D-09). */
+    await waitFor(() => expect(calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/tips').length).toBeGreaterThan(tipsBefore), { timeout: 4000 })
   })
 
-  it('помощник видит отметку, но не кнопки: их исход у него — только 403', async () => {
-    serve(weddingRoutes('helper'))
+  it.each(['helper', 'coordinator'] as const)('%s видит отметку, но не кнопки: их исход у него — только 403', async (role) => {
+    serve(weddingRoutes(role))
     renderAt('/home', screens)
     await waitFor(() => expect(screen.getByText('Отметку ведёт пара')).toBeTruthy(), { timeout: 4000 })
     const card = prebookedCard('Площадка')!
