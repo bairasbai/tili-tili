@@ -65,7 +65,7 @@ describe('018-A: график платежей в интерфейсе', () => {
   })
   it('частичная оплата несёт версию этапа и идёт только новым API', async () => {
     open(); const card = await screen.findByRole('region', { name: 'Аванс' })
-    fireEvent.click(within(card).getByRole('button', { name: 'Отметить оплату' }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Отметить оплату: Аванс' }))
     const form = screen.getByRole('form', { name: 'Редактор платежа' })
     fireEvent.change(within(form).getByLabelText('Сумма, ₽'), { target: { value: '100' } }); fireEvent.submit(form)
     await waitFor(() => expect(writes).toHaveLength(1))
@@ -86,7 +86,7 @@ describe('018-A: график платежей в интерфейсе', () => {
   })
   it('нет доступа — нет финансовых цифр, действий и выгрузки', async () => {
     status = 403; open(); await screen.findByText('Финансовый раздел доступен только паре')
-    expect(screen.queryByText('Обязательства')).toBeNull()
+    expect(screen.queryByText('Цены активных сделок')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Добавить этап' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'История CSV' })).toBeNull()
   })
@@ -102,21 +102,73 @@ describe('018-A: график платежей в интерфейсе', () => {
     await waitFor(() => expect(writes).toHaveLength(1))
     expect(writes[0]).toMatchObject({ path: '/weddings/w1/payments/p1/plan', body: { version: 2, installmentId: 'i1' } })
   })
-  it('устаревший черновик не получает новую версию молча', async () => {
+  it('устаревшая версия: данные перечитаны, черновик остаётся, повтор — со свежей версией (ревью 018, F-05)', async () => {
     stale = true; open(); const card = await screen.findByRole('region', { name: 'Аванс' })
-    fireEvent.click(within(card).getByRole('button', { name: 'Изменить' }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Изменить: Аванс' }))
     const form = screen.getByRole('form', { name: 'Редактор платежа' })
-    fireEvent.change(within(form).getByLabelText('Название этапа'), { target: { value: 'Мой черновик' } }); fireEvent.submit(form)
+    fireEvent.change(within(form).getByLabelText('Название этапа'), { target: { value: 'Мой черновик' } })
+    // Пока пара правила, этап изменили на другом устройстве: сервер отдаст версию 4.
+    state.items = [{ ...stage, version: 4 }]
+    const readsBefore = reads.length
+    fireEvent.submit(form)
     await screen.findByRole('alert'); expect((within(form).getByLabelText('Название этапа') as HTMLInputElement).value).toBe('Мой черновик')
     expect(writes[0].body.version).toBe(3)
-    expect(screen.getByRole('alert').textContent).toContain('Черновик сохранён')
+    expect(screen.getByRole('alert').textContent).toContain('данные обновлены')
+    await waitFor(() => expect(reads.length).toBeGreaterThan(readsBefore))
+    // Прежде повтор снова уходил с версией 3 и получал 409 по кругу.
+    stale = false; fireEvent.submit(form)
+    await waitFor(() => expect(writes).toHaveLength(2))
+    expect(writes[1].body).toMatchObject({ version: 4, title: 'Мой черновик' })
   })
   it('отмена объясняет отсутствие возврата и отправляет только отмену', async () => {
     open(); const card = await screen.findByRole('region', { name: 'Аванс' })
-    fireEvent.click(within(card).getByRole('button', { name: 'Отменить этап' }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Отменить этап: Аванс' }))
     const form = screen.getByRole('form', { name: 'Редактор платежа' }); expect(form.textContent).toContain('не возвращает деньги'); fireEvent.submit(form)
     await waitFor(() => expect(writes).toHaveLength(1))
-    expect(writes[0].body).toEqual({ version: 3, cancelled: true, reason: '' })
+    // Пустая причина не уходит: в базе ей место — null, а не '' (ревью 018, F-13).
+    expect(writes[0].body).toEqual({ version: 3, cancelled: true })
+  })
+  it('период проверяется до запроса и не прячет экран (ревью 018, F-02)', async () => {
+    open(); const form = await screen.findByRole('form', { name: 'Период платежей' })
+    const readsBefore = reads.length
+    fireEvent.change(within(form).getByLabelText('С даты'), { target: { value: '2027-06-01' } })
+    fireEvent.change(within(form).getByLabelText('По дату'), { target: { value: '2027-05-01' } }); fireEvent.submit(form)
+    expect((await within(form).findByRole('alert')).textContent).toBe('Начало периода позже конца')
+    fireEvent.change(within(form).getByLabelText('С даты'), { target: { value: '2027-01-01' } })
+    fireEvent.change(within(form).getByLabelText('По дату'), { target: { value: '2028-01-02' } }); fireEvent.submit(form)
+    expect(within(form).getByRole('alert').textContent).toBe('Выберите период не длиннее 366 дней')
+    expect(reads.length).toBe(readsBefore)
+    expect(screen.getByRole('form', { name: 'Период платежей' })).toBeTruthy()
+  })
+  it('отказ сервера по периоду оставляет выход — «Сбросить период» (ревью 018, F-02)', async () => {
+    open(); const form = await screen.findByRole('form', { name: 'Период платежей' })
+    status = 422
+    fireEvent.change(within(form).getByLabelText('С даты'), { target: { value: '2027-02-01' } }); fireEvent.submit(form)
+    const reset = await screen.findByRole('button', { name: 'Сбросить период' })
+    status = 200; fireEvent.click(reset)
+    await screen.findByRole('form', { name: 'Период платежей' })
+    expect(reads.at(-1)).not.toContain('from=')
+  })
+  it('без изменений «Сохранить» выключен (ревью 018, F-11)', async () => {
+    open(); const card = await screen.findByRole('region', { name: 'Аванс' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Изменить: Аванс' }))
+    const form = screen.getByRole('form', { name: 'Редактор платежа' })
+    expect(within(form).getByRole('button', { name: 'Сохранить' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.change(within(form).getByLabelText('Название этапа'), { target: { value: 'Аванс фотографу' } })
+    expect(within(form).getByRole('button', { name: 'Сохранить' }).hasAttribute('disabled')).toBe(false)
+  })
+  it('этап, закрытый оплатой сделки без привязки, — «покрыто», без оплаты (ревью 018, M-01)', async () => {
+    state.items = [{ ...stage, status: 'covered', allocated: money(400000), remaining: money(0) }]
+    open(); const card = await screen.findByRole('region', { name: 'Аванс' })
+    expect(card.textContent).toContain('Покрыто оплатами сделки')
+    expect(card.textContent).toContain('Покрыто отметками без привязки')
+    expect(within(card).getByRole('button', { name: 'Отметить оплату: Аванс' }).hasAttribute('disabled')).toBe(true)
+  })
+  it('дата отметки — в поясе свадьбы, а не срезом UTC (ревью 018, F-09)', async () => {
+    // 21:30 UTC 1 января — это 2 января в Екатеринбурге (UTC+5).
+    state.payments = [{ ...state.payments[0]!, createdAt: '2027-01-01T21:30:00.000Z' }]
+    open(); fireEvent.click(await screen.findByText(/История оплат/))
+    expect(await screen.findByText(/2 января 2027/)).toBeTruthy()
   })
   it('период и просрочки фильтруются сервером', async () => {
     open(); const form = await screen.findByRole('form', { name: 'Период платежей' })
