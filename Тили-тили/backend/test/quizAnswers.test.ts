@@ -13,6 +13,9 @@
  * Т6  бронь из каталога и свой подрядчик снимают отметку; отметка на слоте со сделкой запрещена базой.
  * Т7  перенос даты двигает второй день; первая дата ставит часы по формату.
  * Т8  название «Имя ♥ Партнёр» после `PATCH /users/me` — на это опирается квиз.
+ * Т9  подсказки Тиля (§3.14): отмеченный слот не открыт — ни дефицита, ни блокирующего слота; блоки форматов
+ *     названы в карте зависимостей; «Выездная церемония» держится и на слотах своего формата.
+ * Т10 контекст Тиля называет отметку «уже забронировано вне приложения», а не «пусто».
  *
  * Все проверки — через HTTP и SQL на живой базе: моки базы здесь запрещены (поручение владельца).
  */
@@ -21,7 +24,9 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
-import { SLOT_TEMPLATE, TIMELINE_TEMPLATE } from '../src/wedding/templates.js'
+import { SLOT_TEMPLATE, TIMELINE_TEMPLATE, WEDDING_FORMATS, timelineTemplate } from '../src/wedding/templates.js'
+import { BLOCK_DEPENDENCIES, DEFICIT_THRESHOLD } from '../src/wedding/tips.js'
+import { weddingContext } from '../src/tilly/context.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -46,6 +51,24 @@ interface EventRow {
   starts: string | null
   ends: string | null
 }
+
+/* Т9, чистое правило. Правило «блокирующий слот» находит блок по имени: блок, которого нет в карте, для него
+   не существует. Молчание по блоку формата — тоже решение, поэтому оно записано явно, пустым списком. */
+describe('Т9: карта зависимостей знает блоки всех форматов', () => {
+  const names = [...new Set([null, ...WEDDING_FORMATS].flatMap((f) => timelineTemplate(f).map((b) => b.name)))]
+
+  it('каждый блок тайминга любого формата назван в BLOCK_DEPENDENCIES', () => {
+    for (const name of names) expect(BLOCK_DEPENDENCIES[name], `блок «${name}» не назван`).toBeDefined()
+  })
+
+  it('решения по блокам форматов: ЗАГС и второй день — ни на чём; «Ужин» — на площадке', () => {
+    expect(BLOCK_DEPENDENCIES['Регистрация в ЗАГСе']).toEqual([])
+    expect(BLOCK_DEPENDENCIES['Ужин']).toEqual(['venue'])
+    expect(BLOCK_DEPENDENCIES['День 2: бранч']).toEqual([])
+    expect(BLOCK_DEPENDENCIES['День 2: продолжение праздника']).toEqual([])
+    expect(BLOCK_DEPENDENCIES['Выездная церемония']).toEqual(expect.arrayContaining(['ceremony', 'registrar']))
+  })
+})
 
 describe.skipIf(!live)('фича 018: ответы квиза влияют на свадьбу', () => {
   let app: FastifyInstance
@@ -199,6 +222,17 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
     app.inject({ method: 'DELETE', url: `/weddings/${weddingId}/slots/${slotId}/prebooked`, headers: auth(token) })
 
   const byCategory = (slots: SlotOut[], categoryId: string) => slots.find((s) => s.categoryId === categoryId)!
+
+  type Tip = { kind: string; title: string; categoryId?: string | null }
+  const tipsOf = async (token: string, weddingId: string) => {
+    const res = await app.inject({ method: 'GET', url: `/weddings/${weddingId}/tips`, headers: auth(token) })
+    expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+    return (res.json() as { items: Tip[] }).items
+  }
+
+  /* Дата по часам базы — правило дефицита считает месяцы от `current_date` базы. */
+  const dbDate = async (shiftDays: number) =>
+    (await app.db!.query<{ d: string }>(`select to_char(current_date + $1::int, 'YYYY-MM-DD') as d`, [shiftDays])).rows[0]!.d
 
   /* ── Т1: формат ─────────────────────────────────────────────────────── */
   describe('Т1: формат задаёт мозаику и тайминг', () => {
@@ -590,6 +624,81 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       const anonymous = await newUser()
       const bare = await postWedding(anonymous.token, {})
       expect((bare.json() as { title: string }).title).toBe('Тимур')
+    })
+  })
+
+  /* ── Т9: подсказки Тиля ─────────────────────────────────────────────── */
+  describe('Т9: подсказки Тиля (§3.14) знают отметку и блоки форматов', () => {
+    /* Малый город справочника: свободных площадок там нет или единицы — дефицит виден (как в audit47). */
+    const SMALL = { name: 'Большеустьикинское', region: 'Башкортостан' }
+    const freeIn = async (categoryId: string, date: string) =>
+      Number(
+        (
+          await app.db!.query<{ n: string }>(
+            `select count(*)::text as n from vendors v
+               join users u on u.id = v.user_id and u.deleted_at is null and v.blocked_at is null
+               join cities c on c.id = v.city_id
+              where v.category_id = $1 and v.published_at is not null and c.name = $2
+                and not exists (select 1 from vendor_busy_dates b where b.vendor_id = v.id and b.date = $3::date)`,
+            [categoryId, SMALL.name, date],
+          )
+        ).rows[0]!.n,
+      )
+    const about = (tips: Tip[], categoryId: string) =>
+      tips.filter((t) => t.categoryId === categoryId && (t.kind === 'deficit' || t.kind === 'blocking_slot'))
+    const blocking = (tips: Tip[], categoryId: string) =>
+      tips.find((t) => t.kind === 'blocking_slot' && t.categoryId === categoryId)?.title
+
+    it('отмеченный слот не открыт: ни дефицита, ни блокирующего слота; «Нет, ещё ищем» возвращает подсказки', async () => {
+      const date = await dbDate(90)
+      const w = await wedding({ date, city: SMALL, format: 'outdoor', prebooked: ['venue', 'host'] })
+      const before = await tipsOf(w.token, w.weddingId)
+      expect(about(before, 'venue'), 'площадка отмечена — искать её Тиль не зовёт').toEqual([])
+      expect(about(before, 'host'), 'ведущий отмечен — искать его Тиль не зовёт').toEqual([])
+      /* Правило не выключено целиком: пустой неотмеченный слот под тем же блоком назван. */
+      expect(blocking(before, 'decor')).toBe('«Выездная церемония» держится на слоте «Декоратор» — он пуст')
+
+      const venue = byCategory(await slotsOf(w.token, w.weddingId), 'venue')
+      expect((await unmark(w.token, w.weddingId, venue.id)).statusCode).toBe(204)
+      const after = await tipsOf(w.token, w.weddingId)
+      expect(blocking(after, 'venue')).toBe('«Выездная церемония» держится на слоте «Площадка» — он пуст')
+      const deficit = after.find((t) => t.kind === 'deficit' && t.categoryId === 'venue')
+      if ((await freeIn('venue', date)) <= DEFICIT_THRESHOLD) expect(deficit, 'дефицит площадок после снятия отметки').toBeTruthy()
+      else expect(deficit).toBeUndefined()
+      expect(about(after, 'host'), 'ведущий по-прежнему отмечен').toEqual([])
+    })
+
+    it('«Выездная церемония» держится и на слотах своего формата — площадке церемонии и церемониймейстере', async () => {
+      const w = await wedding({ format: 'outdoor' })
+      const tips = await tipsOf(w.token, w.weddingId)
+      expect(blocking(tips, 'ceremony')).toBe('«Выездная церемония» держится на слоте «Площадка выездной церемонии» — он пуст')
+      expect(blocking(tips, 'registrar')).toBe('«Выездная церемония» держится на слоте «Церемониймейстер» — он пуст')
+    })
+
+    it('камерная свадьба без выездной церемонии: «Ужин» держится на площадке, DJ ему не нужен', async () => {
+      const w = await wedding({ format: 'intimate' })
+      /* Пара убрала церемонию из тайминга — экран шлёт список целиком, как редактор тайминга. */
+      const rest = timelineTemplate('intimate').filter((e) => e.name !== 'Выездная церемония').map((e) => ({ name: e.name }))
+      const put = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/timeline`, headers: auth(w.token), payload: rest })
+      expect(put.statusCode, put.body.slice(0, 200)).toBe(200)
+      const tips = await tipsOf(w.token, w.weddingId)
+      expect(blocking(tips, 'venue')).toBe('«Ужин» держится на слоте «Площадка» — он пуст')
+      expect(blocking(tips, 'dj')).toBeUndefined()
+    })
+  })
+
+  /* ── Т10: контекст Тиля ─────────────────────────────────────────────── */
+  describe('Т10: контекст Тиля называет отметку', () => {
+    it('отмеченный слот — «уже забронировано вне приложения», пустой — «пусто»; после «Нет, ещё ищем» — «пусто»', async () => {
+      const w = await wedding({ prebooked: ['venue'] })
+      const ctx = (await weddingContext(app.db!, w.weddingId)).text
+      expect(ctx).toContain('- Площадка: уже забронировано вне приложения')
+      expect(ctx).not.toContain('- Площадка: пусто')
+      expect(ctx).toContain('- Фотограф: пусто — подрядчик не выбран')
+
+      const venue = byCategory(await slotsOf(w.token, w.weddingId), 'venue')
+      expect((await unmark(w.token, w.weddingId, venue.id)).statusCode).toBe(204)
+      expect((await weddingContext(app.db!, w.weddingId)).text).toContain('- Площадка: пусто — подрядчик не выбран')
     })
   })
 })

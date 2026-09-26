@@ -14,7 +14,7 @@ import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { profileCompleteness, COMPLETENESS_FIELDS } from '../src/vendor/completeness.js'
 import { BLOCK_DEPENDENCIES, BUDGET_ALERT_RATIO, DEFICIT_THRESHOLD } from '../src/wedding/tips.js'
-import { TIMELINE_TEMPLATE } from '../src/wedding/templates.js'
+import { WEDDING_FORMATS, timelineTemplate } from '../src/wedding/templates.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -29,8 +29,10 @@ describe('корзина 1: чистые правила', () => {
   })
 
   it('Т1: зависимости блоков названы именами шаблона тайминга', () => {
+    /* Шаблон — любого формата (фича 018): «Регистрация в ЗАГСе», «Ужин», «День 2: …» — тоже блоки шаблона. */
+    const names = new Set([null, ...WEDDING_FORMATS].flatMap((f) => timelineTemplate(f).map((b) => b.name)))
     for (const name of Object.keys(BLOCK_DEPENDENCIES)) {
-      expect(TIMELINE_TEMPLATE.some((b) => b.name === name), `блока «${name}» нет в шаблоне`).toBe(true)
+      expect(names.has(name), `блока «${name}» нет в шаблоне`).toBe(true)
     }
     expect(BLOCK_DEPENDENCIES['Доставка букета и деталей']).toContain('florist')
     expect(DEFICIT_THRESHOLD).toBe(6)

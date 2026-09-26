@@ -19,6 +19,10 @@ import { loadBudget } from './budget.js'
  *     свои статьи против доли общего бюджета) — дальше только за счёт
  *     резерва. Считается той же функцией, что экран бюджета (`loadBudget`).
  *
+ * Слот с отметкой «уже забронировано вне приложения» (фича 018) не открыт:
+ * пара ответила в квизе, что подрядчик найден, — звать его искать нельзя,
+ * как нельзя и после брони. Экраны считают такой слот забронированным.
+ *
  * До этого правила жили на клиенте: порог 80 % считался по загруженной
  * странице, дефицита и блокирующих слотов не было вовсе (сверка планов
  * 2026-09-18). Модель здесь не нужна — это арифметика; Тиль-чат (фича 010)
@@ -40,14 +44,25 @@ export const DEFICIT_MONTHS = 8
 /** Порог лимита категории (§3.14 п. 3). */
 export const BUDGET_ALERT_RATIO = 0.85
 
-/** Какие слоты держат блок тайминга из шаблона — по имени блока. */
+/**
+ * Какие слоты держат блок тайминга из шаблона — по имени блока. Названы блоки
+ * шаблонов всех форматов (`timelineTemplate`, фича 018); пустой список — блок
+ * не держится ни на одном слоте команды, это решение, а не пропуск.
+ * «Выездная церемония» держится и на слотах, которые добавляет её формат, —
+ * площадке церемонии и церемониймейстере; у свадьбы без них ничего не меняется.
+ * «Ужин» камерной свадьбы — на площадке: ведущего и DJ формат не предполагает.
+ */
 export const BLOCK_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
   'Сборы невесты': ['stylist'],
   'Сборы жениха': [],
   'Доставка букета и деталей': ['florist'],
-  'Выездная церемония': ['venue', 'host', 'decor'],
+  'Выездная церемония': ['venue', 'host', 'decor', 'ceremony', 'registrar'],
+  'Регистрация в ЗАГСе': [],
   'Банкет': ['venue', 'host', 'dj'],
+  'Ужин': ['venue'],
   'Салют и финал': [],
+  'День 2: бранч': [],
+  'День 2: продолжение праздника': [],
 }
 
 const rubles = (kopecks: number) => `${Math.round(kopecks / 100).toLocaleString('ru-RU')} ₽`
@@ -66,10 +81,11 @@ export async function computeTips(db: Queryable, weddingId: string): Promise<Tip
   const wedding = w[0]
   if (!wedding) return tips
 
-  /* Слоты без брони: нет сделки или сделка не дошла до `booked`. */
+  /* Слоты без брони: нет сделки или сделка не дошла до `booked` — и нет отметки «уже забронировано». */
   const { rows: slots } = await db.query<{ category_id: string; label: string; open: boolean }>(
     `select s.category_id, s.label,
-            not exists (select 1 from deals d where d.id = s.deal_id and d.state = any($2)) as open
+            s.prebooked_at is null
+              and not exists (select 1 from deals d where d.id = s.deal_id and d.state = any($2)) as open
        from slots s where s.wedding_id = $1 order by s.sort`,
     [weddingId, COMMITTED],
   )
