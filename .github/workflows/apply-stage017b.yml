@@ -3,7 +3,7 @@ permissions:
   contents: read
 concurrency:
   group: stage017b-publication
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   apply:
     if: github.repository == 'bairasbai/tili-tili' && github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
@@ -173,10 +173,13 @@ jobs:
         (cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
         (cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort) > "$RUNNER_TEMP/task-vite.log" 2>&1 & ui=$!
         trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
+        # This fixture runs the real reminder function directly, without Redis.
+        # Bootstrap SQL must finish (private fixture file), then HTTP must be live.
+        # Production /health/ready semantics are intentionally unchanged.
         ready=0
         for attempt in $(seq 1 60); do
           if ! kill -0 "$api" 2>/dev/null || ! kill -0 "$ui" 2>/dev/null; then break; fi
-          if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health/ready >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
+          if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
           sleep 1
          done
         if test "$ready" != 1; then
