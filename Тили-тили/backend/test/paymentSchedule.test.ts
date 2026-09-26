@@ -1,12 +1,53 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
-import type { FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
+import { CONTRACT_SCHEMAS, ref, type ContractSchemaName } from '../src/contract/schemas.generated.js'
+/* Уборка архива — табличная задача (проходит по всем свадьбам): поэтому файл в серийной
+ * группе `vitest.serial.json`, этого требует сторож audit53. Там же по одному идёт и подмена
+ * триггера на общей `audit_log` в тесте отказа аудита (ревью 018, C-10/M-15, P-08). */
+import { eraseUser, purgeArchivedWeddings } from '../src/jobs/index.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'a'.repeat(48)
 const money = (amount: number) => ({ amount, currency: 'RUB' })
+/** Наименьший PNG для подтверждения оплаты (018-B): сигнатура и один байт. */
+const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0])
+type Money = { amount: number; currency: string }
+interface Stage {
+  id: string; dealId: string; title: string; due: string; version: number; status: string; overdue: boolean
+  amount: Money; paid: Money; allocated: Money; remaining: Money; cancelReason: string | null
+}
+interface PaymentView { id: string; installmentId: string | null; version: number; amount: Money; kind: string }
+
+/** Отказ — это статус и код: 409 здесь дают десять разных причин, и статус один их не различает (ревью 018, C-04). */
+function expectError(res: { statusCode: number; body: string }, status: number, code: string) {
+  expect(res.statusCode, res.body).toBe(status)
+  expect((JSON.parse(res.body) as { error?: { code?: string } }).error?.code, res.body).toBe(code)
+}
+
+/**
+ * Ответ сервера по схеме контракта — тем же AJV, что у Fastify, но без приведения типов,
+ * срезания лишних полей и подстановки умолчаний: иначе расхождение с контрактом прячется.
+ * `null` — ответ по схеме, иначе текст отказа валидатора с путём до поля.
+ */
+async function contractViolation(name: ContractSchemaName, body: unknown): Promise<string | null> {
+  const probe = Fastify({
+    logger: false,
+    ajv: { customOptions: { coerceTypes: false, removeAdditional: false, useDefaults: false, allErrors: true } },
+  })
+  probe.addSchema(CONTRACT_SCHEMAS)
+  probe.post('/probe', { schema: { body: ref(name) } }, async () => ({ ok: true }))
+  try {
+    await probe.ready()
+    const res = await probe.inject({ method: 'POST', url: '/probe', payload: body as object })
+    return res.statusCode === 200 ? null : res.body
+  } finally {
+    await probe.close()
+  }
+}
+
 describe.skipIf(!DB)('018-A: график платежей — деньги, права и версии', () => {
   let app: FastifyInstance
   beforeAll(async () => {
@@ -62,13 +103,13 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
   })
   it('не принимает чужую сделку и не раскрывает деньги helper/coordinator', async () => {
     const a = await setup(), b = await setup()
-    expect((await create(a,{dealId:b.dealId})).statusCode).toBe(404)
+    expectError(await create(a,{dealId:b.dealId}),404,'not_found')
     for (const role of ['helper','coordinator','vendor']) {
       const u = await user()
       await app.db!.query('insert into wedding_members(wedding_id,user_id,role) values($1,$2,$3)',[a.id,u.id,role])
       const other = {...a,owner:u}
-      expect((await read(other)).statusCode).toBe(403)
-      expect((await create(other)).statusCode).toBe(403)
+      expectError(await read(other),403,'forbidden')
+      expectError(await create(other),403,'forbidden')
     }
   })
   it('не молча перезаписывает устаревшую версию этапа', async () => {
@@ -77,7 +118,7 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const id = stage.json().id
     expect((await edit(w,id,{version:1,title:'Задаток'})).statusCode).toBe(200)
     const stale = await edit(w,id,{version:1,title:'Старый черновик'})
-    expect(stale.statusCode,stale.body).toBe(409)
+    expectError(stale,409,'stale_payment_plan')
     expect((await read(w)).json().items[0].title).toBe('Задаток')
   })
   it('отмена оплаченного этапа не создаёт возврат и не теряет историю', async () => {
@@ -93,11 +134,77 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect((await app.db!.query("select id from payments where deal_id=$1 and kind='refund'",[w.dealId])).rowCount).toBe(0)
   })
   it.each(['2027-02-30','2027-13-01'])('не допускает некалендарную дату %s', async due => {
-    const w = await setup();expect((await create(w,{due})).statusCode).toBe(422)
+    /* Некалендарную дату в теле отсекает схема (`format: date`) раньше обработчика —
+     * отсюда validation_failed с полем due, а не bad_date из текста контракта. */
+    const w = await setup(), res = await create(w,{due})
+    expectError(res,422,'validation_failed')
+    expect(res.json().error.fields).toHaveProperty('due')
   })
   const link = (w: W, paymentId: string, installmentId: string | null, version = 1) => app.inject({method:'PATCH',url:`/weddings/${w.id}/payments/${paymentId}/plan`,headers:headers(w),payload:{version,installmentId}})
   const oldPay = (w: W, amount: number) => app.inject({method:'POST',url:`/weddings/${w.id}/slots/${w.slotId}/pay`,headers:headers(w),payload:{amount:money(amount)}})
   const paymentId = async (w: W) => (await app.db!.query<{id:string}>('select id from payments where deal_id=$1 order by created_at',[w.dealId])).rows[0]!.id
+  /** Старая кнопка слота без суммы — отметка всего остатка сделки одной строкой, без этапа. */
+  const oldPayRest = (w: W) => app.inject({method:'POST',url:`/weddings/${w.id}/slots/${w.slotId}/pay`,headers:headers(w),payload:{}})
+  const bearer = (token: string) => ({ authorization: 'Bearer ' + token })
+  /** «Сегодня» свадьбы со сдвигом в днях — тем же выражением, что `financialToday` на сервере (R-310). */
+  const weddingDay = async (w: W, shift: number) => (await app.db!.query<{ day: string }>(
+    "select ((now() at time zone coalesce(tz,'Europe/Moscow'))::date + $2::int)::text as day from weddings where id=$1",
+    [w.id, shift])).rows[0]!.day
+  const stageOf = (items: Stage[], id: string) => items.find(i => i.id === id)
+  /**
+   * Сделка на 1 000 000 с двумя этапами: 400 000 со сроком десять дней назад по «сегодня»
+   * свадьбы и 600 000 через двадцать дней. Окно графика накрывает оба срока.
+   */
+  async function pastAndFuture(w: W) {
+    const [past, future, from, to] = await Promise.all([-10, 20, -30, 60].map(n => weddingDay(w, n)))
+    const first = await create(w, { title: 'Аванс', due: past, amount: money(400000) })
+    const second = await create(w, { title: 'Остаток', due: future, amount: money(600000) })
+    expect(first.statusCode, first.body).toBe(201)
+    expect(second.statusCode, second.body).toBe(201)
+    const window = `?from=${from}&to=${to}`
+    // Предпосылка: пока денег нет, первый этап и правда просрочен — иначе тесту нечего доказывать.
+    const before = (await read(w, window)).json()
+    expect(stageOf(before.items, first.json().id)).toMatchObject({ status: 'pending', overdue: true, remaining: money(400000) })
+    expect(stageOf(before.items, second.json().id)).toMatchObject({ status: 'pending', overdue: false, remaining: money(600000) })
+    return { a: first.json() as Stage, b: second.json() as Stage, window }
+  }
+  /** Сколько строк графика и оплат у сделки — состояние базы, а не ответ сервера. */
+  const financeRows = async (w: W) => (await app.db!.query<{ installments: number; payments: number }>(
+    `select (select count(*)::int from payment_installments where deal_id=$1) as installments,
+            (select count(*)::int from payments where deal_id=$1) as payments`, [w.dealId])).rows[0]!
+  /**
+   * Финансовая история сделки: этап с оплатой и привязанным возвратом, отметка без этапа,
+   * отменённый этап с оплатой на нём — всё, во что упираются триггеры версий при каскаде.
+   */
+  async function financeHistory(w: W) {
+    const a = (await create(w)).json() as Stage
+    expect((await pay(w, a.id, 100000)).statusCode).toBe(200)
+    await app.db!.query("insert into payments(id,deal_id,kind,amount,status,installment_id) values($1,$2,'refund',10000,'recorded',$3)",
+      [randomUUID(), w.dealId, a.id])
+    expect((await oldPay(w, 50000)).statusCode).toBe(200)
+    const b = (await create(w, { title: 'Отменённый этап', due: '2027-06-01', amount: money(100000) })).json() as Stage
+    const paidB = await pay(w, b.id, 20000)
+    expect(paidB.statusCode, paidB.body).toBe(200)
+    const cancelB = await edit(w, b.id, { version: paidB.json().version, cancelled: true })
+    expect(cancelB.statusCode, cancelB.body).toBe(200)
+    expect(await financeRows(w)).toEqual({ installments: 2, payments: 4 })
+    return { a, b }
+  }
+  /**
+   * Дождаться, пока чужой запрос встанет в очередь за замком транзакции `pid`.
+   * Ожидание — факт из pg_stat_activity, а не таймер: таймер не знает, дошёл ли запрос
+   * до замка, и при медленном старте тест проходил при любом порядке замков (ревью 018, C-11).
+   */
+  async function blockedBy(pid: number, timeoutMs = 5000): Promise<string[]> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      const { rows } = await app.db!.query<{ query: string }>(
+        "select query from pg_stat_activity where wait_event_type='Lock' and $1=any(pg_blocking_pids(pid))", [pid])
+      if (rows.length > 0) return rows.map(r => r.query)
+      if (Date.now() > deadline) throw new Error(`за замком транзакции ${pid} никто не встал за ${timeoutMs} мс`)
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+  }
   it('привязывает прежнюю оплату без второй записи и позволяет снять привязку', async () => {
     const w=await setup(), stage=(await create(w)).json()
     expect((await oldPay(w,100000)).statusCode).toBe(200)
@@ -116,45 +223,57 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const w=await setup(), other=await setup(), a=(await create(w)).json(), b=(await create(other)).json()
     await oldPay(w,100000)
     const id=await paymentId(w)
-    expect((await link(w,id,b.id)).statusCode).toBe(404)
+    expectError(await link(w,id,b.id),404,'not_found')
     expect((await link(w,id,a.id)).statusCode).toBe(200)
-    expect((await link(w,id,null,1)).statusCode).toBe(409)
+    expectError(await link(w,id,null,1),409,'stale_payment_plan')
     expect((await read(w)).json().items[0].paid).toEqual(money(100000))
   })
   it('две оплаты из одной версии не проходят обе и не превышают остаток', async () => {
     const w=await setup(), stage=(await create(w)).json()
     const results=await Promise.all([pay(w,stage.id,300000),pay(w,stage.id,300000)])
     expect(results.map(r=>r.statusCode).sort()).toEqual([200,409])
+    // Вторая ждёт замок сделки и видит уже новую версию этапа.
+    expectError(results.find(r=>r.statusCode===409)!,409,'stale_payment_plan')
     expect((await read(w)).json().summary.recorded).toEqual(money(300000))
   })
   it('старый и новый способы оплаты используют один предел цены сделки', async () => {
     const w=await setup(1000000), stage=(await create(w,{amount:money(1000000)})).json()
     const results=await Promise.all([pay(w,stage.id,700000),oldPay(w,700000)])
     expect(results.map(r=>r.statusCode).sort()).toEqual([200,409])
+    // В любом порядке проигравший упирается в цену сделки, а не в версию этапа.
+    expectError(results.find(r=>r.statusCode===409)!,409,'overpay')
     expect((await read(w)).json().summary.recorded).toEqual(money(700000))
   })
   it('не повторяет оплату при другом теле с прежним ключом', async () => {
     const w=await setup(), stage=(await create(w)).json(), key=randomUUID()
-    expect((await pay(w,stage.id,100000,1,key)).statusCode).toBe(200)
-    expect((await pay(w,stage.id,200000,1,key)).statusCode).toBe(409)
+    const first=await pay(w,stage.id,100000,1,key)
+    expect(first.statusCode,first.body).toBe(200)
+    /* Версия — актуальная, после первой оплаты. С устаревшей 409 дала бы сверка версии
+     * (stale_payment_plan), и тест был зелёным и без сверки ключа (ревью 018, C-03). */
+    const version=first.json().version
+    expectError(await pay(w,stage.id,200000,version,key),409,'idempotency_key_reused')
     expect((await read(w)).json().payments).toHaveLength(1)
+    // То же тело с новым ключом проходит: отказ выше дал только ключ.
+    const fresh=await pay(w,stage.id,200000,version)
+    expect(fresh.statusCode,fresh.body).toBe(200)
+    expect((await read(w)).json().payments).toHaveLength(2)
   })
   it.each([0,-1,1.5,Number.MAX_SAFE_INTEGER+1])('отклоняет невалидную сумму %s без записей', async amount=>{
-    const w=await setup();expect((await create(w,{amount:money(amount)})).statusCode).toBe(422)
+    const w=await setup();expectError(await create(w,{amount:money(amount)}),422,'validation_failed')
     expect((await read(w)).json().items).toHaveLength(0)
   })
   it('отклоняет чужую валюту, пустое название и превышение цены',async()=>{
     const w=await setup()
-    expect((await create(w,{amount:{amount:100,currency:'USD'}})).statusCode).toBe(422)
-    expect((await create(w,{title:'  '})).statusCode).toBe(422)
-    expect((await create(w,{amount:money(1000001)})).statusCode).toBe(409)
+    expectError(await create(w,{amount:{amount:100,currency:'USD'}}),422,'validation_failed')
+    expectError(await create(w,{title:'  '}),422,'validation_failed')
+    expectError(await create(w,{amount:money(1000001)}),409,'plan_over_price')
     await create(w,{amount:money(800000)})
-    expect((await create(w,{amount:money(300000)})).statusCode).toBe(409)
+    expectError(await create(w,{amount:money(300000)}),409,'plan_over_price')
   })
   it('не скрывает изменение суммы внутри отмены и не уменьшает ниже оплаченного',async()=>{
     const w=await setup(), stage=(await create(w)).json(), paid=(await pay(w,stage.id,100000)).json()
-    expect((await edit(w,stage.id,{version:paid.version,amount:money(99999)})).statusCode).toBe(409)
-    expect((await edit(w,stage.id,{version:paid.version,cancelled:true,amount:money(1)})).statusCode).toBe(422)
+    expectError(await edit(w,stage.id,{version:paid.version,amount:money(99999)}),409,'plan_below_paid')
+    expectError(await edit(w,stage.id,{version:paid.version,cancelled:true,amount:money(1)}),422,'validation_failed')
     expect((await read(w)).json().items[0].amount).toEqual(money(400000))
   })
   it('возврат уменьшает итог, отменённая отметка не считается, версии обновляются',async()=>{
@@ -177,7 +296,8 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(state.summary.committed).toEqual(money(0))
     expect(state.summary.inactiveDealRecorded).toEqual(money(100000))
     expect(state.payments).toHaveLength(1)
-    expect((await pay(w,stage.id,1,state.items[0].version)).statusCode).toBe(409)
+    // Версия актуальная — отказ даёт отменённая сделка, а не устаревший экран.
+    expectError(await pay(w,stage.id,1,state.items[0].version),409,'not_booked')
   })
   it('перенос свадьбы не сдвигает согласованные даты платежей',async()=>{
     const w=await setup();await create(w)
@@ -191,19 +311,43 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(price.statusCode,price.body).toBe(200)
     const data=(await read(w)).json()
     expect(data.deals[0].needsReview).toBe(true)
-    expect((await edit(w,stage.id,{version:1,amount:money(700000)})).statusCode).toBe(409)
+    expectError(await edit(w,stage.id,{version:1,amount:money(700000)}),409,'stale_payment_plan')
     expect((await edit(w,stage.id,{version:data.items[0].version,amount:money(700000)})).statusCode).toBe(200)
     expect((await read(w)).json().deals[0].needsReview).toBe(false)
   })
   it('отдельно фильтрует окно, просрочки и отменённые этапы',async()=>{
     const w=await setup()
-    const yesterday=new Date();yesterday.setUTCDate(yesterday.getUTCDate()-2)
-    await create(w,{title:'Просрочено',due:yesterday.toISOString().slice(0,10)})
-    await create(w,{title:'План',due:'2027-05-01'})
-    expect((await read(w,'?from=2027-05-01&to=2027-05-01&includeOverdue=false')).json().items).toHaveLength(1)
-    expect((await read(w,'?from=2027-05-01&to=2027-05-01')).json().items).toHaveLength(2)
-    expect((await read(w,'?from=2027-05-02&to=2027-05-01')).statusCode).toBe(422)
-    expect((await read(w,'?from=2027-01-01&to=2029-01-01')).statusCode).toBe(422)
+    /* Даты — от «сегодня» свадьбы тем же выражением, что у сервера (R-310), а не от часов
+     * машины в UTC и не от 2027 года: итог не зависит ни от дня, ни от часа запуска.
+     * Отменённый этап лежит в окне — иначе умолчание includeCancelled=false не проверено (ревью 018, C-12). */
+    const [past,from,due,to]=await Promise.all([-5,10,20,30].map(n=>weddingDay(w,n)))
+    const overdue=await create(w,{title:'Просрочено',due:past})
+    expect(overdue.statusCode,overdue.body).toBe(201)
+    const planned=await create(w,{title:'План',due})
+    expect(planned.statusCode,planned.body).toBe(201)
+    const dropped=await create(w,{title:'Отменён',due,amount:money(100000)})
+    expect(dropped.statusCode,dropped.body).toBe(201)
+    const cancel=await edit(w,dropped.json().id,{version:1,cancelled:true})
+    expect(cancel.statusCode,cancel.body).toBe(200)
+    const titles=async(query:string)=>{
+      const res=await read(w,`?from=${from}&to=${to}${query}`)
+      expect(res.statusCode,res.body).toBe(200)
+      return (res.json().items as Stage[]).map(i=>i.title).sort()
+    }
+    expect(await titles('&includeOverdue=false')).toEqual(['План'])
+    // Умолчание: просрочку вне окна показывает, отменённые — нет.
+    expect(await titles('')).toEqual(['План','Просрочено'])
+    expect(await titles('&includeCancelled=true')).toEqual(['Отменён','План','Просрочено'])
+    expect(await titles('&includeCancelled=true&includeOverdue=false')).toEqual(['Отменён','План'])
+    const data=(await read(w,`?from=${from}&to=${to}`)).json()
+    expect(data.range).toMatchObject({from,to,includeOverdue:true,includeCancelled:false})
+    expect(stageOf(data.items,overdue.json().id)).toMatchObject({overdue:true,remaining:money(400000)})
+    expect(stageOf(data.items,planned.json().id)).toMatchObject({overdue:false,remaining:money(400000)})
+    // «К оплате в окне» — только срок в окне; просрочка — своей суммой (M-09).
+    expect(data.dueInWindow).toEqual(money(400000))
+    expect(data.overdueRemaining).toEqual(money(400000))
+    expectError(await read(w,'?from=2027-05-02&to=2027-05-01'),422,'bad_payment_range')
+    expectError(await read(w,'?from=2027-01-01&to=2029-01-01'),422,'bad_payment_range')
   })
   it('CSV различает планы и оплаты, нейтрализует формулы и закрыт чужому',async()=>{
     const w=await setup();await create(w,{title:'=HYPERLINK("bad")'})
@@ -215,7 +359,7 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(csv.json().csv).toContain('"payment"')
     expect(csv.json().csv).toContain("'=HYPERLINK")
     const other=await user()
-    expect((await app.inject({method:'GET',url:`/weddings/${w.id}/payment-schedule/export`,headers:{authorization:'Bearer '+other.token}})).statusCode).toBe(404)
+    expectError(await app.inject({method:'GET',url:`/weddings/${w.id}/payment-schedule/export`,headers:{authorization:'Bearer '+other.token}}),404,'not_found')
   })
   it('CSV сохраняет возврат числом со знаком минус, не текстом формулы',async()=>{
     const w=await setup();await oldPay(w,100000)
@@ -229,22 +373,27 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const w=await setup(), stage=(await create(w)).json()
     await app.db!.query('update weddings set cancelled_at=now() where id=$1',[w.id])
     expect((await read(w)).json().readOnly).toBe(true)
-    expect((await pay(w,stage.id,1)).statusCode).toBe(409)
-    expect((await create(w)).statusCode).toBe(409)
+    expectError(await pay(w,stage.id,1),409,'wedding_cancelled')
+    expectError(await create(w),409,'wedding_cancelled')
     await app.db!.query('update weddings set archived_at=now() where id=$1',[w.id])
-    expect((await read(w)).statusCode).toBe(404)
+    expectError(await read(w),404,'not_found')
   })
   it('отказ аудита откатывает оплату и не оставляет ложную отметку',async()=>{
     const w=await setup(), stage=(await create(w)).json(), fn='plan_fault_'+randomUUID().replaceAll('-','')
-    await app.db!.query(`create function ${fn}() returns trigger language plpgsql as $$ begin
+    /* DDL на общей audit_log: CREATE TRIGGER берёт SHARE ROW EXCLUSIVE, DROP — ACCESS EXCLUSIVE;
+     * оба ждут открытые транзакции соседей и останавливают запись их журнала. Поэтому файл
+     * в серийной группе (соседей нет), а каждая команда — с lock_timeout: чужой зависший
+     * замок даёт понятный отказ, а не таймаут всего теста (ревью 018, C-10/M-15). */
+    const ddl=(sql:string)=>app.db!.tx(async tx=>{await tx.query("set local lock_timeout='5s'");await tx.query(sql)})
+    await ddl(`create function ${fn}() returns trigger language plpgsql as $$ begin
       if new.actor_id='${w.owner.id}' and new.action='payment.recorded' then raise exception 'injected audit failure'; end if; return new; end $$`)
-    await app.db!.query(`create trigger ${fn} before insert on audit_log for each row execute function ${fn}()`)
+    await ddl(`create trigger ${fn} before insert on audit_log for each row execute function ${fn}()`)
     try {
       expect((await pay(w,stage.id,100000)).statusCode).toBe(500)
       expect((await read(w)).json().payments).toHaveLength(0)
       expect((await read(w)).json().items[0].version).toBe(1)
     } finally {
-      await app.db!.query(`drop trigger ${fn} on audit_log; drop function ${fn}()`)
+      await ddl(`drop trigger ${fn} on audit_log; drop function ${fn}()`)
     }
   })
   it('бюджет и Тиль используют тот же итог оплат, не сумму этапов',async()=>{
@@ -263,8 +412,13 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     let startPayment: Promise<Awaited<ReturnType<typeof pay>>> | undefined
     await app.db!.tx(async tx=>{
       await tx.query('select id from weddings where id=$1 for update',[w.id])
+      const {rows}=await tx.query<{pid:number}>('select pg_backend_pid() as pid')
       startPayment=pay(w,stage.id,100000)
-      await new Promise(resolve=>setTimeout(resolve,80))
+      /* Оплата обязана реально стоять за замком свадьбы, прежде чем берём пользователя.
+       * Бери она пользователя первой, её замок уже держал бы строку users, и запрос ниже
+       * упёрся бы в lock_timeout — тест красный при неверном порядке, а не «как повезёт» (C-11). */
+      const waiting=await blockedBy(rows[0]!.pid)
+      expect(waiting.join('\n')).toContain('from weddings')
       await tx.query("set local lock_timeout='800ms'")
       await tx.query('select id from users where id=$1 for update',[w.owner.id])
     })
@@ -272,4 +426,343 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(res.statusCode,res.body).toBe(200)
   })
 
+  /* ── Ревью 018-A: деньги сделки на этапах (M-01) ─────────────────────── */
+  it('M-01: весь остаток старой кнопкой закрывает оба этапа — просрочки нет, одну отметку не разнести', async () => {
+    const w = await setup(), { a, b, window } = await pastAndFuture(w)
+    const paid = await oldPayRest(w)
+    expect(paid.statusCode, paid.body).toBe(200)
+    const data = (await read(w, window)).json()
+    expect(stageOf(data.items, a.id)).toMatchObject({ status: 'covered', paid: money(0), allocated: money(400000), remaining: money(0), overdue: false })
+    expect(stageOf(data.items, b.id)).toMatchObject({ status: 'covered', paid: money(0), allocated: money(600000), remaining: money(0), overdue: false })
+    expect(data.dueInWindow).toEqual(money(0))
+    expect(data.overdueRemaining).toEqual(money(0))
+    expect(data.summary.remaining).toEqual(money(0))
+    const payments = data.payments as PaymentView[]
+    expect(payments).toHaveLength(1)
+    expect(payments[0]).toMatchObject({ amount: money(1000000), installmentId: null })
+    // Отметка целиком не помещается ни в один этап: привязка — отказ с кодом, а не молчаливое разнесение.
+    for (const stage of [a, b]) expectError(await link(w, payments[0]!.id, stage.id, payments[0]!.version), 409, 'installment_overpay')
+    expect(((await read(w, window)).json().payments as PaymentView[])[0]!.installmentId).toBeNull()
+  })
+
+  it('M-01: половина цены старой кнопкой — первый этап покрыт, второй частично, остатки сходятся со сделкой', async () => {
+    const w = await setup(), { a, b, window } = await pastAndFuture(w)
+    expect((await oldPay(w, 500000)).statusCode).toBe(200)
+    const data = (await read(w, window)).json()
+    expect(stageOf(data.items, a.id)).toMatchObject({ status: 'covered', allocated: money(400000), remaining: money(0), overdue: false })
+    expect(stageOf(data.items, b.id)).toMatchObject({ status: 'partial', allocated: money(100000), remaining: money(500000), overdue: false })
+    const remaining = (data.items as Stage[]).reduce((sum, i) => sum + i.remaining.amount, 0)
+    expect(remaining).toBe(500000)
+    expect(data.deals[0].remaining).toEqual(money(remaining))
+    expect(data.summary.remaining).toEqual(money(remaining))
+    expect(data.dueInWindow).toEqual(money(500000))
+    expect(data.overdueRemaining).toEqual(money(0))
+  })
+
+  it('M-01: ответы графика с покрытым этапом — по схемам контракта', async () => {
+    const w = await setup(), { a, b, window } = await pastAndFuture(w)
+    expect((await oldPay(w, 500000)).statusCode).toBe(200)
+    const schedule = await read(w, window)
+    expect(schedule.statusCode, schedule.body).toBe(200)
+    expect((schedule.json().allInstallments as { status: string }[]).map(i => i.status)).toEqual(['covered', 'partial'])
+    expect.soft(await contractViolation('PaymentSchedule', schedule.json())).toBeNull()
+    const renamed = await edit(w, a.id, { version: a.version, title: 'Аванс по договору' })
+    expect(renamed.statusCode, renamed.body).toBe(200)
+    expect(renamed.json().status).toBe('covered')
+    expect.soft(await contractViolation('PaymentInstallment', renamed.json())).toBeNull()
+    const linked = await link(w, await paymentId(w), b.id)
+    expect(linked.statusCode, linked.body).toBe(200)
+    expect.soft(await contractViolation('PaymentRecord', linked.json())).toBeNull()
+    const csv = await app.inject({ method: 'GET', url: `/weddings/${w.id}/payment-schedule/export`, headers: headers(w) })
+    expect(csv.statusCode, csv.body).toBe(200)
+    expect.soft(await contractViolation('PaymentHistoryExport', csv.json())).toBeNull()
+  })
+
+  /* ── Коды отказов (C-04) ─────────────────────────────────────────────── */
+  it('C-04: оплата этапа сверх его суммы, но в пределах цены — 409 installment_overpay, записи нет', async () => {
+    const w = await setup(), stage = (await create(w)).json()
+    expectError(await pay(w, stage.id, 400001), 409, 'installment_overpay')
+    expect(await financeRows(w)).toEqual({ installments: 1, payments: 0 })
+  })
+
+  it('C-04: правка, поднимающая сумму этапов выше цены, — 409 plan_over_price, сумма прежняя', async () => {
+    const w = await setup(), stage = (await create(w)).json()
+    expect((await create(w, { title: 'Остаток', due: '2027-06-01', amount: money(600000) })).statusCode).toBe(201)
+    expectError(await edit(w, stage.id, { version: 1, amount: money(400001) }), 409, 'plan_over_price')
+    expect(stageOf((await read(w)).json().items, stage.id)).toMatchObject({ amount: money(400000), version: 1 })
+  })
+
+  it('C-04/M-11: предел 500 — только активные этапы: 500 активных — 409 payment_plan_limit, 500 отменённых — 201', async () => {
+    const full = await setup(), freed = await setup()
+    const fill = (w: W, cancelled: boolean) => app.db!.query(
+      `insert into payment_installments(id,deal_id,title,amount,due,cancelled_at)
+       select gen_random_uuid(),$1,'Этап '||g,1,'2027-05-01'::date,case when $2 then now() end from generate_series(1,500) g`,
+      [w.dealId, cancelled])
+    await fill(full, false)
+    await fill(freed, true)
+    expectError(await create(full), 409, 'payment_plan_limit')
+    expect((await financeRows(full)).installments).toBe(500)
+    // Отменённые этапы — история, а не занятые места: сделку они не запирают.
+    const created = await create(freed)
+    expect(created.statusCode, created.body).toBe(201)
+    expect((await financeRows(freed)).installments).toBe(501)
+  })
+
+  it('C-04: отменённую отметку не привязать — 409 payment_cancelled', async () => {
+    const w = await setup(), stage = (await create(w)).json()
+    expect((await oldPay(w, 100000)).statusCode).toBe(200)
+    const pid = await paymentId(w)
+    await app.db!.query("update payments set status='cancelled' where id=$1", [pid])
+    // Смена статуса подняла версию привязки триггером — берём актуальную, чтобы отказ дал статус, а не версия.
+    const { rows } = await app.db!.query<{ plan_version: number }>('select plan_version from payments where id=$1', [pid])
+    expectError(await link(w, pid, stage.id, rows[0]!.plan_version), 409, 'payment_cancelled')
+    const after = await app.db!.query<{ installment_id: string | null }>('select installment_id from payments where id=$1', [pid])
+    expect(after.rows[0]!.installment_id).toBeNull()
+  })
+
+  it('C-04: без Idempotency-Key ни одна запись графика не выполняется — 400 idempotency_key_required', async () => {
+    const w = await setup(), stage = (await create(w)).json()
+    expect((await oldPay(w, 100000)).statusCode).toBe(200)
+    const pid = await paymentId(w)
+    const requests = [
+      { method: 'POST', url: `/weddings/${w.id}/payment-schedule`, payload: { dealId: w.dealId, title: 'Без ключа', due: '2027-06-01', amount: money(1000) } },
+      { method: 'PATCH', url: `/weddings/${w.id}/payment-schedule/${stage.id}`, payload: { version: 1, title: 'Без ключа' } },
+      { method: 'POST', url: `/weddings/${w.id}/payment-schedule/${stage.id}/pay`, payload: { version: 1, amount: money(1000) } },
+      { method: 'PATCH', url: `/weddings/${w.id}/payments/${pid}/plan`, payload: { version: 1, installmentId: stage.id } },
+    ] as const
+    for (const request of requests) {
+      expectError(await app.inject({ ...request, headers: bearer(w.owner.token) }), 400, 'idempotency_key_required')
+    }
+    const data = (await read(w)).json()
+    expect(data.items).toHaveLength(1)
+    expect(data.items[0]).toMatchObject({ title: 'Аванс', version: 1, paid: money(0) })
+    expect(data.payments).toHaveLength(1)
+    expect(data.payments[0].installmentId).toBeNull()
+  })
+
+  /* ── Возврат на этапе (M-04) ─────────────────────────────────────────── */
+  it('M-04: снятие возврата, после которого оплаты этапа превысят его сумму, — 409 installment_overpay', async () => {
+    const w = await setup(), stage = (await create(w)).json()
+    expect((await pay(w, stage.id, 400000)).statusCode).toBe(200)
+    const refundId = randomUUID()
+    await app.db!.query("insert into payments(id,deal_id,kind,amount,status,installment_id) values($1,$2,'refund',100000,'recorded',$3)",
+      [refundId, w.dealId, stage.id])
+    const refunded = stageOf((await read(w)).json().items, stage.id)!
+    expect(refunded.paid).toEqual(money(300000))
+    const topUp = await pay(w, stage.id, 100000, refunded.version)
+    expect(topUp.statusCode, topUp.body).toBe(200)
+    const before = stageOf((await read(w)).json().items, stage.id)!
+    expect(before.paid).toEqual(money(400000))
+    // Без возврата нетто этапа — 500 000 при сумме 400 000.
+    expectError(await link(w, refundId, null, 1), 409, 'installment_overpay')
+    const after = stageOf((await read(w)).json().items, stage.id)!
+    expect(after).toMatchObject({ paid: money(400000), version: before.version })
+    const refund = await app.db!.query<{ installment_id: string | null }>('select installment_id from payments where id=$1', [refundId])
+    expect(refund.rows[0]!.installment_id).toBe(stage.id)
+  })
+
+  /* ── Срок и период (M-11, C-18) ──────────────────────────────────────── */
+  it.each(['0100-01-01', '1999-12-31', '2101-01-01'])('M-11: срок %s вне 2000–2100 — 422 bad_date при создании и при правке', async due => {
+    const w = await setup()
+    expectError(await create(w, { due }), 422, 'bad_date')
+    const stage = (await create(w)).json()
+    expectError(await edit(w, stage.id, { version: 1, due }), 422, 'bad_date')
+    expect(((await read(w)).json().items as Stage[]).map(i => [i.id, i.due, i.version])).toEqual([[stage.id, '2027-05-01', 1]])
+  })
+
+  it('M-11: края диапазона сроков — 2000-01-01 и 2100-12-31 — принимаются', async () => {
+    const w = await setup()
+    for (const due of ['2000-01-01', '2100-12-31']) {
+      const res = await create(w, { due, amount: money(100000) })
+      expect(res.statusCode, res.body).toBe(201)
+      expect(res.json().due).toBe(due)
+    }
+  })
+
+  it('C-18: период графика — до 366 календарных дней включительно, и в високосном году тоже', async () => {
+    const w = await setup()
+    for (const [from, to] of [['2027-01-01', '2028-01-01'], ['2028-01-01', '2028-12-31']]) {
+      const res = await read(w, `?from=${from}&to=${to}`)
+      expect(res.statusCode, res.body).toBe(200)
+      expect(res.json().range).toMatchObject({ from, to })
+    }
+    for (const [from, to] of [['2027-01-01', '2028-01-02'], ['2028-01-01', '2029-01-01']]) {
+      expectError(await read(w, `?from=${from}&to=${to}`), 422, 'bad_payment_range')
+    }
+  })
+
+  /* ── Матрица ролей по всем шести операциям (P-04) ───────────────────── */
+  it('P-04: шесть операций графика — только паре своей свадьбы: роли 403, чужая пара 404, без входа 401', async () => {
+    const w = await setup(), stranger = await setup(), stage = (await create(w)).json()
+    expect((await oldPay(w, 100000)).statusCode).toBe(200)
+    const pid = await paymentId(w)
+    const version = async (sql: string, id: string) => (await app.db!.query<{ v: number }>(sql, [id])).rows[0]!.v
+    const stageVersion = () => version('select version as v from payment_installments where id=$1', stage.id)
+    const paymentVersion = () => version('select plan_version as v from payments where id=$1', pid)
+    /* Тела валидны на момент вызова: без проверки роли каждый запрос прошёл бы —
+     * это и доказывает контрольный проход пары в конце. */
+    const ops: { name: string; method: 'GET' | 'POST' | 'PATCH'; url: string; body?: () => Promise<object>; ok: number }[] = [
+      { name: 'GET график', method: 'GET', url: `/weddings/${w.id}/payment-schedule?from=2027-01-01&to=2027-12-31`, ok: 200 },
+      { name: 'POST этап', method: 'POST', url: `/weddings/${w.id}/payment-schedule`,
+        body: async () => ({ dealId: w.dealId, title: 'Остаток', due: '2027-06-01', amount: money(100000) }), ok: 201 },
+      { name: 'PATCH этап', method: 'PATCH', url: `/weddings/${w.id}/payment-schedule/${stage.id}`,
+        body: async () => ({ version: await stageVersion(), title: 'Задаток' }), ok: 200 },
+      { name: 'POST оплата этапа', method: 'POST', url: `/weddings/${w.id}/payment-schedule/${stage.id}/pay`,
+        body: async () => ({ version: await stageVersion(), amount: money(1000) }), ok: 200 },
+      { name: 'GET выгрузка CSV', method: 'GET', url: `/weddings/${w.id}/payment-schedule/export`, ok: 200 },
+      { name: 'PATCH привязка оплаты', method: 'PATCH', url: `/weddings/${w.id}/payments/${pid}/plan`,
+        body: async () => ({ version: await paymentVersion(), installmentId: stage.id }), ok: 200 },
+    ]
+    const call = async (op: (typeof ops)[number], auth: Record<string, string>) => app.inject({
+      method: op.method, url: op.url, headers: { ...auth, 'idempotency-key': randomUUID() },
+      ...(op.body ? { payload: await op.body() } : {}),
+    })
+    const outsiders: { who: string; id: string | null; auth: Record<string, string>; status: number; code: string }[] = []
+    for (const role of ['helper', 'coordinator', 'vendor']) {
+      const u = await user()
+      await app.db!.query('insert into wedding_members(wedding_id,user_id,role) values($1,$2,$3)', [w.id, u.id, role])
+      outsiders.push({ who: role, id: u.id, auth: bearer(u.token), status: 403, code: 'forbidden' })
+    }
+    outsiders.push({ who: 'пара чужой свадьбы', id: stranger.owner.id, auth: bearer(stranger.owner.token), status: 404, code: 'not_found' })
+    outsiders.push({ who: 'без токена', id: null, auth: {}, status: 401, code: 'unauthorized' })
+    for (const caller of outsiders) {
+      for (const op of ops) {
+        const res = await call(op, caller.auth)
+        const code = (JSON.parse(res.body) as { error?: { code?: string } }).error?.code
+        expect([caller.who, op.name, res.statusCode, code]).toEqual([caller.who, op.name, caller.status, caller.code])
+      }
+    }
+    // Отказы ничего не записали: ни этапа, ни правки, ни оплаты, ни привязки, ни строки журнала.
+    expect((await app.db!.query('select title,version from payment_installments where deal_id=$1', [w.dealId])).rows)
+      .toEqual([{ title: 'Аванс', version: 1 }])
+    expect((await app.db!.query('select installment_id from payments where deal_id=$1', [w.dealId])).rows).toEqual([{ installment_id: null }])
+    const ids = outsiders.map(o => o.id).filter((id): id is string => id !== null)
+    expect((await app.db!.query('select 1 from audit_log where actor_id=any($1)', [ids])).rowCount).toBe(0)
+    // Контроль: те же запросы от пары проходят — отказы выше дала роль, а не форма запроса.
+    for (const op of ops) {
+      const res = await call(op, bearer(w.owner.token))
+      expect([op.name, res.statusCode], res.body).toEqual([op.name, op.ok])
+    }
+  })
+
+  /* ── Журнал (M-03, M-05) ─────────────────────────────────────────────── */
+  it('M-03: журнал этапа — без названия и причины отмены, сущность payment_installment', async () => {
+    const w = await setup(), stage = (await create(w, { title: 'Личное название' })).json()
+    const renamed = await edit(w, stage.id, { version: 1, title: 'Секретный этап' })
+    expect(renamed.statusCode, renamed.body).toBe(200)
+    const cancelled = await edit(w, stage.id, { version: renamed.json().version, cancelled: true, reason: 'Тайная причина' })
+    expect(cancelled.statusCode, cancelled.body).toBe(200)
+    // Сам этап причину помнит — её не пишет только журнал, переживающий стирание аккаунта.
+    expect(cancelled.json()).toMatchObject({ status: 'cancelled', cancelReason: 'Тайная причина' })
+    const { rows } = await app.db!.query<{ action: string; entity: string; actor_id: string; diff: Record<string, unknown>; text: string }>(
+      'select action,entity,actor_id,diff,diff::text as text from audit_log where entity_id=$1 order by id', [stage.id])
+    expect(rows.map(r => [r.action, r.entity, r.actor_id])).toEqual([
+      ['payment_plan.created', 'payment_installment', w.owner.id],
+      ['payment_plan.updated', 'payment_installment', w.owner.id],
+      ['payment_plan.cancelled', 'payment_installment', w.owner.id],
+    ])
+    for (const row of rows) {
+      for (const secret of ['Личное название', 'Секретный этап', 'Тайная причина']) {
+        expect(row.text).not.toContain(secret)
+        expect(JSON.stringify(row.diff)).not.toContain(secret)
+      }
+    }
+    expect(rows[1]!.diff).toMatchObject({ previousVersion: 1, changed: ['title'] })
+    expect(rows[2]!.diff).toMatchObject({ previousVersion: renamed.json().version, changed: ['reason'] })
+  })
+
+  it('M-05: оплата старой кнопкой слота пишет payment.recorded с сущностью payment, как и новая дверь', async () => {
+    const w = await setup(), stage = (await create(w)).json()
+    expect((await oldPay(w, 250000)).statusCode).toBe(200)
+    const slotPayment = await paymentId(w)
+    const journal = async (id: string) => (await app.db!.query('select action,entity,actor_id,diff from audit_log where entity_id=$1 order by id', [id])).rows
+    expect(await journal(slotPayment)).toEqual([{ action: 'payment.recorded', entity: 'payment', actor_id: w.owner.id,
+      diff: { dealId: w.dealId, installmentId: null, amount: 250000 } }])
+    // Новая дверь и привязка — та же сущность payment (P-07).
+    expect((await pay(w, stage.id, 100000)).statusCode).toBe(200)
+    const stagePayment = (await app.db!.query<{ id: string }>('select id from payments where installment_id=$1', [stage.id])).rows[0]!.id
+    expect(await journal(stagePayment)).toEqual([{ action: 'payment.recorded', entity: 'payment', actor_id: w.owner.id,
+      diff: { dealId: w.dealId, installmentId: stage.id, amount: 100000 } }])
+    expect((await link(w, slotPayment, stage.id)).statusCode).toBe(200)
+    expect((await journal(slotPayment)).map(r => [r.action, r.entity, r.diff])).toEqual([
+      ['payment.recorded', 'payment', { dealId: w.dealId, installmentId: null, amount: 250000 }],
+      ['payment.plan_linked', 'payment', { from: null, to: stage.id }],
+    ])
+  })
+
+  /* ── Выгрузка 152-ФЗ (P-02) ──────────────────────────────────────────── */
+  it('P-02: выгрузка своих данных — у пары этапы графика и привязка оплат, у помощника денег нет', async () => {
+    const w = await setup(), helper = await user(), title = 'Этап выгрузки ' + randomUUID()
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'helper')", [w.id, helper.id])
+    const stage = (await create(w, { title })).json()
+    expect((await pay(w, stage.id, 100000)).statusCode).toBe(200)
+    const pid = (await app.db!.query<{ id: string }>('select id from payments where installment_id=$1', [stage.id])).rows[0]!.id
+    const exportOf = async (token: string) => {
+      const res = await app.inject({ method: 'GET', url: '/users/me/export', headers: bearer(token) })
+      expect(res.statusCode, res.body).toBe(200)
+      return res.json()
+    }
+    const couple = await exportOf(w.owner.token)
+    expect(couple.paymentInstallments).toEqual([expect.objectContaining({
+      id: stage.id, deal_id: w.dealId, wedding_id: w.id, title, amount: '400000', due: '2027-05-01', cancelled_at: null, cancel_reason: null })])
+    expect(couple.payments).toEqual([expect.objectContaining({ id: pid, deal_id: w.dealId, installment_id: stage.id, amount: '100000' })])
+    const assistant = await exportOf(helper.token)
+    expect(assistant.paymentInstallments).toEqual([])
+    expect(assistant.payments).toEqual([])
+    expect(JSON.stringify(assistant)).not.toContain(title)
+  })
+
+  /* ── Уборка архива и стирание аккаунта (P-08) ────────────────────────── */
+  it('P-08: этап с оплатами и возвратом не мешает уборке отменённой свадьбы', async () => {
+    const w = await setup()
+    await financeHistory(w)
+    // Архив старше любого чужого в базе: уборка берёт по сто свадеб, старшие первыми.
+    await app.db!.query("update weddings set cancelled_at=now()-interval '20000 days',archived_at=now()-interval '20000 days' where id=$1", [w.id])
+    await purgeArchivedWeddings(app)
+    // Уборка глотает ошибку свадьбы в лог — доказательство только состояние базы (R-226).
+    expect((await app.db!.query('select 1 from weddings where id=$1', [w.id])).rowCount).toBe(0)
+    expect(await financeRows(w)).toEqual({ installments: 0, payments: 0 })
+    expect((await app.db!.query("select 1 from audit_log where action='wedding.purged' and entity_id=$1", [w.id])).rowCount).toBe(1)
+  })
+
+  it('P-08: стирание аккаунта уносит свадьбу без наследника вместе с этапами и оплатами', async () => {
+    const w = await setup()
+    await financeHistory(w)
+    await app.db!.tx(client => eraseUser(client, w.owner.id))
+    expect((await app.db!.query('select 1 from users where id=$1', [w.owner.id])).rowCount).toBe(0)
+    expect((await app.db!.query('select 1 from weddings where id=$1', [w.id])).rowCount).toBe(0)
+    expect(await financeRows(w)).toEqual({ installments: 0, payments: 0 })
+  })
+
+  it('P-08: при стирании одного партнёра этапы и оплаты остаются второму нетронутыми', async () => {
+    const w = await setup(), partner = await user()
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [w.id, partner.id])
+    await financeHistory(w)
+    const query = '?from=2027-01-01&to=2027-12-31&includeCancelled=true'
+    const before = (await read(w, query)).json()
+    await app.db!.tx(client => eraseUser(client, w.owner.id))
+    expect((await app.db!.query('select 1 from users where id=$1', [w.owner.id])).rowCount).toBe(0)
+    const heir = { ...w, owner: partner }
+    const after = await read(heir, query)
+    expect(after.statusCode, after.body).toBe(200)
+    expect(after.json().items).toEqual(before.items)
+    expect(after.json().payments).toEqual(before.payments)
+    expect(after.json().summary).toEqual(before.summary)
+  })
+
+  /* Найдено по пути (018-B): подтверждение оплаты помнит загрузившего ссылкой на users без
+   * ON DELETE, и eraseUser её не обнуляет — стирание партнёра, чья свадьба остаётся второму,
+   * падает на внешнем ключе, и аккаунт не стирается никогда. Файл кладётся SQL, как его
+   * оставила бы загрузка: сама загрузка выключена, пока владелец не включит хранилище. */
+  it('P-08: подтверждение к оплате не мешает стиранию партнёра, чью свадьбу наследует второй', async () => {
+    const w = await setup(), partner = await user()
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [w.id, partner.id])
+    const { a } = await financeHistory(w)
+    const pid = (await app.db!.query<{ id: string }>("select id from payments where installment_id=$1 and kind<>'refund'", [a.id])).rows[0]!.id
+    await app.db!.query(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
+      values($1,$2,$3,'чек.png','image/png',$4,$5,$6)`, [randomUUID(), w.id, pid, PNG.length, PNG, w.owner.id])
+    await app.db!.tx(client => eraseUser(client, w.owner.id))
+    expect((await app.db!.query('select 1 from users where id=$1', [w.owner.id])).rowCount).toBe(0)
+    expect(await financeRows(w)).toEqual({ installments: 2, payments: 4 })
+  })
 })
