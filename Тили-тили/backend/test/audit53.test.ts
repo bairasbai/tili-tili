@@ -98,6 +98,10 @@ function touchesSharedState(rawText: string): boolean {
   if (/from\s*['"]\.\.\/src\/notify\/push\.(?:js|ts)['"]/.test(code) && /\bsendDuePushes\b/.test(code)) return true
   if (/from\s*['"]\.\.\/src\/notify\/task-notifications\.(?:js|ts)['"]/.test(code) && /\b(sendTaskReminders|pruneTaskNotifications)\b/.test(code)) return true
   if (code.includes('/admin/categories')) return true
+  /* Временный триггер сбоя — DDL на общей таблице: пока он висит, через него
+   * проходит каждая запись соседей в эту таблицу, а создание и снятие берут
+   * блокировку всей таблицы (ревью 018, 018-B BB-03). */
+  if (/\bcreate\s+(?:constraint\s+)?trigger\b/i.test(code)) return true
   if (/\b(insert\s+into|update|delete\s+from)\s+(categories|category_synonyms)\b/i.test(code)) return true
   return false
 }

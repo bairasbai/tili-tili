@@ -129,7 +129,7 @@ export async function dealStageRows(tx: Queryable, weddingId: string, dealId: st
  * этапа или причина отмены, написанные парой, остались бы в нём навсегда. Пишем
  * id, версии, суммы, даты и имена изменённых полей.
  */
-export async function financeAudit(tx: Queryable, uid: string, entity: 'payment' | 'payment_installment',
+export async function financeAudit(tx: Queryable, uid: string, entity: 'payment' | 'payment_installment' | 'payment_receipt',
   id: string, action: string, diff: Record<string, unknown>) {
   await tx.query('insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,$2,$3,$4,$5)',
     [uid, action, entity, id, JSON.stringify(diff)])

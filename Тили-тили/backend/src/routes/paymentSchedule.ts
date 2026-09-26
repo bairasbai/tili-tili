@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { weddingAccessHook } from '../wedding/access.js'
@@ -130,6 +131,8 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
         version:p.plan_version+(p.installment_id===body.installmentId?0:1),kind:p.kind,amount:asMoney(p.amount),status:p.status,createdAt:p.created_at.toISOString()}}
     }))
   })
+  /* ── приватные подтверждения оплат (018-B) ─────────────────────────── */
+  const receiptsEnabled=()=>app.appConfig.receiptsStorage!==null
   app.get('/weddings/:weddingId/payments/:paymentId/receipts', async request => {
     const wid=request.member!.weddingId,id=(request.params as {paymentId:string}).paymentId
     if(!isUuid(id))throw notFound('Оплата не найдена')
@@ -137,7 +140,9 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     if(!payment[0])throw notFound('Оплата не найдена')
     const {rows}=await db().query<{id:string;filename:string;mime_type:string;size_bytes:number;created_at:Date}>(
       'select id,filename,mime_type,size_bytes,created_at from payment_receipts where wedding_id=$1 and payment_id=$2 order by created_at,id',[wid,id])
-    return {items:rows.map(r=>({id:r.id,filename:r.filename,mimeType:r.mime_type,sizeBytes:r.size_bytes,createdAt:r.created_at.toISOString()}))}
+    // `uploadEnabled` — чтобы экран не предлагал загрузку, которую сервер отклонит (R-176).
+    return {items:rows.map(r=>({id:r.id,filename:r.filename,mimeType:r.mime_type,sizeBytes:r.size_bytes,createdAt:r.created_at.toISOString()})),
+      uploadEnabled:receiptsEnabled()}
   })
 
   app.post('/weddings/:weddingId/payments/:paymentId/receipts', {
@@ -146,29 +151,42 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       mimeType:{type:'string',enum:['application/pdf','image/jpeg','image/png','image/webp']},
       contentBase64:{type:'string',minLength:4,maxLength:720000,pattern:'^[A-Za-z0-9+/]+={0,2}$'},
     }}},
-  }, async(request,reply)=>withIdempotency(db(),request,reply,'payment-receipt.add',tx=>tx(async client=>{
+  }, async(request,reply)=>{
+    // Хранилище не включено владельцем — честный 501 до ключа и разбора файла (ревью 018, BB-01).
+    if(!receiptsEnabled())throw new AppError(501,'storage_not_configured','Загрузка подтверждений оплаты не включена на сервере')
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {paymentId:string}).paymentId
     if(!isUuid(id))throw notFound('Оплата не найдена')
     const body=request.body as {filename:string;mimeType:string;contentBase64:string}
-    /* Разделители пути и управляющие символы — в «_»: имя уходит в заголовок
-       скачивания и в файловую систему пары. Посимвольно, без регулярки с
-       управляющими символами (линт no-control-regex). */
-    const filename=Array.from(body.filename.trim(),ch=>{const c=ch.codePointAt(0)!;return ch==='/'||ch==='\\'||c<0x20||c===0x7f?'_':ch}).join('')
+    const filename=receiptFilename(body.filename,body.mimeType)
     if(!filename)throw validationFailed({filename:'Введите имя файла'})
     const content=Buffer.from(body.contentBase64,'base64')
-    if(content.length===0||content.length>524288)throw validationFailed({contentBase64:'Файл должен быть не больше 512 КБ'})
+    if(content.length===0||content.length>RECEIPT_MAX_BYTES)throw validationFailed({contentBase64:'Файл должен быть не больше 512 КБ'})
     if(content.toString('base64').replace(/=+$/,'')!==body.contentBase64.replace(/=+$/,''))throw validationFailed({contentBase64:'Некорректный base64'})
     if(!matchesMime(content,body.mimeType))throw validationFailed({mimeType:'Содержимое файла не соответствует указанному типу'})
-    const {rows: payment}=await client.query(`select 1 from payments p join deals d on d.id=p.deal_id where p.id=$1 and d.wedding_id=$2 for update of p`,[id,wid])
-    if(!payment[0])throw notFound('Оплата не найдена')
-    const {rows: count}=await client.query<{n:number}>('select count(*)::int as n from payment_receipts where payment_id=$1',[id])
-    if(count[0]!.n>=5)throw conflict('receipt_limit','К одной оплате можно прикрепить не больше 5 файлов')
-    const receiptId=uuidv7()
-    await client.query(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
-      values($1,$2,$3,$4,$5,$6,$7,$8)`,[receiptId,wid,id,filename,body.mimeType,content.length,content,uid])
-    await audit(client,uid,receiptId,'payment.receipt_added',{paymentId:id,mimeType:body.mimeType,sizeBytes:content.length})
-    return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length}}
-  })))
+    const sha256=createHash('sha256').update(content).digest('hex')
+    return withIdempotency(db(),request,reply,'payment-receipt.add',tx=>tx(async client=>{
+      /* Свадьба — первой и эксклюзивно: квота свадьбы считается без гонки двух загрузок в
+         разные оплаты. Права — после, под блокировками (ревью 018, BB-05): наоборот две
+         загрузки с общей FOR SHARE на свадьбе ждали бы друг друга. */
+      await client.query('select id from weddings where id=$1 for update',[wid])
+      await lockFinanceAccess(client,wid,uid)
+      const {rows: payment}=await client.query(`select 1 from payments p join deals d on d.id=p.deal_id where p.id=$1 and d.wedding_id=$2 for update of p`,[id,wid])
+      if(!payment[0])throw notFound('Оплата не найдена')
+      const {rows:[used]}=await client.query<{files:number;onPayment:number;bytes:string}>(
+        `select count(*)::int as files,(count(*) filter(where payment_id=$2))::int as "onPayment",coalesce(sum(size_bytes),0)::text as bytes
+           from payment_receipts where wedding_id=$1`,[wid,id])
+      if(used!.onPayment>=RECEIPTS_PER_PAYMENT)throw conflict('receipt_limit','К одной оплате можно прикрепить не больше 5 файлов')
+      const {receiptsMaxPerWedding,receiptsMaxBytesPerWedding}=app.appConfig
+      if(used!.files>=receiptsMaxPerWedding||BigInt(used!.bytes)+BigInt(content.length)>BigInt(receiptsMaxBytesPerWedding))
+        throw conflict('receipt_quota','Место под подтверждения оплат у свадьбы закончилось — удалите ненужные файлы')
+      const receiptId=uuidv7()
+      await client.query(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
+        values($1,$2,$3,$4,$5,$6,$7,$8)`,[receiptId,wid,id,filename,body.mimeType,content.length,content,uid])
+      // В журнале — что за файл, но не его имя: журнал переживает стирание аккаунта (ревью 018, BB-14).
+      await financeAudit(client,uid,'payment_receipt',receiptId,'payment.receipt_added',{paymentId:id,mimeType:body.mimeType,sizeBytes:content.length,sha256})
+      return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length}}
+    }))
+  })
 
   app.get('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content', async(request)=>{
     const wid=request.member!.weddingId,{paymentId,receiptId}=request.params as {paymentId:string;receiptId:string}
@@ -181,14 +199,50 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     return {filename:file.filename,mimeType:file.mime_type,contentBase64:file.content.toString('base64')}
   })
 
-  app.delete('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId', async(request,reply)=>db().tx(async tx=>{
+  app.delete('/weddings/:weddingId/payments/:paymentId/receipts/:receiptId', async(request,reply)=>{
     const wid=request.member!.weddingId,uid=request.caller!.userId,{paymentId,receiptId}=request.params as {paymentId:string;receiptId:string}
     if(!isUuid(paymentId)||!isUuid(receiptId))throw notFound('Файл не найден')
-    const res=await tx.query('delete from payment_receipts where id=$1 and payment_id=$2 and wedding_id=$3',[receiptId,paymentId,wid])
-    if(!res.rowCount)throw notFound('Файл не найден')
-    await audit(tx,uid,receiptId,'payment.receipt_deleted',{paymentId})
+    await db().tx(async tx=>{
+      await lockFinanceAccess(tx,wid,uid)
+      const {rows}=await tx.query<{size_bytes:number;mime_type:string;sha256:string}>(
+        `delete from payment_receipts where id=$1 and payment_id=$2 and wedding_id=$3
+          returning size_bytes,mime_type,encode(sha256(content),'hex') as sha256`,[receiptId,paymentId,wid])
+      const gone=rows[0];if(!gone)throw notFound('Файл не найден')
+      await financeAudit(tx,uid,'payment_receipt',receiptId,'payment.receipt_deleted',
+        {paymentId,mimeType:gone.mime_type,sizeBytes:gone.size_bytes,sha256:gone.sha256})
+    })
+    // 204 — после коммита, а не изнутри транзакции (ревью 018, BB-03).
     return reply.code(204).send()
-  }))
+  })
+}
+
+const RECEIPT_MAX_BYTES=524288
+const RECEIPTS_PER_PAYMENT=5
+const RECEIPT_EXTENSIONS:Record<string,readonly string[]>={
+  'application/pdf':['pdf'],'image/jpeg':['jpg','jpeg'],'image/png':['png'],'image/webp':['webp']}
+
+/**
+ * Имя подтверждения — то, под которым файл сохранится у пары (ревью 018, BB-10).
+ *
+ * Разделители пути и управляющие символы (C0, DEL, C1) — в «_»; невидимые символы
+ * формата Unicode (Cf: U+202E «справа налево», нулевой ширины, мягкий перенос) —
+ * прочь: с ними «чек[U+202E]gnp.exe» выглядит как «чекexe.png». Расширение — по типу,
+ * проверенному по содержимому: файл сохранится с тем расширением, каким он
+ * является, а не каким назван. Длина — в пределах 180 символов после правки.
+ * Пустое имя — пустая строка: отказ словами делает обработчик.
+ * Посимвольно, без регулярки с управляющими символами (линт no-control-regex).
+ */
+export function receiptFilename(raw:string,mime:string):string {
+  const name=Array.from(raw.normalize('NFC'))
+    .filter(ch=>!/\p{Cf}/u.test(ch))
+    .map(ch=>{const c=ch.codePointAt(0)!;return ch==='/'||ch==='\\'||c<0x20||(c>=0x7f&&c<=0x9f)?'_':ch})
+    .join('').trim()
+  if(!name)return ''
+  const allowed=RECEIPT_EXTENSIONS[mime]??[]
+  const dot=name.lastIndexOf('.')
+  const ext=dot>0?name.slice(dot+1).toLowerCase():''
+  const [base,suffix]=allowed.includes(ext)?[name.slice(0,dot),name.slice(dot)]:[dot>0?name.slice(0,dot):name,'.'+(allowed[0]??'bin')]
+  return Array.from(base.trimEnd()||'file').slice(0,180-Array.from(suffix).length).join('')+suffix
 }
 
 function matchesMime(content:Buffer,mime:string):boolean {
@@ -197,7 +251,4 @@ function matchesMime(content:Buffer,mime:string):boolean {
   if(mime==='image/jpeg')return content.length>=3&&content[0]===0xff&&content[1]===0xd8&&content[2]===0xff
   if(mime==='image/webp')return content.length>=12&&content.subarray(0,4).toString('ascii')==='RIFF'&&content.subarray(8,12).toString('ascii')==='WEBP'
   return false
-}
-async function audit(tx:Queryable,uid:string,id:string,action:string,diff:object){
-  await tx.query('insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,$2,$3,$4,$5)',[uid,action,'payment_schedule',id,JSON.stringify(diff)])
 }

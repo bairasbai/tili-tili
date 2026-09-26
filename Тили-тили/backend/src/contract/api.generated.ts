@@ -2370,6 +2370,8 @@ export interface paths {
          * @description Снимает пользовательский лимит: категория снова получает долю общего
          *     бюджета. Строка остаётся с `custom: false` и новой версией, поэтому клиент
          *     со старой версией не «воскресит» снятый лимит — 409 `stale_budget_limit`.
+         *     Неизвестная категория — 422 `validation_failed` с полем `categoryId`, как у
+         *     PUT. Правит только пара.
          */
         patch: {
             parameters: {
@@ -2472,7 +2474,9 @@ export interface paths {
          * Приватные подтверждения оплаты
          * @description Список файлов к ручной отметке оплаты — без содержимого. Только пара.
          *     Подтверждение — файл пары, а не проверка банка: приложение не сверяет его
-         *     с движением денег.
+         *     с движением денег. `uploadEnabled` — включена ли загрузка новых на сервере
+         *     (`RECEIPTS_STORAGE`); выключена — экран не предлагает загрузку, а уже
+         *     загруженные файлы читаются и удаляются.
          */
         get: {
             parameters: {
@@ -2493,6 +2497,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            uploadEnabled: boolean;
                             items: {
                                 /** Format: uuid */
                                 id: string;
@@ -2514,11 +2519,17 @@ export interface paths {
         /**
          * Прикрепить приватное подтверждение оплаты
          * @description Файл PDF, JPEG, PNG или WebP до 512 КиБ в base64; тип проверяется по
-         *     содержимому, а не по `mimeType` браузера — несовпадение 422. К одной
-         *     оплате — не больше 5 файлов: шестой — 409 `receipt_limit`. Без
+         *     содержимому, а не по `mimeType` браузера — несовпадение 422. Загрузка не
+         *     включена на сервере (`RECEIPTS_STORAGE` пуст) — 501 `storage_not_configured`.
+         *     К одной оплате — не больше 5 файлов: шестой — 409 `receipt_limit`; у свадьбы
+         *     кончилась квота (по умолчанию 50 файлов и 25 МиБ) — 409 `receipt_quota`.
+         *     Имя файла чистится: разделители пути и управляющие символы — в «_»,
+         *     невидимые символы формата Unicode убираются, расширение приводится к
+         *     проверенному типу; в ответе — имя, под которым файл сохранён. Без
          *     `Idempotency-Key` — 400 `idempotency_key_required`; тот же ключ с другим
          *     телом — 409 `idempotency_key_reused`, первый запрос ещё идёт — 409
-         *     `idempotency_in_progress`. Только пара.
+         *     `idempotency_in_progress`. Ключ — на одну попытку загрузки: другой файл
+         *     с тем же ключом — 409 `idempotency_key_reused`. Только пара.
          */
         post: {
             parameters: {
@@ -2564,6 +2575,7 @@ export interface paths {
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
+                501: components["responses"]["NotConfigured"];
             };
         };
         delete?: never;
@@ -2633,7 +2645,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить приватное подтверждение оплаты */
+        /**
+         * Удалить приватное подтверждение оплаты
+         * @description Файл удаляется из базы сразу. В журнале действий остаются оплата, тип,
+         *     размер и SHA-256 содержимого — без имени файла: журнал переживает стирание
+         *     аккаунта. Повтор удаления — 404: файла уже нет. Только пара.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -9902,7 +9919,7 @@ export interface paths {
         /**
          * Создать этап платежа
          * @description Только couple. Этап не создаёт payment и не увеличивает смету. До 500 этапов на сделку; сумма активных этапов не выше цены. 409 stale_payment_plan / plan_over_price / payment_plan_limit. Обязателен Idempotency-Key.
-         *     Коды: 422 validation_failed (пустое название), bad_date (срок не календарный или вне 2000–2100); 409 not_booked, no_price (сделка не забронирована или без цены), payment_plan_limit (500 активных этапов), plan_over_price (сумма активных этапов больше цены), wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
+         *     Коды: 422 validation_failed (пустое название; срок не календарный — отказ схемы с полем `due`), bad_date (срок вне 2000–2100); 409 not_booked, no_price (сделка не забронирована или без цены), payment_plan_limit (500 активных этапов), plan_over_price (сумма активных этапов больше цены), wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
          */
         post: {
             parameters: {
@@ -9968,7 +9985,7 @@ export interface paths {
         /**
          * Изменить или отменить плановый этап
          * @description Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой свадьбой запрещены.
-         *     Коды: 422 validation_failed, bad_date; 409 stale_payment_plan (устаревшая версия), installment_cancelled, not_booked, no_price, plan_below_paid (сумма меньше оплаченного), plan_over_price, wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
+         *     Коды: 422 validation_failed (в том числе не календарный срок — поле `due`), bad_date (срок вне 2000–2100); 409 stale_payment_plan (устаревшая версия), installment_cancelled, not_booked, no_price, plan_below_paid (сумма меньше оплаченного), plan_over_price, wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
          */
         patch: {
             parameters: {
@@ -10309,8 +10326,11 @@ export interface components {
                 /** Format: uuid */
                 dealId: string;
                 title: string;
-                /** @enum {string} */
-                status: "pending" | "partial" | "paid" | "cancelled";
+                /**
+                 * @description Те же значения, что у `PaymentInstallment.status`, включая `covered` (ревью 018, M-01).
+                 * @enum {string}
+                 */
+                status: "pending" | "partial" | "paid" | "covered" | "cancelled";
                 remaining: components["schemas"]["Money"];
             }[];
         };
