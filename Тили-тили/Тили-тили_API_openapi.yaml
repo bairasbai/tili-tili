@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.40.0
+  version: 0.41.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -40,6 +40,26 @@ info:
       OpenAPI 3.0 не описывает WS-каналы — контракт событий ведётся здесь.
     - Ошибки: `{ "error": { "code": "string", "message": "string" } }`.
     - Идемпотентность мутаций оплаты/брони — через `Idempotency-Key` header.
+
+    ## Общие коды ошибок (не привязаны к одной операции)
+    Могут прийти у любой операции, если не сказано иное:
+    - `unauthorized` (401) — любая операция за входом; у гостевых см. описание `GuestToken`.
+    - `token_expired` (401) — просроченный access-токен; у живого канала — закрытие 4401.
+    - `forbidden` (403) — нет согласия под действующей редакцией, роли или стороны недостаточно.
+    - `consent_outdated` (403) — согласие есть, но под прежней редакцией политики: нужно подтвердить новую (см. `POST /users/me/consent`); у живого канала чата — закрытие 4403 с тем же кодом.
+    - `not_found` (404) — чужой или несуществующий идентификатор, либо неизвестный адрес.
+    - `validation_failed` (422) — нарушение схемы запроса; поле-виновник — в `error.fields`.
+    - `invalid_json` (422) — тело запроса не является JSON.
+    - `invalid_character` (422) — NUL-байт в адресе, строке запроса или теле.
+    - `payload_too_large` (413) — тело запроса больше 1 МиБ.
+    - `unsupported_media_type` (415) — тело не `application/json`.
+    - `bad_content_length` (400) — заголовок `Content-Length` не совпал с телом.
+    - `rate_limited` (429) — превышен общий лимит запросов (кроме `/health*`); ответ несёт `Retry-After`.
+    - `internal` (500) — необработанная ошибка сервера; тело несёт идентификатор запроса для поддержки.
+    - `money_overflow` (500) — денежная сумма в базе вышла за пределы точного представления.
+    - `db_unavailable` (503) — база данных недоступна.
+    - `not_configured` (503) — секрет для отправки SMS-кодов не настроен на сервере.
+    - `code_collision` (503) — генератор человекочитаемого кода исчерпал попытки подобрать свободный.
 servers:
   - url: https://api.tili-tili.ru/v1
   - url: http://localhost:8080/v1
@@ -72,9 +92,10 @@ paths:
 
         Лимиты выдачи кода (фича 005): по паре «номер + адрес» — 3 в час, по
         номеру — 10 в час и 30 в сутки, по адресу — как прежде. Каждый 429
-        несёт `Retry-After` в секундах. Чужой номер пятью запросами больше
-        не закрыть: посторонний с одного адреса упирается в свой лимит, а
-        владелец номера с другого адреса код получает.
+        `too_many_requests` несёт `Retry-After` в секундах. Чужой номер пятью
+        запросами больше не закрыть: посторонний с одного адреса упирается в
+        свой лимит, а владелец номера с другого адреса код получает. Номер не
+        похож на телефон — 422 `bad_phone`.
       requestBody:
         required: true
         content:
@@ -112,7 +133,8 @@ paths:
         уборкой раньше), и вход заводит новый аккаунт (фичи 005/014). Код
         сверяется со всеми живыми кодами номера: чужой запрос кода на ваш
         номер ваш код не отменяет; попытки считаются, после пяти неверных —
-        429 (ревью 015).
+        429 `too_many_requests` (ревью 015). Номер не похож на телефон — 422
+        `bad_phone`.
       requestBody:
         required: true
         content:
@@ -140,8 +162,8 @@ paths:
       summary: Обновление access-token
       description: |
         Refresh одноразовый: при обмене старый гасится, выдаётся новый.
-        Повторное предъявление уже погашенного — признак кражи, и тогда
-        гасятся ВСЕ сессии пользователя.
+        Повторное предъявление уже погашенного — 401 `refresh_superseded`,
+        признак кражи, и тогда гасятся ВСЕ сессии пользователя.
       requestBody:
         required: true
         content:
@@ -198,6 +220,10 @@ paths:
     post:
       tags: [weddings]
       summary: Создать свадьбу (после квиза)
+      description: |
+        Город не найден в справочнике — 404 (ARB-4). Дата свадьбы вне
+        диапазона «год назад … пять лет вперёд» — 422 `date_out_of_range`;
+        несуществующий день вроде 30 февраля — 422 `bad_date`.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -222,6 +248,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Wedding' }
+        '404':
+          description: 'город не найден в справочнике'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '409':
           description: |
             `wedding_exists` — у пары уже есть живая свадьба (не отменена и
@@ -230,6 +261,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}:
     get:
       tags: [weddings]
@@ -250,11 +282,14 @@ paths:
         `POST /weddings/{weddingId}/reschedule`, и тянет за собой занятость
         в календарях подрядчиков, сроки задач чек-листа, время блоков тайминга
         и час открытия чата дня X. Если кто-то из забронированной команды занят
-        на новую дату — 409 `team_busy`, и не меняется ничего.
+        на новую дату — 409 `team_busy`, и не меняется ничего; дата уже
+        занята у своего же подрядчика — 409 `date_taken`.
 
         Дата свадьбы принимается в диапазоне «год назад … пять лет вперёд»
         (решение владельца 2026-09-03); за его пределами — 422
         `date_out_of_range`. Несуществующий день вроде 30 февраля — 422 `bad_date`.
+        Незнакомый `tz` (не из справочника IANA) — 422 `unknown_timezone`.
+        Город не найден в справочнике — 404 (ARB-4).
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       requestBody:
@@ -291,7 +326,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Wedding' }
+        '404':
+          description: 'город не найден в справочнике'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/members:
     get:
       tags: [weddings]
@@ -310,6 +351,7 @@ paths:
     patch:
       tags: [weddings]
       summary: Сменить роль участника (только couple)
+      description: 'Последнюю пару из свадьбы убрать нельзя (`last_couple`, 409) — у свадьбы должен остаться хотя бы один couple.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -327,10 +369,15 @@ paths:
                 role: { type: string, enum: [couple, helper, coordinator] }
       responses:
         '200': { description: OK }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`last_couple` — последнюю пару из свадьбы убрать нельзя'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [weddings]
       summary: Удалить участника
+      description: 'Последнюю пару из свадьбы убрать нельзя (`last_couple`, 409).'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -340,7 +387,11 @@ paths:
           schema: { type: string }
       responses:
         '204': { description: Удалён }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`last_couple` — последнюю пару из свадьбы убрать нельзя'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── INVITES (команда) ─────────────────────────
   /weddings/{weddingId}/invites:
@@ -402,7 +453,11 @@ paths:
                   weddingTitle: { type: string, example: 'Алина ♥ Тимур' }
                   inviterName: { type: string }
                   expiresAt: { type: string, format: date-time }
-        '410': { description: Истёк или отозван }
+        '410':
+          description: '`gone` — истёк или отозван'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [invites]
       summary: Отозвать приглашение
@@ -430,8 +485,16 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Member' }
-        '410': { description: Истёк/отозван/уже использован }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`already_member` — уже в этой свадьбе'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '410':
+          description: '`gone` — истёк, отозван или уже использован'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── GEO ─────────────────────────
   /health:
@@ -638,7 +701,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VendorPage' }
-        '400': { description: 'Курсор от другой сортировки (bad_cursor) — начать листать заново' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422':
+          description: '`bad_date` — календарная дата в `date` не существует'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /catalog/vendors/{vendorId}:
     get:
       tags: [catalog]
@@ -843,6 +911,12 @@ paths:
     post:
       tags: [bookings]
       summary: Забронировать подрядчика в слот («Добавить в свадьбу»)
+      description: |
+        Обязательный `Idempotency-Key`: без него — 400 `idempotency_key_required`,
+        длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
+        другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется —
+        409 `idempotency_in_progress`. Пакет не из справочника подрядчика —
+        422 `unknown_package`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -871,7 +945,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
-        '409': { description: Слот уже занят }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`slot_taken` — слот уже занят; `date_taken` — у подрядчика уже есть бронь на эту дату; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/slots/{slotId}/cancel:
     post:
@@ -881,7 +960,9 @@ paths:
         Идемпотентно по `Idempotency-Key`, как бронь и оплата: отмена освобождает
         дату у подрядчика и рассылает уведомления, повтор на плохой связи не
         должен делать этого дважды. Сервер требовал заголовок с этапа 4, а
-        контракт его не называл (класс ERR-0038) — выправлено в v0.24.
+        контракт его не называл (класс ERR-0038) — выправлено в v0.24. Без
+        заголовка — 400 `idempotency_key_required`, длиннее 200 символов —
+        400 `idempotency_key_too_long`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -899,7 +980,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`already_cancelled` — уже отменена; `slot_empty` — слот и так пуст; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/slots/{slotId}/pay:
     post:
       tags: [bookings]
@@ -913,7 +999,11 @@ paths:
         с минусом, отменённые записи не считаются — та же формула, что `Deal.paid`);
         сделка, оплаченная целиком, — 409 `overpay`. Сумма сверх остатка — 409
         `overpay`; ноль — 422 `bad_amount`; сделка без цены — 409 `no_price`
-        (ревью 015).
+        (ревью 015). Пустой слот — 409 `slot_empty`; слот без подтверждённой
+        брони — 409 `not_booked`. Без заголовка — 400 `idempotency_key_required`,
+        длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
+        другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё
+        выполняется — 409 `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -941,6 +1031,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Validation' }
 
@@ -1131,13 +1222,14 @@ paths:
               type: object
               properties:
                 name: { type: string, example: 'Стол 7' }
-                capacity: { type: integer, default: 8 }
+                capacity: { type: integer, minimum: 1, maximum: 100, default: 8 }
       responses:
         '201':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Table' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   /weddings/{weddingId}/tables/{tableId}:
     patch:
@@ -1159,7 +1251,7 @@ paths:
               type: object
               properties:
                 name: { type: string, maxLength: 60 }
-                capacity: { type: integer, minimum: 1, maximum: 50 }
+                capacity: { type: integer, minimum: 1, maximum: 100 }
       responses:
         '200':
           description: OK
@@ -1210,9 +1302,13 @@ paths:
                   diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other] }
                   dietNote: { type: string, nullable: true }
                   transfer: { type: string, nullable: true, enum: [null, need, own] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [guests]
       summary: Ответ гостя (RSVP)
+      description: |
+        `plusOne: true` при уже забронированном автобусе может не поместиться
+        в его границу мест — тогда 409 `bus_full`, ответ RSVP не сохраняется.
       parameters:
         - name: guestToken
           in: path
@@ -1235,6 +1331,12 @@ paths:
       security: []
       responses:
         '200': { description: Принято }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`bus_full` — мест в автобусе не осталось'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /weddings/{weddingId}/guests/import:
     post:
@@ -1334,7 +1436,11 @@ paths:
                     type: integer
                     description: 'телефон и ссылка есть, а SMS не ушла: отказ провайдера или предел рассылки (300 за нажатие; остальные — в следующие сутки)'
         '403': { $ref: '#/components/responses/Forbidden' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '429':
+          description: '`too_often` — не чаще раза в сутки; заголовка `Retry-After` нет'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/guests/{guestId}/invite-link:
     post:
       tags: [guests]
@@ -1391,7 +1497,11 @@ paths:
                   guestToken: { type: string }
                   guestName: { type: string }
                   wedding: { $ref: '#/components/schemas/WeddingPublic' }
-        '410': { description: Код уже использован или истёк — попросите пару выслать ссылку заново }
+        '410':
+          description: '`gone` — код уже использован или истёк: попросите пару выслать ссылку заново'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── TASKS / CHECKLIST ─────────────────────────
   /weddings/{weddingId}/tasks:
@@ -1457,6 +1567,7 @@ paths:
     delete:
       tags: [tasks]
       summary: Удалить свою задачу
+      description: 'Системную задачу (заведённую сервером, не парой) удалить нельзя — 409 `system_task`.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1466,7 +1577,11 @@ paths:
           schema: { type: string }
       responses:
         '204': { description: Удалена }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`system_task` — системную задачу удалить нельзя'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── CHATS ─────────────────────────
   /chats:
@@ -1506,7 +1621,13 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/Message' }
                   nextCursor: { type: string, nullable: true }
-        '423': { $ref: '#/components/responses/Locked' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '423':
+          description: '`wedding_date_unknown` — у свадьбы ещё нет даты, окно чата не считается; `chat_not_open_yet` — окно чата ещё не открылось'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     post:
       tags: [chats]
       summary: Отправить сообщение
@@ -1532,12 +1653,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '409':
           description: '`chat_closed` — чат своего подрядчика закрыт: сделка отменена, писать некому (переписка остаётся паре для чтения)'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-        '423': { $ref: '#/components/responses/Locked' }
+        '423':
+          description: '`wedding_date_unknown` — у свадьбы ещё нет даты, окно чата не считается; `chat_not_open_yet` — окно чата ещё не открылось'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429':
           description: |
             Предел исчерпан: `cold_outreach_limit` — непроверенный подрядчик начал
@@ -1569,6 +1695,11 @@ paths:
 
         Если канал недоступен, клиент опрашивает историю раз в 30 секунд —
         штатный запасной путь §13.4.
+
+        Коды закрытия — тем же пространством, что и обычные ответы, только
+        4000+status: `token_expired` → 4401, `forbidden`/`vendor_blocked` →
+        4403, `not_found` → 4404, `wedding_date_unknown`/`chat_not_open_yet` →
+        4423. Без апгрейда до WebSocket — 426 `upgrade_required`.
       parameters:
         - name: chatId
           in: path
@@ -1582,7 +1713,7 @@ paths:
       security: []
       responses:
         '101': { description: Соединение установлено }
-        '426': { description: Нужен апгрейд до WebSocket }
+        '426': { description: '`upgrade_required` — нужен апгрейд до WebSocket' }
   /chats/{chatId}/typing:
     post:
       tags: [chats]
@@ -1599,6 +1730,12 @@ paths:
           schema: { type: string }
       responses:
         '204': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '423':
+          description: '`wedding_date_unknown` — у свадьбы ещё нет даты, окно чата не считается; `chat_not_open_yet` — окно чата ещё не открылось'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /chats/vendor/{vendorId}:
     post:
       tags: [chats]
@@ -1635,6 +1772,11 @@ paths:
     put:
       tags: [vendor]
       summary: "Создать/обновить анкету (мастер: категория → пакеты → город → публикация)"
+      description: |
+        Категория или город не из справочника — 404 (ARB-4). Несколько
+        городов подходят под название — 422 `city_ambiguous`; портфолио с
+        видео без длительности — 422 `video_duration_required`; видео длиннее
+        предела — 422 `video_too_long`.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1647,6 +1789,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VendorDetail' }
+        '404':
+          description: 'категория или город не найдены в справочнике'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Validation' }
   /vendor/profile/publish:
     post:
       tags: [vendor]
@@ -1699,6 +1847,7 @@ paths:
     post:
       tags: [vendor]
       summary: Отметить даты занятыми/свободными
+      description: 'Календарная дата не существует — 422 `bad_date`.'
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1714,6 +1863,7 @@ paths:
                 status: { type: string, enum: [free, busy] }
       responses:
         '204': { description: OK }
+        '422': { $ref: '#/components/responses/Validation' }
   /vendor/leads:
     get:
       tags: [vendor]
@@ -1731,6 +1881,13 @@ paths:
     post:
       tags: [vendor]
       summary: "Действие с лидом: ответить / холд 72ч / отклонить / вернуть"
+      description: |
+        `text` обязателен при `action=reply` — без него 422 `text_required`;
+        текст при action, для которого он не по делу, — 422 `text_not_allowed`.
+        Уходит той же дверью, что `POST /chats/{chatId}/messages`:
+        заблокированному подрядчику — 403 `vendor_blocked`, непроверенному
+        сверх предела холодных обращений — 429 `cold_outreach_limit`. Лид уже
+        выигран (`lead_won`) — 409: решение принято, действие не применяется.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: leadId
@@ -1751,19 +1908,27 @@ paths:
                   minLength: 1
                   maxLength: 4000
                   description: |
-                    Сообщение паре в чат заявки. Обязателен при `action=reply` (без него 422);
-                    при `hold`/`decline`/`reopen` — по желанию: причина отказа или холда (§3.13,
-                    R-48). Уходит той же дверью, что `POST /chats/{chatId}/messages`:
-                    заблокированному подрядчику — 403 `vendor_blocked`, непроверенному сверх
-                    предела холодных обращений — 429 `cold_outreach_limit`.
+                    Сообщение паре в чат заявки. Обязателен при `action=reply`;
+                    при `hold`/`decline`/`reopen` — по желанию: причина отказа
+                    или холда (§3.13, R-48).
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Lead' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: '`lead_won` — лид уже выигран, действие не применяется'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/Validation' }
+        '429':
+          description: '`cold_outreach_limit` — непроверенный подрядчик исчерпал предел холодных обращений за день'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /vendor/reviews:
     get:
       tags: [vendor]
@@ -1980,6 +2145,7 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/Review' } }
                   nextCursor: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [catalog]
@@ -2107,6 +2273,7 @@ paths:
     patch:
       tags: [wishlist]
       summary: Изменить желание
+      description: 'Новая цена ниже уже собранной суммы — 409 `gift_price_below_funded`.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -2127,18 +2294,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Gift' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`gift_price_below_funded` — новая цена ниже уже собранной суммы'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [wishlist]
       summary: Удалить желание
-      description: 'Запрещено, если в подарок уже сложились — 409, как и у фонда.'
+      description: 'Запрещено, если в подарок уже сложились — 409 `gift_has_contributions`, как и у фонда.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: OK }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`gift_has_contributions` — в подарок уже сложились'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── WISHLIST (гость по ссылке) ─────────────────────────
   /gifts/{guestToken}:
@@ -2167,18 +2342,23 @@ paths:
                       «Площадка и кейтеринг», делённые на число гостей. Пока
                       бюджет пуст или список гостей пуст — null, а не ноль
                       и не выдуманное число.
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /gifts/{guestToken}/{giftId}/reserve:
     post:
       tags: [wishlist-guest]
       summary: Зарезервировать подарок
       description: |
         Атомарно: резерв проходит только если подарок свободен (conditional update
-        либо unique constraint). Второй гость получает 409 — подарить дважды нельзя.
-        Токен гостя сохраняется, но паре не отдаётся никогда.
+        либо unique constraint). Второй гость получает 409 `gift_reserved` —
+        подарить дважды нельзя. Токен гостя сохраняется, но паре не отдаётся
+        никогда.
 
         Повтор тем же токеном — тот же 200: гость нажал дважды, подарок его.
-        Подарок, в который уже сложились, зарезервировать нельзя (409): иначе
-        деньги участников складчины повисают на чужом резерве.
+        Подарок, в который уже сложились (`gift_has_contributions`), зарезервировать
+        нельзя: иначе деньги участников складчины повисают на чужом резерве.
+        Обязательный `Idempotency-Key`: без него — 400 `idempotency_key_required`,
+        длиннее 200 символов — 400 `idempotency_key_too_long`. Предел резервов
+        с одного токена — `reservation_limit` (429, без `Retry-After`).
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
@@ -2186,7 +2366,13 @@ paths:
       security: []
       responses:
         '200': { description: Зарезервировано }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`gift_reserved` — уже зарезервирован другим гостем; `gift_has_contributions` — в подарок уже сложились'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
     delete:
       tags: [wishlist-guest]
@@ -2198,15 +2384,21 @@ paths:
       security: []
       responses:
         '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /gifts/{guestToken}/{giftId}/fund:
     post:
       tags: [wishlist-guest]
       summary: Внести часть суммы (складчина)
       description: |
-        Только для подарков с `group: true`. Сумма прибавляется к `funded`
-        до `price`; взнос, переваливающий за цену, отклоняется 409 — принять
-        больше нужного значит взять с гостя лишнее. При `funded == price`
-        подарок закрывается и больше не принимает ни взносов, ни резерва.
+        Только для подарков с `group: true` (иначе 409 `gift_not_group`). Сумма
+        прибавляется к `funded` до `price`; взнос, переваливающий за цену
+        (`gift_overfunded`), или закрытый подарок (`gift_closed`, `funded == price`),
+        или уже зарезервированный кем-то (`gift_reserved`) — 409: принять
+        больше нужного значит взять с гостя лишнее. Обязательный
+        `Idempotency-Key`: без него — 400 `idempotency_key_required`, длиннее
+        200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой
+        запрос — 409 `idempotency_key_reused`. Предел взносов с одного токена —
+        `contribution_limit` (429, без `Retry-After`).
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
         - { name: giftId, in: path, required: true, schema: { type: string } }
@@ -2227,12 +2419,23 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Gift' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`gift_not_group` — не складчина; `gift_overfunded` — сумма выше цены; `gift_closed` — уже собрано; `gift_reserved` — занят; `idempotency_key_reused` — тот же ключ на другой запрос'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
   /gifts/{guestToken}/funds/{fundId}:
     post:
       tags: [wishlist-guest]
       summary: Перевод в денежный фонд
+      description: |
+        Обязательный `Idempotency-Key`: без него — 400 `idempotency_key_required`,
+        длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
+        другой запрос — 409 `idempotency_key_reused`. Предел взносов с одного
+        токена — `contribution_limit` (429, без `Retry-After`).
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
         - { name: fundId, in: path, required: true, schema: { type: string } }
@@ -2253,7 +2456,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Fund' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`idempotency_key_reused` — тот же ключ на другой запрос'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
 
   # ───────────────────────── СВОИ ПОДРЯДЧИКИ (§11) ─────────────────────────
@@ -2261,7 +2470,10 @@ paths:
     post:
       tags: [bookings]
       summary: Добавить своего подрядчика (не из каталога)
-      description: Пара нашла исполнителя сама. Профиля в каталоге нет, но слот, бюджет и тайминг он занимает наравне с каталожным.
+      description: |
+        Пара нашла исполнителя сама. Профиля в каталоге нет, но слот, бюджет
+        и тайминг он занимает наравне с каталожным. Слот уже занят — 409
+        `slot_taken`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -2283,15 +2495,25 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Slot' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`slot_taken` — слот уже занят'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/Validation' }
     delete:
       tags: [bookings]
       summary: Удалить своего подрядчика
       description: |
-        Слот возвращается в empty, выданный гостевой токен аннулируется. В слоте нет
-        сделки или сделка каталожная (не свой подрядчик) — 404; выполненная работа
-        не снимается — 409 `bad_transition`.
+        Отменяет сделку той же единственной дверью `cancelDeal()`, что и
+        отмена брони слота, `PATCH /deals` и отмена свадьбы (F1,
+        F-RL-2-02/SA-06): освобождает дату, гасит ссылку-приглашение,
+        снимает автобусные маршруты, возвращает лид в работу. Слот
+        возвращается в empty, выданный гостевой токен аннулируется. В слоте
+        нет сделки или сделка каталожная (не свой подрядчик) — 404;
+        выполненная работа не снимается — 409 `bad_transition`; сделка,
+        которую успел отменить параллельный запрос, — 409 `already_cancelled`
+        (повтор после завершённой отмены получает 404: слот уже пуст).
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -2299,7 +2521,11 @@ paths:
       responses:
         '204': { description: OK }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`bad_transition` — выполненная работа не снимается; `already_cancelled` — сделку уже отменил параллельный запрос'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/slots/{slotId}/external/invite:
     post:
       tags: [bookings]
@@ -2322,7 +2548,7 @@ paths:
                 type: object
                 properties:
                   token: { type: string }
-                  url: { type: string, example: 'https://tili-tili.ru/join/ТИЛИ-СВОЙ-S8' }
+                  url: { type: string, example: 'https://tili-tili.ru/guest-vendor/<token>' }
                   expiresAt: { type: string, format: date-time }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -2353,7 +2579,7 @@ paths:
                       команды здесь нет.
                     items: { $ref: '#/components/schemas/TimelineEvent' }
         '410':
-          description: Ссылка истекла или отозвана
+          description: '`gone` — ссылка истекла или отозвана'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2380,8 +2606,9 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/Message' } }
                   nextCursor: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '410':
-          description: Ссылка истекла или отозвана
+          description: '`gone` — ссылка истекла или отозвана'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2406,7 +2633,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
         '410':
-          description: Ссылка истекла или отозвана
+          description: '`gone` — ссылка истекла или отозвана'
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -2513,6 +2740,7 @@ paths:
     post:
       tags: [logistics]
       summary: Добавить отельный блок
+      description: 'Дата заезда/выезда — не существующий календарный день — 422 `bad_date`.'
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WeddingId' }]
       requestBody:
@@ -2526,6 +2754,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HotelBlock' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/logistics/hotels/{hotelId}:
     delete:
       tags: [logistics]
@@ -2545,7 +2774,11 @@ paths:
         журнал и уведомляет команду в приложении. Тело ответа говорит, что
         именно сделано, — `recipients` это кого касается, `notified` —
         скольким членам команды ушло. Повторный вызов с тем же
-        Idempotency-Key рассылку не дублирует.
+        Idempotency-Key рассылку не дублирует. Без заголовка — 400
+        `idempotency_key_required`, длиннее 200 символов — 400
+        `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+        `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+        `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -2556,6 +2789,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/BroadcastResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /join/{guestToken}/shuttle:
     get:
       tags: [logistics-guest]
@@ -2579,13 +2818,16 @@ paths:
                   routes:
                     type: array
                     items: { $ref: '#/components/schemas/BusRoute' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [logistics-guest]
       summary: Гость записывается в автобус
-      description: Место занимается атомарно; при переполнении — 409.
+      description: |
+        Место занимается атомарно; при переполнении — 409. Повтор безопасен по
+        построению (`on conflict do nothing` + признак «уже записан») —
+        `Idempotency-Key` не читается и не объявляется.
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -2598,6 +2840,7 @@ paths:
       security: []
       responses:
         '200': { description: Записан }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/Conflict' }
   /join/{guestToken}/day:
     get:
@@ -2649,7 +2892,11 @@ paths:
                       open: { type: boolean, description: 'чат дня открыт гостям: с 09:00 кануна по конец дня после свадьбы (по tz)' }
                       opensAt: { type: string, format: date-time, nullable: true }
                       closesAt: { type: string, format: date-time, nullable: true }
-        '410': { description: 'Ссылка отозвана или истекла' }
+        '410':
+          description: '`gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /join/{guestToken}/day-chat/messages:
     get:
       tags: [logistics-guest]
@@ -2675,7 +2922,12 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/Message' }
                   nextCursor: { type: string, nullable: true }
-        '410': { description: 'Ссылка отозвана или истекла' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '410':
+          description: '`gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '423': { $ref: '#/components/responses/Locked' }
     post:
       tags: [logistics-guest]
@@ -2701,7 +2953,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
-        '410': { description: 'Ссылка отозвана или истекла' }
+        '410':
+          description: '`gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/Validation' }
         '423': { $ref: '#/components/responses/Locked' }
   /join/{guestToken}/team:
@@ -2755,6 +3011,7 @@ paths:
                         vendorId: { type: string }
                         name: { type: string }
                         categoryId: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /join/{guestToken}/hotels:
     get:
       tags: [logistics-guest]
@@ -2769,16 +3026,19 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/HotelBlock' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [logistics-guest]
       summary: Гость занимает номер в блоке
       description: |
-        Место занимается атомарно, при переполнении — 409. Пути записи
-        не было вовсе: блоки показывались, а занять номер было нечем,
-        хотя план требует «атомарные места в автобусе И НОМЕРЕ».
+        Место занимается атомарно, при переполнении — 409 `hotel_full`. Пути
+        записи не было вовсе: блоки показывались, а занять номер было нечем,
+        хотя план требует «атомарные места в автобусе И НОМЕРЕ». После
+        `deadline_passed` (дедлайн заселения прошёл) — тоже 409. Повтор
+        безопасен по построению (`on conflict do nothing` + признак «уже
+        занято») — `Idempotency-Key` не читается и не объявляется.
       parameters:
         - { $ref: '#/components/parameters/GuestToken' }
-        - { name: Idempotency-Key, in: header, required: true, schema: { type: string } }
       requestBody:
         required: true
         content:
@@ -2791,7 +3051,12 @@ paths:
       security: []
       responses:
         '200': { description: Номер занят }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: '`hotel_full` — мест не осталось; `deadline_passed` — дедлайн заселения прошёл'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── ОПРОС ПО МЕНЮ (§12.2) ─────────────────────────
   /weddings/{weddingId}/menu-poll:
@@ -2829,6 +3094,10 @@ paths:
       description: |
         Гостям доставки нет: напоминание уходит команде в приложении, чтобы
         она добрала голоса сама. Тело — что сделано (см. `BroadcastResult`).
+        Без заголовка — 400 `idempotency_key_required`, длиннее 200 символов —
+        400 `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+        `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+        `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -2839,6 +3108,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/BroadcastResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /join/{guestToken}/menu-vote:
     get:
       tags: [logistics-guest]
@@ -2865,6 +3140,7 @@ paths:
                       properties:
                         id: { type: string }
                         name: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [catering]
       summary: Гость выбирает блюдо
@@ -2882,6 +3158,7 @@ paths:
       security: []
       responses:
         '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ───────────────────────── ОТЗЫВЫ ГОСТЕЙ (§15) ─────────────────────────
   /weddings/{weddingId}/guest-reviews:
@@ -2940,6 +3217,7 @@ paths:
                 text: { type: string }
       responses:
         '201': { description: Создано }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ───────────────────────── СОГЛАСИЕ НА ОБРАБОТКУ ПДн (§18.1) ─────────────────────────
   /users/me/consent:
@@ -2953,6 +3231,14 @@ paths:
         `adult` — отдельная галочка «мне есть 18 лет» (план бэкенда §7): версия
         документа покрывает текст, возраст текстом не покрывается. Пишется в
         `consents.adult` как есть; клиент не даёт зафиксировать согласие без неё.
+
+        После смены редакции возвращает доступ (гасит `consent_outdated`).
+        `policyVersion` не совпадает с действующей редакцией сервера — 409
+        `policy_version_stale`: клиент показал не тот текст, подпись под ним
+        не годится. Повтор той же действующей редакции — снова 201 и новая
+        строка в `consents`: каждое нажатие «принимаю» — отдельный акт, а не
+        обновление предыдущего. `Idempotency-Key` не читается и не
+        объявляется.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2966,7 +3252,11 @@ paths:
                 adult: { type: boolean, description: 'подтверждение «мне есть 18 лет»; поля нет — false' }
       responses:
         '201': { description: Зафиксировано }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`policy_version_stale` — `policyVersion` старше действующей редакции'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [auth]
       summary: Отозвать согласие
@@ -2991,7 +3281,7 @@ paths:
     patch:
       tags: [auth]
       summary: Изменить профиль и настройки уведомлений
-      description: Имя, язык, таймзона, четыре канала push и тихие часы — экран «Настройки».
+      description: 'Имя, язык, таймзона, четыре канала push и тихие часы — экран «Настройки». Незнакомый `tz` (не из справочника IANA) — 422 `unknown_timezone`.'
       security: [{ bearerAuth: [] }]
       requestBody:
         content:
@@ -3003,20 +3293,27 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UserProfile' }
+        '422': { $ref: '#/components/responses/Validation' }
     delete:
       tags: [auth]
       summary: Удалить аккаунт
       description: |
         Soft-delete на 30 дней, затем полное удаление кроном (План §19.1).
-        Активные сделки требуют подтверждения второй стороны — 409 со списком.
+        Активные сделки требуют подтверждения второй стороны — 409
+        `active_deals` со списком.
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: OK }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`active_deals` — есть активные сделки, требуют подтверждения второй стороны'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /users/me/sessions:
     get:
       tags: [auth]
       summary: Мои сессии и устройства
+      description: 'Работает и без действующего согласия под текущей редакцией: выйти можно всегда (ARB-2).'
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -3029,6 +3326,7 @@ paths:
     delete:
       tags: [auth]
       summary: Выйти со всех устройств, кроме текущего
+      description: 'Работает и без действующего согласия под текущей редакцией: выйти можно всегда (ARB-2).'
       security: [{ bearerAuth: [] }]
       responses:
         '204': { description: OK }
@@ -3036,7 +3334,10 @@ paths:
     delete:
       tags: [auth]
       summary: Завершить сессию
-      description: 'Выход со всех устройств сразу — DELETE /users/me/sessions.'
+      description: |
+        Выход со всех устройств сразу — DELETE /users/me/sessions. Работает и
+        без действующего согласия под текущей редакцией: выйти можно всегда
+        (ARB-2).
       security: [{ bearerAuth: [] }]
       parameters: [{ name: sessionId, in: path, required: true, schema: { type: string } }]
       responses:
@@ -3074,16 +3375,28 @@ paths:
             schema:
               type: object
               required: [endpoint, keys]
+              additionalProperties: false
               properties:
-                endpoint: { type: string }
-                keys: { type: object }
+                endpoint: { type: string, minLength: 1, maxLength: 2000, pattern: '^https://[^ ]+$' }
+                keys:
+                  type: object
+                  required: [p256dh, auth]
+                  additionalProperties: false
+                  properties:
+                    p256dh: { type: string, minLength: 1, maxLength: 200 }
+                    auth: { type: string, minLength: 1, maxLength: 200 }
       responses:
         '201': { description: Создано }
+        '422': { $ref: '#/components/responses/Validation' }
         '501': { $ref: '#/components/responses/NotConfigured' }
     delete:
       tags: [notifications]
       summary: Отписаться от push
-      description: 'С параметром endpoint — только подписка этого устройства (её адрес знает только оно); без параметра — все подписки человека.'
+      description: |
+        С параметром endpoint — только подписка этого устройства (её адрес
+        знает только оно); без параметра — все подписки человека. Работает и
+        при согласии под прежней редакцией: выход с экрана повторного
+        согласия (ARB-2, allow-list).
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: endpoint, in: query, required: false, schema: { type: string, maxLength: 2048 } }
@@ -3136,12 +3449,18 @@ paths:
     post:
       tags: [auth]
       summary: Применить чужой реферальный код
-      description: Один раз на аккаунт и только до первой сделки. Повтор — 409.
+      description: |
+        Один раз на аккаунт: уже применявший любой код — 409 `referral_used`.
+        Свой же код — 409 `own_code`.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
       responses:
         '200': { description: OK }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`referral_used` — код на этот аккаунт уже применялся; `own_code` — свой же код'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── СДЕЛКИ: ПЕРЕХОДЫ И ДОГОВОРЫ ─────────────────────────
   /deals/{dealId}/events:
@@ -3187,11 +3506,15 @@ paths:
       tags: [bookings]
       summary: Перевести сделку в следующее состояние или исправить сумму
       description: |
-        Контракт знал только book/cancel/pay — четыре из шести состояний были
-        недостижимы через API. Разрешены только переходы вперёд по цепочке
-        candidate → contacted → negotiating → booked → paid_deposit → done
-        и cancelled из любого. Недопустимый переход — 409.
-        Переход в negotiating ставит negotiatingUntil = now + 72 ч.
+        Сделка рождается сразу в `booked` (бронь слота или свой подрядчик) —
+        ступени до `booked` (`candidate`, `contacted`, `negotiating`) через API
+        не производятся, это витрина будущего сценария подбора, не действующий
+        путь. Дальше разрешены только переходы вперёд по цепочке
+        booked → paid_deposit → done; отмена — из любого состояния, КРОМЕ
+        `done`. Недопустимый переход — 409 `bad_transition`; повторная отмена
+        уже отменённой сделки — 409 `already_cancelled` (одна дверь
+        `cancelDeal()` — ARB-1). Дата подрядчика уже занята другой его сделкой —
+        409 `date_taken`.
 
         Сумму можно исправить до внесения аванса: подрядчик присылает новую
         смету, и без этой правки пара была вынуждена отменять сделку, а
@@ -3199,7 +3522,11 @@ paths:
         done и cancelled сумма зафиксирована — 409 `price_locked`.
         Правка пишется в журнал сделки как событие вида `price`.
 
-        Требуется хотя бы одно из полей: `state` или `price`.
+        Требуется хотя бы одно из полей: `state` или `price`. Обязательный
+        `Idempotency-Key`: без него — 400 `idempotency_key_required`, длиннее
+        200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой
+        запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется —
+        409 `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: dealId, in: path, required: true, schema: { type: string } }
@@ -3221,6 +3548,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Deal' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '409': { $ref: '#/components/responses/Conflict' }
   /deals/{dealId}/contract:
     post:
@@ -3231,9 +3559,17 @@ paths:
         и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10).
         Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2
         шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде
-        свадьбы — 403: договор содержит суммы и данные сторон.
+        свадьбы — 403: договор содержит суммы и данные сторон. Сделка ещё не
+        забронирована — 409 `not_booked`; в `fields` не хватает полей шаблона —
+        422 `fields_missing`. `Idempotency-Key` необязателен: без него
+        переоформление создаёт новую версию, с ним повтор возвращает тот же
+        документ; длиннее 200 символов — 400 `idempotency_key_too_long`, тот
+        же ключ на другой запрос — 409 `idempotency_key_reused`, тот же ключ
+        ещё выполняется — 409 `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
-      parameters: [{ name: dealId, in: path, required: true, schema: { type: string } }]
+      parameters:
+        - { name: dealId, in: path, required: true, schema: { type: string } }
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, maxLength: 200 } }
       requestBody:
         required: true
         content:
@@ -3242,15 +3578,24 @@ paths:
               type: object
               required: [templateCode]
               properties:
-                templateCode: { type: string, example: photographer }
-                fields: { type: object, description: 'паспортные данные и реквизиты, вводятся парой' }
+                templateCode: { type: string, enum: [photographer, videographer, venue, host, universal] }
+                fields:
+                  type: object
+                  additionalProperties: true
+                  description: 'паспортные данные и реквизиты, вводятся парой; обязательные поля зависят от шаблона — не хватает хотя бы одного, названного шаблоном, — 422 `fields_missing`'
       responses:
         '201':
           description: Создано
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Document' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`not_booked` — сделка ещё не забронирована; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/documents:
     get:
       tags: [documents]
@@ -3323,7 +3668,14 @@ paths:
     post:
       tags: [timeline]
       summary: Сдвинуть день X на N минут
-      description: 'Кнопка «+15 мин» в режиме дня X. Сдвигает все последующие блоки и рассылает push команде и гостям — killer-фича §19.6.'
+      description: |
+        Кнопка «+15 мин» в режиме дня X. Сдвигает все последующие блоки и
+        рассылает push команде и гостям — killer-фича §19.6. Нулевой сдвиг —
+        422 `empty_shift`. Обязательный `Idempotency-Key`: без него — 400
+        `idempotency_key_required`, длиннее 200 символов — 400
+        `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+        `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+        `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -3343,6 +3695,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DayXBroadcast' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/planb:
     get:
       tags: [timeline]
@@ -3380,7 +3739,15 @@ paths:
     post:
       tags: [timeline]
       summary: Активировать план Б
-      description: 'Фиксирует запасной сценарий и время его активации и уведомляет команду в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не пересобирается, гостям ничего не рассылается: канала доставки гостям пока нет.'
+      description: |
+        Фиксирует запасной сценарий и время его активации и уведомляет команду
+        в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не
+        пересобирается, гостям ничего не рассылается: канала доставки гостям
+        пока нет. Обязательный `Idempotency-Key`: без него — 400
+        `idempotency_key_required`, длиннее 200 символов — 400
+        `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+        `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+        `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -3400,6 +3767,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DayXBroadcast' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── ВДОХНОВЕНИЕ (§8.4) ─────────────────────────
   /inspiration/likes:
@@ -3425,12 +3798,15 @@ paths:
     put:
       tags: [catalog]
       summary: Отметить историю
+      description: |
+        Предел отметок на пользователя — `likes_limit` (429, 500 штук):
+        постоянный отказ, без заголовка `Retry-After`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: storyId, in: path, required: true, schema: { type: string, maxLength: 40 } }
       responses:
         '204': { description: Отмечено; повтор ничего не меняет }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
     delete:
       tags: [catalog]
       summary: Снять отметку
@@ -3495,10 +3871,15 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/AlbumPhoto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [album]
       summary: Гость добавляет фото
-      description: 'Без регистрации, по персональному токену. Кадр попадает в очередь модерации парой.'
+      description: |
+        Без регистрации, по персональному токену (`guestToken` в строке
+        запроса). Кадр попадает в очередь модерации парой. Согласие на
+        публикацию — явная галочка: без неё 422 `consent_required`. Предел
+        кадров на гостя — `album_limit` (429, без `Retry-After`).
       security: []
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -3519,6 +3900,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AlbumPhoto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Validation' }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
     patch:
       tags: [album]
@@ -3621,14 +4004,18 @@ paths:
     delete:
       tags: [wishlist]
       summary: Удалить фонд
-      description: 'Запрещено, если в фонд уже внесены деньги — 409.'
+      description: 'Запрещено, если в фонд уже внесены деньги — 409 `fund_has_contributions`.'
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
         - { name: fundId, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: OK }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`fund_has_contributions` — в фонд уже внесены деньги'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   # ───────────────────────── ЖИЗНЬ ПРОЕКТА ─────────────────────────
   /weddings/{weddingId}/reschedule:
@@ -3643,7 +4030,14 @@ paths:
 
         Тот же перенос делает `PATCH /weddings/{weddingId}` с полем `date` —
         это один код, а не два похожих. Разница только в ответе: здесь
-        возвращается отчёт по команде, там — карточка свадьбы.
+        возвращается отчёт по команде, там — карточка свадьбы. Дата вне
+        допустимого диапазона — 422 `date_out_of_range`; календарная дата не
+        существует — 422 `bad_date`; занятая дата у своего же подрядчика —
+        409 `date_taken`. Обязательный `Idempotency-Key`: без него — 400
+        `idempotency_key_required`, длиннее 200 символов — 400
+        `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+        `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+        `idempotency_in_progress`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -3667,7 +4061,13 @@ paths:
                 properties:
                   free: { type: array, items: { type: string } }
                   busy: { type: array, items: { type: string } }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: '`date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Validation' }
   /weddings/{weddingId}/cancel:
     post:
       tags: [weddings]
@@ -3676,11 +4076,13 @@ paths:
         Требует подтверждения ОБОИХ партнёров: первый вызов создаёт запрос,
         второй — исполняет (План §19.1).
 
-        Отменяются сделки в состояниях `booked` и `paid_deposit`: им ставится
-        `cancelled_by_couple`, и подрядчики уведомляются. Сделки `done`
-        остаются как были — работа уже сделана, и отменять в ней нечего.
-        Даты подрядчиков и слоты свадьбы освобождаются только по отменённым
-        сделкам: занятость по `done` — это состоявшийся день, а не бронь.
+        Брони отменяются той же дверью, что и отмена сделки —
+        `cancelDeal()` (F1, F-RL-2-02/SA-06): даты, маршруты, ссылки своего
+        подрядчика, лиды. Отменяются сделки в состояниях `booked` и
+        `paid_deposit`, подрядчики уведомляются. Сделки `done` остаются как
+        были — работа уже сделана, и отменять в ней нечего. Даты подрядчиков
+        и слоты свадьбы освобождаются только по отменённым сделкам: занятость
+        по `done` — это состоявшийся день, а не бронь.
 
         Проект уходит в архив на `WEDDING_ARCHIVE_DAYS` дней (по умолчанию
         365, меньше 30 не бывает), после чего уборка удаляет его со всем
@@ -3700,7 +4102,11 @@ paths:
     post:
       tags: [catalog]
       summary: Заявка консьержу при пустой выдаче
-      description: 'Пока в городе меньше 50 анкет, поиск честно предлагает подбор вручную за 24 часа (План §18.12).'
+      description: |
+        Пока в городе меньше 50 анкет, поиск честно предлагает подбор вручную
+        за 24 часа (План §18.12). Категория не из справочника — 404 (ARB-4).
+        Уже есть открытая (`new`/`in_progress`) заявка по той же категории —
+        409 `concierge_pending`.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -3716,7 +4122,16 @@ paths:
                 city: { type: string, description: 'город поиска, если отличается от города свадьбы; только из справочника — иначе 422' }
       responses:
         '201': { description: Создано }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '404':
+          description: 'категория не найдена в справочнике'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`concierge_pending` — уже есть открытая заявка по той же категории и городу'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/Validation' }
   /complaints:
     post:
@@ -3803,9 +4218,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ModerationVendorPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
   /admin/moderation/vendors/{vendorId}:
     post:
       tags: [admin]
@@ -3874,9 +4289,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VerificationPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
   /admin/verifications/{requestId}:
     get:
       tags: [admin]
@@ -3966,9 +4381,9 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/Complaint' } }
                   nextCursor: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
   /admin/complaints/{complaintId}:
     post:
       tags: [admin]
@@ -4027,9 +4442,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConciergePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
   /admin/concierge/{requestId}:
     post:
       tags: [admin]
@@ -4212,6 +4627,20 @@ components:
         Персональный токен гостя. Нужен там, где гость обращается к пути
         со свадьбой в адресе: подставить его в путь некуда, а без него
         сервер не отличит гостя от постороннего.
+
+        Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+        архиве. Пути дня X — `GET /join/{guestToken}/day`,
+        `GET /join/{guestToken}/day-chat/messages` и
+        `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+        ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+        операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+        `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+        `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+        `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+        `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+        `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+        `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+        не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
       schema: { type: string }
     GuestToken:
       name: guestToken
@@ -4224,6 +4653,20 @@ components:
         приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
         Анонимность подарков при этом сохраняется: система знает гостя, а API
         пары этот токен не отдаёт никогда (§9).
+
+        Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+        архиве. Пути дня X — `GET /join/{guestToken}/day`,
+        `GET /join/{guestToken}/day-chat/messages` и
+        `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+        ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+        операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+        `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+        `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+        `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+        `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+        `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+        `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+        не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
       schema: { type: string }
     WeddingId:
       name: weddingId
@@ -4269,6 +4712,17 @@ components:
         снятие анкеты с публикации без причины, санкция, неприменимая к цели
         жалобы, синоним на несуществующую категорию. В описании операции
         сказано, какое поле сервер называет виноватым.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BadRequest:
+      description: |
+        Запрос не годится ещё до проверки схемы или бизнес-правил. Возможные
+        коды (в описании операции — какой из них применим): `bad_limit`
+        (параметр `limit` — не целое число от 1 до 100), `bad_cursor` (курсор
+        листания испорчен, не того типа сортировки или обрезан), `idempotency_key_required`
+        (обязательный заголовок `Idempotency-Key` не передан) и
+        `idempotency_key_too_long` (заголовок длиннее 200 символов).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -4344,9 +4798,12 @@ components:
         consentRequired:
           type: boolean
           description: |
-            Только у `POST /auth/otp/verify`: согласие нужно дать — аккаунт новый
-            или отозвал согласие при удалении и восстановлен входом (фича 005).
-            До `POST /users/me/consent` остальные пути отвечают 403 `consent_required`.
+            Только у `POST /auth/otp/verify`: нет живого согласия под
+            действующей редакцией политики — новый аккаунт, восстановленный
+            после отзыва, или согласие дано под прежней редакцией (фича 005).
+            До `POST /users/me/consent` остальные пути отвечают: без согласия
+            вовсе — 403 `forbidden`; под прежней редакцией — 403
+            `consent_outdated`.
     User:
       type: object
       properties:

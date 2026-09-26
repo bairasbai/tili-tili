@@ -22,9 +22,10 @@ export interface paths {
          *
          *     Лимиты выдачи кода (фича 005): по паре «номер + адрес» — 3 в час, по
          *     номеру — 10 в час и 30 в сутки, по адресу — как прежде. Каждый 429
-         *     несёт `Retry-After` в секундах. Чужой номер пятью запросами больше
-         *     не закрыть: посторонний с одного адреса упирается в свой лимит, а
-         *     владелец номера с другого адреса код получает.
+         *     `too_many_requests` несёт `Retry-After` в секундах. Чужой номер пятью
+         *     запросами больше не закрыть: посторонний с одного адреса упирается в
+         *     свой лимит, а владелец номера с другого адреса код получает. Номер не
+         *     похож на телефон — 422 `bad_phone`.
          */
         post: {
             parameters: {
@@ -101,7 +102,8 @@ export interface paths {
          *     уборкой раньше), и вход заводит новый аккаунт (фичи 005/014). Код
          *     сверяется со всеми живыми кодами номера: чужой запрос кода на ваш
          *     номер ваш код не отменяет; попытки считаются, после пяти неверных —
-         *     429 (ревью 015).
+         *     429 `too_many_requests` (ревью 015). Номер не похож на телефон — 422
+         *     `bad_phone`.
          */
         post: {
             parameters: {
@@ -158,8 +160,8 @@ export interface paths {
         /**
          * Обновление access-token
          * @description Refresh одноразовый: при обмене старый гасится, выдаётся новый.
-         *     Повторное предъявление уже погашенного — признак кражи, и тогда
-         *     гасятся ВСЕ сессии пользователя.
+         *     Повторное предъявление уже погашенного — 401 `refresh_superseded`,
+         *     признак кражи, и тогда гасятся ВСЕ сессии пользователя.
          */
         post: {
             parameters: {
@@ -269,7 +271,12 @@ export interface paths {
             };
         };
         put?: never;
-        /** Создать свадьбу (после квиза) */
+        /**
+         * Создать свадьбу (после квиза)
+         * @description Город не найден в справочнике — 404 (ARB-4). Дата свадьбы вне
+         *     диапазона «год назад … пять лет вперёд» — 422 `date_out_of_range`;
+         *     несуществующий день вроде 30 февраля — 422 `bad_date`.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -309,6 +316,15 @@ export interface paths {
                         "application/json": components["schemas"]["Wedding"];
                     };
                 };
+                /** @description город не найден в справочнике */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /**
                  * @description `wedding_exists` — у пары уже есть живая свадьба (не отменена и
                  *     не в архиве); вторая заводится только после её отмены или
@@ -322,6 +338,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -371,11 +388,14 @@ export interface paths {
          *     `POST /weddings/{weddingId}/reschedule`, и тянет за собой занятость
          *     в календарях подрядчиков, сроки задач чек-листа, время блоков тайминга
          *     и час открытия чата дня X. Если кто-то из забронированной команды занят
-         *     на новую дату — 409 `team_busy`, и не меняется ничего.
+         *     на новую дату — 409 `team_busy`, и не меняется ничего; дата уже
+         *     занята у своего же подрядчика — 409 `date_taken`.
          *
          *     Дата свадьбы принимается в диапазоне «год назад … пять лет вперёд»
          *     (решение владельца 2026-09-03); за его пределами — 422
          *     `date_out_of_range`. Несуществующий день вроде 30 февраля — 422 `bad_date`.
+         *     Незнакомый `tz` (не из справочника IANA) — 422 `unknown_timezone`.
+         *     Город не найден в справочнике — 404 (ARB-4).
          */
         patch: {
             parameters: {
@@ -423,7 +443,17 @@ export interface paths {
                         "application/json": components["schemas"]["Wedding"];
                     };
                 };
+                /** @description город не найден в справочнике */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         trace?: never;
@@ -476,7 +506,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить участника */
+        /**
+         * Удалить участника
+         * @description Последнюю пару из свадьбы убрать нельзя (`last_couple`, 409).
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -496,12 +529,23 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `last_couple` — последнюю пару из свадьбы убрать нельзя */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
         head?: never;
-        /** Сменить роль участника (только couple) */
+        /**
+         * Сменить роль участника (только couple)
+         * @description Последнюю пару из свадьбы убрать нельзя (`last_couple`, 409) — у свадьбы должен остаться хотя бы один couple.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -528,7 +572,15 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `last_couple` — последнюю пару из свадьбы убрать нельзя */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         trace?: never;
@@ -642,12 +694,14 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Истёк или отозван */
+                /** @description `gone` — истёк или отозван */
                 410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -709,13 +763,23 @@ export interface paths {
                         "application/json": components["schemas"]["Member"];
                     };
                 };
-                409: components["responses"]["Conflict"];
-                /** @description Истёк/отозван/уже использован */
+                /** @description `already_member` — уже в этой свадьбе */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `gone` — истёк, отозван или уже использован */
                 410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -1064,12 +1128,15 @@ export interface paths {
                         "application/json": components["schemas"]["VendorPage"];
                     };
                 };
-                /** @description Курсор от другой сортировки (bad_cursor) — начать листать заново */
-                400: {
+                400: components["responses"]["BadRequest"];
+                /** @description `bad_date` — календарная дата в `date` не существует */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -1477,7 +1544,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Забронировать подрядчика в слот («Добавить в свадьбу») */
+        /**
+         * Забронировать подрядчика в слот («Добавить в свадьбу»)
+         * @description Обязательный `Idempotency-Key`: без него — 400 `idempotency_key_required`,
+         *     длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
+         *     другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется —
+         *     409 `idempotency_in_progress`. Пакет не из справочника подрядчика —
+         *     422 `unknown_package`.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1509,12 +1583,15 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
-                /** @description Слот уже занят */
+                400: components["responses"]["BadRequest"];
+                /** @description `slot_taken` — слот уже занят; `date_taken` — у подрядчика уже есть бронь на эту дату; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
                 409: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 422: components["responses"]["Validation"];
             };
@@ -1539,7 +1616,9 @@ export interface paths {
          * @description Идемпотентно по `Idempotency-Key`, как бронь и оплата: отмена освобождает
          *     дату у подрядчика и рассылает уведомления, повтор на плохой связи не
          *     должен делать этого дважды. Сервер требовал заголовок с этапа 4, а
-         *     контракт его не называл (класс ERR-0038) — выправлено в v0.24.
+         *     контракт его не называл (класс ERR-0038) — выправлено в v0.24. Без
+         *     заголовка — 400 `idempotency_key_required`, длиннее 200 символов —
+         *     400 `idempotency_key_too_long`.
          */
         post: {
             parameters: {
@@ -1564,7 +1643,16 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                400: components["responses"]["BadRequest"];
+                /** @description `already_cancelled` — уже отменена; `slot_empty` — слот и так пуст; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -1592,7 +1680,11 @@ export interface paths {
          *     с минусом, отменённые записи не считаются — та же формула, что `Deal.paid`);
          *     сделка, оплаченная целиком, — 409 `overpay`. Сумма сверх остатка — 409
          *     `overpay`; ноль — 422 `bad_amount`; сделка без цены — 409 `no_price`
-         *     (ревью 015).
+         *     (ревью 015). Пустой слот — 409 `slot_empty`; слот без подтверждённой
+         *     брони — 409 `not_booked`. Без заголовка — 400 `idempotency_key_required`,
+         *     длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
+         *     другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё
+         *     выполняется — 409 `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -1627,6 +1719,7 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
             };
@@ -2021,6 +2114,7 @@ export interface paths {
                         "application/json": components["schemas"]["Table"];
                     };
                 };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -2147,10 +2241,15 @@ export interface paths {
                         };
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
-        /** Ответ гостя (RSVP) */
+        /**
+         * Ответ гостя (RSVP)
+         * @description `plusOne: true` при уже забронированном автобусе может не поместиться
+         *     в его границу мест — тогда 409 `bus_full`, ответ RSVP не сохраняется.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -2182,6 +2281,16 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description `bus_full` — мест в автобусе не осталось */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -2320,7 +2429,15 @@ export interface paths {
                     };
                 };
                 403: components["responses"]["Forbidden"];
-                429: components["responses"]["TooManyRequests"];
+                /** @description `too_often` — не чаще раза в сутки; заголовка `Retry-After` нет */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -2414,12 +2531,14 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Код уже использован или истёк — попросите пару выслать ссылку заново */
+                /** @description `gone` — код уже использован или истёк: попросите пару выслать ссылку заново */
                 410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -2509,7 +2628,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить свою задачу */
+        /**
+         * Удалить свою задачу
+         * @description Системную задачу (заведённую сервером, не парой) удалить нельзя — 409 `system_task`.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2529,7 +2651,15 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `system_task` — системную задачу удалить нельзя */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -2637,7 +2767,17 @@ export interface paths {
                         };
                     };
                 };
-                423: components["responses"]["Locked"];
+                400: components["responses"]["BadRequest"];
+                403: components["responses"]["Forbidden"];
+                /** @description `wedding_date_unknown` — у свадьбы ещё нет даты, окно чата не считается; `chat_not_open_yet` — окно чата ещё не открылось */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         put?: never;
@@ -2669,6 +2809,7 @@ export interface paths {
                         "application/json": components["schemas"]["Message"];
                     };
                 };
+                403: components["responses"]["Forbidden"];
                 /** @description `chat_closed` — чат своего подрядчика закрыт: сделка отменена, писать некому (переписка остаётся паре для чтения) */
                 409: {
                     headers: {
@@ -2678,7 +2819,15 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                423: components["responses"]["Locked"];
+                /** @description `wedding_date_unknown` — у свадьбы ещё нет даты, окно чата не считается; `chat_not_open_yet` — окно чата ещё не открылось */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /**
                  * @description Предел исчерпан: `cold_outreach_limit` — непроверенный подрядчик начал
                  *     за день больше переписок, чем разрешено (§18.2); `tilly_daily_limit` —
@@ -2727,6 +2876,11 @@ export interface paths {
          *
          *     Если канал недоступен, клиент опрашивает историю раз в 30 секунд —
          *     штатный запасной путь §13.4.
+         *
+         *     Коды закрытия — тем же пространством, что и обычные ответы, только
+         *     4000+status: `token_expired` → 4401, `forbidden`/`vendor_blocked` →
+         *     4403, `not_found` → 4404, `wedding_date_unknown`/`chat_not_open_yet` →
+         *     4423. Без апгрейда до WebSocket — 426 `upgrade_required`.
          */
         get: {
             parameters: {
@@ -2749,7 +2903,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Нужен апгрейд до WebSocket */
+                /** @description `upgrade_required` — нужен апгрейд до WebSocket */
                 426: {
                     headers: {
                         [name: string]: unknown;
@@ -2798,6 +2952,16 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                /** @description `wedding_date_unknown` — у свадьбы ещё нет даты, окно чата не считается; `chat_not_open_yet` — окно чата ещё не открылось */
+                423: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -2878,7 +3042,13 @@ export interface paths {
                 404: components["responses"]["NotFound"];
             };
         };
-        /** Создать/обновить анкету (мастер: категория → пакеты → город → публикация) */
+        /**
+         * Создать/обновить анкету (мастер: категория → пакеты → город → публикация)
+         * @description Категория или город не из справочника — 404 (ARB-4). Несколько
+         *     городов подходят под название — 422 `city_ambiguous`; портфолио с
+         *     видео без длительности — 422 `video_duration_required`; видео длиннее
+         *     предела — 422 `video_too_long`.
+         */
         put: {
             parameters: {
                 query?: never;
@@ -2901,6 +3071,16 @@ export interface paths {
                         "application/json": components["schemas"]["VendorDetail"];
                     };
                 };
+                /** @description категория или город не найдены в справочнике */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
             };
         };
         post?: never;
@@ -3013,7 +3193,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Отметить даты занятыми/свободными */
+        /**
+         * Отметить даты занятыми/свободными
+         * @description Календарная дата не существует — 422 `bad_date`.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3038,6 +3221,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -3091,7 +3275,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Действие с лидом: ответить / холд 72ч / отклонить / вернуть */
+        /**
+         * Действие с лидом: ответить / холд 72ч / отклонить / вернуть
+         * @description `text` обязателен при `action=reply` — без него 422 `text_required`;
+         *     текст при action, для которого он не по делу, — 422 `text_not_allowed`.
+         *     Уходит той же дверью, что `POST /chats/{chatId}/messages`:
+         *     заблокированному подрядчику — 403 `vendor_blocked`, непроверенному
+         *     сверх предела холодных обращений — 429 `cold_outreach_limit`. Лид уже
+         *     выигран (`lead_won`) — 409: решение принято, действие не применяется.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3107,11 +3299,9 @@ export interface paths {
                         /** @enum {string} */
                         action: "reply" | "hold" | "decline" | "reopen";
                         /**
-                         * @description Сообщение паре в чат заявки. Обязателен при `action=reply` (без него 422);
-                         *     при `hold`/`decline`/`reopen` — по желанию: причина отказа или холда (§3.13,
-                         *     R-48). Уходит той же дверью, что `POST /chats/{chatId}/messages`:
-                         *     заблокированному подрядчику — 403 `vendor_blocked`, непроверенному сверх
-                         *     предела холодных обращений — 429 `cold_outreach_limit`.
+                         * @description Сообщение паре в чат заявки. Обязателен при `action=reply`;
+                         *     при `hold`/`decline`/`reopen` — по желанию: причина отказа
+                         *     или холда (§3.13, R-48).
                          */
                         text?: string;
                     };
@@ -3127,8 +3317,26 @@ export interface paths {
                         "application/json": components["schemas"]["Lead"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                403: components["responses"]["Forbidden"];
+                /** @description `lead_won` — лид уже выигран, действие не применяется */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 422: components["responses"]["Validation"];
+                /** @description `cold_outreach_limit` — непроверенный подрядчик исчерпал предел холодных обращений за день */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -3499,6 +3707,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 404: components["responses"]["NotFound"];
             };
         };
@@ -3755,7 +3964,7 @@ export interface paths {
         post?: never;
         /**
          * Удалить желание
-         * @description Запрещено, если в подарок уже сложились — 409, как и у фонда.
+         * @description Запрещено, если в подарок уже сложились — 409 `gift_has_contributions`, как и у фонда.
          */
         delete: {
             parameters: {
@@ -3776,12 +3985,23 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `gift_has_contributions` — в подарок уже сложились */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
         head?: never;
-        /** Изменить желание */
+        /**
+         * Изменить желание
+         * @description Новая цена ниже уже собранной суммы — 409 `gift_price_below_funded`.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -3812,7 +4032,15 @@ export interface paths {
                         "application/json": components["schemas"]["Gift"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `gift_price_below_funded` — новая цена ниже уже собранной суммы */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         trace?: never;
@@ -3840,6 +4068,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -3867,6 +4109,7 @@ export interface paths {
                         };
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
@@ -3889,12 +4132,16 @@ export interface paths {
         /**
          * Зарезервировать подарок
          * @description Атомарно: резерв проходит только если подарок свободен (conditional update
-         *     либо unique constraint). Второй гость получает 409 — подарить дважды нельзя.
-         *     Токен гостя сохраняется, но паре не отдаётся никогда.
+         *     либо unique constraint). Второй гость получает 409 `gift_reserved` —
+         *     подарить дважды нельзя. Токен гостя сохраняется, но паре не отдаётся
+         *     никогда.
          *
          *     Повтор тем же токеном — тот же 200: гость нажал дважды, подарок его.
-         *     Подарок, в который уже сложились, зарезервировать нельзя (409): иначе
-         *     деньги участников складчины повисают на чужом резерве.
+         *     Подарок, в который уже сложились (`gift_has_contributions`), зарезервировать
+         *     нельзя: иначе деньги участников складчины повисают на чужом резерве.
+         *     Обязательный `Idempotency-Key`: без него — 400 `idempotency_key_required`,
+         *     длиннее 200 символов — 400 `idempotency_key_too_long`. Предел резервов
+         *     с одного токена — `reservation_limit` (429, без `Retry-After`).
          */
         post: {
             parameters: {
@@ -3910,6 +4157,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                     giftId: string;
@@ -3925,7 +4186,17 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `gift_reserved` — уже зарезервирован другим гостем; `gift_has_contributions` — в подарок уже сложились */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 429: components["responses"]["QuotaExceeded"];
             };
         };
@@ -3945,6 +4216,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                     giftId: string;
@@ -3960,6 +4245,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         options?: never;
@@ -3978,10 +4264,15 @@ export interface paths {
         put?: never;
         /**
          * Внести часть суммы (складчина)
-         * @description Только для подарков с `group: true`. Сумма прибавляется к `funded`
-         *     до `price`; взнос, переваливающий за цену, отклоняется 409 — принять
-         *     больше нужного значит взять с гостя лишнее. При `funded == price`
-         *     подарок закрывается и больше не принимает ни взносов, ни резерва.
+         * @description Только для подарков с `group: true` (иначе 409 `gift_not_group`). Сумма
+         *     прибавляется к `funded` до `price`; взнос, переваливающий за цену
+         *     (`gift_overfunded`), или закрытый подарок (`gift_closed`, `funded == price`),
+         *     или уже зарезервированный кем-то (`gift_reserved`) — 409: принять
+         *     больше нужного значит взять с гостя лишнее. Обязательный
+         *     `Idempotency-Key`: без него — 400 `idempotency_key_required`, длиннее
+         *     200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой
+         *     запрос — 409 `idempotency_key_reused`. Предел взносов с одного токена —
+         *     `contribution_limit` (429, без `Retry-After`).
          */
         post: {
             parameters: {
@@ -3997,6 +4288,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                     giftId: string;
@@ -4020,7 +4325,17 @@ export interface paths {
                         "application/json": components["schemas"]["Gift"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `gift_not_group` — не складчина; `gift_overfunded` — сумма выше цены; `gift_closed` — уже собрано; `gift_reserved` — занят; `idempotency_key_reused` — тот же ключ на другой запрос */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 429: components["responses"]["QuotaExceeded"];
             };
         };
@@ -4039,7 +4354,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Перевод в денежный фонд */
+        /**
+         * Перевод в денежный фонд
+         * @description Обязательный `Idempotency-Key`: без него — 400 `idempotency_key_required`,
+         *     длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
+         *     другой запрос — 409 `idempotency_key_reused`. Предел взносов с одного
+         *     токена — `contribution_limit` (429, без `Retry-After`).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -4054,6 +4375,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                     fundId: string;
@@ -4077,7 +4412,17 @@ export interface paths {
                         "application/json": components["schemas"]["Fund"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 429: components["responses"]["QuotaExceeded"];
             };
         };
@@ -4098,7 +4443,9 @@ export interface paths {
         put?: never;
         /**
          * Добавить своего подрядчика (не из каталога)
-         * @description Пара нашла исполнителя сама. Профиля в каталоге нет, но слот, бюджет и тайминг он занимает наравне с каталожным.
+         * @description Пара нашла исполнителя сама. Профиля в каталоге нет, но слот, бюджет
+         *     и тайминг он занимает наравне с каталожным. Слот уже занят — 409
+         *     `slot_taken`.
          */
         post: {
             parameters: {
@@ -4129,15 +4476,29 @@ export interface paths {
                         "application/json": components["schemas"]["Slot"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `slot_taken` — слот уже занят */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 422: components["responses"]["Validation"];
             };
         };
         /**
          * Удалить своего подрядчика
-         * @description Слот возвращается в empty, выданный гостевой токен аннулируется. В слоте нет
-         *     сделки или сделка каталожная (не свой подрядчик) — 404; выполненная работа
-         *     не снимается — 409 `bad_transition`.
+         * @description Отменяет сделку той же единственной дверью `cancelDeal()`, что и
+         *     отмена брони слота, `PATCH /deals` и отмена свадьбы (F1,
+         *     F-RL-2-02/SA-06): освобождает дату, гасит ссылку-приглашение,
+         *     снимает автобусные маршруты, возвращает лид в работу. Слот
+         *     возвращается в empty, выданный гостевой токен аннулируется. В слоте
+         *     нет сделки или сделка каталожная (не свой подрядчик) — 404;
+         *     выполненная работа не снимается — 409 `bad_transition`; сделка,
+         *     которую успел отменить параллельный запрос, — 409 `already_cancelled`
+         *     (повтор после завершённой отмены получает 404: слот уже пуст).
          */
         delete: {
             parameters: {
@@ -4159,7 +4520,15 @@ export interface paths {
                     content?: never;
                 };
                 404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
+                /** @description `bad_transition` — выполненная работа не снимается; `already_cancelled` — сделку уже отменил параллельный запрос */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -4203,7 +4572,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             token?: string;
-                            /** @example https://tili-tili.ru/join/ТИЛИ-СВОЙ-S8 */
+                            /** @example https://tili-tili.ru/guest-vendor/<token> */
                             url?: string;
                             /** Format: date-time */
                             expiresAt?: string;
@@ -4263,7 +4632,7 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Ссылка истекла или отозвана */
+                /** @description `gone` — ссылка истекла или отозвана */
                 410: {
                     headers: {
                         [name: string]: unknown;
@@ -4319,7 +4688,8 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Ссылка истекла или отозвана */
+                400: components["responses"]["BadRequest"];
+                /** @description `gone` — ссылка истекла или отозвана */
                 410: {
                     headers: {
                         [name: string]: unknown;
@@ -4358,7 +4728,7 @@ export interface paths {
                         "application/json": components["schemas"]["Message"];
                     };
                 };
-                /** @description Ссылка истекла или отозвана */
+                /** @description `gone` — ссылка истекла или отозвана */
                 410: {
                     headers: {
                         [name: string]: unknown;
@@ -4564,7 +4934,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Добавить отельный блок */
+        /**
+         * Добавить отельный блок
+         * @description Дата заезда/выезда — не существующий календарный день — 422 `bad_date`.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -4589,6 +4962,7 @@ export interface paths {
                         "application/json": components["schemas"]["HotelBlock"];
                     };
                 };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -4649,7 +5023,11 @@ export interface paths {
          *     журнал и уведомляет команду в приложении. Тело ответа говорит, что
          *     именно сделано, — `recipients` это кого касается, `notified` —
          *     скольким членам команды ушло. Повторный вызов с тем же
-         *     Idempotency-Key рассылку не дублирует.
+         *     Idempotency-Key рассылку не дублирует. Без заголовка — 400
+         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+         *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+         *     `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -4671,6 +5049,16 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["BroadcastResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -4707,6 +5095,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -4726,19 +5128,20 @@ export interface paths {
                         };
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
         /**
          * Гость записывается в автобус
-         * @description Место занимается атомарно; при переполнении — 409.
+         * @description Место занимается атомарно; при переполнении — 409. Повтор безопасен по
+         *     построению (`on conflict do nothing` + признак «уже записан») —
+         *     `Idempotency-Key` не читается и не объявляется.
          */
         post: {
             parameters: {
                 query?: never;
-                header: {
-                    "Idempotency-Key": string;
-                };
+                header?: never;
                 path: {
                     /**
                      * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
@@ -4747,6 +5150,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -4767,6 +5184,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                401: components["responses"]["Unauthorized"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -4803,6 +5221,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -4844,12 +5276,14 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Ссылка отозвана или истекла */
+                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
                 410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
             };
         };
@@ -4889,6 +5323,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -4908,12 +5356,15 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Ссылка отозвана или истекла */
+                400: components["responses"]["BadRequest"];
+                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
                 410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 423: components["responses"]["Locked"];
             };
@@ -4937,6 +5388,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -4959,12 +5424,14 @@ export interface paths {
                         "application/json": components["schemas"]["Message"];
                     };
                 };
-                /** @description Ссылка отозвана или истекла */
+                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
                 410: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
                 };
                 422: components["responses"]["Validation"];
                 423: components["responses"]["Locked"];
@@ -5007,6 +5474,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -5048,6 +5529,7 @@ export interface paths {
                         };
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
@@ -5078,6 +5560,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -5094,21 +5590,23 @@ export interface paths {
                         "application/json": components["schemas"]["HotelBlock"][];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
         /**
          * Гость занимает номер в блоке
-         * @description Место занимается атомарно, при переполнении — 409. Пути записи
-         *     не было вовсе: блоки показывались, а занять номер было нечем,
-         *     хотя план требует «атомарные места в автобусе И НОМЕРЕ».
+         * @description Место занимается атомарно, при переполнении — 409 `hotel_full`. Пути
+         *     записи не было вовсе: блоки показывались, а занять номер было нечем,
+         *     хотя план требует «атомарные места в автобусе И НОМЕРЕ». После
+         *     `deadline_passed` (дедлайн заселения прошёл) — тоже 409. Повтор
+         *     безопасен по построению (`on conflict do nothing` + признак «уже
+         *     занято») — `Idempotency-Key` не читается и не объявляется.
          */
         post: {
             parameters: {
                 query?: never;
-                header: {
-                    "Idempotency-Key": string;
-                };
+                header?: never;
                 path: {
                     /**
                      * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
@@ -5117,6 +5615,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -5137,7 +5649,16 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                401: components["responses"]["Unauthorized"];
+                /** @description `hotel_full` — мест не осталось; `deadline_passed` — дедлайн заселения прошёл */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -5223,6 +5744,10 @@ export interface paths {
          * Напомнить не выбравшим блюдо
          * @description Гостям доставки нет: напоминание уходит команде в приложении, чтобы
          *     она добрала голоса сама. Тело — что сделано (см. `BroadcastResult`).
+         *     Без заголовка — 400 `idempotency_key_required`, длиннее 200 символов —
+         *     400 `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+         *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+         *     `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -5244,6 +5769,16 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["BroadcastResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -5278,6 +5813,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -5301,6 +5850,7 @@ export interface paths {
                         };
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
@@ -5320,6 +5870,20 @@ export interface paths {
                      *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
                      *     Анонимность подарков при этом сохраняется: система знает гостя, а API
                      *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestToken"];
                 };
@@ -5340,6 +5904,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         delete?: never;
@@ -5412,6 +5977,20 @@ export interface paths {
                      * @description Персональный токен гостя. Нужен там, где гость обращается к пути
                      *     со свадьбой в адресе: подставить его в путь некуда, а без него
                      *     сервер не отличит гостя от постороннего.
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestTokenQuery"];
                 };
@@ -5438,6 +6017,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         delete?: never;
@@ -5463,6 +6043,14 @@ export interface paths {
          *     `adult` — отдельная галочка «мне есть 18 лет» (план бэкенда §7): версия
          *     документа покрывает текст, возраст текстом не покрывается. Пишется в
          *     `consents.adult` как есть; клиент не даёт зафиксировать согласие без неё.
+         *
+         *     После смены редакции возвращает доступ (гасит `consent_outdated`).
+         *     `policyVersion` не совпадает с действующей редакцией сервера — 409
+         *     `policy_version_stale`: клиент показал не тот текст, подпись под ним
+         *     не годится. Повтор той же действующей редакции — снова 201 и новая
+         *     строка в `consents`: каждое нажатие «принимаю» — отдельный акт, а не
+         *     обновление предыдущего. `Idempotency-Key` не читается и не
+         *     объявляется.
          */
         post: {
             parameters: {
@@ -5489,7 +6077,15 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `policy_version_stale` — `policyVersion` старше действующей редакции */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         /**
@@ -5552,7 +6148,8 @@ export interface paths {
         /**
          * Удалить аккаунт
          * @description Soft-delete на 30 дней, затем полное удаление кроном (План §19.1).
-         *     Активные сделки требуют подтверждения второй стороны — 409 со списком.
+         *     Активные сделки требуют подтверждения второй стороны — 409
+         *     `active_deals` со списком.
          */
         delete: {
             parameters: {
@@ -5570,14 +6167,22 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `active_deals` — есть активные сделки, требуют подтверждения второй стороны */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
         head?: never;
         /**
          * Изменить профиль и настройки уведомлений
-         * @description Имя, язык, таймзона, четыре канала push и тихие часы — экран «Настройки».
+         * @description Имя, язык, таймзона, четыре канала push и тихие часы — экран «Настройки». Незнакомый `tz` (не из справочника IANA) — 422 `unknown_timezone`.
          */
         patch: {
             parameters: {
@@ -5601,6 +6206,7 @@ export interface paths {
                         "application/json": components["schemas"]["UserProfile"];
                     };
                 };
+                422: components["responses"]["Validation"];
             };
         };
         trace?: never;
@@ -5612,7 +6218,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Мои сессии и устройства */
+        /**
+         * Мои сессии и устройства
+         * @description Работает и без действующего согласия под текущей редакцией: выйти можно всегда (ARB-2).
+         */
         get: {
             parameters: {
                 query?: never;
@@ -5635,7 +6244,10 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Выйти со всех устройств, кроме текущего */
+        /**
+         * Выйти со всех устройств, кроме текущего
+         * @description Работает и без действующего согласия под текущей редакцией: выйти можно всегда (ARB-2).
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -5671,7 +6283,9 @@ export interface paths {
         post?: never;
         /**
          * Завершить сессию
-         * @description Выход со всех устройств сразу — DELETE /users/me/sessions.
+         * @description Выход со всех устройств сразу — DELETE /users/me/sessions. Работает и
+         *     без действующего согласия под текущей редакцией: выйти можно всегда
+         *     (ARB-2).
          */
         delete: {
             parameters: {
@@ -5804,7 +6418,10 @@ export interface paths {
                 content: {
                     "application/json": {
                         endpoint: string;
-                        keys: Record<string, never>;
+                        keys: {
+                            p256dh: string;
+                            auth: string;
+                        };
                     };
                 };
             };
@@ -5816,12 +6433,16 @@ export interface paths {
                     };
                     content?: never;
                 };
+                422: components["responses"]["Validation"];
                 501: components["responses"]["NotConfigured"];
             };
         };
         /**
          * Отписаться от push
-         * @description С параметром endpoint — только подписка этого устройства (её адрес знает только оно); без параметра — все подписки человека.
+         * @description С параметром endpoint — только подписка этого устройства (её адрес
+         *     знает только оно); без параметра — все подписки человека. Работает и
+         *     при согласии под прежней редакцией: выход с экрана повторного
+         *     согласия (ARB-2, allow-list).
          */
         delete: {
             parameters: {
@@ -5903,7 +6524,8 @@ export interface paths {
         put?: never;
         /**
          * Применить чужой реферальный код
-         * @description Один раз на аккаунт и только до первой сделки. Повтор — 409.
+         * @description Один раз на аккаунт: уже применявший любой код — 409 `referral_used`.
+         *     Свой же код — 409 `own_code`.
          */
         post: {
             parameters: {
@@ -5923,7 +6545,15 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `referral_used` — код на этот аккаунт уже применялся; `own_code` — свой же код */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -6012,11 +6642,15 @@ export interface paths {
         head?: never;
         /**
          * Перевести сделку в следующее состояние или исправить сумму
-         * @description Контракт знал только book/cancel/pay — четыре из шести состояний были
-         *     недостижимы через API. Разрешены только переходы вперёд по цепочке
-         *     candidate → contacted → negotiating → booked → paid_deposit → done
-         *     и cancelled из любого. Недопустимый переход — 409.
-         *     Переход в negotiating ставит negotiatingUntil = now + 72 ч.
+         * @description Сделка рождается сразу в `booked` (бронь слота или свой подрядчик) —
+         *     ступени до `booked` (`candidate`, `contacted`, `negotiating`) через API
+         *     не производятся, это витрина будущего сценария подбора, не действующий
+         *     путь. Дальше разрешены только переходы вперёд по цепочке
+         *     booked → paid_deposit → done; отмена — из любого состояния, КРОМЕ
+         *     `done`. Недопустимый переход — 409 `bad_transition`; повторная отмена
+         *     уже отменённой сделки — 409 `already_cancelled` (одна дверь
+         *     `cancelDeal()` — ARB-1). Дата подрядчика уже занята другой его сделкой —
+         *     409 `date_taken`.
          *
          *     Сумму можно исправить до внесения аванса: подрядчик присылает новую
          *     смету, и без этой правки пара была вынуждена отменять сделку, а
@@ -6024,7 +6658,11 @@ export interface paths {
          *     done и cancelled сумма зафиксирована — 409 `price_locked`.
          *     Правка пишется в журнал сделки как событие вида `price`.
          *
-         *     Требуется хотя бы одно из полей: `state` или `price`.
+         *     Требуется хотя бы одно из полей: `state` или `price`. Обязательный
+         *     `Idempotency-Key`: без него — 400 `idempotency_key_required`, длиннее
+         *     200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой
+         *     запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется —
+         *     409 `idempotency_in_progress`.
          */
         patch: {
             parameters: {
@@ -6056,6 +6694,7 @@ export interface paths {
                         "application/json": components["schemas"]["Deal"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -6072,12 +6711,14 @@ export interface paths {
         put?: never;
         /**
          * Сгенерировать договор из шаблона
-         * @description Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10). Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2 шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде свадьбы — 403: договор содержит суммы и данные сторон.
+         * @description Автоподстановка сторон, даты, суммы и города. Возвращает ссылки на PDF и DOCX. Дисклеймер про информационный характер — в теле документа (§3.10). Оформляет любая из двух сторон сделки: пара или подрядчик (план §9.2 шаг 3 — «Ирина генерирует договор из шаблона платформы»). Команде свадьбы — 403: договор содержит суммы и данные сторон. Сделка ещё не забронирована — 409 `not_booked`; в `fields` не хватает полей шаблона — 422 `fields_missing`. `Idempotency-Key` необязателен: без него переоформление создаёт новую версию, с ним повтор возвращает тот же документ; длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется — 409 `idempotency_in_progress`.
          */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    "Idempotency-Key"?: string;
+                };
                 path: {
                     dealId: string;
                 };
@@ -6086,10 +6727,12 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @example photographer */
-                        templateCode: string;
-                        /** @description паспортные данные и реквизиты, вводятся парой */
-                        fields?: Record<string, never>;
+                        /** @enum {string} */
+                        templateCode: "photographer" | "videographer" | "venue" | "host" | "universal";
+                        /** @description паспортные данные и реквизиты, вводятся парой; обязательные поля зависят от шаблона — не хватает хотя бы одного, названного шаблоном, — 422 `fields_missing` */
+                        fields?: {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };
@@ -6103,7 +6746,17 @@ export interface paths {
                         "application/json": components["schemas"]["Document"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                400: components["responses"]["BadRequest"];
+                /** @description `not_booked` — сделка ещё не забронирована; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6270,7 +6923,13 @@ export interface paths {
         put?: never;
         /**
          * Сдвинуть день X на N минут
-         * @description Кнопка «+15 мин» в режиме дня X. Сдвигает все последующие блоки и рассылает push команде и гостям — killer-фича §19.6.
+         * @description Кнопка «+15 мин» в режиме дня X. Сдвигает все последующие блоки и
+         *     рассылает push команде и гостям — killer-фича §19.6. Нулевой сдвиг —
+         *     422 `empty_shift`. Обязательный `Idempotency-Key`: без него — 400
+         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+         *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+         *     `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -6301,6 +6960,17 @@ export interface paths {
                         "application/json": components["schemas"]["DayXBroadcast"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6371,7 +7041,14 @@ export interface paths {
         put?: never;
         /**
          * Активировать план Б
-         * @description Фиксирует запасной сценарий и время его активации и уведомляет команду в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не пересобирается, гостям ничего не рассылается: канала доставки гостям пока нет.
+         * @description Фиксирует запасной сценарий и время его активации и уведомляет команду
+         *     в приложении — проверить точку сбора и тайминг (§13.1). Тайминг не
+         *     пересобирается, гостям ничего не рассылается: канала доставки гостям
+         *     пока нет. Обязательный `Idempotency-Key`: без него — 400
+         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+         *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+         *     `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -6400,6 +7077,16 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["DayXBroadcast"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -6459,7 +7146,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Отметить историю */
+        /**
+         * Отметить историю
+         * @description Предел отметок на пользователя — `likes_limit` (429, 500 штук):
+         *     постоянный отказ, без заголовка `Retry-After`.
+         */
         put: {
             parameters: {
                 query?: never;
@@ -6478,7 +7169,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                429: components["responses"]["TooManyRequests"];
+                429: components["responses"]["QuotaExceeded"];
             };
         };
         post?: never;
@@ -6598,12 +7289,16 @@ export interface paths {
                         "application/json": components["schemas"]["AlbumPhoto"][];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
             };
         };
         put?: never;
         /**
          * Гость добавляет фото
-         * @description Без регистрации, по персональному токену. Кадр попадает в очередь модерации парой.
+         * @description Без регистрации, по персональному токену (`guestToken` в строке
+         *     запроса). Кадр попадает в очередь модерации парой. Согласие на
+         *     публикацию — явная галочка: без неё 422 `consent_required`. Предел
+         *     кадров на гостя — `album_limit` (429, без `Retry-After`).
          */
         post: {
             parameters: {
@@ -6612,6 +7307,20 @@ export interface paths {
                      * @description Персональный токен гостя. Нужен там, где гость обращается к пути
                      *     со свадьбой в адресе: подставить его в путь некуда, а без него
                      *     сервер не отличит гостя от постороннего.
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
                      */
                     guestToken: components["parameters"]["GuestTokenQuery"];
                 };
@@ -6640,6 +7349,8 @@ export interface paths {
                         "application/json": components["schemas"]["AlbumPhoto"];
                     };
                 };
+                401: components["responses"]["Unauthorized"];
+                422: components["responses"]["Validation"];
                 429: components["responses"]["QuotaExceeded"];
             };
         };
@@ -6830,7 +7541,7 @@ export interface paths {
         post?: never;
         /**
          * Удалить фонд
-         * @description Запрещено, если в фонд уже внесены деньги — 409.
+         * @description Запрещено, если в фонд уже внесены деньги — 409 `fund_has_contributions`.
          */
         delete: {
             parameters: {
@@ -6851,7 +7562,15 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `fund_has_contributions` — в фонд уже внесены деньги */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         options?: never;
@@ -6877,7 +7596,14 @@ export interface paths {
          *
          *     Тот же перенос делает `PATCH /weddings/{weddingId}` с полем `date` —
          *     это один код, а не два похожих. Разница только в ответе: здесь
-         *     возвращается отчёт по команде, там — карточка свадьбы.
+         *     возвращается отчёт по команде, там — карточка свадьбы. Дата вне
+         *     допустимого диапазона — 422 `date_out_of_range`; календарная дата не
+         *     существует — 422 `bad_date`; занятая дата у своего же подрядчика —
+         *     409 `date_taken`. Обязательный `Idempotency-Key`: без него — 400
+         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
+         *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
+         *     `idempotency_in_progress`.
          */
         post: {
             parameters: {
@@ -6911,7 +7637,17 @@ export interface paths {
                         };
                     };
                 };
-                409: components["responses"]["Conflict"];
+                400: components["responses"]["BadRequest"];
+                /** @description `date_taken` — дата уже занята у подрядчика; `idempotency_key_reused`/`idempotency_in_progress` — см. описание */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6934,11 +7670,13 @@ export interface paths {
          * @description Требует подтверждения ОБОИХ партнёров: первый вызов создаёт запрос,
          *     второй — исполняет (План §19.1).
          *
-         *     Отменяются сделки в состояниях `booked` и `paid_deposit`: им ставится
-         *     `cancelled_by_couple`, и подрядчики уведомляются. Сделки `done`
-         *     остаются как были — работа уже сделана, и отменять в ней нечего.
-         *     Даты подрядчиков и слоты свадьбы освобождаются только по отменённым
-         *     сделкам: занятость по `done` — это состоявшийся день, а не бронь.
+         *     Брони отменяются той же дверью, что и отмена сделки —
+         *     `cancelDeal()` (F1, F-RL-2-02/SA-06): даты, маршруты, ссылки своего
+         *     подрядчика, лиды. Отменяются сделки в состояниях `booked` и
+         *     `paid_deposit`, подрядчики уведомляются. Сделки `done` остаются как
+         *     были — работа уже сделана, и отменять в ней нечего. Даты подрядчиков
+         *     и слоты свадьбы освобождаются только по отменённым сделкам: занятость
+         *     по `done` — это состоявшийся день, а не бронь.
          *
          *     Проект уходит в архив на `WEDDING_ARCHIVE_DAYS` дней (по умолчанию
          *     365, меньше 30 не бывает), после чего уборка удаляет его со всем
@@ -6986,7 +7724,10 @@ export interface paths {
         put?: never;
         /**
          * Заявка консьержу при пустой выдаче
-         * @description Пока в городе меньше 50 анкет, поиск честно предлагает подбор вручную за 24 часа (План §18.12).
+         * @description Пока в городе меньше 50 анкет, поиск честно предлагает подбор вручную
+         *     за 24 часа (План §18.12). Категория не из справочника — 404 (ARB-4).
+         *     Уже есть открытая (`new`/`in_progress`) заявка по той же категории —
+         *     409 `concierge_pending`.
          */
         post: {
             parameters: {
@@ -7014,7 +7755,24 @@ export interface paths {
                     };
                     content?: never;
                 };
-                409: components["responses"]["Conflict"];
+                /** @description категория не найдена в справочнике */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `concierge_pending` — уже есть открытая заявка по той же категории и городу */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 422: components["responses"]["Validation"];
             };
         };
@@ -7191,9 +7949,9 @@ export interface paths {
                         "application/json": components["schemas"]["ModerationVendorPage"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
-                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -7313,9 +8071,9 @@ export interface paths {
                         "application/json": components["schemas"]["VerificationPage"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
-                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -7468,9 +8226,9 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
-                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -7580,9 +8338,9 @@ export interface paths {
                         "application/json": components["schemas"]["ConciergePage"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
-                422: components["responses"]["Validation"];
             };
         };
         put?: never;
@@ -7931,9 +8689,12 @@ export interface components {
             expiresIn?: number;
             user?: components["schemas"]["User"];
             /**
-             * @description Только у `POST /auth/otp/verify`: согласие нужно дать — аккаунт новый
-             *     или отозвал согласие при удалении и восстановлен входом (фича 005).
-             *     До `POST /users/me/consent` остальные пути отвечают 403 `consent_required`.
+             * @description Только у `POST /auth/otp/verify`: нет живого согласия под
+             *     действующей редакцией политики — новый аккаунт, восстановленный
+             *     после отзыва, или согласие дано под прежней редакцией (фича 005).
+             *     До `POST /users/me/consent` остальные пути отвечают: без согласия
+             *     вовсе — 403 `forbidden`; под прежней редакцией — 403
+             *     `consent_outdated`.
              */
             consentRequired?: boolean;
         };
@@ -9225,6 +9986,22 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description Запрос не годится ещё до проверки схемы или бизнес-правил. Возможные
+         *     коды (в описании операции — какой из них применим): `bad_limit`
+         *     (параметр `limit` — не целое число от 1 до 100), `bad_cursor` (курсор
+         *     листания испорчен, не того типа сортировки или обрезан), `idempotency_key_required`
+         *     (обязательный заголовок `Idempotency-Key` не передан) и
+         *     `idempotency_key_too_long` (заголовок длиннее 200 символов).
+         */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Слишком часто — см. Retry-After */
         TooManyRequests: {
             headers: {
@@ -9282,6 +10059,20 @@ export interface components {
          * @description Персональный токен гостя. Нужен там, где гость обращается к пути
          *     со свадьбой в адресе: подставить его в путь некуда, а без него
          *     сервер не отличит гостя от постороннего.
+         *
+         *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+         *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+         *     `GET /join/{guestToken}/day-chat/messages` и
+         *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+         *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+         *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+         *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+         *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+         *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+         *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+         *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+         *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+         *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
          */
         GuestTokenQuery: string;
         /**
@@ -9291,6 +10082,20 @@ export interface components {
          *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
          *     Анонимность подарков при этом сохраняется: система знает гостя, а API
          *     пары этот токен не отдаёт никогда (§9).
+         *
+         *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+         *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+         *     `GET /join/{guestToken}/day-chat/messages` и
+         *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+         *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+         *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+         *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+         *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+         *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+         *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+         *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+         *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+         *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
          */
         GuestToken: string;
         WeddingId: string;

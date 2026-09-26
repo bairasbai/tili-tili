@@ -944,7 +944,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           additionalProperties: false,
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 60 },
-            capacity: { type: 'integer', minimum: 1, maximum: 50 },
+            capacity: { type: 'integer', minimum: 1, maximum: 100 },
           },
         },
       },

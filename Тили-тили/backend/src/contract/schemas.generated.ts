@@ -256,7 +256,7 @@ export const CONTRACT_SCHEMAS = {
               },
               "consentRequired": {
                   "type": "boolean",
-                  "description": "Только у `POST /auth/otp/verify`: согласие нужно дать — аккаунт новый\nили отозвал согласие при удалении и восстановлен входом (фича 005).\nДо `POST /users/me/consent` остальные пути отвечают 403 `consent_required`.\n"
+                  "description": "Только у `POST /auth/otp/verify`: нет живого согласия под\nдействующей редакцией политики — новый аккаунт, восстановленный\nпосле отзыва, или согласие дано под прежней редакцией (фича 005).\nДо `POST /users/me/consent` остальные пути отвечают: без согласия\nвовсе — 403 `forbidden`; под прежней редакцией — 403\n`consent_outdated`.\n"
               }
           }
       },
