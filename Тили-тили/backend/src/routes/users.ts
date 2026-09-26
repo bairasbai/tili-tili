@@ -311,7 +311,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
   })
 
   /* ── сессии и устройства ──────────────────────────────────────────── */
-  app.get('/users/me/sessions', { preHandler: app.requireConsent }, async (request) => {
+  // выход доступен и при согласии под прежней редакцией (F4)
+  app.get('/users/me/sessions', { preHandler: app.requireAuth }, async (request) => {
     /* Сессия, не обновлявшаяся дольше срока refresh-токена (30 дней), уже
      * мертва — `POST /auth/refresh` по ней отвечает 401 и гасит её. В списке
      * устройств она стояла бы «живой» до первого такого обмена (ревью 015). */
@@ -330,7 +331,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }))
   })
 
-  app.delete('/users/me/sessions', { preHandler: app.requireConsent }, async (request, reply) => {
+  // выход доступен и при согласии под прежней редакцией (F4)
+  app.delete('/users/me/sessions', { preHandler: app.requireAuth }, async (request, reply) => {
     // Текущая сессия остаётся: человек нажимает «выйти везде», чтобы выгнать
     // чужого, а не себя. Выгнать себя — это кнопка «выйти».
     await db().query('update sessions set revoked_at = now() where user_id = $1 and id <> $2 and revoked_at is null', [
@@ -343,7 +345,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
   app.delete(
     '/users/me/sessions/:sessionId',
     {
-      preHandler: app.requireConsent,
+      // выход доступен и при согласии под прежней редакцией (F4)
+      preHandler: app.requireAuth,
       // `sessions.id` — колонка uuid. Без проверки чужая строка уходит прямо
       // в запрос, драйвер отвечает ошибкой синтаксиса, а обработчик переводит
       // это в 500 с записью в лог как о падении сервера (R-108, R-111).

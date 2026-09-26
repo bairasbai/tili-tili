@@ -1,4 +1,4 @@
-import { accessTokenForWs, api, url } from './client'
+import { accessTokenForWs, api, reportConsentOutdated, url } from './client'
 import { getMe } from './auth'
 
 /*
@@ -93,7 +93,14 @@ export function openChatSocket(
 
     socket.onopen = () => onStatus?.(true)
     socket.onmessage = (e: MessageEvent<string>) => {
-      try { onEvent(JSON.parse(e.data) as ChatEvent) } catch { /* чужой формат — не наше дело */ }
+      try {
+        const ev = JSON.parse(e.data) as ChatEvent
+        /* Редакция поднялась, пока чат открыт (F4, RL-1): хаб шлёт этот же
+           код и закрывает канал `4403`. Экран о событии всё равно узнаёт —
+           `onEvent` зовётся как обычно, гейт решает поверх него. */
+        if (ev.type === 'error' && ev.code === 'consent_outdated') reportConsentOutdated()
+        onEvent(ev)
+      } catch { /* чужой формат — не наше дело */ }
     }
     socket.onclose = (ev: CloseEvent) => {
       onStatus?.(false)

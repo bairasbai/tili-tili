@@ -2,6 +2,7 @@ import { isIP } from 'node:net'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AppError, TooManyRequests, unauthorized } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import { consentState } from '../auth/consent.js'
 import {
   CODE_TTL_SECONDS,
   MAX_ATTEMPTS,
@@ -418,16 +419,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         [userId],
       )
 
-      /* Есть ли живое согласие. У нового аккаунта его нет; у восстановленного
-       * после `DELETE /users/me/consent` — тоже (там ставится `withdrawn_at`).
-       * Признак в ответе — чтобы клиент показал согласие заново, а не узнал
-       * о нём по 403 на первом же экране. */
-      const { rows: consent } = await db().query(
-        'select 1 from consents where user_id = $1 and withdrawn_at is null limit 1',
-        [userId],
-      )
+      /* Есть ли живое согласие под действующей редакцией. У нового аккаунта
+       * согласия нет вовсе; у восстановленного после `DELETE /users/me/consent`
+       * — тоже (там ставится `withdrawn_at`); у вошедшего под старой редакцией
+       * (F4, RL-1) — есть, но не действующее. Признак в ответе — чтобы клиент
+       * показал согласие заново, а не узнал о нём по 403 на первом же экране. */
+      const consentRequired = (await consentState(db(), userId, app.appConfig.policyVersion)) !== 'current'
       const tokens = await issueTokens(userId, body.device ?? request.headers['user-agent'] ?? null)
-      return { ...tokens, consentRequired: consent.length === 0 }
+      return { ...tokens, consentRequired }
     },
   )
 

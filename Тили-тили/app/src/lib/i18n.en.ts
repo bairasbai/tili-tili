@@ -2005,3 +2005,13 @@ Object.assign(EN, {
 Object.assign(EN, {
   'Укажите название и цену пакета — целое число рублей больше нуля': 'Enter the package name and price — a whole number of roubles above zero',
 })
+
+/* Гейт устаревшего согласия при смене редакции политики (F4, RL-1, review016-tail6). */
+Object.assign(EN, {
+  'Мы обновили документы': 'We have updated our documents',
+  'Чтобы продолжить, прочитайте новую редакцию и подтвердите согласие': 'To continue, read the new version and confirm your consent',
+  'Принять': 'Accept',
+  'Обновить приложение': 'Update the app',
+  'Не согласен — удалить аккаунт': 'I disagree — delete my account',
+  'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить': 'We have updated our documents — confirm the new version to continue',
+})

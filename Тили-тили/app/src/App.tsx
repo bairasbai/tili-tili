@@ -1,13 +1,17 @@
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useReducer } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TabBar, VendorTabBar, OfflineBanner } from '@/components/chrome'
 import { t } from '@/lib/i18n'
+import { CONSENT_OUTDATED_KEY, consentOutdated, isAuthorized, onConsentOutdated } from '@/lib/api/client'
 import Onboarding from '@/pages/Onboarding'
 import Quiz from '@/pages/Quiz'
 import Home from '@/pages/Home'
 import { Auth, Notifications, Settings, Support } from '@/pages/Account'
+/* Не `lazy`: гейт обязан быть в первом кадре и офлайн, а ленивый чанк может
+   не лежать в кэше service worker'а до первого онлайн-визита (F4, RL-1). */
+import { ConsentGate } from '@/pages/Consent'
 
 /*
  * Разделение бандла. Сразу грузится только путь первого запуска — онбординг,
@@ -118,9 +122,44 @@ function RouteLoading() {
   return <div data-testid="route-loading" className="min-h-dvh" aria-busy="true" aria-label={t('Загрузка')} />
 }
 
+/**
+ * Пути, свободные от гейта устаревшего согласия (F4, RL-1): документы (их
+ * можно читать с гейта — «Назад» там возвращает на него же, `chrome.tsx`) и
+ * гостевые адреса по токену — другая личность, сервер согласия там не
+ * проверяет (та же граница, что у `noTab` ниже).
+ */
+function consentGateFree(p: string): boolean {
+  return (
+    p === '/legal/offer' ||
+    p === '/legal/privacy' ||
+    p === '/invite' ||
+    p.startsWith('/invite/') ||
+    p.startsWith('/i/') ||
+    p.startsWith('/guest-vendor/') ||
+    p === '/gifts'
+  )
+}
+
 function Shell() {
   const { onboarded, theme, lang } = useStore()
   const loc = useLocation()
+  /*
+   * Гейт устаревшего согласия (F4, RL-1): нет своего состояния — только
+   * принудительный перерендер. `bump` меняется, `consentOutdated()` читает
+   * `localStorage` заново на каждой отрисовке, поэтому отдельного `useState`
+   * с флагом не нужно (и не разойдётся с хранилищем).
+   */
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => onConsentOutdated(bump), [])
+  /* Вторая вкладка приняла или вышла: `storage` — событие только чужих
+     документов того же источника (см. тот же приём в `store.tsx:430-436`). */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CONSENT_OUTDATED_KEY || e.key === null) bump()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     // строка статуса телефона должна совпадать с фоном приложения, иначе в тёмной
@@ -139,10 +178,14 @@ function Shell() {
   // новый экран — всегда с верха страницы (иначе на телефоне кажется, что «ничего не нажалось»)
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
   const p = loc.pathname
+  /* Гейт держит вошедшего с устаревшей подписью на любом несвободном пути —
+     гостевые токены и документы не трогает (F4, RL-1). */
+  const gated = consentOutdated() && isAuthorized() && !consentGateFree(p)
   /* Кабинет подрядчика — со своей навигацией (фича 007): на всех `/vendor-app*`,
      кроме переписки, где низ занимает поле ввода — как у пары в `/us/chats/:id`. */
   const vendorTab = p.startsWith('/vendor-app') && !p.startsWith('/vendor-app/chats/')
   const noTab =
+    gated ||
     ['/', '/quiz', '/invite', '/auth', '/dayx', '/assistant', '/gifts'].includes(p) ||
     /* Гость без аккаунта: нижняя навигация пары ему ни к чему и на чате дня. */
     p.startsWith('/invite/') ||
@@ -159,6 +202,7 @@ function Shell() {
   return (
     <div className={`app-shell${noTab ? ' no-tab' : ''}`} key={lang}>
       <OfflineBanner />
+      {gated ? <ConsentGate onDone={bump} /> : (
       <Suspense fallback={<RouteLoading />}>
         <Routes>
           <Route path="/" element={<Onboarding />} />
@@ -246,6 +290,7 @@ function Shell() {
           <Route path="*" element={<Navigate to={onboarded ? '/home' : '/'} replace />} />
         </Routes>
       </Suspense>
+      )}
       {!noTab && (vendorTab ? <VendorTabBar /> : <TabBar />)}
     </div>
   )

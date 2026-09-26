@@ -3,6 +3,7 @@ import type { Config } from '../config.js'
 import { AppError, forbidden, unauthorized } from '../errors.js'
 import { verifyAccessToken, type AccessClaims } from '../auth/tokens.js'
 import { createSender, type SmsSender } from '../auth/sms.js'
+import { consentState } from '../auth/consent.js'
 
 export interface Caller {
   userId: string
@@ -13,7 +14,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Есть действующий access-токен. Без согласия на ПДн — тоже проходит. */
     requireAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
-    /** То же плюс непросроченное согласие. Ставится на всё, кроме входа и согласия. */
+    /** То же плюс действующее согласие (F4, RL-1). Ставится на всё, кроме входа, согласия
+     * и allow-list выхода — сессии и отписка от push работают и при устаревшем согласии. */
     requireConsent: (request: FastifyRequest, reply: FastifyReply) => Promise<void>
     /** Те же проверки для живого канала: у WebSocket нет ни заголовков, ни reply. */
     authorizeToken: (token: string) => Promise<AccessClaims>
@@ -71,14 +73,16 @@ export async function registerAuth(app: FastifyInstance, config: Config): Promis
   }
 
   const assertConsent = async (userId: string): Promise<void> => {
-    const { rows } = await app.db!.query<{ ok: boolean }>(
-      'select true as ok from consents where user_id = $1 and withdrawn_at is null limit 1',
-      [userId],
-    )
-    if (rows.length === 0) {
+    const state = await consentState(app.db!, userId, config.policyVersion)
+    if (state === 'none') {
       // 403, а не 401: человек вошёл, но не дал согласия. 401 отправил бы его
       // на повторный вход по кругу — код он получит, а дальше опять 401.
       throw forbidden('Нужно согласие на обработку персональных данных')
+    }
+    if (state === 'outdated') {
+      // Согласие есть, но не под действующей редакцией (F4, RL-1): отдельный
+      // код — фронт включает гейт повторного согласия, а не «войдите снова».
+      throw new AppError(403, 'consent_outdated', 'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить')
     }
   }
 

@@ -182,6 +182,47 @@ function announceSessionExpired(): void {
   }
 }
 
+/**
+ * Кто узнаёт об устаревшем согласии (F4, RL-1).
+ *
+ * Сервер отвечает 403 `consent_outdated` на любом пути за `requireConsent` —
+ * редакция политики поднялась, а этот вход подписан под прежней. Тот же код
+ * закрывает живой канал (`4403`, обрабатывается в `chats.ts`). Флаг переживает
+ * перезагрузку и офлайн: без него гейт исчезал бы на каждом обновлении
+ * страницы до следующего защищённого запроса. Приём тот же, что у смерти
+ * сессии выше (`onSessionExpired`/`announceSessionExpired`).
+ */
+export const CONSENT_OUTDATED_KEY = 'tt_consent_outdated'
+
+export function consentOutdated(): boolean {
+  try {
+    return localStorage.getItem(CONSENT_OUTDATED_KEY) === '1'
+  } catch {
+    /* см. readTokens — приватный режим читаем как «флага нет» */
+    return false
+  }
+}
+
+export function clearConsentOutdated(): void {
+  try { localStorage.removeItem(CONSENT_OUTDATED_KEY) } catch { /* см. readTokens */ }
+}
+
+type ConsentListener = () => void
+const consentListeners = new Set<ConsentListener>()
+
+/** Подписка на устаревшее согласие; возвращает отписку. */
+export function onConsentOutdated(listener: ConsentListener): () => void {
+  consentListeners.add(listener)
+  return () => { consentListeners.delete(listener) }
+}
+
+export function reportConsentOutdated(): void {
+  try { localStorage.setItem(CONSENT_OUTDATED_KEY, '1') } catch { /* см. readTokens */ }
+  for (const listener of consentListeners) {
+    try { listener() } catch { /* слушатель не должен ронять запрос */ }
+  }
+}
+
 /** Секунды из `Retry-After`: число или HTTP-дата; нет заголовка — `null`. */
 function readRetryAfter(res: Response): number | null {
   const h = res.headers.get('retry-after')
@@ -384,7 +425,14 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
     throw err.message === NO_BEARER ? new ApiError('http', 401, 'unauthorized', SIGN_IN_REQUIRED) : err
   }
 
-  if (!res.ok) throw await errorFrom(res)
+  if (!res.ok) {
+    const err = await errorFrom(res)
+    /* Гейт узнаёт об устаревшем согласии здесь же, а не в каждом экране:
+       иначе первый экран, успевший позвать `request()` после выката новой
+       редакции, ловил бы гейт, а остальные — нет (F4, RL-1). */
+    if (res.status === 403 && err.code === 'consent_outdated') reportConsentOutdated()
+    throw err
+  }
 
   /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
      у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет

@@ -113,7 +113,8 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   app.delete(
     '/users/me/push-subscriptions',
     {
-      preHandler: app.requireConsent,
+      // выход доступен и при согласии под прежней редакцией (F4)
+      preHandler: app.requireAuth,
       schema: {
         querystring: {
           type: 'object',
