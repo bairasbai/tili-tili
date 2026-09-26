@@ -43,7 +43,8 @@ export async function openLead(
  * которой он не мог ни ответить, ни отказать (ревью 015). Возвращается в
  * `replied` — переписка была, договорённость сорвалась, — и только если у
  * пары с этим подрядчиком не осталось другой живой сделки (фото + видео —
- * два слота, один лид). Зовётся из каждой двери отмены, как `detachBusRoutes`.
+ * два слота, один лид). Зовётся из `cancelDeal` — единственной двери отмены
+ * сделки (F1), как `detachBusRoutes`.
  */
 export async function releaseLead(db: Queryable, dealId: string): Promise<void> {
   await db.query(

@@ -3,18 +3,9 @@ import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import {
-  DEAL_COLUMNS,
-  DEAL_JOINS,
-  detachBusRoutes,
-  expireHolds,
-  holdVendorDate,
-  releaseVendorDate,
-  toDeal,
-  type DealRow,
-} from '../deals/repo.js'
+import { cancelDeal } from '../deals/cancel.js'
+import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, holdVendorDate, toDeal, type DealRow } from '../deals/repo.js'
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
-import { releaseLead } from '../vendor/leads.js'
 
 /**
  * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
@@ -257,6 +248,20 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             return { status: 200, body: toDeal(only[0]!, true) }
           }
 
+          /* Отмена — через единственную дверь `cancelDeal` (F1, ARB-1 = A):
+           * повторная отмена отвечает `already_cancelled`, а не общим
+           * `bad_transition` ниже, и все побочные эффекты (дата, слот,
+           * маршруты, лид, ссылки слота) идут одним и тем же кодом у всех
+           * четырёх HTTP-дверей. */
+          if (body.state === 'cancelled') {
+            await cancelDeal(client, dealId, { actorId: userId, note: body.note ?? null })
+            const { rows: out } = await client.query<DealRow>(
+              `select ${DEAL_COLUMNS} from deals d ${DEAL_JOINS} where d.id = $1`,
+              [dealId],
+            )
+            return { status: 200, body: toDeal(out[0]!, true) }
+          }
+
           assertTransition(from, body.state)
 
           const sets: string[] = ['state = $2']
@@ -270,7 +275,6 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           }
           if (body.state === 'booked') sets.push('booked_at = now()')
           if (body.state === 'done') sets.push('done_at = now()')
-          if (body.state === 'cancelled') sets.push('cancelled_at = now()')
 
           await client.query(`update deals set ${sets.join(', ')} where id = $1`, args)
 
@@ -287,20 +291,6 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
               await holdVendorDate(client, deal.vendor_id, w[0].date, dealId, deal.wedding_id)
             }
           }
-          if (body.state === 'cancelled') {
-            await client.query('update slots set deal_id = null where deal_id = $1', [dealId])
-            await releaseVendorDate(client, dealId)
-            await detachBusRoutes(client, dealId)
-            // Лид подрядчика из `won` — обратно в работу (ревью 015).
-            await releaseLead(client, dealId)
-            // Ссылка своего подрядчика гаснет любой дверью отмены (ERR-0242).
-            await client.query(
-              `update external_invites set revoked_at = now()
-                where slot_id = (select slot_id from deals where id = $1) and revoked_at is null`,
-              [dealId],
-            )
-          }
-
           await client.query(
             `insert into deal_events (id, deal_id, from_state, to_state, actor_id, note)
              values ($1, $2, $3, $4, $5, $6)`,

@@ -205,7 +205,8 @@ export async function holdVendorDate(
  * у `bus_routes.deal_id` сам по себе не срабатывает: без этого шага колонка
  * держала бы указатель на убранного перевозчика, а API прятал бы его лишь на
  * чтении. Маршрут и записи гостей остаются — отмена автобуса не высаживает
- * сорок человек (фича 006). Зовётся из каждой двери отмены (ERR-0242).
+ * сорок человек (фича 006). Зовётся из `cancelDeal` — единственной двери
+ * отмены сделки (F1, ERR-0242).
  */
 export async function detachBusRoutes(client: Queryable, dealId: string): Promise<void> {
   await client.query('update bus_routes set deal_id = null where deal_id = $1', [dealId])

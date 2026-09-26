@@ -5,19 +5,18 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
 import { rolesSeeing } from '../chats/access.js'
-import { openLead, releaseLead } from '../vendor/leads.js'
+import { openLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
+import { cancelDeal } from '../deals/cancel.js'
 import { CREATED_AT_US } from './chats.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
   PAID_SUM,
-  detachBusRoutes,
   holdVendorDate,
   loadSlot,
   loadSlots,
-  releaseVendorDate,
   toSlot,
   type SlotRow,
 } from '../deals/repo.js'
@@ -55,40 +54,6 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
   const seesMoney = (role: string | undefined) => role === 'couple'
-
-  /**
-   * Отмена сделки в слоте — одна дверь для брони и для своего подрядчика.
-   *
-   * Состояние читается `for update`: два одновременных «Отменить» с разными
-   * ключами иначе оба видели `booked`, оба писали событие `booked → cancelled`
-   * и оба слали подрядчику «Сделка отменена» (D2-06, R-187). Переход
-   * проверяется той же машиной, что у `PATCH /deals`: из `done` отменять
-   * нельзя — услуга оказана и оплачена, а здесь до этого можно было, и
-   * плитка выполненной работы пустела (D2-02, R-102).
-   */
-  async function cancelDealInSlot(client: Queryable, slotId: string, dealId: string, actorId: string): Promise<void> {
-    const { rows } = await client.query<{ state: DealState }>('select state from deals where id = $1 for update', [
-      dealId,
-    ])
-    const state = rows[0]!.state
-    if (state === 'cancelled') throw conflict('already_cancelled', 'Сделка уже отменена')
-    assertTransition(state, 'cancelled')
-
-    await client.query(`update deals set state = 'cancelled', cancelled_at = now() where id = $1`, [dealId])
-    await client.query(
-      `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
-       values ($1, $2, $3, 'cancelled', $4)`,
-      [uuidv7(), dealId, state, actorId],
-    )
-    // Слот освобождается, дата возвращается подрядчику. Ручную отметку
-    // «занято» не трогаем — её ставил он сам.
-    await client.query('update slots set deal_id = null where id = $1', [slotId])
-    await releaseVendorDate(client, dealId)
-    await revokeSlotInvites(client, slotId)
-    await detachBusRoutes(client, dealId)
-    // Лид подрядчика из `won` — обратно в работу (ревью 015).
-    await releaseLead(client, dealId)
-  }
 
   /**
    * Погасить все выданные приглашения своего подрядчика в слоте.
@@ -341,7 +306,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       tx(async (client) => {
         const slot = await slotOf(client, weddingId, slotId)
         if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нечего отменять')
-        await cancelDealInSlot(client, slotId, slot.deal_id, request.caller!.userId)
+        await cancelDeal(client, slot.deal_id, { actorId: request.caller!.userId })
         return { status: 200, body: (await loadSlot(client, slotId, true))! }
       }),
     )
@@ -526,7 +491,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       /* Тот же путь, что у отмены брони: состояние под блокировкой и через
        * машину переходов. Раньше состояние здесь не смотрели вовсе, и
        * выполненная работа своего подрядчика снималась с плитки (D2-02). */
-      await cancelDealInSlot(client, slotId, slot.deal_id!, request.caller!.userId)
+      await cancelDeal(client, slot.deal_id!, { actorId: request.caller!.userId })
     })
     return reply.code(204).send()
   })

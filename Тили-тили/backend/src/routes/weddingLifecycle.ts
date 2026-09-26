@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError } from '../errors.js'
-import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
+import { cancelDeal } from '../deals/cancel.js'
 import type { DealState } from '../deals/state.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
@@ -145,36 +145,27 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         return { state: 'confirmation_required' as const, requestedBy: userId }
       }
 
+      /* Отбор броней под блокировкой строк, до отмены: from_state в
+       * deal_events пишет cancelDeal() (F1) из своего собственного select
+       * (deals/cancel.ts) — колонка state в этой выборке сама событие не
+       * питает, она лишь часть строки для цикла ниже. */
       const { rows: cancelled } = await client.query<{ id: string; state: string }>(
-        /* `returning state` после `update` отдал бы уже НОВОЕ состояние — и в
-         * журнале сделки у каждой отменённой вместе со свадьбой стояло бы
-         * `cancelled → cancelled` (так и было: 77 таких строк в базе против
-         * `booked → cancelled` у отмены через PATCH /deals). Исходное
-         * состояние читается ДО записи, под блокировкой строк. */
         `select id, state from deals where wedding_id = $1 and state = any($2) for update`,
         [weddingId, CANCELLED_WITH_WEDDING],
       )
-      await client.query(
-        `update deals set state = 'cancelled', cancelled_at = now(), cancel_reason = 'cancelled_by_couple'
-          where id = any($1)`,
-        [cancelled.map((deal) => deal.id)],
-      )
+      /* Единственная дверь `cancelDeal` (F1) — та же, что у слота и
+       * `PATCH /deals`: снимает дату через `releaseVendorDate` (а не голым
+       * `delete`, RF-BE-02 — иначе отменённая сделка забирала день у
+       * `done`-сделки того же подрядчика без своей строки в
+       * `vendor_busy_dates`), гасит ссылки слота и маршруты автобуса, лид —
+       * обратно в работу. `done` не трогается (`CANCELLED_WITH_WEDDING`, :27). */
       for (const deal of cancelled) {
-        await client.query(
-          `insert into deal_events (id, deal_id, from_state, to_state, actor_id, note)
-           values ($1, $2, $3, 'cancelled', $4, 'свадьба отменена')`,
-          [uuidv7(), deal.id, deal.state, userId],
-        )
+        await cancelDeal(client, deal.id, {
+          actorId: userId,
+          note: 'свадьба отменена',
+          reason: 'cancelled_by_couple',
+        })
       }
-      /* Даты и слоты освобождаются ТОЛЬКО по отменённым сделкам.
-       *
-       * Условия по `wedding_id` снимали занятость и у `done`: день, в который
-       * подрядчик отработал, снова выглядел свободным, и на него можно было
-       * взять новую пару. Слот `done` при этом терял ссылку на сделку, и
-       * мозаика после отмены показывала выполненную работу пустой плиткой. */
-      const ids = cancelled.map((deal) => deal.id)
-      await client.query(`delete from vendor_busy_dates where source = 'deal' and deal_id = any($1)`, [ids])
-      await client.query('update slots set deal_id = null where deal_id = any($1)', [ids])
       // Архив на 12 месяцев, а не удаление: пара возвращается чаще, чем кажется
       // (План §19.1).
       await client.query('update weddings set cancelled_at = now(), archived_at = now() where id = $1', [weddingId])
