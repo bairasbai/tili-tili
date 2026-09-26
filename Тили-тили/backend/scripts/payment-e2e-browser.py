@@ -1,5 +1,7 @@
-"""018-A browser acceptance against the real API and a disposable task fixture.
+"""018-A/018-B browser acceptance against the real API and a disposable task fixture.
 No additional HTTP endpoints, bank requests or production credentials are used.
+Receipt upload needs RECEIPTS_STORAGE=db in the fixture server environment (ревью 018, BB-01).
+Button names carry the stage or file name since review 018 (F-15, BF-12).
 """
 import datetime
 import json
@@ -86,7 +88,7 @@ with sync_playwright() as pw:
         state = data()
         assert state['summary']['unallocated'] == money(0) and len(state['payments']) == 1
         passed.append('link-existing-payment-without-duplication')
-        card.get_by_role('button', name='Отметить оплату', exact=True).click()
+        card.get_by_role('button', name='Отметить оплату: Аванс фотографу', exact=True).click()
         form = page.get_by_role('form', name='Редактор платежа')
         form.get_by_label('Сумма, ₽', exact=True).fill('1000')
         save(page)
@@ -107,16 +109,16 @@ with sync_playwright() as pw:
         expect(other.get_by_role('region', name='Аванс фотографу')).to_contain_text('Частично отмечено')
         passed.append('second-couple-session-sees-same-payments')
         card = page.get_by_role('region', name='Аванс фотографу')
-        card.get_by_role('button', name='Изменить', exact=True).click()
+        card.get_by_role('button', name='Изменить: Аванс фотографу', exact=True).click()
         old_form = page.get_by_role('form', name='Редактор платежа')
         old_form.get_by_label('Название этапа').fill('Мой черновик')
-        other.get_by_role('region', name='Аванс фотографу').get_by_role('button', name='Изменить', exact=True).click()
+        other.get_by_role('region', name='Аванс фотографу').get_by_role('button', name='Изменить: Аванс фотографу', exact=True).click()
         partner_form = other.get_by_role('form', name='Редактор платежа')
         partner_form.get_by_label('Название этапа').fill('Согласованный аванс')
         partner_form.get_by_label('Дата платежа').fill(moved_due)
         save(other)
         old_form.get_by_role('button', name='Сохранить', exact=True).click()
-        expect(page.get_by_role('alert')).to_contain_text('Черновик сохранён')
+        expect(page.get_by_role('alert')).to_contain_text('Черновик остался в форме')
         expect(old_form.get_by_label('Название этапа')).to_have_value('Мой черновик')
         passed.append('stale-draft-rejected-and-preserved')
         old_form.get_by_role('button', name='Закрыть', exact=True).click()
@@ -132,7 +134,7 @@ with sync_playwright() as pw:
             assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'overflow at {width}px'
         page.screenshot(path=str(out / 'payment-schedule-mobile.png'), full_page=True)
         passed.append('320-and-390-pixel-layout')
-        card.get_by_role('button', name='Отменить этап', exact=True).click()
+        card.get_by_role('button', name='Отменить этап: Согласованный аванс', exact=True).click()
         form = page.get_by_role('form', name='Редактор платежа')
         expect(form).to_contain_text('не возвращает деньги')
         form.get_by_label('Причина отмены').fill('Срок согласуем заново')
@@ -154,6 +156,44 @@ with sync_playwright() as pw:
         passed.append('csv-download-with-distinct-plan-and-payment-records')
         page.locator('summary').filter(has_text='История оплат').click()
         page.screenshot(path=str(out / 'payment-history-mobile.png'), full_page=True)
+        # 018-B: private payment evidence — lazy list, upload, download, two-step delete.
+        # The panel sits inside «История оплат»: take the inner <details> through its own summary.
+        summary = page.locator('summary', has_text='Подтверждения оплаты').first
+        panel = summary.locator('xpath=..')
+        summary.click()
+        expect(panel.get_by_text('Прикрепить файл', exact=True)).to_be_visible()
+        png = bytes([137, 80, 78, 71, 13, 10, 26, 10]) + bytes(64)
+        panel.locator('input[type=file]').set_input_files({'name': 'чек-e2e.png', 'mimeType': 'image/png', 'buffer': png})
+        expect(panel.get_by_text('чек-e2e.png', exact=True)).to_be_visible()
+        with page.expect_download() as receipt:
+            panel.get_by_role('button', name='Скачать: чек-e2e.png', exact=True).click()
+        assert receipt.value.suggested_filename == 'чек-e2e.png'
+        panel.get_by_role('button', name='Удалить: чек-e2e.png', exact=True).click()
+        panel.get_by_role('button', name='Удалить? чек-e2e.png', exact=True).click()
+        expect(panel.get_by_text('чек-e2e.png', exact=True)).to_have_count(0)
+        passed.append('receipt-upload-download-two-step-delete')
+        # 018-B: reserve and a custom category limit on the budget screen.
+        request('PATCH', f'/weddings/{wid}', {'budgetTotal': money(100_000_000)})
+        page.goto(ui + '/wedding/budget', wait_until='networkidle')
+        page.get_by_label('Резерв, %', exact=True).fill('12,5')
+        page.get_by_role('button', name='Сохранить', exact=True).click()
+        expect(page.get_by_text(re.compile('^Сейчас: 12,5'))).to_be_visible()
+        category = request('GET', f'/weddings/{wid}/budget')['categories'][0]['title']
+        page.get_by_label(f'{category} лимит, ₽', exact=True).fill('150 000')
+        page.get_by_role('button', name=f'Задать лимит: {category}', exact=True).click()
+        reset = page.get_by_role('button', name=f'Вернуть автоматический лимит: {category}', exact=True)
+        expect(reset).to_be_visible()
+        budget = request('GET', f'/weddings/{wid}/budget')
+        assert budget['reserveBps'] == 1250, budget['reserveBps']
+        assert budget['categories'][0]['planned'] == money(15_000_000) and budget['categories'][0]['limitCustom']
+        reset.click()
+        expect(reset).to_have_count(0)
+        assert not request('GET', f'/weddings/{wid}/budget')['categories'][0]['limitCustom']
+        for width in (320, 390):
+            page.set_viewport_size({'width': width, 'height': 844})
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1'), f'budget overflow at {width}px'
+        page.screenshot(path=str(out / 'budget-controls-mobile.png'), full_page=True)
+        passed.append('budget-reserve-and-category-limit')
         assert not errors, errors
         result = {'passed': passed, 'page_errors': errors, 'browser': browser.version, 'viewport_widths': [320,390]}
         (out / 'payment-browser-result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2))
