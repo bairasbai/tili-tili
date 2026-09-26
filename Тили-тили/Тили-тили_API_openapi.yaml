@@ -1264,12 +1264,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, filename, mimeType, sizeBytes]
+                required: [id, filename, mimeType, sizeBytes, createdAt]
                 properties:
                   id: { type: string, format: uuid }
                   filename: { type: string }
                   mimeType: { type: string }
                   sizeBytes: { type: integer }
+                  createdAt: { type: string, format: date-time }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -6148,16 +6149,27 @@ components:
           enum: [empty, candidate, hold, booked, paid]
     Budget:
       type: object
+      # Обязательны поля 018-B: сервер отдаёт их всегда, и клиенту незачем
+      # подставлять своё умолчание (ревью 018, BF-16).
+      required: [reserveBps, settingsVersion]
       properties:
         paymentSummary: { $ref: '#/components/schemas/PaymentSummary' }
         total: { $ref: '#/components/schemas/Money' }  # example: 1500000
         spent: { $ref: '#/components/schemas/Money' }  # example: 560000
-        reserveBps: { type: integer, minimum: 0, maximum: 5000 }
-        settingsVersion: { type: integer, minimum: 0 }
+        reserveBps:
+          type: integer
+          minimum: 0
+          maximum: 5000
+          description: 'Доля резерва в базисных пунктах: 1000 = 10 %. От 0 до 5000 (50 %), по умолчанию 1000.'
+        settingsVersion:
+          type: integer
+          minimum: 0
+          description: 'Версия настроек резерва для `PATCH …/budget/settings`; 0 — резерв ни разу не меняли.'
         reserve:
           allOf: [{ $ref: '#/components/schemas/Money' }]
           description: |
-            Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).
+            Резерв на непредвиденное — `reserveBps` от общего бюджета: по
+            умолчанию 10 % (План ч. 283), пара меняет долю от 0 до 50 % (018-B).
             Отдельная строка, а не категория: категории делят сто процентов
             между собой, и резерв внутри них означал бы, что часть сметы
             просто уменьшили.
@@ -6167,12 +6179,15 @@ components:
           type: array
           items:
             type: object
+            required: [limitCustom, limitVersion]
             properties:
               id: { type: string }
               title: { type: string }
-              planned: { $ref: '#/components/schemas/Money' }
-              limitCustom: { type: boolean }
-              limitVersion: { type: integer, minimum: 0 }
+              planned:
+                allOf: [{ $ref: '#/components/schemas/Money' }]
+                description: 'Лимит категории: доля общего бюджета или, при `limitCustom`, сумма, заданная парой.'
+              limitCustom: { type: boolean, description: 'true — лимит задан парой (`PUT …/limit`), false — автоматическая доля.' }
+              limitVersion: { type: integer, minimum: 0, description: 'Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали.' }
               fromSlots: { type: integer, description: 'автосумма из броней' }
               color:
                 type: string

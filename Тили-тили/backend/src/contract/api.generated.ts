@@ -2087,6 +2087,8 @@ export interface paths {
                             filename: string;
                             mimeType: string;
                             sizeBytes: number;
+                            /** Format: date-time */
+                            createdAt: string;
                         };
                     };
                 };
@@ -9919,10 +9921,13 @@ export interface components {
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
-            reserveBps?: number;
-            settingsVersion?: number;
+            /** @description Доля резерва в базисных пунктах: 1000 = 10 %. От 0 до 5000 (50 %), по умолчанию 1000. */
+            reserveBps: number;
+            /** @description Версия настроек резерва для `PATCH …/budget/settings`; 0 — резерв ни разу не меняли. */
+            settingsVersion: number;
             /**
-             * @description Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).
+             * @description Резерв на непредвиденное — `reserveBps` от общего бюджета: по
+             *     умолчанию 10 % (План ч. 283), пара меняет долю от 0 до 50 % (018-B).
              *     Отдельная строка, а не категория: категории делят сто процентов
              *     между собой, и резерв внутри них означал бы, что часть сметы
              *     просто уменьшили.
@@ -9933,9 +9938,12 @@ export interface components {
             categories?: {
                 id?: string;
                 title?: string;
+                /** @description Лимит категории: доля общего бюджета или, при `limitCustom`, сумма, заданная парой. */
                 planned?: components["schemas"]["Money"];
-                limitCustom?: boolean;
-                limitVersion?: number;
+                /** @description true — лимит задан парой (`PUT …/limit`), false — автоматическая доля. */
+                limitCustom: boolean;
+                /** @description Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали. */
+                limitVersion: number;
                 /** @description автосумма из броней */
                 fromSlots?: number;
                 /**

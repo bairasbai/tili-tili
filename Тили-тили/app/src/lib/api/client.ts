@@ -366,11 +366,13 @@ export const newIdempotencyKey = (): string =>
 interface Options {
   /** Значение заголовка `Idempotency-Key` для необратимых действий. */
   idempotencyKey?: string
+  /** Свой срок ожидания ответа — для больших тел (файл подтверждения оплаты, ревью 018 BF-13). */
+  timeoutMs?: number
 }
 
 async function raw(method: Method, path: string, body: unknown, token: string | null, opts?: Options): Promise<Response> {
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? TIMEOUT_MS)
   try {
     return await fetch(BASE + path, {
       method,

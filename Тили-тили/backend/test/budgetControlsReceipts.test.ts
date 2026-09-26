@@ -244,6 +244,93 @@ describe.skipIf(!DB)('018-B: лимиты, резерв и приватные п
    for(const key of ['budgetSettings','budgetLimits','paymentReceipts'])
      expect((theirs[key] as Record<string,unknown>[]).filter(r=>r['wedding_id']===w.id)).toEqual([])
  })
+
+ /* ── ревью 018, BB-09/BF-17: заявленное, но не проверенное ───────────── */
+ const pdf=Buffer.from('%PDF-1.4\n%чек\n').toString('base64')
+ const jpeg=Buffer.from([0xff,0xd8,0xff,0xe0,0,16]).toString('base64')
+ const webp=Buffer.concat([Buffer.from('RIFF'),Buffer.from([4,0,0,0]),Buffer.from('WEBP')]).toString('base64')
+ const post=(w:{id:string},pid:string,token:string,body:Record<string,unknown>)=>app.inject({method:'POST',url:`/weddings/${w.id}/payments/${pid}/receipts`,
+   headers:{authorization:'Bearer '+token,'idempotency-key':randomUUID()},payload:body})
+
+ it('BB-09: сигнатуры PDF, JPEG и WebP принимаются; тип, не совпавший с содержимым, — 422',async()=>{
+   const w=await setup(),pid=await payment(w)
+   for(const [filename,mimeType,contentBase64] of [['a.pdf','application/pdf',pdf],['b.jpg','image/jpeg',jpeg],['c.webp','image/webp',webp]] as const)
+     expect((await post(w,pid,w.owner.token,{filename,mimeType,contentBase64})).statusCode).toBe(201)
+   const wrong=await post(w,pid,w.owner.token,{filename:'d.webp',mimeType:'image/webp',contentBase64:jpeg})
+   expect(wrong.statusCode).toBe(422);expect(wrong.json().error.fields).toHaveProperty('mimeType')
+ })
+
+ it('BB-09: 512 КиБ ровно — принимается, на байт больше — 422; неканонический base64 — 422',async()=>{
+   const w=await setup(),pid=await payment(w)
+   const exact=Buffer.alloc(524288);Buffer.from([137,80,78,71,13,10,26,10]).copy(exact)
+   expect((await post(w,pid,w.owner.token,{filename:'max.png',mimeType:'image/png',contentBase64:exact.toString('base64')})).statusCode).toBe(201)
+   const over=Buffer.alloc(524289);Buffer.from([137,80,78,71,13,10,26,10]).copy(over)
+   const big=await post(w,pid,w.owner.token,{filename:'big.png',mimeType:'image/png',contentBase64:over.toString('base64')})
+   expect(big.statusCode).toBe(422);expect(big.json().error.fields).toHaveProperty('contentBase64')
+   // «…Ggp=» — у «p» лишний младший бит перед «=»: Buffer.from молча отбросит его и даст те же 8 байт
+   // сигнатуры PNG, а сверка с каноническим «…Ggo=» — нет.
+   const odd=await post(w,pid,w.owner.token,{filename:'odd.png',mimeType:'image/png',contentBase64:'iVBORw0KGgp='})
+   expect(odd.statusCode).toBe(422)
+ })
+
+ it('BB-09: шестой файл к одной оплате — 409 receipt_limit; две гонящиеся загрузки на пятое место — одна проходит',async()=>{
+   const w=await setup(),pid=await payment(w)
+   for(let i=0;i<4;i++)expect((await upload(app,w,pid,w.owner.token)).statusCode).toBe(201)
+   const race=await Promise.all([upload(app,w,pid,w.owner.token),upload(app,w,pid,w.owner.token)])
+   expect(race.map(r=>r.statusCode).sort()).toEqual([201,409])
+   const sixth=await upload(app,w,pid,w.owner.token)
+   expect(sixth.statusCode).toBe(409);expect(sixth.json().error.code).toBe('receipt_limit')
+   expect((await app.db!.query('select 1 from payment_receipts where payment_id=$1',[pid])).rows).toHaveLength(5)
+ })
+
+ it('BB-09: чужая свадьба — список, загрузка и удаление по чужой оплате отвечают 404',async()=>{
+   const w=await setup(),pid=await payment(w),rid=(await upload(app,w,pid,w.owner.token)).json().id,other=await setup()
+   const h={authorization:'Bearer '+other.owner.token}
+   expect((await app.inject({method:'GET',url:`/weddings/${other.id}/payments/${pid}/receipts`,headers:h})).statusCode).toBe(404)
+   expect((await upload(app,other,pid,other.owner.token)).statusCode).toBe(404)
+   expect((await app.inject({method:'DELETE',url:`/weddings/${other.id}/payments/${pid}/receipts/${rid}`,headers:h})).statusCode).toBe(404)
+   expect(await receiptRow(rid)).toBeDefined()
+ })
+
+ it('BB-09: помощник и координатор — 403 на все пути чеков и лимитов, ничего не записано',async()=>{
+   const w=await setup(),pid=await payment(w),rid=(await upload(app,w,pid,w.owner.token)).json().id
+   for(const role of ['helper','coordinator']){
+     const member=await user()
+     await app.db!.query('insert into wedding_members(wedding_id,user_id,role) values($1,$2,$3)',[w.id,member.id,role])
+     const h={authorization:'Bearer '+member.token}
+     const calls=[
+       app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts`,headers:h}),
+       upload(app,w,pid,member.token),
+       app.inject({method:'GET',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}/content`,headers:h}),
+       app.inject({method:'DELETE',url:`/weddings/${w.id}/payments/${pid}/receipts/${rid}`,headers:h}),
+       app.inject({method:'PUT',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:h,payload:{amount:money(100),version:0}}),
+       app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:h,payload:{reset:true,version:1}}),
+       app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:h,payload:{reserveBps:0,version:0}}),
+     ]
+     expect((await Promise.all(calls)).map(r=>r.statusCode),role).toEqual([403,403,403,403,403,403,403])
+   }
+   expect((await app.db!.query('select 1 from payment_receipts where wedding_id=$1',[w.id])).rows).toHaveLength(1)
+   expect((await app.db!.query('select 1 from budget_category_limits where wedding_id=$1',[w.id])).rows).toHaveLength(0)
+ })
+
+ it('BB-09: резерв вне 0–5000 б. п. — 422, ничего не записано',async()=>{
+   const w=await setup()
+   for(const reserveBps of [-1,5001,12.5])
+     expect((await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:headers(w),payload:{reserveBps,version:0}})).statusCode,String(reserveBps)).toBe(422)
+   expect((await app.db!.query('select 1 from wedding_budget_settings where wedding_id=$1',[w.id])).rows).toHaveLength(0)
+ })
+
+ it('BB-08: подсказка о перерасходе не обещает резерв, которого нет',async()=>{
+   const w=await setup()
+   // Сделка «Фото» на 10 000 ₽ в категории фото; лимит категории — 1 000 ₽: перерасход.
+   expect((await app.inject({method:'PUT',url:`/weddings/${w.id}/budget/categories/b2/limit`,headers:headers(w),payload:{amount:money(100_000),version:0}})).statusCode).toBe(200)
+   const tip=async()=>((await app.inject({method:'GET',url:`/weddings/${w.id}/tips`,headers:headers(w)})).json().items as {kind:string;categoryId:string;body:string}[])
+     .find(x=>x.kind==='budget'&&x.categoryId==='b2')
+   expect((await tip())?.body).toContain('за счёт резерва')
+   expect((await app.inject({method:'PATCH',url:`/weddings/${w.id}/budget/settings`,headers:headers(w),payload:{reserveBps:0,version:0}})).statusCode).toBe(200)
+   const body=(await tip())?.body
+   expect(body).toContain('резерв выключен');expect(body).not.toContain('за счёт резерва')
+ })
 })
 
 describe('018-B: имя файла подтверждения (ревью 018, BB-10)',()=>{

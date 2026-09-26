@@ -283,6 +283,10 @@ export const CONTRACT_SCHEMAS = {
       },
       "Budget": {
           "type": "object",
+          "required": [
+              "reserveBps",
+              "settingsVersion"
+          ],
           "properties": {
               "paymentSummary": {
                   "$ref": "contract#/definitions/PaymentSummary"
@@ -296,11 +300,13 @@ export const CONTRACT_SCHEMAS = {
               "reserveBps": {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 5000
+                  "maximum": 5000,
+                  "description": "Доля резерва в базисных пунктах: 1000 = 10 %. От 0 до 5000 (50 %), по умолчанию 1000."
               },
               "settingsVersion": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "description": "Версия настроек резерва для `PATCH …/budget/settings`; 0 — резерв ни разу не меняли."
               },
               "reserve": {
                   "allOf": [
@@ -308,12 +314,16 @@ export const CONTRACT_SCHEMAS = {
                           "$ref": "contract#/definitions/Money"
                       }
                   ],
-                  "description": "Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).\nОтдельная строка, а не категория: категории делят сто процентов\nмежду собой, и резерв внутри них означал бы, что часть сметы\nпросто уменьшили.\n\nСчитает сервер, чтобы доля не разошлась между экранами.\n"
+                  "description": "Резерв на непредвиденное — `reserveBps` от общего бюджета: по\nумолчанию 10 % (План ч. 283), пара меняет долю от 0 до 50 % (018-B).\nОтдельная строка, а не категория: категории делят сто процентов\nмежду собой, и резерв внутри них означал бы, что часть сметы\nпросто уменьшили.\n\nСчитает сервер, чтобы доля не разошлась между экранами.\n"
               },
               "categories": {
                   "type": "array",
                   "items": {
                       "type": "object",
+                      "required": [
+                          "limitCustom",
+                          "limitVersion"
+                      ],
                       "properties": {
                           "id": {
                               "type": "string"
@@ -322,14 +332,21 @@ export const CONTRACT_SCHEMAS = {
                               "type": "string"
                           },
                           "planned": {
-                              "$ref": "contract#/definitions/Money"
+                              "allOf": [
+                                  {
+                                      "$ref": "contract#/definitions/Money"
+                                  }
+                              ],
+                              "description": "Лимит категории: доля общего бюджета или, при `limitCustom`, сумма, заданная парой."
                           },
                           "limitCustom": {
-                              "type": "boolean"
+                              "type": "boolean",
+                              "description": "true — лимит задан парой (`PUT …/limit`), false — автоматическая доля."
                           },
                           "limitVersion": {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "description": "Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали."
                           },
                           "fromSlots": {
                               "type": "integer",
