@@ -17,7 +17,13 @@ jobs:
           # Node 22 LTS, не 25: на нечётной ветке npm падает с
           # "Exit handler never called!" (ERR-0006).
           node-version: 22
-      - run: corepack enable
+      # Версия pnpm закреплена, как в deploy/Dockerfile.web: без неё corepack
+      # тянет свежайшую (12.x), и та падает на --frozen-lockfile с
+      # ERR_PNPM_IGNORED_BUILDS — CI был красным ещё до первого теста (FL-16).
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      # Установка из закоммиченного лок-файла: защита от только что
+      # опубликованных версий здесь не нужна (так же в образе).
+      - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
       - run: node node_modules/typescript/bin/tsc -b
       - run: node node_modules/vitest/vitest.mjs run
@@ -56,7 +62,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: corepack enable
+      # Та же закреплённая версия pnpm, что в backend/Dockerfile (FL-16).
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
       - name: Миграции на живой базе
