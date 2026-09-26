@@ -22,3 +22,12 @@ export const payInstallment = (weddingId: string, installmentId: string, body: S
 export const linkPaymentPlan = (weddingId: string, paymentId: string, body: Schema['PaymentPlanLink'], idempotencyKey: string) =>
   api.patch(url('/weddings/{weddingId}/payments/{paymentId}/plan', { weddingId, paymentId }), body, { idempotencyKey })
 export const exportPaymentHistory = (weddingId: string) => api.get(url('/weddings/{weddingId}/payment-schedule/export', { weddingId }))
+
+export const listPaymentReceipts = (weddingId: string, paymentId: string) =>
+  api.get(url('/weddings/{weddingId}/payments/{paymentId}/receipts', { weddingId, paymentId }))
+export const addPaymentReceipt = (weddingId: string, paymentId: string, body: { filename: string; mimeType: 'application/pdf'|'image/jpeg'|'image/png'|'image/webp'; contentBase64: string }, idempotencyKey: string) =>
+  api.post(url('/weddings/{weddingId}/payments/{paymentId}/receipts', { weddingId, paymentId }), body, { idempotencyKey })
+export const getPaymentReceipt = (weddingId: string, paymentId: string, receiptId: string) =>
+  api.get(url('/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content', { weddingId, paymentId, receiptId }))
+export const deletePaymentReceipt = (weddingId: string, paymentId: string, receiptId: string) =>
+  api.delete(url('/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}', { weddingId, paymentId, receiptId }))

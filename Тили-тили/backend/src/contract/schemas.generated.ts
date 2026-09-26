@@ -290,6 +290,15 @@ export const CONTRACT_SCHEMAS = {
               "spent": {
                   "$ref": "contract#/definitions/Money"
               },
+              "reserveBps": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5000
+              },
+              "settingsVersion": {
+                  "type": "integer",
+                  "minimum": 0
+              },
               "reserve": {
                   "allOf": [
                       {
@@ -311,6 +320,13 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "planned": {
                               "$ref": "contract#/definitions/Money"
+                          },
+                          "limitCustom": {
+                              "type": "boolean"
+                          },
+                          "limitVersion": {
+                              "type": "integer",
+                              "minimum": 0
                           },
                           "fromSlots": {
                               "type": "integer",

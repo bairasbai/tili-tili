@@ -315,3 +315,10 @@ export const shiftTimeline = (weddingId: string, minutes: number) =>
  */
 export const activatePlanB = (weddingId: string, scenario = 'rain') =>
   api.post(url('/weddings/{weddingId}/planb/activate', { weddingId }), { scenario }, { idempotencyKey: newIdempotencyKey() })
+
+export const setBudgetReserve = (weddingId: string, reserveBps: number, version: number) =>
+  api.patch(url('/weddings/{weddingId}/budget/settings', { weddingId }), { reserveBps, version })
+export const setBudgetCategoryLimit = (weddingId: string, categoryId: string, amount: { amount: number; currency: 'RUB' }, version: number) =>
+  api.put(url('/weddings/{weddingId}/budget/categories/{categoryId}/limit', { weddingId, categoryId }), { amount, version })
+export const resetBudgetCategoryLimit = (weddingId: string, categoryId: string, version: number) =>
+  api.patch(url('/weddings/{weddingId}/budget/categories/{categoryId}/limit', { weddingId, categoryId }), { reset: true, version })

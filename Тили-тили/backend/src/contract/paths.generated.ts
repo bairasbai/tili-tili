@@ -199,4 +199,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Добавить желание","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/wishlist/{giftId}","url":"/weddings/:weddingId/wishlist/:giftId","operationId":null,"summary":"Удалить желание","tag":"wishlist"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/wishlist/{giftId}","url":"/weddings/:weddingId/wishlist/:giftId","operationId":null,"summary":"Изменить желание","tag":"wishlist"},
+
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Вернуть автоматический лимит категории с проверкой версии","tag":"budget"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Задать пользовательский лимит категории","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts","url":"/weddings/:weddingId/payments/:paymentId/receipts","operationId":null,"summary":"Приватные подтверждения оплаты","tag":"payments"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts","url":"/weddings/:weddingId/payments/:paymentId/receipts","operationId":null,"summary":"Прикрепить приватное подтверждение оплаты","tag":"payments"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Скачать приватное подтверждение оплаты","tag":"payments"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}","url":"/weddings/:weddingId/payments/:paymentId/receipts/:receiptId","operationId":null,"summary":"Удалить приватное подтверждение оплаты","tag":"payments"},
 ] as const

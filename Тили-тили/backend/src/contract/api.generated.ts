@@ -2244,6 +2244,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/budget/settings": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; };
+        get?: never; put?: never; post?: never; delete?: never; options?: never; head?: never;
+        patch: {
+            parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; }; cookie?: never; };
+            requestBody: { content: { "application/json": { reserveBps: number; version: number; }; }; };
+            responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { reserveBps?: number; version?: number; }; }; }; 409: components["responses"]["Conflict"]; };
+        }; trace?: never;
+    };
+    "/weddings/{weddingId}/budget/categories/{categoryId}/limit": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; get?: never; post?: never; options?: never; head?: never; trace?: never;
+        put: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; categoryId: string; }; cookie?: never; }; requestBody: { content: { "application/json": { amount: components["schemas"]["Money"]; version: number; }; }; }; responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { categoryId?: string; amount?: components["schemas"]["Money"]; custom?: boolean; version?: number; }; }; }; 409: components["responses"]["Conflict"]; }; };
+        patch: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; categoryId: string; }; cookie?: never; }; requestBody: { content: { "application/json": { reset: true; version: number; }; }; }; responses: { 204: { headers: { [name: string]: unknown; }; content?: never; }; 409: components["responses"]["Conflict"]; }; };
+        delete?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; put?: never; delete?: never; options?: never; head?: never; patch?: never; trace?: never;
+        get: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; }; cookie?: never; }; requestBody?: never; responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { items: { id: string; filename: string; mimeType: string; sizeBytes: number; createdAt: string; }[]; }; }; }; }; };
+        post: { parameters: { query?: never; header: { "Idempotency-Key": string; }; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; }; cookie?: never; }; requestBody: { content: { "application/json": { filename: string; mimeType: "application/pdf"|"image/jpeg"|"image/png"|"image/webp"; contentBase64: string; }; }; }; responses: { 201: { headers: { [name: string]: unknown; }; content: { "application/json": { id: string; filename: string; mimeType: string; sizeBytes: number; }; }; }; }; };
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; put?: never; post?: never; delete?: never; options?: never; head?: never; patch?: never; trace?: never;
+        get: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; receiptId: string; }; cookie?: never; }; requestBody?: never; responses: { 200: { headers: { [name: string]: unknown; }; content: { "application/json": { filename: string; mimeType: string; contentBase64: string; }; }; }; }; };
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}": {
+        parameters: { query?: never; header?: never; path?: never; cookie?: never; }; get?: never; put?: never; post?: never; options?: never; head?: never; patch?: never; trace?: never;
+        delete: { parameters: { query?: never; header?: never; path: { weddingId: components["parameters"]["WeddingId"]; paymentId: string; receiptId: string; }; cookie?: never; }; requestBody?: never; responses: { 204: { headers: { [name: string]: unknown; }; content?: never; }; }; };
+    };
     "/weddings/{weddingId}/tips": {
         parameters: {
             query?: never;
@@ -10530,6 +10558,8 @@ export interface components {
             readonly prebooked: boolean;
         };
         Budget: {
+            reserveBps?: number;
+            settingsVersion?: number;
             paymentSummary?: components["schemas"]["PaymentSummary"];
             total?: components["schemas"]["Money"];
             spent?: components["schemas"]["Money"];
@@ -10546,6 +10576,8 @@ export interface components {
                 id?: string;
                 title?: string;
                 planned?: components["schemas"]["Money"];
+                limitCustom?: boolean;
+                limitVersion?: number;
                 /** @description автосумма из броней */
                 fromSlots?: number;
                 /**
