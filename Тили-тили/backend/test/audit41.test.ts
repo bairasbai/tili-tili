@@ -14,6 +14,7 @@ import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
+import { PROFILES_METRIC_SQL } from '../src/routes/admin.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -93,6 +94,7 @@ describe.skipIf(!live)('фича 012: заполненность анкет на
       const pub = await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(owner.token) })
       expect(pub.statusCode, pub.body.slice(0, 200)).toBe(200)
     }
+    return { vendorId: put.json().id as string }
   }
 
   async function metrics(token: string): Promise<Metrics> {
@@ -101,31 +103,22 @@ describe.skipIf(!live)('фича 012: заполненность анкет на
     return res.json() as Metrics
   }
 
-  it('profiles: пустая, половинная и полная анкеты двигают published на 3, complete на 1, среднее — по долям; черновик не считается', async () => {
+  it('profiles: published — тот же снимок, что vendorsPublished; заполненность считает определение спеки на своих трёх анкетах', async () => {
     const staff = await newUser()
     await app.db!.query('update users set is_staff = true where id = $1', [staff.userId])
-    const before = await metrics(staff.token)
-    expect(before.profiles, 'в ответе дашборда нет profiles').toBeTruthy()
-    expect(before.profiles!.published, 'profiles.published — тот же набор, что vendorsPublished').toBe(before.vendorsPublished)
 
-    await profile({}, true) // 0 из 4
-    await profile({ about: 'Оформляем залы', priceFrom: { amount: 3_000_000, currency: 'RUB' } }, true) // 2 из 4
-    await profile({
-      about: 'Полный декор', phone: '+79170009900', priceFrom: { amount: 5_000_000, currency: 'RUB' },
-      packages: [{ name: 'Базовый', price: { amount: 5_000_000, currency: 'RUB' }, includes: ['арка'] }],
-    }, true) // 4 из 4
-    await profile({ about: 'Черновик', phone: '+79170009901', priceFrom: { amount: 100, currency: 'RUB' }, packages: [{ name: 'x' }] }, false)
+    // (i) Один снимок сервера: published — тот же набор, что vendorsPublished.
+    const snap = await metrics(staff.token)
+    expect(snap.profiles, 'в ответе дашборда нет profiles').toBeTruthy()
+    expect(snap.profiles!.published, 'profiles.published — тот же набор, что vendorsPublished').toBe(snap.vendorsPublished)
 
-    const after = await metrics(staff.token)
-    /* Соседние файлы прогона публикуют свои анкеты на той же базе (R-177): дельты — «не меньше», не «ровно». */
-    expect(after.profiles!.published - before.profiles!.published).toBeGreaterThanOrEqual(3)
-    expect(after.profiles!.complete - before.profiles!.complete).toBeGreaterThanOrEqual(1)
-    expect(after.profiles!.published, 'profiles.published — тот же набор, что vendorsPublished').toBe(after.vendorsPublished)
-
-    /* Определение спеки — сверкой с SQL по живым опубликованным: доля заполненных из четырёх полей.
-       Между снимком сервера и запросом теста соседний файл может опубликовать анкету — поэтому до трёх попыток
-       «снимок → SQL», и совпасть должна хотя бы одна пара. */
-    const DEFINITION = `select count(*)::text as published,
+    /* Определение спеки (Р1) — своей копией SQL, а не текстом дашборда:
+       сверка ниже (ii) доказывает, что копия и константа обработчика
+       (`PROFILES_METRIC_SQL`) считают одно и то же. Функция, а не голая
+       строка: (iii) переиспользует ЭТОТ ЖЕ текст с фильтром по своим id
+       (ARB-3 — один текст формулы, не третья копия, F6-G5-06), а не только
+       без фильтра, как в (ii). */
+    const DEFINITION = (extraWhere = '') => `select count(*)::text as published,
               count(*) filter (where n = 4)::text as complete,
               coalesce(round(100 * avg(n / 4.0)), 0)::text as avg
          from (select (case when coalesce(v.about, '') <> '' then 1 else 0 end
@@ -133,19 +126,43 @@ describe.skipIf(!live)('фича 012: заполненность анкет на
                      + case when v.price_from is not null then 1 else 0 end
                      + case when exists (select 1 from vendor_packages p where p.vendor_id = v.id) then 1 else 0 end) as n
                  from vendors v join users u on u.id = v.user_id and u.deleted_at is null
-                where v.published_at is not null and v.blocked_at is null) f`
-    let matched = false
-    let last = ''
-    for (let attempt = 0; attempt < 3 && !matched; attempt++) {
-      const snap = (await metrics(staff.token)).profiles!
-      const { rows } = await app.db!.query<{ published: string; complete: string; avg: string }>(DEFINITION)
-      const sql = { published: Number(rows[0]!.published), complete: Number(rows[0]!.complete), averagePercent: Number(rows[0]!.avg) }
-      last = `сервер ${JSON.stringify(snap)} · SQL ${JSON.stringify(sql)}`
-      /* `published` под полным прогоном растёт между снимком и SQL на десятки анкет (75 файлов публикуют
-         свои) — его точность держит равенство с `vendorsPublished` в одном снимке выше; здесь — «SQL не меньше».
-         Определение проверяют `complete` (4 из 4 — редкость, чужие тесты его почти не двигают) и среднее. */
-      matched = sql.published >= snap.published && snap.complete === sql.complete && snap.averagePercent === sql.averagePercent
-    }
-    expect(matched, 'profiles не совпали с определением спеки: ' + last).toBe(true)
+                where v.published_at is not null and v.blocked_at is null ${extraWhere}) f`
+
+    /* (ii) F6-d: константа обработчика и определение спеки — в ОДНОМ снимке
+       (`repeatable read`), а не «снимок сервера → SQL секунду позже»: сосед
+       не может подвинуть базу МЕЖДУ двумя запросами одной транзакции, гонка
+       с параллельными файлами исключена конструктивно, а не вероятностно. */
+    const [fromMetric, fromSpec] = await app.db!.tx(async (client) => {
+      await client.query('set transaction isolation level repeatable read')
+      const metric = await client.query<{ published: string; complete: string; average_percent: string }>(PROFILES_METRIC_SQL)
+      const spec = await client.query<{ published: string; complete: string; avg: string }>(DEFINITION())
+      return [metric.rows[0]!, spec.rows[0]!]
+    })
+    expect(Number(fromMetric.published)).toBe(Number(fromSpec.published))
+    expect(Number(fromMetric.complete)).toBe(Number(fromSpec.complete))
+    expect(Number(fromMetric.average_percent)).toBe(Number(fromSpec.avg))
+
+    // (iii) Свои три анкеты, посчитанные строго по своим id (без дельт по всей базе, R-177):
+    // пустая — 0/4, половинная — 2/4, полная — 4/4; черновик не публикуется и не попадает в выборку.
+    const empty = await profile({}, true)
+    const half = await profile({ about: 'Оформляем залы', priceFrom: { amount: 3_000_000, currency: 'RUB' } }, true)
+    const full = await profile({
+      about: 'Полный декор', phone: '+79170009900', priceFrom: { amount: 5_000_000, currency: 'RUB' },
+      packages: [{ name: 'Базовый', price: { amount: 5_000_000, currency: 'RUB' }, includes: ['арка'] }],
+    }, true)
+    const draft = await profile({ about: 'Черновик', phone: '+79170009901', priceFrom: { amount: 100, currency: 'RUB' }, packages: [{ name: 'x' }] }, false)
+
+    // F6-G5-06: тот же DEFINITION, что и в (ii) — не третья копия формулы, —
+    // с фильтром по своим id: пустая (0/4) + половинная (2/4) + полная (4/4)
+    // дают published=3, complete=1 (только полная); черновик не публикуется —
+    // если бы он попал в выборку, published было бы 4, а не 3.
+    const own = [empty.vendorId, half.vendorId, full.vendorId, draft.vendorId]
+    const { rows: filtered } = await app.db!.query<{ published: string; complete: string; avg: string }>(
+      DEFINITION('and v.id = any($1)'),
+      [own],
+    )
+    expect(Number(filtered[0]!.published), 'черновик не публикуется — его нет среди опубликованных').toBe(3)
+    expect(Number(filtered[0]!.complete)).toBe(1)
+    expect(Number(filtered[0]!.avg)).toBe(50)
   })
 })

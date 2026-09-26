@@ -206,14 +206,33 @@ describe.skipIf(!live)('перепроверка после этапа 5', () =>
       url: `/weddings/${w.weddingId}/logistics/notify-pickup`,
       headers: idem(w.token),
     })
-    await app.db!.query("update broadcasts set created_at = now() - interval '400 days'")
+
+    // F6-j: «сосед» — своя свадьба и своя свежая рассылка.
+    const neighbor = await newWedding()
+    await app.inject({
+      method: 'POST',
+      url: `/weddings/${neighbor.weddingId}/logistics/notify-pickup`,
+      headers: idem(neighbor.token),
+    })
+
+    // F6-j: старит только СВОИ рассылки (по своей свадьбе), не всю таблицу.
+    await app.db!.query("update broadcasts set created_at = now() - interval '400 days' where wedding_id = $1", [w.weddingId])
     await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/menu-poll/remind`,
       headers: idem(w.token),
     })
+
+    // Рассылка соседней свадьбы должна переживать зачистку (routes/day.ts:729).
+    const survived = await app.db!.query<{ n: number }>('select count(*)::int as n from broadcasts where wedding_id = $1', [
+      neighbor.weddingId,
+    ])
+    expect(survived.rows[0]!.n, 'рассылка соседней свадьбы переживает уборку').toBe(1)
+
+    // И считает только свои рассылки — не всю таблицу.
     const { rows } = await app.db!.query<{ n: number }>(
-      "select count(*)::int as n from broadcasts where created_at < now() - interval '90 days'",
+      "select count(*)::int as n from broadcasts where created_at < now() - interval '90 days' and wedding_id = $1",
+      [w.weddingId],
     )
     expect(rows[0]!.n).toBe(0)
   })

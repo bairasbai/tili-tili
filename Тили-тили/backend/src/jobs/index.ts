@@ -124,8 +124,22 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
   for (const row of rows) {
     try {
       /* Транзакция на свадьбу: между записью в журнал и удалением не должно
-       * быть состояния «свадьбы нет, а следа не осталось» — и наоборот. */
-      await db.tx(async (client) => {
+       * быть состояния «свадьбы нет, а следа не осталось» — и наоборот.
+       *
+       * Первый запрос транзакции — блокировка САМОЙ свадьбы (F6-g, V-1, V-4):
+       * без неё два одновременных прохода видят одну и ту же строку в своей
+       * (нелокирующей) выборке выше и оба пишут след + удаляют — один след
+       * остаётся, другой лишний (двойной `wedding.purged`). С блокировкой
+       * второй проход ждёт первого, а после ждёт — либо блокировка уже не
+       * встречает свадьбы вовсе (сосед её убрал первым, F6-g2): тогда свой
+       * след не пишется и `purged` не растёт — уборка не лжёт о том, что не
+       * сделала. */
+      const ok = await db.tx(async (client) => {
+        const { rowCount } = await client.query(
+          'select 1 from weddings where id = $1 and cancelled_at is not null for update',
+          [row.id],
+        )
+        if (rowCount === 0) return false
         await client.query(
           `delete from vendor_busy_dates
             where source = 'deal' and deal_id in (select id from deals where wedding_id = $1)`,
@@ -141,8 +155,9 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
         // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
         // чаты, задачи — все двадцать три таблицы свадьбы.
         await client.query('delete from weddings where id = $1', [row.id])
+        return true
       })
-      purged += 1
+      if (ok) purged += 1
     } catch (err) {
       // Сбой на одной свадьбе не останавливает остальные: ошибка в лог с
       // идентификатором — иначе искать её было бы негде.

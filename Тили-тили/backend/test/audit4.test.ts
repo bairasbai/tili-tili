@@ -368,7 +368,26 @@ describe.skipIf(!live)('перепроверка после этапа 4', () =>
   /* ── ключи идемпотентности не копятся вечно ───────────────────────── */
   it('ключи идемпотентности не хранятся дольше суток', async () => {
     const { w, slotId } = await bookOne('decor', 2_000_000)
-    await app.db!.query("update idempotency_keys set created_at = now() - interval '30 days'")
+
+    /* F6-i (ROADMAP:1301-1302): «сосед» — свой пользователь и свой живой
+       ключ (столбцы — как jobs.test.ts:263-267), нужен как отрицательный
+       контроль для правки ниже: она старит и считает ключи только владельца
+       своей свадьбы (:387-390 — с `where`; F6-G5r6-07), поэтому живой ключ
+       соседа не тронет и не снесёт зачистка deals/idempotency.ts:74 —
+       проверяется ниже (F6-G5-04/F6-G6-03). */
+    const neighbor = await newUser()
+    const liveKey = `f6i-live-${randomUUID()}`
+    await app.db!.query(
+      `insert into idempotency_keys (key, user_id, route, request_hash) values ($1,$2,'f6i-neighbor','h')`,
+      [liveKey, neighbor.id],
+    )
+
+    // F6-i: старит и считает только СВОИ ключи (по владельцу своей свадьбы),
+    // а не всю таблицу — сосед выше эту правку больше не задевает.
+    await app.db!.query(
+      "update idempotency_keys set created_at = now() - interval '30 days' where user_id = (select owner_id from weddings where id = $1)",
+      [w.weddingId],
+    )
 
     // Любой следующий запрос с ключом подметает просроченные: таблица иначе
     // растёт линейно от числа действий и никогда не уменьшается.
@@ -377,10 +396,31 @@ describe.skipIf(!live)('перепроверка после этапа 4', () =>
       url: `/weddings/${w.weddingId}/slots/${slotId}/cancel`,
       headers: idem(w.token),
     })
+
+    // F6-i (ROADMAP:1301-1302): живой ключ соседа не «состарен» правкой выше
+    // (она трогает только владельца своей свадьбы) — подметание сработавшего
+    // запроса его не находит и не удаляет.
+    const { rows: liveRows } = await app.db!.query<{ n: number }>(
+      'select count(*)::int as n from idempotency_keys where key = $1',
+      [liveKey],
+    )
+    expect(liveRows[0]!.n, 'живой ключ соседа должен остаться на месте').toBe(1)
+
+    // «Сосед» у себя завёл ключ трёхдневной давности (как jobs.test.ts) —
+    // легитимно старый, но никакой чужой прогон его пока не подметал.
+    await app.db!.query(
+      `insert into idempotency_keys (key, user_id, route, request_hash, created_at)
+       values ($1,$2,'f6i-neighbor','h', now() - interval '3 days')`,
+      [`f6i-old-${randomUUID()}`, neighbor.id],
+    )
+
     const { rows } = await app.db!.query<{ n: number }>(
-      "select count(*)::int as n from idempotency_keys where created_at < now() - interval '1 day'",
+      "select count(*)::int as n from idempotency_keys where created_at < now() - interval '1 day' and user_id = (select owner_id from weddings where id = $1)",
+      [w.weddingId],
     )
     expect(rows[0]!.n).toBe(0)
+
+    await app.db!.query('delete from idempotency_keys where user_id = $1', [neighbor.id])
   })
 
   /* ── старые этапы не сломались ────────────────────────────────────── */

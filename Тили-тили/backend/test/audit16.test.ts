@@ -228,7 +228,17 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     expect((await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(vendor.owner.token) })).statusCode).toBe(204)
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [vendor.owner.userId])
 
-    expect(await eraseDeletedUsers(app)).toBeGreaterThanOrEqual(1)
+    // F6-f: «проход соседа» — тот же слив, что в cleanup (jobs/index.ts:52),
+    // вставлен здесь напрямую, чтобы гонка была детерминированной, а не
+    // случайной. До 5 повторов, до 0 — как остаток общей базы, так и наша
+    // только что состаренная строка.
+    for (let i = 0; i < 5 && (await eraseDeletedUsers(app)) > 0; i++);
+
+    // F6-f (FP-1): не счётчик прохода уборки (соседний проход мог стереть
+    // строку первым — вот он и стёр, выше), а состояние СВОЕГО аккаунта.
+    await eraseDeletedUsers(app)
+    const { rows: erased } = await app.db!.query('select 1 from users where id = $1', [vendor.owner.userId])
+    expect(erased).toHaveLength(0)
 
     const { rows } = await app.db!.query<{ vendor_id: string | null; external_name: string | null; state: string }>(
       'select vendor_id, external_name, state from deals where id = $1',

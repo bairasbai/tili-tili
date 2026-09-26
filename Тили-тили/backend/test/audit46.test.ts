@@ -13,6 +13,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -28,6 +31,20 @@ describe('хвосты планов: тексты', () => {
   it('П6: сторож переписки не обещает эскроу, которого нет', () => {
     expect(PAYOUT_WARNING.toLowerCase()).not.toContain('эскроу')
     expect(PAYOUT_WARNING).toContain('Договор')
+  })
+
+  /* F6-c (FP-1): П5 считает точный счётчик города «Нефтекамск» — своя
+     делянка, а не общий «Уфа», который двигают 77 других файлов теста и
+     шум FP-2. Сторож не даёт этой делянке снова стать общей. */
+  it('П5 сторож: делянку «Нефтекамск»/«Октябрьский» не трогает ни один другой файл', () => {
+    const dir = path.dirname(fileURLToPath(import.meta.url))
+    const offenders: string[] = []
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith('.test.ts') || name === 'audit46.test.ts') continue
+      const text = fs.readFileSync(path.join(dir, name), 'utf8')
+      if (text.includes('Нефтекамск') || text.includes('Октябрьский')) offenders.push(name)
+    }
+    expect(offenders, `делянку П5 трогают: ${offenders.join(', ')}`).toEqual([])
   })
 })
 
@@ -125,7 +142,7 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
       payload: { name: `Студия ${RUN}-${++counter}`, categoryId, city: { name: city, region }, priceFrom: { amount: 4_000_000, currency: 'RUB' }, ...extra },
     })
     expect(put.statusCode, put.body.slice(0, 200)).toBe(200)
-    return put.json() as { id: string; mediaRights: boolean }
+    return put.json() as { id: string; mediaRights: boolean; name: string }
   }
   const publish = (owner: { token: string }) => app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: auth(owner.token) })
   const myProfile = async (owner: { token: string }) =>
@@ -205,22 +222,62 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
   })
 
   it('П5: счётчик анкет по городу растёт на одну после публикации и не видит чужой город', async () => {
+    /* Своя делянка (FP-1, F6-c): «Нефтекамск» + florist не встречается ни в
+       одном другом файле backend/test (сторож выше) — шум FP-2 к нему не
+       подбирается (он берёт анкеты старше часа, F6-G5r6-07). Чужая, настоящая
+       анкета в этом городе всё же возможна (см. правку ниже) — точное `toBe`
+       не ломает её: счёт идёт дельтой `before`/`before + 1`, а не абсолютом.
+       «Уфа» тут больше нет: её трогают 77 мест теста, и абсолютный счётчик по
+       ней был не делянкой, а общим полем. */
+    const CITY = 'Нефтекамск'
+    const ELSEWHERE = 'Октябрьский'
+    // F6-G5r5-01: предочистку города убрали. Город доступен настоящим
+    // подрядчикам — CityPicker показывает его как популярный (app/src/lib/
+    // cities.ts:39) → PUT /vendor/profile (src/routes/vendor.ts:260-266);
+    // delete по городу цеплял бы чужую анкету, ронял её каскадом в 9 таблиц
+    // или падал 23503 при активной сделке (deals_vendor_id_fkey, NO ACTION).
+    // Тест не требует пустого города: `before`/`before + 1` остаются верными
+    // при любом числе чужих анкет. Свою анкету находим по уникальному имени
+    // (`q=`, inCatalog ниже) и убираем в `finally` — только свою строку.
     const cats = async (city?: string) =>
       (await app.inject({ method: 'GET', url: `/catalog/categories${city ? `?city=${encodeURIComponent(city)}` : ''}`, headers: auth(owner.token) })).json() as {
         id: string
         vendorsCount: number
       }[]
     const owner = await newUser()
-    const before = (await cats('Уфа')).find((c) => c.id === 'florist')!.vendorsCount
-    const beforeElsewhere = (await cats('Стерлитамак')).find((c) => c.id === 'florist')!.vendorsCount
-    await vendorOf(owner, 'florist', { mediaRights: true })
-    // До публикации счётчик стоит: анкеты в каталоге ещё нет.
-    expect((await cats('Уфа')).find((c) => c.id === 'florist')!.vendorsCount).toBe(before)
-    expect((await publish(owner)).statusCode).toBe(200)
-    expect((await cats('Уфа')).find((c) => c.id === 'florist')!.vendorsCount).toBe(before + 1)
-    expect((await cats('Стерлитамак')).find((c) => c.id === 'florist')!.vendorsCount).toBe(beforeElsewhere)
-    const total = (await cats()).find((c) => c.id === 'florist')!.vendorsCount
-    expect(total).toBeGreaterThanOrEqual(before + 1)
+    const before = (await cats(CITY)).find((c) => c.id === 'florist')!.vendorsCount
+    const beforeElsewhere = (await cats(ELSEWHERE)).find((c) => c.id === 'florist')!.vendorsCount
+    const vendor = await vendorOf(owner, 'florist', { mediaRights: true }, CITY)
+    try {
+      // До публикации счётчик стоит: анкеты в каталоге ещё нет.
+      expect((await cats(CITY)).find((c) => c.id === 'florist')!.vendorsCount).toBe(before)
+      expect((await publish(owner)).statusCode).toBe(200)
+      expect((await cats(CITY)).find((c) => c.id === 'florist')!.vendorsCount).toBe(before + 1)
+      expect((await cats(ELSEWHERE)).find((c) => c.id === 'florist')!.vendorsCount).toBe(beforeElsewhere)
+
+      // Сама анкета — в выдаче своего города и категории, и её нет в чужом.
+      // Ищем по своему уникальному имени (`q=`), а не по позиции на первой
+      // странице (F6-G5-01/F6-G6-01, ROADMAP «Ремонт»): страница каталога
+      // сортирует анкеты без отзывов по `id` (UUIDv7, растёт со временем) —
+      // новая всегда последняя среди равных по рейтингу, и лимит по
+      // умолчанию её не гарантирует, сколько бы анкет делянки ни осталось.
+      const inCatalog = async (city: string) => {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/catalog/vendors?city=${encodeURIComponent(city)}&categoryId=florist&q=${encodeURIComponent(vendor.name)}`,
+          headers: auth(owner.token),
+        })
+        expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+        return (res.json() as { items: { id: string }[] }).items.some((v) => v.id === vendor.id)
+      }
+      expect(await inCatalog(CITY), 'своя анкета — в выдаче своего города').toBe(true)
+      expect(await inCatalog(ELSEWHERE), 'своя анкета не должна быть в выдаче чужого города').toBe(false)
+    } finally {
+      // Не оставлять свою анкету следующему прогону — убираем только свою
+      // строку по её id (F6-G5r6-07): чужие анкеты, если город их успел
+      // получить, не трогаем и делянку пустой не считаем.
+      await app.db!.query('delete from vendors where id = $1', [vendor.id])
+    }
   })
 
   it('П7: «после свадьбы» — отзывы на следующий день при сделках, ключ шага держит один раз; итоги на +14', async () => {

@@ -36,6 +36,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
+import { cleanup } from '../src/jobs/index.js'
 import { safeText } from '../src/tilly/context.js'
 import type { TillyModel, TillyRequest, TillyReply } from '../src/tilly/model.js'
 import { PAYOUT_WARNING } from '../src/chats/guard.js'
@@ -344,10 +345,39 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
   /* ── F7 ───────────────────────────────────────────────────────────── */
   it('F7: сессия старше срока refresh в списке устройств не показывается', async () => {
     const u = await newUser()
-    const list = async () => (await app.inject({ method: 'GET', url: '/users/me/sessions', headers: auth(u.token) })).json() as { id: string }[]
-    expect((await list()).length).toBe(1)
-    await app.db!.query("update sessions set last_used_at = now() - interval '31 days' where user_id = $1", [u.userId])
-    expect((await list()).length, 'протухшая сессия не «живая»').toBe(0)
+    const list = async () => (await app.inject({ method: 'GET', url: '/users/me/sessions', headers: auth(u.token) })).json() as { id: string; current: boolean }[]
+    const before = await list()
+    expect(before.length).toBe(1)
+    const currentId = before[0]!.id
+
+    /* F6-h: «старится» ВТОРАЯ сессия того же человека, а не та, которой
+       спрашивают. Второй вход тем же номером — по образцу F3 (:331-332):
+       сдвиг otp_codes.created_at на 2 минуты пускает второй запрос кода
+       сразу, свой remoteAddress не путает лимит с первым входом. Вход
+       заводит новую сессию и прежнюю не гасит (routes/auth.ts:103-111). */
+    await app.db!.query("update otp_codes set created_at = created_at - interval '2 minutes' where phone = $1", [u.phone])
+    await app.inject({
+      method: 'POST',
+      url: '/auth/otp',
+      payload: { phone: u.phone },
+      remoteAddress: `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`,
+    })
+    const code2 = await readCode(u.phone)
+    const verify2 = await app.inject({ method: 'POST', url: '/auth/otp/verify', payload: { phone: u.phone, code: code2 } })
+    expect(verify2.statusCode, verify2.body.slice(0, 200)).toBe(200)
+
+    // «Старит» только вторую сессию — не ту, которой спрашивают.
+    await app.db!.query("update sessions set last_used_at = now() - interval '31 days' where user_id = $1 and id <> $2", [
+      u.userId,
+      currentId,
+    ])
+    // «Проход соседа» — тот же cleanup(), который вызывают другие файлы
+    // (audit16:206, audit26:398, stage9 и т.д.) на общей базе: свою живую
+    // сессию он не должен погасить.
+    await cleanup(app)
+    const after = await list()
+    expect(after.length, 'протухшая ЧУЖАЯ сессия не «живая», своя — на месте').toBe(1)
+    expect(after[0]!.id).toBe(currentId)
   })
 
   /* ── G2 / G4 ──────────────────────────────────────────────────────── */

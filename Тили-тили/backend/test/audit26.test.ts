@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { hashCode } from '../src/auth/otp.js'
-import { cleanup } from '../src/jobs/index.js'
+import { cleanup, purgeArchivedWeddings } from '../src/jobs/index.js'
 import { recomputeRating } from '../src/reviews/rating.js'
 
 /**
@@ -437,6 +437,78 @@ describe.skipIf(!live)('фича 003: отмена свадьбы и уборк�
     /* Рейтинг — как был: оба отзыва на месте, пересчитывать нечего. */
     const rating = await ratingOf(vendorId)
     expect(rating!.reviews_count).toBe(2)
+  })
+
+  /* ── F6-g/F6-g2: два прохода архивной уборки на одной свадьбе ─────── */
+
+  it('F6-g: два одновременных прохода архивной уборки не пишут двойной след одной свадьбе', async () => {
+    const w = await newWedding()
+    await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/cancel`, headers: auth(w.token) })
+    // Старше всех тестовых (≤ 1000 дней) — первой в партии `limit 100` у обоих проходов.
+    await app.db!.query("update weddings set archived_at = now() - interval '5000 days' where id = $1", [w.weddingId])
+
+    // Прогрев пула: оба прохода должны стартовать выборку почти одновременно,
+    // а не по очереди из-за холодного подключения одного из них.
+    await Promise.all([app.db!.query('select 1'), app.db!.query('select 1')])
+    await Promise.all([purgeArchivedWeddings(app), purgeArchivedWeddings(app)])
+
+    expect(await count('select count(*)::text as n from weddings where id = $1', [w.weddingId])).toBe(0)
+    // Чей бы проход её ни забрал — след в журнале ровно один, не два (V-1).
+    expect(
+      await count(
+        `select count(*)::text as n from audit_log where action = 'wedding.purged' and entity = 'wedding' and entity_id = $1`,
+        [w.weddingId],
+      ),
+    ).toBe(1)
+  })
+
+  it('F6-g2: свадьбу, которую уже убрал сосед, проход не считает и следа не пишет', async () => {
+    const w = await newWedding()
+    await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/cancel`, headers: auth(w.token) })
+    await app.db!.query("update weddings set archived_at = now() - interval '5000 days' where id = $1", [w.weddingId])
+
+    let blockedFound = false
+    let neighborPass!: Promise<number>
+    await app.db!.tx(async (client) => {
+      // «Сосед» держит строку свадьбы первым запросом транзакции.
+      await client.query('select 1 from weddings where id = $1 for update', [w.weddingId])
+      const { rows: pidRows } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+      const pid = pidRows[0]!.pid
+
+      // Проход под тестом — без ожидания: он должен упереться в нашу блокировку.
+      neighborPass = purgeArchivedWeddings(app)
+
+      for (let waited = 0; waited < 5000 && !blockedFound; waited += 20) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        // F6-G6r6-01: pg_stat_activity кэширует список бэкендов на первое обращение внутри
+        // транзакции — если этот тест запускают одним (без прогретого пулом F6-g перед ним),
+        // новое соединение прохода не появится в снимке вовсе. Сброс перед каждым опросом.
+        await client.query('select pg_stat_clear_snapshot()')
+        const { rows } = await client.query<{ n: number }>(
+          'select count(*)::int as n from pg_stat_activity where $1 = any(pg_blocking_pids(pid))',
+          [pid],
+        )
+        blockedFound = rows[0]!.n > 0
+      }
+      expect(blockedFound, 'проход не дошёл до свадьбы соседа').toBe(true)
+
+      // «Сосед» сам убирает свадьбу и фиксирует транзакцию (снимает блокировку).
+      await client.query('delete from weddings where id = $1', [w.weddingId])
+    })
+    // Только теперь блокировка снята — проход под тестом может продолжить.
+    // F6-g2 (ROADMAP:1386): свадьбу, которую увёл сосед, проход не «считает»
+    // — возвращённое число обязано остаться 0 (наша свадьба — единственная
+    // в партии `limit 100`, старше всех тестовых, см. комментарий выше);
+    // мутант без проверки `ok` (`purged += 1` без условия) даёт здесь 1.
+    expect(await neighborPass, 'проход не должен посчитать свадьбу, которую убрал сосед').toBe(0)
+
+    expect(await count('select count(*)::text as n from weddings where id = $1', [w.weddingId])).toBe(0)
+    expect(
+      await count(
+        `select count(*)::text as n from audit_log where action = 'wedding.purged' and entity = 'wedding' and entity_id = $1`,
+        [w.weddingId],
+      ),
+    ).toBe(0)
   })
 
   it('одна свадьба с отзывом не блокирует уборку остальных', async () => {

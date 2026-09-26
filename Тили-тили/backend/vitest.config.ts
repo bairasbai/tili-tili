@@ -1,9 +1,17 @@
-import { defineConfig } from 'vitest/config'
+import { readFileSync } from 'node:fs'
+import { defineConfig, configDefaults } from 'vitest/config'
+
+/* Серийная группа (F6, шаг 8): проходы табличных задач и правка общего
+ * справочника категорий делят состояние всей базы между файлами (FP-1) —
+ * такие файлы идут по одному и после остальных, а не параллельно. Список
+ * ведёт F6 (единственный владелец, до FINAL) в `vitest.serial.json`;
+ * устройство прогона проверяет сторож `test/audit53.test.ts`.
+ */
+const SERIAL: string[] = JSON.parse(readFileSync(new URL('./vitest.serial.json', import.meta.url), 'utf8'))
 
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['test/**/*.test.ts'],
     globals: false,
     /* Здесь почти все наборы ходят в ЖИВУЮ базу, и файлы идут параллельно:
      * тридцать восемь наборов делят один PostgreSQL. Пять секунд по
@@ -27,5 +35,29 @@ export default defineConfig({
       reporter: ['text-summary', 'json-summary', 'html'],
       reportsDirectory: 'coverage',
     },
+    /* `include` корня сюда не возвращать (R6-1): `extends: true` склеивает
+     * корневую конфигурацию с конфигурацией проекта через `mergeConfig`,
+     * а он МАССИВЫ конкатенирует, а не заменяет — корневой `include` дал бы
+     * серийной группе `['test/**\/*.test.ts', ...SERIAL]` (все файлы), а
+     * не-серийным путям — двойной проход. */
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'parallel',
+          include: ['test/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...SERIAL],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'serial',
+          include: SERIAL,
+          fileParallelism: false,
+          sequence: { groupOrder: 1 },
+        },
+      },
+    ],
   },
 })

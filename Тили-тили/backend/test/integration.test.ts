@@ -81,8 +81,9 @@ describe.skipIf(!live)('живые PostgreSQL и Redis', () => {
   })
 })
 
-describe.skipIf(live)('без живых служб', () => {
-  it('набор с базой пропущен намеренно', () => {
-    expect(live).toBe(false)
-  })
+// F6-e (ARB-6 = A): всегда идущий сторож, а не describe.skipIf(live) — иначе
+// полный прогон бэка с живыми службами показывает «1 skipped» вместо «0
+// skipped» (integration.test.ts:84, FINAL §7.1 шаг 3).
+it('набор с живыми службами включён ровно при двух переменных', () => {
+  expect(live).toBe(Boolean(DB && REDIS))
 })

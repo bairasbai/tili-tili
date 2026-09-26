@@ -1,0 +1,23 @@
+[
+  "test/audit14.test.ts",
+  "test/audit15.test.ts",
+  "test/audit16.test.ts",
+  "test/audit17.test.ts",
+  "test/audit22.test.ts",
+  "test/audit23.test.ts",
+  "test/audit24.test.ts",
+  "test/audit26.test.ts",
+  "test/audit27.test.ts",
+  "test/audit28.test.ts",
+  "test/audit33.test.ts",
+  "test/audit43.test.ts",
+  "test/audit44.test.ts",
+  "test/audit46.test.ts",
+  "test/audit50.test.ts",
+  "test/audit7b.test.ts",
+  "test/audit7c.test.ts",
+  "test/audit8.test.ts",
+  "test/jobs.test.ts",
+  "test/stage8.test.ts",
+  "test/stage9.test.ts"
+]

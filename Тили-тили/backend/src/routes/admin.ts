@@ -118,6 +118,25 @@ const SANCTION_TEXT = {
 const CATEGORIES_LOCK = 4_210_001
 
 /**
+ * Заполненность анкет (фича 012, дашборд `GET /admin/metrics`) — ОДИН текст
+ * запроса, а не копия рядом со сторожем `audit41.test.ts`: копия расходится
+ * с оригиналом при первой же правке (та же причина R-212, что у очередей
+ * выше, F6-d). Сторож сверяет свою версию определения с этой константой в
+ * одном снимке (`repeatable read`), а не по чужому «до/после» на всей базе.
+ */
+export const PROFILES_METRIC_SQL = `with filled as (
+         select (case when coalesce(v.about, '') <> '' then 1 else 0 end
+               + case when v.phone is not null then 1 else 0 end
+               + case when v.price_from is not null then 1 else 0 end
+               + case when exists (select 1 from vendor_packages p where p.vendor_id = v.id) then 1 else 0 end) as n
+           from vendors v join users u on u.id = v.user_id and u.deleted_at is null
+          where v.published_at is not null and v.blocked_at is null)
+       select count(*)::text as published,
+              count(*) filter (where n = 4)::text as complete,
+              coalesce(round(100 * avg(n / 4.0)), 0)::text as average_percent
+         from filled`
+
+/**
  * Отпечаток содержимого справочника — версия из FR-001.
  *
  * Считается по самим строкам, поэтому меняется от ЛЮБОЙ правки, в том числе
@@ -1061,17 +1080,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
      * видео не считаются: загрузок нет до хранилища (№3), и метрика штрафовала
      * бы всех за инфраструктуру. Набор анкет — тот же, что у vendorsPublished. */
     const { rows: profiles } = await snap.query<{ published: string; complete: string; average_percent: string }>(
-      `with filled as (
-         select (case when coalesce(v.about, '') <> '' then 1 else 0 end
-               + case when v.phone is not null then 1 else 0 end
-               + case when v.price_from is not null then 1 else 0 end
-               + case when exists (select 1 from vendor_packages p where p.vendor_id = v.id) then 1 else 0 end) as n
-           from vendors v join users u on u.id = v.user_id and u.deleted_at is null
-          where v.published_at is not null and v.blocked_at is null)
-       select count(*)::text as published,
-              count(*) filter (where n = 4)::text as complete,
-              coalesce(round(100 * avg(n / 4.0)), 0)::text as average_percent
-         from filled`,
+      PROFILES_METRIC_SQL,
     )
 
     /* Расход Тиля на модель за 30 дней (фича 010) — по строкам учёта, одна на
