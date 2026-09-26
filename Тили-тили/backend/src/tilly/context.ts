@@ -158,21 +158,37 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
     lines.push(`- ${safeText(s.label)}: ${STATE_RU[s.deal.state] ?? s.deal.state} — ${who}${own}${price}${s.deal.packageName ? `, пакет «${safeText(s.deal.packageName)}»` : ''}`)
   }
 
-  /* The same budget and payment model feeds UI, tips and this context. */
-  const budget = await loadBudget(db, weddingId)
-  const total = budget.total.amount
-  lines.push('', '## Бюджет по категориям (план — доля от общего; факт — сделки и ручные статьи)')
-  for (const c of budget.categories) {
-    const spent = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
-    const planned = c.planned.amount
-    const share = planned > 0 ? ` (${Math.round((spent / planned) * 100)}% плана)` : ''
-    lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}, факт ${rub(spent)}${share}${c.items.length ? `; ручные статьи: ${c.items.map((i) => `${safeText(i.title)} ${rub(i.amount.amount)}`).join(', ')}` : ''}`)
+  /* The same budget and payment model feeds UI, tips and this context.
+   * Сбой сводки (переполнение суммы, слишком длинная история) не должен оставлять
+   * пару без ответа Тиля вовсе: модель получает «суммы не прочитать» и не называет
+   * их (ревью 018, M-06; R-280 — в контекст только известные факты). */
+  let budget: Awaited<ReturnType<typeof loadBudget>> | null = null
+  try {
+    budget = await loadBudget(db, weddingId)
+  } catch {
+    lines.push('', '## Бюджет', 'Суммы бюджета сейчас не прочитать — не называй их и не считай за пару.')
   }
-  lines.push(`Итого обязательств: ${rub(budget.spent.amount)}${total ? ` из ${rub(total)}; резерв на непредвиденное — 10% (${rub(budget.reserve.amount)})` : ''}`)
-  const financial = budget.paymentSummary
-  lines.push(`По активным сделкам: обязательства ${rub(financial.committed.amount)}, отмечено оплат за вычетом возвратов ${rub(financial.recorded.amount)}, осталось ${rub(financial.remaining.amount)}.`)
-  lines.push(`Без привязки к активным этапам ${rub(financial.unallocated.amount)}; неизвестных цен: ${financial.unknownPrices}.`)
-  lines.push('Плановые этапы не являются расходами или доказательством перевода. Отмеченные оплаты — записи пользователя, не подтверждение банка. Ручные статьи бюджета не означают состоявшийся платёж.')
+  if (budget) {
+    const total = budget.total.amount
+    lines.push('', '## Бюджет по категориям (план — лимит категории: доля общего бюджета или лимит, заданный парой; факт — сделки и ручные статьи)')
+    for (const c of budget.categories) {
+      const spent = c.fromSlots + c.items.reduce((sum, i) => sum + i.amount.amount, 0)
+      const planned = c.planned.amount
+      const share = planned > 0 ? ` (${Math.round((spent / planned) * 100)}% плана)` : ''
+      const custom = c.limitCustom ? ', лимит задан парой' : ''
+      lines.push(`- ${c.title}: план ${total ? rub(planned) : '—'}${custom}, факт ${rub(spent)}${share}${c.items.length ? `; ручные статьи: ${c.items.map((i) => `${safeText(i.title)} ${rub(i.amount.amount)}`).join(', ')}` : ''}`)
+    }
+    /* Доля резерва — из настроек пары (018-B), а не «10%» словами: при резерве 25%
+     * модель называла бы паре неверную долю (ревью 018-B, BB-08). */
+    const reservePct = (budget.reserveBps / 100).toLocaleString('ru-RU')
+    lines.push(`Итого обязательств (сделки и ручные статьи): ${rub(budget.spent.amount)}${total ? ` из ${rub(total)}; резерв на непредвиденное — ${reservePct}% (${rub(budget.reserve.amount)})` : ''}`)
+    const financial = budget.paymentSummary
+    /* «Обязательства» выше — сделки плюс ручные статьи; здесь — только цены активных
+     * сделок, часть итога выше. Одно слово на два числа модель складывала (M-08). */
+    lines.push(`Из них цены активных сделок: ${rub(financial.committed.amount)} — это часть итога выше, не прибавляй. Отмечено оплат за вычетом возвратов ${rub(financial.recorded.amount)}, осталось заплатить по сделкам ${rub(financial.remaining.amount)}.`)
+    lines.push(`Без привязки к активным этапам ${rub(financial.unallocated.amount)}; сделок без цены: ${financial.unknownPrices}.`)
+    lines.push('Плановые этапы не являются расходами или доказательством перевода. Отмеченные оплаты — записи пользователя, не подтверждение банка. Ручные статьи бюджета не означают состоявшийся платёж.')
+  }
 
   /* Задачи — невыполненные со сроком; просроченные отмечены. */
   const { rows: tasks } = await db.query<{ title: string; due: string | null; done_at: Date | null; kind: string | null }>(

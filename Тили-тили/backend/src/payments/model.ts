@@ -1,6 +1,7 @@
 import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, forbidden, notFound, unauthorized } from '../errors.js'
 import { isUuid, uuidv7 } from '../ids.js'
+import { assertRealDate } from '../wedding/dates.js'
 import { PAID_SUM } from '../deals/repo.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
 
@@ -38,19 +39,102 @@ export function assertPayable(deal: FinancialDeal) {
 export interface InstallmentRow {
   id: string; deal_id: string; title: string; amount: string; due: string; version: number
   cancelled_at: Date | null; cancel_reason: string | null; paid: string
+  /** Цена и все оплаты сделки — для распределения неразнесённых денег по этапам. */
+  deal_price: string | null; deal_paid: string
 }
+/** Выборка этапа. Требует `deals d` в запросе: цена и оплаты сделки берутся оттуда. */
 export const INSTALLMENT_SELECT = `i.id,i.deal_id,i.title,i.amount::text as amount,i.due::text as due,
   i.version,i.cancelled_at,i.cancel_reason,
   (select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
-     from payments p where p.installment_id=i.id and p.status <> 'cancelled')::text as paid`
-export function toInstallment(row: InstallmentRow,today: string) {
-  const paid=BigInt(row.paid), amount=BigInt(row.amount)
-  return { id:row.id,dealId:row.deal_id,title:row.title,amount:asMoney(amount),due:row.due,
-    version:row.version,paid:asMoney(paid),remaining:asMoney(row.cancelled_at ? 0n : positive(amount-paid)),
-    status:row.cancelled_at ? 'cancelled' as const : paid >= amount ? 'paid' as const : paid > 0n ? 'partial' as const : 'pending' as const,
-    overdue:!row.cancelled_at && paid<amount && row.due<today,
-    cancelledAt:row.cancelled_at?.toISOString() ?? null,cancelReason:row.cancel_reason }
+     from payments p where p.installment_id=i.id and p.status <> 'cancelled')::text as paid,
+  d.price::text as deal_price,${PAID_SUM}::text as deal_paid`
+/** Порядок этапов: по сроку, затем по созданию. Им же неразнесённые деньги ложатся на этапы. */
+export const INSTALLMENT_ORDER = 'i.due,i.created_at,i.id'
+
+export type InstallmentStatus = 'pending' | 'partial' | 'paid' | 'covered' | 'cancelled'
+export interface InstallmentView {
+  id: string; dealId: string; title: string; amount: { amount: number; currency: 'RUB' }; due: string
+  version: number; paid: { amount: number; currency: 'RUB' }; allocated: { amount: number; currency: 'RUB' }
+  remaining: { amount: number; currency: 'RUB' }; status: InstallmentStatus; overdue: boolean
+  cancelledAt: string | null; cancelReason: string | null
 }
+
+/**
+ * Этапы с учётом всех денег сделки (ревью 018, M-01).
+ *
+ * `paid` — отметки, привязанные к этапу. Но старая кнопка «Оплатить» пишет весь
+ * остаток одной отметкой без этапа, а одну отметку нельзя разнести на несколько
+ * этапов: раньше такой график застревал — этапы «Просрочено», привязка и оплата
+ * этапа отвечали 409, хотя деньги отмечены. Поэтому неразнесённые деньги сделки
+ * (без этапа или на отменённом этапе) для показа ложатся на её этапы по сроку
+ * (`allocated`), а остаток каждого этапа не превышает остатка сделки. Ничего не
+ * записывается: привязки меняет только пара. Сумма `remaining` по этапам сделки
+ * никогда не больше её остатка, и просрочен только этап, за который правда
+ * ещё не заплачено.
+ *
+ * Строки одной сделки должны идти в порядке `INSTALLMENT_ORDER`.
+ */
+export function stageViews(rows: InstallmentRow[], today: string): InstallmentView[] {
+  const byDeal = new Map<string, InstallmentRow[]>()
+  for (const row of rows) {
+    const list = byDeal.get(row.deal_id)
+    if (list) list.push(row); else byDeal.set(row.deal_id, [row])
+  }
+  const views = new Map<string, InstallmentView>()
+  for (const list of byDeal.values()) {
+    const dealPaid = BigInt(list[0]!.deal_paid)
+    const price = list[0]!.deal_price === null ? null : BigInt(list[0]!.deal_price)
+    const linkedActive = list.filter(r => !r.cancelled_at).reduce((sum, r) => sum + BigInt(r.paid), 0n)
+    let pool = positive(dealPaid - linkedActive)
+    let left = price === null ? null : positive(price - dealPaid)
+    for (const row of list) {
+      const amount = BigInt(row.amount), paid = BigInt(row.paid)
+      const base = {
+        id: row.id, dealId: row.deal_id, title: row.title, amount: asMoney(amount), due: row.due,
+        version: row.version, paid: asMoney(paid),
+        cancelledAt: row.cancelled_at?.toISOString() ?? null, cancelReason: row.cancel_reason,
+      }
+      if (row.cancelled_at) {
+        views.set(row.id, { ...base, allocated: asMoney(0n), remaining: asMoney(0n), status: 'cancelled', overdue: false })
+        continue
+      }
+      const own = positive(amount - paid)
+      const cover = own < pool ? own : pool
+      pool -= cover
+      let remaining = own - cover
+      if (left !== null) {
+        if (remaining > left) remaining = left
+        left -= remaining
+      }
+      const status: InstallmentStatus = paid >= amount ? 'paid'
+        : remaining === 0n ? 'covered'
+        : paid > 0n || cover > 0n ? 'partial' : 'pending'
+      views.set(row.id, { ...base, allocated: asMoney(cover), remaining: asMoney(remaining), status,
+        overdue: remaining > 0n && row.due < today })
+    }
+  }
+  return rows.map(row => views.get(row.id)!)
+}
+
+/** Все этапы одной сделки в порядке распределения — для ответа о единственном этапе. */
+export async function dealStageRows(tx: Queryable, weddingId: string, dealId: string) {
+  const { rows } = await tx.query<InstallmentRow>(`select ${INSTALLMENT_SELECT} from payment_installments i
+    join deals d on d.id=i.deal_id where i.deal_id=$1 and d.wedding_id=$2 order by ${INSTALLMENT_ORDER}`, [dealId, weddingId])
+  return rows
+}
+
+/**
+ * Журнал финансовых действий — без свободного текста (ревью 018, M-03/P-03).
+ * `audit_log` только дописывается и переживает стирание аккаунта (152-ФЗ): название
+ * этапа или причина отмены, написанные парой, остались бы в нём навсегда. Пишем
+ * id, версии, суммы, даты и имена изменённых полей.
+ */
+export async function financeAudit(tx: Queryable, uid: string, entity: 'payment' | 'payment_installment',
+  id: string, action: string, diff: Record<string, unknown>) {
+  await tx.query('insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,$2,$3,$4,$5)',
+    [uid, action, entity, id, JSON.stringify(diff)])
+}
+
 export async function installment(tx: Queryable,weddingId: string,id: string) {
   if (!isUuid(id)) throw notFound('Этап платежа не найден')
   const {rows}=await tx.query<InstallmentRow>(`select ${INSTALLMENT_SELECT} from payment_installments i
@@ -58,8 +142,14 @@ export async function installment(tx: Queryable,weddingId: string,id: string) {
   if (!rows[0]) throw notFound('Этап платежа не найден')
   return rows[0]
 }
+export const stalePlan = () => conflict('stale_payment_plan','График изменился. Обновите данные и проверьте черновик перед сохранением')
 export function assertVersion(actual: number,expected: number) {
-  if (actual!==expected) throw conflict('stale_payment_plan','График изменился. Обновите данные и проверьте черновик перед сохранением')
+  if (actual!==expected) throw stalePlan()
+}
+/** Срок этапа: календарная дата в разумных пределах — как CHECK в миграции (ревью 018, M-11). */
+export function assertDue(value: string) {
+  assertRealDate(value,'due')
+  if (value<'2000-01-01' || value>'2100-12-31') throw new AppError(422,'bad_date','Срок платежа — между 2000 и 2100 годом',{due:'ожидается дата между 2000-01-01 и 2100-12-31'})
 }
 
 /** Single money-writing door for the existing slot button and the new schedule. */
@@ -80,6 +170,10 @@ export async function recordPayment(tx: Queryable,deal: FinancialDeal,userId: st
   const id=uuidv7()
   await tx.query(`insert into payments(id,deal_id,kind,amount,currency,status,installment_id)
     values($1,$2,$3,$4,'RUB','recorded',$5)`,[id,deal.id,already+amount>=price?'balance':'deposit',amount.toString(),stage?.id ?? null])
+  /* Журнал — здесь, в единой двери: раньше его писал только новый экран, и та же
+   * запись денег через старую кнопку слота в журнал не попадала (ревью 018, M-05). */
+  await financeAudit(tx,userId,'payment',id,'payment.recorded',
+    {dealId:deal.id,installmentId:stage?.id ?? null,amount:Number(amount)})
   if (deal.state==='booked') {
     await tx.query("update deals set state='paid_deposit' where id=$1",[deal.id])
     await tx.query(`insert into deal_events(id,deal_id,from_state,to_state,actor_id)

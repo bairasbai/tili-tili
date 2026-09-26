@@ -253,7 +253,9 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const budget=(await app.inject({method:'GET',url:`/weddings/${w.id}/budget`,headers:headers(w)})).json()
     expect(budget.paymentSummary).toEqual((await read(w)).json().summary)
     const context=await weddingContext(app.db!,w.id)
-    expect(context.text).toContain('отмечено оплат за вычетом возвратов 1 000 ₽')
+    expect(context.text).toContain('Отмечено оплат за вычетом возвратов 1 000 ₽')
+    // Цены сделок — часть итога обязательств, а не второе «обязательства» рядом (ревью 018, M-08).
+    expect(context.text).toContain('это часть итога выше, не прибавляй')
   })
 
   it('берёт замок свадьбы раньше пользователя: перенос и удаление аккаунта не образуют новый deadlock',async()=>{

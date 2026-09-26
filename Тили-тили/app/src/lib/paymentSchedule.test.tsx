@@ -6,7 +6,7 @@ import type { PaymentScheduleData } from './api/paymentSchedule'
 import { setI18nLang } from './i18n'
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
-const stage = { id: 'i1', dealId: 'd1', title: 'Аванс', amount: money(400000), paid: money(0), remaining: money(400000), due: '2027-05-01', version: 3, status: 'pending' as const, overdue: false, cancelReason: null }
+const stage = { id: 'i1', dealId: 'd1', title: 'Аванс', amount: money(400000), paid: money(0), allocated: money(0), remaining: money(400000), due: '2027-05-01', version: 3, status: 'pending' as const, overdue: false, cancelReason: null, cancelledAt: null }
 let state: PaymentScheduleData
 let status = 200, failSave = false, stale = false
 let writes: { path: string; body: Record<string, unknown>; key: string | null }[]
@@ -48,7 +48,7 @@ beforeEach(() => {
   setI18nLang('ru'); localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
   state = { range: { from: '2027-01-01', to: '2027-12-31', today: '2027-01-01', timeZone: 'Asia/Yekaterinburg', includeOverdue: true, includeCancelled: false }, readOnly: false,
     summary: { committed: money(1000000), recorded: money(100000), remaining: money(900000), unallocated: money(100000), inactiveDealRecorded: money(0), unknownPrices: 0 },
-    dueInWindow: money(400000), items: [{ ...stage }],
+    dueInWindow: money(400000), overdueRemaining: money(0), items: [{ ...stage }],
     deals: [{ id: 'd1', slotId: 's1', name: 'Фотограф', state: 'booked', price: money(1000000), recorded: money(100000), remaining: money(900000), planned: money(400000), unallocated: money(100000), needsReview: false, active: true, canPlan: true }],
     allInstallments: [{ id: 'i1', dealId: 'd1', title: 'Аванс', status: 'pending', remaining: money(400000) }],
     payments: [{ id: 'p1', dealId: 'd1', kind: 'deposit', amount: money(100000), status: 'recorded', createdAt: '2027-01-01T12:00:00.000Z', installmentId: null, version: 2 }] }

@@ -1,11 +1,18 @@
-/** 018-A: planning never inserts money; old payments remain unassigned. */
+/**
+ * 018-A: график платежей. План не вносит денег; прежние оплаты остаются без этапа.
+ *
+ * Номер 1761310000000, а не 1761300000000: тот занят миграцией квиза из PR №2
+ * (`1761300000000_quiz_answers_matter`) — два файла с одним префиксом упорядочиваются
+ * по суффиксу, и выкладка зависела бы от порядка слияния (ревью 018, C-08).
+ */
 exports.up = pgm => pgm.sql(`
   create table payment_installments (
     id uuid primary key,
     deal_id uuid not null references deals(id) on delete cascade,
     title text not null check (length(btrim(title)) between 1 and 200),
     amount bigint not null check (amount > 0 and amount <= 9007199254740991),
-    due date not null,
+    currency char(3) not null default 'RUB' constraint payment_installments_currency_rub check (currency = 'RUB'),
+    due date not null check (due between '2000-01-01' and '2100-12-31'),
     version integer not null default 1 check (version > 0),
     cancelled_at timestamptz,
     cancel_reason text check (cancel_reason is null or length(cancel_reason) <= 500),
@@ -61,7 +68,16 @@ exports.up = pgm => pgm.sql(`
   create trigger deals_payment_schedule after update of state,price on deals
     for each row execute function payment_schedule_deal_change();
 `);
+/* Откат стирает этапы и привязки оплат к ним (сами оплаты остаются). На базе с
+ * данными — только осознанно: `SET tili.allow_data_loss = 'yes'` в сессии миграции
+ * (например, `PGOPTIONS='-c tili.allow_data_loss=yes'`). Ревью 018, C-09/M-12. */
 exports.down = pgm => pgm.sql(`
+  do $guard$ begin
+    if exists (select 1 from payment_installments)
+       and coalesce(current_setting('tili.allow_data_loss', true), '') <> 'yes' then
+      raise exception 'Откат 018-A сотрёт этапы графика платежей: задайте tili.allow_data_loss=yes, если это осознанно';
+    end if;
+  end $guard$;
   drop trigger if exists deals_payment_schedule on deals;
   drop function if exists payment_schedule_deal_change();
   drop trigger if exists payments_installment_version on payments;

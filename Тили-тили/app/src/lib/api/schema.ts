@@ -9856,7 +9856,7 @@ export interface paths {
         /**
          * График платежей, актуальные итоги и отметки оплат
          * @description Только couple. Один согласованный снимок. from/to включительно (до 366 дней, по умолчанию сегодня +30); includeOverdue добавляет непогашенные просроченные этапы вне окна, includeCancelled — отменённые в окне. Максимум 10000 записей: при превышении 409 financial_history_too_large, а не тихое обрезание. Даты графика фиксированы и не сдвигаются при переносе свадьбы. Отметка пользователя не подтверждает перевод банком.
-         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         *     Коды: 422 bad_payment_range (начало позже конца или период длиннее 366 дней), bad_date (не календарная дата); 409 financial_history_too_large, money_out_of_range (итог вне точного диапазона). Отменённая свадьба сразу уходит в архив, и её финансовые пути отвечают 404; `readOnly` — на случай отмены без архива.
          */
         get: {
             parameters: {
@@ -9902,7 +9902,7 @@ export interface paths {
         /**
          * Создать этап платежа
          * @description Только couple. Этап не создаёт payment и не увеличивает смету. До 500 этапов на сделку; сумма активных этапов не выше цены. 409 stale_payment_plan / plan_over_price / payment_plan_limit. Обязателен Idempotency-Key.
-         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         *     Коды: 422 validation_failed (пустое название), bad_date (срок не календарный или вне 2000–2100); 409 not_booked, no_price (сделка не забронирована или без цены), payment_plan_limit (500 активных этапов), plan_over_price (сумма активных этапов больше цены), wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
          */
         post: {
             parameters: {
@@ -9968,7 +9968,7 @@ export interface paths {
         /**
          * Изменить или отменить плановый этап
          * @description Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой свадьбой запрещены.
-         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         *     Коды: 422 validation_failed, bad_date; 409 stale_payment_plan (устаревшая версия), installment_cancelled, not_booked, no_price, plan_below_paid (сумма меньше оплаченного), plan_over_price, wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
          */
         patch: {
             parameters: {
@@ -10027,7 +10027,7 @@ export interface paths {
         /**
          * Отметить полную или частичную оплату этапа
          * @description Только couple. Та же таблица payments и предел общей цены, что у slots/pay. Idempotency-Key защищает повтор, version защищает устаревший экран. 409 stale_payment_plan, installment_overpay или overpay. Это ручная отметка, не банковская операция.
-         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         *     Коды: 422 bad_amount; 409 stale_payment_plan, installment_cancelled, not_booked, no_price, overpay (больше остатка сделки), installment_overpay (больше остатка этапа), money_out_of_range, wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
          */
         post: {
             parameters: {
@@ -10094,7 +10094,7 @@ export interface paths {
         /**
          * Привязать существующую оплату к этапу без новой записи
          * @description Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой свадьбой запрещены.
-         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         *     Коды: 422 validation_failed (этап другой сделки); 409 stale_payment_plan, payment_cancelled (отметка отменена), installment_cancelled, installment_overpay (отметка целиком не помещается в этап), payment_refund_link (сначала перенесите возвраты), wedding_cancelled; 400 idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
          */
         patch: {
             parameters: {
@@ -10151,7 +10151,7 @@ export interface paths {
         /**
          * Выгрузить историю планов и оплат в CSV
          * @description Только couple. JSON содержит имя файла и UTF-8 CSV с BOM и разделителем ;. Тип записи plan/payment различает обязательство и отметку; суммы в копейках. Возвраты со знаком минус; отменённые записи сохраняют статус. Формулы в текстовых ячейках экранируются. До 10000 записей, затем 409 без частичной выгрузки.
-         *     Коды финансового раздела: 409 wedding_cancelled (отменённая свадьба), 422 bad_payment_range (период); 409 money_out_of_range (итог вне точного диапазона), plan_below_paid (сумма меньше оплаченного), installment_cancelled (этап отменён), payment_cancelled (отметка отменена), payment_refund_link (сначала перераспределите возвраты), stale_payment_plan (устаревшая версия).
+         *     Коды: 409 financial_history_too_large, money_out_of_range.
          */
         get: {
             parameters: {
@@ -10217,7 +10217,7 @@ export interface components {
         };
         PaymentInstallment: {
             /** Format: date-time */
-            cancelledAt?: string | null;
+            cancelledAt: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -10225,12 +10225,27 @@ export interface components {
             title: string;
             amount: components["schemas"]["Money"];
             paid: components["schemas"]["FinancialBalance"];
+            /**
+             * @description Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на
+             *     отменённом этапе), распределённых по этапам в порядке срока. Только для показа —
+             *     привязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной
+             *     отметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной
+             *     сделке (ревью 018, M-01).
+             */
+            allocated: components["schemas"]["Money"];
+            /** @description Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки. */
             remaining: components["schemas"]["Money"];
             /** Format: date */
             due: string;
             version: number;
-            /** @enum {string} */
-            status: "pending" | "partial" | "paid" | "cancelled";
+            /**
+             * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
+             *     сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
+             *     ничего; cancelled — этап отменён.
+             * @enum {string}
+             */
+            status: "pending" | "partial" | "paid" | "covered" | "cancelled";
+            /** @description Срок прошёл, а `remaining` больше нуля. */
             overdue: boolean;
             cancelReason: string | null;
         };
@@ -10281,10 +10296,13 @@ export interface components {
             };
             readOnly: boolean;
             summary: components["schemas"]["PaymentSummary"];
+            /** @description Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`. */
             dueInWindow: components["schemas"]["Money"];
             items: components["schemas"]["PaymentInstallment"][];
             deals: components["schemas"]["PaymentDeal"][];
             payments: components["schemas"]["PaymentRecord"][];
+            /** @description Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09). */
+            overdueRemaining: components["schemas"]["Money"];
             allInstallments: {
                 /** Format: uuid */
                 id: string;

@@ -3,7 +3,7 @@ import { AppError, conflict, notFound } from '../errors.js'
 import { COMMITTED_WITH_HOLD } from '../deals/state.js'
 import { PAID_SUM } from '../deals/repo.js'
 import { assertRealDate } from '../wedding/dates.js'
-import { asMoney, INSTALLMENT_SELECT, positive, toInstallment, type InstallmentRow } from './model.js'
+import { asMoney, INSTALLMENT_ORDER, INSTALLMENT_SELECT, positive, stageViews, type InstallmentRow } from './model.js'
 
 export interface ScheduleQuery { from?: string; to?: string; includeOverdue?: boolean; includeCancelled?: boolean }
 export async function financialToday(db: Queryable,weddingId: string) {
@@ -49,15 +49,16 @@ export async function loadPaymentSchedule(db: Queryable,weddingId:string,query:S
   const end=new Date(from+'T12:00:00Z');end.setUTCDate(end.getUTCDate()+30)
   const to=query.to??end.toISOString().slice(0,10)
   assertRealDate(to,'to')
-  if (from>to || Date.parse(to+'T00:00:00Z')-Date.parse(from+'T00:00:00Z')>366*86400000) {
+  // «До 366 дней» — календарных, включая оба конца: разница дат не больше 365 суток (ревью 018, C-18).
+  if (from>to || Date.parse(to+'T00:00:00Z')-Date.parse(from+'T00:00:00Z')>365*86400000) {
     throw new AppError(422,'bad_payment_range','Выберите период до 366 дней: начало не позже конца')
   }
   const includeOverdue=query.includeOverdue??true,includeCancelled=query.includeCancelled??false
   const overview=await paymentOverview(db,weddingId)
   const {rows}=await db.query<InstallmentRow>(`select ${INSTALLMENT_SELECT} from payment_installments i
-    join deals d on d.id=i.deal_id where d.wedding_id=$1 order by i.due,i.created_at,i.id limit 10001`,[weddingId])
+    join deals d on d.id=i.deal_id where d.wedding_id=$1 order by ${INSTALLMENT_ORDER} limit 10001`,[weddingId])
   if (rows.length>10000) throw conflict('financial_history_too_large','График слишком велик для одного ответа')
-  const all=rows.map(row=>toInstallment(row,today))
+  const all=stageViews(rows,today)
   const items=all.filter(i=>(includeCancelled || i.status!=='cancelled') &&
     ((i.due>=from && i.due<=to) || (includeOverdue && i.overdue)))
   const {rows:payments}=await db.query<{id:string;deal_id:string;kind:string;amount:string;status:string;created_at:Date;installment_id:string|null;plan_version:number}>(
@@ -65,7 +66,10 @@ export async function loadPaymentSchedule(db: Queryable,weddingId:string,query:S
       from payments p join deals d on d.id=p.deal_id where d.wedding_id=$1 order by p.created_at desc,p.id desc limit 10001`,[weddingId])
   if (payments.length>10000) throw conflict('financial_history_too_large','История оплат слишком велика для одного ответа')
   return {range:{from,to,today,timeZone:tz,includeOverdue,includeCancelled},readOnly:cancelled,items,...overview,
-    dueInWindow:asMoney(items.reduce((sum,i)=>sum+BigInt(i.remaining.amount),0n)),
+    /* «К оплате в окне» — только этапы со сроком в окне; просрочка вне окна — отдельной
+       суммой, иначе окно «май» несло бы долг с марта под подписью «по датам» (ревью 018, M-09). */
+    dueInWindow:asMoney(items.filter(i=>i.due>=from && i.due<=to).reduce((sum,i)=>sum+BigInt(i.remaining.amount),0n)),
+    overdueRemaining:asMoney(all.filter(i=>i.overdue).reduce((sum,i)=>sum+BigInt(i.remaining.amount),0n)),
     allInstallments:all.map(i=>({id:i.id,dealId:i.dealId,title:i.title,status:i.status,remaining:i.remaining})),
     payments:payments.map(p=>({id:p.id,dealId:p.deal_id,kind:p.kind,amount:asMoney(p.amount),status:p.status,
       createdAt:p.created_at.toISOString(),installmentId:p.installment_id,version:p.plan_version}))}
@@ -84,9 +88,11 @@ export async function financialExport(db:Queryable,weddingId:string) {
         case when i.cancelled_at is null then 'planned' else 'cancelled' end as status,i.id as installment_id
         from payment_installments i join deals d on d.id=i.deal_id where d.wedding_id=$1
       union all
-      select 'payment',p.id,p.deal_id,coalesce(v.name,d.external_name,s.label),p.created_at::text,
+      -- Дата отметки — в поясе свадьбы и одним форматом: created_at::text брал пояс сессии базы (ревью 018, C-15).
+      select 'payment',p.id,p.deal_id,coalesce(v.name,d.external_name,s.label),
+        to_char(p.created_at at time zone coalesce(w.tz,'Europe/Moscow'),'YYYY-MM-DD HH24:MI'),
         (case when p.kind='refund' then -p.amount else p.amount end)::text,p.status,p.installment_id
-        from payments p join deals d on d.id=p.deal_id join slots s on s.id=d.slot_id
+        from payments p join deals d on d.id=p.deal_id join slots s on s.id=d.slot_id join weddings w on w.id=d.wedding_id
         left join vendors v on v.id=d.vendor_id where d.wedding_id=$1
     ) history order by date,id limit 10001`,[weddingId])
   if(rows.length>10000) throw conflict('financial_history_too_large','История слишком велика для одной выгрузки')

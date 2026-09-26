@@ -5,8 +5,7 @@ import type { FastifyInstance } from 'fastify'
 import { AppError,conflict,notFound,validationFailed } from '../errors.js'
 import { uuidv7,isUuid } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { assertRealDate } from '../wedding/dates.js'
-import { assertPayable,assertVersion,asMoney,installment,lockDeal,lockFinanceAccess,recordPayment,toInstallment } from '../payments/model.js'
+import { assertDue,assertPayable,assertVersion,asMoney,dealStageRows,financeAudit,installment,lockDeal,lockFinanceAccess,recordPayment,stalePlan,stageViews } from '../payments/model.js'
 import { financialExport,financialToday,loadPaymentSchedule,type ScheduleQuery } from '../payments/read.js'
 import type { Queryable } from '../plugins/db.js'
 
@@ -17,7 +16,12 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
   // Authorize even malformed requests before schema validation, including guest-token queries.
   app.addHook('preValidation', weddingAccessHook(app))
   const db=()=>{if(!app.db)throw new AppError(503,'db_unavailable','База недоступна');return app.db}
-  const output=async(tx:Queryable,weddingId:string,id:string)=>toInstallment(await installment(tx,weddingId,id),(await financialToday(tx,weddingId)).today)
+  /* Этап в ответе считается так же, как в графике: вместе с остальными этапами сделки,
+     на которые ложатся её неразнесённые деньги (ревью 018, M-01). */
+  const output=async(tx:Queryable,weddingId:string,id:string)=>{
+    const found=await installment(tx,weddingId,id),{today}=await financialToday(tx,weddingId)
+    return stageViews(await dealStageRows(tx,weddingId,found.deal_id),today).find(v=>v.id===id)!
+  }
   // A single consistent snapshot for the calendar, totals and existing payment history.
   app.get('/weddings/:weddingId/payment-schedule',{schema:{querystring:{type:'object',additionalProperties:false,properties:{
     from:DATE,to:DATE,includeOverdue:{type:'boolean',default:true},includeCancelled:{type:'boolean',default:false}}}}},async request=>db().tx(async tx=>{
@@ -29,25 +33,26 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
   app.post('/weddings/:weddingId/payment-schedule', { schema: { body: ref('PaymentInstallmentCreate') } }, async(request,reply)=>{
     const wid=request.member!.weddingId,uid=request.caller!.userId
     const body=request.body as Schemas['PaymentInstallmentCreate']
-    assertRealDate(body.due,'due')
+    assertDue(body.due)
     if(!body.title.trim())throw validationFailed({title:'Введите название этапа'})
     return withIdempotency(db(),request,reply,'payment-schedule.create',tx=>tx(async client=>{
       await lockFinanceAccess(client,wid,uid)
       const deal=await lockDeal(client,wid,body.dealId);assertPayable(deal)
+      // В пределе 500 — только активные этапы: отменённые запирали сделку навсегда (ревью 018, M-11).
       const {rows}=await client.query<{amount:string;n:number}>(`select coalesce(sum(amount) filter(where cancelled_at is null),0)::text as amount,
-        count(*)::int as n from payment_installments where deal_id=$1`,[deal.id])
+        (count(*) filter(where cancelled_at is null))::int as n from payment_installments where deal_id=$1`,[deal.id])
       if(rows[0]!.n>=500)throw conflict('payment_plan_limit','В одной сделке допускается до 500 этапов')
       if(BigInt(rows[0]!.amount)+BigInt(body.amount.amount)>BigInt(deal.price!))throw conflict('plan_over_price','Сумма активных этапов превысила цену сделки')
       const id=uuidv7()
       await client.query('insert into payment_installments(id,deal_id,title,amount,due) values($1,$2,$3,$4,$5)',[id,deal.id,body.title.trim(),body.amount.amount,body.due])
-      await audit(client,uid,id,'payment_plan.created',{dealId:deal.id,amount:body.amount.amount,due:body.due})
+      await financeAudit(client,uid,'payment_installment',id,'payment_plan.created',{dealId:deal.id,amount:body.amount.amount,due:body.due})
       return {status:201,body:await output(client,wid,id)}
     }))
   })
   app.patch('/weddings/:weddingId/payment-schedule/:installmentId', { schema: { body: ref('PaymentInstallmentPatch') } }, async(request,reply)=>{
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {installmentId:string}).installmentId
     const body=request.body as Schemas['PaymentInstallmentPatch']
-    if(body.due!==undefined)assertRealDate(body.due,'due')
+    if(body.due!==undefined)assertDue(body.due)
     if(body.title!==undefined&&!body.title.trim())throw validationFailed({title:'Введите название этапа'})
     if(body.cancelled && (body.title!==undefined || body.amount!==undefined || body.due!==undefined)) throw validationFailed({cancelled:'Отмена выполняется отдельно от изменения суммы, названия и срока'})
     if(body.reason!==undefined&&!body.cancelled)throw validationFailed({reason:'Причина указывается при отмене'})
@@ -67,10 +72,15 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
         // An already inconsistent schedule may be reduced step-by-step, never silently repriced.
         if(after>BigInt(deal.price!)&&after>=before)throw conflict('plan_over_price','Сумма активных этапов превысила цену сделки')
       }
-      await client.query(`update payment_installments set title=coalesce($2,title),amount=coalesce($3,amount),due=coalesce($4::date,due),
+      const updated=await client.query(`update payment_installments set title=coalesce($2,title),amount=coalesce($3,amount),due=coalesce($4::date,due),
         cancelled_at=case when $5 then now() else cancelled_at end,cancel_reason=case when $5 then $6 else cancel_reason end,
-        version=version+1,updated_at=now() where id=$1`,[id,body.title?.trim()??null,body.amount?.amount??null,body.due??null,!!body.cancelled,body.reason??null])
-      await audit(client,uid,id,body.cancelled?'payment_plan.cancelled':'payment_plan.updated',{previousVersion:current.version,...body})
+        version=version+1,updated_at=now() where id=$1 and version=$7`,[id,body.title?.trim()??null,body.amount?.amount??null,body.due??null,!!body.cancelled,body.reason?.trim()||null,current.version])
+      // Версия сверяется и в самом UPDATE, а не только чтением выше (ревью 018, M-02).
+      if(updated.rowCount!==1)throw stalePlan()
+      await financeAudit(client,uid,'payment_installment',id,body.cancelled?'payment_plan.cancelled':'payment_plan.updated',{
+        previousVersion:current.version,
+        changed:(['title','amount','due','reason'] as const).filter(k=>body[k]!==undefined),
+        ...(body.amount!==undefined?{amount:body.amount.amount}:{}),...(body.due!==undefined?{due:body.due}:{})})
       return {status:200,body:await output(client,wid,id)}
     }))
   })
@@ -81,8 +91,7 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       await lockFinanceAccess(client,wid,uid)
       const found=await installment(client,wid,id),deal=await lockDeal(client,wid,found.deal_id)
       const current=await installment(client,wid,id);assertVersion(current.version,body.version)
-      const paymentId=await recordPayment(client,deal,uid,body.amount.amount,current)
-      await audit(client,uid,paymentId,'payment.recorded',{installmentId:id,amount:body.amount.amount})
+      await recordPayment(client,deal,uid,body.amount.amount,current)
       return {status:200,body:await output(client,wid,id)}
     }))
   })
@@ -110,10 +119,13 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       }
       if(p.installment_id && p.installment_id!==body.installmentId){
         const old=await installment(client,wid,p.installment_id)
-        if(BigInt(old.paid)-signed<0n)throw conflict('payment_refund_link','Сначала перенесите связанные возвраты, чтобы не получить отрицательный итог этапа')
+        const rest=BigInt(old.paid)-signed
+        if(rest<0n)throw conflict('payment_refund_link','Сначала перенесите связанные возвраты, чтобы не получить отрицательный итог этапа')
+        // Снятие возврата поднимает итог этапа — он не должен выйти за сумму этапа (ревью 018, M-04).
+        if(rest>BigInt(old.amount))throw conflict('installment_overpay','Без этого возврата оплаты этапа превысят его сумму')
       }
       await client.query('update payments set installment_id=$2 where id=$1',[id,body.installmentId])
-      await audit(client,uid,id,'payment.plan_linked',{from:p.installment_id,to:body.installmentId})
+      await financeAudit(client,uid,'payment',id,'payment.plan_linked',{from:p.installment_id,to:body.installmentId})
       return {status:200,body:{id,dealId:deal.id,installmentId:body.installmentId,
         version:p.plan_version+(p.installment_id===body.installmentId?0:1),kind:p.kind,amount:asMoney(p.amount),status:p.status,createdAt:p.created_at.toISOString()}}
     }))
