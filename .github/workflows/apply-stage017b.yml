@@ -82,6 +82,8 @@ jobs:
               assert actual==f['after'],f"Applied differs: {f['path']}"
           manifest=pathlib.Path(os.environ['RUNNER_TEMP'])/'stage017b-manifest.json'
           manifest.write_text(json.dumps(payload['files'],ensure_ascii=False))
+          out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
+          (out/'source-manifest.json').write_text(json.dumps(payload['files'],ensure_ascii=False,indent=2))
           print('Verified 33 original and resulting Git blob hashes')
           PY
       - name: Install frozen dependencies and regenerate contracts
@@ -107,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           node node_modules/typescript/bin/tsc -b
-          node node_modules/vitest/vitest.mjs run
+          node node_modules/vitest/vitest.mjs run --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/frontend-tests.json"
           node node_modules/eslint/bin/eslint.js .
           node node_modules/vite/bin/vite.js build
       - name: Check full backend with disposable PostgreSQL and Redis
@@ -116,9 +118,33 @@ jobs:
           set -euo pipefail
           node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
           DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
-          node node_modules/vitest/vitest.mjs run
+          node node_modules/vitest/vitest.mjs run --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/backend-tests.json"
           node node_modules/eslint/bin/eslint.js .
           node node_modules/typescript/bin/tsc -p tsconfig.json
+      - name: Preserve exact test outcomes without fixtures or credentials
+        if: always()
+        run: |
+          python - <<'PY'
+          import json,os,pathlib,re,subprocess
+          out=pathlib.Path(os.environ['E2E_RESULT_DIR']);out.mkdir(parents=True,exist_ok=True)
+          results={'run':os.environ['GITHUB_RUN_ID'],'head':os.environ['GITHUB_SHA']}
+          for component in ('frontend','backend'):
+              p=pathlib.Path(os.environ['RUNNER_TEMP'])/(component+'-tests.json')
+              if not p.exists():
+                  results[component]={'status':'not-run'};continue
+              raw=json.loads(p.read_text())
+              selected={k:raw.get(k) for k in ('success','numTotalTests','numPassedTests','numFailedTests','numPendingTests','numTotalTestSuites','numPassedTestSuites','numFailedTestSuites')}
+              selected['failed']=[]
+              for suite in raw.get('testResults',[]):
+                  for test in suite.get('assertionResults',[]):
+                      if test.get('status')!='failed':continue
+                      errors='\n'.join(test.get('failureMessages',[]))
+                      errors=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]',errors)
+                      selected['failed'].append({'file':suite.get('name','').split('/tili-tili/')[-1],'test':test.get('fullName'),'error':errors[:1800]})
+              results[component]=selected
+          (out/'test-results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
+          print(json.dumps(results,ensure_ascii=False))
+          PY
       - name: Install isolated browser tooling
         run: |
           python -m pip install playwright==1.57.0
@@ -153,13 +179,11 @@ jobs:
           paths=[f['path'] for f in manifest]
           for f in manifest:
               assert subprocess.check_output(['git','hash-object',f['path']],text=True).strip()==f['after'],f['path']
-          bridge=['.github/workflows/apply-stage017b.yml']+[f'tasks/.transfer-stage017b/part{i}.b64' for i in range(3)]
+          bridge=['.github/workflows/apply-stage017b.yml','.github/workflows/stage017b-review-export.yml']+[f'tasks/.transfer-stage017b/part{i}.b64' for i in range(3)]
           subprocess.run(['git','add','--',*paths],check=True)
           subprocess.run(['git','rm','--',*bridge],check=True)
           staged=set(subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0'))
           assert staged==set(paths+bridge),staged^set(paths+bridge)
-          out=pathlib.Path(os.environ['E2E_RESULT_DIR'])
-          (out/'source-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -182,6 +206,7 @@ jobs:
             /tmp/tili-017b-evidence/*.png
             /tmp/tili-017b-evidence/browser-result.json
             /tmp/tili-017b-evidence/source-manifest.json
+            /tmp/tili-017b-evidence/test-results.json
             /tmp/tili-017b-evidence/publication.json
           retention-days: 7
           if-no-files-found: warn
