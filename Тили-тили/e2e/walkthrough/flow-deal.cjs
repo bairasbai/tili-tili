@@ -185,7 +185,9 @@ run('flow-deal', async (step, a) => {
       expect(/Лена Обход/.test(await h.text()), 'Лена в списке «Придут»: ' + (await h.text()).slice(0, 300).replace(/\n/g, ' '))
       await h.goto('/wedding/wishlist')
       const t1 = await h.text()
-      expect(/Обещано\s[1-9]/.test(t1), 'складчина видна паре: ' + t1.slice(0, 600).replace(/\n/g, ' '))
+      // У пары подпись складчины — «Обещано гостями N» (CoupleGiftRow), у гостя — «Обещано N из M» (GiftPick).
+      const promised = /Обещано гостями\s[1-9]/.exec(t1)
+      expect(promised, 'складчина видна паре: ' + (t1.match(/[^\n]*Обещано[^\n]*/g) || [t1.slice(0, 600)]).join(' | ').replace(/\n/g, ' '))
       expect(!h.bad.filter((x) => !x.includes('GET /vendor/profile 404') && !/ 401 $/.test(x)).length, 'без ≥400: ' + h.bad.join('; '))
     })
   })
