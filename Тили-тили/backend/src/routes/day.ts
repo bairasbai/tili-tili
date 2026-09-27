@@ -851,13 +851,31 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = await guestPersonByToken(db(), guestToken, personId)
 
       return db().tx(async (client) => {
-        await client.query('select 1 from guests where id = $1 for update', [guest.personId])
+        await client.query('select id from guest_parties where id = $1 for update', [guest.partyId])
+
+        const targetIds = [guest.personId]
+        if (personId === undefined) {
+          const { rows: legacy } = await client.query<{ id: string }>(
+            `select id from guests
+              where party_id = $1 and not is_primary and name = 'Спутник/спутница'
+              order by created_at, id limit 1`,
+            [guest.partyId],
+          )
+          if (legacy[0]) targetIds.push(legacy[0].id)
+        }
+
+        await client.query(
+          'select id from guests where id = any($1::uuid[]) order by id for update',
+          [targetIds],
+        )
         await client.query(
           `select r.id from bus_routes r
             where r.wedding_id = $2
-              and (r.id = $1 or r.id in (select b.bus_id from bus_bookings b where b.guest_id = $3))
+              and (r.id = $1 or r.id in (
+                select b.bus_id from bus_bookings b where b.guest_id = any($3::uuid[])
+              ))
             order by r.id for update`,
-          [busId, guest.weddingId, guest.personId],
+          [busId, guest.weddingId, targetIds],
         )
         const { rows: bus } = await client.query<{ seats: number; taken: number }>(
           'select seats, taken from bus_routes where id = $1 and wedding_id = $2',
@@ -865,35 +883,54 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         )
         if (!bus[0]) throw notFound('Маршрут не найден')
 
-        const { rows: already } = await client.query<{ bus_id: string }>(
-          'select bus_id from bus_bookings where guest_id = $1 limit 1',
-          [guest.personId],
+        const { rows: existing } = await client.query<{ guest_id: string; bus_id: string }>(
+          'select guest_id, bus_id from bus_bookings where guest_id = any($1::uuid[])',
+          [targetIds],
         )
-        if (!already[0] || already[0].bus_id !== busId) {
-          if (bus[0].taken + 1 > bus[0].seats) throw conflict('bus_full', 'Мест в этом автобусе не осталось')
+        const existingByPerson = new Map(existing.map((b) => [b.guest_id, b.bus_id]))
+        const seatsNeeded = targetIds.filter((id) => existingByPerson.get(id) !== busId).length
+        if (bus[0].taken + seatsNeeded > bus[0].seats) {
+          throw conflict(
+            'bus_full',
+            seatsNeeded > 1
+              ? 'В автобусе нет мест для всех персон этого приглашения'
+              : 'Мест в этом автобусе не осталось',
+          )
         }
 
         await client.query(
           `delete from bus_bookings b using bus_routes r
-            where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and b.bus_id <> $3`,
-          [guest.personId, guest.weddingId, busId],
+            where b.bus_id = r.id
+              and b.guest_id = any($1::uuid[])
+              and r.wedding_id = $2
+              and b.bus_id <> $3`,
+          [targetIds, guest.weddingId, busId],
         )
-        let booked
-        try {
-          booked = await client.query(
-            'insert into bus_bookings (bus_id, guest_id) values ($1,$2) on conflict do nothing',
-            [busId, guest.personId],
-          )
-        } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) throw conflict('bus_full', 'Мест в этом автобусе не осталось')
-          throw error
+        let inserted = 0
+        for (const id of targetIds) {
+          try {
+            const booked = await client.query(
+              'insert into bus_bookings (bus_id, guest_id) values ($1,$2) on conflict do nothing',
+              [busId, id],
+            )
+            inserted += booked.rowCount ?? 0
+          } catch (error) {
+            if (isCheckViolation(error, 'bus_taken_bounded')) throw conflict('bus_full', 'Мест в этом автобусе не осталось')
+            throw error
+          }
         }
         const { rows } = await client.query<{ taken: number; seats: number }>(
           'select taken, seats from bus_routes where id = $1',
           [busId],
         )
-        await client.query(`update guests set transfer = 'need' where id = $1`, [guest.personId])
-        return { personId: guest.personId, busId, alreadyBooked: booked.rowCount === 0, ...rows[0]! }
+        await client.query(`update guests set transfer = 'need' where id = any($1::uuid[])`, [targetIds])
+        return {
+          personId: guest.personId,
+          personIds: targetIds,
+          busId,
+          alreadyBooked: inserted === 0,
+          ...rows[0]!,
+        }
       })
     },
   )
