@@ -84,7 +84,7 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     isPrimary: r.party_position === 1,
     isPlaceholder: r.is_placeholder,
     /* Transitional field for old clients: derived from real family members. */
-    plusOne: r.party_size > 1,
+    plusOne: r.party_position === 1 && r.party_size > 1,
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
      * (`/rsvp`, `/gifts`) этот объект не отдают. */
@@ -408,18 +408,32 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         /* Строка гостя — первой, до стола и до броней: тот же порядок замков,
          * что у посадки в автобус (гость → маршрут, RF-BE-06). Заодно 404
          * до любых проверок: чужого гостя дальше не пускаем. */
-        const { rows: locked } = await client.query('select 1 from guests where id = $1 and wedding_id = $2 for update', [
-          guestId,
-          weddingId,
-        ])
+        const { rows: locked } = await client.query<{
+          party_id: string
+          party_position: number
+          name: string
+          rsvp: string
+          table_id: string | null
+          group_name: string | null
+          diet: string | null
+          diet_note: string | null
+          transfer: string | null
+          menu_option_id: string | null
+        }>(
+          `select party_id, party_position, name, rsvp, table_id, group_name, diet, diet_note, transfer, menu_option_id
+             from guests where id = $1 and wedding_id = $2 for update`,
+          [guestId, weddingId],
+        )
         if (locked.length === 0) throw notFound('Гость не найден')
+        const current = locked[0]!
 
         /* Вместимость стола проверяется и при пересадке, и при «+1» без
          * пересадки: гость уже сидит, а «+1» добавляет за столом персону
          * (ревью 015) — стол заявляется сразу с текущим `table_id`. */
-        const seatedAt = body.plusOne === true && !has('tableId')
-          ? (await client.query<{ table_id: string | null }>('select table_id from guests where id = $1', [guestId])).rows[0]?.table_id ?? null
-          : null
+        if (has('plusOne') && current.party_position !== 1) {
+          throw new AppError(409, 'family_member_not_primary', 'Состав семьи меняется у основного приглашённого')
+        }
+        const seatedAt = body.plusOne === true && !has('tableId') ? current.table_id : null
         const tableToCheck = (body.tableId as string | undefined) ?? seatedAt ?? undefined
         if (tableToCheck) {
           /* Стол обязан принадлежать этой же свадьбе: иначе гость садится
@@ -437,16 +451,21 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
            * на соседнем экране. Сам гость исключается из уже сидящих (он мог
            * пересаживаться в пределах этого же стола) и добавляется с тем
            * `plusOne`, который придёт вместе с посадкой. */
-          const { rows: seated } = await client.query<{ persons: string; plus_one: boolean | null }>(
-            `select coalesce(sum(1 + o.plus_one::int) filter (where o.id <> $3), 0)::text as persons,
-                    bool_or(o.plus_one) filter (where o.id = $3) as plus_one
+          const { rows: seated } = await client.query<{ persons: string }>(
+            `select count(*)::text as persons
                from guests o
-              where o.wedding_id = $2 and (o.table_id = $1 or o.id = $3)`,
-            [tableToCheck, weddingId, guestId],
+              where o.wedding_id = $2
+                and o.table_id = $1
+                and o.party_id <> $3`,
+            [tableToCheck, weddingId, current.party_id],
           )
-          if (seated[0]!.plus_one === null) throw notFound('Гость не найден')
-          const plusOne = has('plusOne') ? Boolean(body.plusOne) : seated[0]!.plus_one
-          const total = Number(seated[0]!.persons) + (plusOne ? 2 : 1)
+          const { rows: family } = await client.query<{ n: string }>(
+            'select count(*)::text as n from guests where party_id = $1',
+            [current.party_id],
+          )
+          const currentFamilySize = Number(family[0]!.n)
+          const desiredFamilySize = has('plusOne') ? (body.plusOne ? Math.max(2, currentFamilySize) : 1) : currentFamilySize
+          const total = Number(seated[0]!.persons) + desiredFamilySize
           const { capacity, name } = table[0]!
           if (total > capacity) {
             throw conflict(
@@ -470,11 +489,6 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
             [guestId, weddingId],
           )
-          await client.query(
-            `delete from hotel_bookings b using hotel_blocks h
-              where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
-            [guestId, weddingId],
-          )
         }
 
         let res
@@ -482,7 +496,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           res = await client.query(
             `update guests set
                name = coalesce($3, name),
-               plus_one = coalesce($4, plus_one),
+               plus_one = false,
                rsvp = coalesce($5, rsvp),
                group_name = case when $6 then $7 else group_name end,
                table_id = case when $8 then $9::uuid else table_id end,
@@ -495,7 +509,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               guestId,
               weddingId,
               (body.name as string) ?? null,
-              (body.plusOne as boolean) ?? null,
+              null,
               (body.status as string) ?? null,
               has('group'),
               (body.group as string) ?? null,
@@ -516,6 +530,106 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           throw error
         }
         if (res.rowCount === 0) throw notFound('Гость не найден')
+
+        if (has('plusOne')) {
+          const { rows: placeholderRows } = await client.query<{ id: string }>(
+            `select id from guests
+              where party_id = $1 and party_position = 2 and is_placeholder
+              for update`,
+            [current.party_id],
+          )
+          const placeholder = placeholderRows[0]
+          if (body.plusOne === true && !placeholder) {
+            const companionId = uuidv7()
+            const effectiveTable = has('tableId') ? (body.tableId as string | null) : current.table_id
+            const effectiveStatus = (body.status as string | undefined) ?? current.rsvp
+            const effectiveGroup = has('group') ? (body.group as string | null) : current.group_name
+            const effectiveDiet = has('diet') ? (body.diet as string | null) : current.diet
+            const effectiveDietNote = has('dietNote') ? (body.dietNote as string | null) : current.diet_note
+            const effectiveTransfer = has('transfer') ? (body.transfer as string | null) : current.transfer
+            await client.query(
+              `insert into guests
+                 (id, wedding_id, name, rsvp, plus_one, group_name, diet, diet_note, transfer,
+                  table_id, menu_option_id, rsvp_token, party_id, party_position, is_placeholder)
+               values ($1,$2,$3,$4,false,$5,$6,$7,$8,$9,$10,$11,$12,2,true)`,
+              [
+                companionId,
+                weddingId,
+                `Спутник ${(body.name as string | undefined) ?? current.name}`,
+                effectiveStatus,
+                effectiveGroup,
+                effectiveDiet,
+                effectiveDietNote,
+                effectiveTransfer,
+                effectiveTable,
+                current.menu_option_id,
+                newGuestToken(),
+                current.party_id,
+              ],
+            )
+            if (current.menu_option_id) {
+              await client.query(
+                `insert into menu_votes (guest_id, option_id)
+                 values ($1,$2) on conflict (guest_id) do nothing`,
+                [companionId, current.menu_option_id],
+              )
+            }
+            try {
+              await client.query(
+                `insert into bus_bookings (bus_id, guest_id)
+                 select bus_id, $2 from bus_bookings where guest_id = $1
+                 on conflict do nothing`,
+                [guestId, companionId],
+              )
+            } catch (error) {
+              if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
+              throw error
+            }
+          } else if (body.plusOne === false && placeholder) {
+            await client.query('delete from guests where id = $1', [placeholder.id])
+          }
+        }
+
+        /* Legacy family fields were shared by the old +1 row. Keep generated
+         * placeholders in sync when the pair edits the primary through the
+         * old single-person route. A real named member is edited separately. */
+        if (current.party_position === 1) {
+          await client.query(
+            `update guests set
+                 rsvp = case when $2 then $3 else rsvp end,
+                 table_id = case when $4 then $5::uuid else table_id end,
+                 group_name = case when $6 then $7 else group_name end,
+                 diet = case when $8 then $9 else diet end,
+                 diet_note = case when $10 then $11 else diet_note end,
+                 transfer = case when $12 then $13 else transfer end
+               where party_id = $1 and party_position = 2 and is_placeholder`,
+            [
+              current.party_id,
+              has('status'),
+              (body.status as string) ?? null,
+              has('tableId'),
+              (body.tableId as string) ?? null,
+              has('group'),
+              (body.group as string) ?? null,
+              has('diet'),
+              (body.diet as string) ?? null,
+              has('dietNote'),
+              (body.dietNote as string) ?? null,
+              has('transfer'),
+              (body.transfer as string) ?? null,
+            ],
+          )
+        }
+
+        if (has('status')) {
+          const { rows: attending } = await client.query<{ n: string }>(
+            "select count(*)::text as n from guests where party_id = $1 and rsvp = 'yes'",
+            [current.party_id],
+          )
+          if (Number(attending[0]!.n) === 0) {
+            await client.query('delete from hotel_bookings where party_id = $1', [current.party_id])
+          }
+        }
 
         /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
          * Декоратор расставляет карточки по столам, кейтеринг считает порции —
