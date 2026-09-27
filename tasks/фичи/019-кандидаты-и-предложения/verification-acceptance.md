@@ -56,3 +56,14 @@ GitHub Actions: https://github.com/bairasbai/tili-tili/actions/runs/36352817493
 - artifact SHA-256: `40ec4f0889c41d28f6e39d5b4c3993e3d03b726cf0b623e78d1775753ed63d00`
 
 T039, T040, T041 и T042 закрыты. Этап 019 завершён; следующий roadmap stage — 020.
+
+## Дополнительный аудит ChatGPT · 2026-09-28
+
+Аудитировалась завершённая линия 019 `feature/019-complete-20260928`, без этапа 020 и без merge в main.
+
+Повторно проверены: lock ordering `wedding → actor → slot → request → vendor/package`, конкурентное принятие разных предложений, гонка ответа подрядчика с accept, idempotency, stale/expired/superseded offers, immutable snapshot согласованных условий, rollback при занятой дате, закрытие запросов при брони/переносе/отмене, hard erase, tombstone и export isolation.
+
+Новый regression guard: `accept019.test.ts` проверяет атомарность внутреннего отказа `bookVendor()` после `closeSlotRequests()`: если выбранный подрядчик становится недоступен, транзакция обязана вернуть все offer requests в open, не оставить уведомление конкуренту, не создать deal и не отметить offer принятым. Код production для этого не менялся — тест закрепляет уже требуемый транзакционный инвариант.
+
+Подтверждённых новых production-дефектов уровня security/data-loss/concurrency в завершённом 019 этим проходом не найдено. Вопрос о разрешении подрядчику отправлять уже истёкший `validUntil` не классифицирован как дефект: текущая спека требует запрещать принятие истёкшего предложения, но явно не запрещает его создание.
+
