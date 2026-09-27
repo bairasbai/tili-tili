@@ -70,7 +70,7 @@ exports.up = (pgm) => {
      WHERE g.id = c.guest_id;
     ALTER TABLE guest_invite_codes ALTER COLUMN invitation_id SET NOT NULL;
     CREATE INDEX guest_invite_codes_invitation_idx
-      ON guest_invite_codes(invitation_id) WHERE expires_at > now();
+      ON guest_invite_codes(invitation_id);
 
     -- A legacy +1 becomes a real second person. It intentionally starts with
     -- its own RSVP/menu/diet/seat/logistics state instead of copying the first
