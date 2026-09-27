@@ -57,8 +57,12 @@ with sync_playwright() as pw:
         page.get_by_role('button', name='Отправить запрос', exact=True).click()
         expect(page.get_by_role('status')).to_contain_text('Запрос отправлен')
         passed.append('candidate_to_batch_request')
+        vendor_requests = request('GET', '/vendor/offer-requests', person='vendor')
+        assert len(vendor_requests) == 1 and vendor_requests[0]['status'] == 'open', vendor_requests
         other.goto(ui + '/vendor-app/offer-requests')
-        other.get_by_role('button', name='Ответить', exact=True).click()
+        # A new request opens its editor immediately; the "Reply" button is
+        # only rendered after the editor has been collapsed or an offer exists.
+        expect(other.get_by_placeholder('Название предложения')).to_be_visible()
         other.get_by_placeholder('Название предложения').fill('Репортаж E2E')
         other.get_by_placeholder('Что входит — по пункту в строке').fill('8 часов\nРетушь')
         other.get_by_label('Цена предложения, ₽', exact=True).fill('12345')
@@ -87,7 +91,8 @@ with sync_playwright() as pw:
         assert not errors, errors
     except Exception:
         errors.append(traceback.format_exc())
-        page.screenshot(path=str(out / 'failure.png'), full_page=True)
+        page.screenshot(path=str(out / 'owner-failure.png'), full_page=True)
+        other.screenshot(path=str(out / 'vendor-failure.png'), full_page=True)
     finally:
         browser.close()
         (out / 'result.json').write_text(json.dumps({'passed': passed, 'errors': errors},ensure_ascii=False,indent=2))
