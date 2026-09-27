@@ -8,6 +8,7 @@ export type Role = (typeof ROLES)[number]
 
 const ALL_TEAM: Role[] = ['couple', 'helper', 'coordinator']
 const ONLY_COUPLE: Role[] = ['couple']
+const COUPLE_AND_HELPER: Role[] = ['couple', 'helper']
 /** Днём X командует координатор — вместе с парой и без помощника (§2). */
 const DAY_COMMAND: Role[] = ['couple', 'coordinator']
 
@@ -38,6 +39,29 @@ interface Rule {
 const MATRIX: Rule[] = [
   // Деньги. helper и coordinator не видят их нигде — ни сумм, ни действий.
   { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  /* 019: кандидатов ведут пара и помощник; координатор только читает.
+   * Запрос предложения и принятие — только пара. Более специфичные правила
+   * стоят выше общего правила действий внутри слота. */
+  {
+    url: /^\/weddings\/:weddingId\/slots\/[^/]+\/shortlist$/,
+    by: { GET: ALL_TEAM },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/slots\/[^/]+\/shortlist\/[^/]+$/,
+    by: { DELETE: COUPLE_AND_HELPER },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/slots\/[^/]+\/offer-requests$/,
+    by: { POST: ONLY_COUPLE },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/shortlist\/[^/]+$/,
+    by: { PUT: COUPLE_AND_HELPER },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/offers\/[^/]+\/accept$/,
+    by: { POST: ONLY_COUPLE },
+  },
   { url: /^\/weddings\/:weddingId\/slots\/[^/]+\//, by: { POST: ONLY_COUPLE, DELETE: ONLY_COUPLE, PATCH: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/wishlist/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/(anti-gifts|funds)/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
