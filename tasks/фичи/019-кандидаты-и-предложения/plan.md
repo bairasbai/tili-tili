@@ -1,8 +1,8 @@
 # План: кандидаты, запросы предложений и сравнение
 
 **Спека:** ./spec.md · **Вопросы:** ./questions.md · **Задачи:** ./tasks.md
-**Статус:** решения владельца В1–В5 приняты 2026-09-27 (Б/Б/А/А/А). Версия 4 — после сверки шага 5,
-перепроверки и security-аудита; раздел «Принятые ответы владельца» фиксирует итог.
+**Статус:** решения владельца В1–В5 приняты 2026-09-27 (Б/Б/А/А/А). Версия 5 — этап реализован
+целиком 2026-09-28; основание решений версии 4 — сверка шага 5, перепроверка и security-аудит.
 
 Ссылки `путь:строка` — на код до правок 019; `R` — `backend/src/routes`, `M` — `backend/migrations`.
 
@@ -12,7 +12,7 @@
 |---|---|
 | БД | `slot_shortlist`, `offer_requests`, `offers`; обезличенные tombstone после стирания подрядчика; неизменяемые `package_title_snapshot`/`package_includes_snapshot` в `deals`; уникальности и CHECK под FR-001/FR-010/FR-016; две денежные колонки с CHECK RUB — audit52 15 → 17 таблиц |
 | Бэк | ядро брони `bookVendor` для трёх дверей (`…/book`, `…/external`, `…/accept`) со снимком условий и закрытием запросов места; `PUT /vendor/profile` сохраняет пакеты по `id`; шорт-лист, запросы, предложения; кабинет подрядчика; закрытие запросов при отмене/переносе и стирании подрядчика; уведомления; выгрузка данных |
-| Контракт | текущий 0.48.0 (146 путей / 194 операции / 88 схем) содержит `VendorPackage`/`VendorPackageInput`, `ShortlistEntry`, `OfferRequest`, строгий `Offer`, `OfferPublic`, batch-запрос пары и список/ответ кабинета; accept идёт в US3 |
+| Контракт | 0.49.0 (147 путей / 195 операций / 88 схем): `VendorPackage`/`VendorPackageInput`, `ShortlistEntry`, `OfferRequest`, строгий `Offer`, `OfferPublic`, batch-запрос пары, список/ответ кабинета и `POST …/offers/{offerId}/accept` |
 | Фронт | место `/wedding/slot/:id` — кандидаты, запрос, предложения, принятие; анкета и выдача — «В кандидаты»; `/compare` — только отмеченные; кабинет — «Запросы предложений»; мастер анкеты — `id` и состав пакетов; уведомления — заголовок и текст через `t()`; подписи прежнего состояния сделки `candidate` |
 
 ## Ворота инвариантов
@@ -40,7 +40,8 @@
 - **R-311 / R-221.** Ссылки на `users` — `on delete set null`. `slot_shortlist.vendor_id` и
   `offer_requests.vendor_id` — `on delete set null`, чтобы обещанная позиция «анкета недоступна» пережила стирание
   без id и имени. До удаления vendor открытые запросы закрываются `vendor_erased`, непринятые предложения удаляются;
-  принятые условия уже скопированы в неизменяемые колонки сделки. `offers.deal_id` — `on delete cascade`, а не
+  принятые условия уже скопированы в неизменяемые колонки сделки. `performer_erased_at` делает сделку без
+  `vendor_id`/`external_name` явным валидным состоянием; имя и телефон не подменяются меткой. `offers.deal_id` — `on delete cascade`, а не
   `set null`: `set null` рядом с CHECK «принято ↔ сделка» откатывал бы уборку архива (ERR-0209). Тест стирания — через
   уборку и вход, со свадьбой и принятым предложением; поиск id, имени, телефона и непринятых текстов — включая JSON.
 - **R-322.** Tombstone адресуется собственным `slot_shortlist.id`, а не nullable `vendor_id`: поэтому DELETE принимает
@@ -63,7 +64,7 @@
 
 ## Контракт
 
-Текущая версия 0.48.0; операции US1 добавлены в T013, а атомарная замена закрыла ERR-0323 при интеграции T017; T023 добавил batch-запрос и кабинет. Каждая правка YAML — в той же задаче с `gen-contract`, `gen-schemas`,
+Текущая версия 0.49.0; операции US1 добавлены в T013, а атомарная замена закрыла ERR-0323 при интеграции T017; T023 добавил batch-запрос и кабинет, T033 — принятие. Каждая правка YAML — в той же задаче с `gen-contract`, `gen-schemas`,
 `openapi-typescript` и копией `app/src/lib/api/schema.ts` (инвариант 9). Коды отказа названы у своей операции (audit55
 G-c1); операции с `withIdempotency` объявляют `Idempotency-Key` и 400 (G-a). «Анкета недоступна» — один код во всех
 операциях 019: 409 `vendor_unavailable` (прежний `…/book` отвечает 404 и не меняется).
@@ -127,6 +128,8 @@ offers           (id, request_id → offer_requests cascade, kind offer|decline,
                   index (request_id, created_at) для предела 5 версий за 24 часа)
 deals            (+ package_title_snapshot text null,
                   + package_includes_snapshot jsonb null check array;
+                  + performer_erased_at timestamptz null;
+                  check (vendor_id is not null or external_name is not null or performer_erased_at is not null);
                   миграция заполняет снимок для существующих сделок с живым package_id)
 ```
 
