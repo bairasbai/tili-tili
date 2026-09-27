@@ -384,18 +384,37 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select id from notifications where user_id=$1', [other.vendor.id])).toHaveLength(before.length)
   })
 
-  it('T039 erases vendor offer text and keeps accepted snapshot', async () => {
+  it('T039 erases open vendor offer text and keeps accepted snapshot', async () => {
     const accepted = await ready(undefined, true)
     const pending = await ready(accepted.wedding)
-    expect((await accept(accepted)).statusCode).toBe(200)
     await app.db!.tx(client => eraseUser(client, pending.vendor.id))
     expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
       .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
     expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
+    expect((await accept(accepted)).statusCode).toBe(200)
     await app.db!.tx(client => eraseUser(client, accepted.vendor.id))
     expect(await rows('select vendor_id, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
       .toEqual([{ vendor_id: null, package_title_snapshot: 'Съёмка 8 часов',
         package_includes_snapshot: ['Ретушь', '500 фотографий'], price: '7654321' }])
+  })
+
+  it('T039 does not deadlock account erasure against a concurrent vendor reply', async () => {
+    const f = await ready()
+    let reply: Promise<unknown> | null = null
+    let cleanupRun: Promise<unknown> | null = null
+    await app.db!.tx(async client => {
+      await client.query('select id from vendors where id = $1 for update', [f.vendor.vendorId])
+      const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+      reply = Promise.resolve(answer(f, { ...offerBody, title: 'Race check' }))
+      await waitForBlocked(client, holder!.pid, 1)
+      cleanupRun = app.db!.tx(c => eraseUser(c, f.vendor.id))
+      await waitForBlocked(client, holder!.pid, 2)
+    })
+    const settled = await Promise.allSettled([reply!, cleanupRun!])
+    expect(settled.every(x => x.status === 'fulfilled')).toBe(true)
+    expect(await rows('select id from offers where request_id = $1', [f.requestId])).toEqual([])
+    expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [f.requestId]))
+      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
   })
 
   it('T040 exports couple offer data and vendor own offer data', async () => {
