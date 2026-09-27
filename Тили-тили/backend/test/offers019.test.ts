@@ -26,6 +26,7 @@ const futureDate = (days: number) => {
   return date.toISOString().slice(0, 10)
 }
 const WEDDING_DATE = futureDate(730)
+const BUSY_WEDDING_DATE = futureDate(900)
 const OFFER_VALID_UNTIL = futureDate(1095)
 
 interface UserFixture {
@@ -510,8 +511,14 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     for (;;) {
       await client.query('select pg_stat_clear_snapshot()')
       const { rows } = await client.query<{ query: string }>(
-        `select query from pg_stat_activity
-          where wait_event_type = 'Lock' and $1 = any(pg_blocking_pids(pid))`,
+        `with recursive blocked(pid, query) as (
+           select pid, query from pg_stat_activity
+            where wait_event_type = 'Lock' and $1 = any(pg_blocking_pids(pid))
+           union
+           select activity.pid, activity.query from pg_stat_activity activity
+             join blocked parent on parent.pid = any(pg_blocking_pids(activity.pid))
+            where activity.wait_event_type = 'Lock'
+         ) select query from blocked`,
         [holderPid],
       )
       if (rows.length >= expected) return rows.map((row) => row.query)
@@ -662,7 +669,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
   }, 60_000)
 
   it('занятому не шлёт, свободному шлёт; ноль успехов даёт route-specific 409', async () => {
-    const wedding = await newWedding('2035-07-19')
+    const wedding = await newWedding(BUSY_WEDDING_DATE)
     const [busy, free] = await Promise.all([newVendor(), newVendor()])
     const added = await Promise.all([addCandidate(wedding, busy), addCandidate(wedding, free)])
     expect(added.map((response) => response.statusCode)).toEqual([200, 200])
