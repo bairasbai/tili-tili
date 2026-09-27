@@ -1152,26 +1152,38 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const { guestToken } = request.params as { guestToken: string }
       const { optionId, guestId } = request.body as { optionId: string; guestId?: string }
       const guest = await guestByToken(db(), guestToken)
-      const memberId = await familyMemberId(db(), guest, guestId)
 
-      const { rows: option } = await db().query('select 1 from menu_options where id = $1 and wedding_id = $2', [
-        optionId,
-        guest.weddingId,
-      ])
-      if (option.length === 0) throw notFound('Такого блюда нет в опросе')
-
-      // Один голос на гостя: первичный ключ по гостю превращает повтор
-      // в смену выбора, а не во второй голос. Голос и отметка у гостя —
-      // одна транзакция: опрос и список гостей читают их порознь (R-122).
-      await db().tx(async (client) => {
-        await client.query(
-          `insert into menu_votes (guest_id, option_id) values ($1,$2)
-           on conflict (guest_id) do update set option_id = excluded.option_id, at = now()`,
-          [memberId, optionId],
+      const memberIds = await db().tx(async (client) => {
+        const { rows: option } = await client.query(
+          'select 1 from menu_options where id = $1 and wedding_id = $2',
+          [optionId, guest.weddingId],
         )
-        await client.query('update guests set menu_option_id = $2 where id = $1', [memberId, optionId])
+        if (option.length === 0) throw notFound('Такого блюда нет в опросе')
+
+        /* New client: one named person. Legacy client: apply the old single
+         * household choice to every person materialized from the invitation.
+         * This keeps pre-020 UI behaviour while storing one vote per person. */
+        const { rows: selected } = await client.query<{ id: string }>(
+          guestId
+            ? 'select id from guests where id = $1 and party_id = $2 order by id for update'
+            : 'select id from guests where party_id = $2 order by id for update',
+          guestId ? [guestId, guest.partyId] : [null, guest.partyId],
+        )
+        if (selected.length === 0) throw notFound('Человек не входит в это приглашение')
+        const ids = selected.map((row) => row.id)
+        await client.query(
+          `insert into menu_votes (guest_id, option_id)
+           select x.id, $2 from unnest($1::uuid[]) as x(id)
+           on conflict (guest_id) do update set option_id = excluded.option_id, at = now()`,
+          [ids, optionId],
+        )
+        await client.query(
+          'update guests set menu_option_id = $2 where id = any($1::uuid[])',
+          [ids, optionId],
+        )
+        return ids
       })
-      return { guestId: memberId, optionId }
+      return { guestId: guestId ?? guest.guestId, guestIds: memberIds, optionId }
     },
   )
 
