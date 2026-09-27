@@ -2748,11 +2748,18 @@ export interface paths {
                 content: {
                     "application/json": {
                         name: string;
-                        /** @default false */
+                        /**
+                         * @description legacy: создаёт auto-companion, если persons не задан
+                         * @default false
+                         */
                         plusOne?: boolean;
+                        /** @description дополнительные именованные персоны той же семейной ссылки */
+                        persons?: {
+                            name: string;
+                        }[];
                         /** @example Родня невесты */
                         group?: string;
-                        /** @description для напоминаний по SMS (POST …/guests/remind) */
+                        /** @description контакт приглашения для SMS; хранится у primary person */
                         phone?: string;
                     };
                 };
@@ -3039,6 +3046,8 @@ export interface paths {
                             dietNote?: string | null;
                             /** @enum {string|null} */
                             transfer?: null | "need" | "own";
+                            /** @description все персоны этой семейной ссылки; top-level поля выше зеркалят primary */
+                            persons?: components["schemas"]["GuestPerson"][];
                         };
                     };
                 };
@@ -3063,16 +3072,31 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        status: "yes" | "no";
+                        /**
+                         * @description legacy: ответ primary/auto-companion
+                         * @enum {string}
+                         */
+                        status?: "yes" | "no";
+                        /** @description legacy: управляет только auto-companion */
                         plusOne?: boolean;
                         comment?: string;
                         /** @enum {string|null} */
                         diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
-                        dietNote?: string;
-                        /** @enum {string} */
-                        transfer?: "need" | "own";
-                    };
+                        dietNote?: string | null;
+                        /** @enum {string|null} */
+                        transfer?: null | "need" | "own";
+                        persons?: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            status: "yes" | "no";
+                            /** @enum {string|null} */
+                            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                            dietNote?: string | null;
+                            /** @enum {string|null} */
+                            transfer?: null | "need" | "own";
+                        }[];
+                    } | unknown | unknown;
                 };
             };
             responses: {
@@ -3138,8 +3162,14 @@ export interface paths {
                         guests: {
                             name: string;
                             phone?: string;
-                            /** @default false */
+                            /**
+                             * @description legacy auto-companion
+                             * @default false
+                             */
                             plusOne?: boolean;
+                            persons?: {
+                                name: string;
+                            }[];
                             group?: string;
                         }[];
                     };
@@ -3326,8 +3356,11 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description токен семейного приглашения (party) */
                             guestToken: string;
+                            /** @description имя primary person для legacy UI */
                             guestName: string;
+                            persons: components["schemas"]["GuestPerson"][];
                             wedding: components["schemas"]["WeddingPublic"];
                         };
                     };
@@ -6105,7 +6138,14 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description legacy: автобус primary person */
                             myBusId?: string | null;
+                            bookings?: {
+                                /** Format: uuid */
+                                personId: string;
+                                /** Format: uuid */
+                                busId: string;
+                            }[];
                             routes?: components["schemas"]["BusRoute"][];
                         };
                     };
@@ -6155,6 +6195,11 @@ export interface paths {
                 content: {
                     "application/json": {
                         busId: string;
+                        /**
+                         * Format: uuid
+                         * @description персона этой party; пропуск = legacy primary/auto-companion
+                         */
+                        personId?: string;
                     };
                 };
             };
@@ -6824,7 +6869,14 @@ export interface paths {
                     content: {
                         "application/json": {
                             question?: string;
+                            /** @description legacy: выбор primary person */
                             chosenOptionId?: string | null;
+                            votes?: {
+                                /** Format: uuid */
+                                personId: string;
+                                /** Format: uuid */
+                                optionId: string;
+                            }[];
                             options?: {
                                 id?: string;
                                 name?: string;
@@ -6875,6 +6927,11 @@ export interface paths {
                 content: {
                     "application/json": {
                         optionId: string;
+                        /**
+                         * Format: uuid
+                         * @description персона этой party; пропуск = primary
+                         */
+                        personId?: string;
                     };
                 };
             };
@@ -10719,10 +10776,31 @@ export interface components {
             /** @description true = своя статья (удаляемая) */
             custom?: boolean;
         };
+        GuestPerson: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            primary: boolean;
+            /** @enum {string} */
+            status: "yes" | "no" | "pending";
+            /** @enum {string|null} */
+            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+            dietNote?: string | null;
+            /** @enum {string|null} */
+            transfer?: null | "need" | "own";
+        };
         Guest: {
             id?: string;
+            /**
+             * Format: uuid
+             * @description семейное приглашение; несколько Guest могут иметь один partyId
+             */
+            partyId?: string;
+            /** @description контактная/основная персона приглашения */
+            primary?: boolean;
             name?: string;
-            plusOne?: boolean;
+            /** @description legacy compatibility: true, если в party больше одной персоны; в базе не хранится */
+            readonly plusOne?: boolean;
             group?: string | null;
             /**
              * @description Для напоминаний по SMS; вводит пара. Видит только пара (152-ФЗ,

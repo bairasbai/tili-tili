@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 88. */
+ * Схем: 89. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1102,11 +1102,22 @@ export const CONTRACT_SCHEMAS = {
               "id": {
                   "type": "string"
               },
+              "partyId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "семейное приглашение; несколько Guest могут иметь один partyId"
+              },
+              "primary": {
+                  "type": "boolean",
+                  "description": "контактная/основная персона приглашения"
+              },
               "name": {
                   "type": "string"
               },
               "plusOne": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "legacy compatibility: true, если в party больше одной персоны; в базе не хранится"
               },
               "group": {
                   "type": [
@@ -1212,6 +1223,67 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "readOnly": true,
                   "description": "true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link"
+              }
+          }
+      },
+      "GuestPerson": {
+          "type": "object",
+          "required": [
+              "id",
+              "name",
+              "primary",
+              "status"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "primary": {
+                  "type": "boolean"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "yes",
+                      "no",
+                      "pending"
+                  ]
+              },
+              "diet": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      null,
+                      "vegetarian",
+                      "vegan",
+                      "halal",
+                      "kosher",
+                      "gluten_free",
+                      "other"
+                  ]
+              },
+              "dietNote": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "transfer": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      null,
+                      "need",
+                      "own"
+                  ]
               }
           }
       },
@@ -4044,6 +4116,7 @@ export type ContractSchemaName =
   | "Fund"
   | "Gift"
   | "Guest"
+  | "GuestPerson"
   | "HotelBlock"
   | "InviteLink"
   | "Lead"
