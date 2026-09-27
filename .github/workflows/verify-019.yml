@@ -2,7 +2,7 @@ name: Verify 019 acceptance (temporary)
 on:
   push:
     branches: ['test/019-acceptance-20260928']
-    paths: ['.github/patches/accept019.patch.gz.b64', '.github/workflows/verify-019.yml']
+    paths: ['.github/patches/019/**', '.github/workflows/verify-019.yml']
 permissions:
   contents: read
 jobs:
@@ -32,18 +32,19 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Apply feature to its pinned base
+      - name: Apply reviewed source to pinned base and verify content hashes
         run: |
           mkdir -p /tmp/verify019
           git rev-parse HEAD > /tmp/verify019/runner-commit.txt
-          if test -f .github/patches/accept019.patch.gz.b64; then
-            base64 --decode .github/patches/accept019.patch.gz.b64 | gzip -d > /tmp/accept019.patch
-            sha256sum /tmp/accept019.patch > /tmp/verify019/patch-sha256.txt
-            git checkout --detach c4d37c2995d2aeb28bd988cb5144af164ff9fb60
-            git apply --check /tmp/accept019.patch
-            git apply /tmp/accept019.patch
-            git add -N .
-          fi
+          cp -r .github/patches/019 /tmp/patch019
+          git checkout --detach c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          python /tmp/patch019/backend.py
+          python /tmp/patch019/frontend.py
+          python /tmp/patch019/docs.py
+          cat /tmp/patch019/test.{0,1,2} > 'Тили-тили/backend/test/accept019.test.ts'
+          echo '4bfd228b0a1c73e0d091274c090774109523dfa08f794bf708f8c7362a5a2801  Тили-тили/backend/test/accept019.test.ts' | sha256sum --check
+          python /tmp/patch019/corrections.py
+          git add -N .
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -64,6 +65,7 @@ jobs:
           cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
           pnpm exec node-pg-migrate up -m migrations > /tmp/verify019/migrate.log 2>&1
       - name: Run independent checks
+        id: checks
         if: always() && steps.generated.outcome == 'success'
         run: |
           set +e
@@ -74,7 +76,7 @@ jobs:
           }
           runcheck typecheck-backend 'Тили-тили/backend' pnpm run typecheck
           runcheck lint-backend 'Тили-тили/backend' pnpm run lint
-          runcheck acceptance-backend 'Тили-тили/backend' pnpm exec vitest run test/accept019.test.ts --reporter=default --reporter=json --outputFile=/tmp/verify019/acceptance-backend.json --passWithNoTests
+          runcheck acceptance-backend 'Тили-тили/backend' pnpm exec vitest run test/accept019.test.ts --reporter=default --reporter=json --outputFile=/tmp/verify019/acceptance-backend.json
           runcheck typecheck-app 'Тили-тили/app' pnpm exec tsc -b
           runcheck lint-app 'Тили-тили/app' pnpm run lint
           runcheck acceptance-app 'Тили-тили/app' pnpm exec vitest run src/lib/offers019.test.tsx --reporter=default --reporter=json --outputFile=/tmp/verify019/acceptance-app.json

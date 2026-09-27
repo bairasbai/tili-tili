@@ -1,0 +1,170 @@
+      method: 'POST',
+      url: `/invites/${issued.json().code as string}/accept`,
+      headers: auth(user.token),
+    })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    return user
+  }
+
+  async function slotOf(wedding: WeddingFixture, categoryId = 'photo'): Promise<string> {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/weddings/${wedding.weddingId}/slots`,
+      headers: auth(wedding.token),
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    const slots = response.json() as { id: string; categoryId: string }[]
+    const slot = slots.find((item) => item.categoryId === categoryId)
+    if (!slot) throw new Error(`нет слота ${categoryId}`)
+    return slot.id
+  }
+
+  const addCandidate = (wedding: WeddingFixture, vendor: VendorFixture) =>
+    app.inject({
+      method: 'PUT',
+      url: `/weddings/${wedding.weddingId}/shortlist/${vendor.vendorId}`,
+      headers: auth(wedding.token),
+    })
+
+  const requestOffers = (
+    wedding: WeddingFixture,
+    slotId: string,
+    entryIds: string[],
+    key = randomUUID(),
+    extra: Record<string, unknown> = {},
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: `/weddings/${wedding.weddingId}/slots/${slotId}/offer-requests`,
+      headers: idem(wedding.token, key),
+      payload: { entryIds, ...extra },
+    })
+
+  const answer = (
+    vendor: VendorFixture,
+    requestId: string,
+    payload: Record<string, unknown>,
+    key = randomUUID(),
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: `/vendor/offer-requests/${requestId}/offers`,
+      headers: idem(vendor.token, key),
+      payload,
+    })
+
+  const customOffer = (number: number) => ({
+    kind: 'offer',
+    title: `Версия ${number}`,
+    price: { amount: 11_000_000 + number, currency: 'RUB' },
+    includes: [`Пункт ${number}`],
+    message: `Сообщение ${number}`,
+    validUntil: '2028-06-01',
+  })
+
+
+  const accept = (w: WeddingFixture, offerId: string, key = randomUUID(), token = w.token) => app.inject({
+    method: 'POST', url: `/weddings/${w.weddingId}/offers/${offerId}/accept`, headers: idem(token, key),
+  })
+  async function fixture(packageOffer = false) {
+    const w = await newWedding()
+    const v = await newVendor()
+    const slotId = await slotOf(w)
+    const added = await addCandidate(w, v)
+    expect(added.statusCode, added.body).toBe(200)
+    const requested = await requestOffers(w, slotId, [added.json().id])
+    expect(requested.statusCode, requested.body).toBe(201)
+    const requestId = requested.json().results[0].requestId as string
+    const reply = await answer(v, requestId, packageOffer ? { kind: 'offer', packageId: v.packageId } : customOffer(1))
+    expect(reply.statusCode, reply.body).toBe(201)
+    return { w, v, slotId, requestId, offer: reply.json() as { id: string; title: string; price: { amount: number }; includes: string[] } }
+  }
+  async function persisted(slotId: string) {
+    const { rows } = await app.db!.query<{
+      id: string; price: string; title: string; includes: string[]; package_id: string | null
+    }>(`select id, price::text, package_title_snapshot as title,
+              package_includes_snapshot as includes, package_id from deals where slot_id = $1`, [slotId])
+    return rows
+  }
+  async function closed(requestId: string) {
+    const { rows } = await app.db!.query<{ status: string; close_reason: string | null }>(
+      'select status, close_reason from offer_requests where id = $1', [requestId])
+    return rows[0]!
+  }
+
+  it('T032: accepts immutable price/services, books once, closes requests privately and replays', async () => {
+    const { w, v, slotId, requestId, offer } = await fixture()
+    const other = await newVendor()
+    const added = await addCandidate(w, other)
+    const request2 = await requestOffers(w, slotId, [added.json().id])
+    const otherId = request2.json().results[0].requestId as string
+    const key = randomUUID()
+    const result = await accept(w, offer.id, key)
+    expect(result.statusCode, result.body).toBe(200)
+    expect(result.json()).toMatchObject({ id: slotId, tileState: 'booked', deal: {
+      state: 'booked', price: offer.price, packageName: offer.title, packageIncludes: offer.includes,
+    } })
+    const replay = await accept(w, offer.id, key)
+    expect(replay.statusCode, replay.body).toBe(200)
+    expect(replay.headers['idempotent-replay']).toBe('true')
+    expect(replay.json()).toEqual(result.json())
+    expect(await persisted(slotId)).toHaveLength(1)
+    expect(await closed(requestId)).toEqual({ status: 'closed', close_reason: 'booked' })
+    expect(await closed(otherId)).toEqual({ status: 'closed', close_reason: 'booked_other' })
+    const { rows: events } = await app.db!.query('select id from deal_events where deal_id = $1', [result.json().deal.id])
+    const { rows: holds } = await app.db!.query('select deal_id from vendor_busy_dates where vendor_id = $1 and date = $2', [v.vendorId, w.date])
+    expect(events).toHaveLength(1)
+    expect(holds).toEqual([{ deal_id: result.json().deal.id }])
+    const { rows: notices } = await app.db!.query<{ body: string; link: string }>(
+      "select body, link from notifications where user_id = $1 and title = 'Пара выбрала другого исполнителя'", [other.id])
+    expect(notices).toEqual([{ body: 'Запрос предложения закрыт: пара выбрала другого исполнителя.', link: '/vendor/offer-requests' }])
+  })
+
+  it.each(['expired', 'stale', 'superseded', 'declined', 'closed'] as const)('T032: %s offer is rejected without a partial booking', async kind => {
+    const { w, v, slotId, requestId, offer } = await fixture()
+    let id = offer.id
+    let code = ''
+    if (kind === 'expired') {
+      await app.db!.query("update offers set valid_until = '2000-01-01' where id = $1", [id]); code = 'offer_expired'
+    } else if (kind === 'stale') {
+      await app.db!.query("update offer_requests set wedding_date = '2028-06-13' where id = $1", [requestId]); code = 'offer_stale_date'
+    } else if (kind === 'superseded') {
+      expect((await answer(v, requestId, customOffer(2))).statusCode).toBe(201); code = 'offer_superseded'
+    } else if (kind === 'declined') {
+      const reply = await answer(v, requestId, { kind: 'decline', message: 'Не смогу' });
+      expect(reply.statusCode, reply.body).toBe(201); id = reply.json().id; code = 'offer_declined'
+    } else {
+      await app.db!.query("update offer_requests set status = 'closed', close_reason = 'removed', closed_at = now() where id = $1", [requestId]); code = 'request_closed'
+    }
+    const result = await accept(w, id)
+    expect(result.statusCode, result.body).toBe(409)
+    expect(result.json().error.code).toBe(code)
+    expect(await persisted(slotId)).toEqual([])
+  })
+
+  it('T032: wedding-local expiry is inclusive, not the UTC date', async () => {
+    const f = await fixture()
+    // Always use a timezone whose local day differs from UTC at execution.
+    const { rows } = await app.db!.query<{ tz: string }>(`select case
+      when (now() at time zone 'Pacific/Kiritimati')::date <> (now() at time zone 'UTC')::date
+      then 'Pacific/Kiritimati' else 'Pacific/Pago_Pago' end as tz`)
+    await app.db!.query('update weddings set tz = $2 where id = $1', [f.w.weddingId, rows[0]!.tz])
+    await app.db!.query('update offers set valid_until = (now() at time zone $2)::date where id = $1', [f.offer.id, rows[0]!.tz])
+    const result = await accept(f.w, f.offer.id)
+    expect(result.statusCode, result.body).toBe(200)
+  })
+
+  it('T032: two partners accepting different candidates cannot double-book a slot', async () => {
+    const f = await fixture()
+    const partner = await member(f.w, 'couple')
+    const v2 = await newVendor()
+    const added = await addCandidate(f.w, v2)
+    const requested = await requestOffers(f.w, f.slotId, [added.json().id])
+    const response = await answer(v2, requested.json().results[0].requestId, customOffer(2))
+    expect(response.statusCode, response.body).toBe(201)
+    await Promise.all(Array.from({ length: 6 }, () => app.db!.query('select 1')))
+    const results = await Promise.all([accept(f.w, f.offer.id), accept(f.w, response.json().id, randomUUID(), partner.token)])
+    expect(results.map(x => x.statusCode).sort()).toEqual([200, 409])
+    expect(results.find(x => x.statusCode === 409)!.json().error.code).toBe('slot_taken')
+    const deals = await persisted(f.slotId)
+    expect(deals).toHaveLength(1)

@@ -1,0 +1,167 @@
+    const { rows } = await app.db!.query('select id from offers where deal_id = $1 and accepted_at is not null', [deals[0]!.id])
+    expect(rows).toHaveLength(1)
+  })
+
+  it('T032: acceptance versus vendor revision leaves exactly one consistent outcome', async () => {
+    const f = await fixture()
+    const [booked, revised] = await Promise.all([accept(f.w, f.offer.id), answer(f.v, f.requestId, customOffer(2))])
+    if (booked.statusCode === 200) {
+      expect(revised.statusCode, revised.body).toBe(409)
+      expect(revised.json().error.code).toBe('request_closed')
+      expect((await persisted(f.slotId))[0]!.title).toBe(f.offer.title)
+    } else {
+      expect(booked.statusCode, booked.body).toBe(409)
+      expect(booked.json().error.code).toBe('offer_superseded')
+      expect(revised.statusCode, revised.body).toBe(201)
+      expect(await persisted(f.slotId)).toEqual([])
+      expect((await closed(f.requestId)).status).toBe('open')
+    }
+  })
+
+  it('T032: hidden vendor and busy date roll back all state and allow a later retry', async () => {
+    const f = await fixture()
+    await app.db!.query('update vendors set published_at = null where id = $1', [f.v.vendorId])
+    let result = await accept(f.w, f.offer.id)
+    expect(result.statusCode, result.body).toBe(409)
+    expect(result.json().error.code).toBe('vendor_unavailable')
+    await app.db!.query('update vendors set published_at = now() where id = $1', [f.v.vendorId])
+    await app.db!.query("insert into vendor_busy_dates (vendor_id, date, source) values ($1, $2, 'manual')", [f.v.vendorId, f.w.date])
+    result = await accept(f.w, f.offer.id)
+    expect(result.statusCode, result.body).toBe(409)
+    expect(result.json().error.code).toBe('date_taken')
+    expect((await closed(f.requestId)).status).toBe('open')
+    expect(await persisted(f.slotId)).toEqual([])
+    await app.db!.query('delete from vendor_busy_dates where vendor_id = $1', [f.v.vendorId])
+    expect((await accept(f.w, f.offer.id)).statusCode).toBe(200)
+  })
+
+  it('T032: package edit/removal and offer removal never rewrite accepted terms in either cabinet', async () => {
+    const f = await fixture(true)
+    await app.db!.query("update vendor_packages set name = 'CHANGED', price = 1, items = '[\"CHANGED\"]' where id = $1", [f.v.packageId])
+    const result = await accept(f.w, f.offer.id)
+    expect(result.statusCode, result.body).toBe(200)
+    await app.db!.query('delete from vendor_packages where id = $1', [f.v.packageId])
+    await app.db!.query('delete from offers where id = $1', [f.offer.id])
+    const slots = await app.inject({ method: 'GET', url: `/weddings/${f.w.weddingId}/slots`, headers: auth(f.w.token) })
+    expect(slots.statusCode, slots.body).toBe(200)
+    expect(slots.json().find((s: { id: string }) => s.id === f.slotId).deal).toMatchObject({
+      price: f.offer.price, packageName: f.offer.title, packageIncludes: f.offer.includes,
+    })
+    const vendor = await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(f.v.token) })
+    expect(vendor.statusCode, vendor.body).toBe(200)
+    expect(vendor.json().items.find((d: { id: string }) => d.id === result.json().deal.id)).toMatchObject({
+      price: f.offer.price, packageName: f.offer.title, packageIncludes: f.offer.includes,
+    })
+    expect((await persisted(f.slotId))[0]!.package_id).toBeNull()
+  })
+
+  it('T032: package deletion while acceptance waits on vendor preserves snapshot without FK error or deadlock', async () => {
+    const f = await fixture(true)
+    let unlock!: () => void
+    let ready!: () => void
+    const gate = new Promise<void>(resolve => { unlock = resolve })
+    const locked = new Promise<void>(resolve => { ready = resolve })
+    const deletion = app.db!.tx(async client => {
+      await client.query('select id from vendors where id = $1 for update', [f.v.vendorId])
+      ready()
+      await gate
+      await client.query('delete from vendor_packages where id = $1', [f.v.packageId])
+    })
+    await locked
+    const accepting = accept(f.w, f.offer.id)
+    try {
+      let waiting = false
+      for (let i = 0; i < 100 && !waiting; i++) {
+        const { rows } = await app.db!.query<{ waiting: boolean }>(`select exists (
+          select 1 from pg_stat_activity where datname = current_database()
+          and query like '%select v.id from vendors v join users%'
+          and cardinality(pg_blocking_pids(pid)) > 0) as waiting`)
+        waiting = rows[0]!.waiting
+        if (!waiting) await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      expect(waiting, 'accept must reach vendor lock before deleting the package').toBe(true)
+    } finally { unlock() }
+    await deletion
+    const result = await accepting
+    expect(result.statusCode, result.body).toBe(200)
+    expect(result.json().deal).toMatchObject({ price: f.offer.price, packageName: f.offer.title, packageIncludes: f.offer.includes })
+    expect((await persisted(f.slotId))[0]!.package_id).toBeNull()
+  })
+
+  it('T032: couple-only, cross-wedding isolation, mandatory key and no caller-supplied price', async () => {
+    const f = await fixture()
+    for (const role of ['helper', 'coordinator'] as const) {
+      const user = await member(f.w, role)
+      expect((await accept(f.w, f.offer.id, randomUUID(), user.token)).statusCode).toBe(403)
+    }
+    const other = await newWedding()
+    expect((await accept(other, f.offer.id)).statusCode).toBe(404)
+    const path = `/weddings/${f.w.weddingId}/offers/${f.offer.id}/accept`
+    expect((await app.inject({ method: 'POST', url: path, headers: auth(f.w.token) })).statusCode).toBe(400)
+    const badBody = await app.inject({ method: 'POST', url: path, headers: idem(f.w.token), payload: { price: { amount: 1, currency: 'RUB' } } })
+    expect(badBody.statusCode, badBody.body).toBe(400)
+    expect(await persisted(f.slotId)).toEqual([])
+  })
+
+  it.each(['date', 'first-date', 'cancel'] as const)('T035: %s closes requests, but same-date PATCH does not', async kind => {
+    const f = await fixture()
+    const same = await app.inject({ method: 'PATCH', url: `/weddings/${f.w.weddingId}`, headers: auth(f.w.token), payload: { date: f.w.date } })
+    expect(same.statusCode, same.body).toBe(200)
+    expect((await closed(f.requestId)).status).toBe('open')
+    if (kind === 'first-date') {
+      await app.db!.query('update weddings set date = null where id = $1', [f.w.weddingId])
+      await app.db!.query('update offer_requests set wedding_date = null where id = $1', [f.requestId])
+    }
+    const result = await app.inject(kind === 'cancel'
+      ? { method: 'POST', url: `/weddings/${f.w.weddingId}/cancel`, headers: auth(f.w.token) }
+      : { method: 'PATCH', url: `/weddings/${f.w.weddingId}`, headers: auth(f.w.token), payload: { date: '2028-06-15' } })
+    expect(result.statusCode, result.body).toBe(200)
+    expect(await closed(f.requestId)).toEqual({ status: 'closed', close_reason: kind === 'cancel' ? 'wedding_cancelled' : 'date_changed' })
+    const accepted = await accept(f.w, f.offer.id)
+    expect(accepted.statusCode, accepted.body).toBe(kind === 'cancel' ? 404 : 409)
+    expect(await persisted(f.slotId)).toEqual([])
+  })
+
+  it('T032: a booking with no wedding date is allowed but does not reserve an invented day', async () => {
+    const f = await fixture()
+    await app.db!.query('update weddings set date = null where id = $1', [f.w.weddingId])
+    await app.db!.query('update offer_requests set wedding_date = null where id = $1', [f.requestId])
+    const result = await accept(f.w, f.offer.id)
+    expect(result.statusCode, result.body).toBe(200)
+    const { rows } = await app.db!.query('select date from vendor_busy_dates where vendor_id = $1', [f.v.vendorId])
+    expect(rows).toEqual([])
+  })
+  it.each(['catalog', 'external'] as const)('T032: %s booking also closes pending requests atomically', async kind => {
+    const f = await fixture()
+    const result = await app.inject({
+      method: 'POST', url: `/weddings/${f.w.weddingId}/slots/${f.slotId}/${kind === 'catalog' ? 'book' : 'external'}`,
+      headers: idem(f.w.token), payload: kind === 'catalog'
+        ? { vendorId: f.v.vendorId, packageId: f.v.packageId, price: { amount: 10_000_000, currency: 'RUB' } }
+        : { vendorName: 'Свой фотограф', price: { amount: 5_000_000, currency: 'RUB' } },
+    })
+    expect(result.statusCode, result.body).toBe(200)
+    expect(await closed(f.requestId)).toEqual({ status: 'closed', close_reason: kind === 'catalog' ? 'booked' : 'booked_other' })
+    expect((await accept(f.w, f.offer.id)).statusCode).toBe(409)
+    expect(await persisted(f.slotId)).toHaveLength(1)
+  })
+
+  it('T032: vendor erasure preserves accepted terms for the couple and redacts them for helpers', async () => {
+    const f = await fixture(true)
+    const helper = await member(f.w, 'helper')
+    const result = await accept(f.w, f.offer.id)
+    expect(result.statusCode, result.body).toBe(200)
+    const hidden = await app.inject({ method: 'GET', url: `/weddings/${f.w.weddingId}/slots`, headers: auth(helper.token) })
+    const deal = hidden.json().find((s: { id: string }) => s.id === f.slotId).deal
+    expect(deal).not.toHaveProperty('price')
+    expect(deal).not.toHaveProperty('packageIncludes')
+    expect(deal.packageName).toBeNull()
+    await app.db!.tx(client => eraseUser(client, f.v.id))
+    createdUsers.splice(createdUsers.indexOf(f.v.id), 1)
+    const slots = await app.inject({ method: 'GET', url: `/weddings/${f.w.weddingId}/slots`, headers: auth(f.w.token) })
+    expect(slots.statusCode, slots.body).toBe(200)
+    expect(slots.json().find((s: { id: string }) => s.id === f.slotId).deal).toMatchObject({
+      price: f.offer.price, packageName: f.offer.title, packageIncludes: f.offer.includes,
+    })
+  })
+
+})
