@@ -113,7 +113,7 @@ const steps: Step[] = [
 
 export default function Quiz() {
   const nav = useNavigate()
-  const { finishOnboarding, city, cityRegion, setCity, setWeddingId, adoptWeddings } = useStore()
+  const { finishOnboarding, saveQuizDraft, city, cityRegion, setCity, setWeddingId, adoptWeddings } = useStore()
   const [i, setI] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string[]>>({})
   const [picker, setPicker] = useState(false)
@@ -191,7 +191,6 @@ export default function Quiz() {
       planner: one(6),
       booked: answers[BOOKED_STEP] ?? [],
     }
-    finishOnboarding(collected)
     try {
       /* Название свадьбы сервер собирает из имени в профиле, поэтому имя уходит
          туда первым — и только если в профиле его нет или его изменили. Не
@@ -212,6 +211,7 @@ export default function Quiz() {
         quizAnswers: { ...collected },
       })
       setWeddingId(id)
+      finishOnboarding(collected)
       nav('/home')
     } catch (e) {
       /*
@@ -228,11 +228,16 @@ export default function Quiz() {
         if (existing) {
           setErr(t('У вас уже есть свадьба — открываем её'))
           setWeddingId(existing)
+          finishOnboarding()
           try { adoptWeddings(await listMyWeddings()) } catch { /* см. выше */ }
           nav('/home')
           return
         }
       }
+      // Запрос не создал свадьбу: сохраняем только черновик квиза. Флаг
+      // завершённого онбординга и дата проекта появятся лишь после успешного
+      // POST /weddings (или подтверждённого wedding_exists).
+      saveQuizDraft(collected)
       setErr(e instanceof ApiError
         ? (e.isDown ? t('Сервер недоступен. Попробуйте позже') : e.message)
         : t('Что-то пошло не так'))

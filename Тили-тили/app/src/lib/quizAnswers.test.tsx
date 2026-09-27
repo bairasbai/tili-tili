@@ -196,6 +196,29 @@ describe('К2: имя уходит в профиль до создания св�
     expect(postIndex(calls), 'свадьба с одним именем партнёра заводиться не должна').toBe(-1)
     expect(text(r)).not.toContain('ГЛАВНАЯ')
   })
+
+  it('ошибка создания сохраняет черновик, но не завершает онбординг и не записывает дату свадьбы', async () => {
+    localStorage.removeItem('tt_onboarded')
+    const calls = serve(quizRoutes({ id: 'u1', name: 'Алина' }, {
+      '/weddings': (c: Call) => (c.method === 'POST'
+        ? withStatus(503, 'service_unavailable', 'Сервис недоступен')
+        : []),
+    }))
+    const r = quizScreen()
+    walkToNames({ format: 'Классика: ЗАГС + банкет' })
+    await waitFor(() => expect(ownInput().value).toBe('Алина'), { timeout: 4000 })
+    type(partnerInput(), 'Тимур')
+    fireEvent.click(createButton())
+
+    await waitFor(() => expect(text(r)).toContain('Сервер недоступен'), { timeout: 4000 })
+    expect(postIndex(calls)).toBeGreaterThanOrEqual(0)
+    expect(localStorage.getItem('tt_onboarded')).toBeNull()
+    expect(JSON.parse(localStorage.getItem('tt_quiz') ?? 'null')).toMatchObject({
+      format: 'Классика: ЗАГС + банкет',
+    })
+    expect(localStorage.getItem('tt_wedding_date')).toBeNull()
+    expect(text(r)).not.toContain('ГЛАВНАЯ')
+  })
 })
 
 describe('К3: на сервер уходят коды, а не подписи', () => {

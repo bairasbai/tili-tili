@@ -31,6 +31,8 @@ export const EMPTY_QUIZ: QuizAnswers = {
 
 interface Store {
   onboarded: boolean
+  /** Сохраняет ответы как черновик, не утверждая, что свадьба уже создана. */
+  saveQuizDraft: (answers: QuizAnswers) => void
   finishOnboarding: (answers?: QuizAnswers) => void
   /**
    * Забыть сессию в памяти после выхода (ревью RF-01).
@@ -458,6 +460,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     weddingsState,
     adoptWeddings,
     forgetSession,
+    saveQuizDraft: (answers: QuizAnswers) => {
+      setQuiz(answers)
+    },
     finishOnboarding: (answers?: QuizAnswers) => {
       // Ответы квиза — это план свадьбы, ради которого его и проходят.
       // Раньше они терялись между последним «Далее» и главным экраном.
