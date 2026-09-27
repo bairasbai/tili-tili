@@ -25,7 +25,8 @@ jobs:
             mkdir -p /out/deps
             ldd /usr/local/bin/redis-server /usr/local/bin/redis-cli | awk "\$2 == \"=>\" && \$3 ~ /^\\// {print \$3}" | sort -u | xargs -r cp -Lt /out/deps
           '
-          tar -C /tmp/tools -czf /tmp/database-tools.tar.gz .
+          sudo tar -C /tmp/tools -czf /tmp/database-tools.tar.gz .
+          sudo chmod 644 /tmp/database-tools.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: offer019-database-tools
