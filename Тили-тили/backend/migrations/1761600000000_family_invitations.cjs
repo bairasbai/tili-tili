@@ -125,7 +125,7 @@ exports.up = (pgm) => {
     /* Gift reservation ownership follows the invitation session from 020.
      * Rotating/deleting that shared token must release anonymous whole-gift
      * reservations exactly like legacy guest-token rotation did. */
-    CREATE FUNCTION release_invitation_reservations() RETURNS trigger AS $
+    CREATE FUNCTION release_invitation_reservations() RETURNS trigger AS $$
     BEGIN
       DELETE FROM gift_reservations r USING gifts g
        WHERE r.gift_id = g.id
@@ -133,7 +133,7 @@ exports.up = (pgm) => {
          AND r.guest_token = OLD.rsvp_token;
       RETURN OLD;
     END;
-    $ LANGUAGE plpgsql;
+    $$ LANGUAGE plpgsql;
 
     CREATE TRIGGER guest_invitations_release_reservations
       AFTER DELETE OR UPDATE OF rsvp_token ON guest_invitations
