@@ -6,7 +6,7 @@ import { useApi, explainError } from '@/lib/api/useApi'
 import { ApiError } from '@/lib/api/client'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
-  joinShuttle, postGuestDayMessage, saveGuestToken, sendRsvp, voteMenu,
+  joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
 import { dressPalettes } from '@/lib/dressPalettes'
 import { formatTime, formatWeddingDate, todayIn } from '@/lib/weddingDate'
@@ -199,7 +199,18 @@ const DIETS: [string | null, string][] = [
   ['kosher', 'Кошер'], ['gluten_free', 'Без глютена'], ['other', 'Другое'],
 ]
 
+interface RsvpMemberView {
+  guestId: string
+  name: string
+  status: 'yes' | 'no' | 'pending'
+  diet?: string | null
+  dietNote?: string | null
+  transfer?: 'need' | 'own' | null
+  isPlaceholder?: boolean
+}
+
 interface RsvpPage {
+  partyId?: string
   guestName?: string
   status?: string
   /* Свой ответ целиком (контракт v0.25): без него после «приду» гость не
@@ -208,6 +219,7 @@ interface RsvpPage {
   diet?: string | null
   dietNote?: string | null
   transfer?: string | null
+  members?: RsvpMemberView[]
   wedding?: {
     title?: string
     date?: string | null
@@ -240,6 +252,11 @@ function InviteView({
   refreshing: boolean
 }) {
   const nav = useNavigate()
+  const familyMembers = page.members ?? []
+  const familyMode = familyMembers.length > 1
+  const familyAttending = familyMembers.length
+    ? familyMembers.some((member) => member.status === 'yes')
+    : page.status === 'yes'
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
   const disp = T.serif ? 'font-serif-d' : ''
@@ -402,7 +419,15 @@ function InviteView({
             <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
             <h2 className={cn('text-[24px] text-center', disp)}>{t('Вы придёте?')}</h2>
 
-            {!answered ? (
+            {familyMode ? (
+              <FamilyRsvpForm
+                token={token}
+                members={familyMembers}
+                busy={busy}
+                T={T}
+                onSaved={onAnswered}
+              />
+            ) : !answered ? (
               <>
                 <div className="mt-5">
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Heart size={12} style={{ color: T.accent }} />{t('Придёте с парой?')}</p>
@@ -494,7 +519,7 @@ function InviteView({
         })()}
 
         {/* Дальше — только тем, кто придёт: меню, трансфер, отель */}
-        {page.status === 'yes' && (
+        {familyAttending && (
           <>
             <GuestMenu token={token} T={T} shadow={shadow} />
             <GuestShuttle token={token} T={T} shadow={shadow} />
@@ -523,6 +548,129 @@ function InviteView({
 
         <p className="text-center text-[10px] mt-12 tracking-[.2em] uppercase relative z-10" style={{ color: T.soft }}>{t('Сделано в Тили-тили 💍')}</p>
       </div>
+    </div>
+  )
+}
+
+function FamilyRsvpForm({
+  token, members, busy, T, onSaved,
+}: {
+  token: string
+  members: RsvpMemberView[]
+  busy: boolean
+  T: Theme
+  onSaved: () => void
+}) {
+  const [draft, setDraft] = useState(() => members.map((member) => ({ ...member })))
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!sending) setDraft(members.map((member) => ({ ...member })))
+  }, [members, sending])
+
+  const patch = (guestId: string, change: Partial<RsvpMemberView>) =>
+    setDraft((current) => current.map((member) => member.guestId === guestId ? { ...member, ...change } : member))
+
+  const save = () => void (async () => {
+    setSending(true)
+    setError(null)
+    try {
+      await sendFamilyRsvp(token, draft.map((member) => ({
+        guestId: member.guestId,
+        status: member.status === 'yes' ? 'yes' : 'no',
+        ...(member.status === 'yes'
+          ? {
+              diet: member.diet ?? null,
+              dietNote: member.diet === 'other' ? member.dietNote ?? null : null,
+              transfer: member.transfer ?? null,
+            }
+          : {}),
+      })))
+      onSaved()
+    } catch (e) {
+      setError(explainError(e))
+    } finally {
+      setSending(false)
+    }
+  })()
+
+  return (
+    <div className="mt-5 space-y-4">
+      <p className="text-[11.5px] text-center" style={{ color: T.soft }}>
+        {t('Ответьте за каждого человека в приглашении отдельно')}
+      </p>
+      {draft.map((member) => (
+        <div key={member.guestId} className="rounded-[18px] p-4" style={{ background: T.bg }}>
+          <div className="flex items-center justify-between gap-3">
+            <b className="text-[13px]">{member.name}</b>
+            {member.isPlaceholder && <span className="text-[9px]" style={{ color: T.soft }}>{t('имя можно уточнить у пары')}</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <button
+              disabled={busy || sending}
+              onClick={() => patch(member.guestId, { status: 'yes' })}
+              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              style={member.status === 'yes' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+            >{t('Приду')}</button>
+            <button
+              disabled={busy || sending}
+              onClick={() => patch(member.guestId, { status: 'no' })}
+              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              style={member.status === 'no' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+            >{t('Не смогу')}</button>
+          </div>
+          {member.status === 'yes' && (
+            <>
+              <p className="text-[10.5px] font-semibold mt-4">{t('Ограничения по еде')}</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {DIETS.map(([id, label]) => (
+                  <button
+                    key={id ?? 'none'}
+                    disabled={busy || sending}
+                    onClick={() => patch(member.guestId, { diet: id })}
+                    className="press px-3 h-[32px] rounded-full text-[10.5px] disabled:opacity-50"
+                    style={(member.diet ?? null) === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+                  >{t(label)}</button>
+                ))}
+              </div>
+              {member.diet === 'other' && (
+                <input
+                  value={member.dietNote ?? ''}
+                  onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
+                  placeholder={t('Например: аллергия на орехи')}
+                  className="w-full mt-2 h-[38px] px-4 rounded-full text-[11px] outline-none"
+                  style={{ background: T.card, color: T.ink }}
+                />
+              )}
+              <p className="text-[10.5px] font-semibold mt-4">{t('Как доберётесь?')}</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {([['need', t('Нужен трансфер')], ['own', t('Доберусь сам(а)')]] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    disabled={busy || sending}
+                    onClick={() => patch(member.guestId, { transfer: id })}
+                    className="press h-[36px] rounded-full text-[10.5px] disabled:opacity-50"
+                    style={member.transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+                  >{label}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      <button
+        disabled={busy || sending || draft.some((member) => member.status === 'pending')}
+        onClick={save}
+        className="press w-full h-[48px] rounded-full text-[12.5px] font-semibold disabled:opacity-50"
+        style={{ background: T.accentGrad, color: '#FFF7F0' }}
+      >
+        {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
+      </button>
+      {draft.some((member) => member.status === 'pending') && (
+        <p className="text-[10.5px] text-center" style={{ color: T.soft }}>{t('Выберите ответ для каждого человека')}</p>
+      )}
+      {error && <p role="alert" className="text-[11.5px] text-center" style={{ color: T.accent }}>{error}</p>}
     </div>
   )
 }
