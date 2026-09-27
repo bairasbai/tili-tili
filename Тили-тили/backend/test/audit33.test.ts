@@ -238,8 +238,19 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     return res.json().id as string
   }
 
-  const board = (guestToken: string, busId: string) =>
-    app.inject({ method: 'POST', url: `/join/${guestToken}/shuttle`, headers: key(), payload: { busId } })
+  const peopleOf = async (guestToken: string) => {
+    const res = await app.inject({ method: 'GET', url: `/rsvp/${guestToken}` })
+    expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+    return (res.json().people ?? []) as { id: string; name: string; status: string }[]
+  }
+
+  const board = (guestToken: string, busId: string, personId?: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/join/${guestToken}/shuttle`,
+      headers: key(),
+      payload: { busId, ...(personId ? { personId } : {}) },
+    })
 
   const takenOf = async (w: Wedding, busId: string) => {
     const buses = (
@@ -259,33 +270,30 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     code: res.json().error?.code,
   })
 
-  /* ── T011: автобус считает людей ──────────────────────────────────── */
+  /* ── T011 / 020: автобус считает отдельные персоны ─────────────── */
 
-  it('T011: 39 мест, 19 гостей «с +1» — taken 38, двадцатый «с +1» получает 409 bus_full', async () => {
-    /* Спека (US1, сценарий 2) говорит «автобус на 20 мест, 19 гостей с +1 —
-     * taken 38»: в 20 мест 38 человек не помещаются, поэтому мест 39 — все
-     * девятнадцать пар сидят, двадцатой паре места нет, одиночке — есть. */
+  it('T011/020: 19 семей по две персоны занимают 38 мест, двадцатой семье остаётся одно', async () => {
     const w = await newWedding()
     const busId = await newBus(w, 39)
     for (let i = 0; i < 19; i++) {
-      const g = await newGuest(w, `Гость ${i}`, true)
-      const res = await board(g.token, busId)
-      expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+      const family = await newGuest(w, `Семья ${i}`, true)
+      const people = await peopleOf(family.token)
+      expect(people).toHaveLength(2)
+      for (const person of people) {
+        const res = await board(family.token, busId, person.id)
+        expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+      }
     }
-    // Счётчик экрана пары — персоны, а не записи: 19 × 2.
     expect(await takenOf(w, busId)).toBe(38)
 
-    const twentieth = await newGuest(w, 'Двадцатый', true)
-    expect(errorOf(await board(twentieth.token, busId))).toEqual({ status: 409, code: 'bus_full' })
-    expect(await takenOf(w, busId)).toBe(38)
-
-    // Один без «+1» — влезает на последнее место ровно как один.
-    const single = await newGuest(w, 'Одиночка', false)
-    expect((await board(single.token, busId)).statusCode).toBe(200)
+    const twentieth = await newGuest(w, 'Двадцатая семья', true)
+    const people = await peopleOf(twentieth.token)
+    expect((await board(twentieth.token, busId, people[0]!.id)).statusCode).toBe(200)
+    expect(errorOf(await board(twentieth.token, busId, people[1]!.id))).toEqual({ status: 409, code: 'bus_full' })
     expect(await takenOf(w, busId)).toBe(39)
   })
 
-  it('T011: гость без «+1» сел, поставил «+1» в полном автобусе — 409 bus_full, taken не изменился', async () => {
+  it('T011/020: добавление второй персоны не занимает автобус автоматически', async () => {
     const w = await newWedding()
     const busId = await newBus(w, 2)
     const anna = await newGuest(w, 'Анна')
@@ -294,62 +302,56 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect((await board(boris.token, busId)).statusCode).toBe(200)
     expect(await takenOf(w, busId)).toBe(2)
 
-    // Ответ гостя: «приду, и со мной ещё один» — а места для второго нет.
-    const own = await rsvp(anna.token, { status: 'yes', plusOne: true })
-    expect(errorOf(own)).toEqual({ status: 409, code: 'bus_full' })
-    expect(own.json().error.message).toContain('нет места для +1')
-
-    // Рука пары — тот же отказ, а не 500 от базы.
-    expect(errorOf(await patchGuest(w, anna.guestId, { plusOne: true }))).toEqual({ status: 409, code: 'bus_full' })
-
+    const addPerson = await patchGuest(w, anna.guestId, { plusOne: true })
+    expect(addPerson.statusCode, addPerson.body.slice(0, 200)).toBe(200)
     expect(await takenOf(w, busId)).toBe(2)
-    const { rows } = await app.db!.query<{ plus_one: boolean }>('select plus_one from guests where id = $1', [anna.guestId])
-    expect(rows[0]!.plus_one).toBe(false)
+
+    const family = await peopleOf(anna.token)
+    expect(family).toHaveLength(2)
+    const companion = family.find((p) => p.id !== anna.guestId)!
+    expect(errorOf(await board(anna.token, busId, companion.id))).toEqual({ status: 409, code: 'bus_full' })
+    expect(await takenOf(w, busId)).toBe(2)
   })
 
-  it('T011: прямой SQL «plus_one = true» у гостя в полном автобусе — 23514 bus_taken_bounded', async () => {
+  it('T011/020: база запрещает вернуть скрытый plus_one', async () => {
     const w = await newWedding()
-    const busId = await newBus(w, 1)
     const anna = await newGuest(w, 'Анна')
-    expect((await board(anna.token, busId)).statusCode).toBe(200)
-
-    // Правило держит база: обработчик тут ни при чём.
     expect(await pgFail(app.db!.query('update guests set plus_one = true where id = $1', [anna.guestId]))).toEqual({
       code: '23514',
-      constraint: 'bus_taken_bounded',
+      constraint: 'guests_plus_one_disabled',
     })
-    expect(await takenOf(w, busId)).toBe(1)
   })
 
-  it('T011: «не приду» вместе с «+1» у гостя из полного автобуса проходит — место освобождается', async () => {
+  it('T011/020: «не приду» освобождает только место этой персоны', async () => {
     const w = await newWedding()
-    const busId = await newBus(w, 1)
-    const anna = await newGuest(w, 'Анна')
-    expect((await board(anna.token, busId)).statusCode).toBe(200)
-
-    /* Отказ гостя не может упереться в автобус: сиденье освобождается ДО
-     * записи ответа, и «+1» в том же теле переполнения не даёт. */
-    const res = await rsvp(anna.token, { status: 'no', plusOne: true })
-    expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
-    expect(await takenOf(w, busId)).toBe(0)
-    const { rows } = await app.db!.query<{ rsvp: string; plus_one: boolean }>(
-      'select rsvp, plus_one from guests where id = $1',
-      [anna.guestId],
-    )
-    expect(rows[0]).toEqual({ rsvp: 'no', plus_one: true })
-  })
-
-  it('T011: гость «с +1» на одно свободное место — ранняя 409 без отката, taken прежний', async () => {
-    const w = await newWedding()
-    const busId = await newBus(w, 3)
-    const anna = await newGuest(w, 'Анна', true)
-    expect((await board(anna.token, busId)).statusCode).toBe(200)
+    const busId = await newBus(w, 2)
+    const family = await newGuest(w, 'Анна', true)
+    const people = await peopleOf(family.token)
+    for (const person of people) expect((await board(family.token, busId, person.id)).statusCode).toBe(200)
     expect(await takenOf(w, busId)).toBe(2)
 
-    const pair = await newGuest(w, 'Пара гостей', true)
-    expect(errorOf(await board(pair.token, busId))).toEqual({ status: 409, code: 'bus_full' })
-    const alone = await newGuest(w, 'Один', false)
-    expect((await board(alone.token, busId)).statusCode).toBe(200)
+    const own = await rsvp(family.token, { personId: people[0]!.id, status: 'no' })
+    expect(own.statusCode, own.body.slice(0, 200)).toBe(200)
+    expect(await takenOf(w, busId)).toBe(1)
+    const bookings = await app.db!.query<{ guest_id: string }>(
+      'select guest_id from bus_bookings where bus_id = $1 order by guest_id',
+      [busId],
+    )
+    expect(bookings.rows.map((row) => row.guest_id)).toEqual([people[1]!.id])
+  })
+
+  it('T011/020: последнее место отдаётся одной персоне, не всей семье скрыто', async () => {
+    const w = await newWedding()
+    const busId = await newBus(w, 3)
+    const first = await newGuest(w, 'Первая семья', true)
+    const firstPeople = await peopleOf(first.token)
+    for (const person of firstPeople) expect((await board(first.token, busId, person.id)).statusCode).toBe(200)
+    expect(await takenOf(w, busId)).toBe(2)
+
+    const second = await newGuest(w, 'Вторая семья', true)
+    const secondPeople = await peopleOf(second.token)
+    expect((await board(second.token, busId, secondPeople[0]!.id)).statusCode).toBe(200)
+    expect(errorOf(await board(second.token, busId, secondPeople[1]!.id))).toEqual({ status: 409, code: 'bus_full' })
     expect(await takenOf(w, busId)).toBe(3)
   })
 
