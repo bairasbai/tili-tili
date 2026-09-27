@@ -1,4 +1,5 @@
 import { api, url } from './client'
+import type { components } from './schema'
 
 /*
  * Кабинет подрядчика.
@@ -97,6 +98,25 @@ export const setVendorBusy = (dates: string[], status: 'busy' | 'free') =>
 /* ── заявки ── */
 
 export const getVendorLeads = () => api.get('/vendor/leads')
+
+/* ── запросы предложений (019) ── */
+
+export type VendorOfferRequest = components['schemas']['OfferRequest']
+export type VendorOfferInput = components['schemas']['OfferInput']
+
+/** Только запросы текущего подрядчика; чужие кандидаты в ответ не входят. */
+export const getVendorOfferRequests = () => api.get('/vendor/offer-requests')
+
+/** Одна попытка ответа. Ключ приходит с формы и переживает сетевой повтор. */
+export const sendVendorOffer = (
+  requestId: string,
+  body: VendorOfferInput,
+  idempotencyKey: string,
+) => api.post(
+  url('/vendor/offer-requests/{requestId}/offers', { requestId }),
+  body,
+  { idempotencyKey },
+)
 
 /**
  * Действие по заявке: ответить, взять дату на 72 часа, отклонить, вернуть.
