@@ -385,15 +385,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           additionalProperties: false,
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 120 },
-            plusOne: { type: 'boolean' },
             status: { type: 'string', enum: ['yes', 'no', 'pending'] },
-            /* `null` снимает группу — контракт (`Guest.group: nullable`) это
-             * обещает, а без `nullable` AJV приводил `null` к пустой строке,
-             * и «без группы» записывалось как группа с пустым именем. */
             group: { type: 'string', nullable: true, maxLength: 120 },
-            // `null` стирает номер — гость попросил не писать ему (R-17).
             phone: { type: 'string', nullable: true, maxLength: 32 },
-            // Стол уходит в колонку uuid; `null` снимает рассадку (R-17).
             tableId: { ...UUID_ID, nullable: true },
             diet: {
               type: 'string',
@@ -411,133 +405,101 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const { guestId } = request.params as { guestId: string }
       const body = request.body as Record<string, unknown>
       if (!isUuid(guestId)) throw notFound('Гость не найден')
-
-      // `undefined` — поле не прислали, оставить как есть. Явный `null` —
-      // снять значение (R-17): пропуск и очистка это разные намерения.
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
       assertPhoneByCouple(request.member!.role, has('phone'))
-      // Телефон — к одному виду (см. POST); `null` — стереть, как и было.
       const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
 
-      /* Правка гостя, посадка и освобождение мест — одна транзакция (R-122):
-       * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,
-       * которого не бывает в норме. */
       return db().tx(async (client) => {
-        /* Строка гостя — первой, до стола и до броней: тот же порядок замков,
-         * что у посадки в автобус (гость → маршрут, RF-BE-06). Заодно 404
-         * до любых проверок: чужого гостя дальше не пускаем. */
-        const { rows: locked } = await client.query('select 1 from guests where id = $1 and wedding_id = $2 for update', [
-          guestId,
-          weddingId,
-        ])
-        if (locked.length === 0) throw notFound('Гость не найден')
+        /* Person row is the mutex. The family party is read from it so no
+         * caller can move a person across invitations by supplying an id. */
+        const { rows: locked } = await client.query<{ party_id: string; is_primary: boolean }>(
+          'select party_id, is_primary from guests where id = $1 and wedding_id = $2 for update',
+          [guestId, weddingId],
+        )
+        const current = locked[0]
+        if (!current) throw notFound('Гость не найден')
 
-        /* Вместимость стола проверяется и при пересадке, и при «+1» без
-         * пересадки: гость уже сидит, а «+1» добавляет за столом персону
-         * (ревью 015) — стол заявляется сразу с текущим `table_id`. */
-        const seatedAt = body.plusOne === true && !has('tableId')
-          ? (await client.query<{ table_id: string | null }>('select table_id from guests where id = $1', [guestId])).rows[0]?.table_id ?? null
-          : null
-        const tableToCheck = (body.tableId as string | undefined) ?? seatedAt ?? undefined
+        const tableToCheck = has('tableId') ? (body.tableId as string | null) : undefined
         if (tableToCheck) {
-          /* Стол обязан принадлежать этой же свадьбе: иначе гость садится
-           * за чужой стол и портит чужую рассадку. Строка стола под
-           * блокировкой: два одновременных «посадить» за последнее место
-           * иначе оба прошли бы проверку вместимости (R-49). */
           const { rows: table } = await client.query<{ name: string; capacity: number }>(
             'select name, capacity from tables where id = $1 and wedding_id = $2 for update',
             [tableToCheck, weddingId],
           )
-          if (table.length === 0) throw notFound('Стол не найден')
-
-          /* Вместимость считается в персонах, а не в записях (R-29): «Ольга
-           * и Денис» с плюс-одним — двое за столом, как их считает кейтеринг
-           * на соседнем экране. Сам гость исключается из уже сидящих (он мог
-           * пересаживаться в пределах этого же стола) и добавляется с тем
-           * `plusOne`, который придёт вместе с посадкой. */
-          const { rows: seated } = await client.query<{ persons: string; plus_one: boolean | null }>(
-            `select coalesce(sum(1 + o.plus_one::int) filter (where o.id <> $3), 0)::text as persons,
-                    bool_or(o.plus_one) filter (where o.id = $3) as plus_one
-               from guests o
-              where o.wedding_id = $2 and (o.table_id = $1 or o.id = $3)`,
+          if (!table[0]) throw notFound('Стол не найден')
+          const { rows: seated } = await client.query<{ persons: string }>(
+            `select count(*)::text as persons
+               from guests
+              where wedding_id = $2 and table_id = $1 and id <> $3`,
             [tableToCheck, weddingId, guestId],
           )
-          if (seated[0]!.plus_one === null) throw notFound('Гость не найден')
-          const plusOne = has('plusOne') ? Boolean(body.plusOne) : seated[0]!.plus_one
-          const total = Number(seated[0]!.persons) + (plusOne ? 2 : 1)
-          const { capacity, name } = table[0]!
-          if (total > capacity) {
+          const total = Number(seated[0]!.persons) + 1
+          if (total > table[0].capacity) {
             throw conflict(
               'table_full',
-              `За столом «${name}» ${capacity} ${plural(capacity, 'место', 'места', 'мест')}, а с этим гостем сидело бы ${total}`,
+              `За столом «${table[0].name}» ${table[0].capacity} ${plural(table[0].capacity, 'место', 'места', 'мест')}, а с этой персоной сидело бы ${total}`,
             )
           }
         }
 
-        /* «Не придёт», поставленное рукой пары («бабушка без смартфона»,
-         * План §19.5), освобождает автобус и номер так же, как ответ самого
-         * гостя в `POST /rsvp/{t}`: иначе автобус выглядит полным при пустом
-         * сиденье (ERR-0040 другим путём). Счётчики поправит триггер.
-         *
-         * ДО записи самого ответа: с «+1» в том же теле у гостя, сидящего в
-         * полном автобусе, база иначе отказала бы тому, кто место как раз
-         * освобождает. */
         if (body.status === 'no') {
           await client.query(
             `delete from bus_bookings b using bus_routes r
               where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
             [guestId, weddingId],
           )
-          await client.query(
-            `delete from hotel_bookings b using hotel_blocks h
-              where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
-            [guestId, weddingId],
-          )
         }
 
-        let res
-        try {
-          res = await client.query(
-            `update guests set
-               name = coalesce($3, name),
-               plus_one = coalesce($4, plus_one),
-               rsvp = coalesce($5, rsvp),
-               group_name = case when $6 then $7 else group_name end,
-               table_id = case when $8 then $9::uuid else table_id end,
-               diet = case when $10 then $11 else diet end,
-               diet_note = case when $12 then $13 else diet_note end,
-               transfer = case when $14 then $15 else transfer end,
-               phone = case when $16 then $17 else phone end
-             where id = $1 and wedding_id = $2`,
-            [
-              guestId,
-              weddingId,
-              (body.name as string) ?? null,
-              (body.plusOne as boolean) ?? null,
-              (body.status as string) ?? null,
-              has('group'),
-              (body.group as string) ?? null,
-              has('tableId'),
-              (body.tableId as string) ?? null,
-              has('diet'),
-              (body.diet as string) ?? null,
-              has('dietNote'),
-              (body.dietNote as string) ?? null,
-              has('transfer'),
-              (body.transfer as string) ?? null,
-              has('phone'),
-              phone,
-            ],
-          )
-        } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
-          throw error
-        }
+        const res = await client.query(
+          `update guests set
+             name = coalesce($3, name),
+             rsvp = coalesce($4, rsvp),
+             group_name = case when $5 then $6 else group_name end,
+             table_id = case when $7 then $8::uuid else table_id end,
+             diet = case when $9 then $10 else diet end,
+             diet_note = case when $11 then $12 else diet_note end,
+             transfer = case when $13 then $14 else transfer end
+           where id = $1 and wedding_id = $2`,
+          [
+            guestId,
+            weddingId,
+            (body.name as string) ?? null,
+            (body.status as string) ?? null,
+            has('group'),
+            (body.group as string) ?? null,
+            has('tableId'),
+            (body.tableId as string) ?? null,
+            has('diet'),
+            (body.diet as string) ?? null,
+            has('dietNote'),
+            (body.dietNote as string) ?? null,
+            has('transfer'),
+            (body.transfer as string) ?? null,
+          ],
+        )
         if (res.rowCount === 0) throw notFound('Гость не найден')
 
-        /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
-         * Декоратор расставляет карточки по столам, кейтеринг считает порции —
-         * им нужно узнать об этом от нас, а не от пары накануне. */
+        /* Contact phone belongs to the invitation, represented by its primary
+         * person during the transition. Editing a companion updates the same
+         * family contact instead of silently creating a second contact. */
+        if (has('phone')) {
+          await client.query(
+            'update guests set phone = $2 where party_id = $1 and is_primary',
+            [current.party_id, phone],
+          )
+        }
+
+        /* A room is a family-level booking. One declining person must not
+         * cancel it while another still attends or has not answered. */
+        if (body.status === 'no') {
+          const { rows: remaining } = await client.query<{ n: string }>(
+            "select count(*)::text as n from guests where party_id = $1 and rsvp <> 'no'",
+            [current.party_id],
+          )
+          if (Number(remaining[0]!.n) === 0) {
+            await client.query('delete from hotel_bookings where party_id = $1', [current.party_id])
+          }
+        }
+
         if (has('tableId')) {
           const { rows: seated } = await client.query<{ n: string }>(
             'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
