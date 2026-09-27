@@ -1,0 +1,50 @@
+name: Verify 019 finalization
+
+on:
+  push:
+    branches: ['test/019-finalization-20260928']
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d tili_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install and migrate
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          for part in app backend; do
+            cd "Тили-тили/$part"
+            printf 'minimum-release-age=0\n' > .npmrc
+            pnpm install --frozen-lockfile --node-linker=hoisted
+            rm .npmrc
+            cd ../..
+          done
+          cd Тили-тили/backend
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Target T039 T040
+        run: cd Тили-тили/backend && pnpm vitest run test/accept019.test.ts
+      - name: Full gate
+        run: bash init.sh
