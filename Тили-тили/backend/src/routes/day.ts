@@ -969,18 +969,22 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   app.get('/join/:guestToken/shuttle', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)
-    // Те же маршруты, что у пары, с именем перевозчика: гость ищет автобус
-    // на точке сбора по нему (фича 006, В4). Телефона и цены в `BusRoute` нет.
     const routes = await busesOf(db(), guest.weddingId)
-    const { rows: mine } = await db().query<{ bus_id: string }>(
-      'select bus_id from bus_bookings where guest_id = $1 limit 1',
-      [guest.guestId],
+    const { rows: bookings } = await db().query<{ person_id: string; bus_id: string; is_primary: boolean }>(
+      `select g.id as person_id, b.bus_id, g.is_primary
+         from guests g join bus_bookings b on b.guest_id = g.id
+        where g.party_id = $1
+        order by g.is_primary desc, g.created_at, g.id`,
+      [guest.partyId],
     )
-    return { myBusId: mine[0]?.bus_id ?? null, routes }
+    return {
+      /* Legacy primary-person view. */
+      myBusId: bookings.find((b) => b.is_primary)?.bus_id ?? null,
+      bookings: bookings.map((b) => ({ personId: b.person_id, busId: b.bus_id })),
+      routes,
+    }
   })
 
-  /* Варианты блюд задаёт пара — гостю их надо показать, иначе он голосует
-     вслепую. `chosenOptionId` возвращает его собственный выбор. */
   app.get('/join/:guestToken/menu-vote', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)
@@ -988,17 +992,23 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       'select question from menu_polls where wedding_id = $1',
       [guest.weddingId],
     )
-    /* Варианты привязаны к свадьбе, а не к опросу: отдельной таблицы опросов
-       с идентификатором нет — `menu_polls` хранит один вопрос на свадьбу. */
     const { rows: options } = await db().query<{ id: string; name: string }>(
       'select id, name from menu_options where wedding_id = $1 order by sort, name',
       [guest.weddingId],
     )
-    const { rows: mine } = await db().query<{ option_id: string }>(
-      'select option_id from menu_votes where guest_id = $1 limit 1',
-      [guest.guestId],
+    const { rows: votes } = await db().query<{ person_id: string; option_id: string; is_primary: boolean }>(
+      `select g.id as person_id, v.option_id, g.is_primary
+         from guests g join menu_votes v on v.guest_id = g.id
+        where g.party_id = $1
+        order by g.is_primary desc, g.created_at, g.id`,
+      [guest.partyId],
     )
-    return { question: poll[0]?.question ?? '', options, chosenOptionId: mine[0]?.option_id ?? null }
+    return {
+      question: poll[0]?.question ?? '',
+      options,
+      chosenOptionId: votes.find((v) => v.is_primary)?.option_id ?? null,
+      votes: votes.map((v) => ({ personId: v.person_id, optionId: v.option_id })),
+    }
   })
 
   /* Команда свадьбы глазами гостя: только имя и категория тех, кто
@@ -1046,9 +1056,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await db().query<{ mine: boolean }>(
       `select h.id, h.name, h.rooms, h.booked, h.price::text as price, h.currency,
               h.deadline::text as deadline, h.promo,
-              exists(select 1 from hotel_bookings b where b.hotel_id = h.id and b.guest_id = $2) as mine
+              exists(select 1 from hotel_bookings b where b.hotel_id = h.id and b.party_id = $2) as mine
          from hotel_blocks h where h.wedding_id = $1 order by h.name`,
-      [guest.weddingId, guest.guestId],
+      [guest.weddingId, guest.partyId],
     )
     return rows.map((r) => ({ ...toHotel(r as never), mine: r.mine }))
   })
@@ -1061,33 +1071,31 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['optionId'],
           additionalProperties: false,
-          properties: { optionId: UUID_ID },
+          properties: { optionId: UUID_ID, personId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { optionId } = request.body as { optionId: string }
-      const guest = await guestByToken(db(), guestToken)
+      const { optionId, personId } = request.body as { optionId: string; personId?: string }
+      const guest = await guestPersonByToken(db(), guestToken, personId)
 
-      const { rows: option } = await db().query('select 1 from menu_options where id = $1 and wedding_id = $2', [
-        optionId,
-        guest.weddingId,
-      ])
+      const { rows: option } = await db().query(
+        'select 1 from menu_options where id = $1 and wedding_id = $2',
+        [optionId, guest.weddingId],
+      )
       if (option.length === 0) throw notFound('Такого блюда нет в опросе')
 
-      // Один голос на гостя: первичный ключ по гостю превращает повтор
-      // в смену выбора, а не во второй голос. Голос и отметка у гостя —
-      // одна транзакция: опрос и список гостей читают их порознь (R-122).
       await db().tx(async (client) => {
+        await client.query('select id from guests where id = $1 for update', [guest.personId])
         await client.query(
           `insert into menu_votes (guest_id, option_id) values ($1,$2)
            on conflict (guest_id) do update set option_id = excluded.option_id, at = now()`,
-          [guest.guestId, optionId],
+          [guest.personId, optionId],
         )
-        await client.query('update guests set menu_option_id = $2 where id = $1', [guest.guestId, optionId])
+        await client.query('update guests set menu_option_id = $2 where id = $1', [guest.personId, optionId])
       })
-      return { optionId }
+      return { personId: guest.personId, optionId }
     },
   )
 
