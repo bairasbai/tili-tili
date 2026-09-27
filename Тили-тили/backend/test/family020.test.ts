@@ -28,15 +28,14 @@ describe.skipIf(!DB)('020 / family invitations migration invariants', () => {
     expect(Number(rows[0]!.missing)).toBe(0)
   })
 
-  it('legacy plusOne no longer survives as an invisible second person', async () => {
-    const { rows } = await app.db!.query<{ plus: string; migrated: string }>(
-      `select
-         count(*) filter (where plus_one)::text as plus,
-         count(*) filter (where legacy_plus_one)::text as migrated
-       from guests`,
+  it('database forbids restoring plusOne as an invisible second person', async () => {
+    const { rows } = await app.db!.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def
+         from pg_constraint
+        where conrelid = 'guests'::regclass and conname = 'guests_plus_one_disabled'`,
     )
-    expect(Number(rows[0]!.plus)).toBe(0)
-    expect(Number(rows[0]!.migrated)).toBeGreaterThanOrEqual(0)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.def).toContain('plus_one = false')
   })
 
   it('one bus booking is constrained to exactly one person', async () => {
