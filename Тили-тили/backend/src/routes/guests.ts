@@ -24,6 +24,7 @@ interface GuestRow {
   party_id: string
   party_position: number
   is_placeholder: boolean
+  party_size: number
   plus_one: boolean
   group_name: string | null
   phone: string | null
@@ -41,7 +42,9 @@ interface GuestRow {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.name, g.party_id, g.party_position, g.is_placeholder, g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
+  g.id, g.name, g.party_id, g.party_position, g.is_placeholder,
+  (select count(*)::int from guests family where family.party_id = g.party_id) as party_size,
+  g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
@@ -80,7 +83,8 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     partyPosition: r.party_position,
     isPrimary: r.party_position === 1,
     isPlaceholder: r.is_placeholder,
-    plusOne: r.plus_one,
+    /* Transitional field for old clients: derived from real family members. */
+    plusOne: r.party_size > 1,
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
      * (`/rsvp`, `/gifts`) этот объект не отдают. */
@@ -237,13 +241,21 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             id,
             request.member!.weddingId,
             body.name,
-            body.plusOne ?? false,
+            false,
             body.group ?? null,
             phone,
             token,
             partyId,
           ],
         )
+        if (body.plusOne) {
+          await client.query(
+            `insert into guests
+               (id, wedding_id, name, plus_one, group_name, rsvp_token, party_id, party_position, is_placeholder)
+             values ($1,$2,$3,false,$4,$5,$6,2,true)`,
+            [uuidv7(), request.member!.weddingId, `Спутник ${body.name}`, body.group ?? null, newGuestToken(), partyId],
+          )
+        }
       })
       return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
     },
@@ -326,8 +338,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             `insert into guests
                (id, wedding_id, name, plus_one, group_name, phone, rsvp_token, party_id, party_position)
              values ($1, $2, $3, $4, $5, $6, $7, $8, 1)`,
-            [id, weddingId, cleanName, row.plusOne ?? false, row.group ?? null, phone ?? null, token, partyId],
+            [id, weddingId, cleanName, false, row.group ?? null, phone ?? null, token, partyId],
           )
+          if (row.plusOne) {
+            await client.query(
+              `insert into guests
+                 (id, wedding_id, name, plus_one, group_name, rsvp_token, party_id, party_position, is_placeholder)
+               values ($1,$2,$3,false,$4,$5,$6,2,true)`,
+              [uuidv7(), weddingId, `Спутник ${cleanName}`, row.group ?? null, newGuestToken(), partyId],
+            )
+          }
           createdIds.push(id)
         }
       })
