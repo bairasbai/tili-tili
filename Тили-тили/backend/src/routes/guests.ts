@@ -761,12 +761,23 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.get('/rsvp/:guestToken', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)
-    const { rows } = await db().query<{
+    const { rows: members } = await db().query<{
+      id: string
+      name: string
       rsvp: string
-      plus_one: boolean
       diet: string | null
       diet_note: string | null
       transfer: string | null
+      party_position: number
+      is_placeholder: boolean
+    }>(
+      `select id, name, rsvp, diet, diet_note, transfer, party_position, is_placeholder
+         from guests
+        where party_id = $1
+        order by party_position, created_at, id`,
+      [guest.partyId],
+    )
+    const { rows } = await db().query<{
       title: string
       date: string | null
       city: string | null
@@ -778,39 +789,46 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       dress_note: string | null
       tz: string
     }>(
-      `select g.rsvp, g.plus_one, g.diet, g.diet_note, g.transfer,
-              w.title, w.date::text as date, c.name as city, c.region,
+      `select w.title, w.date::text as date, c.name as city, c.region,
               w.invite_text, w.invite_theme_id, w.venue, w.dress_code, w.dress_note,
               coalesce(w.tz, 'Europe/Moscow') as tz
-         from guests g join weddings w on w.id = g.wedding_id
+         from weddings w
          left join cities c on c.id = w.city_id
-        where g.id = $1`,
-      [guest.guestId],
+        where w.id = $1`,
+      [guest.weddingId],
     )
-    const r = rows[0]!
+    const primary = members[0]!
+    const wedding = rows[0]!
     return {
-      guestName: guest.name,
-      status: r.rsvp,
-      /* Свой ответ целиком (v0.25): гость видит, что уже выбрал, и может
-         поправить, а не отвечать вслепую поверх старого. */
-      plusOne: r.plus_one,
-      diet: r.diet,
-      dietNote: r.diet_note,
-      transfer: r.transfer,
+      partyId: guest.partyId,
+      guestName: primary.name,
+      status: primary.rsvp,
+      /* Transitional single-person fields stay until the frontend moves to
+       * members[]. plusOne is derived from real people, never from the old
+       * boolean column. */
+      plusOne: members.length > 1,
+      diet: primary.diet,
+      dietNote: primary.diet_note,
+      transfer: primary.transfer,
+      members: members.map((m) => ({
+        guestId: m.id,
+        name: m.name,
+        status: m.rsvp,
+        diet: m.diet,
+        dietNote: m.diet_note,
+        transfer: m.transfer,
+        isPlaceholder: m.is_placeholder,
+      })),
       wedding: {
-        title: r.title,
-        date: r.date,
-        city: r.city ? { name: r.city, region: r.region } : null,
-        inviteText: r.invite_text,
-        inviteThemeId: r.invite_theme_id,
-        venue: r.venue,
-        /* Дресс-код видит гость — ради него он и заводится (План ч. 976). */
-        dressCode: r.dress_code,
-        dressNote: r.dress_note,
-        /* Пояс места (`WeddingPublic.tz`): раздел «День свадьбы» на экране гостя
-         * появляется с кануна по нему, а не по поясу телефона (фича 009); пустой
-         * пояс — Москва, как у остальных гостевых путей. */
-        tz: r.tz,
+        title: wedding.title,
+        date: wedding.date,
+        city: wedding.city ? { name: wedding.city, region: wedding.region } : null,
+        inviteText: wedding.invite_text,
+        inviteThemeId: wedding.invite_theme_id,
+        venue: wedding.venue,
+        dressCode: wedding.dress_code,
+        dressNote: wedding.dress_note,
+        tz: wedding.tz,
       },
     }
   })
@@ -821,8 +839,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['status'],
           additionalProperties: false,
+          anyOf: [{ required: ['status'] }, { required: ['members'] }],
           properties: {
             status: { type: 'string', enum: ['yes', 'no'] },
             plusOne: { type: 'boolean' },
@@ -832,82 +850,198 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               nullable: true,
               enum: [null, 'vegetarian', 'vegan', 'halal', 'kosher', 'gluten_free', 'other'],
             },
-            dietNote: { type: 'string', maxLength: 300 },
-            transfer: { type: 'string', enum: ['need', 'own'] },
+            dietNote: { type: 'string', nullable: true, maxLength: 300 },
+            transfer: { type: 'string', nullable: true, enum: [null, 'need', 'own'] },
+            members: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 10,
+              items: {
+                type: 'object',
+                required: ['guestId', 'status'],
+                additionalProperties: false,
+                properties: {
+                  guestId: UUID_ID,
+                  status: { type: 'string', enum: ['yes', 'no'] },
+                  diet: {
+                    type: 'string',
+                    nullable: true,
+                    enum: [null, 'vegetarian', 'vegan', 'halal', 'kosher', 'gluten_free', 'other'],
+                  },
+                  dietNote: { type: 'string', nullable: true, maxLength: 300 },
+                  transfer: { type: 'string', nullable: true, enum: [null, 'need', 'own'] },
+                },
+              },
+            },
           },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const body = request.body as Record<string, unknown>
+      const body = request.body as {
+        status?: 'yes' | 'no'
+        plusOne?: boolean
+        comment?: string
+        diet?: string | null
+        dietNote?: string | null
+        transfer?: string | null
+        members?: {
+          guestId: string
+          status: 'yes' | 'no'
+          diet?: string | null
+          dietNote?: string | null
+          transfer?: string | null
+        }[]
+      }
       const guest = await guestByToken(db(), guestToken)
+      const has = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key)
 
-      /* Ответ и освобождение мест — одна транзакция (R-122): «не приду»
-       * с сиденьем, оставшимся за гостем, — состояние, которого не бывает
-       * в норме, а до 2026-09-06 сбой между запросами его давал. */
-      /* Еда: присланный `null` — это «без ограничений», а не «не трогать».
-       * Через `coalesce` гость, однажды выбравший «веган», не мог вернуться к
-       * обычному меню: контракт разрешает null, обработчик его глотал. */
-      const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key)
-      await db().tx(async (client) => {
-        /* Строка гостя — первой: тот же порядок замков, что у посадки в
-         * автобус (гость → маршрут, RF-BE-06). «Не приду» — значит держать
-         * под него сиденье и номер незачем; освобождаются ДО записи ответа:
-         * с «+1» в том же теле у гостя из полного автобуса база иначе
-         * отказала бы тому, кто место как раз освобождает. Счётчики
-         * поправит триггер: он считает по факту строк. */
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
-        if (body.status === 'no') {
-          await client.query(
-            `delete from bus_bookings b using bus_routes r
-              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
-            [guest.guestId, guest.weddingId],
-          )
-          await client.query(
-            `delete from hotel_bookings b using hotel_blocks h
-              where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
-            [guest.guestId, guest.weddingId],
-          )
+      const result = await db().tx(async (client) => {
+        const { rows: locked } = await client.query<{
+          id: string
+          name: string
+          party_position: number
+          is_placeholder: boolean
+          rsvp: string
+          table_id: string | null
+          diet: string | null
+          diet_note: string | null
+          transfer: string | null
+        }>(
+          `select id, name, party_position, is_placeholder, rsvp, table_id, diet, diet_note, transfer
+             from guests
+            where party_id = $1
+            order by id
+            for update`,
+          [guest.partyId],
+        )
+        if (locked.length === 0) throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
+
+        /* Compatibility for the old +1 UI. It mutates real people instead of
+         * reviving guests.plus_one. A generated placeholder may later be
+         * renamed by the pair/new family UI. */
+        if (body.members === undefined && body.plusOne !== undefined) {
+          const primary = locked.find((m) => m.party_position === 1) ?? locked[0]!
+          const placeholder = locked.find((m) => m.party_position === 2 && m.is_placeholder)
+          await client.query('update guests set plus_one = false where id = $1', [primary.id])
+          if (body.plusOne && !placeholder) {
+            const companionId = uuidv7()
+            await client.query(
+              `insert into guests
+                 (id, wedding_id, name, rsvp, plus_one, group_name, diet, diet_note, transfer,
+                  table_id, menu_option_id, rsvp_token, party_id, party_position, is_placeholder)
+               select $2, wedding_id, 'Спутник ' || name, $3, false, group_name, diet, diet_note, transfer,
+                      table_id, menu_option_id, $4, party_id, 2, true
+                 from guests where id = $1`,
+              [primary.id, companionId, body.status ?? primary.rsvp, newGuestToken()],
+            )
+            await client.query(
+              `insert into menu_votes (guest_id, option_id, at)
+               select $2, option_id, at from menu_votes where guest_id = $1
+               on conflict (guest_id) do nothing`,
+              [primary.id, companionId],
+            )
+            await client.query(
+              `insert into bus_bookings (bus_id, guest_id)
+               select bus_id, $2 from bus_bookings where guest_id = $1
+               on conflict do nothing`,
+              [primary.id, companionId],
+            )
+          } else if (!body.plusOne && placeholder) {
+            await client.query('delete from guests where id = $1', [placeholder.id])
+          }
         }
-        try {
+
+        const requested = body.members ?? [{
+          guestId: guest.guestId,
+          status: body.status!,
+          ...(has(body, 'diet') ? { diet: body.diet } : {}),
+          ...(has(body, 'dietNote') ? { dietNote: body.dietNote } : {}),
+          ...(has(body, 'transfer') ? { transfer: body.transfer } : {}),
+        }]
+        const ids = new Set(locked.map((m) => m.id))
+        const seen = new Set<string>()
+        for (const item of requested) {
+          if (!ids.has(item.guestId)) throw new AppError(404, 'not_found', 'Человек не входит в это приглашение')
+          if (seen.has(item.guestId)) throw new AppError(422, 'validation_failed', 'Один человек указан дважды')
+          seen.add(item.guestId)
+
+          if (item.status === 'no') {
+            await client.query(
+              `delete from bus_bookings b using bus_routes r
+                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+              [item.guestId, guest.weddingId],
+            )
+          }
           await client.query(
-            `update guests set rsvp = $2, rsvp_at = now(),
-                    plus_one = coalesce($3, plus_one),
-                    comment = coalesce($4, comment),
-                    diet = case when $5 then $6 else diet end,
-                    diet_note = case when $7 then $8 else diet_note end,
-                    transfer = coalesce($9, transfer)
-              where id = $1`,
+            `update guests set rsvp = $3, rsvp_at = now(),
+                    comment = case when $4 then $5 else comment end,
+                    diet = case when $6 then $7 else diet end,
+                    diet_note = case when $8 then $9 else diet_note end,
+                    transfer = case when $10 then $11 else transfer end,
+                    plus_one = false
+              where id = $1 and party_id = $2`,
             [
-              guest.guestId,
-              body.status,
-              (body.plusOne as boolean) ?? null,
-              (body.comment as string) ?? null,
-              has('diet'),
-              (body.diet as string) ?? null,
-              has('diet') || has('dietNote'),
-              (body.dietNote as string) ?? null,
-              (body.transfer as string) ?? null,
+              item.guestId,
+              guest.partyId,
+              item.status,
+              item.guestId === guest.guestId && has(body, 'comment'),
+              body.comment ?? null,
+              has(item, 'diet'),
+              item.diet ?? null,
+              has(item, 'diet') || has(item, 'dietNote'),
+              item.dietNote ?? null,
+              has(item, 'transfer'),
+              item.transfer ?? null,
             ],
           )
-        } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
-          throw error
         }
 
-        /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
-         * кейтеринг закупает по числу «приду», и разница в десять человек
-         * это разница в закупке, а не в таблице. */
+        /* Room belongs to the invitation, not to every person. Keep it while
+         * at least one family member still attends. */
+        const { rows: attending } = await client.query<{ n: string }>(
+          "select count(*)::text as n from guests where party_id = $1 and rsvp = 'yes'",
+          [guest.partyId],
+        )
+        if (Number(attending[0]!.n) === 0) {
+          await client.query('delete from hotel_bookings where party_id = $1', [guest.partyId])
+        }
+
         const { rows: counters } = await client.query<{ yes: string }>(
           "select count(*)::text as yes from guests where wedding_id = $1 and rsvp = 'yes'",
           [guest.weddingId],
         )
         await noteVendorUpdate(client, guest.weddingId, 'guests', `Гостей «приду»: ${counters[0]!.yes}`)
+
+        const { rows: members } = await client.query<{
+          id: string
+          name: string
+          rsvp: string
+          diet: string | null
+          diet_note: string | null
+          transfer: string | null
+        }>(
+          `select id, name, rsvp, diet, diet_note, transfer
+             from guests where party_id = $1 order by party_position, created_at, id`,
+          [guest.partyId],
+        )
+        return members
       })
 
-      // Ответ гостю — без чужих данных: он видит только себя.
-      return { status: body.status, guestName: guest.name }
+      const primary = result[0]!
+      return {
+        status: primary.rsvp,
+        guestName: primary.name,
+        members: result.map((m) => ({
+          guestId: m.id,
+          name: m.name,
+          status: m.rsvp,
+          diet: m.diet,
+          dietNote: m.diet_note,
+          transfer: m.transfer,
+        })),
+      }
     },
   )
 
