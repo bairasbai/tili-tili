@@ -14,6 +14,7 @@ import { AppError } from '../errors.js'
 export interface GuestCaller {
   guestId: string
   weddingId: string
+  invitationId: string
   name: string
 }
 
@@ -53,17 +54,64 @@ export function newShareCode(): string {
 
 export async function guestByToken(db: Queryable, token: string): Promise<GuestCaller> {
   if (!token || token.length > 200) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
-  const { rows } = await db.query<{ id: string; wedding_id: string; name: string }>(
-    `select g.id, g.wedding_id, g.name
-       from guests g join weddings w on w.id = g.wedding_id
-      where g.rsvp_token = $1 and w.cancelled_at is null and w.archived_at is null`,
+  const { rows } = await db.query<{ id: string; wedding_id: string; invitation_id: string; name: string }>(
+    `select g.id, g.wedding_id, g.invitation_id, g.name
+       from guests g
+       join guest_invitations i on i.id = g.invitation_id
+       join weddings w on w.id = g.wedding_id
+      where (g.rsvp_token = $1 or i.rsvp_token = $1)
+        and w.cancelled_at is null and w.archived_at is null
+      order by (g.rsvp_token = $1) desc, g.created_at, g.id
+      limit 1`,
     [token],
   )
   const guest = rows[0]
   // Один и тот же ответ на «нет такого токена» и «свадьба отменена»:
   // по кодам ответа не должно быть видно, существовал ли токен.
   if (!guest) throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
-  return { guestId: guest.id, weddingId: guest.wedding_id, name: guest.name }
+  return { guestId: guest.id, weddingId: guest.wedding_id, invitationId: guest.invitation_id, name: guest.name }
+}
+
+export async function guestPersonByToken(db: Queryable, token: string, guestId: string): Promise<GuestCaller> {
+  if (!token || token.length > 200) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
+  const { rows } = await db.query<{ id: string; wedding_id: string; invitation_id: string; name: string }>(
+    `select g.id, g.wedding_id, g.invitation_id, g.name
+       from guests g
+       join guest_invitations i on i.id = g.invitation_id
+       join weddings w on w.id = g.wedding_id
+      where g.id = $2
+        and (g.rsvp_token = $1 or i.rsvp_token = $1)
+        and w.cancelled_at is null and w.archived_at is null`,
+    [token, guestId],
+  )
+  const guest = rows[0]
+  if (!guest) throw new AppError(404, 'not_found', 'Гость не найден')
+  return { guestId: guest.id, weddingId: guest.wedding_id, invitationId: guest.invitation_id, name: guest.name }
+}
+
+export async function guestFamilyByToken(db: Queryable, token: string) {
+  const anchor = await guestByToken(db, token)
+  const { rows } = await db.query<{
+    id: string
+    name: string
+    rsvp: string
+    diet: string | null
+    diet_note: string | null
+    transfer: string | null
+    table_id: string | null
+    menu_option_id: string | null
+    bus_id: string | null
+    hotel_id: string | null
+  }>(
+    `select g.id, g.name, g.rsvp, g.diet, g.diet_note, g.transfer, g.table_id, g.menu_option_id,
+            (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
+            (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id
+       from guests g
+      where g.invitation_id = $1
+      order by g.created_at, g.id`,
+    [anchor.invitationId],
+  )
+  return { ...anchor, people: rows }
 }
 
 export function readGuestToken(request: FastifyRequest): string | null {
