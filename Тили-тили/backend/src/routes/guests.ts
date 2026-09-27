@@ -180,7 +180,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   /** 020: one invitation owns one token; each attendee is a separate guest row. */
   const createParty = async (
     client: Queryable,
-    input: { weddingId: string; name: string; group?: string; phone?: string | null; persons?: NewPartyPerson[]; legacyPlusOne?: boolean },
+    input: { weddingId: string; name: string; group?: string | undefined; phone?: string | null | undefined; persons?: NewPartyPerson[] | undefined; legacyPlusOne?: boolean | undefined },
   ) => {
     const primaryId = uuidv7()
     const partyId = uuidv7()
