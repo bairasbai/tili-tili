@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.49.0).
- * Операций: 195. Путей: 147. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.50.0).
+ * Операций: 196. Путей: 148. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -139,6 +139,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/documents","url":"/weddings/:weddingId/documents","operationId":null,"summary":"Договоры свадьбы","tag":"documents"},
   {"method":"POST","openapi":"/weddings/{weddingId}/funds","url":"/weddings/:weddingId/funds","operationId":null,"summary":"Завести денежный фонд","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/funds/{fundId}","url":"/weddings/:weddingId/funds/:fundId","operationId":null,"summary":"Удалить фонд","tag":"wishlist"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/guest-invitations","url":"/weddings/:weddingId/guest-invitations","operationId":null,"summary":"Создать семейное или одиночное приглашение","tag":"guests"},
   {"method":"GET","openapi":"/weddings/{weddingId}/guest-reviews","url":"/weddings/:weddingId/guest-reviews","operationId":null,"summary":"Отзывы гостей о подрядчиках (для пары)","tag":"reviews"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guest-reviews","url":"/weddings/:weddingId/guest-reviews","operationId":null,"summary":"Гость оставляет отзыв","tag":"reviews"},
   {"method":"GET","openapi":"/weddings/{weddingId}/guests","url":"/weddings/:weddingId/guests","operationId":null,"summary":"Список гостей","tag":"guests"},

@@ -1100,13 +1100,30 @@ export const CONTRACT_SCHEMAS = {
           "type": "object",
           "properties": {
               "id": {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "invitationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Семейное/одиночное приглашение, к которому относится персона"
+              },
+              "invitationLabel": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "familySize": {
+                  "type": "integer",
+                  "minimum": 1
               },
               "name": {
                   "type": "string"
               },
               "plusOne": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "Совместимость старых клиентов; с 020 всегда false. plusOne=true во входе создаёт отдельную персону."
               },
               "group": {
                   "type": [
