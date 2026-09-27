@@ -465,6 +465,9 @@ export const api = {
     request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string),
   post: <P extends PathsWith<'post'>>(path: P, body?: unknown, opts?: Options) =>
     request<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, body ?? {}, opts),
+  /** Bodyless POST commands must not silently send {} or a JSON content-type. */
+  postWithoutBody: <P extends PathsWith<'post'>>(path: P, opts?: Options) =>
+    request<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, undefined, opts),
   /* PUT и PATCH тоже принимают ключ идемпотентности: контракт требует его,
      например, на переходах сделки — без него второе нажатие на плохой связи
      двигает состояние дважды. */

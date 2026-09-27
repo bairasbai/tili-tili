@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.48.0).
- * Операций: 194. Путей: 146. */
+ * Операций: 195. Путей: 147. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -167,6 +167,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Заметки и идеи свадьбы","tag":"wedding"},
   {"method":"POST","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Добавить заметку","tag":"wedding"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/notes/{noteId}","url":"/weddings/:weddingId/notes/:noteId","operationId":null,"summary":"Удалить заметку","tag":"wedding"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/offers/{offerId}/accept","url":"/weddings/:weddingId/offers/:offerId/accept","operationId":null,"summary":"Принять предложение и забронировать исполнителя","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"График платежей, актуальные итоги и отметки оплат","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"Создать этап платежа","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}","url":"/weddings/:weddingId/payment-schedule/:installmentId","operationId":null,"summary":"Изменить или отменить плановый этап","tag":"budget"},

@@ -333,6 +333,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dealState: d?.state,
       /* Пакет — только когда сервер его назвал (контракт v0.29.0, фича 005). */
       packageName: d?.packageName ?? undefined,
+      packageIncludes: d?.packageIncludes ?? undefined,
     }
   }), [serverSlots])
   /* Пустой список, а не `['v1']`: подрядчика с таким номером не существует —

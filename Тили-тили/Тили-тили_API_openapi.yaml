@@ -1037,6 +1037,59 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /weddings/{weddingId}/offers/{offerId}/accept:
+    post:
+      tags: [bookings]
+      summary: Принять предложение и забронировать исполнителя
+      description: |
+        Только пара. Без тела: цена, название и состав берутся из неизменяемого
+        предложения. Одна транзакция создаёт бронь, занимает дату, сохраняет
+        условия в сделке, отмечает принятие и закрывает запросы этого места.
+        Срок включителен по календарному дню свадьбы (tz, иначе Europe/Moscow).
+        Повтор успешной попытки с тем же ключом возвращает прежний Slot без
+        второй брони. Неопределённый сетевой исход повторяется с тем же ключом.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '200':
+          description: Забронированное место с принятыми условиями
+          headers:
+            Idempotent-Replay:
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '400':
+          description: Требуется Idempotency-Key или ключ слишком длинный
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            offer_expired, offer_stale_date, offer_superseded, offer_declined,
+            offer_accepted, request_closed, slot_taken, date_taken,
+            vendor_unavailable, wedding_cancelled, idempotency_key_reused,
+            idempotency_in_progress. При отказе изменений и уведомлений нет.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Передано тело запроса; условия берутся только из предложения
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/slots/{slotId}/offer-requests:
     post:
       tags: [bookings]
@@ -2678,7 +2731,12 @@ paths:
                         packageName:
                           type: string
                           nullable: true
-                          description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
+                          description: 'Неизменяемое название принятого пакета/предложения; null — без сохранённых условий'
+                        packageIncludes:
+                          type: array
+                          nullable: true
+                          items: { type: string }
+                          description: Неизменяемый состав услуг в момент брони
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         paid:
                           allOf: [{ $ref: '#/components/schemas/Money' }]
@@ -7177,7 +7235,13 @@ components:
           nullable: true
           description: |
             Название пакета, по которому бронировали (`packageId` в
-            `POST …/book`). null — бронь без пакета или пакет снят с витрины.
+            `POST …/book` или принятие предложения). Не меняется при правке
+            или удалении пакета. null — нет снимка или роль не видит условия.
+        packageIncludes:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: Неизменяемый состав услуг; только паре. null — снимок отсутствует.
         price: { $ref: '#/components/schemas/Money' }
         paid:
           allOf: [{ $ref: '#/components/schemas/Money' }]

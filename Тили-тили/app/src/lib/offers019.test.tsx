@@ -13,7 +13,7 @@ import { notificationRoute } from '@/lib/api/notifications'
 import { setI18nLang } from '@/lib/i18n'
 
 type Reply = unknown | Response | { __status: number; body: unknown }
-type Call = { method: string; path: string; body: unknown; key: string | null }
+type Call = { method: string; path: string; body: unknown; key: string | null; contentType: string | null }
 type RouteTable = Record<string, Reply | ((call: Call) => Reply | Promise<Reply>)>
 
 const WEDDING = {
@@ -69,7 +69,7 @@ function serve(routes: RouteTable) {
     let body: unknown = null
     try { body = init?.body ? JSON.parse(String(init.body)) : null } catch { body = init?.body }
     const headers = new Headers(init?.headers)
-    const call = { method: init?.method ?? 'GET', path, body, key: headers.get('Idempotency-Key') }
+    const call = { method: init?.method ?? 'GET', path, body, key: headers.get('Idempotency-Key'), contentType: headers.get('content-type') }
     calls.push(call)
     const route = routes[`${call.method} ${path}`] ?? routes[path]
     if (route === undefined) return Promise.resolve(json({ error: { code: 'not_found', message: `UNEXPECTED ${call.method} ${path}` } }, 404))
@@ -265,5 +265,100 @@ describe('offers019 · уведомления', () => {
     expect(notificationRoute('/wedding/slot/s1')).toBe('/wedding/slot/s1')
     expect(notificationRoute('/vendor/offer-requests', { vendor: true })).toBe('/vendor-app/offer-requests')
     expect(notificationRoute('/vendor/offer-requests')).toBeNull()
+  })
+})
+
+describe('offers019 · принятие предложения (US3)', () => {
+  const accepted = { ...SLOT, tileState: 'booked', deal: {
+    id: 'd1', state: 'booked', vendor: { id: 'v1', name: PROFILE.name },
+    price: OFFER.price, packageName: OFFER.title, packageIncludes: OFFER.includes,
+  } }
+  const acceptPath = 'POST /weddings/w1/offers/o1/accept'
+  const candidate = { ...E1, request: { ...REQUEST, offer: OFFER } }
+
+  it('T037: confirms real offer without editable money, then refreshes slot and requests', async () => {
+    let booked = false
+    const view = mount('/wedding/slot/s1', {
+      '/weddings/w1/slots': () => [booked ? accepted : SLOT],
+      '/weddings/w1/slots/s1/shortlist': () => [{ ...candidate, request: { ...candidate.request, status: booked ? 'closed' : 'open', closeReason: booked ? 'booked' : null } }],
+      [acceptPath]: () => { booked = true; return accepted },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение' }))
+    expect(screen.getByText('Бронь сохранит цену и состав предложения выше. Оплата сейчас не списывается.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить бронь' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Принять предложение' })).toBeNull())
+    const sent = view.calls.filter(c => c.method === 'POST' && c.path.endsWith('/accept'))
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.body).toBeNull()
+    expect(sent[0]!.contentType).toBeNull()
+    expect(sent[0]!.key).toBeTruthy()
+    await waitFor(() => expect(view.calls.filter(c => c.path === '/weddings/w1/slots' && c.method === 'GET').length).toBeGreaterThan(1))
+  })
+
+  it('T037: lost response retries exactly the same key, with only one in-flight request', async () => {
+    let attempts = 0
+    const view = mount('/wedding/slot/s1', {
+      '/weddings/w1/slots/s1/shortlist': [candidate],
+      [acceptPath]: () => { if (++attempts === 1) throw new TypeError('network lost'); return accepted },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить бронь' }))
+    expect(await screen.findByText('Ответ не получен. Повторите — второй брони не будет')).toBeTruthy()
+    const confirm = screen.getByRole('button', { name: 'Подтвердить бронь' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    await waitFor(() => expect(view.calls.filter(c => c.path.endsWith('/accept'))).toHaveLength(2))
+    const posts = view.calls.filter(c => c.path.endsWith('/accept'))
+    expect(posts[0]!.key).toBeTruthy()
+    expect(posts[1]!.key).toBe(posts[0]!.key)
+  })
+
+  it.each(['helper', 'coordinator'])('T037: %s cannot see acceptance even with an accidentally full response', async role => {
+    mount('/wedding/slot/s1', {
+      '/weddings': [{ ...WEDDING, role }],
+      '/weddings/w1/slots/s1/shortlist': [candidate],
+    })
+    await screen.findByText('День целиком')
+    expect(screen.queryByRole('button', { name: 'Принять предложение' })).toBeNull()
+  })
+
+  it.each(['expired', 'stale', 'closed', 'declined', 'booked'])('T037: %s offer cannot be accepted from the slot', async reason => {
+    const offer = reason === 'declined'
+      ? { ...OFFER, kind: 'decline', title: null, price: null, includes: [], validUntil: null }
+      : { ...OFFER, validUntil: reason === 'expired' ? '2000-01-01' : OFFER.validUntil }
+    mount('/wedding/slot/s1', {
+      '/weddings/w1/slots': [reason === 'booked' ? accepted : SLOT],
+      '/weddings/w1/slots/s1/shortlist': [{ ...E1, request: {
+        ...REQUEST, offer, status: reason === 'closed' ? 'closed' : 'open',
+        weddingDate: reason === 'stale' ? '2027-06-13' : REQUEST.weddingDate,
+      } }],
+    })
+    await screen.findByText(/1\. Анна Фотограф/)
+    expect(screen.queryByRole('button', { name: 'Принять предложение' })).toBeNull()
+  })
+
+  it('T037: stale conflict explains the problem and reloads server state instead of fabricating a booking', async () => {
+    let replied = false
+    const view = mount('/wedding/slot/s1', {
+      '/weddings/w1/slots/s1/shortlist': () => [{ ...candidate, request: {
+        ...candidate.request, status: replied ? 'closed' : 'open', closeReason: replied ? 'date_changed' : null,
+      } }],
+      [acceptPath]: () => { replied = true; return withStatus(409, { error: { code: 'offer_stale_date', message: 'stale' } }) },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить бронь' }))
+    await waitFor(() => expect(screen.getAllByText('На прежнюю дату — запросите заново').length).toBeGreaterThan(0))
+    await waitFor(() => expect(view.calls.filter(c => c.path.endsWith('/shortlist') && c.method === 'GET').length).toBeGreaterThan(1))
+    expect(screen.queryByRole('button', { name: 'Принять предложение' })).toBeNull()
+  })
+
+  it('T037: comparison accepts the selected offer through the same confirmation flow', async () => {
+    const view = mount('/compare?slot=s1&entries=e1,e2', {
+      '/weddings/w1/slots/s1/shortlist': [candidate, E2],
+      [acceptPath]: accepted,
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить бронь' }))
+    await waitFor(() => expect(view.calls.some(c => c.path === '/weddings/w1/offers/o1/accept' && c.key)).toBe(true))
   })
 })

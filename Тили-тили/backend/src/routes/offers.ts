@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { acceptOffer } from '../offers/accept.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { AppError, conflict, notFound, quotaExceeded, unauthorized, validationFailed } from '../errors.js'
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
@@ -106,6 +107,21 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
+
+  app.post('/weddings/:weddingId/offers/:offerId/accept', async (request, reply) => {
+    // This command has no editable terms. Reject bodies rather than silently
+    // discarding a price that a caller may think they have negotiated.
+    if (request.body !== undefined && request.body !== null) {
+      throw validationFailed({ body: 'Принятие предложения не принимает тело запроса' })
+    }
+    const { offerId } = request.params as { offerId: string }
+    return withIdempotency(db(), request, reply, 'offers.accept', (tx) => tx(async (client) => ({
+      status: 200,
+      body: await acceptOffer(client, {
+        weddingId: request.member!.weddingId, actorId: request.caller!.userId, offerId,
+      }),
+    })))
+  })
 
   app.post(
     '/weddings/:weddingId/slots/:slotId/offer-requests',

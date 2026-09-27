@@ -97,6 +97,12 @@ function touchesSharedState(rawText: string): boolean {
   if (/from\s*['"]\.\.\/src\/reviews\/rating\.(?:js|ts)['"]/.test(code) && /\brecomputeAllRatings\b/.test(code)) return true
   if (/from\s*['"]\.\.\/src\/notify\/push\.(?:js|ts)['"]/.test(code) && /\bsendDuePushes\b/.test(code)) return true
   if (/from\s*['"]\.\.\/src\/notify\/task-notifications\.(?:js|ts)['"]/.test(code) && /\b(sendTaskReminders|pruneTaskNotifications)\b/.test(code)) return true
+  // A global OTP budget can shrink when another suite cleans up its phones.
+  // Scoped counts (phone/IP predicates) remain safe to run in parallel.
+  for (const literal of stringLiterals(code)) {
+    if (/\bselect\s+count\s*\([^)]*\)[\s\S]*\bfrom\s+otp_codes\b/i.test(literal)
+      && !/\b(?:phone|ip)\b\s*(?:=|like\b|in\b)/i.test(literal)) return true
+  }
   if (code.includes('/admin/categories')) return true
   /* Временный триггер сбоя — DDL на общей таблице: пока он висит, через него
    * проходит каждая запись соседей в эту таблицу, а создание и снятие берут
@@ -229,5 +235,15 @@ describe('audit53: устройство серийной группы держи
       }
     }
     expect(offenders, offenders.join('\n')).toEqual([])
+  })
+})
+
+
+describe('serial guard: aggregate OTP budget', () => {
+  it('requires serialization only for a global counter, not a fixture-scoped count', () => {
+    expect(touchesSharedState(`client.query("select count(*) from otp_codes where created_at > now() - interval '1 hour'")`)).toBe(true)
+    expect(touchesSharedState(`client.query('select count(*) from otp_codes where phone = $1')`)).toBe(false)
+    expect(touchesSharedState(`client.query('select count(*) from otp_codes where phone like $1')`)).toBe(false)
+    expect(touchesSharedState(`client.query('select count(*) from otp_codes where ip = $1')`)).toBe(false)
   })
 })

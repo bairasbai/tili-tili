@@ -36,11 +36,12 @@ export async function lockBookingContext(
   client: Queryable,
   input: { weddingId: string; slotId: string; actorId: string },
 ): Promise<BookingContext> {
-  const { rows: weddings } = await client.query<{ date: string | null; tz: string | null }>(
-    'select date::text as date, tz from weddings where id = $1 for share',
+  const { rows: weddings } = await client.query<{ date: string | null; tz: string | null; archived_at: Date | null; cancelled_at: Date | null }>(
+    'select date::text as date, tz, archived_at, cancelled_at from weddings where id = $1 for share',
     [input.weddingId],
   )
-  if (!weddings[0]) throw notFound('Свадьба не найдена')
+  if (!weddings[0] || weddings[0].archived_at) throw notFound('Свадьба не найдена')
+  if (weddings[0].cancelled_at) throw conflict('wedding_cancelled', 'Свадьба отменена')
 
   const { rows: users } = await client.query<{ deleted_at: Date | null }>(
     'select deleted_at from users where id = $1 for share',
@@ -68,16 +69,19 @@ interface PackageSnapshot {
   items: string[]
 }
 
-async function lockLiveVendor(client: Queryable, vendorId: string): Promise<void> {
+async function lockLiveVendor(client: Queryable, vendorId: string, offer = false): Promise<void> {
   /* Замок пользователя подрядчика сериализует бронь со стиранием аккаунта.
    * Анкета должна быть опубликована и не заблокирована — как в каталоге. */
   const { rows: vendors } = await client.query<{ id: string }>(
     `select v.id from vendors v join users u on u.id = v.user_id and u.deleted_at is null
       where v.id = $1 and v.published_at is not null and v.blocked_at is null
-      for share of u`,
+      for share of u, v`,
     [vendorId],
   )
-  if (!vendors[0]) throw notFound('Подрядчик не найден')
+  if (!vendors[0]) {
+    if (offer) throw conflict('vendor_unavailable', 'Анкета подрядчика недоступна')
+    throw notFound('Подрядчик не найден')
+  }
 }
 
 async function liveCatalogTerms(
@@ -160,7 +164,19 @@ export async function bookVendor(
       : input.performer.kind === 'offer'
         ? { name: input.performer.packageTitle, items: input.performer.packageIncludes }
         : null
-  if (input.performer.kind === 'offer') await lockLiveVendor(client, input.performer.vendorId)
+  let packageId = input.performer.kind === 'external' ? null : input.performer.packageId ?? null
+  if (input.performer.kind === 'offer') {
+    await lockLiveVendor(client, input.performer.vendorId, true)
+    // The offer may have been read before a concurrent package deletion.
+    // Stabilize the optional FK, but NEVER replace the immutable offer terms.
+    if (packageId) {
+      const { rows } = await client.query<{ id: string }>(
+        'select id from vendor_packages where id = $1 and vendor_id = $2 for key share',
+        [packageId, input.performer.vendorId],
+      )
+      packageId = rows[0]?.id ?? null
+    }
+  }
   const dealId = uuidv7()
 
   if (input.performer.kind !== 'external') {
@@ -175,7 +191,7 @@ export async function bookVendor(
         context.slotId,
         input.performer.vendorId,
         input.price,
-        input.performer.packageId ?? null,
+        packageId,
         terms?.name ?? null,
         terms ? JSON.stringify(terms.items) : null,
       ],

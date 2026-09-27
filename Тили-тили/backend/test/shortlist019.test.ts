@@ -126,7 +126,7 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
       headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' },
     })
-    expect(consent.statusCode, consent.body).toBe(200)
+    expect(consent.statusCode, consent.body).toBe(201)
     createdUsers.add(body.user.id)
     return { id: body.user.id, token: body.accessToken }
   }

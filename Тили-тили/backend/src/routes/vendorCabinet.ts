@@ -554,6 +554,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       paid: string
       hold_alive: boolean
       package_name: string | null
+      package_includes: string[] | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
       chat_id: string | null
       contract: { id: string; templateCode: string; version: number; status: string; createdAt: string } | null
@@ -563,6 +564,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               ${PAID_SUM}::text as paid,
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
               coalesce(d.package_title_snapshot, pkg.name) as package_name,
+              coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
               /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
               (select c.id from chats c where c.kind = 'vendor' and c.wedding_id = d.wedding_id and c.vendor_id = d.vendor_id) as chat_id,
               /* Последняя редакция договора по сделке — только заголовок:
@@ -607,6 +609,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
         // Что именно продано: неизменяемый снимок сделки; живая витрина — fallback старых строк.
         packageName: r.package_name,
+        packageIncludes: r.package_includes,
         state: r.state,
         /* Карточка сделки (План §8.2): отметки оплат — те же `payments`, что у
            пары; чат с парой и заголовок договора — чтобы с карточки было куда

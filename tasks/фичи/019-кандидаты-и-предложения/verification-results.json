@@ -1,0 +1,46 @@
+{
+  "feature": "019 / US3 / T032-T038",
+  "base_commit": "c4d37c2995d2aeb28bd988cb5144af164ff9fb60",
+  "verification_run": "https://github.com/bairasbai/tili-tili/actions/runs/36343976440",
+  "checks": {
+    "typecheck-backend": "0",
+    "lint-backend": "0",
+    "acceptance-backend": "0",
+    "typecheck-app": "0",
+    "lint-app": "0",
+    "acceptance-app": "0",
+    "backend-tests": "0",
+    "app-tests": "0",
+    "build-backend": "0",
+    "build-app": "0",
+    "init": "0"
+  },
+  "tests": {
+    "acceptance-backend": {
+      "numTotalTests": 20,
+      "numPassedTests": 20,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "acceptance-app": {
+      "numTotalTests": 19,
+      "numPassedTests": 19,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "backend-tests": {
+      "numTotalTests": 1213,
+      "numPassedTests": 1213,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "app-tests": {
+      "numTotalTests": 1046,
+      "numPassedTests": 1046,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    }
+  },
+  "browser_e2e": "Not run; T041 remains open",
+  "deployment": "Not deployed; main unchanged"
+}

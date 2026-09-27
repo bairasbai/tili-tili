@@ -26,3 +26,9 @@ export const requestOffers = (
   body,
   { idempotencyKey },
 )
+
+/** Retry an indeterminate outcome with this SAME key. No editable terms. */
+export const acceptOffer = (weddingId: string, offerId: string, idempotencyKey: string) => api.postWithoutBody(
+  url('/weddings/{weddingId}/offers/{offerId}/accept', { weddingId, offerId }),
+  { idempotencyKey },
+)

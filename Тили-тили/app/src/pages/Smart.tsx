@@ -20,6 +20,8 @@ import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { listMyWeddings } from '@/lib/api/wedding'
+import type { OfferAcceptance } from '@/components/AcceptOffer'
 import { OfferSummary } from '@/components/OfferSummary'
 
 /*
@@ -82,7 +84,7 @@ type CompareItem = {
   request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null }) {
+function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: { items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTz?: string | null; acceptance?: OfferAcceptance }) {
   const nav = useNavigate()
   const rows: [string, (item: CompareItem) => ReactNode][] = [
     [t('Цена «от»'), ({ vendor }) => vendor?.priceFrom?.amount != null ? fmt(vendor.priceFrom.amount) : '—'],
@@ -101,7 +103,7 @@ function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; ico
         </div>)}
       </div>
     ) : '—'],
-    [t('Предложение'), ({ request }) => <OfferSummary request={request} currentWeddingDate={weddingDate} compact />],
+    [t('Предложение'), item => <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} acceptance={item.available && item.occupancy !== 'busy' ? acceptance : undefined} compact />],
     [t('Видео-визитка'), ({ vendor }) => vendor?.hasVideo ? t('▶ Есть') : '—'],
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
@@ -133,7 +135,10 @@ function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; ico
 
 export function Compare() {
   const nav = useNavigate()
-  const { weddingId, weddingDate, weddingsState, slots, slotsState } = useStore()
+  const { weddingId, weddingDate, weddingsState, slots, slotsState, refreshSlots } = useStore()
+  const roles = useApi(() => isAuthorized() ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const [acceptError, setAcceptError] = useState<string | null>(null)
+  const currentWedding = roles.data?.find(w => w.id === weddingId)
   const [params] = useSearchParams()
   const hasSlot = params.has('slot')
   const slotId = params.get('slot') ?? ''
@@ -184,12 +189,18 @@ export function Compare() {
           : !slot ? <p role="alert" className="px-5 mt-6 text-[12px] text-[var(--soft)]">{t('Слот не найден')}</p>
             : <>
               <AsyncState q={shortlist} />
+              {acceptError && <p role="alert" className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{acceptError}</p>}
               {shortlist.refreshing && <p className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
               {slotCurrent && (requested.length < 2 || slotItems.length < 2 || slotItems.length !== requested.length) && <div className="px-5 mt-8 text-center">
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} />}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} weddingTz={currentWedding?.tz}
+                acceptance={weddingId && ready(roles) && currentWedding?.role === 'couple' && !slot.dealId ? {
+                  weddingId,
+                  onComplete: () => { setAcceptError(null); refreshSlots(); shortlist.reload() },
+                  onConflict: message => { setAcceptError(message); refreshSlots(); shortlist.reload() },
+                } : undefined} />}
             </>
     ) : <>
       <AsyncState q={favs} />

@@ -2,6 +2,16 @@ import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  'Принять предложение': 'Accept offer',
+  'Подтвердить бронь': 'Confirm booking',
+  'Бронь сохранит цену и состав предложения выше. Оплата сейчас не списывается.': 'The booking will preserve the price and services above. No payment is charged now.',
+  'Ответ не получен. Повторите — второй брони не будет': 'No response received. Retry safely without creating another booking.',
+  'Подрядчик обновил предложение — проверьте новые условия': 'The vendor updated the offer — review the new terms',
+  'Предложение уже принято': 'This offer has already been accepted',
+  'Место уже забронировано — обновили команду': 'This slot is already booked — the team has been refreshed',
+  'Дата у подрядчика уже занята — выберите другого': 'The vendor is already booked on this date — choose another',
+  'Анкета подрядчика недоступна': 'The vendor profile is unavailable',
+
   // 019: offer requests closed by a booking without revealing the winner.
   'Пара выбрала другого исполнителя': 'The couple chose another vendor',
   'Запрос предложения закрыт: пара выбрала другого исполнителя.': 'The offer request is closed: the couple chose another vendor.',

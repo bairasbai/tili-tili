@@ -857,7 +857,17 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book`). null — бронь без пакета или пакет снят с витрины.\n"
+                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book` или принятие предложения). Не меняется при правке\nили удалении пакета. null — нет снимка или роль не видит условия.\n"
+              },
+              "packageIncludes": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "items": {
+                      "type": "string"
+                  },
+                  "description": "Неизменяемый состав услуг; только паре. null — снимок отсутствует."
               },
               "price": {
                   "$ref": "contract#/definitions/Money"

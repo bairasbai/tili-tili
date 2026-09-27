@@ -468,6 +468,9 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
 
       const tilly = (await chatsOf(w.token)).find((c) => c.kind === 'tilly')!
       expect((await say(w.token, tilly.id, `Что дарить гостям? ${RUN}`)).statusCode).toBe(201)
+      // 201 confirms the user's message, not the asynchronous Tilly reply.
+      // Await the service's existing completion barrier, never a fixed delay.
+      await app.tilly.settle()
       const reply = (await historyOf(w.token, tilly.id)).find((m) => m.senderId === null)
       expect(reply).toMatchObject({ system: false })
     })

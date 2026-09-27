@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { OfferPublic, OfferRequest } from '@/lib/api/offers'
 import { fmt } from '@/lib/money'
-import { formatWeddingDate } from '@/lib/weddingDate'
+import { AcceptOffer, type OfferAcceptance } from './AcceptOffer'
+import { formatWeddingDate, todayIn } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
@@ -24,14 +25,24 @@ export function OfferSummary({
   request,
   currentWeddingDate,
   compact = false,
+  weddingTz,
+  acceptance,
 }: {
   request?: OfferRequest | OfferPublic
   /** `undefined` — экран не знает нынешнюю дату; `null` — дата снята. */
   currentWeddingDate?: string | null
   compact?: boolean
+  weddingTz?: string | null
+  acceptance?: OfferAcceptance
 }) {
-  // Снимаем день один раз за жизнь карточки: время не читается в фазе рендера (R-04).
-  const [today] = useState(() => new Date().toISOString().slice(0, 10))
+  const [clock, setClock] = useState(() => Date.now())
+  useEffect(() => {
+    const update = () => setClock(Date.now())
+    const timer = window.setInterval(update, 30_000)
+    window.addEventListener('focus', update)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', update) }
+  }, [])
+  const today = todayIn(weddingTz ?? 'Europe/Moscow', clock)
   if (!request) return <span className="text-[var(--soft)]">—</span>
 
   if (!isFullOfferRequest(request)) return (
@@ -67,6 +78,9 @@ export function OfferSummary({
           )}
           {offer.message && <p className="font-normal text-[var(--ink2)] whitespace-pre-wrap">{offer.message}</p>}
           <p className="text-[var(--soft)] font-normal">{t('Действует до')} {formatWeddingDate(offer.validUntil)}</p>
+          {acceptance && request.status === 'open' && !oldDate && offer.validUntil >= today && (
+            <AcceptOffer key={offer.id} offerId={offer.id} acceptance={acceptance} />
+          )}
         </>
       )}
     </div>
