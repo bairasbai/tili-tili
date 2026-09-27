@@ -414,7 +414,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const pending = await ready(accepted.wedding)
     await app.db!.tx(client => eraseUser(client, pending.vendor.id))
     expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
-      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
+      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'booked_other' }])
     expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
     for (const erased of [
       pending.vendor.id,
