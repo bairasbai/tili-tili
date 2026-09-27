@@ -1,4 +1,4 @@
-name: Verify and deliver one offer acceptance feature
+name: Confirm comparison browser acceptance
 
 on:
   push:
@@ -7,55 +7,76 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
-  verify-deliver:
+  browser-confirm:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: tili
           POSTGRES_PASSWORD: tili
-          POSTGRES_DB: tili_test
+          POSTGRES_DB: offers_test
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U tili -d tili_test"
-          --health-interval 5s --health-timeout 3s --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "pg_isready -U tili -d offers_test"
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_test
-      TEST_REDIS_URL: redis://127.0.0.1:6379
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/offers_test
       FEATURE_BRANCH: feature/019-accept-offer-complete-20260928
+      PREVIOUS_FEATURE: c3af41dca5f28b64f9feeaf8b7ac44effe65ab26
     steps:
       - uses: actions/checkout@v4
         with:
-          path: payload
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
           path: work
-          ref: c4d37c2995d2aeb28bd988cb5144af164ff9fb60
-          fetch-depth: 1
+          ref: c3af41dca5f28b64f9feeaf8b7ac44effe65ab26
+          fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply exact reviewed delta
+      - uses: actions/download-artifact@v4
+        with:
+          name: offer019-verification
+          run-id: 36344285636
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/previous019
+      - name: Preserve verified full gate and strengthen only the browser test
         run: |
           set -euo pipefail
-          test "$(git -C work rev-parse HEAD)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
-          python payload/.delivery019/apply.py work
-          git -C work diff --check
           mkdir -p "$RUNNER_TEMP/offer019-evidence"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, os, subprocess
+          root = Path('work')
+          previous = Path(os.environ['RUNNER_TEMP']) / 'previous019'
+          log = previous / 'full-gate.log'
+          assert hashlib.sha256(log.read_bytes()).hexdigest() == '4e1497320fa6a255d30618eb1d8a8657b9f1590715bdc9f8d0dd3b23a78d0eef'
+          assert (previous / 'feature-commit.txt').read_text().strip() == os.environ['PREVIOUS_FEATURE']
+          (previous.parent / 'offer019-evidence/full-gate.log').write_bytes(log.read_bytes())
+          p = root / 'Тили-тили/backend/scripts/offers-e2e-browser.py'
+          s = p.read_text()
+          old = "        expect(page).to_have_url(re.compile(r'/compare\\?'))\n"
+          assert s.count(old) == 1
+          s = s.replace(old, old + "        # The router may update the URL before replacing the previous slot screen.\n        expect(page.get_by_text('Сравнение', exact=True)).to_be_visible()\n        table = page.get_by_role('table')\n        expect(table).to_be_visible()\n")
+          old = "expect(page.get_by_role('button', name='Принять предложение: ' + vendor['packageName'], exact=True))"
+          assert s.count(old) == 1
+          s = s.replace(old, old.replace('expect(page.', 'expect(table.'))
+          old = "        page.get_by_role('button', name='Принять предложение: ' + chosen['packageName'], exact=True).click()"
+          assert s.count(old) == 1
+          s = s.replace(old, old.replace('page.get_by_role', 'table.get_by_role'))
+          p.write_text(s)
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == 'b69ca801b139c59515534b48d442a5167b35387db307d3f2b02fb3dedabc222e'
+          compile(s, str(p), 'exec')
+          changed = subprocess.check_output(['git', '-C', 'work', 'diff', '--name-only', '-z']).decode().strip('\0').split('\0')
+          assert changed == ['Тили-тили/backend/scripts/offers-e2e-browser.py'], changed
+          print('All application code remains identical to the successful 2269-test full gate; only browser assertions changed.')
+          PY
       - name: Install pinned dependencies
         run: |
           set -euo pipefail
@@ -70,13 +91,7 @@ jobs:
           done
           python -m pip install playwright==1.57.0
           python -m playwright install --with-deps chromium
-      - name: Migrate and run full gate without skips
-        working-directory: work
-        run: |
-          set -euo pipefail
-          (cd Тили-тили/backend && DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up) > "$RUNNER_TEMP/offer019-evidence/migrations.log" 2>&1
-          bash init.sh 2>&1 | tee "$RUNNER_TEMP/offer019-evidence/full-gate.log"
-      - name: Real browser acceptance
+      - name: Real browser with comparison table barrier
         run: |
           set -euo pipefail
           export E2E_FIXTURE_FILE="$RUNNER_TEMP/offer019-fixture.json"
@@ -84,9 +99,7 @@ jobs:
           BACK="$GITHUB_WORKSPACE/work/Тили-тили/backend"
           FRONT="$GITHUB_WORKSPACE/work/Тили-тили/app"
           cd "$BACK"
-          node --input-type=module -e 'import pg from "pg";const c=new pg.Client({connectionString:process.env.TEST_DATABASE_URL});await c.connect();await c.query("CREATE DATABASE offers_test OWNER tili");await c.end()'
-          export TEST_DATABASE_URL=postgres://tili:tili@127.0.0.1:5432/offers_test
-          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/offer019-evidence/browser-migrations.log" 2>&1
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/offer019-evidence/migrations.log" 2>&1
           node --import tsx scripts/offers-e2e-server.mts > "$RUNNER_TEMP/offer019-server.log" 2>&1 &
           BACK_PID=$!
           cd "$FRONT"
@@ -101,26 +114,49 @@ jobs:
           done
           test -f "$E2E_FIXTURE_FILE"
           python "$BACK/scripts/offers-e2e-browser.py" 2>&1 | tee "$RUNNER_TEMP/offer019-evidence/browser.log"
-      - name: Record actual observations and publish one feature commit
+      - name: Correct evidence and replace only our own unmerged feature commit
         run: |
           set -euo pipefail
-          python payload/.delivery019/report.py
+          python - <<'PY'
+          from pathlib import Path
+          import json, os, subprocess
+          root = Path('work')
+          out = Path(os.environ['RUNNER_TEMP']) / 'offer019-evidence'
+          result = json.loads((out / 'browser/result.json').read_text())
+          assert len(result['passed']) == 5 and not result['errors'], result
+          run = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          p = root / 'tasks/фичи/019-кандидаты-и-предложения/verification-acceptance.md'
+          text = p.read_text()
+          text = text.replace('[Полный журнал GitHub Actions]', '[Общий gate: 2269 тестов, типы, линт и сборки]')
+          old = '- Артефакт `offer019-verification` в [этом запуске](https://github.com/bairasbai/tili-tili/actions/runs/36344285636): result.json, 01-compare.png, 02-booked.png, full-gate.log.'
+          assert text.count(old) == 1
+          text = text.replace(old, f'- Актуальный браузерный артефакт `offer019-verification-final` в [этом запуске]({run}): result.json, 01-compare.png, 02-booked.png; full-gate.log скопирован без изменений из предыдущего общего gate (SHA-256 `4e1497320fa6a255d30618eb1d8a8657b9f1590715bdc9f8d0dd3b23a78d0eef`).')
+          text += '\n## Уточнение браузерной приёмки\n\nПри просмотре первого скриншота обнаружено: URL менялся раньше DOM, поэтому прежнее ожидание могло нажать «Принять» ещё на экране слота. Тот скриншот не доказывал принятие из сравнения.\n'
+          text += f'Тест усилен ожиданием заголовка «Сравнение» и таблицы; кнопки ищутся и нажимаются только внутри неё. [Повторная приёмка]({run}) прошла все пять шагов, page errors = 0. SHA-256 исправленного сценария: `b69ca801b139c59515534b48d442a5167b35387db307d3f2b02fb3dedabc222e`.\n'
+          text += 'Общий gate повторно не запускался: перед новым браузерным прогоном Git проверил, что относительно проверенного `c3af41dca5f28b64f9feeaf8b7ac44effe65ab26` изменён только Python-сценарий E2E; весь код приложения и 2269 тестов остался побайтово тем же. После приёмки обновлены только этот протокол и журнал. Итоговая ветка сохраняет один feature-коммит непосредственно над исходной базой.\n'
+          p.write_text(text)
+          journal = root / 'JOURNAL.md'
+          journal.write_text(journal.read_text() + '\n**Уточнение проверки US3.** Первый browser screenshot показывал ещё слот: URL уже сменился, DOM перехода — нет. E2E усилен ожиданием «Сравнение» и `table`, принятие ищется строго внутри таблицы. Повторный реальный браузерный прогон и неизменность прикладного кода относительно успешного общего gate подтверждены в `verification-acceptance.md`. Исправление проверки включено в тот же единственный feature-коммит; прежний скриншот сравнения заменён.\n')
+          changed = set(subprocess.check_output(['git', '-C', 'work', 'diff', '--name-only', '-z']).decode().strip('\0').split('\0'))
+          assert changed == {'Тили-тили/backend/scripts/offers-e2e-browser.py', 'tasks/фичи/019-кандидаты-и-предложения/verification-acceptance.md', 'JOURNAL.md'}, changed
+          (out / 'verification-acceptance.md').write_text(text)
+          PY
           cd work
-          test "$(git rev-parse HEAD)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
-          test ! -e .delivery019
-          test ! -e .github/workflows/offer019-complete.yml
+          test "$(git rev-parse HEAD)" = "$PREVIOUS_FEATURE"
+          test "$(git rev-parse HEAD^)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
           git diff --check
+          git reset --soft c4d37c2995d2aeb28bd988cb5144af164ff9fb60
           git config user.name 'ChatGPT'
           git config user.email 'noreply@openai.com'
           git add --all
-          git commit -m 'feat(019): accept vendor offers into immutable bookings' -m 'Complete US3 T032-T038 and browser acceptance T041. Add 21 PostgreSQL and 21 frontend checks; preserve original offer terms, privacy and concurrent booking invariants. Update API 0.49.0, maps, roadmap and verification report. Main and production unchanged.'
+          git commit -m 'feat(019): accept vendor offers into immutable bookings' -m 'Complete US3 T032-T038 and real comparison-table browser acceptance T041. Add 21 PostgreSQL and 21 frontend checks. Preserve offer snapshots, role privacy, idempotency and booking concurrency. Update API 0.49.0, roadmap and evidence. Main and production unchanged.'
           test "$(git rev-parse HEAD^)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
-          git push --force-with-lease="refs/heads/$FEATURE_BRANCH:" origin "HEAD:refs/heads/$FEATURE_BRANCH"
+          git push --force-with-lease="refs/heads/$FEATURE_BRANCH:$PREVIOUS_FEATURE" origin "HEAD:refs/heads/$FEATURE_BRANCH"
           git rev-parse HEAD | tee "$RUNNER_TEMP/offer019-evidence/feature-commit.txt"
           cat tasks/фичи/019-кандидаты-и-предложения/verification-acceptance.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: offer019-verification
+          name: offer019-verification-final
           path: ${{ runner.temp }}/offer019-evidence/
           retention-days: 7
