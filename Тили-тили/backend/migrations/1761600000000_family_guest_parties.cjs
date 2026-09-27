@@ -129,6 +129,21 @@ exports.up = (pgm) => {
       JOIN bus_bookings b ON b.guest_id = c.original_id
     ON CONFLICT DO NOTHING;
 
+    /* From here one bus_booking is exactly one person. plus_one is retained
+     * only as an API compatibility field during rollout and may never alter
+     * capacity. */
+    DROP TRIGGER IF EXISTS guests_plus_one_seats ON guests;
+    DROP FUNCTION IF EXISTS bus_bookings_follow_plus_one();
+
+    CREATE OR REPLACE FUNCTION bus_booking_persons() RETURNS trigger AS $bus020$
+    BEGIN
+      NEW.persons := 1;
+      RETURN NEW;
+    END;
+    $bus020$ LANGUAGE plpgsql;
+
+    UPDATE bus_bookings SET persons = 1 WHERE persons <> 1;
+
     /* A hotel row is a room, not a person. party_id marks that ownership and
      * a partial unique index prevents the two people of one invitation from
      * consuming two rows in the same hotel by accident. Existing code can
@@ -220,6 +235,32 @@ exports.down = (pgm) => {
 
     DELETE FROM guests
      WHERE party_position = 2 AND is_placeholder = true;
+
+    /* Restore pre-020 bus semantics for a rollback. */
+    CREATE OR REPLACE FUNCTION bus_booking_persons() RETURNS trigger AS $bus020down$
+    BEGIN
+      SELECT 1 + plus_one::int INTO NEW.persons FROM guests WHERE id = NEW.guest_id;
+      NEW.persons := coalesce(NEW.persons, 1);
+      RETURN NEW;
+    END;
+    $bus020down$ LANGUAGE plpgsql;
+
+    CREATE FUNCTION bus_bookings_follow_plus_one() RETURNS trigger AS $bus020follow$
+    BEGIN
+      UPDATE bus_bookings SET persons = 1 + NEW.plus_one::int WHERE guest_id = NEW.id;
+      RETURN NEW;
+    END;
+    $bus020follow$ LANGUAGE plpgsql;
+
+    CREATE TRIGGER guests_plus_one_seats
+      AFTER UPDATE OF plus_one ON guests
+      FOR EACH ROW WHEN (OLD.plus_one IS DISTINCT FROM NEW.plus_one)
+      EXECUTE FUNCTION bus_bookings_follow_plus_one();
+
+    UPDATE bus_bookings b
+       SET persons = 1 + g.plus_one::int
+      FROM guests g
+     WHERE g.id = b.guest_id;
 
     DROP TRIGGER IF EXISTS guest_parties_release_reservations ON guest_parties;
     DROP FUNCTION IF EXISTS release_party_reservations();
