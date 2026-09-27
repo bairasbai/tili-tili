@@ -155,6 +155,15 @@ export function VendorDashboard() {
           ))}
         </div>
 
+        <button onClick={() => nav('/vendor-app/offer-requests')} className="press w-full card p-4 mt-3.5 flex items-center gap-3 text-left">
+          <Tile icon="✉️" tile="bg-[var(--blue)]" size={42} />
+          <div className="flex-1">
+            <b className="text-[13px]">{t('Запросы предложений')}</b>
+            <p className="text-[10.5px] text-[var(--soft)]">{t('условия пары, ваше предложение или отказ')}</p>
+          </div>
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </button>
+
         {/* Обновления от пар: настоящие правки по забронированным свадьбам.
             Раньше здесь стояли три строки про «Алину & Тимура» — у любого
             подрядчика одни и те же. */}
