@@ -27,6 +27,8 @@ import { isAuthorized } from '@/lib/api/client'
 import { t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
 import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '@/components/TaskPlanning'
+import { OfferRequestComposer } from '@/components/OfferRequestComposer'
+import { OfferSummary } from '@/components/OfferSummary'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
@@ -217,7 +219,7 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
    умолчанию, а снятые отметки сохраняются по стабильному id записи. */
 function SlotCandidates({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { weddingId } = useStore()
+  const { weddingId, weddingDate } = useStore()
   const q = useApi(() => weddingId ? getShortlist(weddingId, s.id) : noWedding(), [weddingId, s.id])
   const roles = useApi(() => listMyWeddings(), [weddingId])
   const role = roles.data?.find(w => w.id === weddingId)?.role
@@ -284,6 +286,7 @@ function SlotCandidates({ s }: { s: Slot }) {
                     <b className="text-[12.5px] block">{entry.position}. {name}</b>
                     {!live && vendor && <p className="text-[11px] text-[var(--rose-ink)] mt-1">{t('Анкета недоступна')}</p>}
                     {live && <p className="text-[11px] text-[var(--soft)] mt-1">{occupancy}</p>}
+                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={weddingDate} /></div>}
                   </div>
                 </div>
                 <div className="flex gap-2 mt-2.5 justify-end">
@@ -305,6 +308,9 @@ function SlotCandidates({ s }: { s: Slot }) {
             className="press w-full mt-3 py-3 rounded-[16px] card-s text-[12px] font-semibold disabled:opacity-50"
           >{t('Сравнить')} ({selected.length})</button>
           {selected.length < 2 && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Отметьте хотя бы двух доступных кандидатов')}</p>}
+          {canBook && weddingId && selected.length > 0 && (
+            <OfferRequestComposer weddingId={weddingId} slotId={s.id} entries={selected} onChanged={q.reload} />
+          )}
         </>
       )}
       {ready(q) && roles.loading && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Проверяем доступ…')}</p>}
