@@ -7,9 +7,19 @@
  */
 /* Версия поднимается вместе с правилом кэширования (ниже): в кэше прежней
    версии лежат записи, положенные туда прежним правилом, — их вычищает `activate`.
-   v4 — «всё, кроме /api/» → белый список статики; v5 — только сборка и оболочка. */
-const CACHE = 'tilitili-v5'
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
+   v4 — «всё, кроме /api/» → белый список статики; v5 — только сборка и оболочка;
+   v6 — новый комплект PNG-иконок бренда. */
+const CACHE = 'tilitili-v6'
+const SHELL = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './favicon-32.png',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+]
 const OFFLINE_PAGE = new URL('./index.html', self.registration.scope).toString()
 
 self.addEventListener('install', (e) => {
@@ -23,7 +33,7 @@ self.addEventListener('activate', (e) => {
 /*
  * Хостинг с SPA-fallback отдаёт index.html на любой неизвестный путь. При заходе
  * по прямой ссылке вида /app/wedding/guests preload-сканер браузера успевает
- * запросить ./manifest.webmanifest и ./icon.svg относительно ГЛУБОКОГО пути —
+ * запросить ./manifest.webmanifest и PNG-иконки относительно ГЛУБОКОГО пути —
  * ещё до того, как шим в index.html уведёт на корень приложения. Без проверки
  * в кэш легла бы HTML-страница под адресом манифеста.
  */
@@ -79,8 +89,8 @@ self.addEventListener('push', (e) => {
   const title = payload.title || 'Тили-тили'
   e.waitUntil(self.registration.showNotification(title, {
     body: payload.body || '',
-    icon: './icon.svg',
-    badge: './icon.svg',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     data: payload.data || {},
   }))
 })

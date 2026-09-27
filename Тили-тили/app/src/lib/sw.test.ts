@@ -79,7 +79,7 @@ function staticRule(scope: string): (url: string) => boolean {
 describe('service worker кэширует только сборку и оболочку', () => {
   it('в кэш идут файлы ./assets/ и оболочка; картинки и JSON по другим путям — нет', () => {
     const at = staticRule('https://tili-tili.ru/')
-    for (const p of ['/assets/index-a1b2c3.js', '/assets/main-4f.css', '/assets/serif-9x.woff2', '/assets/hero-77.png', '/icon.svg', '/manifest.webmanifest', '/'])
+    for (const p of ['/assets/index-a1b2c3.js', '/assets/main-4f.css', '/assets/serif-9x.woff2', '/assets/hero-77.png', '/icon-192.png', '/manifest.webmanifest', '/'])
       expect(at(p), `статика ${p} не попала бы в кэш`).toBe(true)
     for (const p of ['/img/hero.png', '/files/album/1.jpg', '/uploads/passport.png', '/v1/weddings/w1', '/backend/admin/verifications', '/gw/users/me', '/api/weddings', '/admin/verifications', '/assets/'])
       expect(at(p), `адрес ${p} прошёл бы как статика`).toBe(false)
@@ -89,7 +89,7 @@ describe('service worker кэширует только сборку и обол�
   it('пути считаются от адреса воркера — приложение в подпапке хостинга', () => {
     const at = staticRule('https://host.example/app/')
     expect(at('/app/assets/index-a1.js')).toBe(true)
-    expect(at('/app/icon.svg')).toBe(true)
+    expect(at('/app/icon-192.png')).toBe(true)
     expect(at('/assets/index-a1.js'), 'корень хостинга — не наша сборка').toBe(false)
     expect(at('/app/photos/1.jpg')).toBe(false)
   })
