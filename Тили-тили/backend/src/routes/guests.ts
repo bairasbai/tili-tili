@@ -164,9 +164,9 @@ export function guestNameKey(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
-/** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
-export function personCount(guests: { status: string; plusOne: boolean }[]): number {
-  return guests.filter((g) => g.status === 'yes').reduce((a, g) => a + (g.plusOne ? 2 : 1), 0)
+/** 020: одна строка guests = одна реальная персона. plusOne больше не множит счётчики. */
+export function personCount(guests: { status: string; plusOne?: boolean }[]): number {
+  return guests.filter((g) => g.status === 'yes').length
 }
 
 export async function guestRoutes(app: FastifyInstance): Promise<void> {
@@ -214,19 +214,24 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * провайдеру SMS как есть (ревью 015). Не российский или неполный — 422. */
       const phone = normalizedPhoneOr422(body.phone)
       const id = uuidv7()
-      await db().query(
-        `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          id,
-          request.member!.weddingId,
-          body.name,
-          body.plusOne ?? false,
-          body.group ?? null,
-          phone,
-          newGuestToken(),
-        ],
-      )
+      await db().tx(async (client) => {
+        const { rows } = await client.query<{ invitation_id: string }>(
+          `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
+           values ($1, $2, $3, false, $4, $5, $6)
+           returning invitation_id`,
+          [id, request.member!.weddingId, body.name, body.group ?? null, phone, newGuestToken()],
+        )
+        /* 020 compatibility: old clients can still send plusOne=true, but it
+         * becomes a visible second person in the same invitation instead of a
+         * hidden multiplier. Personal menu/seat/transport/hotel are not copied. */
+        if (body.plusOne === true) {
+          await client.query(
+            `insert into guests (id, wedding_id, name, plus_one, group_name, rsvp_token, invitation_id)
+             values ($1, $2, $3, false, $4, $5, $6)`,
+            [uuidv7(), request.member!.weddingId, `Гость ${body.name}`, body.group ?? null, newGuestToken(), rows[0]!.invitation_id],
+          )
+        }
+      })
       return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
     },
   )
@@ -296,12 +301,23 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           names.add(nameKey)
           if (phone) phones.add(phone)
           const id = uuidv7()
-          await client.query(
+          const normalizedName = row.name.trim().replace(/\s+/g, ' ')
+          const { rows: inserted } = await client.query<{ invitation_id: string }>(
             `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
-             values ($1, $2, $3, $4, $5, $6, $7)`,
-            [id, weddingId, row.name.trim().replace(/\s+/g, ' '), row.plusOne ?? false, row.group ?? null, phone ?? null, newGuestToken()],
+             values ($1, $2, $3, false, $4, $5, $6)
+             returning invitation_id`,
+            [id, weddingId, normalizedName, row.group ?? null, phone ?? null, newGuestToken()],
           )
           createdIds.push(id)
+          if (row.plusOne === true) {
+            const companionId = uuidv7()
+            await client.query(
+              `insert into guests (id, wedding_id, name, plus_one, group_name, rsvp_token, invitation_id)
+               values ($1, $2, $3, false, $4, $5, $6)`,
+              [companionId, weddingId, `Гость ${normalizedName}`, row.group ?? null, newGuestToken(), inserted[0]!.invitation_id],
+            )
+            createdIds.push(companionId)
+          }
         }
       })
 
@@ -370,10 +386,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         /* Вместимость стола проверяется и при пересадке, и при «+1» без
          * пересадки: гость уже сидит, а «+1» добавляет за столом персону
          * (ревью 015) — стол заявляется сразу с текущим `table_id`. */
-        const seatedAt = body.plusOne === true && !has('tableId')
-          ? (await client.query<{ table_id: string | null }>('select table_id from guests where id = $1', [guestId])).rows[0]?.table_id ?? null
-          : null
-        const tableToCheck = (body.tableId as string | undefined) ?? seatedAt ?? undefined
+        const tableToCheck = body.tableId as string | undefined
         if (tableToCheck) {
           /* Стол обязан принадлежать этой же свадьбе: иначе гость садится
            * за чужой стол и портит чужую рассадку. Строка стола под
@@ -390,16 +403,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
            * на соседнем экране. Сам гость исключается из уже сидящих (он мог
            * пересаживаться в пределах этого же стола) и добавляется с тем
            * `plusOne`, который придёт вместе с посадкой. */
-          const { rows: seated } = await client.query<{ persons: string; plus_one: boolean | null }>(
-            `select coalesce(sum(1 + o.plus_one::int) filter (where o.id <> $3), 0)::text as persons,
-                    bool_or(o.plus_one) filter (where o.id = $3) as plus_one
+          const { rows: seated } = await client.query<{ persons: string }>(
+            `select count(*) filter (where o.id <> $3)::text as persons
                from guests o
-              where o.wedding_id = $2 and (o.table_id = $1 or o.id = $3)`,
+              where o.wedding_id = $2 and o.table_id = $1`,
             [tableToCheck, weddingId, guestId],
           )
-          if (seated[0]!.plus_one === null) throw notFound('Гость не найден')
-          const plusOne = has('plusOne') ? Boolean(body.plusOne) : seated[0]!.plus_one
-          const total = Number(seated[0]!.persons) + (plusOne ? 2 : 1)
+          const total = Number(seated[0]!.persons) + 1
           const { capacity, name } = table[0]!
           if (total > capacity) {
             throw conflict(
@@ -448,7 +458,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               guestId,
               weddingId,
               (body.name as string) ?? null,
-              (body.plusOne as boolean) ?? null,
+              false,
               (body.status as string) ?? null,
               has('group'),
               (body.group as string) ?? null,
@@ -465,10 +475,29 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             ],
           )
         } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
           throw error
         }
         if (res.rowCount === 0) throw notFound('Гость не найден')
+
+        if (body.plusOne === true) {
+          const { rows: invitation } = await client.query<{ invitation_id: string; n: string }>(
+            `select g.invitation_id,
+                    (select count(*)::text from guests x where x.invitation_id = g.invitation_id) as n
+               from guests g where g.id = $1`,
+            [guestId],
+          )
+          if (invitation[0] && Number(invitation[0].n) === 1) {
+            const { rows: current } = await client.query<{ name: string; group_name: string | null }>(
+              'select name, group_name from guests where id = $1',
+              [guestId],
+            )
+            await client.query(
+              `insert into guests (id, wedding_id, name, plus_one, group_name, rsvp_token, invitation_id)
+               values ($1, $2, $3, false, $4, $5, $6)`,
+              [uuidv7(), weddingId, `Гость ${current[0]!.name}`, current[0]!.group_name, newGuestToken(), invitation[0].invitation_id],
+            )
+          }
+        }
 
         /* §13.2: изменения рассадки видны подрядчику, чья сделка забронирована.
          * Декоратор расставляет карточки по столам, кейтеринг считает порции —
