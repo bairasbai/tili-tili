@@ -409,7 +409,7 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
     await inviteCode(w, g.guestId)
     const shown = ((await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/guests`, headers: auth(w.token) })).json() as { id: string; inviteUrlUsed?: boolean }[]).find((x) => x.id === g.guestId)!
     expect(shown.inviteUrlUsed, 'ссылку никто не открывал').toBeFalsy()
-    const { rows: codes } = await app.db!.query<{ used_at: Date | null }>('select used_at from guest_invite_codes where guest_id = $1', [g.guestId])
+    const { rows: codes } = await app.db!.query<{ used_at: Date | null }>('select used_at from guest_invite_codes where party_id = (select party_id from guests where id = $1)', [g.guestId])
     expect(codes.every((c) => c.used_at === null), 'перевыпуск гасит сроком, а не отметкой «открыт»').toBe(true)
 
     // G7: провайдер отказал — это `failed`, а не «без телефона».
