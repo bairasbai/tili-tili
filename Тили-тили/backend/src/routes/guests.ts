@@ -3,7 +3,7 @@ import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
-import type { Queryable } from '../plugins/db.js'
+import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import { requireRole, type Role } from '../wedding/access.js'
 
