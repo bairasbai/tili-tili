@@ -2058,3 +2058,12 @@ Object.assign(EN, {
   'Отметку ведёт пара': 'Only the couple can change this mark',
   'Вы отметили в квизе, что этот подрядчик уже есть. Добавьте его — он впишется в команду, бюджет и тайминг.': 'You said in the quiz that this vendor is already booked. Add them — they will join the team, budget and timeline.',
 })
+/* 019, FR-006: пакеты подрядчика сохраняются по id, у пакета — состав и правка на месте (ERR-0318). */
+Object.assign(EN, {
+  'Что входит': 'What’s included',
+  'Что входит — по пункту в строке': 'What’s included — one item per line',
+  'Изменить пакет': 'Edit package',
+  'Правка пакета': 'Editing a package',
+  'В составе пакета — до 40 пунктов, каждый до 200 знаков': 'A package lists up to 40 items, each up to 200 characters',
+  'Такого пакета в анкете уже нет — обновите страницу': 'This package is no longer in your profile — reload the page',
+})
