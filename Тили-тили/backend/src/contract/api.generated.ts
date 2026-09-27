@@ -2560,7 +2560,10 @@ export interface paths {
         /** Чек-лист (шаблонные + свои задачи) */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Только задачи текущего пользователя в этой свадьбе; права раздела не меняются. */
+                    mine?: boolean;
+                };
                 header?: never;
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -2593,21 +2596,26 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        title: string;
-                        /** @example 3–1 месяц */
-                        period: string;
-                    };
+                    "application/json": components["schemas"]["TaskCreate"];
                 };
             };
             responses: {
-                /** @description OK */
+                /** @description Создана */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Неверная дата, период или ответственный; относительная точная дата без даты свадьбы. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -2675,12 +2683,9 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
-                    "application/json": {
-                        done?: boolean;
-                        title?: string;
-                    };
+                    "application/json": components["schemas"]["TaskPatch"];
                 };
             };
             responses: {
@@ -2691,6 +2696,24 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Task"];
+                    };
+                };
+                /** @description Задача не найдена в доступной свадьбе. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Неверная дата или ответственный; планирование задач плана Б не поддерживается. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -9107,21 +9130,69 @@ export interface components {
             capacity: number;
             guestIds?: string[];
         };
+        TaskCreate: {
+            title: string;
+            /** @description Число месяцев 0–120 до свадьбы или произвольная подпись периода без вычисленного срока. */
+            period: string;
+            /** Format: date */
+            due?: string | null;
+            /**
+             * @description Без явной даты — relative; с явной датой или null — fixed по умолчанию. Relative с точной датой требует даты свадьбы.
+             * @enum {string}
+             */
+            dueMode?: "relative" | "fixed";
+            /** Format: uuid */
+            assigneeId?: string | null;
+            /** @description Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание. */
+            reminderDaysBefore?: number | null;
+            /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
+            reminderTime?: string;
+        };
+        TaskPatch: {
+            title?: string;
+            done?: boolean;
+            /**
+             * Format: date
+             * @description Пропуск сохраняет срок; null снимает срок. Явное значение без dueMode переключает в fixed.
+             */
+            due?: string | null;
+            /**
+             * @description Relative без due пересчитывает срок по периоду и дате свадьбы; fixed без due сохраняет дату.
+             * @enum {string}
+             */
+            dueMode?: "relative" | "fixed";
+            /**
+             * Format: uuid
+             * @description Живой участник этой свадьбы с ролью couple/helper/coordinator. Null снимает назначение; пропуск сохраняет.
+             */
+            assigneeId?: string | null;
+            /** @description Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание. */
+            reminderDaysBefore?: number | null;
+            /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
+            reminderTime?: string;
+        };
         Task: {
             id?: string;
             title?: string;
-            period?: string;
+            period?: string | null;
             done?: boolean;
             custom?: boolean;
             /**
              * Format: date
-             * @description Срок задачи, посчитанный от даты свадьбы («за 9 месяцев» → сентябрь
-             *     2026 для свадьбы 14 июня 2027). Null — у свадьбы ещё нет даты, и
-             *     тогда срока нет ни у одной задачи. Сервер считает его сам и
-             *     пересчитывает при переносе: клиент вычислять его не должен, иначе
-             *     чек-лист на телефоне и напоминания в фоне разойдутся.
+             * @description Срок задачи. Relative двигается вместе с датой свадьбы; fixed сохраняет выбранную дату, в том числе отсутствие срока.
              */
             due?: string | null;
+            /** @enum {string} */
+            dueMode?: "relative" | "fixed";
+            assignee?: {
+                /** Format: uuid */
+                userId?: string;
+                name?: string | null;
+            } | null;
+            /** @description Напомнить ответственному за N календарных дней до срока; 0 — в день срока, null — выключено. Для включения нужны срок и ответственный. Снятие срока или назначения выключает напоминание. */
+            reminderDaysBefore?: number | null;
+            /** @description Время по поясу ответственного (профиль → свадьба → Москва), по умолчанию 09:00. Тихие часы и настройки уведомлений имеют приоритет. */
+            reminderTime?: string;
         };
         Chat: {
             id?: string;

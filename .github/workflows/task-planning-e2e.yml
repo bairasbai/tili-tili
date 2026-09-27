@@ -1,0 +1,102 @@
+name: Task planning browser E2E
+permissions:
+  contents: read
+concurrency:
+  group: task-browser-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    if: github.head_ref == 'feature/product-improvements-stage1-tasks' || github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: task_browser_test
+        ports:
+        - 5432:5432
+        options: --health-cmd "pg_isready -U tili -d task_browser_test" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/task_browser_test
+      E2E_FIXTURE_FILE: /tmp/task-browser-fixture.json
+      E2E_RESULT_DIR: /tmp/task-browser-evidence
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install locked application dependencies
+      run: |
+        set -euo pipefail
+        corepack enable && corepack prepare pnpm@10.34.5 --activate
+        for dir in 'Тили-тили/app' 'Тили-тили/backend'; do
+          (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+        done
+    - name: Install isolated browser test tooling
+      run: |
+        python -m pip install playwright==1.57.0
+        python -m playwright install --with-deps chromium
+    - name: Migrate disposable database
+      working-directory: Тили-тили/backend
+      run: DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+    - name: Exercise two browser sessions against the real API
+      run: |
+        set -euo pipefail
+        mkdir -p "$E2E_RESULT_DIR"
+        rm -f "$E2E_FIXTURE_FILE"
+        (cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
+        (cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort) > "$RUNNER_TEMP/task-vite.log" 2>&1 & ui=$!
+        trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
+        # This fixture runs the real reminder function directly, without Redis.
+        # Bootstrap SQL must finish (private fixture file), then HTTP must be live.
+        # Production /health/ready semantics are intentionally unchanged.
+        ready=0
+        for attempt in $(seq 1 60); do
+          if ! kill -0 "$api" 2>/dev/null || ! kill -0 "$ui" 2>/dev/null; then break; fi
+          if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
+          sleep 1
+         done
+        if test "$ready" != 1; then
+          python - <<'PYCODE'
+        import json,os,pathlib,re
+        result={'error':'Fixture services did not become ready','logs':{}}
+        for name in ('task-api','task-vite'):
+            p=pathlib.Path(os.environ['RUNNER_TEMP'])/(name+'.log')
+            text=p.read_text(errors='replace')[-12000:] if p.exists() else 'No log created'
+            text=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]',text)
+            text=re.sub(r'postgres(?:ql)?://[^\s"\x27]+','[redacted-db]',text)
+            text=re.sub(r'\+7\d{10}','[redacted-phone]',text)
+            result['logs'][name]=text
+        (pathlib.Path(os.environ['E2E_RESULT_DIR'])/'startup-error.json').write_text(json.dumps(result,indent=2))
+        print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')
+        PYCODE
+          exit 1
+        fi
+        python 'Тили-тили/backend/scripts/task-e2e-browser.py'
+        python - <<'PYCODE'
+        import json,os,pathlib
+        r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
+        assert len(r['passed'])==14 and not r['page_errors'] and 'error' not in r
+        PYCODE
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: task-planning-browser-evidence
+        path: ${{ env.E2E_RESULT_DIR }}
+        retention-days: 7
+        if-no-files-found: warn
+'on':
+  push:
+    branches:
+    - feature/product-improvements-stage1-tasks
+  pull_request:
+    branches:
+    - main

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
+import { pruneTaskNotifications } from '../notify/task-notifications.js'
 
 export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -9,6 +10,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   }
 
   app.get('/notifications', { preHandler: app.requireConsent }, async (request) => {
+    await pruneTaskNotifications(db(), new Date(), request.caller!.userId)
     /* Отдаём всё, что создано, не глядя на `deliver_after`: тихие часы —
      * про звук в 23:00, а не про право знать. Открыв приложение ночью сам,
      * человек должен увидеть новость, а не пустой экран. */
@@ -22,7 +24,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       created_at: Date
     }>(
       `select id, kind, title, body, link, read_at, created_at
-         from notifications where user_id = $1
+         from notifications where user_id = $1 and cancelled_at is null
         order by created_at desc limit 100`,
       [request.caller!.userId],
     )
@@ -42,7 +44,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
     if (!isUuid(id)) throw notFound('Уведомление не найдено')
     // Повторная отметка не двигает время: «когда прочитал» — это первый раз.
     const res = await db().query(
-      'update notifications set read_at = coalesce(read_at, now()) where id = $1 and user_id = $2',
+      'update notifications set read_at = coalesce(read_at, now()) where id = $1 and user_id = $2 and cancelled_at is null',
       [id, request.caller!.userId],
     )
     if (res.rowCount === 0) throw notFound('Уведомление не найдено')
@@ -53,7 +55,7 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
    * сотня запросов на тап, и обрыв посередине оставлял половину непрочитанной.
    * Повтор пустой: уже прочитанные не трогаются, время прочтения не двигается. */
   app.post('/notifications/read-all', { preHandler: app.requireConsent }, async (request) => {
-    const res = await db().query('update notifications set read_at = now() where user_id = $1 and read_at is null', [
+    const res = await db().query('update notifications set read_at = now() where user_id = $1 and read_at is null and cancelled_at is null', [
       request.caller!.userId,
     ])
     return { marked: res.rowCount ?? 0 }

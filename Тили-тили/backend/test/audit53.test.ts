@@ -96,6 +96,7 @@ function touchesSharedState(rawText: string): boolean {
   }
   if (/from\s*['"]\.\.\/src\/reviews\/rating\.(?:js|ts)['"]/.test(code) && /\brecomputeAllRatings\b/.test(code)) return true
   if (/from\s*['"]\.\.\/src\/notify\/push\.(?:js|ts)['"]/.test(code) && /\bsendDuePushes\b/.test(code)) return true
+  if (/from\s*['"]\.\.\/src\/notify\/task-notifications\.(?:js|ts)['"]/.test(code) && /\b(sendTaskReminders|pruneTaskNotifications)\b/.test(code)) return true
   if (code.includes('/admin/categories')) return true
   if (/\b(insert\s+into|update|delete\s+from)\s+(categories|category_synonyms)\b/i.test(code)) return true
   return false

@@ -163,7 +163,7 @@ export async function rescheduleWedding(
     await client.query(
       `update tasks
           set due = ($2::date - make_interval(months => period::int))::date
-        where wedding_id = $1 and due is null and period ~ '^[0-9]+$'`,
+        where wedding_id = $1 and due is null and due_mode = 'relative' and period ~ '^[0-9]+$'`,
       [weddingId, date],
     )
     // Время шаблона местное для площадки: пояс берём у свадьбы.
@@ -179,7 +179,7 @@ export async function rescheduleWedding(
   }
   if (oldDate) {
     await client.query(
-      `update tasks set due = due + ($2::date - $3::date) where wedding_id = $1 and due is not null`,
+      `update tasks set due = due + ($2::date - $3::date) where wedding_id = $1 and due is not null and due_mode = 'relative'`,
       [weddingId, date, oldDate],
     )
     // `date - date` даёт целое число дней, а к timestamptz целое прибавить
