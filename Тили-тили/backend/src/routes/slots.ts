@@ -83,6 +83,26 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   }
 
   /**
+   * Слот под эксклюзивным замком — до вставки сделки (разведка 019, ERR-0317).
+   *
+   * Бронь вставляла сделку раньше, чем захватывала слот: внешний ключ `deals.slot_id`
+   * ставит на строку слота KEY SHARE, а `update slots set deal_id` (колонка с
+   * уникальным индексом) требует FOR UPDATE. Две одновременные брони обе держали
+   * KEY SHARE и обе ждали FOR UPDATE — детектор взаимных блокировок убивал одну,
+   * пара получала 500 вместо 409 (14 пар из 40 на этой машине). Замок первым —
+   * вторая бронь ждёт, видит занятый слот и отвечает 409.
+   */
+  async function lockEmptySlot(client: Queryable, weddingId: string, slotId: string) {
+    if (!isUuid(slotId)) throw notFound('Слот не найден')
+    const { rows } = await client.query<{ deal_id: string | null }>(
+      'select deal_id from slots where id = $1 and wedding_id = $2 for update',
+      [slotId, weddingId],
+    )
+    if (!rows[0]) throw notFound('Слот не найден')
+    if (rows[0].deal_id) throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
+  }
+
+  /**
    * Дата свадьбы для захвата у подрядчика — под замком `for share` строки
    * свадьбы: перенос (`rescheduleWedding`) держит её `for update`, и бронь,
    * прочитавшая дату до переноса и записавшая занятость после, занимала у
@@ -220,7 +240,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           const date = await weddingDate(client, weddingId)
           // Затем своя строка `users` — тем же порядком, что и удаление аккаунта.
           await assertCallerLive(client, request.caller!.userId)
-          await slotOf(client, weddingId, slotId)
+          // Затем слот — эксклюзивно и до вставки сделки (ERR-0317).
+          await lockEmptySlot(client, weddingId, slotId)
 
           /* Живая анкета: опубликована и не заблокирована модератором — та же
            * граница, что у каталога (`VENDOR_LIVE_JOIN`). Заблокированную
@@ -248,8 +269,11 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
            * фича 005): кабинет и карточка показывают, что именно продано. */
           if (body.packageId !== undefined) {
             // Колонка uuid: строка не той формы роняет запрос драйвером (R-118).
+            /* `for key share`: сохранение анкеты подрядчиком удаляет пакеты, и без замка
+             * пакет, прочитанный живым, исчезал до вставки сделки — внешний ключ ронял
+             * бронь 500 вместо 422 (разведка 019). Замок держит пакет до коммита брони. */
             const { rows: pkg } = new RegExp(UUID_ID.pattern).test(body.packageId)
-              ? await client.query('select 1 from vendor_packages where id = $1 and vendor_id = $2', [
+              ? await client.query('select 1 from vendor_packages where id = $1 and vendor_id = $2 for key share', [
                   body.packageId,
                   body.vendorId,
                 ])
@@ -369,7 +393,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       return db().tx(async (client) => {
         // Свой подрядчик — такая же сделка, и дверь такая же (SA-05).
         await assertCallerLive(client, request.caller!.userId)
-        await slotOf(client, weddingId, slotId)
+        // Слот — эксклюзивно и до вставки сделки, как у каталожной брони (ERR-0317).
+        await lockEmptySlot(client, weddingId, slotId)
         // Прежние ссылки слота гаснут до новой сделки: страховка от любого
         // пути отмены, который их не отозвал (ERR-0242).
         await revokeSlotInvites(client, slotId)
