@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useOfferDay } from '@/lib/useOfferDay'
 import type { OfferPublic, OfferRequest } from '@/lib/api/offers'
 import { fmt } from '@/lib/money'
 import { formatWeddingDate } from '@/lib/weddingDate'
@@ -23,15 +23,16 @@ function closeReason(reason: OfferRequest['closeReason']): string {
 export function OfferSummary({
   request,
   currentWeddingDate,
+  weddingTz,
   compact = false,
 }: {
   request?: OfferRequest | OfferPublic
   /** `undefined` — экран не знает нынешнюю дату; `null` — дата снята. */
   currentWeddingDate?: string | null
+  weddingTz?: string | null
   compact?: boolean
 }) {
-  // Снимаем день один раз за жизнь карточки: время не читается в фазе рендера (R-04).
-  const [today] = useState(() => new Date().toISOString().slice(0, 10))
+  const today = useOfferDay(weddingTz)
   if (!request) return <span className="text-[var(--soft)]">—</span>
 
   if (!isFullOfferRequest(request)) return (
@@ -57,7 +58,7 @@ export function OfferSummary({
         </>
       ) : (
         <>
-          {offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
+          {request.closeReason !== 'booked' && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
           <p className="font-semibold">{offer.title}</p>
           <p className="font-semibold tabular text-[var(--rose-ink)]">{fmt(offer.price.amount)}</p>
           {offer.includes.length > 0 && (
