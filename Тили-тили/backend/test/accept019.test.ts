@@ -409,12 +409,12 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select id from notifications where user_id=$1', [other.vendor.id])).toHaveLength(before.length)
   })
 
-  it('T039 erases terminal vendor offer text, keeps its close reason and accepted snapshot', async () => {
+  it('T039 erases open vendor offer text and keeps accepted snapshot', async () => {
     const accepted = await ready(undefined, true)
-    const pending = await ready(accepted.wedding)
+    const pending = await ready()
     await app.db!.tx(client => eraseUser(client, pending.vendor.id))
     expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
-      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'booked_other' }])
+      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
     expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
     for (const erased of [
       pending.vendor.id,
