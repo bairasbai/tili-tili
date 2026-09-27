@@ -570,19 +570,18 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             `update guests set
                name = coalesce($3, name),
                plus_one = false,
-               rsvp = coalesce($5, rsvp),
-               group_name = case when $6 then $7 else group_name end,
-               table_id = case when $8 then $9::uuid else table_id end,
-               diet = case when $10 then $11 else diet end,
-               diet_note = case when $12 then $13 else diet_note end,
-               transfer = case when $14 then $15 else transfer end,
-               phone = case when $16 then $17 else phone end
+               rsvp = coalesce($4, rsvp),
+               group_name = case when $5 then $6 else group_name end,
+               table_id = case when $7 then $8::uuid else table_id end,
+               diet = case when $9 then $10 else diet end,
+               diet_note = case when $11 then $12 else diet_note end,
+               transfer = case when $13 then $14 else transfer end,
+               phone = case when $15 then $16 else phone end
              where id = $1 and wedding_id = $2`,
             [
               guestId,
               weddingId,
               (body.name as string) ?? null,
-              null,
               (body.status as string) ?? null,
               has('group'),
               (body.group as string) ?? null,
