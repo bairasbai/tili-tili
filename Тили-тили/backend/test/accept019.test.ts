@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import type { Queryable } from '../src/plugins/db.js'
-import { eraseUser } from '../src/jobs/index.js'
+import { cleanup, eraseUser } from '../src/jobs/index.js'
 
 // Keep wedding fixtures inside the API's rolling five-year limit.
 const TEST_YEAR = new Date().getUTCFullYear() + 1
@@ -140,6 +140,14 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
       if (Number(rows[0]!.n) > 0) found.push(`${c.table_name}.${c.column_name}`)
     }
     return found
+  }
+
+  async function hardErase(user: User): Promise<void> {
+    const deleted = await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(user.token) })
+    expect(deleted.statusCode, deleted.body).toBe(204)
+    await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [user.id])
+    await cleanup(app)
+    expect(await rows('select id from users where id = $1', [user.id])).toEqual([])
   }
 
   async function waitForBlocked(client: Queryable, holder: number, expected: number): Promise<void> {
@@ -409,27 +417,29 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select id from notifications where user_id=$1', [other.vendor.id])).toHaveLength(before.length)
   })
 
-  it('T039 erases open vendor offer text and keeps accepted snapshot', async () => {
+  it('T039 hard-erases vendor identity and unaccepted text, preserving accepted deal terms', async () => {
     const accepted = await ready(undefined, true)
     const pending = await ready()
-    await app.db!.tx(client => eraseUser(client, pending.vendor.id))
+    const secret = `ERASE-${pending.vendor.id}`
+    const revised = await answer(pending, { ...offerBody, title: secret, includes: [secret], message: secret })
+    expect(revised.statusCode, revised.body).toBe(201)
+
+    await hardErase(pending.vendor)
     expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
       .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
     expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
-    for (const erased of [
-      pending.vendor.id,
-      pending.vendor.phone,
-      `Accept ${pending.vendor.id}`,
-      offerBody.title,
-      offerBody.message,
-    ]) {
-      expect(await findPersonalValueEverywhere(String(erased))).toEqual([])
+    for (const erased of [pending.vendor.id, pending.vendor.phone, `Accept ${pending.vendor.id}`, secret]) {
+      expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
     }
+
     expect((await accept(accepted)).statusCode).toBe(200)
-    await app.db!.tx(client => eraseUser(client, accepted.vendor.id))
-    expect(await rows('select vendor_id, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
-      .toEqual([{ vendor_id: null, package_title_snapshot: 'Съёмка 8 часов',
+    await hardErase(accepted.vendor)
+    expect(await rows('select vendor_id, external_name, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
+      .toEqual([{ vendor_id: null, external_name: null, package_title_snapshot: 'Съёмка 8 часов',
         package_includes_snapshot: ['Ретушь', '500 фотографий'], price: '7654321' }])
+    for (const erased of [accepted.vendor.id, accepted.vendor.phone, `Accept ${accepted.vendor.id}`]) {
+      expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
+    }
   })
 
   it('T039 does not deadlock account erasure against a concurrent vendor reply', async () => {
