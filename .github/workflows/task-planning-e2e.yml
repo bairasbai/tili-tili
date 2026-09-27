@@ -6,7 +6,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser:
-    if: github.head_ref == 'feature/product-improvements-stage1-tasks' || github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
