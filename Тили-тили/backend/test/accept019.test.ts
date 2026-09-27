@@ -457,6 +457,21 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     }
   })
 
+  it('T039 hard-erases one couple member while the partner keeps anonymous 019 history', async () => {
+    const f = await ready()
+    const partner = await member(f.wedding, 'couple')
+    await hardErase(f.wedding, [f.wedding.id, f.wedding.phone])
+    expect(await rows('select owner_id from weddings where id = $1', [f.wedding.weddingId]))
+      .toEqual([{ owner_id: partner.id }])
+    expect(await rows('select created_by, status, vendor_id from offer_requests where id = $1', [f.requestId]))
+      .toEqual([{ created_by: null, status: 'open', vendor_id: f.vendor.vendorId }])
+    expect(await rows('select created_by from offers where id = $1', [f.offerId]))
+      .toEqual([{ created_by: f.vendor.id }])
+    for (const erased of [f.wedding.id, f.wedding.phone]) {
+      expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
+    }
+  })
+
   it('T039 does not deadlock account erasure against a concurrent vendor reply', async () => {
     const f = await ready()
     let reply: Promise<unknown> | null = null
