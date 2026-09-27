@@ -228,12 +228,8 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
 export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId: string | null = null): Promise<void> {
   /* 019/T039: request is the response mutex. Lock all vendor requests before
    * the user cascade so account erasure and an offer reply use one order. */
-  const { rows: erasedUsers } = await client.query<{ phone: string | null }>(
-    'select phone from users where id = $1',
-    [id],
-  )
-  const { rows: ownedVendors } = await client.query<{ id: string; name: string }>(
-    'select id, name from vendors where user_id = $1',
+  const { rows: ownedVendors } = await client.query<{ id: string }>(
+    'select id from vendors where user_id = $1',
     [id],
   )
   for (const vendor of ownedVendors) {
@@ -284,22 +280,11 @@ export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId
        from vendors v where v.id = d.vendor_id and v.user_id = $1`,
     [id],
   )
-  /* Idempotency responses are a one-day transport cache, not archive data.
-   * Responses produced by another user can contain the erased vendor/user
-   * identity, so the user_id FK alone cannot purge them. Drop any cached
-   * response that still serializes one of the erased identity values. */
-  const privacyTokens = [
-    id,
-    erasedUsers[0]?.phone ?? null,
-    ...ownedVendors.flatMap((vendor) => [vendor.id, vendor.name]),
-  ].filter((value): value is string => Boolean(value))
-  for (const value of privacyTokens) {
-    await client.query(
-      `delete from idempotency_keys
-        where position($1 in coalesce(body::text, '')) > 0`,
-      [value],
-    )
-  }
+  /* Idempotency responses are a one-day transport cache, not archive
+   * data. Scheduled cleanup runs this before hard erasure; stale-account
+   * login can call eraseUser directly, so enforce the same TTL here too.
+   * Never match/delete live caches by free-form names. */
+  await client.query("delete from idempotency_keys where created_at < now() - interval '1 day'")
   /* OTP rows are not FK-linked to users, but still contain the phone.
    * A stale-account login must keep only the code currently being verified;
    * scheduled/final erasure keeps none. */
