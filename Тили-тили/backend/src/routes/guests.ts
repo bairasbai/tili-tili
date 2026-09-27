@@ -21,6 +21,9 @@ const REDEEM_RETRY_MINUTES = 10
 interface GuestRow {
   id: string
   name: string
+  party_id: string
+  party_position: number
+  is_placeholder: boolean
   plus_one: boolean
   group_name: string | null
   phone: string | null
@@ -38,7 +41,7 @@ interface GuestRow {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.name, g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
+  g.id, g.name, g.party_id, g.party_position, g.is_placeholder, g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
@@ -73,6 +76,10 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
   return {
     id: r.id,
     name: r.name,
+    partyId: r.party_id,
+    partyPosition: r.party_position,
+    isPrimary: r.party_position === 1,
+    isPlaceholder: r.is_placeholder,
     plusOne: r.plus_one,
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
@@ -214,19 +221,30 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * провайдеру SMS как есть (ревью 015). Не российский или неполный — 422. */
       const phone = normalizedPhoneOr422(body.phone)
       const id = uuidv7()
-      await db().query(
-        `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          id,
-          request.member!.weddingId,
-          body.name,
-          body.plusOne ?? false,
-          body.group ?? null,
-          phone,
-          newGuestToken(),
-        ],
-      )
+      const partyId = uuidv7()
+      const token = newGuestToken()
+      await db().tx(async (client) => {
+        await client.query(
+          `insert into guest_parties (id, wedding_id, invite_token, label, contact_phone)
+           values ($1,$2,$3,$4,$5)`,
+          [partyId, request.member!.weddingId, token, body.name, phone],
+        )
+        await client.query(
+          `insert into guests
+             (id, wedding_id, name, plus_one, group_name, phone, rsvp_token, party_id, party_position)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, 1)`,
+          [
+            id,
+            request.member!.weddingId,
+            body.name,
+            body.plusOne ?? false,
+            body.group ?? null,
+            phone,
+            token,
+            partyId,
+          ],
+        )
+      })
       return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
     },
   )
@@ -296,10 +314,19 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           names.add(nameKey)
           if (phone) phones.add(phone)
           const id = uuidv7()
+          const partyId = uuidv7()
+          const token = newGuestToken()
+          const cleanName = row.name.trim().replace(/\s+/g, ' ')
           await client.query(
-            `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
-             values ($1, $2, $3, $4, $5, $6, $7)`,
-            [id, weddingId, row.name.trim().replace(/\s+/g, ' '), row.plusOne ?? false, row.group ?? null, phone ?? null, newGuestToken()],
+            `insert into guest_parties (id, wedding_id, invite_token, label, contact_phone)
+             values ($1,$2,$3,$4,$5)`,
+            [partyId, weddingId, token, cleanName, phone ?? null],
+          )
+          await client.query(
+            `insert into guests
+               (id, wedding_id, name, plus_one, group_name, phone, rsvp_token, party_id, party_position)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, 1)`,
+            [id, weddingId, cleanName, row.plusOne ?? false, row.group ?? null, phone ?? null, token, partyId],
           )
           createdIds.push(id)
         }
