@@ -54,6 +54,11 @@ export function notificationRoute(link?: string | null, opts: { vendor?: boolean
      шлёт с блока 2 — без перевода уведомление некуда было вести. */
   if (link === '/wedding') return vendor ? '/vendor-app' : '/wedding'
   if (link === '/vendor-app') return '/vendor-app'
+  /* 019: сервер называет смысл (`/vendor/offer-requests`), а UI кабинета
+     живёт под единым префиксом `/vendor-app`. Пару в кабинет не пускаем. */
+  if (link === '/vendor/offer-requests') return vendor ? '/vendor-app/offer-requests' : null
+  const slot = /^\/wedding\/slot\/([\w-]+)$/.exec(link)
+  if (slot) return vendor ? null : `/wedding/slot/${slot[1]}`
   /* Решение по документам (`/vendor-app/verification`) и другие экраны
      кабинета сервер называет своими маршрутами — они и есть адреса. */
   if (/^\/vendor-app\/[\w/-]+$/.test(link)) return link

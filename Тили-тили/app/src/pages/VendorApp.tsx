@@ -19,12 +19,14 @@ import {
   saveVendorProfile,
   setVendorBusy,
   type VendorDraft,
+  type VendorDraftPackage,
 } from '@/lib/api/vendor'
 import { getCategories } from '@/lib/api/catalog'
 import { getChats } from '@/lib/api/chats'
 import { cn, currentMonth, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { fmt, rub } from '@/lib/money'
+import { parseWholeRubles } from '@/lib/paymentAmount'
 import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/lib/weddingDate'
 
 /*
@@ -152,6 +154,15 @@ export function VendorDashboard() {
             </div>
           ))}
         </div>
+
+        <button onClick={() => nav('/vendor-app/offer-requests')} className="press w-full card p-4 mt-3.5 flex items-center gap-3 text-left">
+          <Tile icon="✉️" tile="bg-[var(--blue)]" size={42} />
+          <div className="flex-1">
+            <b className="text-[13px]">{t('Запросы предложений')}</b>
+            <p className="text-[10.5px] text-[var(--soft)]">{t('условия пары, ваше предложение или отказ')}</p>
+          </div>
+          <ChevronRight size={16} className="text-[var(--soft)]" />
+        </button>
 
         {/* Обновления от пар: настоящие правки по забронированным свадьбам.
             Раньше здесь стояли три строки про «Алину & Тимура» — у любого
@@ -376,6 +387,23 @@ const noProfile = (e: unknown) => {
   throw e
 }
 
+/** Пакет черновика: `key` — только для экрана (строка списка, перенос id из ответа), на сервер не уходит. */
+type DraftPackage = VendorDraftPackage & { key: string }
+type WizardDraft = Omit<VendorDraft, 'packages'> & { packages: DraftPackage[] }
+
+/* Ключ нового пакета — счётчиком и только из обработчика (чистота рендера, инвариант 4). */
+let draftSeq = 0
+const newDraftKey = () => `new-${++draftSeq}`
+
+/** «Что входит» — по пункту в строке, пустые строки не пункты. Пределы — как у сервера (`routes/vendor.ts`). */
+const parseIncludes = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean)
+const INCLUDES_MAX = 40
+const INCLUDE_MAX_LEN = 200
+
+/** Цена пакета в поле формы — как её вводят: целые рубли; копейки (пакет заведён вне мастера) — как есть. */
+const priceText = (price: number | null) =>
+  price === null ? '' : price % 100 === 0 ? String(price / 100) : (price / 100).toFixed(2).replace('.', ',')
+
 /*
  * Мастер анкеты.
  *
@@ -400,7 +428,11 @@ export function VendorProfileWizard() {
 
   /* Поля заполняются ответом сервера один раз — дальше ими владеет форма.
      Без этого каждое перечитывание анкеты затирало бы то, что человек печатает. */
-  const [form, setForm] = useState<VendorDraft | null>(null)
+  const [form, setForm] = useState<WizardDraft | null>(null)
+  /* Сырая строка нужна только после правки поля: иначе `1500,50` сразу
+     превращалось в 150050 и уже выглядело валидными рублями. `null` значит,
+     что серверное значение не трогали — в том числе цену с копейками. */
+  const [priceFromDraft, setPriceFromDraft] = useState<string | null>(null)
   const p = profile.data
   if (form === null && ready(profile)) {
     setForm({
@@ -415,8 +447,10 @@ export function VendorProfileWizard() {
       priceFrom: p?.priceFrom?.amount,
       /* Цена пакета — число, которое назвал подрядчик. Пакет без цены (заведён
          вне мастера) остаётся без цены: `?? 0` делал из него «0 ₽» в каталоге
-         при первом же «Далее» (ERR-0281, R-281). */
-      packages: (p?.packages ?? []).map(x => ({ name: x.name ?? '', price: x.price?.amount ?? null })),
+         при первом же «Далее» (ERR-0281, R-281). `id` и состав — с сервера:
+         без них «Далее» заводил пакеты заново и стирал, что в них входит, а
+         брони теряли пакет (019, FR-006, ERR-0318). */
+      packages: (p?.packages ?? []).map(x => ({ key: x.id, id: x.id, name: x.name, price: x.price?.amount ?? null, includes: x.includes })),
       /* Права на фото и согласие снятых (152-ФЗ, план бэкенда §7): подтверждение
          одноразовое — уже данное сервер помнит, и галочка не спрашивается заново. */
       mediaRights: !!p?.mediaRights,
@@ -424,12 +458,15 @@ export function VendorProfileWizard() {
   }
 
   const [cityPick, setCityPick] = useState(false)
-  const [pkgForm, setPkgForm] = useState(false)
+  /* Форма пакета: `null` — закрыта, `'new'` — новый пакет, иначе `key` правимого. Правка —
+     тот же пакет с тем же id: брони называют его и после правки (019, FR-006). */
+  const [pkgForm, setPkgForm] = useState<string | null>(null)
   const [pkgName, setPkgName] = useState('')
   const [pkgPrice, setPkgPrice] = useState('')
+  const [pkgIncludes, setPkgIncludes] = useState('')
 
   const steps = [t('Категория'), t('О себе'), t('Услуги и цены'), t('Портфолио'), t('Публикация')]
-  const set = (patch: Partial<VendorDraft>) => setForm(f => (f ? { ...f, ...patch } : f))
+  const set = (patch: Partial<WizardDraft>) => setForm(f => (f ? { ...f, ...patch } : f))
 
   /* Сохранение — на каждом переходе: мастер длинный, и потерять введённое на
      пятом шаге из-за закрытой вкладки нельзя. */
@@ -440,9 +477,44 @@ export function VendorProfileWizard() {
       setStep(form.categoryId ? 1 : 0)
       return
     }
+    const submittedPriceText = priceFromDraft
+    const parsedPrice = submittedPriceText === null || !submittedPriceText.trim()
+      ? null
+      : parseWholeRubles(submittedPriceText)
+    if (submittedPriceText !== null && submittedPriceText.trim() && parsedPrice === null) {
+      setErr(t('Введите цену «от» целым числом рублей, например 150 000'))
+      setStep(2)
+      return
+    }
+    const submittedForm: WizardDraft = submittedPriceText === null
+      ? form
+      : { ...form, priceFrom: parsedPrice === null ? undefined : rub(parsedPrice) }
     setBusy(true)
     setErr(null)
-    try { await saveVendorProfile(form); await next() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try {
+      const sent = submittedForm.packages
+      const saved = await saveVendorProfile(submittedForm)
+      /* id новых пакетов — из ответа, по месту в списке: сервер пишет пакеты в присланном
+         порядке и читает ответ в той же транзакции (019, FR-006). Без переноса следующий шаг
+         прислал бы пакет снова без id — сервер завёл бы его заново, а только что созданный
+         удалил. Перенос — по `key`, а не по месту в черновике: пока шёл запрос, пакет могли
+         добавить, убрать или поправить. */
+      const got = saved.packages ?? []
+      const ids = got.length === sent.length ? new Map(sent.map((pkg, i) => [pkg.key, got[i]!.id])) : null
+      setForm(f => f && {
+        ...f,
+        /* После правки берём каноническое значение из того же ответа, а не из
+           ввода: пустое/нулевое поле сервер хранит как `null`, не как 0 ₽. */
+        ...(submittedPriceText === null ? {} : { priceFrom: saved.priceFrom?.amount }),
+        packages: ids
+          ? f.packages.map(pkg => (pkg.id || !ids.has(pkg.key) ? pkg : { ...pkg, id: ids.get(pkg.key) }))
+          : f.packages,
+      })
+      if (submittedPriceText !== null) {
+        setPriceFromDraft(current => current === submittedPriceText ? null : current)
+      }
+      await next()
+    } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
 
   /* Сохранение и публикация — одна операция для человека, значит и один
@@ -459,18 +531,53 @@ export function VendorProfileWizard() {
     })
   }
 
+  const openPkg = (pkg: DraftPackage | null) => {
+    setErr(null)
+    setPkgForm(pkg ? pkg.key : 'new')
+    setPkgName(pkg?.name ?? '')
+    setPkgPrice(priceText(pkg?.price ?? null))
+    setPkgIncludes((pkg?.includes ?? []).join('\n'))
+  }
+  const closePkg = () => { setPkgForm(null); setPkgName(''); setPkgPrice(''); setPkgIncludes('') }
+
   /* Название и цена — обязательны и словами: «Добавить» с пустой или нулевой
      ценой молчал, и подрядчик не узнавал, что пакет не добавлен (F-RL-8-03,
-     R-258 — тот же приём, что число мест в автобусе, `Logistics.tsx:139`). */
-  const addPkg = () => {
-    const rubles = parseInt(pkgPrice.replace(/\D/g, ''), 10)
-    if (!pkgName.trim() || !(rubles > 0)) {
+     R-258 — тот же приём, что число мест в автобусе, `Logistics.tsx:139`).
+     Цена — строго целые рубли: вырезание нецифр делало из «1500,50» 150 050 ₽
+     (тот же класс, что ревью 018, BF-09). Поле цены при правке не трогали —
+     цена прежняя: и «не названа», и копейки пакета, заведённого вне мастера;
+     выдумывать или округлять её за подрядчика мастер не заставляет. */
+  const savePkg = () => {
+    if (!form) return
+    const editing = form.packages.find(pkg => pkg.key === pkgForm) ?? null
+    const name = pkgName.trim()
+    const rubles = parseWholeRubles(pkgPrice)
+    /* `undefined` — цены нет и не было: отказ. */
+    const price: number | null | undefined =
+      editing && pkgPrice === priceText(editing.price) ? editing.price
+      : rubles !== null && rubles > 0 ? rub(rubles)
+      : undefined
+    if (!name || price === undefined) {
       setErr(t('Укажите название и цену пакета — целое число рублей больше нуля'))
       return
     }
+    const includes = parseIncludes(pkgIncludes)
+    if (includes.length > INCLUDES_MAX || includes.some(line => line.length > INCLUDE_MAX_LEN)) {
+      setErr(t('В составе пакета — до 40 пунктов, каждый до 200 знаков'))
+      return
+    }
     setErr(null)
-    set({ packages: [...(form?.packages ?? []), { name: pkgName.trim(), price: rub(rubles) }] })
-    setPkgName(''); setPkgPrice(''); setPkgForm(false)
+    set({
+      packages: editing
+        ? form.packages.map(pkg => (pkg.key === editing.key ? { ...pkg, name, price, includes } : pkg))
+        : [...form.packages, { key: newDraftKey(), name, price, includes }],
+    })
+    closePkg()
+  }
+  const removePkg = (key: string) => {
+    if (!form) return
+    set({ packages: form.packages.filter(pkg => pkg.key !== key) })
+    if (pkgForm === key) closePkg()
   }
 
   if (publishedNow) return (
@@ -557,30 +664,38 @@ export function VendorProfileWizard() {
           <div className="space-y-3">
             <label className="card p-4 block">
               <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Цена «от», ₽')}</span>
-              <input value={form.priceFrom ? String(Math.round(form.priceFrom / 100)) : ''} onChange={e => set({ priceFrom: rub(Number(e.target.value.replace(/\D/g, '')) || 0) })}
+              <input value={priceFromDraft ?? priceText(form.priceFrom ?? null)} onChange={e => setPriceFromDraft(e.target.value)}
                 inputMode="numeric" placeholder={t('С какой суммы начинается работа')}
                 className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium tabular outline-none" />
             </label>
-            {(form.packages ?? []).map((pkg, k) => (
-              <div key={`${pkg.name}-${k}`} className="card p-4 flex justify-between items-center">
-                <b className="text-[13px]">{pkg.name}</b>
-                <span className="flex items-center gap-2.5">
-                  <span className="font-serif-d text-[15px] text-[var(--rose-deep)] font-semibold tabular">{pkg.price === null ? t('цена не названа') : fmt(pkg.price)}</span>
-                  <button onClick={() => set({ packages: (form.packages ?? []).filter((_, i) => i !== k) })} className="press text-[var(--rose-deep)] text-[13px]" aria-label={t('Удалить')}>×</button>
-                </span>
+            {form.packages.map(pkg => (
+              <div key={pkg.key} className="card p-4">
+                <div className="flex justify-between items-center gap-2">
+                  <b className="text-[13px] min-w-0">{pkg.name}</b>
+                  <span className="flex items-center gap-2.5 shrink-0">
+                    <span className="font-serif-d text-[15px] text-[var(--rose-deep)] font-semibold tabular">{pkg.price === null ? t('цена не названа') : fmt(pkg.price)}</span>
+                    <button onClick={() => removePkg(pkg.key)} className="press text-[var(--rose-deep)] text-[13px]" aria-label={t('Удалить')}>×</button>
+                  </span>
+                </div>
+                {/* Состав — то, что пара сравнивает между кандидатами (019, FR-005). */}
+                {pkg.includes.length > 0 && <p className="text-[11px] text-[var(--soft)] mt-1.5 leading-relaxed">{pkg.includes.join(' · ')}</p>}
+                <button onClick={() => openPkg(pkg)} className="press text-[10.5px] font-bold text-[var(--rose-deep)] mt-2" aria-label={`${t('Изменить пакет')} ${pkg.name}`}>{t('Изменить')}</button>
               </div>
             ))}
-            {pkgForm ? (
+            {pkgForm !== null ? (
               <div className="card-s p-4 space-y-2.5 fade-up">
-                <input value={pkgName} onChange={e => setPkgName(e.target.value)} placeholder={t('Название пакета')} className="w-full h-11 px-4 rounded-full bg-[var(--card)] text-[13px] outline-none" />
+                {pkgForm !== 'new' && <p className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Правка пакета')}</p>}
+                <input value={pkgName} onChange={e => setPkgName(e.target.value)} maxLength={120} placeholder={t('Название пакета')} className="w-full h-11 px-4 rounded-full bg-[var(--card)] text-[13px] outline-none" />
                 <input value={pkgPrice} onChange={e => setPkgPrice(e.target.value)} inputMode="numeric" placeholder={t('Цена, ₽')} className="w-full h-11 px-4 rounded-full bg-[var(--card)] text-[13px] outline-none" />
+                <textarea value={pkgIncludes} onChange={e => setPkgIncludes(e.target.value)} rows={4} placeholder={t('Что входит — по пункту в строке')} aria-label={t('Что входит')}
+                  className="w-full px-4 py-3 rounded-[18px] bg-[var(--card)] text-[12.5px] outline-none resize-none" />
                 <div className="flex gap-2">
-                  <button onClick={() => setPkgForm(false)} className="press flex-1 h-11 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-                  <button onClick={addPkg} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold">{t('Добавить')}</button>
+                  <button onClick={closePkg} className="press flex-1 h-11 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
+                  <button onClick={savePkg} className="press flex-1 h-11 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold">{pkgForm === 'new' ? t('Добавить') : t('Сохранить')}</button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => setPkgForm(true)} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить пакет')}</button>
+              <button onClick={() => openPkg(null)} className="press w-full card-s py-4 text-[13px] font-semibold flex items-center justify-center gap-2"><Plus size={15} />{t('Добавить пакет')}</button>
             )}
           </div>
         )}
@@ -750,7 +865,7 @@ export function VendorDeals() {
 }
 
 const DEAL_STATE_LABEL: Record<string, string> = {
-  candidate: 'Кандидат',
+  candidate: 'Не связывались',
   contacted: 'Написали',
   negotiating: 'Держим дату',
   booked: 'Забронировано',

@@ -98,7 +98,8 @@ describe('FL-11 · T1: цена пакета из ответа сервера �
     fireEvent.click(screen.getByText('Далее'))
     await waitFor(() => expect(text(r)).toContain('Шаг 2 из 5'), { timeout: 4000 })
     const sent = puts(calls, '/vendor/profile').at(-1)!.body as { packages: Array<Record<string, unknown>> }
-    expect(sent.packages[0], 'пакет с ценой должен уйти как был').toStrictEqual({ name: 'Базовый', price: { amount: 1_234_500, currency: 'RUB' } })
+    // С 019 (FR-006) «как был» — с id и составом: без них сервер заводил пакет заново.
+    expect(sent.packages[0], 'пакет с ценой должен уйти как был').toStrictEqual({ id: 'pkg2', name: 'Базовый', price: { amount: 1_234_500, currency: 'RUB' }, includes: [] })
   })
 
   it('пакет без цены (price: null от сервера) → «Далее» шлёт PUT без поля price у этого пакета, не {amount:0}; пакет с ценой уходит как был', async () => {
@@ -117,8 +118,8 @@ describe('FL-11 · T1: цена пакета из ответа сервера �
     await waitFor(() => expect(text(r)).toContain('Шаг 2 из 5'), { timeout: 4000 })
     const sent = puts(calls, '/vendor/profile').at(-1)!.body as { packages: Array<Record<string, unknown>> }
     expect(sent.packages, 'мастер не отправил список пакетов вовсе').toHaveLength(2)
-    expect(sent.packages[0], 'пакет без цены должен уйти без поля price — {amount:0} = ERR-0281, null = 422 по контракту').toStrictEqual({ name: 'Пакет без цены' })
-    expect(sent.packages[1], 'пакет с ценой должен уйти как был').toStrictEqual({ name: 'Базовый', price: { amount: 1_234_500, currency: 'RUB' } })
+    expect(sent.packages[0], 'пакет без цены должен уйти без поля price — {amount:0} = ERR-0281, null = 422 по контракту').toStrictEqual({ id: 'pkg1', name: 'Пакет без цены', includes: [] })
+    expect(sent.packages[1], 'пакет с ценой должен уйти как был').toStrictEqual({ id: 'pkg2', name: 'Базовый', price: { amount: 1_234_500, currency: 'RUB' }, includes: ['съёмка'] })
   })
 
   it('шаг «Услуги и цены»: пакет без цены показан словами «цена не названа», а не «0 ₽»', async () => {
@@ -214,5 +215,197 @@ describe('FL-11 · T2: «Добавить» пакет без цены — сл�
     expect(text(r), 'сообщение об отказе должно исчезнуть после успешного добавления').not.toContain('Укажите название и цену пакета')
     expect(screen.queryByPlaceholderText('Название пакета'), 'форма пакета должна закрыться после добавления').toBeNull()
     expect(calls.length, 'добавление пакета — локальное состояние, запрос уходит только по «Далее»').toBe(before)
+  })
+})
+
+/*
+ * 019, FR-006 (ERR-0318): мастер отправлял пакеты без id и без состава. Сервер заменял список
+ * целиком — каждое «Далее» заводило пакеты заново, брони теряли пакет, состав стирался. Теперь
+ * черновик держит id и состав, переносит id новых пакетов из ответа `PUT`, пакет правится на месте.
+ */
+describe('019 · FR-006: мастер держит id и состав пакетов', () => {
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+  type SentPackage = { id?: string; name: string; price?: { amount: number; currency: string }; includes?: string[] }
+  /** Как сервер: пакет без id получает новый id на своём месте списка, ответ — в присланном порядке. */
+  const serveProfile = (packages: unknown[]) => {
+    let put = 0
+    const profile = baseProfile(packages)
+    return serve({
+      '/vendor/profile': (c: Call) => {
+        if (c.method !== 'PUT') return profile
+        put += 1
+        const body = c.body as { packages?: SentPackage[] }
+        return {
+          ...profile,
+          ...body,
+          packages: (body.packages ?? []).map((pkg, i) => ({
+            id: pkg.id ?? `srv-${put}-${i}`, name: pkg.name, price: pkg.price ?? null, includes: pkg.includes ?? [],
+          })),
+        }
+      },
+      '/catalog/categories': CATEGORIES,
+    })
+  }
+  const toPackagesStep = async (r: ReturnType<typeof openWizard>) => {
+    await waitFor(() => expect(text(r)).toContain('Шаг 1 из 5'), { timeout: 4000 })
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Шаг 2 из 5'), { timeout: 4000 })
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Шаг 3 из 5 · Услуги и цены'), { timeout: 4000 })
+  }
+  const next = async (r: ReturnType<typeof openWizard>, step: string) => {
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain(step), { timeout: 4000 })
+  }
+  const lastPackages = (calls: Call[]) => (puts(calls, '/vendor/profile').at(-1)!.body as { packages: SentPackage[] }).packages
+
+  it('цена «от» 1500,50 не превращается в 150 050 ₽; после отказа целые рубли сохраняются', async () => {
+    const calls = serveProfile([])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    const before = puts(calls, '/vendor/profile').length
+    const input = screen.getByLabelText('Цена «от», ₽')
+
+    fireEvent.change(input, { target: { value: '1500,50' } })
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Введите цену «от» целым числом рублей, например 150 000'), { timeout: 4000 })
+    expect(puts(calls, '/vendor/profile')).toHaveLength(before)
+    expect((input as HTMLInputElement).value).toBe('1500,50')
+
+    fireEvent.change(input, { target: { value: '150 000' } })
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Шаг 4 из 5'), { timeout: 4000 })
+    expect((puts(calls, '/vendor/profile').at(-1)!.body as { priceFrom: unknown }).priceFrom)
+      .toStrictEqual({ amount: rub(150000), currency: 'RUB' })
+  })
+
+  it('нетронутая серверная цена «от» с копейками сохраняется без округления', async () => {
+    const profile = { ...baseProfile([]), priceFrom: { amount: 1_234_550, currency: 'RUB' } }
+    const calls = serve({
+      '/vendor/profile': (c: Call) => (c.method === 'PUT' ? { ...profile, ...(c.body as object) } : profile),
+      '/catalog/categories': CATEGORIES,
+    })
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    expect((screen.getByLabelText('Цена «от», ₽') as HTMLInputElement).value).toBe('12345,50')
+
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Шаг 4 из 5'), { timeout: 4000 })
+    expect((puts(calls, '/vendor/profile').at(-1)!.body as { priceFrom: unknown }).priceFrom)
+      .toStrictEqual({ amount: 1_234_550, currency: 'RUB' })
+  })
+
+  it('новый пакет с составом: первый «Далее» — без id, следующий — с id из ответа, сервер не заводит его заново', async () => {
+    const calls = serveProfile([])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    fireEvent.click(screen.getByText('Добавить пакет'))
+    fireEvent.change(screen.getByPlaceholderText('Название пакета'), { target: { value: 'Свадебный день' } })
+    fireEvent.change(screen.getByPlaceholderText('Цена, ₽'), { target: { value: '15 000' } })
+    fireEvent.change(screen.getByLabelText('Что входит'), { target: { value: '8 часов съёмки\n\n 300 фото в обработке ' } })
+    fireEvent.click(screen.getByText('Добавить'))
+    await waitFor(() => expect(text(r)).toContain('8 часов съёмки · 300 фото в обработке'), { timeout: 4000 })
+
+    await next(r, 'Шаг 4 из 5')
+    expect(lastPackages(calls)).toStrictEqual([
+      { name: 'Свадебный день', price: { amount: rub(15000), currency: 'RUB' }, includes: ['8 часов съёмки', '300 фото в обработке'] },
+    ])
+    const created = puts(calls, '/vendor/profile').length
+    await next(r, 'Шаг 5 из 5')
+    // До исправления второй шаг снова слал пакет без id: сервер удалял только что созданный и заводил новый.
+    expect(lastPackages(calls), 'второй шаг должен прислать id пакета, созданного на первом').toStrictEqual([
+      { id: `srv-${created}-0`, name: 'Свадебный день', price: { amount: rub(15000), currency: 'RUB' }, includes: ['8 часов съёмки', '300 фото в обработке'] },
+    ])
+  })
+
+  it('«Изменить» правит пакет на месте: новое имя, цена и состав уходят с тем же id', async () => {
+    const calls = serveProfile([
+      { id: 'pkg1', name: 'Мини', price: { amount: rub(9000), currency: 'RUB' }, includes: ['2 часа'] },
+      { id: 'pkg2', name: 'Базовый', price: { amount: rub(15000), currency: 'RUB' }, includes: ['съёмка'] },
+    ])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    fireEvent.click(screen.getByLabelText('Изменить пакет Базовый'))
+    expect((screen.getByPlaceholderText('Название пакета') as HTMLInputElement).value).toBe('Базовый')
+    expect((screen.getByPlaceholderText('Цена, ₽') as HTMLInputElement).value).toBe('15000')
+    expect((screen.getByLabelText('Что входит') as HTMLTextAreaElement).value).toBe('съёмка')
+    fireEvent.change(screen.getByPlaceholderText('Название пакета'), { target: { value: 'Базовый плюс' } })
+    fireEvent.change(screen.getByPlaceholderText('Цена, ₽'), { target: { value: '18000' } })
+    fireEvent.change(screen.getByLabelText('Что входит'), { target: { value: 'съёмка\nвидео' } })
+    fireEvent.click(screen.getByText('Сохранить'))
+    await waitFor(() => expect(text(r)).toContain('Базовый плюс'), { timeout: 4000 })
+
+    await next(r, 'Шаг 4 из 5')
+    expect(lastPackages(calls)).toStrictEqual([
+      { id: 'pkg1', name: 'Мини', price: { amount: rub(9000), currency: 'RUB' }, includes: ['2 часа'] },
+      { id: 'pkg2', name: 'Базовый плюс', price: { amount: rub(18000), currency: 'RUB' }, includes: ['съёмка', 'видео'] },
+    ])
+  })
+
+  it('пакет без цены: правка состава не заставляет выдумывать цену — цена остаётся не названной', async () => {
+    const calls = serveProfile([{ id: 'pkg1', name: 'По запросу', price: null, includes: [] }])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    fireEvent.click(screen.getByLabelText('Изменить пакет По запросу'))
+    expect((screen.getByPlaceholderText('Цена, ₽') as HTMLInputElement).value).toBe('')
+    fireEvent.change(screen.getByLabelText('Что входит'), { target: { value: 'выездная церемония' } })
+    fireEvent.click(screen.getByText('Сохранить'))
+    await waitFor(() => expect(text(r)).toContain('выездная церемония'), { timeout: 4000 })
+    expect(text(r)).not.toContain('Укажите название и цену пакета')
+    expect(text(r)).toContain('цена не названа')
+
+    await next(r, 'Шаг 4 из 5')
+    expect(lastPackages(calls)).toStrictEqual([{ id: 'pkg1', name: 'По запросу', includes: ['выездная церемония'] }])
+  })
+
+  it('копейки пакета, заведённого вне мастера, переживают правку состава — поле цены не трогали', async () => {
+    const calls = serveProfile([{ id: 'pkg1', name: 'Фуршет', price: { amount: 1_234_550, currency: 'RUB' }, includes: [] }])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    fireEvent.click(screen.getByLabelText('Изменить пакет Фуршет'))
+    expect((screen.getByPlaceholderText('Цена, ₽') as HTMLInputElement).value).toBe('12345,50')
+    fireEvent.change(screen.getByLabelText('Что входит'), { target: { value: 'канапе' } })
+    fireEvent.click(screen.getByText('Сохранить'))
+    await waitFor(() => expect(text(r)).toContain('канапе'), { timeout: 4000 })
+    expect(text(r)).not.toContain('Укажите название и цену пакета')
+
+    await next(r, 'Шаг 4 из 5')
+    expect(lastPackages(calls)).toStrictEqual([{ id: 'pkg1', name: 'Фуршет', price: { amount: 1_234_550, currency: 'RUB' }, includes: ['канапе'] }])
+  })
+
+  it('цена «1500,50» — отказ словами, а не пакет за 150 050 ₽', async () => {
+    const calls = serveProfile([])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    const before = calls.length
+    fireEvent.click(screen.getByText('Добавить пакет'))
+    fireEvent.change(screen.getByPlaceholderText('Название пакета'), { target: { value: 'Свадебный день' } })
+    fireEvent.change(screen.getByPlaceholderText('Цена, ₽'), { target: { value: '1500,50' } })
+    fireEvent.click(screen.getByText('Добавить'))
+    await waitFor(() => expect(text(r)).toContain('Укажите название и цену пакета — целое число рублей больше нуля'), { timeout: 4000 })
+    expect(text(r), 'вырезание нецифр сделало из 1500,50 сумму в сто раз больше').not.toContain(fmt(rub(150050)))
+    expect(calls.length).toBe(before)
+  })
+
+  it('состав длиннее 40 пунктов — отказ словами, пакет не добавлен', async () => {
+    serveProfile([])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    fireEvent.click(screen.getByText('Добавить пакет'))
+    fireEvent.change(screen.getByPlaceholderText('Название пакета'), { target: { value: 'Всё включено' } })
+    fireEvent.change(screen.getByPlaceholderText('Цена, ₽'), { target: { value: '50000' } })
+    fireEvent.change(screen.getByLabelText('Что входит'), { target: { value: Array.from({ length: 41 }, (_, i) => `пункт ${i + 1}`).join('\n') } })
+    fireEvent.click(screen.getByText('Добавить'))
+    await waitFor(() => expect(text(r)).toContain('В составе пакета — до 40 пунктов, каждый до 200 знаков'), { timeout: 4000 })
+    expect(screen.getByPlaceholderText('Название пакета')).toBeTruthy()
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ChevronLeft, CloudRain, Zap, Heart } from 'lucide-react'
 
@@ -12,11 +12,17 @@ import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
 import { activatePlanB, setTaskDone, shiftTimeline, type DayXBroadcast } from '@/lib/api/weddingWrite'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
 import { formatWeddingDate } from '@/lib/weddingDate'
-import { getAvailability, getCategories, getFavorites, getVendors, reviewsPendingRating } from '@/lib/api/catalog'
+import { getCategories, getFavorites, getVendor } from '@/lib/api/catalog'
+import { getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
+import type { components } from '@/lib/api/schema'
+import { isAuthorized } from '@/lib/api/client'
 import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { OfferAcceptance } from '@/components/OfferAcceptance'
+import { listMyWeddings } from '@/lib/api/wedding'
+import { OfferSummary } from '@/components/OfferSummary'
 
 /*
  * ИИ-координатор «Тиль».
@@ -67,153 +73,171 @@ export function Assistant() {
   )
 }
 
-/*
- * Сравнение кандидатов.
- *
- * Экран сравнивал три подрядчика из `lib/data.ts` — фотографа, видеографа и
- * площадку — под подписью «3 кандидата · категория «Фотограф»», приписывал всем
- * «Свободен 14.06 ✓ Да» и советовал первого как «лучшее соотношение цены и
- * рейтинга». Кнопка «Выбрать» отправляла на сервер имя подрядчика там, где
- * нужен идентификатор: запрос отваливался с 422, ошибка не всплывала нигде, а
- * экран ставил галочку «✓ В команде» и уводил на мозаику. Ничего не
- * бронировалось.
- *
- * Теперь кандидаты приходят с сервера, а «Выбрать» открывает анкету: цена
- * сделки зависит от пакета, и придумывать её на экране сравнения нельзя.
- *
- * С `?cat=` здесь верх выдачи категории (три первых по рейтингу, с ротацией
- * новичков сервера), а не кандидаты пары — и подпись так и говорит; слово
- * «кандидаты» остаётся за избранным, которое пара отобрала сама (ревью
- * D5-19). Упавший календарь одного подрядчика называется словами, а не
- * «…» навсегда.
- */
-export function Compare() {
+/* Выбор — лишь адресная подсказка. Данные и порядок принадлежат шорт-листу
+   свадьбы: URL не даёт доступа к чужой записи и не подменяет ответ сервера. */
+type CompareVendor = NonNullable<ShortlistEntry['vendor']> | components['schemas']['VendorDetail']
+type CompareItem = {
+  id: string
+  vendor: CompareVendor | null
+  available: boolean | null
+  occupancy: ShortlistEntry['occupancy']
+  request?: ShortlistEntry['request']
+}
+
+function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
+  items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTz?: string | null
+  acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
+}) {
   const nav = useNavigate()
-  const { city, weddingDate, favorites } = useStore()
-  const [params] = useSearchParams()
-  const catId = params.get('cat')
-
-  const cats = useApi(() => getCategories(), [])
-  /* Категория задана — сравниваем её выдачу. Нет — избранное: это и есть
-     короткий список, который пара сама себе отобрала. */
-  const q = useApi(
-    () => catId
-      ? getVendors({ categoryId: catId, city, limit: 3 }).then(r => r?.items ?? [])
-      : getFavorites().then(list => (list ?? []).slice(0, 3)),
-    [catId, city, favorites.length],
-  )
-  const list = q.data ?? []
-  const catTitle = (cats.data ?? []).find(c => c.id === catId)?.title
-
-  /*
-   * Занятость спрашиваем по каждому кандидату отдельно: общего пути «кто
-   * свободен в этот день» в контракте нет. Без даты свадьбы строки нет вовсе —
-   * «свободен» без дня ничего не значит.
-   */
-  const month = (weddingDate ?? '').slice(0, 7)
-  const free = useApi(
-    async () => {
-      if (!weddingDate || !list.length) return {} as Record<string, boolean>
-      const pairs = await Promise.all(list.map(async v => {
-        try {
-          const a = await getAvailability(v.id ?? '', month)
-          return [v.id ?? '', !(a?.busyDates ?? []).includes(weddingDate)] as const
-        } catch {
-          /* Календарь одного подрядчика не должен ронять сравнение остальных. */
-          return [v.id ?? '', null] as const
-        }
-      }))
-      return Object.fromEntries(pairs) as Record<string, boolean | null>
-    },
-    [weddingDate, month, list.map(v => v.id).join(',')],
-  )
-
-  const rows: [string, (v: (typeof list)[number]) => string][] = [
-    [t('Цена «от»'), v => (v.priceFrom?.amount != null ? fmt(v.priceFrom.amount) : '—')],
-    /* По самой оценке, не по числу отзывов: до третьего отзыва сервер отдаёт
-       `rating: null`, и клетка печатала «★ null · 2 отзывов» (ревью D5-02). */
-    [t('Рейтинг'), v => (v.rating != null
-      ? `★ ${v.rating}${v.reviewsCount != null ? ` · ${v.reviewsCount} ${plural(v.reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))}` : ''}`
-      : (v.reviewsCount ?? 0) > 0 ? reviewsPendingRating(v.reviewsCount ?? 0) : t('Новый'))],
-    ...(weddingDate
-      ? ([[t('Свободен на вашу дату'), v => {
-          const f = free.data?.[v.id ?? '']
-          /* `null` — календарь этого подрядчика не пришёл, и это не «ждём»:
-             троеточие здесь стояло бессрочно (ERR-0160). */
-          if (f === null) return t('календарь не загрузился')
-          return f === undefined ? '…' : f ? t('✓ Да') : t('✕ Занят')
-        }]] as [string, (v: (typeof list)[number]) => string][])
-      : []),
-    [t('Видео-визитка'), v => (v.hasVideo ? t('▶ Есть') : '—')],
-    [t('Проверен'), v => (v.verified ? t('✓ Да') : '—')],
+  const rows: [string, (item: CompareItem) => ReactNode][] = [
+    [t('Цена «от»'), ({ vendor }) => vendor?.priceFrom?.amount != null ? fmt(vendor.priceFrom.amount) : '—'],
+    [t('Рейтинг'), ({ vendor }) => vendor?.rating != null ? `★ ${vendor.rating}` : '—'],
+    [t('Отзывы'), ({ vendor }) => vendor?.reviewsCount != null
+      ? `${vendor.reviewsCount} ${plural(vendor.reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))}` : '—'],
+    [t('Свободен на вашу дату'), ({ occupancy }) => occupancy === 'free' ? t('Свободен')
+      : occupancy === 'held' ? t('Идут переговоры с другой парой')
+      : occupancy === 'busy' ? t('Занят на вашу дату') : '—'],
+    [t('Пакеты и цены'), ({ vendor }) => vendor?.packages?.length ? (
+      <div className="space-y-2 text-left">
+        {vendor.packages.map((p, index) => <div key={p.id ?? `${index}-${p.name}`} className="rounded-lg bg-[var(--bg)] p-2">
+          <b className="block">{p.name}</b>
+          <span className="block tabular">{p.price?.amount != null ? fmt(p.price.amount) : t('цена не названа')}</span>
+          {p.includes.length ? <ul className="mt-1 list-disc pl-4 font-normal">{p.includes.map((part, index) => <li key={`${index}-${part}`}>{part}</li>)}</ul> : <span className="block font-normal">—</span>}
+        </div>)}
+      </div>
+    ) : '—'],
+    [t('Предложение'), item => <>
+      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} compact />
+      {acceptance && <OfferAcceptance
+        key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
+        weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
+        canAccept={acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
+        onChanged={acceptance.onChanged}
+      />}
+    </>],
+    [t('Видео-визитка'), ({ vendor }) => vendor?.hasVideo ? t('▶ Есть') : '—'],
+    [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
 
-  if (!list.length) {
-    return (
-      <div className="pb-28">
-        <TopBar back title={t('Сравнение')} sub={catTitle ?? t('Избранное')} />
-        <AsyncState q={q} />
-        {ready(q) && (
-          <div className="px-5 mt-8 text-center">
-            <p className="text-[12.5px] text-[var(--soft)] leading-relaxed">
-              {catId ? t('В этой категории пока некого сравнивать') : t('Добавьте подрядчиков в избранное — здесь они встанут рядом')}
-            </p>
-            <button onClick={() => nav(catId ? `/search/${catId}` : '/search')} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть каталог')}</button>
+  return <div className="px-5 mt-3 overflow-x-auto no-scrollbar">
+    <table className="w-full min-w-[520px]">
+      <thead><tr>
+        <th scope="col" className="w-[110px]" />
+        {items.map(item => <th scope="col" key={item.id} className="p-1.5 align-top font-normal">
+          <div className="card-s p-3 text-center">
+            <span className="text-[24px]" aria-hidden="true">{icons[item.vendor?.categoryId ?? ''] ?? '📋'}</span>
+            <b className="font-serif-d text-[13px] block mt-1.5 leading-tight">{item.vendor?.name ?? t('Анкета недоступна')}</b>
+            {item.available === false && <span className="block mt-1 text-[10px] text-[var(--soft)]">{t('Анкета недоступна или сменила категорию')}</span>}
           </div>
-        )}
-      </div>
-    )
-  }
+        </th>)}
+      </tr></thead>
+      <tbody>
+        {rows.map(([label, render]) => <tr key={label}>
+          <th scope="row" className="p-1.5 text-[11px] text-[var(--soft)] font-medium text-left">{label}</th>
+          {items.map(item => <td key={item.id} className="p-1.5 align-top"><div className="bg-[var(--card)] rounded-xl px-2.5 py-2.5 text-[11.5px] text-center font-medium" style={{ boxShadow: 'var(--shadow)' }}>{render(item)}</div></td>)}
+        </tr>)}
+        <tr><th scope="row" />{items.map(item => <td key={item.id} className="p-1.5">
+          {item.vendor && item.available === true && <button onClick={() => nav(`/vendor/${item.vendor!.id}`)} className="press w-full h-[40px] rounded-full text-[11px] font-bold grad text-[var(--on-grad)]">{t('Открыть анкету')}</button>}
+        </td>)}</tr>
+      </tbody>
+    </table>
+  </div>
+}
 
-  return (
-    <div className="pb-28">
-      <TopBar back title={t('Сравнение')} sub={ready(q)
-        ? catId
-          ? `${list.length === 1 ? t('первый в выдаче') : `${t('первые')} ${list.length} ${t('в выдаче')}`}${catTitle ? ` · ${catTitle}` : ''}`
-          : `${list.length} ${plural(list.length, t('кандидат'), t('кандидата'), t('кандидатов'))} ${t('из избранного')}`
-        : catTitle ?? undefined} />
-      <AsyncState q={q} />
-      <div className="px-5 mt-3 overflow-x-auto no-scrollbar">
-        <table className="w-full min-w-[520px]">
-          <thead>
-            <tr>
-              <td className="w-[110px]" />
-              {list.map(v => (
-                <td key={v.id} className="p-1.5 align-top">
-                  {/* Плашки «Рекомендуем» здесь нет: она вешалась на первого в
-                      списке и означала лишь порядок выдачи. */}
-                  <div className="card-s p-3 text-center">
-                    <span className="text-[24px]">{(cats.data ?? []).find(c => c.id === v.categoryId)?.icon ?? '📋'}</span>
-                    <b className="font-serif-d text-[13px] block mt-1.5 leading-tight">{v.name}</b>
-                  </div>
-                </td>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(([label, fn]) => (
-              <tr key={label}>
-                <td className="p-1.5 text-[11px] text-[var(--soft)] font-medium">{label}</td>
-                {list.map(v => <td key={v.id} className="p-1.5"><div className="bg-[var(--card)] rounded-xl px-2.5 py-2.5 text-[11.5px] text-center font-medium" style={{ boxShadow: 'var(--shadow)' }}>{fn(v)}</div></td>)}
-              </tr>
-            ))}
-            <tr>
-              <td />
-              {list.map(v => (
-                <td key={v.id} className="p-1.5">
-                  {/* Ведём в анкету, а не бронируем отсюда: цена сделки зависит
-                      от выбранного пакета, а в выдаче есть только «от». */}
-                  <button onClick={() => nav(`/vendor/${v.id}`)} className="press w-full h-[40px] rounded-full text-[11px] font-bold grad text-[var(--on-grad)]">
-                    {t('Открыть анкету')}
-                  </button>
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+export function Compare() {
+  const nav = useNavigate()
+  const { weddingId, weddingDate, weddingsState, slots, slotsState, refreshSlots } = useStore()
+  const [params] = useSearchParams()
+  const hasSlot = params.has('slot')
+  const slotId = params.get('slot') ?? ''
+  const catId = params.get('cat')
+  const slot = slotsState === 'ready' ? slots.find(s => s.id === slotId) : undefined
+  const requested = [...new Set((params.get('entries') ?? '').split(',').filter(Boolean))].slice(0, 3)
+  const requestedKey = requested.join(',')
+  /* Смена категории не переносит невидимые галочки в новый выбор. */
+  const [choice, setChoice] = useState<{ category: string | null; ids: string[] }>({ category: catId, ids: [] })
+  const chosen = choice.category === catId ? choice.ids : []
+
+  const roles = useApi(() => hasSlot ? listMyWeddings() : Promise.resolve([]), [hasSlot, weddingId])
+  const currentWedding = roles.data?.find(w => w.id === weddingId)
+  const cats = useApi(() => getCategories(), [])
+  const shortlist = useApi(
+    () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId) : Promise.resolve([] as ShortlistEntry[]),
+    [hasSlot, weddingId, slotId, slot?.id],
   )
+  const favs = useApi(
+    () => hasSlot ? Promise.resolve([]) : getFavorites(),
+    [hasSlot],
+  )
+  const visibleFavorites = (favs.data ?? []).filter(v => !!v.id && (!catId || v.categoryId === catId))
+  const selectedIds = visibleFavorites.filter(v => chosen.includes(v.id ?? '')).map(v => v.id!).slice(0, 3)
+  const selectionKey = selectedIds.join(',')
+  const details = useApi(
+    () => !hasSlot && selectedIds.length >= 2
+      ? Promise.all(selectedIds.map(id => getVendor(id)))
+      : Promise.resolve([] as components['schemas']['VendorDetail'][]),
+    [hasSlot, selectionKey],
+  )
+  const icons = Object.fromEntries((cats.data ?? []).map(c => [c.id, c.icon ?? '📋']))
+  const categoryTitle = (cats.data ?? []).find(c => c.id === (slot?.categoryId ?? catId))?.title
+  const slotEntries = (shortlist.data ?? [])
+    .filter(entry => requested.includes(entry.id) && entry.slotId === slotId)
+    .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+  const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy, request: entry.request }))
+  const favoriteItems: CompareItem[] = (details.data ?? []).filter(v => selectedIds.includes(v.id ?? '')).map(v => ({ id: v.id!, vendor: v, available: true, occupancy: null }))
+  const slotCurrent = ready(shortlist) && !shortlist.refreshing
+  const detailsCurrent = ready(details) && !details.refreshing
+
+  return <div className="pb-28">
+    <TopBar back title={t('Сравнение')} sub={hasSlot ? slot?.label ?? categoryTitle : categoryTitle ?? t('Избранное')} />
+    {hasSlot ? (
+      !isAuthorized() || !weddingId ? <div className="px-5 mt-6 text-center">
+        <p className="text-[12px] text-[var(--soft)]">{!isAuthorized() ? t('Войдите, чтобы увидеть свою свадьбу') : weddingsState === 'error' ? t('Сервер недоступен. Попробуйте позже') : weddingsState === 'ready' ? t('Свадьбы пока нет') : t('Загружаем…')}</p>
+        {(!isAuthorized() || weddingsState === 'ready') && <button onClick={() => nav(isAuthorized() ? '/quiz' : '/auth')} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{isAuthorized() ? t('Завести свадьбу') : t('Войти')}</button>}
+      </div>
+        : slotsState !== 'ready' ? <p className="px-5 mt-6 text-[12px] text-[var(--soft)]">{slotsState === 'error' ? t('Сервер недоступен. Попробуйте позже') : t('Загружаем…')}</p>
+          : !slot ? <p role="alert" className="px-5 mt-6 text-[12px] text-[var(--soft)]">{t('Слот не найден')}</p>
+            : <>
+              <AsyncState q={shortlist} />
+              {shortlist.refreshing && <p className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
+              {slotCurrent && (requested.length < 2 || slotItems.length < 2 || slotItems.length !== requested.length) && <div className="px-5 mt-8 text-center">
+                <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
+                <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
+              </div>}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} weddingTz={currentWedding?.tz}
+                acceptance={weddingId ? { weddingId,
+                  canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
+                  onChanged: () => { shortlist.reload(); refreshSlots() },
+                } : undefined} />}
+            </>
+    ) : <>
+      <AsyncState q={favs} />
+      {ready(favs) && <div className="px-5 mt-4">
+        <p className="text-[12px] text-[var(--soft)]">{t('Выберите двух или трёх подрядчиков из избранного')}</p>
+        {visibleFavorites.length ? <div className="mt-3 space-y-2">
+          {visibleFavorites.map(v => {
+            const checked = chosen.includes(v.id ?? '')
+            return <label key={v.id} className="card-s flex items-center gap-3 p-3 text-[12px] cursor-pointer">
+              <input type="checkbox" checked={checked} disabled={!checked && selectedIds.length >= 3} onChange={() => setChoice(old => {
+                const ids = old.category === catId ? old.ids : []
+                return { category: catId, ids: checked ? ids.filter(id => id !== v.id) : [...ids, v.id!] }
+              })} className="h-4 w-4 accent-[var(--rose)]" />
+              <span>{v.name ?? '—'}</span>
+            </label>
+          })}
+        </div> : <div className="mt-5 text-center">
+          <p className="text-[12px] text-[var(--soft)]">{catId ? t('В этой категории пока некого сравнивать') : t('Добавьте подрядчиков в избранное — здесь они встанут рядом')}</p>
+          <button onClick={() => nav(catId ? `/search/${encodeURIComponent(catId)}` : '/search')} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть каталог')}</button>
+        </div>}
+      </div>}
+      {ready(favs) && selectedIds.length >= 2 && <>
+        <AsyncState q={details} />
+        {details.refreshing && <p className="px-5 py-6 text-center text-[12px] text-[var(--soft)]">{t('Загружаем…')}</p>}
+        {detailsCurrent && favoriteItems.length === selectedIds.length && <CompareTable items={favoriteItems} icons={icons} />}
+        {detailsCurrent && favoriteItems.length !== selectedIds.length && <p role="alert" className="px-5 mt-5 text-[12px] text-[var(--soft)]">{t('Анкета недоступна')}</p>}
+      </>}
+    </>}
+  </div>
 }
 
 /*
