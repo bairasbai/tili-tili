@@ -125,7 +125,7 @@ export async function saveResult(
 }
 
 /** Ключ, по которому действие не выполнилось, освобождается: повтор должен пройти. */
-export async function releaseKey(db: Db, userId: string, route: string, clientKey: string): Promise<void> {
+export async function releaseKey(db: Queryable, userId: string, route: string, clientKey: string): Promise<void> {
   await db.query('delete from idempotency_keys where key = $1 and status is null', [
     scopedKey(userId, route, clientKey),
   ])
@@ -152,8 +152,11 @@ export type IdempotentTx = <T>(
 
 /**
  * Обёртка вокруг действия: разбирает заголовок, отдаёт сохранённый ответ или
- * выполняет и запоминает. Действие получает `tx` — транзакцию, в которую
- * ложится и его ответ; действию без транзакции ответ записывается после.
+ * выполняет и запоминает успех (`status < 400`). Возвращённый отказ ключ не
+ * занимает: состояние может измениться, и та же попытка должна выполниться снова
+ * (R-312), а не replay-ить устаревший 4xx. Действие получает `tx`: в ней ответ либо
+ * сохраняется, либо claim атомарно освобождается. Действию без транзакции обёртка
+ * завершает claim после его ответа.
  */
 export async function withIdempotency<T>(
   db: Db,
@@ -180,17 +183,24 @@ export async function withIdempotency<T>(
     return reply.code(replayed.status).send(replayed.body)
   }
 
-  let saved = false
+  let claimFinalized = false
+  const finalizeClaim = async (target: Queryable, result: IdempotentResult<unknown>): Promise<void> => {
+    if (result.status < 400) {
+      await saveResult(target, userId, route, clientKey, result.status, result.body)
+    } else {
+      await releaseKey(target, userId, route, clientKey)
+    }
+    claimFinalized = true
+  }
   const tx: IdempotentTx = (fn) =>
     db.tx(async (client) => {
       const result = await fn(client)
-      await saveResult(client, userId, route, clientKey, result.status, result.body)
-      saved = true
+      await finalizeClaim(client, result)
       return result
     })
   try {
     const result = await action(tx)
-    if (!saved) await saveResult(db, userId, route, clientKey, result.status, result.body)
+    if (!claimFinalized) await finalizeClaim(db, result)
     return reply.code(result.status).send(result.body)
   } catch (error) {
     await releaseKey(db, userId, route, clientKey)
