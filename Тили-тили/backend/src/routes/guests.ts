@@ -576,19 +576,6 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.post('/weddings/:weddingId/guests/remind', async (request) => {
     requireRole(request, 'couple')
     const weddingId = request.member!.weddingId
-
-    /* Рассылка стоит денег и приходит чужим людям: не чаще раза в сутки.
-     *
-     * Захват — одним условным UPDATE, а не «прочитали, проверили, отправили»:
-     * два нажатия подряд на плохой связи иначе оба проходили проверку и
-     * каждый гость получал два SMS (R-49 про гонки — то же самое). Если
-     * отправлять оказалось некому, захват снимается ниже: пара, дописавшая
-     * телефоны, не должна ждать сутки. */
-    /* Условие — на самой обновляемой строке, а не на присоединённом
-     * подзапросе: при параллельном обновлении PostgreSQL перепроверяет
-     * условие по новой версии строки только для целевой таблицы, а
-     * значения из подзапроса берёт из старого снимка — и второй запрос
-     * проходил бы. */
     const claimed = await db().query(
       `update weddings set guests_reminded_at = now()
         where id = $1
@@ -599,13 +586,22 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError(429, 'too_often', 'Напоминание уходит не чаще раза в сутки — гости получают его лично')
     }
 
-    const { rows: pending } = await db().query<{ id: string; name: string; phone: string | null; code: string | null }>(
-      `select g.id, g.name, g.phone,
+    /* One SMS per invitation, not per person. The primary person carries the
+     * family contact during the 020 transition. */
+    const { rows: pending } = await db().query<{ party_id: string; name: string; phone: string | null; code: string | null }>(
+      `select party.id as party_id, primary_person.name, primary_person.phone,
               (select c.code from guest_invite_codes c
-                where c.guest_id = g.id and c.used_at is null and c.expires_at > now()
+                where c.party_id = party.id and c.used_at is null and c.expires_at > now()
                 order by c.expires_at desc limit 1) as code
-         from guests g
-        where g.wedding_id = $1 and g.rsvp = 'pending'`,
+         from guest_parties party
+         join lateral (
+           select g.name, g.phone from guests g
+            where g.party_id = party.id and g.is_primary
+            limit 1
+         ) primary_person on true
+        where party.wedding_id = $1
+          and exists (select 1 from guests g where g.party_id = party.id and g.rsvp = 'pending')
+        order by party.created_at, party.id`,
       [weddingId],
     )
 
@@ -613,39 +609,18 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     let skippedNoPhone = 0
     let skippedLinkUsed = 0
     let failed = 0
-    /* Предел на одну рассылку: список гостей не ограничен, а SMS — наши
-     * деньги на чужие номера (ревью 015). Сверх предела — не шлём, и в ответе
-     * это видно как `failed`; на следующие сутки очередь дойдёт до остальных. */
-    for (const guest of pending) {
-      if (!guest.phone) {
-        skippedNoPhone++
-        continue
-      }
-      if (!guest.code) {
-        /* Ссылки у гостя нет вовсе (импорт списком, ссылку не выдавали) —
-         * напоминать не о чём, это не «ссылка открыта». */
-        skippedLinkUsed++
-        continue
-      }
-      if (sent >= REMIND_MAX_PER_CALL) {
-        failed++
-        continue
-      }
+    for (const party of pending) {
+      if (!party.phone) { skippedNoPhone++; continue }
+      if (!party.code) { skippedLinkUsed++; continue }
+      if (sent >= REMIND_MAX_PER_CALL) { failed++; continue }
       try {
-        await app.sms.send(guest.phone, remindText(guest.name, guest.code))
+        await app.sms.send(party.phone, remindText(party.name, party.code))
         sent++
       } catch {
-        // Отказ провайдера на одном номере не должен ронять всю рассылку:
-        // остальные гости не виноваты. Ошибка уже в логе отправителя.
         failed++
       }
     }
-
-    if (sent === 0) {
-      /* Никому не ушло — суточный запрет не заслужен: снимаем захват. Прежняя
-       * отметка либо пуста, либо старше суток — для правила это одно и то же. */
-      await db().query('update weddings set guests_reminded_at = null where id = $1', [weddingId])
-    }
+    if (sent === 0) await db().query('update weddings set guests_reminded_at = null where id = $1', [weddingId])
     return { sent, skippedNoPhone, skippedLinkUsed, failed }
   })
 
@@ -654,54 +629,39 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
 
-    const { rows } = await db().query('select 1 from guests where id = $1 and wedding_id = $2', [guestId, weddingId])
-    if (rows.length === 0) throw notFound('Гость не найден')
+    const { rows } = await db().query<{ party_id: string }>(
+      'select party_id from guests where id = $1 and wedding_id = $2',
+      [guestId, weddingId],
+    )
+    const partyId = rows[0]?.party_id
+    if (!partyId) throw notFound('Гость не найден')
 
     return db().tx(async (client) => {
-      /* Прежний код гаснет: «выдать новую ссылку» означает, что старая
-       * потеряна или ушла не туда.
-       *
-       * Гаснет он СРОКОМ, а не отметкой `used_at`: у обмена есть окно повтора
-       * (`REDEEM_RETRY_MINUTES`), в котором уже использованный код отдаёт
-       * токен ещё раз, — истёкший срок закрывает и его. Отметка «открыт» на
-       * неоткрытом коде врала бы паре `inviteUrlUsed: true` (ревью 015). */
+      await client.query('select id from guest_parties where id = $1 for update', [partyId])
       await client.query(
         `update guest_invite_codes
             set expires_at = least(expires_at, now())
-          where guest_id = $1 and expires_at > now()`,
-        [guestId],
+          where party_id = $1 and expires_at > now()`,
+        [partyId],
       )
+      /* Rotating the family token invalidates a lost link and releases only
+       * the live anonymous gift reservation. Contributions remain history. */
+      await client.query('update guest_parties set rsvp_token = $2 where id = $1', [partyId, newGuestToken()])
 
-      /* Вместе с кодом гаснет и сам токен.
-       *
-       * Без этого перевыпуск отдаёт ТОТ ЖЕ токен, и пара, которая ссылку
-       * выдаёт, может обменять её сама и открыть гостевую страницу — а там
-       * видно, какой подарок этот гость зарезервировал. Анонимность §9
-       * рушится молча, гость об этом не узнаёт.
-       *
-       * Со сменой токена такой обмен выдаёт пустую личность (резервы уходят
-       * по триггеру), а у настоящего гостя ссылка перестаёт работать — он
-       * попросит новую, и подмена станет видна.
-       *
-       * Отзыв гостя ключуется самим гостем (`reviews.guest_id`, фича 005), а
-       * не токеном: переносить его за новой ссылкой больше не нужно — пара,
-       * выпускающая ссылки, гостевых голосов в рейтинг не множит (D3-09). */
-      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, newGuestToken()])
       let code = ''
       for (let attempt = 0; attempt < 3; attempt++) {
         code = newShareCode()
         const res = await client.query(
-          `insert into guest_invite_codes (code, guest_id, expires_at)
+          `insert into guest_invite_codes (code, party_id, expires_at)
            values ($1, $2, greatest(now(), (select coalesce(date::timestamptz, now()) from weddings where id = $3))
                    + ($4 || ' days')::interval)
            on conflict (code) do nothing`,
-          [code, guestId, weddingId, String(SHARE_TTL_DAYS)],
+          [code, partyId, weddingId, String(SHARE_TTL_DAYS)],
         )
         if (res.rowCount === 1) break
         code = ''
       }
       if (!code) throw new AppError(503, 'code_collision', 'Не удалось выдать ссылку, попробуйте ещё раз')
-
       const { rows: saved } = await client.query<{ expires_at: Date }>(
         'select expires_at from guest_invite_codes where code = $1',
         [code],
@@ -712,29 +672,17 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/invite/:shareCode', async (request) => {
     const { shareCode } = request.params as { shareCode: string }
-    /* Гашение и выдача — один оператор, чтобы код нельзя было обменять
-     * второй раз спустя время.
-     *
-     * Но не «ровно один раз»: обмен — GET, который гасит код до ответа, а
-     * ответ теряется на мобильной сети или обрывается таймаутом клиента.
-     * Тогда токен получил никто, а «Повторить» упиралось в 410 — ссылка
-     * сгорала впустую (D3-07). Поэтому тот же код в окне после первого
-     * обмена отдаёт тот же токен: отметка `used_at` не двигается, окно
-     * считается от неё. Позже окна — 410, как и раньше; перевыпуск ссылки
-     * закрывает окно немедленно (см. `invite-link`). */
-    /* Свадьба отменена или убрана — ссылка мертва: обмен сжигал код и отдавал
-     * название, дату и площадку отменённой свадьбы с токеном, который дальше
-     * везде отвечал 401 (ревью 015). */
-    const claimed = await db().query<{ guest_id: string }>(
+    const claimed = await db().query<{ party_id: string }>(
       `update guest_invite_codes c set used_at = coalesce(c.used_at, now())
-        from guests g join weddings w on w.id = g.wedding_id
-        where c.code = $1 and c.expires_at > now() and g.id = c.guest_id
+        from guest_parties p join weddings w on w.id = p.wedding_id
+        where c.code = $1 and c.expires_at > now() and p.id = c.party_id
           and w.cancelled_at is null and w.archived_at is null
           and (c.used_at is null or c.used_at > now() - make_interval(mins => $2))
-        returning c.guest_id`,
+        returning c.party_id`,
       [shareCode.toUpperCase(), REDEEM_RETRY_MINUTES],
     )
-    if (claimed.rowCount === 0) {
+    const partyId = claimed.rows[0]?.party_id
+    if (!partyId) {
       throw gone('Ссылка недействительна: уже использована или истекла — попросите пару прислать новую')
     }
     const { rows } = await db().query<{
@@ -748,17 +696,29 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       invite_theme_id: number
       venue: string | null
     }>(
-      `select g.name, g.rsvp_token as token, w.title, w.date::text as date,
+      `select primary_person.name, p.rsvp_token as token, w.title, w.date::text as date,
               c.name as city, c.region, w.invite_text, w.invite_theme_id, w.venue
-         from guests g join weddings w on w.id = g.wedding_id
+         from guest_parties p
+         join weddings w on w.id = p.wedding_id
+         join lateral (
+           select g.name from guests g where g.party_id = p.id
+           order by g.is_primary desc, g.created_at, g.id limit 1
+         ) primary_person on true
          left join cities c on c.id = w.city_id
-        where g.id = $1`,
-      [claimed.rows[0]!.guest_id],
+        where p.id = $1`,
+      [partyId],
+    )
+    const { rows: persons } = await db().query<{
+      id: string; name: string; is_primary: boolean; rsvp: string
+    }>(
+      'select id, name, is_primary, rsvp from guests where party_id = $1 order by is_primary desc, created_at, id',
+      [partyId],
     )
     const g = rows[0]!
     return {
       guestToken: g.token,
       guestName: g.name,
+      persons: persons.map((p) => ({ id: p.id, name: p.name, primary: p.is_primary, status: p.rsvp })),
       wedding: {
         title: g.title,
         date: g.date,
