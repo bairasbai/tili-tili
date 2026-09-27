@@ -971,6 +971,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             [guest.partyId],
           )
           if (Number(size[0]!.n) === 1) {
+            const companionId = uuidv7()
             await client.query(
               `insert into guests (
                  id, wedding_id, name, rsvp, group_name, diet, diet_note,
@@ -981,13 +982,40 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                  from guests where id = $1`,
               [
                 guest.guestId,
-                uuidv7(),
+                companionId,
                 body.status ?? 'pending',
                 body.diet ?? null,
                 body.dietNote ?? null,
                 body.transfer ?? null,
               ],
             )
+            const { rows: primaryBus } = await client.query<{ bus_id: string }>(
+              'select bus_id from bus_bookings where guest_id = $1 limit 1',
+              [guest.guestId],
+            )
+            if (primaryBus[0]) {
+              try {
+                await client.query(
+                  'insert into bus_bookings(bus_id, guest_id) values ($1,$2)',
+                  [primaryBus[0].bus_id, companionId],
+                )
+              } catch (error) {
+                if (isCheckViolation(error, 'bus_taken_bounded')) {
+                  throw conflict('bus_full', 'В автобусе нет места для +1')
+                }
+                throw error
+              }
+            }
+            const { rows: primaryMenu } = await client.query<{ menu_option_id: string | null }>(
+              'select menu_option_id from guests where id = $1',
+              [guest.guestId],
+            )
+            if (primaryMenu[0]?.menu_option_id) {
+              await client.query(
+                'insert into menu_votes(guest_id, option_id) values ($1,$2) on conflict (guest_id) do nothing',
+                [companionId, primaryMenu[0].menu_option_id],
+              )
+            }
           }
         }
 
