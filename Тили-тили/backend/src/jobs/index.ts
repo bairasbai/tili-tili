@@ -226,6 +226,26 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
  * тем же путём и заводит аккаунт заново.
  */
 export async function eraseUser(client: Queryable, id: string): Promise<void> {
+  /* 019/T039: request is the response mutex. Lock all vendor requests before
+   * the user cascade so account erasure and an offer reply use one order. */
+  const { rows: ownedVendors } = await client.query<{ id: string }>(
+    'select id from vendors where user_id = $1',
+    [id],
+  )
+  for (const vendor of ownedVendors) {
+    await client.query('select id from offer_requests where vendor_id = $1 order by id for update', [vendor.id])
+    await client.query(
+      `delete from offers o using offer_requests r
+        where o.request_id = r.id and r.vendor_id = $1`,
+      [vendor.id],
+    )
+    await client.query(
+      `update offer_requests
+          set status = 'closed', close_reason = 'vendor_erased', closed_at = coalesce(closed_at, now())
+        where vendor_id = $1 and status = 'open'`,
+      [vendor.id],
+    )
+  }
   /* Наследник — живой партнёр, а если такого нет — партнёр, мягко удалённый
    * в своём 30-дневном окне: он ещё может вернуться входом (`auth.ts`), и
    * свадьба должна дождаться его, а не уйти каскадом вместе с первым
