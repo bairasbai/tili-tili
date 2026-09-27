@@ -688,17 +688,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          from menu_options o where o.wedding_id = $1 order by o.sort, o.name`,
       [weddingId],
     )
-    // Кейтерингу нужны ПОРЦИИ, а не строки списка: «Ольга +1» — два
-    // человека за столом и две порции. Считаем на сервере, чтобы разные
-    // экраны не получили разных ответов (ERR-0012 ровно про это).
-    const { rows: guests } = await db().query<{ status: string; plus_one: boolean }>(
-      'select rsvp as status, plus_one from guests where wedding_id = $1',
+    // 020: one guest row is one person, so portions are actual attendees.
+    const { rows: guests } = await db().query<{ status: string }>(
+      'select rsvp as status from guests where wedding_id = $1',
       [weddingId],
     )
     return {
       question: poll[0]?.question ?? 'Что будете на горячее?',
       sentAt: poll[0]?.sent_at?.toISOString() ?? null,
-      expectedPortions: personCount(guests.map((g) => ({ status: g.status, plusOne: g.plus_one }))),
+      expectedPortions: personCount(guests),
       options: options.map((o) => ({ id: o.id, name: o.name, icon: o.icon, votes: Number(o.votes) })),
     }
   })
