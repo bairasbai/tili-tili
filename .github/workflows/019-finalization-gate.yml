@@ -1,0 +1,183 @@
+name: Gate and deliver 019 finalization
+
+on:
+  push:
+    branches: ['test/019-finalization-gate-20260928']
+
+permissions:
+  contents: write
+
+jobs:
+  verify-deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d tili_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      FEATURE_BRANCH: feature/019-finalization-privacy-export-20260928
+      BASE_SHA: 776d61fef00c05625f7382988baaded8604d9476
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: payload
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          path: work
+          ref: 776d61fef00c05625f7382988baaded8604d9476
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reconstruct and apply exact reviewed patch
+        run: |
+          set -euo pipefail
+          test "$(git -C work rev-parse HEAD)" = "$BASE_SHA"
+          cat payload/.delivery019final/patch.* | base64 -d | gzip -d > "$RUNNER_TEMP/final019.patch"
+          sha256sum "$RUNNER_TEMP/final019.patch"
+          git -C work apply --check "$RUNNER_TEMP/final019.patch"
+          git -C work apply "$RUNNER_TEMP/final019.patch"
+          git -C work diff --check
+          mkdir -p "$RUNNER_TEMP/final019-evidence"
+
+      - name: Install pinned dependencies
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          for part in app backend; do
+            pushd "work/Тили-тили/$part"
+            printf 'minimum-release-age=0\n' > .npmrc
+            pnpm install --frozen-lockfile --node-linker=hoisted
+            rm .npmrc
+            popd
+          done
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+
+      - name: Migrate and run profile tests
+        working-directory: work/Тили-тили/backend
+        run: |
+          set -euo pipefail
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/final019-evidence/migrations.log" 2>&1
+          pnpm exec vitest run test/shortlist019.test.ts test/offers019.test.ts test/accept019.test.ts test/stage9.test.ts 2>&1 | tee "$RUNNER_TEMP/final019-evidence/profile.log"
+
+      - name: Full project gate
+        working-directory: work
+        run: |
+          set -euo pipefail
+          TEST_DATABASE_URL="$TEST_DATABASE_URL" TEST_REDIS_URL="$TEST_REDIS_URL" bash init.sh 2>&1 | tee "$RUNNER_TEMP/final019-evidence/full-gate.log"
+
+      - name: Real browser regression
+        run: |
+          set -euo pipefail
+          export E2E_FIXTURE_FILE="$RUNNER_TEMP/final019-fixture.json"
+          export E2E_RESULT_DIR="$RUNNER_TEMP/final019-evidence/browser"
+          BACK="$GITHUB_WORKSPACE/work/Тили-тили/backend"
+          FRONT="$GITHUB_WORKSPACE/work/Тили-тили/app"
+          cd "$BACK"
+          node --input-type=module -e 'import pg from "pg";const c=new pg.Client({connectionString:process.env.TEST_DATABASE_URL});await c.connect();await c.query("CREATE DATABASE offers_final019 OWNER tili");await c.end()'
+          export TEST_DATABASE_URL=postgres://tili:tili@127.0.0.1:5432/offers_final019
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/final019-evidence/browser-migrations.log" 2>&1
+          node --import tsx scripts/offers-e2e-server.mts > "$RUNNER_TEMP/final019-server.log" 2>&1 &
+          BACK_PID=$!
+          cd "$FRONT"
+          node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort > "$RUNNER_TEMP/final019-vite.log" 2>&1 &
+          FRONT_PID=$!
+          cleanup() {
+            kill "$FRONT_PID" "$BACK_PID" 2>/dev/null || true
+            wait "$FRONT_PID" "$BACK_PID" 2>/dev/null || true
+            rm -f "$E2E_FIXTURE_FILE"
+          }
+          trap cleanup EXIT
+          for i in $(seq 1 60); do
+            if test -f "$E2E_FIXTURE_FILE" && grep -q OFFERS_BROWSER_FIXTURE_READY "$RUNNER_TEMP/final019-server.log" && curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then break; fi
+            kill -0 "$BACK_PID" "$FRONT_PID"
+            sleep 1
+          done
+          test -f "$E2E_FIXTURE_FILE"
+          python "$BACK/scripts/offers-e2e-browser.py" 2>&1 | tee "$RUNNER_TEMP/final019-evidence/browser.log"
+
+      - name: Record verification and publish one feature commit
+        run: |
+          set -euo pipefail
+          cd work
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          mkdir -p "tasks/фичи/019-кандидаты-и-предложения"
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          PROFILE_SUMMARY="$(grep -E 'Test Files|Tests ' "$RUNNER_TEMP/final019-evidence/profile.log" | tail -n 2 | sed 's/^/    /')"
+          GATE_SUMMARY="$(grep -E 'Test Files|Tests ' "$RUNNER_TEMP/final019-evidence/full-gate.log" | tail -n 8 | sed 's/^/    /')"
+          cat > "tasks/фичи/019-кандидаты-и-предложения/verification-finalization.md" <<EOF
+          # ✅ Проверка 019 / финализация privacy + export
+
+          Дата: 2026-09-28. База: `$BASE_SHA`.
+          GitHub Actions: $RUN_URL.
+
+          ## Результат
+
+          - ✅ T039: hard-delete/cleanup обезличивает shortlist и request tombstone, удаляет непринятые offers и их свободный текст, сохраняет только принятый immutable deal snapshot.
+          - ✅ T040: экспорт пары содержит shortlist/requests/offers; helper/coordinator не получают приватные ответы; подрядчик получает только собственные ответы.
+          - ✅ T042: документация, roadmap, handoff и финальный gate обновлены; этап 019 закрыт.
+          - ✅ Детерминированная гонка hard-delete против ответа завершается без deadlock; поздний request закрывается вторым проходом под parent-lock.
+          - ✅ Остаточный `deal_events.actor_id` удалён при hard-delete (ERR-0329).
+          - ✅ PostgreSQL 16 + Redis 7; все миграции применены.
+          - ✅ Полный `bash init.sh`: exit 0 — tests/types/ESLint/build.
+          - ✅ Реальный Playwright/Chromium E2E без mock API: candidates → requests → vendor replies → comparison → accept → reload, page errors = 0.
+
+          ## Профильный прогон
+
+          ```text
+          $PROFILE_SUMMARY
+          ```
+
+          ## Полный gate — строки Vitest
+
+          ```text
+          $GATE_SUMMARY
+          ```
+
+          ## Граница
+
+          Main и production не менялись. Следующий этап по roadmap — 020; он этой поставкой не начинался.
+          EOF
+          sed -i 's/^          //' "tasks/фичи/019-кандидаты-и-предложения/verification-finalization.md"
+          git diff --check
+          git config user.name 'ChatGPT'
+          git config user.email 'noreply@openai.com'
+          git add --all
+          git commit -m 'feat(019): finalize privacy erasure and data export' -m 'Complete T039, T040 and T042. Add deterministic hard-delete concurrency/privacy tests, role-safe exports, tombstone cleanup and final verification. Mark stage 019 complete with checkmarks; next stage is 020. Main and production unchanged.'
+          test "$(git rev-parse HEAD^)" = "$BASE_SHA"
+          git push --force-with-lease="refs/heads/$FEATURE_BRANCH:" origin "HEAD:refs/heads/$FEATURE_BRANCH"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/final019-evidence/feature-commit.txt"
+          cat "tasks/фичи/019-кандидаты-и-предложения/verification-finalization.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final019-verification
+          path: ${{ runner.temp }}/final019-evidence/
+          retention-days: 7
