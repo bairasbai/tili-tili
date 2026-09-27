@@ -184,6 +184,42 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     return rows[0] ? toGuest(rows[0], seesInviteUrl(role)) : null
   }
 
+  interface NewPartyPerson { name: string }
+
+  const cleanPersonName = (raw: string) => raw.trim().replace(/\s+/g, ' ')
+
+  /** 020: one invitation owns one token; each attendee is a separate guest row. */
+  const createParty = async (
+    client: Queryable,
+    input: { weddingId: string; name: string; group?: string; phone?: string | null; persons?: NewPartyPerson[]; legacyPlusOne?: boolean },
+  ) => {
+    const primaryId = uuidv7()
+    const partyId = uuidv7()
+    const extra = [...(input.persons ?? [])]
+    if (input.legacyPlusOne && extra.length === 0) extra.push({ name: 'Спутник/спутница' })
+    if (1 + extra.length > 10) throw new AppError(422, 'validation_failed', 'В одном приглашении не больше 10 персон')
+    const names = [cleanPersonName(input.name), ...extra.map((p) => cleanPersonName(p.name))]
+    if (names.some((name) => !name)) throw new AppError(422, 'validation_failed', 'У каждой персоны должно быть имя')
+
+    await client.query(
+      'insert into guest_parties (id, wedding_id, rsvp_token) values ($1,$2,$3)',
+      [partyId, input.weddingId, newGuestToken()],
+    )
+    await client.query(
+      `insert into guests (id, wedding_id, name, group_name, phone, party_id, is_primary)
+       values ($1,$2,$3,$4,$5,$6,true)`,
+      [primaryId, input.weddingId, names[0], input.group ?? null, input.phone ?? null, partyId],
+    )
+    for (const name of names.slice(1)) {
+      await client.query(
+        `insert into guests (id, wedding_id, name, group_name, party_id, is_primary)
+         values ($1,$2,$3,$4,$5,false)`,
+        [uuidv7(), input.weddingId, name, input.group ?? null, partyId],
+      )
+    }
+    return { primaryId, partyId }
+  }
+
   /* ── список и добавление ──────────────────────────────────────────── */
   app.get('/weddings/:weddingId/guests', async (request) => {
     const { rows } = await db().query<GuestRow>(
@@ -203,7 +239,18 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           additionalProperties: false,
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 120 },
-            plusOne: { type: 'boolean', default: false },
+            /* Legacy bridge only. New clients send named persons. */
+            plusOne: { type: 'boolean' },
+            persons: {
+              type: 'array',
+              maxItems: 9,
+              items: {
+                type: 'object',
+                required: ['name'],
+                additionalProperties: false,
+                properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
+              },
+            },
             group: { type: 'string', maxLength: 120 },
             phone: { type: 'string', maxLength: 32 },
           },
@@ -211,27 +258,26 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (request, reply) => {
-      const body = request.body as { name: string; plusOne?: boolean; group?: string; phone?: string }
+      const body = request.body as {
+        name: string
+        plusOne?: boolean
+        persons?: NewPartyPerson[]
+        group?: string
+        phone?: string
+      }
       assertPhoneByCouple(request.member!.role, body.phone !== undefined)
-      /* Телефон — к виду `+7XXXXXXXXXX`, как у импорта: сырой «8 917 000-55-66»
-       * не совпадал с нормализованным у дедупликации импорта и уходил
-       * провайдеру SMS как есть (ревью 015). Не российский или неполный — 422. */
       const phone = normalizedPhoneOr422(body.phone)
-      const id = uuidv7()
-      await db().query(
-        `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          id,
-          request.member!.weddingId,
-          body.name,
-          body.plusOne ?? false,
-          body.group ?? null,
+      const created = await db().tx((client) =>
+        createParty(client, {
+          weddingId: request.member!.weddingId,
+          name: body.name,
+          group: body.group,
           phone,
-          newGuestToken(),
-        ],
+          persons: body.persons,
+          legacyPlusOne: body.plusOne === true,
+        }),
       )
-      return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
+      return reply.code(201).send(await loadGuest(db(), created.primaryId, request.member!.role))
     },
   )
 
@@ -256,7 +302,17 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                 properties: {
                   name: { type: 'string', minLength: 2, maxLength: 120 },
                   phone: { type: 'string', maxLength: 32 },
-                  plusOne: { type: 'boolean', default: false },
+                  plusOne: { type: 'boolean' },
+                  persons: {
+                    type: 'array',
+                    maxItems: 9,
+                    items: {
+                      type: 'object',
+                      required: ['name'],
+                      additionalProperties: false,
+                      properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
+                    },
+                  },
                   group: { type: 'string', maxLength: 60 },
                 },
               },
@@ -268,22 +324,18 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const weddingId = request.member!.weddingId
       const { guests } = request.body as {
-        guests: { name: string; phone?: string; plusOne?: boolean; group?: string }[]
+        guests: { name: string; phone?: string; plusOne?: boolean; persons?: NewPartyPerson[]; group?: string }[]
       }
       assertPhoneByCouple(request.member!.role, guests.some((g) => g.phone !== undefined))
       const skipped: { index: number; name: string; reason: 'duplicate' | 'invalid' }[] = []
       const createdIds: string[] = []
 
-      /* Одна транзакция под замком строки свадьбы: два одновременных импорта
-       * одного списка иначе прошли бы обе проверки на дубликаты и завели гостей
-       * дважды (R-49). Дубликат — совпадение имени без регистра и лишних пробелов
-       * или телефона: с уже заведёнными гостями и с более ранней строкой того же
-       * списка. Дубликаты пропускаются, не обновляются: импорт заводит, а не
-       * правит — правка у каждого гостя своя (`PATCH …/guests/{id}`). */
       await db().tx(async (client) => {
         await client.query('select id from weddings where id = $1 for update', [weddingId])
         const { rows: existing } = await client.query<{ name: string; phone: string | null }>(
-          'select name, phone from guests where wedding_id = $1',
+          `select g.name,
+                  case when g.is_primary then g.phone else null end as phone
+             from guests g where g.wedding_id = $1`,
           [weddingId],
         )
         const names = new Set(existing.map((g) => guestNameKey(g.name)))
@@ -292,20 +344,29 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         for (const [index, row] of guests.entries()) {
           const phone = normalizeRuPhone(row.phone)
           if (phone === null) { skipped.push({ index, name: row.name, reason: 'invalid' }); continue }
-          const nameKey = guestNameKey(row.name)
-          if (nameKey.length < 2 || names.has(nameKey) || (phone && phones.has(phone))) {
-            skipped.push({ index, name: row.name, reason: nameKey.length < 2 ? 'invalid' : 'duplicate' })
+          const partyNames = [
+            cleanPersonName(row.name),
+            ...(row.persons ?? []).map((p) => cleanPersonName(p.name)),
+            ...(row.plusOne && !(row.persons?.length) ? ['Спутник/спутница'] : []),
+          ]
+          const primaryKey = guestNameKey(row.name)
+          const invalid = partyNames.some((name) => name.length < 1) || partyNames.length > 10
+          const duplicate = names.has(primaryKey) || (phone ? phones.has(phone) : false)
+          if (invalid || duplicate) {
+            skipped.push({ index, name: row.name, reason: invalid ? 'invalid' : 'duplicate' })
             continue
           }
-          names.add(nameKey)
+          const created = await createParty(client, {
+            weddingId,
+            name: row.name,
+            phone: phone ?? null,
+            group: row.group,
+            persons: row.persons,
+            legacyPlusOne: row.plusOne === true,
+          })
+          createdIds.push(created.primaryId)
+          for (const name of partyNames) names.add(guestNameKey(name))
           if (phone) phones.add(phone)
-          const id = uuidv7()
-          await client.query(
-            `insert into guests (id, wedding_id, name, plus_one, group_name, phone, rsvp_token)
-             values ($1, $2, $3, $4, $5, $6, $7)`,
-            [id, weddingId, row.name.trim().replace(/\s+/g, ' '), row.plusOne ?? false, row.group ?? null, phone ?? null, newGuestToken()],
-          )
-          createdIds.push(id)
         }
       })
 
