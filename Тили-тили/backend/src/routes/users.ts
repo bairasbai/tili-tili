@@ -479,6 +479,32 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
            from guests where wedding_id = any($1) order by created_at`,
       )),
     ]
+    const shortlist = await byWeddings(
+      coupleIds,
+      `select s.wedding_id, sl.slot_id, sl.position, sl.created_at,
+              case when sl.vendor_id is null then null else v.name end as vendor_name
+         from slot_shortlist sl
+         join slots s on s.id = sl.slot_id
+         left join vendors v on v.id = sl.vendor_id
+        where s.wedding_id = any($1) order by sl.created_at`,
+    )
+    const offerRequests = await byWeddings(
+      coupleIds,
+      `select s.wedding_id, r.id, r.slot_id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
+              r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at,
+              case when r.vendor_id is null then null else v.name end as vendor_name
+         from offer_requests r
+         join slots s on s.id = r.slot_id
+         left join vendors v on v.id = r.vendor_id
+        where s.wedding_id = any($1) order by r.created_at`,
+    )
+    const offerRequestIds = offerRequests.map((r) => r.id as string)
+    const offers = offerRequestIds.length === 0 ? [] : (await db().query(
+      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until,
+              superseded_at, accepted_at, created_at
+         from offers where request_id = any($1::uuid[]) order by created_at`,
+      [offerRequestIds],
+    )).rows
     const deals = [
       ...(await byWeddings(
         coupleIds,
@@ -622,6 +648,18 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       'select name, price::text as price, currency, items from vendor_packages where vendor_id = $1 order by sort',
     )
     const vendorMedia = await byVendor('select kind, url, duration_s from vendor_media where vendor_id = $1 order by sort')
+    const vendorOfferRequests = await byVendor(
+      `select r.id, r.slot_id, r.status, r.close_reason, r.wedding_date::text as wedding_date, r.guests, r.city,
+              r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at
+         from offer_requests r where r.vendor_id = $1 order by r.created_at`,
+    )
+    const vendorRequestIds = vendorOfferRequests.map((r) => r.id as string)
+    const vendorOffers = vendorRequestIds.length === 0 ? [] : (await db().query(
+      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until,
+              superseded_at, accepted_at, created_at
+         from offers where request_id = any($1::uuid[]) order by created_at`,
+      [vendorRequestIds],
+    )).rows
     // Только отмеченные им самим дни: занятость по сделкам — производная от сделок пары.
     const vendorBusyDates = await byVendor(
       `select date::text as date from vendor_busy_dates where vendor_id = $1 and source <> 'deal' order by date`,
@@ -646,6 +684,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       sessions,
       weddings,
       guests,
+      shortlist,
+      offerRequests,
+      offers,
       deals,
       payments,
       budget,
@@ -668,6 +709,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       vendorVerifications,
       vendorPackages,
       vendorMedia,
+      vendorOfferRequests,
+      vendorOffers,
       vendorBusyDates,
       reviews,
     }
