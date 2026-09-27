@@ -12,7 +12,10 @@ import { AppError } from '../errors.js'
  * обещана в §9 бизнес-логики.
  */
 export interface GuestCaller {
+  /** Primary person used by legacy single-person guest paths during 020 rollout. */
   guestId: string
+  /** Family invitation identity. Gift quota/token and hotel room belong here. */
+  partyId: string
   weddingId: string
   name: string
 }
@@ -53,17 +56,25 @@ export function newShareCode(): string {
 
 export async function guestByToken(db: Queryable, token: string): Promise<GuestCaller> {
   if (!token || token.length > 200) throw new AppError(401, 'unauthorized', 'Нужна ссылка-приглашение')
-  const { rows } = await db.query<{ id: string; wedding_id: string; name: string }>(
-    `select g.id, g.wedding_id, g.name
-       from guests g join weddings w on w.id = g.wedding_id
-      where g.rsvp_token = $1 and w.cancelled_at is null and w.archived_at is null`,
+  const { rows } = await db.query<{ id: string; party_id: string; wedding_id: string; name: string }>(
+    `select g.id, p.id as party_id, p.wedding_id, g.name
+       from guest_parties p
+       join weddings w on w.id = p.wedding_id
+       join lateral (
+         select id, name from guests
+          where party_id = p.id
+          order by party_position, created_at, id
+          limit 1
+       ) g on true
+      where p.invite_token = $1
+        and w.cancelled_at is null and w.archived_at is null`,
     [token],
   )
   const guest = rows[0]
   // Один и тот же ответ на «нет такого токена» и «свадьба отменена»:
   // по кодам ответа не должно быть видно, существовал ли токен.
   if (!guest) throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
-  return { guestId: guest.id, weddingId: guest.wedding_id, name: guest.name }
+  return { guestId: guest.id, partyId: guest.party_id, weddingId: guest.wedding_id, name: guest.name }
 }
 
 export function readGuestToken(request: FastifyRequest): string | null {
