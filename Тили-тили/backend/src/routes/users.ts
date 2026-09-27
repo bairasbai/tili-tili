@@ -644,6 +644,18 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       const { rows } = await db().query<T>(sql, [vendorId])
       return rows
     }
+    const shortlist = await byWeddings(coupleIds,
+      `select ss.* from slot_shortlist ss join slots s on s.id = ss.slot_id
+        where s.wedding_id = any($1) order by ss.created_at`)
+    const offerRequests = await byWeddings(coupleIds,
+      `select r.* from offer_requests r join slots s on s.id = r.slot_id
+        where s.wedding_id = any($1) order by r.created_at`)
+    const offers = await byWeddings(coupleIds,
+      `select o.* from offers o join offer_requests r on r.id = o.request_id
+        join slots s on s.id = r.slot_id where s.wedding_id = any($1) order by o.created_at`)
+    const vendorOffers = await byVendor(
+      `select o.* from offers o join offer_requests r on r.id = o.request_id
+        where r.vendor_id = $1 order by o.created_at`)
     const vendorVerifications = await byVendor(
       'select kind, inn, status, checked_at, created_at from vendor_verifications where vendor_id = $1 order by created_at',
     )
@@ -669,6 +681,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
 
     return {
+      shortlist, offerRequests, offers, vendorOffers,
       exportedAt: new Date().toISOString(),
       profile,
       consents,

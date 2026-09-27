@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { randomInt } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
-import { cleanup } from '../src/jobs/index.js'
+import { cleanup, eraseUser } from '../src/jobs/index.js'
 
 /**
  * Этап 9: эксплуатация и 152-ФЗ.
@@ -93,7 +93,7 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
       `select table_name, column_name, data_type
          from information_schema.columns
         where table_schema = 'public'
-          and data_type in ('uuid', 'text', 'character varying')
+          and data_type in ('uuid', 'text', 'character varying', 'json', 'jsonb')
         order by table_name, column_name`,
     )
     const found: string[] = []
@@ -102,15 +102,115 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
       // ответить «кто и когда удалил», когда самих данных уже нет.
       if (c.table_name === 'audit_log') continue
       if (c.table_name === 'pgmigrations') continue
-      const cast = c.data_type === 'uuid' ? '::text' : ''
+      const cast = ['uuid', 'json', 'jsonb'].includes(c.data_type) ? '::text' : ''
       const { rows } = await app.db!.query<{ n: string }>(
-        `select count(*)::text as n from "${c.table_name}" where "${c.column_name}"${cast} = $1`,
+        `select count(*)::text as n from "${c.table_name}" where position($1 in "${c.column_name}"${cast}) > 0`,
         [value],
       )
       if (Number(rows[0]!.n) > 0) found.push(`${c.table_name}.${c.column_name}`)
     }
     return found
   }
+
+
+  async function offerFixture019(accepted: boolean) {
+    const owner = await newUser(), vendor = await newUser()
+    const wedding = await app.inject({method:'POST',url:'/weddings',headers:auth(owner.token),
+      payload:{partnerName:'019',date:'2027-06-14',city:{name:'Уфа',region:'Башкортостан'}}})
+    expect(wedding.statusCode, wedding.body).toBe(201)
+    const wid = wedding.json().id as string
+    const profile = await app.inject({method:'PUT',url:'/vendor/profile',headers:auth(vendor.token),payload:{
+      name:`Erase019-${randomUUID()}`,categoryId:'photo',city:{name:'Уфа',region:'Башкортостан'},
+      priceFrom:{amount:100000,currency:'RUB'},portfolioUrls:['https://example.com/photo.jpg']}})
+    expect(profile.statusCode, profile.body).toBe(200)
+    const vid = profile.json().id as string
+    expect((await app.inject({method:'POST',url:'/vendor/profile/publish',headers:auth(vendor.token)})).statusCode).toBe(200)
+    const candidate = await app.inject({method:'PUT',url:`/weddings/${wid}/shortlist/${vid}`,headers:auth(owner.token)})
+    expect(candidate.statusCode,candidate.body).toBe(200)
+    const sid = candidate.json().slotId as string
+    const sent = await app.inject({method:'POST',url:`/weddings/${wid}/slots/${sid}/offer-requests`,headers:{...auth(owner.token),'idempotency-key':randomUUID()},payload:{entryIds:[candidate.json().id]}})
+    expect(sent.statusCode,sent.body).toBe(201)
+    const rid = sent.json().results[0].requestId as string
+    const privateText = `Private019-${randomUUID()}`
+    const offer = await app.inject({method:'POST',url:`/vendor/offer-requests/${rid}/offers`,headers:{...auth(vendor.token),'idempotency-key':randomUUID()},payload:{kind:'offer',title:'Договорённый пакет',includes:['8 часов'],price:{amount:1234500,currency:'RUB'},message:privateText,validUntil:'2034-06-01'}})
+    expect(offer.statusCode,offer.body).toBe(201)
+    if (accepted) {
+      const book = await app.inject({method:'POST',url:`/weddings/${wid}/offers/${offer.json().id}/accept`,headers:{...auth(owner.token),'idempotency-key':randomUUID()}})
+      expect(book.statusCode,book.body).toBe(200)
+    }
+    return {owner,vendor,wid,vid,sid,rid,privateText,name:profile.json().name as string}
+  }
+
+  it.each([false,true])('019: cleanup стирает подрядчика, accepted=%s; tombstone и снимок сделки сохранены', async accepted => {
+    const f = await offerFixture019(accepted)
+    expect((await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.vendor.token)})).statusCode).toBe(204)
+    await app.db!.query("update users set deleted_at=now()-interval '31 days' where id=$1",[f.vendor.userId])
+    await cleanup(app)
+    for (const value of [f.vendor.userId,f.vid,f.vendor.phone,f.name,f.privateText]) expect(await findEverywhere(value),value).toEqual([])
+    const rows = await app.db!.query('select vendor_id,status,close_reason,wishes from offer_requests where id=$1',[f.rid])
+    expect(rows.rows[0]).toEqual({vendor_id:null,status:'closed',close_reason:'vendor_erased',wishes:null})
+    const shortlist = await app.db!.query('select vendor_id from slot_shortlist where slot_id=$1',[f.sid])
+    expect(shortlist.rows).toEqual([{vendor_id:null}])
+    if (accepted) {
+      const deals = await app.db!.query('select package_title_snapshot,package_includes_snapshot,price::text from deals where slot_id=$1',[f.sid])
+      expect(deals.rows).toEqual([{package_title_snapshot:'Договорённый пакет',package_includes_snapshot:['8 часов'],price:'1234500'}])
+    }
+    await app.db!.tx(client => eraseUser(client,f.owner.userId))
+  })
+
+  it.each(['owner','archive','otp'] as const)('019: удаление через %s убирает связанные предложения', async method => {
+    const f = await offerFixture019(true)
+    if (method === 'archive') {
+      expect((await app.inject({method:'POST',url:`/weddings/${f.wid}/cancel`,headers:auth(f.owner.token)})).statusCode).toBe(200)
+      await app.db!.query("update weddings set archived_at=now()-interval '400 days' where id=$1",[f.wid])
+      await cleanup(app)
+    } else if (method === 'owner') {
+      await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.owner.token)})
+      await app.db!.query("update users set deleted_at=now()-interval '31 days' where id=$1",[f.owner.userId])
+      await cleanup(app)
+    } else {
+      await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.vendor.token)})
+      await app.db!.query("update users set deleted_at=now()-interval '31 days' where id=$1",[f.vendor.userId])
+      const otp = await app.inject({method:'POST',url:'/auth/otp',payload:{phone:f.vendor.phone},remoteAddress:IP})
+      expect(otp.statusCode,otp.body).toBe(200)
+      const verified = await app.inject({method:'POST',url:'/auth/otp/verify',payload:{phone:f.vendor.phone,code:await readCode(f.vendor.phone)}})
+      expect(verified.statusCode,verified.body).toBe(200)
+      expect(verified.json().user.id).not.toBe(f.vendor.userId)
+      expect(await findEverywhere(f.vid)).toEqual([])
+    }
+    expect((await app.db!.query('select id from offers where request_id=$1',[f.rid])).rows).toEqual([])
+    await app.db!.tx(client => eraseUser(client,f.owner.userId))
+    await app.db!.tx(client => eraseUser(client,f.vendor.userId))
+  })
+
+  it('019: hard-delete ждёт request до user/vendor, ответ завершается без parent↔request deadlock', async () => {
+    const f = await offerFixture019(false)
+    const db = app.db!
+    await Promise.all(Array.from({length:6},()=>db.query('select pg_sleep(0.05)')))
+    let deleting: Promise<void> | undefined
+    try {
+      await db.tx(async client => {
+        // Hold precisely the mutex held by the response route. Deletion must
+        // wait here WITHOUT holding user/vendor, so response can still lock them.
+        await client.query('select id from offer_requests where id=$1 for update',[f.rid])
+        const pid = (await client.query('select pg_backend_pid() as pid')).rows[0].pid
+        deleting = db.tx(c => eraseUser(c,f.vendor.userId))
+        const deadline = Date.now()+5000
+        for (;;) {
+          await client.query('select pg_stat_clear_snapshot()')
+          const waiting = await client.query("select query from pg_stat_activity where wait_event_type='Lock' and $1=any(pg_blocking_pids(pid))",[pid])
+          if (waiting.rows.length) { expect(waiting.rows[0].query).toContain('offer_requests'); break }
+          if (Date.now()>deadline) throw new Error('erase did not reach the request mutex')
+          await new Promise(resolve=>setTimeout(resolve,10))
+        }
+        await client.query('select v.id from vendors v join users u on u.id=v.user_id where v.id=$1 for share of v,u',[f.vid])
+        await client.query("update offers set message='ответ завершён' where request_id=$1",[f.rid])
+      })
+    } finally { await deleting }
+    expect((await db.query('select id from users where id=$1',[f.vendor.userId])).rows).toEqual([])
+    expect(await findEverywhere(f.vid)).toEqual([])
+    await db.tx(client=>eraseUser(client,f.owner.userId))
+  })
 
   /* ── удаление аккаунта ────────────────────────────────────────────── */
   it('через 31 день от удалённого аккаунта не остаётся ничего, кроме журнала', async () => {
