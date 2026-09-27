@@ -37,7 +37,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
  * поэтому кнопка предлагает ровно один следующий шаг.
  */
 const DEAL_STEPS: ReadonlyArray<{ state: DealState; label: string }> = [
-  { state: 'candidate', label: 'Кандидат' },
+  { state: 'candidate', label: 'Не связывались' },
   { state: 'contacted', label: 'Написали' },
   { state: 'negotiating', label: 'Переговоры' },
   { state: 'booked', label: 'Забронировано' },
@@ -328,7 +328,7 @@ function DealView({ s }: { s: Slot }) {
  * получают отсюда чужой идентификатор.
  */
 const EVENT_STATE: Record<string, string> = {
-  candidate: 'Кандидат',
+  candidate: 'Не связывались',
   contacted: 'Написали',
   negotiating: 'Переговоры — бронь держится 72 часа',
   booked: 'Забронировано',

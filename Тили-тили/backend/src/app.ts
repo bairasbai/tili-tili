@@ -19,6 +19,8 @@ import { dealRoutes } from './routes/deals.js'
 import { documentRoutes } from './routes/documents.js'
 import { guestRoutes } from './routes/guests.js'
 import { slotRoutes } from './routes/slots.js'
+import { shortlistRoutes } from './routes/shortlist.js'
+import { offerRoutes } from './routes/offers.js'
 import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { chatRoutes } from './routes/chats.js'
 import { realtimeRoutes } from './routes/realtime.js'
@@ -317,6 +319,8 @@ export async function buildApp(
   await app.register(catalogRoutes)
   await app.register(vendorRoutes)
   await app.register(slotRoutes)
+  await app.register(shortlistRoutes)
+  await app.register(offerRoutes)
   await app.register(dealRoutes)
   await app.register(budgetRoutes)
   await app.register(paymentScheduleRoutes)

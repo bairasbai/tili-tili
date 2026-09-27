@@ -96,6 +96,20 @@ describe('018-B: резерв и лимиты на экране бюджета (
     fireEvent.click(screen.getByRole('button', { name: 'Вернуть автоматический лимит: Декор' }))
     await waitFor(() => expect(writes).toEqual([{ method: 'PATCH', path: '/weddings/w1/budget/categories/b3/limit', body: { reset: true, version: 2 } }]))
   })
+  it('V4-Б: предупреждает, когда лимиты вместе больше бюджета, но не запрещает сохранить', async () => {
+    budget.categories[0]!.planned = money(80_000_000)
+    budget.categories[1]!.planned = money(30_000_000)
+    open()
+
+    const warning = await screen.findByRole('status')
+    expect(warning.textContent!.replace(NBSP, ' ')).toContain('Лимиты категорий вместе превышают общий бюджет на 100 000 ₽')
+    expect(warning.textContent).toContain('Сохранение разрешено — проверьте распределение.')
+
+    const input = screen.getByLabelText('Фото и видео лимит, ₽')
+    fireEvent.change(input, { target: { value: '850000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Задать лимит: Фото и видео' }))
+    await waitFor(() => expect(writes).toEqual([{ method: 'PUT', path: '/weddings/w1/budget/categories/b2/limit', body: { amount: money(85_000_000), version: 0 } }]))
+  })
 })
 
 describe('разбор денег и процента для бюджета', () => {

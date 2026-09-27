@@ -8,6 +8,7 @@ export type Role = (typeof ROLES)[number]
 
 const ALL_TEAM: Role[] = ['couple', 'helper', 'coordinator']
 const ONLY_COUPLE: Role[] = ['couple']
+const COUPLE_AND_HELPER: Role[] = ['couple', 'helper']
 /** Днём X командует координатор — вместе с парой и без помощника (§2). */
 const DAY_COMMAND: Role[] = ['couple', 'coordinator']
 
@@ -40,6 +41,26 @@ const MATRIX: Rule[] = [
   /* PUT — пользовательский лимит категории (018-B): без него правило молча
    * запрещало метод всем, и пара получала 403 на собственный бюджет. */
   { url: /^\/weddings\/:weddingId\/budget/, by: { GET: ONLY_COUPLE, POST: ONLY_COUPLE, PUT: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
+  /* Кандидатов ведут пара и помощник; координатор только читает.
+   * Запрос предложения может отправить только пара (019, решение В1-Б).
+   * Эти правила обязаны стоять выше общего запрета для денежных действий
+   * под слотом: побеждает первое подошедшее правило. */
+  {
+    url: /^\/weddings\/:weddingId\/slots\/[^/]+\/shortlist$/,
+    by: { GET: ALL_TEAM },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/slots\/[^/]+\/shortlist\/[^/]+$/,
+    by: { DELETE: COUPLE_AND_HELPER },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/slots\/[^/]+\/offer-requests$/,
+    by: { POST: ONLY_COUPLE },
+  },
+  {
+    url: /^\/weddings\/:weddingId\/shortlist\/[^/]+$/,
+    by: { PUT: COUPLE_AND_HELPER },
+  },
   { url: /^\/weddings\/:weddingId\/slots\/[^/]+\//, by: { POST: ONLY_COUPLE, DELETE: ONLY_COUPLE, PATCH: ONLY_COUPLE } },
   /* График платежей и оплаты (018): явно, а не запретом по умолчанию — новое правило
    * ниже по списку не должно незаметно открыть их помощнику (ревью 018, P-05). */

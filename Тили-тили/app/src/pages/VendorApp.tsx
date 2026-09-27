@@ -420,6 +420,10 @@ export function VendorProfileWizard() {
   /* Поля заполняются ответом сервера один раз — дальше ими владеет форма.
      Без этого каждое перечитывание анкеты затирало бы то, что человек печатает. */
   const [form, setForm] = useState<WizardDraft | null>(null)
+  /* Сырая строка нужна только после правки поля: иначе `1500,50` сразу
+     превращалось в 150050 и уже выглядело валидными рублями. `null` значит,
+     что серверное значение не трогали — в том числе цену с копейками. */
+  const [priceFromDraft, setPriceFromDraft] = useState<string | null>(null)
   const p = profile.data
   if (form === null && ready(profile)) {
     setForm({
@@ -464,23 +468,41 @@ export function VendorProfileWizard() {
       setStep(form.categoryId ? 1 : 0)
       return
     }
+    const submittedPriceText = priceFromDraft
+    const parsedPrice = submittedPriceText === null || !submittedPriceText.trim()
+      ? null
+      : parseWholeRubles(submittedPriceText)
+    if (submittedPriceText !== null && submittedPriceText.trim() && parsedPrice === null) {
+      setErr(t('Введите цену «от» целым числом рублей, например 150 000'))
+      setStep(2)
+      return
+    }
+    const submittedForm: WizardDraft = submittedPriceText === null
+      ? form
+      : { ...form, priceFrom: parsedPrice === null ? undefined : rub(parsedPrice) }
     setBusy(true)
     setErr(null)
     try {
-      const sent = form.packages
-      const saved = await saveVendorProfile(form)
+      const sent = submittedForm.packages
+      const saved = await saveVendorProfile(submittedForm)
       /* id новых пакетов — из ответа, по месту в списке: сервер пишет пакеты в присланном
          порядке и читает ответ в той же транзакции (019, FR-006). Без переноса следующий шаг
          прислал бы пакет снова без id — сервер завёл бы его заново, а только что созданный
          удалил. Перенос — по `key`, а не по месту в черновике: пока шёл запрос, пакет могли
          добавить, убрать или поправить. */
       const got = saved.packages ?? []
-      if (got.length === sent.length) {
-        const ids = new Map(sent.map((pkg, i) => [pkg.key, got[i]!.id]))
-        setForm(f => f && {
-          ...f,
-          packages: f.packages.map(pkg => (pkg.id || !ids.has(pkg.key) ? pkg : { ...pkg, id: ids.get(pkg.key) })),
-        })
+      const ids = got.length === sent.length ? new Map(sent.map((pkg, i) => [pkg.key, got[i]!.id])) : null
+      setForm(f => f && {
+        ...f,
+        /* После правки берём каноническое значение из того же ответа, а не из
+           ввода: пустое/нулевое поле сервер хранит как `null`, не как 0 ₽. */
+        ...(submittedPriceText === null ? {} : { priceFrom: saved.priceFrom?.amount }),
+        packages: ids
+          ? f.packages.map(pkg => (pkg.id || !ids.has(pkg.key) ? pkg : { ...pkg, id: ids.get(pkg.key) }))
+          : f.packages,
+      })
+      if (submittedPriceText !== null) {
+        setPriceFromDraft(current => current === submittedPriceText ? null : current)
       }
       await next()
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
@@ -633,7 +655,7 @@ export function VendorProfileWizard() {
           <div className="space-y-3">
             <label className="card p-4 block">
               <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold">{t('Цена «от», ₽')}</span>
-              <input value={form.priceFrom ? String(Math.round(form.priceFrom / 100)) : ''} onChange={e => set({ priceFrom: rub(Number(e.target.value.replace(/\D/g, '')) || 0) })}
+              <input value={priceFromDraft ?? priceText(form.priceFrom ?? null)} onChange={e => setPriceFromDraft(e.target.value)}
                 inputMode="numeric" placeholder={t('С какой суммы начинается работа')}
                 className="w-full mt-1.5 h-11 px-4 rounded-full bg-[var(--bg)] text-[14px] font-medium tabular outline-none" />
             </label>
@@ -834,7 +856,7 @@ export function VendorDeals() {
 }
 
 const DEAL_STATE_LABEL: Record<string, string> = {
-  candidate: 'Кандидат',
+  candidate: 'Не связывались',
   contacted: 'Написали',
   negotiating: 'Держим дату',
   booked: 'Забронировано',

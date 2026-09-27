@@ -1,4 +1,4 @@
-# Stage 018-A browser acceptance. Prepared locally; remote execution is still required.
+# Stage 018-A/018-B browser acceptance. Remote execution is required before acceptance.
 name: Payment schedule browser E2E
 permissions:
   contents: read
@@ -7,7 +7,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser:
-    if: github.head_ref == 'feature/product-improvements-stage1-tasks' || github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -64,8 +63,7 @@ jobs:
         \   text=re.sub(r'postgres(?:ql)?://[^\\s\"\\x27]+','[redacted-db]',text)\n    text=re.sub(r'\\+7\\d{10}','[redacted-phone]',text)\n\
         \    result['logs'][name]=text\n(pathlib.Path(os.environ['E2E_RESULT_DIR'])/'startup-error.json').write_text(json.dumps(result,indent=2))\n\
         print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')\nPYCODE\n  exit 1\nfi\npython 'Тили-тили/backend/scripts/payment-e2e-browser.py'\n\
-        python - <<'PYCODE'\nimport json,os,pathlib\nr=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'payment-browser-result.json').read_text())\n\
-        assert len(r['passed'])==12 and not r['page_errors'] and 'error' not in r\nPYCODE\n"
+        python 'Тили-тили/backend/scripts/payment-e2e-verify.py'\n"
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -83,7 +81,11 @@ jobs:
   push:
     branches:
     - feature/product-improvements-stage1-tasks
+    - claude/review-018a-018b-roadmap-kqhovt
+    - codex/continue-019-orchestrated-20260927
   pull_request:
     branches:
     - main
+    - feature/product-improvements-stage1-tasks
+    - claude/review-018a-018b-roadmap-kqhovt
   workflow_dispatch: {}

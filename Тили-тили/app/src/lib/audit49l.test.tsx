@@ -260,6 +260,44 @@ describe('019 · FR-006: мастер держит id и состав пакет
   }
   const lastPackages = (calls: Call[]) => (puts(calls, '/vendor/profile').at(-1)!.body as { packages: SentPackage[] }).packages
 
+  it('цена «от» 1500,50 не превращается в 150 050 ₽; после отказа целые рубли сохраняются', async () => {
+    const calls = serveProfile([])
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    const before = puts(calls, '/vendor/profile').length
+    const input = screen.getByLabelText('Цена «от», ₽')
+
+    fireEvent.change(input, { target: { value: '1500,50' } })
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Введите цену «от» целым числом рублей, например 150 000'), { timeout: 4000 })
+    expect(puts(calls, '/vendor/profile')).toHaveLength(before)
+    expect((input as HTMLInputElement).value).toBe('1500,50')
+
+    fireEvent.change(input, { target: { value: '150 000' } })
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Шаг 4 из 5'), { timeout: 4000 })
+    expect((puts(calls, '/vendor/profile').at(-1)!.body as { priceFrom: unknown }).priceFrom)
+      .toStrictEqual({ amount: rub(150000), currency: 'RUB' })
+  })
+
+  it('нетронутая серверная цена «от» с копейками сохраняется без округления', async () => {
+    const profile = { ...baseProfile([]), priceFrom: { amount: 1_234_550, currency: 'RUB' } }
+    const calls = serve({
+      '/vendor/profile': (c: Call) => (c.method === 'PUT' ? { ...profile, ...(c.body as object) } : profile),
+      '/catalog/categories': CATEGORIES,
+    })
+    signedIn()
+    const r = openWizard()
+    await toPackagesStep(r)
+    expect((screen.getByLabelText('Цена «от», ₽') as HTMLInputElement).value).toBe('12345,50')
+
+    fireEvent.click(screen.getByText('Далее'))
+    await waitFor(() => expect(text(r)).toContain('Шаг 4 из 5'), { timeout: 4000 })
+    expect((puts(calls, '/vendor/profile').at(-1)!.body as { priceFrom: unknown }).priceFrom)
+      .toStrictEqual({ amount: 1_234_550, currency: 'RUB' })
+  })
+
   it('новый пакет с составом: первый «Далее» — без id, следующий — с id из ответа, сервер не заводит его заново', async () => {
     const calls = serveProfile([])
     signedIn()

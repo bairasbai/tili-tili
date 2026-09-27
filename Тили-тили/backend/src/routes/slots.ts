@@ -1,20 +1,19 @@
 import { lockFinanceAccess,lockDeal,recordPayment } from '../payments/model.js'
 import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound, unauthorized } from '../errors.js'
+import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { notify } from '../notify/notify.js'
 import { rolesSeeing } from '../chats/access.js'
-import { openLead } from '../vendor/leads.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
+import { bookVendor, lockBookingContext } from '../deals/book.js'
 import { CREATED_AT_US } from './chats.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
-  holdVendorDate,
   loadSlot,
   loadSlots,
   toSlot,
@@ -80,62 +79,6 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     )
     if (!rows[0]) throw notFound('Слот не найден')
     return rows[0]
-  }
-
-  /**
-   * Слот под эксклюзивным замком — до вставки сделки (разведка 019, ERR-0317).
-   *
-   * Бронь вставляла сделку раньше, чем захватывала слот: внешний ключ `deals.slot_id`
-   * ставит на строку слота KEY SHARE, а `update slots set deal_id` (колонка с
-   * уникальным индексом) требует FOR UPDATE. Две одновременные брони обе держали
-   * KEY SHARE и обе ждали FOR UPDATE — детектор взаимных блокировок убивал одну,
-   * пара получала 500 вместо 409 (14 пар из 40 на этой машине). Замок первым —
-   * вторая бронь ждёт, видит занятый слот и отвечает 409.
-   */
-  async function lockEmptySlot(client: Queryable, weddingId: string, slotId: string) {
-    if (!isUuid(slotId)) throw notFound('Слот не найден')
-    const { rows } = await client.query<{ deal_id: string | null }>(
-      'select deal_id from slots where id = $1 and wedding_id = $2 for update',
-      [slotId, weddingId],
-    )
-    if (!rows[0]) throw notFound('Слот не найден')
-    if (rows[0].deal_id) throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
-  }
-
-  /**
-   * Дата свадьбы для захвата у подрядчика — под замком `for share` строки
-   * свадьбы: перенос (`rescheduleWedding`) держит её `for update`, и бронь,
-   * прочитавшая дату до переноса и записавшая занятость после, занимала у
-   * подрядчика день, которого у свадьбы уже нет (ревью 015, D2). Читается
-   * до захвата слота — порядок «свадьба → остальное», как у переноса.
-   */
-  async function weddingDate(client: Queryable, weddingId: string): Promise<string | null> {
-    const { rows } = await client.query<{ date: string | null }>(
-      'select date::text as date from weddings where id = $1 for share',
-      [weddingId],
-    )
-    return rows[0]?.date ?? null
-  }
-
-  /**
-   * Заявитель ещё жив — проверка внутри транзакции брони, под замком `for
-   * share` его строки `users` (SA-05, сиблинг ERR-0271 / R-271).
-   *
-   * `preHandler` (`plugins/auth.ts` `assertLiveSession`) видит `deleted_at`
-   * на входе, но между ним и этой транзакцией помещается целое удаление
-   * аккаунта: `DELETE /users/me` коммитился, а уже пропущенная бронь
-   * заводила сделку на стёртый аккаунт — подрядчику доставалась дата,
-   * занятая призраком, а пара её не видела. `for update` на своей строке
-   * в удалении и `for share` здесь ставят их в очередь: удаление первым —
-   * тут виден `deleted_at` и 401; бронь первой — проверка живых сделок в
-   * удалении видит сделку и отвечает 409.
-   */
-  async function assertCallerLive(client: Queryable, userId: string): Promise<void> {
-    const { rows } = await client.query<{ deleted_at: Date | null }>(
-      'select deleted_at from users where id = $1 for share',
-      [userId],
-    )
-    if (!rows[0] || rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
   }
 
   /* ── мозаика ──────────────────────────────────────────────────────── */
@@ -236,85 +179,19 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
       return withIdempotency(db(), request, reply, 'slots.book', (tx) =>
         tx(async (client) => {
-          // Свадьба (её дата — под замком) прежде слота: порядок замков как у переноса.
-          const date = await weddingDate(client, weddingId)
-          // Затем своя строка `users` — тем же порядком, что и удаление аккаунта.
-          await assertCallerLive(client, request.caller!.userId)
-          // Затем слот — эксклюзивно и до вставки сделки (ERR-0317).
-          await lockEmptySlot(client, weddingId, slotId)
-
-          /* Живая анкета: опубликована и не заблокирована модератором — та же
-           * граница, что у каталога (`VENDOR_LIVE_JOIN`). Заблокированную
-           * (`block`, §18.2) каталог не показывает, а бронь по прямому
-           * идентификатору до ревью 015 проходила — и подрядчик, снятый за
-           * мошенничество, получал сделку и дату. Категорию анкеты со слотом
-           * нарочно не сверяем: фотограф, который снимает и видео, занимает
-           * два слота одной анкетой (ERR-0037) — слот выбирает пара. */
-          /* `for share of u`: без замка на строке подрядчика эта проверка
-            * ничего не сериализует — удаление его аккаунта не трогает свадьбу,
-            * где его бронируют, и оба порядка проходили насквозь (SA-05,
-            * сторона подрядчика). */
-          const { rows: vendor } = await client.query<{ id: string }>(
-            `select v.id from vendors v join users u on u.id = v.user_id and u.deleted_at is null
-              where v.id = $1 and v.published_at is not null and v.blocked_at is null
-              for share of u`,
-            [body.vendorId],
-          )
-          if (!vendor[0]) throw notFound('Подрядчик не найден')
-
-          /* Пакет, если назван, обязан быть пакетом ЭТОГО подрядчика.
-           * Раньше поле принималось и молча ничего не делало — класс
-           * ERR-0034 (D2-23): чужой или несуществующий пакет — 422, а не
-           * бронь «как будто по пакету». Сделка его помнит (`package_id`,
-           * фича 005): кабинет и карточка показывают, что именно продано. */
-          if (body.packageId !== undefined) {
-            // Колонка uuid: строка не той формы роняет запрос драйвером (R-118).
-            /* `for key share`: сохранение анкеты подрядчиком удаляет пакеты, и без замка
-             * пакет, прочитанный живым, исчезал до вставки сделки — внешний ключ ронял
-             * бронь 500 вместо 422 (разведка 019). Замок держит пакет до коммита брони. */
-            const { rows: pkg } = new RegExp(UUID_ID.pattern).test(body.packageId)
-              ? await client.query('select 1 from vendor_packages where id = $1 and vendor_id = $2 for key share', [
-                  body.packageId,
-                  body.vendorId,
-                ])
-              : { rows: [] }
-            if (pkg.length === 0) {
-              throw new AppError(422, 'unknown_package', 'Такого пакета у подрядчика нет', {
-                packageId: 'пакет не найден у этого подрядчика',
-              })
-            }
-          }
-
-          const dealId = uuidv7()
-          await client.query(
-            `insert into deals (id, wedding_id, slot_id, vendor_id, state, price, currency, booked_at, package_id)
-             values ($1, $2, $3, $4, 'booked', $5, 'RUB', now(), $6)`,
-            [dealId, weddingId, slotId, body.vendorId, body.price.amount, body.packageId ?? null],
-          )
-          // Захват слота условием в UPDATE, а не «прочитали и записали»:
-          // два одновременных «Забронировать» иначе оба видят пустой слот,
-          // оба вешают на него сделку, и бюджет считает обе.
-          const taken = await client.query('update slots set deal_id = $2 where id = $1 and deal_id is null', [
+          const context = await lockBookingContext(client, {
+            weddingId,
             slotId,
-            dealId,
-          ])
-          if (taken.rowCount === 0) {
-            throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
-          }
-          await client.query(
-            `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
-             values ($1, $2, null, 'booked', $3)`,
-            [uuidv7(), dealId, request.caller!.userId],
-          )
-          /* Бронь — это выигранный лид. Заводим его и здесь: пара могла
-           * забронировать сразу из каталога, ни разу не написав, и тогда
-           * в кабинете подрядчика сделка появилась бы ниоткуда. */
-          await openLead(client, weddingId, body.vendorId, null, true)
-
-          // Захват даты — в той же транзакции. Вторая пара упирается
-          // в первичный ключ (vendor_id, date) и получает 409, а не «обе
-          // забронировали одного фотографа на 14 июня».
-          if (date) await holdVendorDate(client, body.vendorId, date, dealId, weddingId)
+            actorId: request.caller!.userId,
+          })
+          await bookVendor(client, context, {
+            performer: {
+              kind: 'catalog',
+              vendorId: body.vendorId,
+              ...(body.packageId === undefined ? {} : { packageId: body.packageId }),
+            },
+            price: body.price.amount,
+          })
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
       )
@@ -391,44 +268,19 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       assertPositivePrice(body.price.amount)
 
       return db().tx(async (client) => {
-        // Свой подрядчик — такая же сделка, и дверь такая же (SA-05).
-        await assertCallerLive(client, request.caller!.userId)
-        // Слот — эксклюзивно и до вставки сделки, как у каталожной брони (ERR-0317).
-        await lockEmptySlot(client, weddingId, slotId)
-        // Прежние ссылки слота гаснут до новой сделки: страховка от любого
-        // пути отмены, который их не отозвал (ERR-0242).
-        await revokeSlotInvites(client, slotId)
-        const dealId = uuidv7()
-        // Свой подрядчик занимает слот, бюджет и тайминг наравне с каталожным,
-        // но даты в чужом календаре не занимает: его календаря у нас нет.
-        await client.query(
-          `insert into deals (id, wedding_id, slot_id, external_name, external_phone, state, price, currency, booked_at)
-           values ($1, $2, $3, $4, $5, 'booked', $6, 'RUB', now())`,
-          [dealId, weddingId, slotId, body.vendorName, body.phone ?? null, body.price.amount],
-        )
-        const taken = await client.query('update slots set deal_id = $2 where id = $1 and deal_id is null', [
+        const context = await lockBookingContext(client, {
+          weddingId,
           slotId,
-          dealId,
-        ])
-        if (taken.rowCount === 0) {
-          throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
-        }
-        await client.query(
-          `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
-           values ($1, $2, null, 'booked', $3)`,
-          [uuidv7(), dealId, request.caller!.userId],
-        )
-        /* Чат заводится вместе с подрядчиком, а не при первом сообщении:
-         * иначе пара открывает список чатов, не находит там своего фотографа
-         * и пишет ему в мессенджер — то есть мимо приложения (§11).
-         * Чат принадлежит СДЕЛКЕ, не слоту: у прежнего подрядчика того же
-         * слота остаётся свой (закрытый) чат, у нового — свой, и историю
-         * прежнего он не видит (ERR-0219). Второй чат на ту же сделку
-         * запрещён индексом; сделка только что заведена — конфликта нет. */
-        await client.query(
-          `insert into chats (id, wedding_id, kind, slot_id, deal_id) values ($1,$2,'external',$3,$4)`,
-          [uuidv7(), weddingId, slotId, dealId],
-        )
+          actorId: request.caller!.userId,
+        })
+        await bookVendor(client, context, {
+          performer: {
+            kind: 'external',
+            name: body.vendorName,
+            ...(body.phone === undefined ? {} : { phone: body.phone }),
+          },
+          price: body.price.amount,
+        })
         return (await loadSlot(client, slotId, true))!
       })
     },

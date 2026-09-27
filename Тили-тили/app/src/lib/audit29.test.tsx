@@ -167,11 +167,21 @@ describe('рейтинг null при отзывах: слова, а не «null�
   })
 
   it('сравнение: клетка рейтинга без «null»', async () => {
-    serve({ ...BASE, '/catalog/categories': CATS, '/catalog/vendors': { items: [vendor({ rating: null, reviewsCount: 2 })] } })
-    const r = await open('/compare?cat=photo', 'Фотостудия Свет')
+    const second = vendor({ id: 'v2', name: 'Второй фотограф', rating: 4.8, reviewsCount: 5 })
+    serve({
+      ...BASE,
+      '/me/favorites': [vendor({ rating: null, reviewsCount: 2 }), second],
+      '/catalog/categories': CATS,
+      '/catalog/vendors/v1': { ...DETAIL, rating: null, reviewsCount: 2 },
+      '/catalog/vendors/v2': { ...DETAIL, ...second, packages: [] },
+    })
+    const r = await open('/compare?cat=photo', 'Выберите двух или трёх подрядчиков из избранного')
+    fireEvent.click(screen.getByLabelText('Фотостудия Свет'))
+    fireEvent.click(screen.getByLabelText('Второй фотограф'))
+    await waitFor(() => expect(screen.getAllByText('Фотостудия Свет').length).toBe(2))
     const text = r.container.textContent ?? ''
     expect(text).not.toMatch(/null/)
-    expect(text).toContain('оценка с третьего')
+    expect(text).toContain('2 отзыва')
   })
 })
 
@@ -276,28 +286,33 @@ describe('карточка подрядчика: «Написать» с оши�
   })
 })
 
-/* ── D5-19. Сравнение: подпись честная, ошибка календаря словами ─────────── */
+/* ── D5-19. Сравнение: только ручной выбор, без первых трёх и календаря ─── */
 
 describe('сравнение по категории', () => {
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('это верх выдачи, а не «3 кандидата»; упавший календарь назван словами, не «…» навсегда', async () => {
-    serve({
-      ...BASE, '/catalog/categories': CATS,
-      '/catalog/vendors': { items: [vendor({ id: 'v1', name: 'Первый' }), vendor({ id: 'v2', name: 'Второй' }), vendor({ id: 'v3', name: 'Третий' })] },
-      '/catalog/vendors/v1/availability': { busyDates: [] },
-      '/catalog/vendors/v2/availability': DOWN,
-      '/catalog/vendors/v3/availability': { busyDates: ['2027-06-14'] },
+  it('категория фильтрует избранное, а таблица содержит ровно отмеченных', async () => {
+    const first = vendor({ id: 'v1', name: 'Первый' })
+    const second = vendor({ id: 'v2', name: 'Второй' })
+    const third = vendor({ id: 'v3', name: 'Третий' })
+    const calls = serve({
+      ...BASE,
+      '/me/favorites': [first, second, third],
+      '/catalog/categories': CATS,
+      '/catalog/vendors/v1': { ...DETAIL, ...first },
+      '/catalog/vendors/v3': { ...DETAIL, ...third },
     })
-    const r = await open('/compare?cat=photo', 'Третий')
-    expect(r.container.textContent ?? '').not.toContain('кандидат')
-    expect(r.container.textContent ?? '').toContain('первые 3 в выдаче')
-    await waitFor(() => expect(r.container.textContent ?? '').toContain('календарь не загрузился'))
-    const text = r.container.textContent ?? ''
-    expect(text).toContain('✓ Да')
-    expect(text).toContain('✕ Занят')
-    expect(text).not.toContain('…')
+    const r = await open('/compare?cat=photo', 'Выберите двух или трёх подрядчиков из избранного')
+    expect(screen.queryAllByText('Открыть анкету')).toHaveLength(0)
+    fireEvent.click(screen.getByLabelText('Третий'))
+    fireEvent.click(screen.getByLabelText('Первый'))
+    await waitFor(() => expect(screen.getAllByText('Открыть анкету')).toHaveLength(2))
+    expect(screen.getAllByText('Первый')).toHaveLength(2)
+    expect(screen.getAllByText('Второй')).toHaveLength(1)
+    expect(screen.getAllByText('Третий')).toHaveLength(2)
+    expect(r.container.textContent ?? '').not.toContain('первые 3 в выдаче')
+    expect(calls.some(c => c.path.endsWith('/availability'))).toBe(false)
   })
 })
 

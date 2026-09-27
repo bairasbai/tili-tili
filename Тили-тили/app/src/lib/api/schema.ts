@@ -1535,6 +1535,347 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/shortlist/{vendorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Добавить подрядчика в кандидаты места
+         * @description Место ищется по текущей категории живой опубликованной анкеты.
+         *     Если места нет, пара создаёт его этим же вызовом; помощник получает
+         *     409 `slot_missing`. Повторный PUT того же подрядчика идемпотентен и возвращает
+         *     ту же запись. Необязательный `replaceEntryId` атомарно заменяет запись,
+         *     но только если тройка всё ещё полна и этот id всё ещё принадлежит этому
+         *     месту. Входящий уже есть — ничего не удаляется; позиция освободилась — он
+         *     просто добавляется. Устаревший или чужой `replaceEntryId` — 409 `shortlist_full` со
+         *     свежей тройкой без удаления. Открытый запрос пара закрывает как `removed`,
+         *     помощник получает 409 `request_open`. Больше трёх без действующей замены —
+         *     409 `shortlist_full` с текущими тремя в `error.details.shortlist`; скрытая,
+         *     заблокированная, удалённая или
+         *     неизвестная анкета — 409 `vendor_unavailable`. Отменённая свадьба —
+         *     409 `wedding_cancelled`.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    vendorId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        replaceEntryId?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Кандидат добавлен или уже был в этом месте */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShortlistEntry"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `shortlist_full`, `request_open`, `vendor_unavailable`, `slot_missing` или `wedding_cancelled` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /** @enum {string} */
+                                code: "shortlist_full" | "request_open" | "vendor_unavailable" | "slot_missing" | "wedding_cancelled";
+                                message: string;
+                                details?: {
+                                    shortlist: components["schemas"]["ShortlistEntry"][];
+                                };
+                            };
+                        };
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/slots/{slotId}/shortlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Кандидаты места
+         * @description Карточки и публичные пакеты видит вся команда свадьбы. Занятость:
+         *     `free` — свободен или занят этой же свадьбой; `held` — идут переговоры с
+         *     другой парой; `busy` — дата занята; `null` — у свадьбы нет даты или анкета
+         *     стёрта. После стирания подрядчика остаётся обезличенная позиция с
+         *     `vendor: null`, `available: null` — без прежних id и имени.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    slotId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShortlistEntry"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Убрать кандидата из места
+         * @description Удаление идёт по `ShortlistEntry.id`, поэтому пара может освободить и
+         *     обезличенную позицию после стирания подрядчика. Бронь и сделка не
+         *     меняются. Открытый запрос пара закрывает как `removed`; помощник в этом
+         *     случае получает 409 `request_open`. Отменённая свадьба — 409 `wedding_cancelled`.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    slotId: string;
+                    entryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Кандидат убран */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `request_open` — помощник не отзывает запрос пары; `wedding_cancelled` — свадьба отменена */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/slots/{slotId}/offer-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Запросить предложение у кандидатов места
+         * @description Только пара. `entryIds` — от одного до трёх уникальных идентификаторов
+         *     записей кандидатов этого места, не id подрядчиков. Ответ `results`
+         *     сохраняет порядок `entryIds`; `requestId` есть только у `sent`.
+         *
+         *     Запрос может уйти части кандидатов: занятая дата, скрытая анкета,
+         *     смена категории или уже открытый запрос не отменяют `sent` остальным.
+         *     Если не ушёл ни один, ответ — 409 `no_request_sent` с теми же итогами в
+         *     `error.details.results`.
+         *
+         *     Обязательный `Idempotency-Key`: без него — 400
+         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     `idempotency_key_too_long`, тот же ключ на другое тело — 409
+         *     `idempotency_key_reused`, ещё выполняется — 409
+         *     `idempotency_in_progress`.
+         *
+         *     Новых запросов — не больше десяти за скользящие 24 часа на свадьбу.
+         *     Если остатка квоты не хватает на всех пригодных адресатов вызова, он
+         *     целиком отвечает 429 `offer_requests_limit`: новых строк и уведомлений нет.
+         *     Эта квота не несёт `Retry-After`. Повтор той же успешной попытки по
+         *     `Idempotency-Key` возвращает тот же 201 до проверки уже заполненной квоты.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    slotId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        entryIds: string[];
+                        wishes?: string;
+                        budgetHint?: components["schemas"]["PositiveMoney"];
+                    };
+                };
+            };
+            responses: {
+                /** @description Итог по каждому `entryId` в порядке запроса; хотя бы один запрос отправлен */
+                201: {
+                    headers: {
+                        /** @description `true` — возвращён сохранённый ответ той же попытки */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description В том же порядке, что `entryIds` в запросе. */
+                            results: ({
+                                /** Format: uuid */
+                                entryId: string;
+                                /** @enum {string} */
+                                status: "sent";
+                                /** Format: uuid */
+                                requestId: string;
+                            } | {
+                                /** Format: uuid */
+                                entryId: string;
+                                /** @enum {string} */
+                                status: "not_shortlisted" | "busy" | "already_open" | "unavailable" | "category_changed";
+                            })[];
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /**
+                 * @description `no_request_sent` — ни один запрос не ушёл, итоги в `details.results`;
+                 *     `wedding_cancelled` — свадьба отменена; `idempotency_key_reused` и
+                 *     `idempotency_in_progress` — конфликт попытки.
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /** @enum {string} */
+                                code: "no_request_sent";
+                                message: string;
+                                details: {
+                                    /** @description В том же порядке, что `entryIds` в запросе. */
+                                    results: ({
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        /** @enum {string} */
+                                        status: "sent";
+                                        /** Format: uuid */
+                                        requestId: string;
+                                    } | {
+                                        /** Format: uuid */
+                                        entryId: string;
+                                        /** @enum {string} */
+                                        status: "not_shortlisted" | "busy" | "already_open" | "unavailable" | "category_changed";
+                                    })[];
+                                };
+                            };
+                        } | {
+                            error: {
+                                /** @enum {string} */
+                                code: "wedding_cancelled" | "idempotency_key_reused" | "idempotency_in_progress";
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                422: components["responses"]["Validation"];
+                /**
+                 * @description `offer_requests_limit` — десять новых запросов за скользящие 24 часа на свадьбу.
+                 *     Вызов атомарен: если квоты не хватает всем пригодным адресатам, ни одна
+                 *     строка и ни одно уведомление не создаются. Заголовка `Retry-After` нет.
+                 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /** @enum {string} */
+                                code: "offer_requests_limit";
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/slots/{slotId}/book": {
         parameters: {
             query?: never;
@@ -3643,6 +3984,155 @@ export interface paths {
                     content?: never;
                 };
                 422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/offer-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Запросы предложений подрядчику
+         * @description Возвращает bare array только запросов текущего подрядчика. Условия
+         *     свадьбы — неизменяемый снимок на момент запроса; данные других
+         *     кандидатов и их ответы сюда не попадают. Без анкеты подрядчика — 403.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OfferRequest"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/offer-requests/{requestId}/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ответить предложением или отказом
+         * @description Только подрядчик, которому адресован запрос. Ответ — либо пакет своей
+         *     живой анкеты, либо собственные название, цена и обязательный список
+         *     состава, либо отказ с непустым сообщением. Формы взаимоисключающие:
+         *     смешивать `packageId` с `title`/`includes` или добавлять поля предложения
+         *     к отказу нельзя. Если `validUntil` не передан для предложения, сервер
+         *     ставит седьмой календарный день от сегодня в часовом поясе свадьбы.
+         *
+         *     Обязательный `Idempotency-Key`: без него — 400
+         *     `idempotency_key_required`, длиннее 200 символов — 400
+         *     `idempotency_key_too_long`, тот же ключ на другое тело — 409
+         *     `idempotency_key_reused`, ещё выполняется — 409
+         *     `idempotency_in_progress`. Replay успешной попытки возвращает тот же 201
+         *     и `Idempotent-Replay: true` до проверки квоты.
+         *
+         *     Не больше пяти новых версий за скользящие 24 часа на запрос. Шестая —
+         *     429 `offer_revisions_limit` с `Retry-After` от 1 до 86400 секунд; replay
+         *     уже записанной версии квоту не расходует. Закрытый запрос и запрос с
+         *     уже принятым предложением — 409 `request_closed`; скрытая, заблокированная
+         *     или удалённая анкета — 409 `vendor_unavailable`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OfferInput"];
+                };
+            };
+            responses: {
+                /** @description Новая версия ответа создана */
+                201: {
+                    headers: {
+                        /** @description `true` только у повторного ответа на уже выполненную попытку */
+                        "Idempotent-Replay"?: "true";
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Offer"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `request_closed`, `vendor_unavailable`, `idempotency_key_reused` или `idempotency_in_progress` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `validation_failed` или `unknown_package` — пакет не принадлежит анкете подрядчика */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `offer_revisions_limit` — пять новых версий за 24 часа уже созданы */
+                429: {
+                    headers: {
+                        /** @description Секунд до освобождения места в скользящем окне */
+                        "Retry-After"?: number;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                /** @enum {string} */
+                                code: "offer_revisions_limit";
+                                message: string;
+                            };
+                        };
+                    };
+                };
             };
         };
         delete?: never;
@@ -9858,6 +10348,152 @@ export interface components {
             price: components["schemas"]["Money"] | null;
             /** @description Что входит в пакет — пунктами. */
             includes: string[];
+        };
+        ShortlistEntry: {
+            /**
+             * Format: uuid
+             * @description Стабильный id записи шорт-листа; по нему запись удаляется.
+             */
+            id: string;
+            /** Format: uuid */
+            slotId: string;
+            position: number;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * @description `true` — живая анкета той же категории; `false` — анкета скрыта,
+             *     заблокирована или сменила категорию; `null` — обезличенный tombstone.
+             */
+            available: boolean | null;
+            /**
+             * @description Занятость на дату свадьбы. `null` — дата не выбрана или анкета стёрта;
+             *     своя бронь этой свадьбы считается `free`.
+             * @enum {string|null}
+             */
+            occupancy: "free" | "held" | "busy" | null;
+            /**
+             * @description Паре — полный запрос с действующим ответом, если он уже есть;
+             *     помощнику и координатору — только обезличенный статус. Поля нет,
+             *     пока пара не отправила запрос этому кандидату.
+             */
+            request?: components["schemas"]["OfferRequest"] | components["schemas"]["OfferPublic"];
+            /**
+             * @description Публичная карточка кандидата. `null` — подрядчик стёрт: прежние id,
+             *     имя и другие данные не возвращаются. У скрытой/заблокированной анкеты
+             *     медиа, цены и пакеты не возвращаются.
+             */
+            vendor: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                categoryId: string;
+                city: string | null;
+                priceFrom: components["schemas"]["Money"] | null;
+                rating: number | null;
+                reviewsCount: number;
+                photoUrl: string | null;
+                verified: boolean;
+                hasVideo: boolean;
+                packages: components["schemas"]["VendorPackage"][];
+            } | null;
+        };
+        /** @description Положительная сумма в копейках; в 019 принимается только RUB. */
+        PositiveMoney: {
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+        };
+        /**
+         * @description Точная публичная форма одной версии ответа: оба варианта имеют ровно
+         *     девять полей. У `decline` поля предложения равны только `null`, а
+         *     `includes` строго пуст; у `offer` название, положительная цена и срок
+         *     не могут быть `null`.
+         */
+        Offer: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            requestId: string;
+            /** @enum {string} */
+            kind: "offer";
+            /** Format: uuid */
+            packageId: string | null;
+            title: string;
+            price: components["schemas"]["PositiveMoney"];
+            includes: string[];
+            message: string | null;
+            /** Format: date */
+            validUntil: string;
+        } | {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            requestId: string;
+            /** @enum {string} */
+            kind: "decline";
+            /**
+             * Format: uuid
+             * @enum {string|null}
+             */
+            packageId: null;
+            /** @enum {string|null} */
+            title: null;
+            /** @enum {object|null} */
+            price: never | null;
+            includes: string[];
+            message: string;
+            /**
+             * Format: date
+             * @enum {string|null}
+             */
+            validUntil: null;
+        };
+        /** @description Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику. */
+        OfferRequest: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            status: "open" | "closed";
+            /** @enum {string} */
+            closeReason?: "removed" | "booked_other" | "booked" | "wedding_cancelled" | "date_changed" | "vendor_erased";
+            /** Format: date */
+            weddingDate: string | null;
+            guests: number | null;
+            city: string | null;
+            wishes: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            budgetHint?: components["schemas"]["PositiveMoney"];
+            offer?: components["schemas"]["Offer"];
+        };
+        /** @description Безопасный статус для помощника и координатора без условий и ответа подрядчика. */
+        OfferPublic: {
+            /** @enum {string} */
+            status: "pending" | "responded";
+        };
+        /** @description Пакет, своё предложение или отказ — ровно одна из трёх строгих форм. */
+        OfferInput: {
+            /** @enum {string} */
+            kind: "offer";
+            /** Format: uuid */
+            packageId: string;
+            price: components["schemas"]["PositiveMoney"];
+            message?: string;
+            /** Format: date */
+            validUntil?: string;
+        } | {
+            /** @enum {string} */
+            kind: "offer";
+            title: string;
+            price: components["schemas"]["PositiveMoney"];
+            includes: string[];
+            message?: string;
+            /** Format: date */
+            validUntil?: string;
+        } | {
+            /** @enum {string} */
+            kind: "decline";
+            message: string;
         };
         /**
          * @description Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который

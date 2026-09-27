@@ -12,6 +12,7 @@ import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
 import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
+import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
 import { rub } from '@/lib/money'
 import { AiTip, Bar, SectionHead, Tile, TopBar } from '@/components/chrome'
 import { useStore } from '@/lib/store'
@@ -119,7 +120,7 @@ export function WeddingTeam() {
               <b className="text-[10.5px] text-center leading-tight">{s.label}</b>
               {s.state === 'booked' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--sage-deep)]">{t('забронирован')}</span>}
               {s.state === 'hold' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--honey-deep)]">{s.status && t(s.status)}</span>}
-              {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--rose-deep)]">{t('кандидаты')}</span>}
+              {s.state === 'candidate' && <span className="text-[7.5px] font-bold uppercase tracking-wide text-[var(--rose-deep)]">{t('Не связывались')}</span>}
             </button>
             )
           })}
@@ -160,7 +161,7 @@ export function WeddingTeam() {
 
 /* Деталь слота */
 export function SlotDetail() {
-  const { slots, slotsState, weddingsState } = useStore()
+  const { slots, slotsState, weddingsState, weddingId } = useStore()
   /* Идентификатор — из маршрута, а не разбором `location.pathname`: разбор
      руками ломается на первом же вложенном адресе. Подмены «не нашли — покажем
      первый слот» здесь нет: чужая ссылка должна открывать «не найдено», а не
@@ -183,7 +184,7 @@ export function SlotDetail() {
       </p>
     </div>
   )
-  return <SlotView s={s} />
+  return <SlotView key={`${weddingId}:${s.id}`} s={s} />
 }
 
 /*
@@ -201,6 +202,108 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
   if (weddingsState === 'ready') return t('Свадьбы пока нет')
   if (weddingsState === 'error') return t('Сервер недоступен. Попробуйте позже')
   return t('Загружаем…')
+}
+
+/* Шорт-лист — отдельное состояние от прежнего `candidate` у сделки. Отметки
+   живут только на этом экране; новые записи после перечитывания отмечены по
+   умолчанию, а снятые отметки сохраняются по стабильному id записи. */
+function SlotCandidates({ s }: { s: Slot }) {
+  const nav = useNavigate()
+  const { weddingId } = useStore()
+  const q = useApi(() => weddingId ? getShortlist(weddingId, s.id) : noWedding(), [weddingId, s.id])
+  const roles = useApi(() => listMyWeddings(), [weddingId])
+  const role = roles.data?.find(w => w.id === weddingId)?.role
+  const canRemove = ready(roles) && (role === 'couple' || role === 'helper')
+  const canBook = ready(roles) && role === 'couple'
+  const [unchecked, setUnchecked] = useState<Record<string, boolean>>({})
+  const [removingId, setRemovingId] = useState<string | null>(null)
+  const removing = useRef(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const [error, setError] = useState<string | null>(null)
+  const entries = ready(q) ? [...(q.data ?? [])].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)) : []
+  const selected = entries.filter(e => e.available === true && e.vendor && !unchecked[e.id])
+  const blocked = !ready(q) || q.refreshing || removingId !== null
+
+  const remove = async (entryId: string) => {
+    if (!weddingId || !canRemove || blocked || removing.current) return
+    removing.current = true
+    setRemovingId(entryId)
+    setError(null)
+    try {
+      await removeShortlistCandidate(weddingId, s.id, entryId)
+      q.reload()
+      heading.current?.focus()
+    } catch (e) {
+      setError(explainError(e))
+    } finally {
+      removing.current = false
+      setRemovingId(null)
+    }
+  }
+
+  return (
+    <section className="card p-4 mt-3.5" aria-labelledby="slot-candidates-heading">
+      <div className="flex items-center justify-between gap-2">
+        <h2 ref={heading} tabIndex={-1} id="slot-candidates-heading" className="font-serif-d text-[18px]">{t('Кандидаты')}</h2>
+        <span className="text-[11px] text-[var(--soft)] tabular" aria-live="polite">{ready(q) ? `${entries.length} / 3` : '—'}</span>
+      </div>
+      <AsyncState q={q} />
+      {ready(q) && entries.length === 0 && <p className="text-[12px] text-[var(--soft)] mt-3">{t('Кандидатов пока нет — добавьте их из каталога')}</p>}
+      {ready(q) && entries.length > 0 && (
+        <div className="space-y-2.5 mt-3">
+          {entries.map(entry => {
+            const vendor = entry.vendor
+            const live = entry.available === true && vendor !== null
+            const name = vendor?.name ?? t('Анкета недоступна')
+            const occupancy = entry.occupancy === 'free' ? t('Свободен на вашу дату')
+              : entry.occupancy === 'held' ? t('На вашу дату идут переговоры')
+              : entry.occupancy === 'busy' ? t('Занят на вашу дату')
+              : t('Занятость неизвестна')
+            return (
+              <div key={entry.id} className="card-s rounded-[16px] p-3">
+                <div className="flex items-start gap-2.5">
+                  {live ? (
+                    <input
+                      type="checkbox"
+                      checked={!unchecked[entry.id]}
+                      disabled={blocked}
+                      onChange={e => setUnchecked(prev => ({ ...prev, [entry.id]: !e.target.checked }))}
+                      aria-label={`${t('Сравнить кандидата')} ${name}`}
+                      className="mt-1 h-4 w-4 accent-[var(--rose-deep)] shrink-0"
+                    />
+                  ) : <span className="w-4 shrink-0" aria-hidden="true" />}
+                  <div className="flex-1 min-w-0">
+                    <b className="text-[12.5px] block">{entry.position}. {name}</b>
+                    {!live && vendor && <p className="text-[11px] text-[var(--rose-ink)] mt-1">{t('Анкета недоступна')}</p>}
+                    {live && <p className="text-[11px] text-[var(--soft)] mt-1">{occupancy}</p>}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-2.5 justify-end">
+                  {canRemove && <button disabled={blocked} onClick={() => void remove(entry.id)} aria-label={`${t('Убрать кандидата')} ${entry.position}: ${name}`} className="press px-3 py-2 rounded-xl bg-[var(--track)] text-[11px] font-semibold text-[var(--rose-ink)] disabled:opacity-50">{removingId === entry.id ? t('Убираем…') : t('Убрать')}</button>}
+                  {canBook && live && entry.occupancy !== 'busy' && !s.dealId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}`)} aria-label={`${t('Забронировать кандидата')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Забронировать')}</button>}
+                  {canBook && live && entry.occupancy !== 'busy' && !!s.dealId && s.dealState !== 'done' && vendor.id !== s.vendorId && <button disabled={blocked} onClick={() => nav(`/vendor/${vendor.id}?${new URLSearchParams({ replaceSlot: s.id })}`)} aria-label={`${t('Заменить исполнителя на')} ${name}`} className="press px-3 py-2 rounded-xl grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">{t('Заменить')}</button>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {canBook && s.dealId && s.dealState !== 'done' && ready(q) && entries.some(e => e.available === true && e.vendor?.id !== s.vendorId) && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Выберите кандидата для замены, затем подтвердите новую бронь в его анкете')}</p>}
+      {ready(q) && entries.length > 0 && (
+        <>
+          <button
+            disabled={blocked || selected.length < 2}
+            onClick={() => nav(`/compare?${new URLSearchParams({ slot: s.id, entries: selected.map(e => e.id).join(',') })}`)}
+            className="press w-full mt-3 py-3 rounded-[16px] card-s text-[12px] font-semibold disabled:opacity-50"
+          >{t('Сравнить')} ({selected.length})</button>
+          {selected.length < 2 && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Отметьте хотя бы двух доступных кандидатов')}</p>}
+        </>
+      )}
+      {ready(q) && roles.loading && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Проверяем доступ…')}</p>}
+      {ready(q) && (roles.error || roles.forbidden) && <AsyncState q={roles} />}
+      {error && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-2">{error}</p>}
+    </section>
+  )
 }
 
 /* Тело экрана вынесено отдельно: состояние слота нужно до первого хука, а
@@ -303,6 +406,7 @@ function SlotView({ s }: { s: Slot }) {
             <p className="text-[11.5px] text-[var(--soft)] mt-1.5">{t('Подберите в каталоге или добавьте своего')}</p>
           </div>
           <button onClick={() => nav(`/search/${s.categoryId}`)} className="press w-full mt-3 py-4 rounded-[20px] grad text-[var(--on-grad)] text-[14px] font-semibold">{t('Выбрать из каталога')}</button>
+          <SlotCandidates s={s} />
           {ownBlock}
         </div>
       </div>
@@ -323,6 +427,8 @@ function SlotView({ s }: { s: Slot }) {
           </div>
           {s.external && s.phone && <p className="text-[11px] text-[var(--soft)] mt-2">📞 {s.phone}</p>}
         </div>
+
+        <SlotCandidates s={s} />
 
         {/* Приглашение внешнего подрядчика в приложение (гость-подрядчик) */}
         {s.external && (
@@ -489,6 +595,11 @@ export function Budget() {
       items,
     }
   })
+  /* В4-Б владельца: лимиты остаются ориентиром, а не блокировкой. Сервер
+     сохраняет любое неотрицательное значение; экран честно показывает,
+     когда распределение категорий уже больше общего бюджета. */
+  const categoryLimitsTotal = cats.reduce((sum, category) => sum + category.limit, 0)
+  const categoryLimitsOver = hasTotal ? Math.max(0, categoryLimitsTotal - budgetTotal) : 0
   /* Потрачено берём у сервера целиком: свои статьи он уже учёл. Раньше к
      серверной сумме прибавлялся локальный список `tt_budget_custom`, и одна и
      та же статья считалась дважды, как только доезжала на сервер. */
@@ -591,6 +702,11 @@ export function Budget() {
           </div>}
           {reserve > 0 && total > budgetTotal - reserve && (
             <p className="text-[10.5px] text-[var(--rose-ink)] mt-1.5">{t('Обязательства уже съели резерв — на неожиданности запаса нет')}</p>
+          )}
+          {categoryLimitsOver > 0 && (
+            <p role="status" aria-live="polite" className="text-[10.5px] text-[var(--rose-ink)] mt-2 leading-relaxed">
+              {t('Лимиты категорий вместе превышают общий бюджет на')} <span className="tabular">{fmt(categoryLimitsOver)}</span>. {t('Сохранение разрешено — проверьте распределение.')}
+            </p>
           )}
           <div className="mt-4 space-y-4">
             {cats.map(b => (

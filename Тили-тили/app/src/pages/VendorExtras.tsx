@@ -37,11 +37,11 @@ const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
  * только ей); подрядчику здесь — журнал, оплаты, договор, чат и спор.
  */
 const DEAL_STATE_LABEL: Record<string, string> = {
-  candidate: 'Кандидат', contacted: 'Написали', negotiating: 'Держим дату', booked: 'Забронировано',
+  candidate: 'Не связывались', contacted: 'Написали', negotiating: 'Держим дату', booked: 'Забронировано',
   paid_deposit: 'Аванс получен', done: 'Завершена', cancelled: 'Отменена',
 }
 const EVENT_STATE: Record<string, string> = {
-  candidate: 'Вернулась в кандидаты', contacted: 'Пара написала', negotiating: 'Мягкая бронь', booked: 'Забронировано',
+  candidate: 'Вернулась к статусу «Не связывались»', contacted: 'Пара написала', negotiating: 'Мягкая бронь', booked: 'Забронировано',
   paid_deposit: 'Аванс внесён', done: 'Выполнено', cancelled: 'Сделка отменена',
 }
 const EVENT_BY: Record<string, string> = { couple: 'пара', vendor: 'вы', system: 'автоматически' }
