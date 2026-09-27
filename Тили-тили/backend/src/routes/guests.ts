@@ -3,7 +3,7 @@ import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
-import { isCheckViolation, type Queryable } from '../plugins/db.js'
+import type { Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import { requireRole, type Role } from '../wedding/access.js'
 
@@ -109,17 +109,6 @@ export function assertPhoneByCouple(role: Role, hasPhone: boolean): void {
     throw new AppError(403, 'forbidden', 'Телефоны гостей ведёт пара — остальной команде они не показываются и не правятся')
   }
 }
-
-/**
- * «+1» у гостя, который уже сидит в полном автобусе.
- *
- * Места считает база: смена `plus_one` пересчитывает персоны его записи
- * триггером, и переполнение приходит как `23514` от `bus_taken_bounded`
- * (фича 005). Это сработавшее правило, а не поломка сервера — человеку
- * нужен 409 с тем, что делать дальше, а не 500.
- */
-const busFullForPlusOne = () =>
-  conflict('bus_full', 'в автобусе нет места для +1 — снимите бронь автобуса или выберите другой')
 
 /**
  * Телефон из списка гостей — к виду `+7XXXXXXXXXX` (фича 008).
@@ -440,43 +429,37 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           )
         }
 
-        let res
-        try {
-          res = await client.query(
-            `update guests set
-               name = coalesce($3, name),
-               plus_one = coalesce($4, plus_one),
-               rsvp = coalesce($5, rsvp),
-               group_name = case when $6 then $7 else group_name end,
-               table_id = case when $8 then $9::uuid else table_id end,
-               diet = case when $10 then $11 else diet end,
-               diet_note = case when $12 then $13 else diet_note end,
-               transfer = case when $14 then $15 else transfer end,
-               phone = case when $16 then $17 else phone end
-             where id = $1 and wedding_id = $2`,
-            [
-              guestId,
-              weddingId,
-              (body.name as string) ?? null,
-              false,
-              (body.status as string) ?? null,
-              has('group'),
-              (body.group as string) ?? null,
-              has('tableId'),
-              (body.tableId as string) ?? null,
-              has('diet'),
-              (body.diet as string) ?? null,
-              has('dietNote'),
-              (body.dietNote as string) ?? null,
-              has('transfer'),
-              (body.transfer as string) ?? null,
-              has('phone'),
-              phone,
-            ],
-          )
-        } catch (error) {
-          throw error
-        }
+        const res = await client.query(
+          `update guests set
+             name = coalesce($3, name),
+             plus_one = false,
+             rsvp = coalesce($4, rsvp),
+             group_name = case when $5 then $6 else group_name end,
+             table_id = case when $7 then $8::uuid else table_id end,
+             diet = case when $9 then $10 else diet end,
+             diet_note = case when $11 then $12 else diet_note end,
+             transfer = case when $13 then $14 else transfer end,
+             phone = case when $15 then $16 else phone end
+           where id = $1 and wedding_id = $2`,
+          [
+            guestId,
+            weddingId,
+            (body.name as string) ?? null,
+            (body.status as string) ?? null,
+            has('group'),
+            (body.group as string) ?? null,
+            has('tableId'),
+            (body.tableId as string) ?? null,
+            has('diet'),
+            (body.diet as string) ?? null,
+            has('dietNote'),
+            (body.dietNote as string) ?? null,
+            has('transfer'),
+            (body.transfer as string) ?? null,
+            has('phone'),
+            phone,
+          ],
+        )
         if (res.rowCount === 0) throw notFound('Гость не найден')
 
         if (body.plusOne === true) {
