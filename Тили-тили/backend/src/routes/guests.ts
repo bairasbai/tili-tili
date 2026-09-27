@@ -76,15 +76,20 @@ const GUEST_COLUMNS = `
  * не уйдёт. Комментарий гость пишет паре, а не команде.
  */
 export function toGuest(r: GuestRow, asCouple: boolean) {
+  /* Transitional fallback is deliberately local to serialization. Old unit
+   * fixtures and rolling clients can still describe a pre-020 row while every
+   * row read from the migrated database already has party metadata. */
+  const partyPosition = r.party_position ?? 1
+  const partySize = r.party_size ?? (r.plus_one ? 2 : 1)
   return {
     id: r.id,
     name: r.name,
-    partyId: r.party_id,
-    partyPosition: r.party_position,
-    isPrimary: r.party_position === 1,
-    isPlaceholder: r.is_placeholder,
+    partyId: r.party_id ?? r.id,
+    partyPosition,
+    isPrimary: partyPosition === 1,
+    isPlaceholder: r.is_placeholder ?? false,
     /* Transitional field for old clients: derived from real family members. */
-    plusOne: r.party_position === 1 && r.party_size > 1,
+    plusOne: partyPosition === 1 && partySize > 1,
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
      * (`/rsvp`, `/gifts`) этот объект не отдают. */
@@ -99,9 +104,9 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     busId: r.bus_id,
     hotelId: r.hotel_id,
     ...(asCouple ? {
-      inviteUrl: r.party_position === 1 && r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null,
+      inviteUrl: partyPosition === 1 && r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null,
     } : {}),
-    inviteUrlUsed: r.party_position === 1 && r.invite_used === true,
+    inviteUrlUsed: partyPosition === 1 && r.invite_used === true,
   }
 }
 
