@@ -21,6 +21,8 @@ import { chatRouteForVendor } from '@/lib/api/chats'
 import { ApiError, isAuthorized } from '@/lib/api/client'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { t } from '@/lib/i18n'
+import { OfferRequestComposer } from '@/components/OfferRequestComposer'
+import { OfferSummary } from '@/components/OfferSummary'
 
 function shortlistFromError(error: unknown): ShortlistEntry[] | null {
   if (!(error instanceof ApiError) || error.code !== 'shortlist_full') return null
@@ -628,7 +630,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
     ...(shortlist.data ?? []),
     ...(justAdded?.scope === shortlistScope && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
   ]
-  const alreadyCandidate = !!v?.id && shortlistEntries.some(entry => entry.vendor?.id === v.id)
+  const candidateEntry = v?.id ? shortlistEntries.find(entry => entry.vendor?.id === v.id) : undefined
+  const alreadyCandidate = !!candidateEntry
   const replaceEntry = replaceIntent && v?.id
     ? shortlistEntries.find(entry => entry.vendor?.id === v.id && entry.available === true && entry.occupancy !== 'busy')
     : undefined
@@ -926,17 +929,25 @@ function VendorDetailView({ id }: { id: string | undefined }) {
           </div>
         )}
         {!replaceIntent && v.id && !mine && (canManageCandidates || alreadyCandidate) && (
-          <div className="mt-3 flex items-center gap-3">
-            <CandidateControl
-              weddingId={weddingId}
-              slotId={slot?.id}
-              vendorId={v.id}
-              vendorName={v.name ?? t('Подрядчик')}
-              entries={shortlistEntries}
-              canAdd={canAddCandidate}
-              onAdded={entry => setJustAdded({ scope: shortlistScope, entry })}
-              onSettled={() => { shortlist.reload(); refreshSlots() }}
-            />
+          <div className="mt-3">
+            <div className="flex items-center gap-3">
+              <CandidateControl
+                weddingId={weddingId}
+                slotId={slot?.id}
+                vendorId={v.id}
+                vendorName={v.name ?? t('Подрядчик')}
+                entries={shortlistEntries}
+                canAdd={canAddCandidate}
+                onAdded={entry => setJustAdded({ scope: shortlistScope, entry })}
+                onSettled={() => { shortlist.reload(); refreshSlots() }}
+              />
+            </div>
+            {role === 'couple' && weddingId && candidateEntry && (
+              <>
+                {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={weddingDate} /></div>}
+                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} onChanged={shortlist.reload} />
+              </>
+            )}
           </div>
         )}
         {v.id && !mine && candidateAccessReady && role === 'helper' && !slot && (
