@@ -520,12 +520,39 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/weddings/:weddingId/guests/:guestId', async (request, reply) => {
     const { guestId } = request.params as { guestId: string }
+    const weddingId = request.member!.weddingId
     if (!isUuid(guestId)) throw notFound('Гость не найден')
-    const res = await db().query('delete from guests where id = $1 and wedding_id = $2', [
-      guestId,
-      request.member!.weddingId,
-    ])
-    if (res.rowCount === 0) throw notFound('Гость не найден')
+
+    await db().tx(async (client) => {
+      const { rows } = await client.query<{ party_id: string; is_primary: boolean; phone: string | null; comment: string | null }>(
+        'select party_id, is_primary, phone, comment from guests where id = $1 and wedding_id = $2 for update',
+        [guestId, weddingId],
+      )
+      const removed = rows[0]
+      if (!removed) throw notFound('Гость не найден')
+      await client.query('delete from guests where id = $1 and wedding_id = $2', [guestId, weddingId])
+
+      const { rows: left } = await client.query<{ id: string }>(
+        'select id from guests where party_id = $1 order by created_at, id for update',
+        [removed.party_id],
+      )
+      if (left.length === 0) {
+        /* Cascades invite codes + hotel; party trigger releases a live gift
+         * reservation tied to its token. Contributions remain historical. */
+        await client.query('delete from guest_parties where id = $1', [removed.party_id])
+      } else if (removed.is_primary) {
+        /* Keep the family link alive when its primary person is removed.
+         * Contact fields move to the oldest surviving person. */
+        await client.query(
+          `update guests
+              set is_primary = true,
+                  phone = coalesce(phone, $2),
+                  comment = coalesce(comment, $3)
+            where id = $1`,
+          [left[0]!.id, removed.phone, removed.comment],
+        )
+      }
+    })
     return reply.code(204).send()
   })
 
