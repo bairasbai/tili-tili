@@ -384,4 +384,35 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select id from notifications where user_id=$1', [other.vendor.id])).toHaveLength(before.length)
   })
 
+  it('T039 erases vendor offer text and keeps accepted snapshot', async () => {
+    const accepted = await ready(undefined, true)
+    const pending = await ready(accepted.wedding)
+    expect((await accept(accepted)).statusCode).toBe(200)
+    await app.db!.tx(client => eraseUser(client, pending.vendor.id))
+    expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
+      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
+    expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
+    await app.db!.tx(client => eraseUser(client, accepted.vendor.id))
+    expect(await rows('select vendor_id, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
+      .toEqual([{ vendor_id: null, package_title_snapshot: 'Съёмка 8 часов',
+        package_includes_snapshot: ['Ретушь', '500 фотографий'], price: '7654321' }])
+  })
+
+  it('T040 exports couple offer data and vendor own offer data', async () => {
+    const f = await ready()
+    const coupleDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.wedding.token) })
+    expect(coupleDump.statusCode, coupleDump.body).toBe(200)
+    expect(coupleDump.json()).toMatchObject({
+      shortlist: [expect.objectContaining({ slot_id: f.slotId })],
+      offerRequests: [expect.objectContaining({ id: f.requestId })],
+      offers: [expect.objectContaining({ request_id: f.requestId, title: 'Индивидуальная съёмка', price: '7654321' })],
+    })
+    const vendorDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.vendor.token) })
+    expect(vendorDump.statusCode, vendorDump.body).toBe(200)
+    expect(vendorDump.json()).toMatchObject({
+      vendorOfferRequests: [expect.objectContaining({ id: f.requestId })],
+      vendorOffers: [expect.objectContaining({ request_id: f.requestId, title: 'Индивидуальная съёмка' })],
+    })
+  })
+
 })
