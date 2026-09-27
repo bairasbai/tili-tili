@@ -841,30 +841,40 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             [guest.guestId, guest.weddingId],
           )
         }
-        try {
-          await client.query(
-            `update guests set rsvp = $2, rsvp_at = now(),
-                    plus_one = coalesce($3, plus_one),
-                    comment = coalesce($4, comment),
-                    diet = case when $5 then $6 else diet end,
-                    diet_note = case when $7 then $8 else diet_note end,
-                    transfer = coalesce($9, transfer)
-              where id = $1`,
-            [
-              guest.guestId,
-              body.status,
-              (body.plusOne as boolean) ?? null,
-              (body.comment as string) ?? null,
-              has('diet'),
-              (body.diet as string) ?? null,
-              has('diet') || has('dietNote'),
-              (body.dietNote as string) ?? null,
-              (body.transfer as string) ?? null,
-            ],
+        await client.query(
+          `update guests set rsvp = $2, rsvp_at = now(),
+                  plus_one = false,
+                  comment = coalesce($3, comment),
+                  diet = case when $4 then $5 else diet end,
+                  diet_note = case when $6 then $7 else diet_note end,
+                  transfer = coalesce($8, transfer)
+            where id = $1`,
+          [
+            guest.guestId,
+            body.status,
+            (body.comment as string) ?? null,
+            has('diet'),
+            (body.diet as string) ?? null,
+            has('diet') || has('dietNote'),
+            (body.dietNote as string) ?? null,
+            (body.transfer as string) ?? null,
+          ],
+        )
+
+        if (body.plusOne === true) {
+          const { rows: invitation } = await client.query<{ invitation_id: string; n: string; name: string; group_name: string | null }>(
+            `select g.invitation_id, g.name, g.group_name,
+                    (select count(*)::text from guests x where x.invitation_id = g.invitation_id) as n
+               from guests g where g.id = $1`,
+            [guest.guestId],
           )
-        } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
-          throw error
+          if (invitation[0] && Number(invitation[0].n) === 1) {
+            await client.query(
+              `insert into guests (id, wedding_id, name, plus_one, group_name, rsvp_token, invitation_id)
+               values ($1, $2, $3, false, $4, $5, $6)`,
+              [uuidv7(), guest.weddingId, `Гость ${invitation[0].name}`, invitation[0].group_name, newGuestToken(), invitation[0].invitation_id],
+            )
+          }
         }
 
         /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
@@ -976,7 +986,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
         if (body.capacity !== undefined) {
           const { rows: seated } = await client.query<{ persons: string }>(
-            'select coalesce(sum(1 + plus_one::int), 0)::text as persons from guests where table_id = $1',
+            'select count(*)::text as persons from guests where table_id = $1',
             [tableId],
           )
           const persons = Number(seated[0]!.persons)
