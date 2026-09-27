@@ -612,8 +612,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
 
-    const { rows } = await db().query('select 1 from guests where id = $1 and wedding_id = $2', [guestId, weddingId])
+    const { rows } = await db().query<{ invitation_id: string }>(
+      'select invitation_id from guests where id = $1 and wedding_id = $2',
+      [guestId, weddingId],
+    )
     if (rows.length === 0) throw notFound('Гость не найден')
+    const invitationId = rows[0]!.invitation_id
 
     return db().tx(async (client) => {
       /* Прежний код гаснет: «выдать новую ссылку» означает, что старая
@@ -626,8 +630,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       await client.query(
         `update guest_invite_codes
             set expires_at = least(expires_at, now())
-          where guest_id = $1 and expires_at > now()`,
-        [guestId],
+          where invitation_id = $1 and expires_at > now()`,
+        [invitationId],
       )
 
       /* Вместе с кодом гаснет и сам токен.
@@ -649,11 +653,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       for (let attempt = 0; attempt < 3; attempt++) {
         code = newShareCode()
         const res = await client.query(
-          `insert into guest_invite_codes (code, guest_id, expires_at)
-           values ($1, $2, greatest(now(), (select coalesce(date::timestamptz, now()) from weddings where id = $3))
-                   + ($4 || ' days')::interval)
+          `insert into guest_invite_codes (code, guest_id, invitation_id, expires_at)
+           values ($1, $2, $3, greatest(now(), (select coalesce(date::timestamptz, now()) from weddings where id = $4))
+                   + ($5 || ' days')::interval)
            on conflict (code) do nothing`,
-          [code, guestId, weddingId, String(SHARE_TTL_DAYS)],
+          [code, guestId, invitationId, weddingId, String(SHARE_TTL_DAYS)],
         )
         if (res.rowCount === 1) break
         code = ''
