@@ -18,6 +18,13 @@ const live = Boolean(DB)
 
 const SECRET_A = 'a'.repeat(48)
 const SECRET_R = 'b'.repeat(48)
+const futureDate = (days: number) => {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+const WEDDING_DATE = futureDate(730)
+const OFFER_VALID_UNTIL = futureDate(1095)
 
 describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () => {
   let app: FastifyInstance
@@ -116,7 +123,7 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
   async function offerFixture019(accepted: boolean) {
     const owner = await newUser(), vendor = await newUser()
     const wedding = await app.inject({method:'POST',url:'/weddings',headers:auth(owner.token),
-      payload:{partnerName:'019',date:'2027-06-14',city:{name:'Уфа',region:'Башкортостан'}}})
+      payload:{partnerName:'019',date:WEDDING_DATE,city:{name:'Уфа',region:'Башкортостан'}}})
     expect(wedding.statusCode, wedding.body).toBe(201)
     const wid = wedding.json().id as string
     const profile = await app.inject({method:'PUT',url:'/vendor/profile',headers:auth(vendor.token),payload:{
@@ -132,11 +139,14 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
     expect(sent.statusCode,sent.body).toBe(201)
     const rid = sent.json().results[0].requestId as string
     const privateText = `Private019-${randomUUID()}`
-    const offer = await app.inject({method:'POST',url:`/vendor/offer-requests/${rid}/offers`,headers:{...auth(vendor.token),'idempotency-key':randomUUID()},payload:{kind:'offer',title:'Договорённый пакет',includes:['8 часов'],price:{amount:1234500,currency:'RUB'},message:privateText,validUntil:'2034-06-01'}})
+    const offer = await app.inject({method:'POST',url:`/vendor/offer-requests/${rid}/offers`,headers:{...auth(vendor.token),'idempotency-key':randomUUID()},payload:{kind:'offer',title:'Договорённый пакет',includes:['8 часов'],price:{amount:1234500,currency:'RUB'},message:privateText,validUntil:OFFER_VALID_UNTIL}})
     expect(offer.statusCode,offer.body).toBe(201)
     if (accepted) {
       const book = await app.inject({method:'POST',url:`/weddings/${wid}/offers/${offer.json().id}/accept`,headers:{...auth(owner.token),'idempotency-key':randomUUID()}})
       expect(book.statusCode,book.body).toBe(200)
+      // Активную бронь нельзя удалять мягко: доводим сделку до истории,
+      // чтобы этот fixture проверял именно 30-дневное стирание.
+      await app.db!.query("update deals set state = 'done', done_at = now() where slot_id = $1", [sid])
     }
     return {owner,vendor,wid,vid,sid,rid,privateText,name:profile.json().name as string}
   }
@@ -152,8 +162,14 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
     const shortlist = await app.db!.query('select vendor_id from slot_shortlist where slot_id=$1',[f.sid])
     expect(shortlist.rows).toEqual([{vendor_id:null}])
     if (accepted) {
-      const deals = await app.db!.query('select package_title_snapshot,package_includes_snapshot,price::text from deals where slot_id=$1',[f.sid])
-      expect(deals.rows).toEqual([{package_title_snapshot:'Договорённый пакет',package_includes_snapshot:['8 часов'],price:'1234500'}])
+      const deals = await app.db!.query(
+        'select vendor_id,external_name,external_phone,performer_erased_at,package_title_snapshot,package_includes_snapshot,price::text from deals where slot_id=$1',
+        [f.sid],
+      )
+      expect(deals.rows).toEqual([{
+        vendor_id:null,external_name:null,external_phone:null,performer_erased_at:expect.any(Date),
+        package_title_snapshot:'Договорённый пакет',package_includes_snapshot:['8 часов'],price:'1234500',
+      }])
     }
     await app.db!.tx(client => eraseUser(client,f.owner.userId))
   })
@@ -165,18 +181,26 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
       await app.db!.query("update weddings set archived_at=now()-interval '400 days' where id=$1",[f.wid])
       await cleanup(app)
     } else if (method === 'owner') {
-      await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.owner.token)})
+      const deleted = await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.owner.token)})
+      expect(deleted.statusCode,deleted.body).toBe(204)
       await app.db!.query("update users set deleted_at=now()-interval '31 days' where id=$1",[f.owner.userId])
       await cleanup(app)
     } else {
-      await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.vendor.token)})
+      const deleted = await app.inject({method:'DELETE',url:'/users/me',headers:auth(f.vendor.token)})
+      expect(deleted.statusCode,deleted.body).toBe(204)
       await app.db!.query("update users set deleted_at=now()-interval '31 days' where id=$1",[f.vendor.userId])
+      await app.db!.query(
+        "update otp_codes set created_at=now()-interval '31 days', expires_at=now()-interval '31 days' where phone=$1",
+        [f.vendor.phone],
+      )
       const otp = await app.inject({method:'POST',url:'/auth/otp',payload:{phone:f.vendor.phone},remoteAddress:IP})
       expect(otp.statusCode,otp.body).toBe(200)
       const verified = await app.inject({method:'POST',url:'/auth/otp/verify',payload:{phone:f.vendor.phone,code:await readCode(f.vendor.phone)}})
       expect(verified.statusCode,verified.body).toBe(200)
-      expect(verified.json().user.id).not.toBe(f.vendor.userId)
+      const replacementId = verified.json().user.id as string
+      expect(replacementId).not.toBe(f.vendor.userId)
       expect(await findEverywhere(f.vid)).toEqual([])
+      await app.db!.tx(client => eraseUser(client,replacementId))
     }
     expect((await app.db!.query('select id from offers where request_id=$1',[f.rid])).rows).toEqual([])
     await app.db!.tx(client => eraseUser(client,f.owner.userId))
@@ -223,7 +247,7 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
       headers: auth(user.token),
       payload: {
         partnerName: 'Тимур',
-        date: '2027-06-14',
+        date: WEDDING_DATE,
         city: { name: 'Казань', region: 'Татарстан' },
         budgetTotal: { amount: 100_000_000, currency: 'RUB' },
       },
@@ -326,7 +350,7 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
       headers: auth(user.token),
       payload: {
         partnerName: 'Тимур',
-        date: '2027-06-14',
+        date: WEDDING_DATE,
         city: { name: 'Казань', region: 'Татарстан' },
       },
     })

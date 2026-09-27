@@ -15,6 +15,10 @@ exports.up = pgm => pgm.sql(`
   alter table deals
     add column package_title_snapshot text,
     add column package_includes_snapshot jsonb,
+    add column performer_erased_at timestamptz,
+    drop constraint deals_has_performer,
+    add constraint deals_has_performer
+      check (vendor_id is not null or external_name is not null or performer_erased_at is not null),
     add constraint deals_package_title_snapshot_valid
       check (package_title_snapshot is null or length(btrim(package_title_snapshot)) between 1 and 200),
     add constraint deals_package_includes_snapshot_array
@@ -132,7 +136,8 @@ exports.down = pgm => pgm.sql(`
         or exists (select 1 from offers)
         or exists (select 1 from deals
                     where package_title_snapshot is not null
-                       or package_includes_snapshot is not null))
+                       or package_includes_snapshot is not null
+                       or performer_erased_at is not null))
        and coalesce(current_setting('tili.allow_data_loss', true), '') <> 'yes' then
       raise exception 'Откат 019 сотрёт кандидатов, предложения и снимки условий: задайте tili.allow_data_loss=yes, если это осознанно';
     end if;
@@ -140,10 +145,17 @@ exports.down = pgm => pgm.sql(`
   drop table if exists offers;
   drop table if exists offer_requests;
   drop table if exists slot_shortlist;
+  -- Откат с разрешённой потерей данных возвращает старый инвариант:
+  -- у обезличенной сделки больше нет точного имени, поэтому ставим нейтральную метку.
+  update deals set external_name = 'Анкета недоступна'
+    where performer_erased_at is not null and vendor_id is null and external_name is null;
   alter table deals
+    drop constraint if exists deals_has_performer,
     drop constraint if exists deals_package_snapshot_pair,
     drop constraint if exists deals_package_includes_snapshot_array,
     drop constraint if exists deals_package_title_snapshot_valid,
+    drop column if exists performer_erased_at,
     drop column if exists package_includes_snapshot,
-    drop column if exists package_title_snapshot;
+    drop column if exists package_title_snapshot,
+    add constraint deals_has_performer check (vendor_id is not null or external_name is not null);
 `);

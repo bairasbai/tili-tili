@@ -9,6 +9,14 @@ const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
 const SECRET_A = 'a'.repeat(48)
 const SECRET_R = 'b'.repeat(48)
+const futureDate = (days: number) => {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+const WEDDING_DATE = futureDate(730)
+const NEXT_WEDDING_DATE = futureDate(731)
+const OFFER_VALID_UNTIL = futureDate(1095)
 
 interface UserFixture {
   id: string
@@ -117,7 +125,7 @@ describe.skipIf(!live)('019 / US3: принятие, снимки, закрыт�
     return { id: body.user.id, token: body.accessToken }
   }
 
-  async function newWedding(date = '2034-06-14', guestsPlanned = 88): Promise<WeddingFixture> {
+  async function newWedding(date = WEDDING_DATE, guestsPlanned = 88): Promise<WeddingFixture> {
     const user = await newUser()
     const created = await app.inject({
       method: 'POST',
@@ -238,7 +246,7 @@ describe.skipIf(!live)('019 / US3: принятие, снимки, закрыт�
     price: { amount: 11_000_000 + number, currency: 'RUB' },
     includes: [`Пункт ${number}`],
     message: `Сообщение ${number}`,
-    validUntil: '2034-06-01',
+    validUntil: OFFER_VALID_UNTIL,
   })
 
 
@@ -262,7 +270,7 @@ describe.skipIf(!live)('019 / US3: принятие, снимки, закрыт�
   it('фиксирует цену, название и состав; replay не создаёт второй брони; снимок переживает удаление пакета и offer', async () => {
     const f = await fixture()
     const response = await answer(f.vendor, f.requestId, {
-      kind: 'offer', packageId: f.vendor.packageId, price: { amount: 1234567, currency: 'RUB' }, validUntil: '2034-06-01',
+      kind: 'offer', packageId: f.vendor.packageId, price: { amount: 1234567, currency: 'RUB' }, validUntil: OFFER_VALID_UNTIL,
     })
     expect(response.statusCode, response.body).toBe(201)
     const offer = response.json()
@@ -289,7 +297,9 @@ describe.skipIf(!live)('019 / US3: принятие, снимки, закрыт�
     let offerId = f.offerId
     const code = { expired: 'offer_expired', stale_date: 'offer_stale_date', superseded: 'offer_superseded', declined: 'offer_declined', closed: 'request_closed', unavailable: 'vendor_unavailable', busy: 'date_taken' }[reason]
     if (reason === 'expired') await app.db!.query("update offers set valid_until = '2000-01-01' where id = $1", [offerId])
-    if (reason === 'stale_date') await app.db!.query("update offer_requests set wedding_date = '2034-06-15' where id = $1", [f.requestId])
+    if (reason === 'stale_date') {
+      await app.db!.query('update offer_requests set wedding_date = $2 where id = $1', [f.requestId, NEXT_WEDDING_DATE])
+    }
     if (reason === 'superseded') expect((await answer(f.vendor, f.requestId, customOffer(2))).statusCode).toBe(201)
     if (reason === 'declined') offerId = (await answer(f.vendor, f.requestId, { kind: 'decline', message: 'Не могу' })).json().id
     if (reason === 'closed') await app.db!.query("update offer_requests set status='closed', close_reason='removed', closed_at=now() where id=$1", [f.requestId])
@@ -362,7 +372,7 @@ describe.skipIf(!live)('019 / US3: принятие, снимки, закрыт�
       await app.db!.query('update weddings set date=null where id=$1', [f.wedding.weddingId])
       await app.db!.query('update offer_requests set wedding_date=null where id=$1',[f.requestId])
     }
-    const result = await app.inject({ method:'POST', url:`/weddings/${f.wedding.weddingId}/${action === 'cancel' ? 'cancel' : 'reschedule'}`, headers:idem(f.wedding.token), ...(action === 'cancel' ? {} : {payload:{date:'2034-06-15'}}) })
+    const result = await app.inject({ method:'POST', url:`/weddings/${f.wedding.weddingId}/${action === 'cancel' ? 'cancel' : 'reschedule'}`, headers:idem(f.wedding.token), ...(action === 'cancel' ? {} : {payload:{date:NEXT_WEDDING_DATE}}) })
     expect(result.statusCode,result.body).toBe(200)
     const rows = await app.db!.query('select status,close_reason from offer_requests where id=$1',[f.requestId])
     expect(rows.rows[0]).toEqual({status:'closed',close_reason:action === 'cancel' ? 'wedding_cancelled' : 'date_changed'})

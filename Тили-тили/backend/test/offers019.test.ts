@@ -20,6 +20,13 @@ const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
 const SECRET_A = 'a'.repeat(48)
 const SECRET_R = 'b'.repeat(48)
+const futureDate = (days: number) => {
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+const WEDDING_DATE = futureDate(730)
+const OFFER_VALID_UNTIL = futureDate(1095)
 
 interface UserFixture {
   id: string
@@ -184,7 +191,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     return { id: body.user.id, token: body.accessToken }
   }
 
-  async function newWedding(date = '2034-06-14', guestsPlanned = 88): Promise<WeddingFixture> {
+  async function newWedding(date = WEDDING_DATE, guestsPlanned = 88): Promise<WeddingFixture> {
     const user = await newUser()
     const created = await app.inject({
       method: 'POST',
@@ -305,7 +312,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     price: { amount: 11_000_000 + number, currency: 'RUB' },
     includes: [`Пункт ${number}`],
     message: `Сообщение ${number}`,
-    validUntil: '2034-06-01',
+    validUntil: OFFER_VALID_UNTIL,
   })
 
   const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -911,7 +918,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       packageId: offering.packageId,
       price: { amount: 12_000_000, currency: 'RUB' },
       message: 'Готовы снимать',
-      validUntil: '2034-06-01',
+      validUntil: OFFER_VALID_UNTIL,
     })
     expect(offer.statusCode, offer.body).toBe(201)
     const offerBody = createdOfferOf(offer, offeringRequest, 'offer')
@@ -924,7 +931,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: 12_000_000, currency: 'RUB' },
       includes: ['8 часов', 'Ретушь'],
       message: 'Готовы снимать',
-      validUntil: '2034-06-01',
+      validUntil: OFFER_VALID_UNTIL,
     })
     const afterOffer = await notifications(wedding.id)
     expect(afterOffer).toHaveLength(before + 1)
@@ -965,7 +972,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       currency: 'RUB',
       includes: ['8 часов', 'Ретушь'],
       message: 'Готовы снимать',
-      valid_until: '2034-06-01',
+      valid_until: OFFER_VALID_UNTIL,
       superseded_at: null,
       accepted_at: null,
       deal_id: null,
@@ -1030,7 +1037,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       kind: 'offer',
       packageId: vendor.packageId,
       price: { amount: 12_000_000, currency: 'RUB' },
-      validUntil: '2034-06-01',
+      validUntil: OFFER_VALID_UNTIL,
     })
     expect(first.statusCode, first.body).toBe(201)
     const firstId = createdOfferOf(first, requestId, 'offer').id
@@ -1123,7 +1130,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: 11_000_001, currency: 'RUB' },
       includes: ['Пункт 1'],
       message: 'Сообщение 1',
-      validUntil: '2034-06-01',
+      validUntil: OFFER_VALID_UNTIL,
     })
     const replayBody = createdOfferOf(replay, requestId, 'offer')
     expect(replay.headers['idempotent-replay']).toBe('true')
@@ -1212,7 +1219,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     expect(history).toEqual([
       {
         kind: 'offer', packageId: null, packageSnapshot: null, title: 'Версия 1', price: '11000001',
-        currency: 'RUB', includes: ['Пункт 1'], message: 'Сообщение 1', validUntil: '2034-06-01',
+        currency: 'RUB', includes: ['Пункт 1'], message: 'Сообщение 1', validUntil: OFFER_VALID_UNTIL,
         superseded: true, acceptedAt: null, dealId: null,
       },
       {
@@ -1222,7 +1229,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       },
       {
         kind: 'offer', packageId: null, packageSnapshot: null, title: 'Версия 3', price: '11000003',
-        currency: 'RUB', includes: ['Пункт 3'], message: 'Сообщение 3', validUntil: '2034-06-01',
+        currency: 'RUB', includes: ['Пункт 3'], message: 'Сообщение 3', validUntil: OFFER_VALID_UNTIL,
         superseded: true, acceptedAt: null, dealId: null,
       },
       {
@@ -1232,7 +1239,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       },
       {
         kind: 'offer', packageId: null, packageSnapshot: null, title: 'Версия 5', price: '11000005',
-        currency: 'RUB', includes: ['Пункт 5'], message: 'Сообщение 5', validUntil: '2034-06-01',
+        currency: 'RUB', includes: ['Пункт 5'], message: 'Сообщение 5', validUntil: OFFER_VALID_UNTIL,
         superseded: false, acceptedAt: null, dealId: null,
       },
     ])
@@ -1619,7 +1626,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: offerPriceCanary, currency: 'RUB' },
       includes: [offerIncludesCanary],
       message: offerMessageCanary,
-      validUntil: '2034-06-01',
+      validUntil: OFFER_VALID_UNTIL,
     })
     expect(offered.statusCode, offered.body).toBe(201)
     const offeredBody = createdOfferOf(offered, requestId, 'offer')
@@ -1632,7 +1639,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: offerPriceCanary, currency: 'RUB' },
       includes: [offerIncludesCanary],
       message: offerMessageCanary,
-      validUntil: '2034-06-01',
+      validUntil: OFFER_VALID_UNTIL,
     })
 
     const [coupleOffered, helperOffered, coordinatorOffered] = await Promise.all([

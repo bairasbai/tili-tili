@@ -225,7 +225,11 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
  * «Аккаунт удалён», — SMS потрачена, войти нельзя. Вход стирает строку сразу
  * тем же путём и заводит аккаунт заново.
  */
-export async function eraseUser(client: Queryable, id: string): Promise<void> {
+export async function eraseUser(
+  client: Queryable,
+  id: string,
+  options: { preserveOtpCodeId?: string } = {},
+): Promise<void> {
   await client.query(`select id from weddings where owner_id = $1 order by id for update`, [id])
   await client.query(`select r.id from offer_requests r
     where r.vendor_id in (select id from vendors where user_id = $1)
@@ -234,6 +238,15 @@ export async function eraseUser(client: Queryable, id: string): Promise<void> {
   // Block new requests/responses before scrubbing, then cascade the account.
   await client.query('select id from users where id = $1 for update', [id])
   await client.query('select id from vendors where user_id = $1 order by id for update', [id])
+  // Телефон в старых OTP — та же персональная строка, что и в users.
+  // При входе спустя 30 дней текущий код нужен до конца verify; остальные
+  // коды удаляются тем же стиранием, что и учётная запись.
+  await client.query(
+    `delete from otp_codes
+      where phone in (select phone from users where id = $1)
+        and ($2::uuid is null or id <> $2::uuid)`,
+    [id, options.preserveOtpCodeId ?? null],
+  )
   await client.query(`delete from idempotency_keys k where exists (
     select 1 from vendors v where v.user_id = $1 and position(v.id::text in k.body::text) > 0)`, [id])
   await client.query(`delete from offers where request_id in (
@@ -275,7 +288,8 @@ export async function eraseUser(client: Queryable, id: string): Promise<void> {
     [id],
   )
   await client.query(
-    `update deals d set vendor_id = null, external_name = null
+    `update deals d set vendor_id = null, external_name = null, external_phone = null,
+                        performer_erased_at = coalesce(d.performer_erased_at, now())
        from vendors v where v.id = d.vendor_id and v.user_id = $1`,
     [id],
   )

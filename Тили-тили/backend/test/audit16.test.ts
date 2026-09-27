@@ -219,7 +219,7 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     expect((await app.inject({ method: 'GET', url: `/weddings/${weddingId}`, headers: auth(partner.token) })).statusCode).toBe(200)
   })
 
-  it('стирание подрядчика: сделка остаётся паре историей с именем исполнителя', async () => {
+  it('стирание подрядчика: сделка остаётся паре обезличенной историей', async () => {
     const couple = await newUser()
     const weddingId = await newWedding(couple.token)
     const vendor = await newVendor('decor')
@@ -240,15 +240,27 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     const { rows: erased } = await app.db!.query('select 1 from users where id = $1', [vendor.owner.userId])
     expect(erased).toHaveLength(0)
 
-    const { rows } = await app.db!.query<{ vendor_id: string | null; external_name: string | null; state: string }>(
-      'select vendor_id, external_name, state from deals where id = $1',
+    const { rows } = await app.db!.query<{
+      vendor_id: string | null
+      external_name: string | null
+      external_phone: string | null
+      performer_erased_at: Date | null
+      state: string
+    }>(
+      'select vendor_id, external_name, external_phone, performer_erased_at, state from deals where id = $1',
       [dealId],
     )
-    expect(rows[0]).toEqual({ vendor_id: null, external_name: vendor.name, state: 'done' })
+    expect(rows[0]).toEqual({
+      vendor_id: null,
+      external_name: null,
+      external_phone: null,
+      performer_erased_at: expect.any(Date),
+      state: 'done',
+    })
     const slot = await app.inject({ method: 'GET', url: `/weddings/${weddingId}/slots`, headers: auth(couple.token) })
     expect(slot.statusCode).toBe(200)
     const mine = (slot.json() as { id: string; deal?: { vendor?: unknown; externalName?: string | null } | null }[]).find((s) => s.id === slotId)
     expect(mine?.deal?.vendor ?? null).toBeNull()
-    expect(mine?.deal?.externalName).toBe(vendor.name)
+    expect(mine?.deal?.externalName ?? null).toBeNull()
   })
 })
