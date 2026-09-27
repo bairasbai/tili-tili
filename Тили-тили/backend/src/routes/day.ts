@@ -5,7 +5,7 @@ import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { guestByToken, type GuestCaller } from '../guests/access.js'
+import { guestByToken, guestPersonByToken, type GuestCaller } from '../guests/access.js'
 import { personCount } from './guests.js'
 import { messagePage, notifyOthers, toMessage } from './chats.js'
 import { notifyWedding } from '../notify/notify.js'
@@ -843,94 +843,59 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['busId'],
           additionalProperties: false,
-          properties: { busId: UUID_ID },
+          properties: { busId: UUID_ID, personId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { busId } = request.body as { busId: string }
-      const guest = await guestByToken(db(), guestToken)
+      const { busId, personId } = request.body as { busId: string; personId?: string }
+      const guest = await guestPersonByToken(db(), guestToken, personId)
 
-      // Ответ собирается ВНУТРИ транзакции, а отправляется после неё.
-      // `reply.send()` внутри `tx` уходит клиенту до коммита: он видит 200,
-      // а данных ещё нет — и если коммит упадёт, ему уже сказали «готово».
       return db().tx(async (client) => {
-        /* Сначала строка гостя, потом маршрут — тот же порядок замков, что у
-         * `PATCH …/guests/{id}` (гость → брони → триггер маршрута): иначе
-         * «не придёт» рукой пары и посадка гостя в ту же секунду взаимно
-         * ждали друг друга и одна из сторон получала 500 (RF-BE-06). */
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
-        /* Маршруты под блокировкой строк — и целевой, и тот, откуда гость
-         * пересаживается, ОДНИМ запросом в порядке `id`: два гостя, меняющиеся
-         * автобусами навстречу, иначе брали замки в разном порядке (один —
-         * A потом B через триггер удаления брони, другой — B потом A) и
-         * упирались в deadlock — 500 одному из них (ревью 015). Заодно два
-         * гостя на последнее место проходят подсчёт персон по очереди (R-49). */
+        await client.query('select 1 from guests where id = $1 for update', [guest.personId])
         await client.query(
           `select r.id from bus_routes r
             where r.wedding_id = $2
               and (r.id = $1 or r.id in (select b.bus_id from bus_bookings b where b.guest_id = $3))
             order by r.id for update`,
-          [busId, guest.weddingId, guest.guestId],
+          [busId, guest.weddingId, guest.personId],
         )
         const { rows: bus } = await client.query<{ seats: number; taken: number }>(
           'select seats, taken from bus_routes where id = $1 and wedding_id = $2',
           [busId, guest.weddingId],
         )
-        if (bus.length === 0) throw notFound('Маршрут не найден')
+        if (!bus[0]) throw notFound('Маршрут не найден')
 
-        // Гость едет ОДНИМ автобусом. Пересел на другой рейс — место
-        // в прежнем обязано освободиться, иначе водитель ждёт того,
-        // кто уехал с другой точки сбора.
+        const { rows: already } = await client.query<{ bus_id: string }>(
+          'select bus_id from bus_bookings where guest_id = $1 limit 1',
+          [guest.personId],
+        )
+        if (!already[0] || already[0].bus_id !== busId) {
+          if (bus[0].taken + 1 > bus[0].seats) throw conflict('bus_full', 'Мест в этом автобусе не осталось')
+        }
+
         await client.query(
           `delete from bus_bookings b using bus_routes r
             where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and b.bus_id <> $3`,
-          [guest.guestId, guest.weddingId, busId],
+          [guest.personId, guest.weddingId, busId],
         )
-
-        /* Места считаются в персонах, а не в записях (R-29): гость «с +1»
-         * едет вдвоём, и `taken` маршрута — сумма персон по записям: её ведёт
-         * триггер (фича 005, миграция 17593…), обработчик персоны не
-         * пересчитывает. Ранний отказ здесь, под блокировкой маршрута, —
-         * потому что дешевле отката транзакции по `CHECK` ниже; правило
-         * держит база (D3-16). */
-        const { rows: aboard } = await client.query<{ plus_one: boolean; already: boolean }>(
-          `select g.plus_one,
-                  exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already
-             from guests g where g.id = $2`,
-          [busId, guest.guestId],
-        )
-        // Кто уже едет этим автобусом, повтором записи места не отнимает.
-        if (!aboard[0]!.already && bus[0]!.taken + (aboard[0]!.plus_one ? 2 : 1) > bus[0]!.seats) {
-          throw conflict('bus_full', 'Мест в этом автобусе не осталось')
-        }
-
-        // Счётчик ведёт триггер: строки исчезают и мимо обработчика —
-        // удаление гостя уносит запись каскадом. Переполнение по персонам
-        // ловит `CHECK bus_taken_bounded`, и оно же откатывает транзакцию.
         let booked
         try {
           booked = await client.query(
             'insert into bus_bookings (bus_id, guest_id) values ($1,$2) on conflict do nothing',
-            [busId, guest.guestId],
+            [busId, guest.personId],
           )
         } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) {
-            throw conflict('bus_full', 'Мест в этом автобусе не осталось')
-          }
+          if (isCheckViolation(error, 'bus_taken_bounded')) throw conflict('bus_full', 'Мест в этом автобусе не осталось')
           throw error
         }
-
         const { rows } = await client.query<{ taken: number; seats: number }>(
           'select taken, seats from bus_routes where id = $1',
           [busId],
         )
-        if (booked.rowCount === 0) {
-          return { busId, alreadyBooked: true, ...rows[0]! }
-        }
-        await client.query(`update guests set transfer = 'need' where id = $1`, [guest.guestId])
-        return { busId, alreadyBooked: false, ...rows[0]! }
+        await client.query(`update guests set transfer = 'need' where id = $1`, [guest.personId])
+        return { personId: guest.personId, busId, alreadyBooked: booked.rowCount === 0, ...rows[0]! }
       })
     },
   )
@@ -953,21 +918,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const guest = await guestByToken(db(), guestToken)
 
       return db().tx(async (client) => {
-        /* Тот же порядок замков, что у автобуса: строка гостя, затем оба
-         * блока — целевой и прежний — в порядке `id` (ревью 015: у отелей
-         * замков не было вовсе, взаимный переезд двух гостей давал deadlock). */
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
+        /* Party row is the family-level hotel mutex. */
+        await client.query('select id from guest_parties where id = $1 for update', [guest.partyId])
         await client.query(
           `select h.id from hotel_blocks h
             where h.wedding_id = $2
-              and (h.id = $1 or h.id in (select b.hotel_id from hotel_bookings b where b.guest_id = $3))
+              and (h.id = $1 or h.id in (select b.hotel_id from hotel_bookings b where b.party_id = $3))
             order by h.id for update`,
-          [hotelId, guest.weddingId, guest.guestId],
+          [hotelId, guest.weddingId, guest.partyId],
         )
-        /* Дедлайн блока — до какого дня отель держит номера по брони пары
-         * (Бизнес-логика §12.1). День дедлайна ещё открыт, следующий — нет;
-         * «сегодня» считается по поясу свадьбы, как дата свадьбы у отзывов
-         * (`reviews.ts`), а не по часам сервера (D3-15). */
         const { rows: block } = await client.query<{ deadline: string | null; closed: boolean }>(
           `select h.deadline::text as deadline,
                   (h.deadline is not null
@@ -976,23 +935,21 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             where h.id = $1 and h.wedding_id = $2`,
           [hotelId, guest.weddingId],
         )
-        if (block.length === 0) throw notFound('Блок не найден')
-        if (block[0]!.closed) {
-          throw conflict('deadline_passed', `Бронь в этом блоке закрылась ${block[0]!.deadline} — спросите у пары, как быть`)
+        if (!block[0]) throw notFound('Блок не найден')
+        if (block[0].closed) {
+          throw conflict('deadline_passed', `Бронь в этом блоке закрылась ${block[0].deadline} — спросите у пары, как быть`)
         }
 
-        // Гость живёт в ОДНОМ отеле: смена блока освобождает прежний номер.
         await client.query(
           `delete from hotel_bookings b using hotel_blocks h
-            where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2 and b.hotel_id <> $3`,
-          [guest.guestId, guest.weddingId, hotelId],
+            where b.hotel_id = h.id and b.party_id = $1 and h.wedding_id = $2 and b.hotel_id <> $3`,
+          [guest.partyId, guest.weddingId, hotelId],
         )
-
         let booked
         try {
           booked = await client.query(
-            'insert into hotel_bookings (hotel_id, guest_id) values ($1,$2) on conflict do nothing',
-            [hotelId, guest.guestId],
+            'insert into hotel_bookings (hotel_id, party_id) values ($1,$2) on conflict do nothing',
+            [hotelId, guest.partyId],
           )
         } catch (error) {
           if (isCheckViolation(error, 'hotel_booked_bounded')) {
@@ -1009,8 +966,6 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  /* Гость видит маршруты и то, куда он уже записан. Раньше путь был только на
-     запись, и `busId` гостю брать было неоткуда. */
   app.get('/join/:guestToken/shuttle', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)
