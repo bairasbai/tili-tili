@@ -179,7 +179,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' },
     })
-    expect(consent.statusCode, consent.body).toBe(200)
+    expect(consent.statusCode, consent.body).toBe(201)
     createdUsers.push(body.user.id)
     return { id: body.user.id, token: body.accessToken }
   }
