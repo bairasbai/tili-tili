@@ -22,5 +22,6 @@
   "test/paymentSchedule.test.ts",
   "test/stage8.test.ts",
   "test/stage9.test.ts",
-  "test/taskReminders.test.ts"
+  "test/taskReminders.test.ts",
+  "test/accept019.test.ts"
 ]

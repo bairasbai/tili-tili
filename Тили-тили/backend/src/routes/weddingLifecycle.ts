@@ -1,3 +1,4 @@
+import { closeWeddingRequests } from '../offers/close.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError } from '../errors.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -149,6 +150,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
        * deal_events пишет cancelDeal() (F1) из своего собственного select
        * (deals/cancel.ts) — колонка state в этой выборке сама событие не
        * питает, она лишь часть строки для цикла ниже. */
+      await closeWeddingRequests(client, weddingId, 'wedding_cancelled')
       const { rows: cancelled } = await client.query<{ id: string; state: string }>(
         `select id, state from deals where wedding_id = $1 and state = any($2) for update`,
         [weddingId, CANCELLED_WITH_WEDDING],

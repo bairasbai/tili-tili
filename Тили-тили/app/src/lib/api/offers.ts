@@ -26,3 +26,9 @@ export const requestOffers = (
   body,
   { idempotencyKey },
 )
+
+export const acceptOffer = (weddingId: string, offerId: string, idempotencyKey: string) => api.post(
+  url('/weddings/{weddingId}/offers/{offerId}/accept', { weddingId, offerId }),
+  undefined,
+  { idempotencyKey },
+)

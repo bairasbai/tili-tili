@@ -82,7 +82,7 @@ type CompareItem = {
   request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null }) {
+function CompareTable({ items, icons, weddingDate, weddingTimeZone, acceptance }: { items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTimeZone?: string; acceptance?: { weddingId: string; onChanged: () => void } }) {
   const nav = useNavigate()
   const rows: [string, (item: CompareItem) => ReactNode][] = [
     [t('Цена «от»'), ({ vendor }) => vendor?.priceFrom?.amount != null ? fmt(vendor.priceFrom.amount) : '—'],
@@ -101,7 +101,7 @@ function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; ico
         </div>)}
       </div>
     ) : '—'],
-    [t('Предложение'), ({ request }) => <OfferSummary request={request} currentWeddingDate={weddingDate} compact />],
+    [t('Предложение'), ({ request, available }) => <OfferSummary request={request} currentWeddingDate={weddingDate} weddingTimeZone={weddingTimeZone} acceptance={available ? acceptance : undefined} compact />],
     [t('Видео-визитка'), ({ vendor }) => vendor?.hasVideo ? t('▶ Есть') : '—'],
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
@@ -134,6 +134,7 @@ function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; ico
 export function Compare() {
   const nav = useNavigate()
   const { weddingId, weddingDate, weddingsState, slots, slotsState } = useStore()
+  const wedding = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
   const [params] = useSearchParams()
   const hasSlot = params.has('slot')
   const slotId = params.get('slot') ?? ''
@@ -189,7 +190,7 @@ export function Compare() {
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} />}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} weddingTimeZone={wedding.data?.tz} acceptance={weddingId && !slot.dealId ? { weddingId, onChanged: shortlist.reload } : undefined} />}
             </>
     ) : <>
       <AsyncState q={favs} />

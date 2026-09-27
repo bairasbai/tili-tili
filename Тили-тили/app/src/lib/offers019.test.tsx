@@ -267,3 +267,50 @@ describe('offers019 · уведомления', () => {
     expect(notificationRoute('/vendor/offer-requests')).toBeNull()
   })
 })
+
+
+describe('offers019 · принятие предложения', () => {
+  it.each(['/wedding/slot/s1', '/compare?slot=s1&entries=e1,e2'])('принятие из %s фиксирует бронь и обновляет место', async route => {
+    let accepted = false
+    const current = [{ ...E1, request: { ...REQUEST, offer: OFFER } }, E2]
+    const booked = { ...SLOT, tileState: 'booked', deal: { id: 'd1', state: 'booked', vendor: PROFILE, price: OFFER.price, packageName: OFFER.title, packageIncludes: OFFER.includes } }
+    const view = mount(route, {
+      '/weddings/w1/slots/s1/shortlist': () => accepted ? [{ ...E1, request: { ...REQUEST, status: 'closed', closeReason: 'booked', offer: OFFER } }, E2] : current,
+      '/weddings/w1/slots': () => accepted ? [booked] : [SLOT],
+      'POST /weddings/w1/offers/o1/accept': (call: Call) => { expect(call.key).toBeTruthy(); accepted = true; return booked },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение' }))
+    await waitFor(() => expect(accepted).toBe(true))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Принять предложение' })).toBeNull())
+    expect(view.calls.filter(c => c.path.endsWith('/accept'))).toHaveLength(1)
+  })
+
+  it('сетевой повтор сохраняет ключ, ошибка показана словами', async () => {
+    let attempts = 0
+    const view = mount('/wedding/slot/s1', {
+      '/weddings/w1/slots/s1/shortlist': [{ ...E1, request: { ...REQUEST, offer: OFFER } }],
+      'POST /weddings/w1/offers/o1/accept': () => {
+        if (++attempts === 1) throw new TypeError('Failed to fetch')
+        return withStatus(409, { error: { code: 'date_taken', message: 'Дата занята' } })
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение' }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Принять предложение' }))
+    await screen.findByText('Дата занята')
+    const attemptsSent = view.calls.filter(c => c.path.endsWith('/accept'))
+    expect(attemptsSent).toHaveLength(2)
+    expect(attemptsSent[0]!.key).toBe(attemptsSent[1]!.key)
+  })
+
+  it.each(['expired', 'old_date', 'closed', 'public', 'unavailable'])('%s не предлагает принятие', async state => {
+    const request = state === 'public' ? { status: 'responded' } : {
+      ...REQUEST, offer: { ...OFFER, validUntil: state === 'expired' ? '2000-01-01' : OFFER.validUntil },
+      ...(state === 'old_date' ? { weddingDate: '2020-01-01' } : {}),
+      ...(state === 'closed' ? { status: 'closed', closeReason: 'removed' } : {}),
+    }
+    const view = mount('/wedding/slot/s1', { '/weddings/w1/slots/s1/shortlist': [{ ...E1, available: state !== 'unavailable', request }] })
+    await waitFor(() => expect(view.container.textContent).toContain(state === 'public' ? 'Подрядчик ответил' : OFFER.title))
+    expect(screen.queryByRole('button', { name: 'Принять предложение' })).toBeNull()
+  })
+})

@@ -1723,6 +1723,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/offers/{offerId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                offerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять предложение и создать бронь
+         * @description Только пара. 409: offer_expired, offer_stale_date, offer_superseded, request_closed, offer_declined, slot_taken, date_taken, vendor_unavailable, wedding_cancelled. Условия фиксируются в сделке.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    offerId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Место с созданной бронью */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Slot"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/slots/{slotId}/offer-requests": {
         parameters: {
             query?: never;
@@ -4377,7 +4429,9 @@ export interface paths {
                                 /** Format: date */
                                 weddingDate?: string | null;
                                 price?: components["schemas"]["Money"] | null;
-                                /** @description пакет, по которому бронировали; null — без пакета или пакет снят с витрины */
+                                /** @description Состав пакета на момент брони */
+                                packageIncludes?: string[] | null;
+                                /** @description Название пакета на момент брони */
                                 packageName?: string | null;
                                 /** @enum {string} */
                                 state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
@@ -10945,6 +10999,8 @@ export interface components {
             /** @description имя своего подрядчика */
             externalName?: string | null;
             externalPhone?: string | null;
+            /** @description Состав пакета на момент брони, только для пары */
+            packageIncludes?: string[] | null;
             /**
              * @description Название пакета, по которому бронировали (`packageId` в
              *     `POST …/book`). null — бронь без пакета или пакет снят с витрины.

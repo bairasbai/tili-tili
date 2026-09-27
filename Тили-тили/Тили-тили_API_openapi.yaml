@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.48.0
+  version: 0.49.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1037,6 +1037,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /weddings/{weddingId}/offers/{offerId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/WeddingId'
+      - in: path
+        name: offerId
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Offers]
+      summary: Принять предложение и создать бронь
+      description: 'Только пара. 409: offer_expired, offer_stale_date, offer_superseded, request_closed, offer_declined, slot_taken, date_taken, vendor_unavailable, wedding_cancelled. Условия фиксируются в сделке.'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Место с созданной бронью
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /weddings/{weddingId}/slots/{slotId}/offer-requests:
     post:
       tags: [bookings]
@@ -2675,10 +2702,15 @@ paths:
                         price:
                           allOf: [{ $ref: '#/components/schemas/Money' }]
                           nullable: true
+                        packageIncludes:
+                          type: array
+                          nullable: true
+                          items: { type: string }
+                          description: Состав пакета на момент брони
                         packageName:
                           type: string
                           nullable: true
-                          description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
+                          description: Название пакета на момент брони
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         paid:
                           allOf: [{ $ref: '#/components/schemas/Money' }]
@@ -7172,6 +7204,11 @@ components:
           description: null у своего подрядчика не из каталога (§11)
         externalName: { type: string, nullable: true, description: имя своего подрядчика }
         externalPhone: { type: string, nullable: true }
+        packageIncludes:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: Состав пакета на момент брони, только для пары
         packageName:
           type: string
           nullable: true

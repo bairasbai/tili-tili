@@ -13,6 +13,7 @@ export interface DealRow {
   external_phone: string | null
   /** Название пакета в момент брони; пусто — сделка была без пакета. */
   package_name: string | null
+  package_includes: string[] | null
   price: string | null
   currency: string
   negotiating_until: Date | null
@@ -44,7 +45,8 @@ export const DEAL_COLUMNS = `
   ${PAID_SUM}::text as paid,
   (select max(p.created_at) from payments p where p.deal_id = d.id and p.status <> 'cancelled') as paid_at,
   ven.name as vendor_name, ven.category_id as vendor_category, vc.name as vendor_city,
-  coalesce(d.package_title_snapshot, pkg.name) as package_name`
+  coalesce(d.package_title_snapshot, pkg.name) as package_name,
+  d.package_includes_snapshot as package_includes`
 
 /* Новая сделка читает неизменяемый снимок; `left join` остаётся только
  * fallback для старой строки без снимка. Миграция 019 заполняет все живые
@@ -70,6 +72,7 @@ export function toDeal(r: DealRow, seesMoney: boolean) {
     externalName: r.external_name,
     externalPhone: r.external_phone,
     packageName: r.package_name,
+    ...(seesMoney ? { packageIncludes: r.package_includes ?? null } : {}),
     ...(seesMoney
       ? {
           price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },

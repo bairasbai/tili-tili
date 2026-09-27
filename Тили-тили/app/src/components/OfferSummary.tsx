@@ -1,3 +1,4 @@
+import { OfferAccept } from './OfferAccept'
 import { useState } from 'react'
 import type { OfferPublic, OfferRequest } from '@/lib/api/offers'
 import { fmt } from '@/lib/money'
@@ -24,14 +25,19 @@ export function OfferSummary({
   request,
   currentWeddingDate,
   compact = false,
+  weddingTimeZone,
+  acceptance,
 }: {
   request?: OfferRequest | OfferPublic
   /** `undefined` — экран не знает нынешнюю дату; `null` — дата снята. */
   currentWeddingDate?: string | null
   compact?: boolean
+  weddingTimeZone?: string
+  acceptance?: { weddingId: string; onChanged?: () => void }
 }) {
   // Снимаем день один раз за жизнь карточки: время не читается в фазе рендера (R-04).
-  const [today] = useState(() => new Date().toISOString().slice(0, 10))
+  const [now] = useState(() => new Date())
+  const today = weddingTimeZone ? new Intl.DateTimeFormat('en-CA', { timeZone: weddingTimeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now) : null
   if (!request) return <span className="text-[var(--soft)]">—</span>
 
   if (!isFullOfferRequest(request)) return (
@@ -57,7 +63,7 @@ export function OfferSummary({
         </>
       ) : (
         <>
-          {offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
+          {today !== null && offer.validUntil < today && <p className="font-semibold text-[var(--rose-ink)]">{t('Срок предложения истёк')}</p>}
           <p className="font-semibold">{offer.title}</p>
           <p className="font-semibold tabular text-[var(--rose-ink)]">{fmt(offer.price.amount)}</p>
           {offer.includes.length > 0 && (
@@ -67,6 +73,9 @@ export function OfferSummary({
           )}
           {offer.message && <p className="font-normal text-[var(--ink2)] whitespace-pre-wrap">{offer.message}</p>}
           <p className="text-[var(--soft)] font-normal">{t('Действует до')} {formatWeddingDate(offer.validUntil)}</p>
+          {acceptance && today !== null && offer.validUntil >= today && !oldDate && request.status === 'open' && (
+            <OfferAccept key={offer.id} weddingId={acceptance.weddingId} offerId={offer.id} onChanged={acceptance.onChanged} />
+          )}
         </>
       )}
     </div>

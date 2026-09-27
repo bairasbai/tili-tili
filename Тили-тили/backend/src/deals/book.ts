@@ -36,11 +36,12 @@ export async function lockBookingContext(
   client: Queryable,
   input: { weddingId: string; slotId: string; actorId: string },
 ): Promise<BookingContext> {
-  const { rows: weddings } = await client.query<{ date: string | null; tz: string | null }>(
-    'select date::text as date, tz from weddings where id = $1 for share',
+  const { rows: weddings } = await client.query<{ date: string | null; tz: string | null; cancelled_at: Date | null; archived_at: Date | null }>(
+    'select date::text as date, tz, cancelled_at, archived_at from weddings where id = $1 for share',
     [input.weddingId],
   )
-  if (!weddings[0]) throw notFound('Свадьба не найдена')
+  if (!weddings[0] || weddings[0].archived_at) throw notFound('Свадьба не найдена')
+  if (weddings[0].cancelled_at) throw conflict('wedding_cancelled', 'Свадьба отменена')
 
   const { rows: users } = await client.query<{ deleted_at: Date | null }>(
     'select deleted_at from users where id = $1 for share',

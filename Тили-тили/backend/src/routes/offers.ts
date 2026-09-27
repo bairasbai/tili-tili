@@ -1,3 +1,5 @@
+import { bookVendor, lockBookingContext } from '../deals/book.js'
+import { loadSlot } from '../deals/repo.js'
 import type { FastifyInstance } from 'fastify'
 import { withIdempotency } from '../deals/idempotency.js'
 import { AppError, conflict, notFound, quotaExceeded, unauthorized, validationFailed } from '../errors.js'
@@ -106,6 +108,59 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
     if (!app.db) throw new AppError(503, 'db_unavailable', 'База недоступна')
     return app.db
   }
+
+  app.post('/weddings/:weddingId/offers/:offerId/accept', async (request, reply) => {
+    const weddingId = request.member!.weddingId
+    const actorId = request.caller!.userId
+    const { offerId } = request.params as { offerId: string }
+    if (!isUuid(offerId)) throw notFound('Предложение не найдено')
+    return withIdempotency(db(), request, reply, 'offers.accept', (tx) => tx(async (client) => {
+      // Lookup is only for routing. Re-read all mutable terms under the request mutex.
+      const { rows: lookup } = await client.query<{ slot_id: string; request_id: string }>(
+        `select r.slot_id, r.id as request_id from offers o
+           join offer_requests r on r.id = o.request_id join slots s on s.id = r.slot_id
+          where o.id = $1 and s.wedding_id = $2`, [offerId, weddingId])
+      if (!lookup[0]) throw notFound('Предложение не найдено')
+      const context = await lockBookingContext(client, { weddingId, actorId, slotId: lookup[0].slot_id })
+      // Lock every request in the same order as catalog/external booking.
+      const { rows: requests } = await client.query<{
+        id: string; vendor_id: string | null; status: string; wedding_date: string | null
+      }>(`select id, vendor_id, status, wedding_date::text from offer_requests
+           where slot_id = $1 order by id for update`, [context.slotId])
+      const target = requests.find(r => r.id === lookup[0]!.request_id)
+      if (!target) throw notFound('Предложение не найдено')
+      if (target.wedding_date !== context.date) throw conflict('offer_stale_date', 'На прежнюю дату — запросите заново')
+      if (target.status !== 'open') throw conflict('request_closed', 'Запрос уже закрыт')
+      const { rows: offers } = await client.query<{
+        kind: string; title: string; includes: string[]; price: string; package_id: string | null;
+        superseded_at: Date | null; expired: boolean
+      }>(`select kind, title, includes, price::text, package_id, superseded_at,
+                 valid_until < (now() at time zone coalesce($2, 'Europe/Moscow'))::date as expired
+            from offers where id = $1`, [offerId, context.weddingTz])
+      const offer = offers[0]
+      if (!offer) throw notFound('Предложение не найдено')
+      if (offer.superseded_at) throw conflict('offer_superseded', 'Подрядчик прислал новое предложение')
+      if (offer.kind === 'decline') throw conflict('offer_declined', 'Подрядчик отказался от запроса')
+      if (offer.expired) throw conflict('offer_expired', 'Срок предложения истёк')
+      const { rows: vendors } = await client.query<{ id: string }>(
+        `select v.id from vendors v join users u on u.id = v.user_id
+           join slots s on s.id = $2 and s.category_id = v.category_id
+          where v.id = $1 and v.published_at is not null and v.blocked_at is null
+            and u.deleted_at is null for share of v, u`, [target.vendor_id, context.slotId])
+      if (!vendors[0]) throw conflict('vendor_unavailable', 'Анкета недоступна')
+      // A deleted package does not cancel the agreed snapshot; a concurrent delete
+      // may already have nulled the FK since the initial unlocked offer read.
+      const { rows: packages } = await client.query<{ id: string }>(
+        'select id from vendor_packages where id = $1 and vendor_id = $2 for key share',
+        [offer.package_id, target.vendor_id])
+      const dealId = await bookVendor(client, context, {
+        price: Number(offer.price), performer: { kind: 'offer', vendorId: vendors[0].id,
+          packageId: packages[0]?.id ?? null, packageTitle: offer.title, packageIncludes: offer.includes },
+      })
+      await client.query('update offers set accepted_at = now(), deal_id = $2 where id = $1', [offerId, dealId])
+      return { status: 200, body: await loadSlot(client, context.slotId, true) }
+    }))
+  })
 
   app.post(
     '/weddings/:weddingId/slots/:slotId/offer-requests',

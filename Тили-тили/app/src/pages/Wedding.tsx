@@ -212,6 +212,7 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
 function SlotCandidates({ s }: { s: Slot }) {
   const nav = useNavigate()
   const { weddingId, weddingDate } = useStore()
+  const wedding = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
   const q = useApi(() => weddingId ? getShortlist(weddingId, s.id) : noWedding(), [weddingId, s.id])
   const roles = useApi(() => listMyWeddings(), [weddingId])
   const role = roles.data?.find(w => w.id === weddingId)?.role
@@ -278,7 +279,7 @@ function SlotCandidates({ s }: { s: Slot }) {
                     <b className="text-[12.5px] block">{entry.position}. {name}</b>
                     {!live && vendor && <p className="text-[11px] text-[var(--rose-ink)] mt-1">{t('Анкета недоступна')}</p>}
                     {live && <p className="text-[11px] text-[var(--soft)] mt-1">{occupancy}</p>}
-                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={weddingDate} /></div>}
+                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={weddingDate} weddingTimeZone={wedding.data?.tz} acceptance={canBook && weddingId && !s.dealId && entry.available ? { weddingId, onChanged: q.reload } : undefined} /></div>}
                   </div>
                 </div>
                 <div className="flex gap-2 mt-2.5 justify-end">

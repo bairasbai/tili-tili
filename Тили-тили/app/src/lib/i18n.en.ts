@@ -2,6 +2,10 @@ import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  'Принять предложение': 'Accept offer',
+  'Бронируем…': 'Booking…',
+  'Подрядчик прислал новое предложение': 'The vendor sent a new offer',
+
   // 019: offer requests closed by a booking without revealing the winner.
   'Пара выбрала другого исполнителя': 'The couple chose another vendor',
   'Запрос предложения закрыт: пара выбрала другого исполнителя.': 'The offer request is closed: the couple chose another vendor.',

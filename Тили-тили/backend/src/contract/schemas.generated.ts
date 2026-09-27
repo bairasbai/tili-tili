@@ -852,6 +852,16 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ]
               },
+              "packageIncludes": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "items": {
+                      "type": "string"
+                  },
+                  "description": "Состав пакета на момент брони, только для пары"
+              },
               "packageName": {
                   "type": [
                       "string",

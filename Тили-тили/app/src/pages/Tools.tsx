@@ -186,6 +186,7 @@ function DealView({ s }: { s: Slot }) {
               <p className="text-[11px] text-[var(--soft)]">{t(s.label)}</p>
               {/* Пакет из брони (`Deal.packageName`, фича 005) — только когда он есть. */}
               {s.packageName && <p className="text-[11px] text-[var(--ink2)] mt-0.5 truncate">{t('Пакет:')} {s.packageName}</p>}
+              {s.packageIncludes?.map((part, i) => <p key={i} className="text-[11px] text-[var(--ink2)]">{part}</p>)}
             </div>
             {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
