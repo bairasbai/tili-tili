@@ -1787,12 +1787,20 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Guest' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`family_full` — в одном семейном приглашении уже 10 персон'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /weddings/{weddingId}/guests/{guestId}:
     patch:
       tags: [guests]
-      summary: Обновить гостя (статус RSVP циклом yes→no→pending)
+      summary: Обновить отдельную персону приглашения
+      description: |
+        Поля RSVP/стола/питания относятся к этой персоне. Переходное plusOne
+        разрешено только у primary и материализует/удаляет системную вторую
+        персону; у secondary возвращается 409 `family_member_not_primary`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1821,10 +1829,18 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Guest' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`family_member_not_primary`, `table_full` или `bus_full`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [guests]
-      summary: Удалить гостя
+      summary: Удалить персону или семейное приглашение
+      description: |
+        Удаление secondary удаляет только эту персону. Удаление primary
+        удаляет всё приглашение: остальных персон, одноразовый код, семейный
+        номер и текущий резерв подарка.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
