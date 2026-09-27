@@ -370,7 +370,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           where phone = $1 and deleted_at is not null and deleted_at <= now() - make_interval(days => $2::int)`,
         [phone, RESTORE_WINDOW_DAYS],
       )
-      if (stale[0]) await db().tx((client) => eraseUser(client, stale[0]!.id))
+      if (stale[0]) await db().tx((client) => eraseUser(client, stale[0]!.id, otp.id))
 
       // Гасим код до выдачи токенов: два одновременных запроса с одним кодом
       // не должны завести две сессии. Условие consumed_at is null делает
