@@ -35,5 +35,50 @@ jobs:
         run: cd Тили-тили/backend && DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
       - name: 020 model tests
         run: cd Тили-тили/backend && pnpm vitest run test/family020.test.ts
+      - name: Rollback and reapply 020 with legacy plus-one fixture
+        run: |
+          set -euo pipefail
+          cd Тили-тили/backend
+          MIGRATE="node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations"
+          DATABASE_URL="$TEST_DATABASE_URL" $MIGRATE down
+          node --input-type=module <<'NODE'
+          import pg from 'pg'
+          import { randomUUID } from 'node:crypto'
+          const db = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL })
+          await db.connect()
+          const owner=randomUUID(), wedding=randomUUID(), guest=randomUUID(), bus=randomUUID()
+          await db.query('insert into users(id,phone,name) values($1,$2,$3)', [owner, '+79995550120', '020 legacy'])
+          await db.query('insert into weddings(id,owner_id,title,tz,invite_code) values($1,$2,$3,$4,$5)', [wedding,owner,'020 legacy','Europe/Moscow','020-legacy-'+randomUUID()])
+          await db.query('insert into guests(id,wedding_id,name,plus_one,rsvp_token) values($1,$2,$3,true,$4)', [guest,wedding,'Ольга','legacy-'+randomUUID()])
+          await db.query('insert into bus_routes(id,wedding_id,name,seats) values($1,$2,$3,2)', [bus,wedding,'020 legacy bus'])
+          await db.query('insert into bus_bookings(bus_id,guest_id) values($1,$2)', [bus,guest])
+          const before=(await db.query('select b.persons,r.taken from bus_bookings b join bus_routes r on r.id=b.bus_id where b.guest_id=$1',[guest])).rows[0]
+          if (before.persons !== 2 || before.taken !== 2) throw new Error('legacy precondition failed: '+JSON.stringify(before))
+          await db.end()
+          NODE
+          DATABASE_URL="$TEST_DATABASE_URL" $MIGRATE up
+          node --input-type=module <<'NODE'
+          import pg from 'pg'
+          const db = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL })
+          await db.connect()
+          const fam=(await db.query("select invitation_id,count(*)::int n,count(*) filter(where migrated_plus_one_companion)::int companions,bool_or(legacy_plus_one) legacy from guests where name in ('Ольга','Гость Ольга') group by invitation_id")).rows
+          if (fam.length !== 1 || fam[0].n !== 2 || fam[0].companions !== 1 || fam[0].legacy !== true) throw new Error('up conversion failed: '+JSON.stringify(fam))
+          const bus=(await db.query("select b.persons,r.taken from bus_bookings b join guests g on g.id=b.guest_id join bus_routes r on r.id=b.bus_id where g.name='Ольга'")).rows[0]
+          if (bus.persons !== 1 || bus.taken !== 1) throw new Error('020 bus conversion failed: '+JSON.stringify(bus))
+          await db.end()
+          NODE
+          DATABASE_URL="$TEST_DATABASE_URL" $MIGRATE down
+          node --input-type=module <<'NODE'
+          import pg from 'pg'
+          const db = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL })
+          await db.connect()
+          const guests=(await db.query("select name,plus_one from guests where name in ('Ольга','Гость Ольга') order by name")).rows
+          if (guests.length !== 1 || guests[0].name !== 'Ольга' || guests[0].plus_one !== true) throw new Error('down restoration failed: '+JSON.stringify(guests))
+          const bus=(await db.query("select b.persons,r.taken from bus_bookings b join guests g on g.id=b.guest_id join bus_routes r on r.id=b.bus_id where g.name='Ольга'")).rows[0]
+          if (bus.persons !== 2 || bus.taken !== 2) throw new Error('legacy bus rollback failed: '+JSON.stringify(bus))
+          await db.end()
+          NODE
+          DATABASE_URL="$TEST_DATABASE_URL" $MIGRATE up
+          pnpm vitest run test/family020.test.ts
       - name: Typecheck
         run: cd Тили-тили/backend && pnpm tsc -p tsconfig.json --noEmit
