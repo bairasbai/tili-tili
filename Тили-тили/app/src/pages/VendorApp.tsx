@@ -25,8 +25,7 @@ import { getCategories } from '@/lib/api/catalog'
 import { getChats } from '@/lib/api/chats'
 import { cn, currentMonth, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
-import { fmt, rub } from '@/lib/money'
-import { parseWholeRubles } from '@/lib/paymentAmount'
+import { fmt, parseWholeRubles, rub } from '@/lib/money'
 import { formatWeddingDate, monthGrid, monthTitle, shortWeddingDate } from '@/lib/weddingDate'
 
 /*
