@@ -7,7 +7,7 @@ import { readSchemas, render, toJsonSchema, OUT_FILE } from '../scripts/gen-sche
 const NAMES = Object.keys(CONTRACT_SCHEMAS.definitions) as ContractSchemaName[]
 
 describe('схемы контракта', () => {
-  it('все 39 схем компилируются валидатором', async () => {
+  it('все схемы компилируются валидатором', async () => {
     // Fastify компилирует схемы маршрутов на ready(). Если конвертация из
     // OpenAPI оставила что-то, чего AJV не понимает, это вылезет здесь,
     // а не на первом запросе в проде.
@@ -17,6 +17,28 @@ describe('схемы контракта', () => {
       app.post(`/t/${name}`, { schema: { body: ref(name) } }, async () => ({ ok: true }))
     }
     await expect(app.ready()).resolves.toBeDefined()
+    await app.close()
+  })
+
+  it('ShortlistEntry принимает обезличенный tombstone, но не пропавшие поля', async () => {
+    const app = Fastify({ logger: false })
+    app.addSchema(CONTRACT_SCHEMAS)
+    app.post('/shortlist', { schema: { body: ref('ShortlistEntry') } }, async () => ({ ok: true }))
+    await app.ready()
+
+    const tombstone = {
+      id: '11111111-1111-4111-8111-111111111111',
+      slotId: '22222222-2222-4222-8222-222222222222',
+      position: 2,
+      createdAt: '2026-09-27T01:00:00.000Z',
+      available: null,
+      occupancy: null,
+      vendor: null,
+    }
+    expect((await app.inject({ method: 'POST', url: '/shortlist', payload: tombstone })).statusCode).toBe(200)
+    const missingVendor: Omit<typeof tombstone, 'vendor'> & { vendor?: null } = { ...tombstone }
+    delete missingVendor.vendor
+    expect((await app.inject({ method: 'POST', url: '/shortlist', payload: missingVendor })).statusCode).toBe(400)
     await app.close()
   })
 
