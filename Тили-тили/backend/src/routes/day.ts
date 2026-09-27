@@ -688,9 +688,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          from menu_options o where o.wedding_id = $1 order by o.sort, o.name`,
       [weddingId],
     )
-    // Кейтерингу нужны ПОРЦИИ, а не строки списка: «Ольга +1» — два
-    // человека за столом и две порции. Считаем на сервере, чтобы разные
-    // экраны не получили разных ответов (ERR-0012 ровно про это).
+    // 020: каждая строка guests — отдельная персона и одна порция.
+    // Считаем на сервере, чтобы разные экраны не получили разных ответов.
     const { rows: guests } = await db().query<{ status: string; plus_one: boolean }>(
       'select rsvp as status, plus_one from guests where wedding_id = $1',
       [weddingId],
@@ -895,14 +894,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          * пересчитывает. Ранний отказ здесь, под блокировкой маршрута, —
          * потому что дешевле отката транзакции по `CHECK` ниже; правило
          * держит база (D3-16). */
-        const { rows: aboard } = await client.query<{ plus_one: boolean; already: boolean }>(
-          `select g.plus_one,
-                  exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already
+        const { rows: aboard } = await client.query<{ already: boolean }>(
+          `select exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already
              from guests g where g.id = $2`,
           [busId, guest.guestId],
         )
-        // Кто уже едет этим автобусом, повтором записи места не отнимает.
-        if (!aboard[0]!.already && bus[0]!.taken + (aboard[0]!.plus_one ? 2 : 1) > bus[0]!.seats) {
+        // 020: одна запись гостя — одна персона и одно место.
+        if (!aboard[0]!.already && bus[0]!.taken + 1 > bus[0]!.seats) {
           throw conflict('bus_full', 'Мест в этом автобусе не осталось')
         }
 
