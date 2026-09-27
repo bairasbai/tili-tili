@@ -47,6 +47,7 @@ export const renameTask = (weddingId: string, taskId: string, title: string) =>
 export interface GuestDraft {
   name: string
   plusOne?: boolean
+  members?: { name: string }[]
   group?: string
   /** E.164 (`+7…`) — для SMS-напоминаний; вводит пара. */
   phone?: string
@@ -56,6 +57,7 @@ export const addGuest = (weddingId: string, draft: GuestDraft) =>
   api.post(url('/weddings/{weddingId}/guests', { weddingId }), {
     name: draft.name,
     ...(draft.plusOne !== undefined ? { plusOne: draft.plusOne } : {}),
+    ...(draft.members?.length ? { members: draft.members } : {}),
     ...(draft.group ? { group: draft.group } : {}),
     /* Телефон — для SMS-напоминания молчащим (`POST …/guests/remind`):
        без него у кнопки «Напомнить» не было ни одного адресата. */
@@ -76,6 +78,14 @@ export const patchGuest = (
 
 export const deleteGuest = (weddingId: string, guestId: string) =>
   api.delete(url('/weddings/{weddingId}/guests/{guestId}', { weddingId, guestId }))
+
+/** Добавить отдельную персону в уже существующее семейное приглашение. */
+export const addGuestMember = (weddingId: string, primaryGuestId: string, name: string) =>
+  api.post(
+    url('/weddings/{weddingId}/guests/{guestId}/members', { weddingId, guestId: primaryGuestId }),
+    { name },
+  )
+
 
 /** Одна строка вставленного списка гостей — уже разобранная экраном (`lib/guestsImport.ts`). */
 export type GuestImportRow = { name: string; phone?: string; plusOne?: boolean; group?: string }
