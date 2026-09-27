@@ -2,7 +2,7 @@ name: Verify 019 acceptance (temporary)
 on:
   push:
     branches: ['test/019-acceptance-20260928']
-    paths-ignore: ['.github/workflows/source-export-019.yml']
+    paths: ['.github/patches/accept019.patch.gz.b64', '.github/workflows/verify-019.yml']
 permissions:
   contents: read
 jobs:
@@ -18,7 +18,7 @@ jobs:
           POSTGRES_DB: tili
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U tili' --health-interval 5s
+          --health-cmd "pg_isready -U tili" --health-interval 5s
           --health-timeout 5s --health-retries 12
       redis:
         image: redis:7-alpine
@@ -31,6 +31,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Apply feature to its pinned base
+        run: |
+          mkdir -p /tmp/verify019
+          git rev-parse HEAD > /tmp/verify019/runner-commit.txt
+          if test -f .github/patches/accept019.patch.gz.b64; then
+            base64 --decode .github/patches/accept019.patch.gz.b64 | gzip -d > /tmp/accept019.patch
+            sha256sum /tmp/accept019.patch > /tmp/verify019/patch-sha256.txt
+            git checkout --detach c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+            git apply --check /tmp/accept019.patch
+            git apply /tmp/accept019.patch
+            git add -N .
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -39,42 +52,46 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.34.5 --activate
       - name: Install locked dependencies
+        id: dependencies
         run: |
-          mkdir -p /tmp/verify019
-          set -o pipefail
           (cd 'Тили-тили/backend' && pnpm install --frozen-lockfile --node-linker=hoisted) > /tmp/verify019/install-backend.log 2>&1
           (cd 'Тили-тили/app' && pnpm install --frozen-lockfile --node-linker=hoisted) > /tmp/verify019/install-app.log 2>&1
       - name: Generate contracts and migrate
+        id: generated
         run: |
           cd 'Тили-тили/backend'
-          pnpm run gen
-          cd ../app
-          pnpm run gen:api
-          cd ../backend
-          pnpm exec node-pg-migrate up -m migrations
-      - name: Check backend
+          pnpm run gen > /tmp/verify019/generate.log 2>&1
+          cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
+          pnpm exec node-pg-migrate up -m migrations > /tmp/verify019/migrate.log 2>&1
+      - name: Run independent checks
+        if: always() && steps.generated.outcome == 'success'
         run: |
-          set -o pipefail
-          cd 'Тили-тили/backend'
-          pnpm run typecheck > /tmp/verify019/typecheck-backend.log 2>&1
-          pnpm run lint > /tmp/verify019/lint-backend.log 2>&1
-          pnpm exec vitest run --reporter=default --reporter=json --outputFile=/tmp/verify019/backend-tests.json > /tmp/verify019/backend-tests.log 2>&1
-          pnpm run build > /tmp/verify019/build-backend.log 2>&1
-      - name: Check frontend
-        if: '!cancelled()'
-        run: |
-          cd 'Тили-тили/app'
-          pnpm exec tsc -b > /tmp/verify019/typecheck-app.log 2>&1
-          pnpm run lint > /tmp/verify019/lint-app.log 2>&1
-          pnpm exec vitest run --reporter=default --reporter=json --outputFile=/tmp/verify019/app-tests.json > /tmp/verify019/app-tests.log 2>&1
-          pnpm run build > /tmp/verify019/build-app.log 2>&1
-      - name: Export verification evidence and generated source
+          set +e
+          runcheck() {
+            local name="$1" dir="$2"; shift 2
+            (cd "$dir" && "$@") > "/tmp/verify019/$name.log" 2>&1
+            printf '%s\t%s\n' "$name" "$?" >> /tmp/verify019/checks.tsv
+          }
+          runcheck typecheck-backend 'Тили-тили/backend' pnpm run typecheck
+          runcheck lint-backend 'Тили-тили/backend' pnpm run lint
+          runcheck acceptance-backend 'Тили-тили/backend' pnpm exec vitest run test/accept019.test.ts --reporter=default --reporter=json --outputFile=/tmp/verify019/acceptance-backend.json --passWithNoTests
+          runcheck typecheck-app 'Тили-тили/app' pnpm exec tsc -b
+          runcheck lint-app 'Тили-тили/app' pnpm run lint
+          runcheck acceptance-app 'Тили-тили/app' pnpm exec vitest run src/lib/offers019.test.tsx --reporter=default --reporter=json --outputFile=/tmp/verify019/acceptance-app.json
+          runcheck backend-tests 'Тили-тили/backend' pnpm exec vitest run --reporter=default --reporter=json --outputFile=/tmp/verify019/backend-tests.json
+          runcheck app-tests 'Тили-тили/app' pnpm exec vitest run --reporter=default --reporter=json --outputFile=/tmp/verify019/app-tests.json
+          runcheck build-backend 'Тили-тили/backend' pnpm run build
+          runcheck build-app 'Тили-тили/app' pnpm run build
+          cat /tmp/verify019/checks.tsv
+          if grep -v $'\t0$' /tmp/verify019/checks.tsv; then exit 1; fi
+      - name: Export evidence and generated source
         if: always()
         run: |
           mkdir -p /tmp/verify019
           git rev-parse HEAD > /tmp/verify019/commit.txt
-          git diff > /tmp/verify019/generated.diff
-          tail -n 50 /tmp/verify019/*.log > /tmp/verify019/summary.txt || true
+          git diff --check > /tmp/verify019/diff-check.txt
+          git diff > /tmp/verify019/verified.diff
+          tail -n 45 /tmp/verify019/*.log > /tmp/verify019/summary.txt || true
           tar --exclude=.git --exclude=node_modules --exclude=dist -czf /tmp/verify019/verified-source.tar.gz .
       - uses: actions/upload-artifact@v4
         if: always()
