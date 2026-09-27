@@ -88,6 +88,7 @@ exports.up = (pgm) => {
      WHERE g.legacy_plus_one = true;
 
     UPDATE guests SET plus_one = false;
+    ALTER TABLE guests ADD CONSTRAINT guests_plus_one_disabled CHECK (plus_one = false);
 
     -- From 020 onward each bus booking is exactly one person/seat.
     DROP TRIGGER IF EXISTS guests_plus_one_seats ON guests;
@@ -127,6 +128,7 @@ exports.down = (pgm) => {
   pgm.sql(`
     DROP TRIGGER IF EXISTS guests_ensure_invitation ON guests;
     DROP FUNCTION IF EXISTS ensure_guest_invitation();
+    ALTER TABLE guests DROP CONSTRAINT IF EXISTS guests_plus_one_disabled;
 
     UPDATE guests g SET plus_one = true
       WHERE g.legacy_plus_one = true;
