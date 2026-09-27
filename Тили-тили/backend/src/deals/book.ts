@@ -27,8 +27,8 @@ export type BookingPerformer =
 /**
  * Общий порядок замков любой двери брони (R-317): свадьба → заявитель → слот.
  *
- * Будущее принятие предложения после этого шага сможет безопасно взять запрос
- * и предложение, а затем вызвать `bookVendor`: подрядчик и живой пакет берутся
+ * Принятие предложения после этого шага берёт mutex запроса, читает
+ * предложение без row lock, а затем вызывает `bookVendor`: подрядчик и живой пакет берутся
  * уже внутри него. Нельзя начинать с запроса/пакета и потом повышать замок
  * свадьбы — перенос даты и стирание аккаунта идут в обратном порядке.
  */
@@ -36,11 +36,12 @@ export async function lockBookingContext(
   client: Queryable,
   input: { weddingId: string; slotId: string; actorId: string },
 ): Promise<BookingContext> {
-  const { rows: weddings } = await client.query<{ date: string | null; tz: string | null }>(
-    'select date::text as date, tz from weddings where id = $1 for share',
+  const { rows: weddings } = await client.query<{ date: string | null; tz: string | null; archived_at: Date | null; cancelled_at: Date | null }>(
+    'select date::text as date, tz, archived_at, cancelled_at from weddings where id = $1 for share',
     [input.weddingId],
   )
-  if (!weddings[0]) throw notFound('Свадьба не найдена')
+  // Access may have been checked before waiting for a concurrent cancellation.
+  if (!weddings[0] || weddings[0].archived_at || weddings[0].cancelled_at) throw notFound('Свадьба не найдена')
 
   const { rows: users } = await client.query<{ deleted_at: Date | null }>(
     'select deleted_at from users where id = $1 for share',
@@ -68,16 +69,19 @@ interface PackageSnapshot {
   items: string[]
 }
 
-async function lockLiveVendor(client: Queryable, vendorId: string): Promise<void> {
+async function lockLiveVendor(client: Queryable, vendorId: string, forOffer = false): Promise<void> {
   /* Замок пользователя подрядчика сериализует бронь со стиранием аккаунта.
    * Анкета должна быть опубликована и не заблокирована — как в каталоге. */
   const { rows: vendors } = await client.query<{ id: string }>(
     `select v.id from vendors v join users u on u.id = v.user_id and u.deleted_at is null
       where v.id = $1 and v.published_at is not null and v.blocked_at is null
-      for share of u`,
+      for share of u, v`,
     [vendorId],
   )
-  if (!vendors[0]) throw notFound('Подрядчик не найден')
+  if (!vendors[0]) {
+    if (forOffer) throw conflict('vendor_unavailable', 'Анкета подрядчика недоступна')
+    throw notFound('Подрядчик не найден')
+  }
 }
 
 async function liveCatalogTerms(
@@ -140,7 +144,7 @@ async function closeSlotRequests(
 }
 
 /**
- * Единственное ядро записи брони для каталога, своего подрядчика и будущего
+ * Единственное ядро записи брони для каталога, своего подрядчика и
  * принятия предложения. Вызывающий обязан сначала взять `BookingContext`.
  */
 export async function bookVendor(
@@ -160,7 +164,20 @@ export async function bookVendor(
       : input.performer.kind === 'offer'
         ? { name: input.performer.packageTitle, items: input.performer.packageIncludes }
         : null
-  if (input.performer.kind === 'offer') await lockLiveVendor(client, input.performer.vendorId)
+  let packageId = input.performer.kind === 'external' ? null : input.performer.packageId ?? null
+  if (input.performer.kind === 'offer') {
+    await lockLiveVendor(client, input.performer.vendorId, true)
+    // The live package is optional: the agreed terms belong to the offer snapshot.
+    // Lock a surviving FK target before writing offers, never the opposite order.
+    if (packageId) {
+      const { rows } = await client.query<{ id: string }>(
+        'select id from vendor_packages where id = $1 and vendor_id = $2 for key share',
+        [packageId, input.performer.vendorId],
+      )
+      packageId = rows[0]?.id ?? null
+    }
+  }
+
   const dealId = uuidv7()
 
   if (input.performer.kind !== 'external') {
@@ -175,7 +192,7 @@ export async function bookVendor(
         context.slotId,
         input.performer.vendorId,
         input.price,
-        input.performer.packageId ?? null,
+        packageId,
         terms?.name ?? null,
         terms ? JSON.stringify(terms.items) : null,
       ],
