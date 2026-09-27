@@ -251,6 +251,7 @@ export function VendorDealCard() {
                 <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)]">{t(DEAL_STATE_LABEL[d.state ?? ''] ?? d.state ?? '')}</span>
               </div>
               {d.packageName && <p className="text-[12px] mt-2">{t('Пакет:')} <b>{d.packageName}</b></p>}
+              {d.packageIncludes && d.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{d.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
               {/* Отметки оплат — те же платежи, что видит пара; без ответа — прочерк (R-178). */}
               <div className="grid grid-cols-3 gap-2 mt-4">
