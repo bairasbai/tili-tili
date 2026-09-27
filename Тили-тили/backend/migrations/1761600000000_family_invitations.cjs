@@ -21,6 +21,34 @@ exports.up = (pgm) => {
     legacy_plus_one: { type: 'boolean', notNull: true, default: false },
   })
 
+  /* Compatibility bridge while API/UI are migrated in this same feature.
+   * Old insert paths still write guests directly. A BEFORE INSERT trigger
+   * creates the one-person invitation atomically so NOT NULL never breaks
+   * existing flows. New family API supplies invitation_id explicitly. */
+  pgm.sql(`
+    CREATE FUNCTION ensure_guest_invitation() RETURNS trigger AS $$
+    DECLARE
+      invite_id uuid;
+      invite_token text;
+    BEGIN
+      IF NEW.invitation_id IS NOT NULL THEN
+        RETURN NEW;
+      END IF;
+      invite_id := NEW.id;
+      invite_token := coalesce(NEW.rsvp_token, encode(gen_random_bytes(32), 'hex'));
+      INSERT INTO guest_invitations (id, wedding_id, label, phone, rsvp_token, created_at)
+      VALUES (invite_id, NEW.wedding_id, NEW.name, NEW.phone, invite_token, coalesce(NEW.created_at, now()));
+      NEW.invitation_id := invite_id;
+      NEW.rsvp_token := invite_token;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    CREATE TRIGGER guests_ensure_invitation
+      BEFORE INSERT ON guests
+      FOR EACH ROW EXECUTE FUNCTION ensure_guest_invitation();
+  `)
+
   pgm.sql(`
     -- Existing one-person invitations become one invitation with one person.
     INSERT INTO guest_invitations (id, wedding_id, label, phone, rsvp_token, created_at)
@@ -86,6 +114,9 @@ exports.up = (pgm) => {
 
 exports.down = (pgm) => {
   pgm.sql(`
+    DROP TRIGGER IF EXISTS guests_ensure_invitation ON guests;
+    DROP FUNCTION IF EXISTS ensure_guest_invitation();
+
     UPDATE guests g SET plus_one = true
       WHERE g.legacy_plus_one = true;
 
