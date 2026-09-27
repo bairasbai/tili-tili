@@ -20,6 +20,9 @@ exports.up = (pgm) => {
     invitation_id: { type: 'uuid', references: 'guest_invitations', onDelete: 'CASCADE' },
     legacy_plus_one: { type: 'boolean', notNull: true, default: false },
   })
+  pgm.addColumns('guest_invite_codes', {
+    invitation_id: { type: 'uuid', references: 'guest_invitations', onDelete: 'CASCADE' },
+  })
 
   /* Compatibility bridge while API/UI are migrated in this same feature.
    * Old insert paths still write guests directly. A BEFORE INSERT trigger
@@ -60,6 +63,14 @@ exports.up = (pgm) => {
            legacy_plus_one = plus_one;
 
     ALTER TABLE guests ALTER COLUMN invitation_id SET NOT NULL;
+
+    UPDATE guest_invite_codes c
+       SET invitation_id = g.invitation_id
+      FROM guests g
+     WHERE g.id = c.guest_id;
+    ALTER TABLE guest_invite_codes ALTER COLUMN invitation_id SET NOT NULL;
+    CREATE INDEX guest_invite_codes_invitation_idx
+      ON guest_invite_codes(invitation_id) WHERE expires_at > now();
 
     -- A legacy +1 becomes a real second person. It intentionally starts with
     -- its own RSVP/menu/diet/seat/logistics state instead of copying the first
@@ -132,6 +143,7 @@ exports.down = (pgm) => {
     ALTER TABLE bus_bookings DROP CONSTRAINT IF EXISTS bus_bookings_persons_range;
     ALTER TABLE bus_bookings ADD CONSTRAINT bus_bookings_persons_range CHECK (persons BETWEEN 1 AND 2);
   `)
+  pgm.dropColumns('guest_invite_codes', ['invitation_id'])
   pgm.dropColumns('guests', ['invitation_id', 'legacy_plus_one'])
   pgm.dropTable('guest_invitations')
 }
