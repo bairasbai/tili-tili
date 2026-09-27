@@ -234,6 +234,83 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
+  /* 020: одно семейное приглашение, несколько реальных персон. */
+  app.post(
+    '/weddings/:weddingId/guest-invitations',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['people'],
+          additionalProperties: false,
+          properties: {
+            label: { type: 'string', minLength: 1, maxLength: 120 },
+            phone: { type: 'string', maxLength: 32 },
+            group: { type: 'string', maxLength: 120 },
+            people: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 8,
+              items: {
+                type: 'object',
+                required: ['name'],
+                additionalProperties: false,
+                properties: {
+                  name: { type: 'string', minLength: 1, maxLength: 120 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const weddingId = request.member!.weddingId
+      const body = request.body as {
+        label?: string
+        phone?: string
+        group?: string
+        people: { name: string }[]
+      }
+      assertPhoneByCouple(request.member!.role, body.phone !== undefined)
+      const phone = normalizedPhoneOr422(body.phone)
+      const names = body.people.map((person) => person.name.trim().replace(/\s+/g, ' '))
+      if (names.some((name) => !name)) {
+        throw new AppError(422, 'validation_failed', 'У каждого приглашённого должно быть имя')
+      }
+      const normalized = names.map(guestNameKey)
+      if (new Set(normalized).size !== normalized.length) {
+        throw conflict('guest_duplicate', 'В одном приглашении имена персон не должны повторяться')
+      }
+
+      const invitationId = uuidv7()
+      const personIds: string[] = []
+      const label = body.label?.trim() || names.join(' и ').slice(0, 120)
+      await db().tx(async (client) => {
+        await client.query('select id from weddings where id = $1 for update', [weddingId])
+        await client.query(
+          `insert into guest_invitations (id, wedding_id, label, phone, rsvp_token)
+           values ($1, $2, $3, $4, $5)`,
+          [invitationId, weddingId, label, phone ?? null, newGuestToken()],
+        )
+        for (const [index, name] of names.entries()) {
+          const id = uuidv7()
+          await client.query(
+            `insert into guests
+              (id, wedding_id, name, phone, plus_one, group_name, rsvp_token, invitation_id)
+             values ($1, $2, $3, $4, false, $5, $6, $7)`,
+            [id, weddingId, name, index === 0 ? phone ?? null : null, body.group ?? null, newGuestToken(), invitationId],
+          )
+          personIds.push(id)
+        }
+      })
+
+      const people: unknown[] = []
+      for (const id of personIds) people.push(await loadGuest(db(), id, request.member!.role))
+      return reply.code(201).send({ invitationId, label, people })
+    },
+  )
+
   /* ── импорт списком ────────────────────────────────────────────────── */
   app.post(
     '/weddings/:weddingId/guests/import',
