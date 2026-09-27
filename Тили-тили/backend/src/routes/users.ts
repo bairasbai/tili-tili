@@ -469,13 +469,13 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     const guests = [
       ...(await byWeddings(
         coupleIds,
-        `select wedding_id, name, phone, rsvp, plus_one, group_name, diet, diet_note,
+        `select wedding_id, party_id, is_primary, name, phone, rsvp, group_name, diet, diet_note,
                 transfer, comment, created_at
            from guests where wedding_id = any($1) order by created_at`,
       )),
       ...(await byWeddings(
         otherIds,
-        `select wedding_id, name, rsvp, plus_one, group_name, diet, diet_note, transfer, created_at
+        `select wedding_id, party_id, is_primary, name, rsvp, group_name, diet, diet_note, transfer, created_at
            from guests where wedding_id = any($1) order by created_at`,
       )),
     ]
