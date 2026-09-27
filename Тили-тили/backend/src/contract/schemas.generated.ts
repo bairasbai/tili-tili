@@ -33,384 +33,6 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
-      "PositiveMoney": {
-          "type": "object",
-          "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
-          "required": [
-              "amount",
-              "currency"
-          ],
-          "additionalProperties": false,
-          "properties": {
-              "amount": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 9007199254740991
-              },
-              "currency": {
-                  "type": "string",
-                  "enum": [
-                      "RUB"
-                  ]
-              }
-          }
-      },
-      "Offer": {
-          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдевять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
-          "oneOf": [
-              {
-                  "type": "object",
-                  "title": "Предложение",
-                  "required": [
-                      "id",
-                      "requestId",
-                      "kind",
-                      "packageId",
-                      "title",
-                      "price",
-                      "includes",
-                      "message",
-                      "validUntil"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                      "id": {
-                          "type": "string",
-                          "format": "uuid"
-                      },
-                      "requestId": {
-                          "type": "string",
-                          "format": "uuid"
-                      },
-                      "kind": {
-                          "type": "string",
-                          "enum": [
-                              "offer"
-                          ]
-                      },
-                      "packageId": {
-                          "type": [
-                              "string",
-                              "null"
-                          ],
-                          "format": "uuid"
-                      },
-                      "title": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 200
-                      },
-                      "price": {
-                          "$ref": "contract#/definitions/PositiveMoney"
-                      },
-                      "includes": {
-                          "type": "array",
-                          "maxItems": 40,
-                          "items": {
-                              "type": "string",
-                              "maxLength": 200
-                          }
-                      },
-                      "message": {
-                          "type": [
-                              "string",
-                              "null"
-                          ],
-                          "maxLength": 2000
-                      },
-                      "validUntil": {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-                      }
-                  }
-              },
-              {
-                  "type": "object",
-                  "title": "Отказ",
-                  "required": [
-                      "id",
-                      "requestId",
-                      "kind",
-                      "packageId",
-                      "title",
-                      "price",
-                      "includes",
-                      "message",
-                      "validUntil"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                      "id": {
-                          "type": "string",
-                          "format": "uuid"
-                      },
-                      "requestId": {
-                          "type": "string",
-                          "format": "uuid"
-                      },
-                      "kind": {
-                          "type": "string",
-                          "enum": [
-                              "decline"
-                          ]
-                      },
-                      "packageId": {
-                          "type": [
-                              "string",
-                              "null"
-                          ],
-                          "format": "uuid",
-                          "enum": [
-                              null
-                          ]
-                      },
-                      "title": {
-                          "type": [
-                              "string",
-                              "null"
-                          ],
-                          "enum": [
-                              null
-                          ]
-                      },
-                      "price": {
-                          "type": [
-                              "object",
-                              "null"
-                          ],
-                          "enum": [
-                              null
-                          ]
-                      },
-                      "includes": {
-                          "type": "array",
-                          "minItems": 0,
-                          "maxItems": 0,
-                          "items": {
-                              "type": "string"
-                          }
-                      },
-                      "message": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 2000
-                      },
-                      "validUntil": {
-                          "type": [
-                              "string",
-                              "null"
-                          ],
-                          "format": "date",
-                          "enum": [
-                              null
-                          ]
-                      }
-                  }
-              }
-          ]
-      },
-      "OfferInput": {
-          "description": "Пакет, своё предложение или отказ — ровно одна из трёх строгих форм.",
-          "oneOf": [
-              {
-                  "type": "object",
-                  "title": "Ответ пакетом анкеты",
-                  "required": [
-                      "kind",
-                      "packageId",
-                      "price"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                      "kind": {
-                          "type": "string",
-                          "enum": [
-                              "offer"
-                          ]
-                      },
-                      "packageId": {
-                          "type": "string",
-                          "format": "uuid"
-                      },
-                      "price": {
-                          "$ref": "contract#/definitions/PositiveMoney"
-                      },
-                      "message": {
-                          "type": "string",
-                          "maxLength": 2000
-                      },
-                      "validUntil": {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-                      }
-                  }
-              },
-              {
-                  "type": "object",
-                  "title": "Собственное предложение",
-                  "required": [
-                      "kind",
-                      "title",
-                      "price",
-                      "includes"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                      "kind": {
-                          "type": "string",
-                          "enum": [
-                              "offer"
-                          ]
-                      },
-                      "title": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 200
-                      },
-                      "price": {
-                          "$ref": "contract#/definitions/PositiveMoney"
-                      },
-                      "includes": {
-                          "type": "array",
-                          "maxItems": 40,
-                          "items": {
-                              "type": "string",
-                              "maxLength": 200
-                          }
-                      },
-                      "message": {
-                          "type": "string",
-                          "maxLength": 2000
-                      },
-                      "validUntil": {
-                          "type": "string",
-                          "format": "date",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-                      }
-                  }
-              },
-              {
-                  "type": "object",
-                  "title": "Отказ",
-                  "required": [
-                      "kind",
-                      "message"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                      "kind": {
-                          "type": "string",
-                          "enum": [
-                              "decline"
-                          ]
-                      },
-                      "message": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 2000
-                      }
-                  }
-              }
-          ]
-      },
-      "OfferPublic": {
-          "type": "object",
-          "description": "Безопасный статус для помощника и координатора без условий и ответа подрядчика.",
-          "required": [
-              "status"
-          ],
-          "additionalProperties": false,
-          "properties": {
-              "status": {
-                  "type": "string",
-                  "enum": [
-                      "pending",
-                      "responded"
-                  ]
-              }
-          }
-      },
-      "OfferRequest": {
-          "type": "object",
-          "description": "Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику.",
-          "required": [
-              "id",
-              "status",
-              "weddingDate",
-              "guests",
-              "city",
-              "wishes",
-              "createdAt"
-          ],
-          "additionalProperties": false,
-          "properties": {
-              "id": {
-                  "type": "string",
-                  "format": "uuid"
-              },
-              "status": {
-                  "type": "string",
-                  "enum": [
-                      "open",
-                      "closed"
-                  ]
-              },
-              "closeReason": {
-                  "type": "string",
-                  "enum": [
-                      "removed",
-                      "booked_other",
-                      "booked",
-                      "wedding_cancelled",
-                      "date_changed",
-                      "vendor_erased"
-                  ]
-              },
-              "weddingDate": {
-                  "type": [
-                      "string",
-                      "null"
-                  ],
-                  "format": "date",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-              },
-              "guests": {
-                  "type": [
-                      "integer",
-                      "null"
-                  ],
-                  "minimum": 0,
-                  "maximum": 5000
-              },
-              "city": {
-                  "type": [
-                      "string",
-                      "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 200
-              },
-              "wishes": {
-                  "type": [
-                      "string",
-                      "null"
-                  ],
-                  "maxLength": 2000
-              },
-              "createdAt": {
-                  "type": "string",
-                  "format": "date-time"
-              },
-              "budgetHint": {
-                  "$ref": "contract#/definitions/PositiveMoney"
-              },
-              "offer": {
-                  "$ref": "contract#/definitions/Offer"
-              }
-          }
-      },
       "AdminCategoriesUpdate": {
           "type": "object",
           "description": "Тело правки справочника категорий (фича 014: одна схема — и контракту, и обработчику).",
@@ -1199,17 +821,7 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "Снимок принятого названия, только couple: текст может содержать цену.\nУдаление живого пакета/предложения не меняет его. null — название неизвестно.\n"
-              },
-              "packageIncludes": {
-                  "type": [
-                      "array",
-                      "null"
-                  ],
-                  "items": {
-                      "type": "string"
-                  },
-                  "description": "Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав."
+                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book`). null — бронь без пакета или пакет снят с витрины.\n"
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -1907,6 +1519,384 @@ export const CONTRACT_SCHEMAS = {
               "createdAt": {
                   "type": "string",
                   "format": "date-time"
+              }
+          }
+      },
+      "Offer": {
+          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдевять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
+          "oneOf": [
+              {
+                  "type": "object",
+                  "title": "Предложение",
+                  "required": [
+                      "id",
+                      "requestId",
+                      "kind",
+                      "packageId",
+                      "title",
+                      "price",
+                      "includes",
+                      "message",
+                      "validUntil"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "requestId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "packageId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid"
+                      },
+                      "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "includes": {
+                          "type": "array",
+                          "maxItems": 40,
+                          "items": {
+                              "type": "string",
+                              "maxLength": 200
+                          }
+                      },
+                      "message": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Отказ",
+                  "required": [
+                      "id",
+                      "requestId",
+                      "kind",
+                      "packageId",
+                      "title",
+                      "price",
+                      "includes",
+                      "message",
+                      "validUntil"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "requestId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "decline"
+                          ]
+                      },
+                      "packageId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid",
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "title": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "price": {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "includes": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 0,
+                          "items": {
+                              "type": "string"
+                          }
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date",
+                          "enum": [
+                              null
+                          ]
+                      }
+                  }
+              }
+          ]
+      },
+      "OfferInput": {
+          "description": "Пакет, своё предложение или отказ — ровно одна из трёх строгих форм.",
+          "oneOf": [
+              {
+                  "type": "object",
+                  "title": "Ответ пакетом анкеты",
+                  "required": [
+                      "kind",
+                      "packageId",
+                      "price"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "packageId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Собственное предложение",
+                  "required": [
+                      "kind",
+                      "title",
+                      "price",
+                      "includes"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "includes": {
+                          "type": "array",
+                          "maxItems": 40,
+                          "items": {
+                              "type": "string",
+                              "maxLength": 200
+                          }
+                      },
+                      "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Отказ",
+                  "required": [
+                      "kind",
+                      "message"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "decline"
+                          ]
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      }
+                  }
+              }
+          ]
+      },
+      "OfferPublic": {
+          "type": "object",
+          "description": "Безопасный статус для помощника и координатора без условий и ответа подрядчика.",
+          "required": [
+              "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "responded"
+                  ]
+              }
+          }
+      },
+      "OfferRequest": {
+          "type": "object",
+          "description": "Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику.",
+          "required": [
+              "id",
+              "status",
+              "weddingDate",
+              "guests",
+              "city",
+              "wishes",
+              "createdAt"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "closed"
+                  ]
+              },
+              "closeReason": {
+                  "type": "string",
+                  "enum": [
+                      "removed",
+                      "booked_other",
+                      "booked",
+                      "wedding_cancelled",
+                      "date_changed",
+                      "vendor_erased"
+                  ]
+              },
+              "weddingDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "guests": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 5000
+              },
+              "city": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "wishes": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "budgetHint": {
+                  "$ref": "contract#/definitions/PositiveMoney"
+              },
+              "offer": {
+                  "$ref": "contract#/definitions/Offer"
+              }
+          }
+      },
+      "PositiveMoney": {
+          "type": "object",
+          "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
               }
           }
       },
@@ -2880,9 +2870,25 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "packages": {
                           "type": "array",
-                          "description": "В порядке, заданном подрядчиком.",
                           "items": {
-                              "$ref": "contract#/definitions/VendorPackage"
+                              "type": "object",
+                              "properties": {
+                                  "id": {
+                                      "type": "string"
+                                  },
+                                  "name": {
+                                      "type": "string"
+                                  },
+                                  "price": {
+                                      "$ref": "contract#/definitions/Money"
+                                  },
+                                  "includes": {
+                                      "type": "array",
+                                      "items": {
+                                          "type": "string"
+                                      }
+                                  }
+                              }
                           }
                       },
                       "reviews": {
@@ -2984,7 +2990,7 @@ export const CONTRACT_SCHEMAS = {
       },
       "VendorUpsert": {
           "type": "object",
-          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
+          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**.\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
           "required": [
               "name",
               "categoryId",
@@ -3026,9 +3032,22 @@ export const CONTRACT_SCHEMAS = {
               },
               "packages": {
                   "type": "array",
-                  "maxItems": 20,
                   "items": {
-                      "$ref": "contract#/definitions/VendorPackageInput"
+                      "type": "object",
+                      "properties": {
+                          "name": {
+                              "type": "string"
+                          },
+                          "price": {
+                              "$ref": "contract#/definitions/Money"
+                          },
+                          "includes": {
+                              "type": "array",
+                              "items": {
+                                  "type": "string"
+                              }
+                          }
+                      }
                   }
               },
               "portfolioUrls": {
@@ -3530,6 +3549,7 @@ export type ContractSchemaName =
   | "OfferInput"
   | "OfferPublic"
   | "OfferRequest"
+  | "PositiveMoney"
   | "PrebookedCategory"
   | "Readiness"
   | "Review"
