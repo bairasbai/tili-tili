@@ -20,8 +20,9 @@ const REDEEM_RETRY_MINUTES = 10
 
 interface GuestRow {
   id: string
+  party_id: string
+  is_primary: boolean
   name: string
-  plus_one: boolean
   group_name: string | null
   phone: string | null
   comment: string | null
@@ -38,13 +39,15 @@ interface GuestRow {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.name, g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
-  g.menu_option_id, g.transfer,
+  g.id, g.party_id, g.is_primary, g.name, g.group_name,
+  (select p.phone from guests p where p.party_id = g.party_id and p.is_primary limit 1) as phone,
+  (select p.comment from guests p where p.party_id = g.party_id and p.is_primary limit 1) as comment,
+  g.rsvp, g.table_id, g.diet, g.diet_note, g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
-  (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
-  (select c.code from guest_invite_codes c where c.guest_id = g.id and c.used_at is null
+  (select h.hotel_id from hotel_bookings h where h.party_id = g.party_id limit 1) as hotel_id,
+  (select c.code from guest_invite_codes c where c.party_id = g.party_id and c.used_at is null
     order by c.issued_at desc limit 1) as invite_code,
-  (select true from guest_invite_codes c where c.guest_id = g.id and c.used_at is not null limit 1) as invite_used`
+  (select true from guest_invite_codes c where c.party_id = g.party_id and c.used_at is not null limit 1) as invite_used`
 
 /**
  * Гость в форме контракта.
@@ -72,8 +75,9 @@ const GUEST_COLUMNS = `
 export function toGuest(r: GuestRow, asCouple: boolean) {
   return {
     id: r.id,
+    partyId: r.party_id,
+    primary: r.is_primary,
     name: r.name,
-    plusOne: r.plus_one,
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
      * (`/rsvp`, `/gifts`) этот объект не отдают. */
@@ -164,9 +168,9 @@ export function guestNameKey(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
-/** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
-export function personCount(guests: { status: string; plusOne: boolean }[]): number {
-  return guests.filter((g) => g.status === 'yes').reduce((a, g) => a + (g.plusOne ? 2 : 1), 0)
+/** 020: одна строка guest = одна персона, поэтому никакого скрытого умножения. */
+export function personCount(guests: { status: string }[]): number {
+  return guests.filter((g) => g.status === 'yes').length
 }
 
 export async function guestRoutes(app: FastifyInstance): Promise<void> {
