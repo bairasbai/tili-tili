@@ -76,7 +76,7 @@ const timeIn = (at: Date, tz: string): string => {
 }
 
 const STATE_RU: Record<string, string> = {
-  candidate: 'кандидат (не забронирован)',
+  candidate: 'не связывались (ещё не написали)',
   contacted: 'связались, не забронирован',
   negotiating: 'мягкая бронь (переговоры)',
   booked: 'забронирован',
