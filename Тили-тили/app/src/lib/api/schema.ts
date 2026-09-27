@@ -2827,7 +2827,15 @@ export interface paths {
                     };
                 };
                 404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
+                /** @description `family_full` — в одном семейном приглашении уже 10 персон */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -2846,7 +2854,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить гостя */
+        /**
+         * Удалить персону или семейное приглашение
+         * @description Удаление secondary удаляет только эту персону. Удаление primary
+         *     удаляет всё приглашение: остальных персон, одноразовый код, семейный
+         *     номер и текущий резерв подарка.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2870,7 +2883,12 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Обновить гостя (статус RSVP циклом yes→no→pending) */
+        /**
+         * Обновить отдельную персону приглашения
+         * @description Поля RSVP/стола/питания относятся к этой персоне. Переходное plusOne
+         *     разрешено только у primary и материализует/удаляет системную вторую
+         *     персону; у secondary возвращается 409 `family_member_not_primary`.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -2910,7 +2928,15 @@ export interface paths {
                         "application/json": components["schemas"]["Guest"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `family_member_not_primary`, `table_full` или `bus_full` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         trace?: never;
