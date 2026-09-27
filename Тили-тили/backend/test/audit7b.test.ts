@@ -116,7 +116,13 @@ describe.skipIf(!live)('второй проход по этапу 7', () => {
   it('в день свадьбы уведомления не ждут утра и не считают лимит', async () => {
     const w = await newWedding()
     // Свадьба сегодня. Ночь: 23:00 по Москве — обычно это «отложить до 09:00».
-    await app.db!.query('update weddings set date = current_date where id = $1', [w.weddingId])
+    /* «Сегодня» — тем же выражением, что у `notify()`: по поясу свадьбы. `current_date`
+     * сессии — это UTC, и с 21:00 до 24:00 UTC по Москве уже завтра: свадьба выходила
+     * «не сегодня», вести откладывались до утра, тест краснел каждый вечер (ERR-0310). */
+    await app.db!.query(
+      "update weddings set date = (now() at time zone coalesce(tz, 'Europe/Moscow'))::date where id = $1",
+      [w.weddingId],
+    )
     const night = new Date()
     night.setUTCHours(20, 0, 0, 0)
 
