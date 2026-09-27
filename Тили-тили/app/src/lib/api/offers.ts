@@ -26,3 +26,10 @@ export const requestOffers = (
   body,
   { idempotencyKey },
 )
+
+/** The server books the stored offer; the client never resubmits its money/terms. */
+export const acceptOffer = (weddingId: string, offerId: string, idempotencyKey: string) => api.post(
+  url('/weddings/{weddingId}/offers/{offerId}/accept', { weddingId, offerId }),
+  undefined,
+  { idempotencyKey },
+)
