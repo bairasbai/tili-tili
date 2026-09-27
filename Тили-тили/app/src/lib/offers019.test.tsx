@@ -267,3 +267,119 @@ describe('offers019 · уведомления', () => {
     expect(notificationRoute('/vendor/offer-requests')).toBeNull()
   })
 })
+
+describe('offers019 · принятие и бронь (US3)', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-09-27T10:00:00Z')) })
+  afterEach(() => vi.useRealTimers())
+  const acceptPath = 'POST /weddings/w1/offers/o1/accept'
+  const offered = () => entry('e1', 'v1', 'Анна Фотограф', 1, { request: { ...REQUEST, offer: OFFER } })
+  const booked = { ...SLOT, tileState: 'booked', deal: {
+    id: 'deal1', state: 'booked', vendor: { id: 'v1', name: 'Анна Фотограф' },
+    price: OFFER.price, paid: { amount: 0, currency: 'RUB' }, packageName: OFFER.title, packageIncludes: OFFER.includes,
+  } }
+
+  it.each(['/wedding/slot/s1', '/compare?slot=s1&entries=e1,e2'])('%s: accepts the stored offer, then reloads the slot and requests', async route => {
+    let current = [offered(), E2]
+    let isBooked = false
+    const view = mount(route, {
+      '/weddings/w1/slots': () => [isBooked ? booked : SLOT],
+      '/weddings/w1/slots/s1/shortlist': () => current,
+      [acceptPath]: (call: Call) => {
+        expect(call.body).toEqual({}) // No client-controlled price, package or conditions.
+        expect(call.key).toBeTruthy()
+        isBooked = true
+        current = [entry('e1', 'v1', 'Анна Фотограф', 1, { request: { ...REQUEST, status: 'closed', closeReason: 'booked', offer: OFFER } }), E2]
+        return booked
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение: День целиком' }))
+    await screen.findByText('Предложение выбрано')
+    expect(screen.queryByRole('button', { name: 'Принять предложение: День целиком' })).toBeNull()
+    expect(view.calls.filter(call => `${call.method} ${call.path}` === acceptPath)).toHaveLength(1)
+    expect(view.calls.filter(call => call.path === '/weddings/w1/slots').length).toBeGreaterThan(1)
+    expect(view.calls.filter(call => call.path === '/weddings/w1/slots/s1/shortlist').length).toBeGreaterThan(1)
+  })
+
+  it('lost response retries the identical key, without a second intent', async () => {
+    let first = true
+    const view = mount('/wedding/slot/s1', {
+      '/weddings/w1/slots/s1/shortlist': [offered()],
+      [acceptPath]: () => { if (first) { first = false; throw new TypeError('connection lost') } return booked },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение: День целиком' }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: 'Принять предложение: День целиком' }))
+    await waitFor(() => expect(view.calls.filter(call => `${call.method} ${call.path}` === acceptPath)).toHaveLength(2))
+    const attempts = view.calls.filter(call => `${call.method} ${call.path}` === acceptPath)
+    expect(attempts[0]!.key).toBeTruthy()
+    expect(attempts[1]!.key).toBe(attempts[0]!.key)
+  })
+
+  it('double tap while pending sends one POST', async () => {
+    let resolve: (reply: Reply) => void = () => undefined
+    const reply = new Promise<Reply>(done => { resolve = done })
+    const view = mount('/wedding/slot/s1', {
+      '/weddings/w1/slots/s1/shortlist': [offered()], [acceptPath]: () => reply,
+    })
+    const button = await screen.findByRole('button', { name: 'Принять предложение: День целиком' })
+    fireEvent.click(button); fireEvent.click(button)
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+    expect(view.calls.filter(call => `${call.method} ${call.path}` === acceptPath)).toHaveLength(1)
+    resolve(booked)
+    await waitFor(() => expect(view.calls.filter(call => call.path === '/weddings/w1/slots').length).toBeGreaterThan(1))
+  })
+
+  it.each(['offer_expired', 'offer_stale_date', 'offer_superseded', 'request_closed', 'offer_declined', 'slot_taken', 'date_taken', 'vendor_unavailable'])('409 %s is visible, requires reload and never claims success', async code => {
+    const view = mount('/compare?slot=s1&entries=e1,e2', {
+      '/weddings/w1/slots/s1/shortlist': [offered(), E2],
+      [acceptPath]: withStatus(409, { error: { code, message: 'REFUSAL_CANARY' } }),
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Принять предложение: День целиком' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).not.toContain('REFUSAL_CANARY')
+    expect(alert.textContent!.length).toBeGreaterThan(10)
+    expect(screen.queryByText('Бронь создана по условиям предложения')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Принять предложение: День целиком' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить предложения' }))
+    await waitFor(() => expect(view.calls.filter(call => call.path === '/weddings/w1/slots/s1/shortlist').length).toBeGreaterThan(1))
+  })
+
+  it.each(['helper', 'coordinator'])('%s cannot accept on the slot or comparison', async role => {
+    for (const route of ['/wedding/slot/s1', '/compare?slot=s1&entries=e1,e2']) {
+      const view = mount(route, {
+        '/weddings': [{ ...WEDDING, role }],
+        '/weddings/w1/slots/s1/shortlist': [offered(), E2],
+      })
+      await screen.findByText('День целиком')
+      expect(screen.queryByRole('button', { name: /Принять предложение/ })).toBeNull()
+      view.unmount()
+    }
+  })
+
+  it.each(['expired', 'oldDate', 'closed', 'busy', 'unavailable', 'booked'])('%s is not actionable', async state => {
+    const request = { ...REQUEST, offer: { ...OFFER, ...(state === 'expired' ? { validUntil: '2020-01-01' } : {}) },
+      ...(state === 'oldDate' ? { weddingDate: '2027-05-01' } : {}),
+      ...(state === 'closed' ? { status: 'closed', closeReason: 'removed' } : {}),
+    }
+    mount('/wedding/slot/s1', {
+      '/weddings/w1/slots': [state === 'booked' ? booked : SLOT],
+      '/weddings/w1/slots/s1/shortlist': [entry('e1', 'v1', 'Анна Фотограф', 1, {
+        request, ...(state === 'busy' ? { occupancy: 'busy' } : {}), ...(state === 'unavailable' ? { available: false } : {}),
+      })],
+    })
+    await screen.findByText('День целиком')
+    expect(screen.queryByRole('button', { name: /Принять предложение/ })).toBeNull()
+  })
+
+  it('validUntil uses the wedding timezone even when the device already crossed midnight', async () => {
+    vi.setSystemTime(new Date('2026-09-28T01:00:00Z'))
+    mount('/wedding/slot/s1', {
+      '/weddings': [{ ...WEDDING, role: 'couple', tz: 'Pacific/Honolulu' }],
+      '/weddings/w1/slots/s1/shortlist': [entry('e1', 'v1', 'Анна Фотограф', 1, {
+        request: { ...REQUEST, offer: { ...OFFER, validUntil: '2026-09-27' } },
+      })],
+    })
+    expect(await screen.findByRole('button', { name: 'Принять предложение: День целиком' })).toBeTruthy()
+    expect(screen.queryByText('Срок предложения истёк')).toBeNull()
+  })
+})
