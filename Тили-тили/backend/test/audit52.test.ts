@@ -22,8 +22,8 @@
  * откатывается сама (см. `updateRolledBack`) — до миграции запрос ещё
  * проходит без ошибки, и голый неоформленный запрос в этом случае просто
  * закоммитился бы, оставив чужую валюту в общей базе навсегда.
- * T3 — то же поведение на всех 13 (G6 evidence F2-G6.txt P3c: T2 покрывал
- * только 3/13). Минимальный `INSERT` с `currency = 'USD'` на каждой из 13
+ * T3 — то же поведение на всех 15 (G6 evidence F2-G6.txt P3c: T2 покрывал
+ * только 3/13). Минимальный `INSERT` с `currency = 'USD'` на каждой из 15
  * таблиц, внутри одной внешней транзакции с SAVEPOINT на таблицу. Внешние
  * ключи — заведомо несуществующие uuid: PostgreSQL проверяет их
  * AFTER-триггером ПОСЛЕ `ExecConstraints` (NOT NULL/CHECK), так что
@@ -171,7 +171,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
   }
 
   describe("T1 · сторож схемы: каждая таблица с currency несёт проверенную CHECK currency = 'RUB'", () => {
-    it('информационная схема: ровно 13 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
+    it('информационная схема: ровно 15 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
       const { rows: tables } = await app.db!.query<{ table_name: string }>(
         `select table_name
            from information_schema.columns
@@ -179,9 +179,10 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
           order by table_name`,
       )
       // Список выводится из схемы, а не зашит явно — сам подхватит будущую
-      // таблицу. Но количество — часть проверки: молчаливое появление 14-й
-      // обязано остановить тест, а не проскочить незамеченным.
-      expect(tables.map((r) => r.table_name)).toHaveLength(13)
+      // таблицу. Но количество — часть проверки: молчаливое появление новой
+      // денежной таблицы обязано остановить тест, а не проскочить незамеченным.
+      // 14-я и 15-я — offer_requests и offers из 019.
+      expect(tables.map((r) => r.table_name)).toHaveLength(15)
 
       const EXACT_DEF = "CHECK ((currency = 'RUB'::bpchar))"
       const { rows: allChecks } = await app.db!.query<{
@@ -310,7 +311,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
 
   describe('T3 · поведение на всех 13: минимальный INSERT с валютой ≠ RUB — своя CHECK, ничего не остаётся', () => {
     /**
-     * Одна минимальная строка на каждую из 13 таблиц: `currency` сразу
+     * Одна минимальная строка на каждую из 15 таблиц: `currency` сразу
      * 'USD', остальные колонки — ровно то, что нужно, чтобы упасть могла
      * ТОЛЬКО проверка валюты (амаунты положительные, kind/category —
      * допустимые, `deals_has_performer` закрыт через `external_name`).
@@ -387,6 +388,16 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
         {
           table: 'vendor_packages',
           sql: `insert into vendor_packages (id, vendor_id, name, currency) values ($1, $2, 'F2 probe', 'USD')`,
+          params: [id(), id()],
+        },
+        {
+          table: 'offer_requests',
+          sql: `insert into offer_requests (id, slot_id, status, budget_hint, currency) values ($1, $2, 'open', 100, 'USD')`,
+          params: [id(), id()],
+        },
+        {
+          table: 'offers',
+          sql: `insert into offers (id, request_id, kind, title, price, currency, valid_until) values ($1, $2, 'offer', 'F2 probe', 100, 'USD', '2027-01-01')`,
           params: [id(), id()],
         },
       ]
