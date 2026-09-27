@@ -3626,7 +3626,7 @@ paths:
     get:
       tags: [logistics-guest]
       summary: Отельные блоки для семейного приглашения
-      description: mine относится ко всей семье: одно приглашение занимает не больше одного номера.
+      description: 'mine относится ко всей семье: одно приглашение занимает не больше одного номера.'
       parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       security: []
       responses:
