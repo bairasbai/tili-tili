@@ -521,6 +521,10 @@ export function Notifications() {
           <div className="px-5 mt-2 space-y-2.5 stagger">
             {list.map(n => {
               const look = NOTIF_LOOK[n.kind ?? 'system'] ?? NOTIF_LOOK.system!
+              /* Постоянные серверные строки переводим на устройстве. Текст
+                 чата — слова человека, его переводить нельзя (019, FR-017). */
+              const title = n.kind === 'chat' ? n.title : t(n.title ?? '')
+              const body = n.kind === 'chat' ? n.body : t(n.body ?? '')
               /* Сервер называет место смыслом (`/guests`, `/deal/{id}`), а
                  не маршрутом приложения — переводим. Незнакомое место никуда
                  не ведёт: уведомление просто отмечается прочитанным. */
@@ -535,8 +539,8 @@ export function Notifications() {
                   {!isRead(n) && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-[var(--rose)]" />}
                   <Tile icon={look.icon} tile={look.tile} size={42} />
                   <div className="min-w-0">
-                    <b className="text-[13px]">{n.title}</b>
-                    <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-0.5 pr-4">{n.body}</p>
+                    <b className="text-[13px]">{title}</b>
+                    <p className="text-[11.5px] text-[var(--soft)] leading-relaxed mt-0.5 pr-4">{body}</p>
                     <span className="text-[10px] text-[var(--soft2)]">{when(n.createdAt)}</span>
                   </div>
                 </button>
