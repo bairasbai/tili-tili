@@ -121,11 +121,30 @@ exports.up = (pgm) => {
 
     UPDATE bus_routes r SET taken = coalesce(
       (SELECT count(*) FROM bus_bookings b WHERE b.bus_id = r.id), 0);
+
+    /* Gift reservation ownership follows the invitation session from 020.
+     * Rotating/deleting that shared token must release anonymous whole-gift
+     * reservations exactly like legacy guest-token rotation did. */
+    CREATE FUNCTION release_invitation_reservations() RETURNS trigger AS $
+    BEGIN
+      DELETE FROM gift_reservations r USING gifts g
+       WHERE r.gift_id = g.id
+         AND g.wedding_id = OLD.wedding_id
+         AND r.guest_token = OLD.rsvp_token;
+      RETURN OLD;
+    END;
+    $ LANGUAGE plpgsql;
+
+    CREATE TRIGGER guest_invitations_release_reservations
+      AFTER DELETE OR UPDATE OF rsvp_token ON guest_invitations
+      FOR EACH ROW EXECUTE FUNCTION release_invitation_reservations();
   `)
 }
 
 exports.down = (pgm) => {
   pgm.sql(`
+    DROP TRIGGER IF EXISTS guest_invitations_release_reservations ON guest_invitations;
+    DROP FUNCTION IF EXISTS release_invitation_reservations();
     DROP TRIGGER IF EXISTS guests_ensure_invitation ON guests;
     DROP FUNCTION IF EXISTS ensure_guest_invitation();
     ALTER TABLE guests DROP CONSTRAINT IF EXISTS guests_plus_one_disabled;
