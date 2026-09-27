@@ -226,6 +226,10 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       headers: auth(w.token),
       payload: { text: 'Что подарить свидетелю?' },
     })
+    /* Тиль отвечает в фоне (фича 010): POST возвращает 201 раньше, чем заглушка
+     * записана. Без ожидания лента начиналась с реплики пары, когда GET обгонял
+     * фоновую вставку, — тест мигал (перенесено из PR №2; в CI этой ветки — запуск 36282911756). */
+    await app.tilly.settle()
     const history = await app.inject({ method: 'GET', url: `/chats/${tilly}/messages`, headers: auth(w.token) })
     const items = history.json().items as { text: string; senderId: string | null }[]
     // Молчание выглядело бы как поломка, «думаю…» — как обман.
