@@ -12,6 +12,8 @@ import { hashCode } from '../src/auth/otp.js'
 import { eraseUser } from '../src/jobs/index.js'
 import { readReplaceEntryId } from '../src/routes/shortlist.js'
 
+// Keep wedding fixtures inside the API's rolling five-year limit.
+const TEST_YEAR = new Date().getUTCFullYear() + 1
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
 const SECRET_A = 'a'.repeat(48)
@@ -126,7 +128,7 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
       headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' },
     })
-    expect(consent.statusCode, consent.body).toBe(200)
+    expect(consent.statusCode, consent.body).toBe(201)
     createdUsers.add(body.user.id)
     return { id: body.user.id, token: body.accessToken }
   }
@@ -562,7 +564,7 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
   })
 
   it('различает free своей свадьбы, held чужих переговоров, busy чужой брони и null без даты', async () => {
-    const date = '2031-08-16'
+    const date = `${TEST_YEAR}-08-16`
     const wedding = await newWedding(date)
     const own = await newVendor('photo')
     const held = await newVendor('photo')

@@ -27,6 +27,7 @@ import { parseReservePercent, parseWholeRubles } from '@/lib/paymentAmount'
 import { getMe } from '@/lib/api/auth'
 import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '@/components/TaskPlanning'
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
+import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { OfferSummary } from '@/components/OfferSummary'
 
 /* Навигация раздела «Свадьба» */
@@ -211,10 +212,11 @@ function noWeddingText(weddingsState: 'idle' | 'loading' | 'ready' | 'error'): s
    умолчанию, а снятые отметки сохраняются по стабильному id записи. */
 function SlotCandidates({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { weddingId, weddingDate } = useStore()
+  const { weddingId, weddingDate, refreshSlots } = useStore()
   const q = useApi(() => weddingId ? getShortlist(weddingId, s.id) : noWedding(), [weddingId, s.id])
   const roles = useApi(() => listMyWeddings(), [weddingId])
-  const role = roles.data?.find(w => w.id === weddingId)?.role
+  const currentWedding = roles.data?.find(w => w.id === weddingId)
+  const role = currentWedding?.role
   const canRemove = ready(roles) && (role === 'couple' || role === 'helper')
   const canBook = ready(roles) && role === 'couple'
   const [unchecked, setUnchecked] = useState<Record<string, boolean>>({})
@@ -278,7 +280,13 @@ function SlotCandidates({ s }: { s: Slot }) {
                     <b className="text-[12.5px] block">{entry.position}. {name}</b>
                     {!live && vendor && <p className="text-[11px] text-[var(--rose-ink)] mt-1">{t('Анкета недоступна')}</p>}
                     {live && <p className="text-[11px] text-[var(--soft)] mt-1">{occupancy}</p>}
-                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={weddingDate} /></div>}
+                    {entry.request && <div className="mt-2 text-[11px]"><OfferSummary request={entry.request} currentWeddingDate={weddingDate} weddingTz={currentWedding?.tz} /></div>}
+                    {weddingId && <OfferAcceptance
+                      key={`${weddingId}:${entry.request && 'id' in entry.request ? entry.request.offer?.id ?? entry.request.id : entry.id}`}
+                      weddingId={weddingId} request={entry.request} currentWeddingDate={weddingDate} weddingTz={currentWedding?.tz}
+                      canAccept={canBook && !roles.refreshing && !blocked && live && entry.occupancy !== 'busy' && !s.dealId}
+                      onChanged={() => { q.reload(); refreshSlots() }}
+                    />}
                   </div>
                 </div>
                 <div className="flex gap-2 mt-2.5 justify-end">

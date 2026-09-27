@@ -1,3 +1,4 @@
+import { closeWeddingOfferRequests } from '../offers/close.js'
 import { AppError, conflict } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
 import { OPEN_BOOKINGS } from '../deals/state.js'
@@ -45,6 +46,9 @@ export async function rescheduleWedding(
      превращаются в 13:00 у пары в Уфе. */
   const tz = w[0]?.tz ?? 'Europe/Moscow'
   if (oldDate === date) return { free: [], busy: [] }
+
+  // In the same transaction: a later team_busy refusal also rolls this back.
+  await closeWeddingOfferRequests(client, weddingId, tz, 'date_changed')
 
   /* Кто из забронированной команды свободен на новую дату, а кто нет.
    * Ответ нужен целиком: пара решает, отменять ли занятого, а не получает

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.48.0
+  version: 0.49.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1210,6 +1210,49 @@ paths:
                     properties:
                       code: { type: string, enum: [offer_requests_limit] }
                       message: { type: string }
+  /weddings/{weddingId}/offers/{offerId}/accept:
+    post:
+      tags: [bookings]
+      summary: Принять предложение и забронировать подрядчика
+      description: |
+        Только couple. Цена, название и состав берутся из неизменяемого предложения,
+        а не из тела запроса или нынешнего пакета. Срок включительно по поясу свадьбы.
+        Удаление пакета не отменяет предложение; снятая/заблокированная анкета недоступна.
+        Одна транзакция создаёт сделку, занимает место/дату, закрывает запросы места
+        и анонимно сообщает остальным подрядчикам о выборе другого исполнителя.
+        Повтор успешной попытки с тем же Idempotency-Key возвращает сохранённый Slot.
+        Обязательный ключ: 400 idempotency_key_required/idempotency_key_too_long;
+        409 idempotency_key_reused/idempotency_in_progress — другая/незавершённая попытка.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Слот с забронированным предложением; повтор не создаёт второй сделки
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            offer_expired — срок истёк; offer_stale_date — дата свадьбы изменилась;
+            offer_superseded — подрядчик заменил условия; offer_declined — это отказ;
+            request_closed — запрос закрыт; slot_taken — место уже занято;
+            date_taken — дата у подрядчика занята; vendor_unavailable — анкета недоступна.
+            idempotency_key_reused/idempotency_in_progress — см. описание.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/slots/{slotId}/book:
     post:
       tags: [bookings]
@@ -2678,7 +2721,12 @@ paths:
                         packageName:
                           type: string
                           nullable: true
-                          description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
+                          description: 'снимок принятого названия; не зависит от удаления живого пакета'
+                        packageIncludes:
+                          type: array
+                          nullable: true
+                          items: { type: string }
+                          description: 'снимок принятого состава; null — состав не был известен'
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         paid:
                           allOf: [{ $ref: '#/components/schemas/Money' }]
@@ -7176,8 +7224,13 @@ components:
           type: string
           nullable: true
           description: |
-            Название пакета, по которому бронировали (`packageId` в
-            `POST …/book`). null — бронь без пакета или пакет снят с витрины.
+            Снимок принятого названия, только couple: текст может содержать цену.
+            Удаление живого пакета/предложения не меняет его. null — название неизвестно.
+        packageIncludes:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: 'Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав.'
         price: { $ref: '#/components/schemas/Money' }
         paid:
           allOf: [{ $ref: '#/components/schemas/Money' }]

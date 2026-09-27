@@ -1876,6 +1876,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/offers/{offerId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять предложение и забронировать подрядчика
+         * @description Только couple. Цена, название и состав берутся из неизменяемого предложения,
+         *     а не из тела запроса или нынешнего пакета. Срок включительно по поясу свадьбы.
+         *     Удаление пакета не отменяет предложение; снятая/заблокированная анкета недоступна.
+         *     Одна транзакция создаёт сделку, занимает место/дату, закрывает запросы места
+         *     и анонимно сообщает остальным подрядчикам о выборе другого исполнителя.
+         *     Повтор успешной попытки с тем же Idempotency-Key возвращает сохранённый Slot.
+         *     Обязательный ключ: 400 idempotency_key_required/idempotency_key_too_long;
+         *     409 idempotency_key_reused/idempotency_in_progress — другая/незавершённая попытка.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    offerId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Слот с забронированным предложением; повтор не создаёт второй сделки */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Slot"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /**
+                 * @description offer_expired — срок истёк; offer_stale_date — дата свадьбы изменилась;
+                 *     offer_superseded — подрядчик заменил условия; offer_declined — это отказ;
+                 *     request_closed — запрос закрыт; slot_taken — место уже занято;
+                 *     date_taken — дата у подрядчика занята; vendor_unavailable — анкета недоступна.
+                 *     idempotency_key_reused/idempotency_in_progress — см. описание.
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/slots/{slotId}/book": {
         parameters: {
             query?: never;
@@ -4377,8 +4446,10 @@ export interface paths {
                                 /** Format: date */
                                 weddingDate?: string | null;
                                 price?: components["schemas"]["Money"] | null;
-                                /** @description пакет, по которому бронировали; null — без пакета или пакет снят с витрины */
+                                /** @description снимок принятого названия; не зависит от удаления живого пакета */
                                 packageName?: string | null;
+                                /** @description снимок принятого состава; null — состав не был известен */
+                                packageIncludes?: string[] | null;
                                 /** @enum {string} */
                                 state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
                                 /** @description внесено платежами (те же `payments`, что видит пара; возвраты с минусом) — карточка сделки, План §8.2 */
@@ -10946,10 +11017,12 @@ export interface components {
             externalName?: string | null;
             externalPhone?: string | null;
             /**
-             * @description Название пакета, по которому бронировали (`packageId` в
-             *     `POST …/book`). null — бронь без пакета или пакет снят с витрины.
+             * @description Снимок принятого названия, только couple: текст может содержать цену.
+             *     Удаление живого пакета/предложения не меняет его. null — название неизвестно.
              */
             packageName?: string | null;
+            /** @description Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав. */
+            packageIncludes?: string[] | null;
             price?: components["schemas"]["Money"];
             /**
              * @description Сколько уже внесено по этой сделке: платежи `deposit` и `balance`

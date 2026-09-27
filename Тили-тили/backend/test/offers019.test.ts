@@ -16,6 +16,8 @@ import { hashCode } from '../src/auth/otp.js'
 import { eraseUser } from '../src/jobs/index.js'
 import type { Queryable } from '../src/plugins/db.js'
 
+// Keep wedding fixtures inside the API's rolling five-year limit.
+const TEST_YEAR = new Date().getUTCFullYear() + 1
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
 const SECRET_A = 'a'.repeat(48)
@@ -179,12 +181,12 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' },
     })
-    expect(consent.statusCode, consent.body).toBe(200)
+    expect(consent.statusCode, consent.body).toBe(201)
     createdUsers.push(body.user.id)
     return { id: body.user.id, token: body.accessToken }
   }
 
-  async function newWedding(date = '2034-06-14', guestsPlanned = 88): Promise<WeddingFixture> {
+  async function newWedding(date = `${TEST_YEAR}-06-14`, guestsPlanned = 88): Promise<WeddingFixture> {
     const user = await newUser()
     const created = await app.inject({
       method: 'POST',
@@ -305,7 +307,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     price: { amount: 11_000_000 + number, currency: 'RUB' },
     includes: [`Пункт ${number}`],
     message: `Сообщение ${number}`,
-    validUntil: '2034-06-01',
+    validUntil: `${TEST_YEAR}-06-01`,
   })
 
   const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -503,8 +505,12 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     for (;;) {
       await client.query('select pg_stat_clear_snapshot()')
       const { rows } = await client.query<{ query: string }>(
-        `select query from pg_stat_activity
-          where wait_event_type = 'Lock' and $1 = any(pg_blocking_pids(pid))`,
+        `with recursive blocked(pid) as (
+           select $1::int
+           union
+           select a.pid from pg_stat_activity a join blocked b on b.pid = any(pg_blocking_pids(a.pid))
+         ) select a.query from pg_stat_activity a join blocked b using(pid)
+            where a.pid <> $1 and a.wait_event_type = 'Lock'`,
         [holderPid],
       )
       if (rows.length >= expected) return rows.map((row) => row.query)
@@ -655,7 +661,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
   }, 60_000)
 
   it('занятому не шлёт, свободному шлёт; ноль успехов даёт route-specific 409', async () => {
-    const wedding = await newWedding('2035-07-19')
+    const wedding = await newWedding(`${TEST_YEAR + 1}-07-19`)
     const [busy, free] = await Promise.all([newVendor(), newVendor()])
     const added = await Promise.all([addCandidate(wedding, busy), addCandidate(wedding, free)])
     expect(added.map((response) => response.statusCode)).toEqual([200, 200])
@@ -854,10 +860,11 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       await app.db!.tx(async (client) => {
         await client.query('select id from weddings where id = $1 for update', [wedding.weddingId])
         const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+        // inject returns a lazy thenable: start both requests before probing locks.
         pending = [
           requestOffers(wedding, slotId, [entryIds[0]!]),
           requestOffers(wedding, slotId, [entryIds[1]!]),
-        ]
+        ].map(response => Promise.resolve(response))
         const blocked = await waitForBlockedBy(client, holder!.pid, 2)
         expect(blocked.every((query) => query.toLocaleLowerCase('en-US').includes('weddings'))).toBe(true)
       })
@@ -911,7 +918,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       packageId: offering.packageId,
       price: { amount: 12_000_000, currency: 'RUB' },
       message: 'Готовы снимать',
-      validUntil: '2034-06-01',
+      validUntil: `${TEST_YEAR}-06-01`,
     })
     expect(offer.statusCode, offer.body).toBe(201)
     const offerBody = createdOfferOf(offer, offeringRequest, 'offer')
@@ -924,7 +931,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: 12_000_000, currency: 'RUB' },
       includes: ['8 часов', 'Ретушь'],
       message: 'Готовы снимать',
-      validUntil: '2034-06-01',
+      validUntil: `${TEST_YEAR}-06-01`,
     })
     const afterOffer = await notifications(wedding.id)
     expect(afterOffer).toHaveLength(before + 1)
@@ -965,7 +972,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       currency: 'RUB',
       includes: ['8 часов', 'Ретушь'],
       message: 'Готовы снимать',
-      valid_until: '2034-06-01',
+      valid_until: `${TEST_YEAR}-06-01`,
       superseded_at: null,
       accepted_at: null,
       deal_id: null,
@@ -1030,7 +1037,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       kind: 'offer',
       packageId: vendor.packageId,
       price: { amount: 12_000_000, currency: 'RUB' },
-      validUntil: '2034-06-01',
+      validUntil: `${TEST_YEAR}-06-01`,
     })
     expect(first.statusCode, first.body).toBe(201)
     const firstId = createdOfferOf(first, requestId, 'offer').id
@@ -1123,7 +1130,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: 11_000_001, currency: 'RUB' },
       includes: ['Пункт 1'],
       message: 'Сообщение 1',
-      validUntil: '2034-06-01',
+      validUntil: `${TEST_YEAR}-06-01`,
     })
     const replayBody = createdOfferOf(replay, requestId, 'offer')
     expect(replay.headers['idempotent-replay']).toBe('true')
@@ -1212,7 +1219,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     expect(history).toEqual([
       {
         kind: 'offer', packageId: null, packageSnapshot: null, title: 'Версия 1', price: '11000001',
-        currency: 'RUB', includes: ['Пункт 1'], message: 'Сообщение 1', validUntil: '2034-06-01',
+        currency: 'RUB', includes: ['Пункт 1'], message: 'Сообщение 1', validUntil: `${TEST_YEAR}-06-01`,
         superseded: true, acceptedAt: null, dealId: null,
       },
       {
@@ -1222,7 +1229,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       },
       {
         kind: 'offer', packageId: null, packageSnapshot: null, title: 'Версия 3', price: '11000003',
-        currency: 'RUB', includes: ['Пункт 3'], message: 'Сообщение 3', validUntil: '2034-06-01',
+        currency: 'RUB', includes: ['Пункт 3'], message: 'Сообщение 3', validUntil: `${TEST_YEAR}-06-01`,
         superseded: true, acceptedAt: null, dealId: null,
       },
       {
@@ -1232,7 +1239,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       },
       {
         kind: 'offer', packageId: null, packageSnapshot: null, title: 'Версия 5', price: '11000005',
-        currency: 'RUB', includes: ['Пункт 5'], message: 'Сообщение 5', validUntil: '2034-06-01',
+        currency: 'RUB', includes: ['Пункт 5'], message: 'Сообщение 5', validUntil: `${TEST_YEAR}-06-01`,
         superseded: false, acceptedAt: null, dealId: null,
       },
     ])
@@ -1271,10 +1278,11 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       await app.db!.tx(async (client) => {
         await client.query('select id from offer_requests where id = $1 for update', [requestId])
         const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+        // inject returns a lazy thenable: start both requests before probing locks.
         pending = [
           answer(vendor, requestId, customOffer(5)),
           answer(vendor, requestId, customOffer(6)),
-        ]
+        ].map(response => Promise.resolve(response))
         const blocked = await waitForBlockedBy(client, holder!.pid, 2)
         expect(blocked.every((query) => query.toLocaleLowerCase('en-US').includes('offer_requests'))).toBe(true)
       })
@@ -1619,7 +1627,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: offerPriceCanary, currency: 'RUB' },
       includes: [offerIncludesCanary],
       message: offerMessageCanary,
-      validUntil: '2034-06-01',
+      validUntil: `${TEST_YEAR}-06-01`,
     })
     expect(offered.statusCode, offered.body).toBe(201)
     const offeredBody = createdOfferOf(offered, requestId, 'offer')
@@ -1632,7 +1640,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       price: { amount: offerPriceCanary, currency: 'RUB' },
       includes: [offerIncludesCanary],
       message: offerMessageCanary,
-      validUntil: '2034-06-01',
+      validUntil: `${TEST_YEAR}-06-01`,
     })
 
     const [coupleOffered, helperOffered, coordinatorOffered] = await Promise.all([

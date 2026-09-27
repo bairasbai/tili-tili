@@ -1,4 +1,6 @@
 import type { FastifyInstance } from 'fastify'
+import { bookVendor, lockBookingContext } from '../deals/book.js'
+import { loadSlot } from '../deals/repo.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { AppError, conflict, notFound, quotaExceeded, unauthorized, validationFailed } from '../errors.js'
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
@@ -285,6 +287,75 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           return { status: 201, body: { results } }
         }),
       )
+    },
+  )
+
+  app.post(
+    '/weddings/:weddingId/offers/:offerId/accept',
+    {
+      schema: {
+        params: {
+          type: 'object', required: ['weddingId', 'offerId'], additionalProperties: false,
+          properties: { weddingId: UUID_ID, offerId: UUID_ID },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { offerId } = request.params as { offerId: string }
+      const weddingId = request.member!.weddingId
+      return withIdempotency(db(), request, reply, 'offers.accept', tx => tx(async client => {
+        // Resolve only inside the caller's wedding; no lock before the wedding/actor/slot.
+        const { rows: located } = await client.query<{ request_id: string; slot_id: string }>(
+          `select o.request_id, r.slot_id from offers o
+             join offer_requests r on r.id = o.request_id
+             join slots s on s.id = r.slot_id
+            where o.id = $1 and s.wedding_id = $2`, [offerId, weddingId],
+        )
+        const location = located[0]
+        if (!location) throw notFound('Предложение не найдено')
+        const context = await lockBookingContext(client, {
+          weddingId, slotId: location.slot_id, actorId: request.caller!.userId,
+        })
+        const { rows: requests } = await client.query<{
+          vendor_id: string | null; status: string; close_reason: string | null; wedding_date: string | null
+        }>(
+          `select vendor_id, status, close_reason, wedding_date::text as wedding_date
+             from offer_requests where id = $1 and slot_id = $2 for update`,
+          [location.request_id, context.slotId],
+        )
+        const incoming = requests[0]
+        if (!incoming) throw notFound('Предложение не найдено')
+        if (incoming.wedding_date !== context.date || incoming.close_reason === 'date_changed') {
+          throw conflict('offer_stale_date', 'Предложение на прежнюю дату — запросите заново')
+        }
+        if (incoming.status !== 'open') throw conflict('request_closed', 'Запрос уже закрыт')
+        // Request is the version mutex shared with vendor replies. A package deletion
+        // can update offers through SET NULL; locking the offer here would deadlock.
+        const { rows: offers } = await client.query<{
+          kind: string; package_id: string | null; title: string; includes: string[]; price: string;
+          superseded_at: Date | null; accepted_at: Date | null; expired: boolean
+        }>(
+          `select kind, package_id, title, includes, price::text as price, superseded_at, accepted_at,
+                  valid_until < (clock_timestamp() at time zone coalesce($3, 'Europe/Moscow'))::date as expired
+             from offers where id = $1 and request_id = $2`,
+          [offerId, location.request_id, context.weddingTz],
+        )
+        const offer = offers[0]
+        if (!offer) throw notFound('Предложение не найдено')
+        if (offer.superseded_at) throw conflict('offer_superseded', 'Подрядчик изменил предложение — проверьте новые условия')
+        if (offer.accepted_at) throw conflict('request_closed', 'Предложение уже принято')
+        if (offer.kind === 'decline') throw conflict('offer_declined', 'Подрядчик отказался от запроса')
+        if (offer.expired) throw conflict('offer_expired', 'Срок предложения истёк — запросите новое')
+        if (!incoming.vendor_id) throw conflict('vendor_unavailable', 'Анкета подрядчика недоступна')
+        const dealId = await bookVendor(client, context, {
+          price: Number(offer.price),
+          performer: { kind: 'offer', vendorId: incoming.vendor_id, packageId: offer.package_id,
+            packageTitle: offer.title, packageIncludes: offer.includes },
+        })
+        // Snapshot is already in the deal; the offer link is not its source of truth.
+        await client.query('update offers set accepted_at = now(), deal_id = $2 where id = $1', [offerId, dealId])
+        return { status: 200, body: (await loadSlot(client, context.slotId, true))! }
+      }))
     },
   )
 }

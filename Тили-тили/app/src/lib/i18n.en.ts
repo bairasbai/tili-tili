@@ -2,6 +2,20 @@ import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  // 019: acceptance, explicit conflicts and retry feedback.
+  'Принять предложение': 'Accept offer',
+  'Принимаем…': 'Accepting…',
+  'Бронь создана по условиям предложения': 'Booked on the agreed offer terms',
+  'Обновить предложения': 'Refresh offers',
+  'Место уже занято — обновите предложения': 'This slot is already booked — refresh offers',
+  'Срок предложения истёк — запросите новое': 'The offer expired — request a new one',
+  'Предложение на прежнюю дату — запросите заново': 'This offer is for the previous date — request a new one',
+  'Подрядчик изменил предложение — проверьте новые условия': 'The vendor changed the offer — review the new terms',
+  'Запрос уже закрыт': 'This request is already closed',
+  'Подрядчик отказался от запроса': 'The vendor declined the request',
+  'Анкета подрядчика недоступна': 'The vendor profile is unavailable',
+  'Эта дата у подрядчика уже занята': 'The vendor is already booked on this date',
+
   // 019: offer requests closed by a booking without revealing the winner.
   'Пара выбрала другого исполнителя': 'The couple chose another vendor',
   'Запрос предложения закрыт: пара выбрала другого исполнителя.': 'The offer request is closed: the couple chose another vendor.',

@@ -20,6 +20,8 @@ import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { OfferAcceptance } from '@/components/OfferAcceptance'
+import { listMyWeddings } from '@/lib/api/wedding'
 import { OfferSummary } from '@/components/OfferSummary'
 
 /*
@@ -82,7 +84,10 @@ type CompareItem = {
   request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null }) {
+function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
+  items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null; weddingTz?: string | null
+  acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
+}) {
   const nav = useNavigate()
   const rows: [string, (item: CompareItem) => ReactNode][] = [
     [t('Цена «от»'), ({ vendor }) => vendor?.priceFrom?.amount != null ? fmt(vendor.priceFrom.amount) : '—'],
@@ -101,7 +106,15 @@ function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; ico
         </div>)}
       </div>
     ) : '—'],
-    [t('Предложение'), ({ request }) => <OfferSummary request={request} currentWeddingDate={weddingDate} compact />],
+    [t('Предложение'), item => <>
+      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} compact />
+      {acceptance && <OfferAcceptance
+        key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
+        weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
+        canAccept={acceptance.canAccept && item.available === true && item.occupancy !== 'busy'}
+        onChanged={acceptance.onChanged}
+      />}
+    </>],
     [t('Видео-визитка'), ({ vendor }) => vendor?.hasVideo ? t('▶ Есть') : '—'],
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
@@ -133,7 +146,7 @@ function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; ico
 
 export function Compare() {
   const nav = useNavigate()
-  const { weddingId, weddingDate, weddingsState, slots, slotsState } = useStore()
+  const { weddingId, weddingDate, weddingsState, slots, slotsState, refreshSlots } = useStore()
   const [params] = useSearchParams()
   const hasSlot = params.has('slot')
   const slotId = params.get('slot') ?? ''
@@ -145,6 +158,8 @@ export function Compare() {
   const [choice, setChoice] = useState<{ category: string | null; ids: string[] }>({ category: catId, ids: [] })
   const chosen = choice.category === catId ? choice.ids : []
 
+  const roles = useApi(() => hasSlot ? listMyWeddings() : Promise.resolve([]), [hasSlot, weddingId])
+  const currentWedding = roles.data?.find(w => w.id === weddingId)
   const cats = useApi(() => getCategories(), [])
   const shortlist = useApi(
     () => hasSlot && weddingId && slot ? getShortlist(weddingId, slotId) : Promise.resolve([] as ShortlistEntry[]),
@@ -189,7 +204,11 @@ export function Compare() {
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} />}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} weddingTz={currentWedding?.tz}
+                acceptance={weddingId ? { weddingId,
+                  canAccept: ready(roles) && !roles.refreshing && currentWedding?.role === 'couple' && !slot?.dealId,
+                  onChanged: () => { shortlist.reload(); refreshSlots() },
+                } : undefined} />}
             </>
     ) : <>
       <AsyncState q={favs} />
