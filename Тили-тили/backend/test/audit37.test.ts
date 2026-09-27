@@ -98,7 +98,7 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
   const listGuests = async (w: { token: string; weddingId: string }) =>
     (await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/guests`, headers: auth(w.token) })).json() as Guest[]
 
-  it('три строки → три гостя; телефон нормализован; повтор того же списка добавляет ноль с причиной duplicate', async () => {
+  it('три строки → три приглашения и четыре персоны; телефон нормализован; повтор не размножает party', async () => {
     const w = await newWedding()
     const rows = [
       { name: 'Анна Петрова', phone: '8 917 000 11 22', plusOne: true },
@@ -113,14 +113,14 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
     expect(body.created[0]!.phone, 'телефон не приведён к +7XXXXXXXXXX').toBe('+79170001122')
     expect(body.created[2]!.phone).toBe('+79170003344')
     expect(body.skipped).toEqual([])
-    expect((await listGuests(w)).length).toBe(3)
+    expect((await listGuests(w)).length).toBe(4)
 
     const again = await importGuests(w, rows)
     expect(again.statusCode, again.body.slice(0, 300)).toBe(201)
     const twice = again.json() as ImportResult
     expect(twice.created).toEqual([])
     expect(twice.skipped.map((s) => s.reason)).toEqual(['duplicate', 'duplicate', 'duplicate'])
-    expect((await listGuests(w)).length, 'повтор списка размножил гостей').toBe(3)
+    expect((await listGuests(w)).length, 'повтор списка размножил персон').toBe(4)
   })
 
   it('дубликаты внутри запроса и с базой — по имени без регистра/пробелов и по телефону; строка с кривым телефоном — invalid, остальные заводятся', async () => {
@@ -152,7 +152,7 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
       { index: 4, name: 'Дарья', reason: 'duplicate' },
       { index: 6, name: 'Елена', reason: 'duplicate' },
     ])
-    expect((await listGuests(w)).length).toBe(3)
+    expect((await listGuests(w)).length).toBe(4)
   })
 
   it('пустой список и 301 строка — 422; чужая свадьба — 404; помощник импортирует так же, как пара', async () => {
