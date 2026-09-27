@@ -1,0 +1,38 @@
+name: Offer acceptance 019 - isolated dependencies
+on:
+  push:
+    branches: ['test/019-accept-offer-20260928']
+    paths: ['.github/workflows/019-accept-dependencies.yml']
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - name: Install locked dependencies, without changing the source
+        run: |
+          set -euo pipefail
+          for dir in 'Тили-тили/backend' 'Тили-тили/app'; do
+            (cd "$dir"; pnpm install --frozen-lockfile --node-linker=hoisted --config.minimum-release-age=0)
+          done
+      - name: Package dependencies only
+        run: |
+          mkdir -p /tmp/offer019-deps
+          tar -czf /tmp/offer019-deps/node-modules.tar.gz 'Тили-тили/backend/node_modules' 'Тили-тили/app/node_modules'
+          git rev-parse HEAD > /tmp/offer019-deps/base-sha.txt
+          node --version > /tmp/offer019-deps/node-version.txt
+          sha256sum /tmp/offer019-deps/node-modules.tar.gz > /tmp/offer019-deps/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offer019-dependencies
+          path: /tmp/offer019-deps/
+          retention-days: 1
