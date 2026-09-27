@@ -4,13 +4,13 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import type { Queryable } from '../src/plugins/db.js'
-import { eraseUser } from '../src/jobs/index.js'
+import { cleanup, eraseUser } from '../src/jobs/index.js'
 
 // Keep wedding fixtures inside the API's rolling five-year limit.
 const TEST_YEAR = new Date().getUTCFullYear() + 1
 const DB = process.env.TEST_DATABASE_URL
 const SECRET_R = 'b'.repeat(48)
-type User = { id: string; token: string }
+type User = { id: string; token: string; phone: string }
 type Wedding = User & { weddingId: string }
 type Vendor = User & { vendorId: string; packageId: string }
 type ReadyOffer = { wedding: Wedding; vendor: Vendor; slotId: string; requestId: string; offerId: string }
@@ -58,7 +58,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const consent = await app.inject({ method: 'POST', url: '/users/me/consent', headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' } })
     expect(consent.statusCode, consent.body).toBe(201)
-    return { id: body.user.id, token: body.accessToken }
+    return { id: body.user.id, token: body.accessToken, phone }
   }
   async function newWedding(date: string | null = `${TEST_YEAR}-06-14`): Promise<Wedding> {
     const user = await newUser()
@@ -115,6 +115,53 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
   const assertError = (response: { statusCode: number; body: string; json: () => { error: { code: string } } }, code: string, status = 409) => {
     expect(response.statusCode, response.body).toBe(status)
     expect(response.json().error.code).toBe(code)
+  }
+
+  async function findPersonalValueEverywhere(value: string): Promise<string[]> {
+    const { rows: columns } = await app.db!.query<{ table_name: string; column_name: string; data_type: string }>(
+      `select table_name, column_name, data_type
+         from information_schema.columns
+        where table_schema = 'public'
+          and data_type in ('uuid', 'text', 'character varying', 'json', 'jsonb')
+        order by table_name, column_name`,
+    )
+    const found: string[] = []
+    for (const c of columns) {
+      if (c.table_name === 'audit_log' || c.table_name === 'pgmigrations') continue
+      const json = c.data_type === 'json' || c.data_type === 'jsonb'
+      const cast = c.data_type === 'uuid' ? '::text' : ''
+      const where = json
+        ? `position($1 in "${c.column_name}"::text) > 0`
+        : `"${c.column_name}"${cast} = $1`
+      const { rows } = await app.db!.query<{ n: string }>(
+        `select count(*)::text as n from "${c.table_name}" where ${where}`,
+        [value],
+      )
+      if (Number(rows[0]!.n) > 0) found.push(`${c.table_name}.${c.column_name}`)
+    }
+    return found
+  }
+
+  async function hardErase(user: User, relatedValues: string[] = []): Promise<void> {
+    const deleted = await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(user.token) })
+    expect(deleted.statusCode, deleted.body).toBe(204)
+    // The test advances this account by 31 days. Advance only transient
+    // idempotency rows belonging to or serializing this fixture as well;
+    // production removes them after one day naturally.
+    await app.db!.query(
+      "update idempotency_keys set created_at = now() - interval '31 days' where user_id = $1",
+      [user.id],
+    )
+    for (const value of relatedValues) {
+      await app.db!.query(
+        `update idempotency_keys set created_at = now() - interval '31 days'
+          where position($1 in coalesce(body::text, '')) > 0`,
+        [value],
+      )
+    }
+    await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [user.id])
+    await cleanup(app)
+    expect(await rows('select id from users where id = $1', [user.id])).toEqual([])
   }
 
   async function waitForBlocked(client: Queryable, holder: number, expected: number): Promise<void> {
@@ -382,6 +429,93 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select status,close_reason from offer_requests where id=$1', [other.requestId]))
       .toEqual([{ status: 'open', close_reason: null }])
     expect(await rows('select id from notifications where user_id=$1', [other.vendor.id])).toHaveLength(before.length)
+  })
+
+  it('T039 hard-erases vendor identity and unaccepted text, preserving accepted deal terms', async () => {
+    const accepted = await ready(undefined, true)
+    const pending = await ready()
+    const secret = `ERASE-${pending.vendor.id}`
+    const revised = await answer(pending, { ...offerBody, title: secret, includes: [secret], message: secret })
+    expect(revised.statusCode, revised.body).toBe(201)
+
+    await hardErase(pending.vendor, [pending.vendor.id, pending.vendor.phone, `Accept ${pending.vendor.id}`, secret])
+    expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
+      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
+    expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
+    for (const erased of [pending.vendor.id, pending.vendor.phone, `Accept ${pending.vendor.id}`, secret]) {
+      expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
+    }
+
+    expect((await accept(accepted)).statusCode).toBe(200)
+    await app.db!.query("update deals set state = 'done', done_at = now() where slot_id = $1", [accepted.slotId])
+    await hardErase(accepted.vendor, [accepted.vendor.id, accepted.vendor.phone, `Accept ${accepted.vendor.id}`])
+    expect(await rows('select vendor_id, external_name, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
+      .toEqual([{ vendor_id: null, external_name: 'Удалённый подрядчик', package_title_snapshot: 'Съёмка 8 часов',
+        package_includes_snapshot: ['Ретушь', '500 фотографий'], price: '7654321' }])
+    for (const erased of [accepted.vendor.id, accepted.vendor.phone, `Accept ${accepted.vendor.id}`]) {
+      expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
+    }
+  })
+
+  it('T039 hard-erases one couple member while the partner keeps anonymous 019 history', async () => {
+    const f = await ready()
+    const partner = await member(f.wedding, 'couple')
+    await hardErase(f.wedding, [f.wedding.id, f.wedding.phone])
+    expect(await rows('select owner_id from weddings where id = $1', [f.wedding.weddingId]))
+      .toEqual([{ owner_id: partner.id }])
+    expect(await rows('select created_by, status, vendor_id from offer_requests where id = $1', [f.requestId]))
+      .toEqual([{ created_by: null, status: 'open', vendor_id: f.vendor.vendorId }])
+    expect(await rows('select created_by from offers where id = $1', [f.offerId]))
+      .toEqual([{ created_by: f.vendor.id }])
+    for (const erased of [f.wedding.id, f.wedding.phone]) {
+      expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
+    }
+  })
+
+  it('T039 does not deadlock account erasure against a concurrent vendor reply', async () => {
+    const f = await ready()
+    let reply: Promise<unknown> | null = null
+    let cleanupRun: Promise<unknown> | null = null
+    await app.db!.tx(async client => {
+      await client.query('select id from vendors where id = $1 for update', [f.vendor.vendorId])
+      const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+      reply = Promise.resolve(answer(f, { ...offerBody, title: 'Race check' }))
+      await waitForBlocked(client, holder!.pid, 1)
+      cleanupRun = app.db!.tx(c => eraseUser(c, f.vendor.id))
+      await waitForBlocked(client, holder!.pid, 2)
+    })
+    const settled = await Promise.allSettled([reply!, cleanupRun!])
+    expect(settled.every(x => x.status === 'fulfilled')).toBe(true)
+    expect(await rows('select id from offers where request_id = $1', [f.requestId])).toEqual([])
+    expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [f.requestId]))
+      .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
+  })
+
+  it('T040 exports couple offer data and vendor own offer data', async () => {
+    const f = await ready()
+    const coupleDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.wedding.token) })
+    expect(coupleDump.statusCode, coupleDump.body).toBe(200)
+    expect(coupleDump.json()).toMatchObject({
+      shortlist: [expect.objectContaining({ slot_id: f.slotId })],
+      offerRequests: [expect.objectContaining({ id: f.requestId })],
+      offers: [expect.objectContaining({ request_id: f.requestId, title: 'Индивидуальная съёмка', price: '7654321' })],
+    })
+    const vendorDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.vendor.token) })
+    expect(vendorDump.statusCode, vendorDump.body).toBe(200)
+    expect(vendorDump.json()).toMatchObject({
+      vendorOfferRequests: [expect.objectContaining({ id: f.requestId })],
+      vendorOffers: [expect.objectContaining({ request_id: f.requestId, title: 'Индивидуальная съёмка' })],
+    })
+
+    const helper = await member(f.wedding, 'helper')
+    const helperDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(helper.token) })
+    expect(helperDump.statusCode, helperDump.body).toBe(200)
+    expect(helperDump.json()).toMatchObject({ shortlist: [], offerRequests: [], offers: [] })
+
+    const outsider = await newVendor()
+    const outsiderDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(outsider.token) })
+    expect(outsiderDump.statusCode, outsiderDump.body).toBe(200)
+    expect(outsiderDump.json()).toMatchObject({ vendorOfferRequests: [], vendorOffers: [] })
   })
 
 })
