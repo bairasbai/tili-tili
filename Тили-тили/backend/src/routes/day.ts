@@ -834,6 +834,21 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     })
   })
 
+  /** A family token may mutate only people inside its invitation. */
+  const familyMemberId = async (
+    client: Queryable,
+    guest: GuestCaller,
+    requestedId?: string,
+  ): Promise<string> => {
+    const id = requestedId ?? guest.guestId
+    const { rows } = await client.query<{ id: string }>(
+      'select id from guests where id = $1 and party_id = $2',
+      [id, guest.partyId],
+    )
+    if (!rows[0]) throw notFound('Человек не входит в это приглашение')
+    return rows[0].id
+  }
+
   /* ── гостевые пути ────────────────────────────────────────────────── */
   app.post(
     '/join/:guestToken/shuttle',
@@ -843,24 +858,25 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['busId'],
           additionalProperties: false,
-          properties: { busId: UUID_ID },
+          properties: { busId: UUID_ID, guestId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { busId } = request.body as { busId: string }
+      const { busId, guestId } = request.body as { busId: string; guestId?: string }
       const guest = await guestByToken(db(), guestToken)
 
       // Ответ собирается ВНУТРИ транзакции, а отправляется после неё.
       // `reply.send()` внутри `tx` уходит клиенту до коммита: он видит 200,
       // а данных ещё нет — и если коммит упадёт, ему уже сказали «готово».
       return db().tx(async (client) => {
+        const memberId = await familyMemberId(client, guest, guestId)
         /* Сначала строка гостя, потом маршрут — тот же порядок замков, что у
          * `PATCH …/guests/{id}` (гость → брони → триггер маршрута): иначе
          * «не придёт» рукой пары и посадка гостя в ту же секунду взаимно
          * ждали друг друга и одна из сторон получала 500 (RF-BE-06). */
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
+        await client.query('select 1 from guests where id = $1 for update', [memberId])
         /* Маршруты под блокировкой строк — и целевой, и тот, откуда гость
          * пересаживается, ОДНИМ запросом в порядке `id`: два гостя, меняющиеся
          * автобусами навстречу, иначе брали замки в разном порядке (один —
@@ -872,7 +888,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             where r.wedding_id = $2
               and (r.id = $1 or r.id in (select b.bus_id from bus_bookings b where b.guest_id = $3))
             order by r.id for update`,
-          [busId, guest.weddingId, guest.guestId],
+          [busId, guest.weddingId, memberId],
         )
         const { rows: bus } = await client.query<{ seats: number; taken: number }>(
           'select seats, taken from bus_routes where id = $1 and wedding_id = $2',
@@ -886,7 +902,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         await client.query(
           `delete from bus_bookings b using bus_routes r
             where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and b.bus_id <> $3`,
-          [guest.guestId, guest.weddingId, busId],
+          [memberId, guest.weddingId, busId],
         )
 
         /* Места считаются в персонах, а не в записях (R-29): гость «с +1»
@@ -895,14 +911,14 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
          * пересчитывает. Ранний отказ здесь, под блокировкой маршрута, —
          * потому что дешевле отката транзакции по `CHECK` ниже; правило
          * держит база (D3-16). */
-        const { rows: aboard } = await client.query<{ plus_one: boolean; already: boolean }>(
-          `select g.plus_one,
-                  exists(select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2) as already
-             from guests g where g.id = $2`,
-          [busId, guest.guestId],
+        const { rows: aboard } = await client.query<{ already: boolean }>(
+          `select exists(
+                   select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2
+                 ) as already`,
+          [busId, memberId],
         )
-        // Кто уже едет этим автобусом, повтором записи места не отнимает.
-        if (!aboard[0]!.already && bus[0]!.taken + (aboard[0]!.plus_one ? 2 : 1) > bus[0]!.seats) {
+        // В 020 одна строка guest = одна персона = одно место.
+        if (!aboard[0]!.already && bus[0]!.taken + 1 > bus[0]!.seats) {
           throw conflict('bus_full', 'Мест в этом автобусе не осталось')
         }
 
@@ -913,7 +929,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         try {
           booked = await client.query(
             'insert into bus_bookings (bus_id, guest_id) values ($1,$2) on conflict do nothing',
-            [busId, guest.guestId],
+            [busId, memberId],
           )
         } catch (error) {
           if (isCheckViolation(error, 'bus_taken_bounded')) {
@@ -927,10 +943,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           [busId],
         )
         if (booked.rowCount === 0) {
-          return { busId, alreadyBooked: true, ...rows[0]! }
+          return { guestId: memberId, busId, alreadyBooked: true, ...rows[0]! }
         }
-        await client.query(`update guests set transfer = 'need' where id = $1`, [guest.guestId])
-        return { busId, alreadyBooked: false, ...rows[0]! }
+        await client.query(`update guests set transfer = 'need' where id = $1`, [memberId])
+        return { guestId: memberId, busId, alreadyBooked: false, ...rows[0]! }
       })
     },
   )
@@ -956,13 +972,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         /* Тот же порядок замков, что у автобуса: строка гостя, затем оба
          * блока — целевой и прежний — в порядке `id` (ревью 015: у отелей
          * замков не было вовсе, взаимный переезд двух гостей давал deadlock). */
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
+        await client.query('select 1 from guest_parties where id = $1 for update', [guest.partyId])
         await client.query(
           `select h.id from hotel_blocks h
             where h.wedding_id = $2
-              and (h.id = $1 or h.id in (select b.hotel_id from hotel_bookings b where b.guest_id = $3))
+              and (h.id = $1 or h.id in (select b.hotel_id from hotel_bookings b where b.party_id = $3))
             order by h.id for update`,
-          [hotelId, guest.weddingId, guest.guestId],
+          [hotelId, guest.weddingId, guest.partyId],
         )
         /* Дедлайн блока — до какого дня отель держит номера по брони пары
          * (Бизнес-логика §12.1). День дедлайна ещё открыт, следующий — нет;
@@ -984,15 +1000,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         // Гость живёт в ОДНОМ отеле: смена блока освобождает прежний номер.
         await client.query(
           `delete from hotel_bookings b using hotel_blocks h
-            where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2 and b.hotel_id <> $3`,
-          [guest.guestId, guest.weddingId, hotelId],
+            where b.hotel_id = h.id and b.party_id = $1 and h.wedding_id = $2 and b.hotel_id <> $3`,
+          [guest.partyId, guest.weddingId, hotelId],
         )
 
         let booked
         try {
           booked = await client.query(
-            'insert into hotel_bookings (hotel_id, guest_id) values ($1,$2) on conflict do nothing',
-            [hotelId, guest.guestId],
+            'insert into hotel_bookings (hotel_id, guest_id, party_id) values ($1,$2,$3) on conflict do nothing',
+            [hotelId, guest.guestId, guest.partyId],
           )
         } catch (error) {
           if (isCheckViolation(error, 'hotel_booked_bounded')) {
@@ -1004,7 +1020,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           'select booked, rooms from hotel_blocks where id = $1',
           [hotelId],
         )
-        return { hotelId, alreadyBooked: booked.rowCount === 0, ...rows[0]! }
+        return { partyId: guest.partyId, hotelId, alreadyBooked: booked.rowCount === 0, ...rows[0]! }
       })
     },
   )
@@ -1017,11 +1033,17 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     // Те же маршруты, что у пары, с именем перевозчика: гость ищет автобус
     // на точке сбора по нему (фича 006, В4). Телефона и цены в `BusRoute` нет.
     const routes = await busesOf(db(), guest.weddingId)
-    const { rows: mine } = await db().query<{ bus_id: string }>(
-      'select bus_id from bus_bookings where guest_id = $1 limit 1',
-      [guest.guestId],
+    const { rows: members } = await db().query<{ guest_id: string; name: string; bus_id: string | null }>(
+      `select g.id as guest_id, g.name,
+              (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id
+         from guests g where g.party_id = $1 order by g.party_position, g.created_at, g.id`,
+      [guest.partyId],
     )
-    return { myBusId: mine[0]?.bus_id ?? null, routes }
+    return {
+      myBusId: members.find((m) => m.guest_id === guest.guestId)?.bus_id ?? null,
+      members: members.map((m) => ({ guestId: m.guest_id, name: m.name, myBusId: m.bus_id })),
+      routes,
+    }
   })
 
   /* Варианты блюд задаёт пара — гостю их надо показать, иначе он голосует
@@ -1039,11 +1061,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       'select id, name from menu_options where wedding_id = $1 order by sort, name',
       [guest.weddingId],
     )
-    const { rows: mine } = await db().query<{ option_id: string }>(
-      'select option_id from menu_votes where guest_id = $1 limit 1',
-      [guest.guestId],
+    const { rows: members } = await db().query<{ guest_id: string; name: string; option_id: string | null }>(
+      `select g.id as guest_id, g.name,
+              (select v.option_id from menu_votes v where v.guest_id = g.id limit 1) as option_id
+         from guests g where g.party_id = $1 order by g.party_position, g.created_at, g.id`,
+      [guest.partyId],
     )
-    return { question: poll[0]?.question ?? '', options, chosenOptionId: mine[0]?.option_id ?? null }
+    return {
+      question: poll[0]?.question ?? '',
+      options,
+      chosenOptionId: members.find((m) => m.guest_id === guest.guestId)?.option_id ?? null,
+      members: members.map((m) => ({ guestId: m.guest_id, name: m.name, chosenOptionId: m.option_id })),
+    }
   })
 
   /* Команда свадьбы глазами гостя: только имя и категория тех, кто
@@ -1091,9 +1120,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await db().query<{ mine: boolean }>(
       `select h.id, h.name, h.rooms, h.booked, h.price::text as price, h.currency,
               h.deadline::text as deadline, h.promo,
-              exists(select 1 from hotel_bookings b where b.hotel_id = h.id and b.guest_id = $2) as mine
+              exists(select 1 from hotel_bookings b where b.hotel_id = h.id and b.party_id = $2) as mine
          from hotel_blocks h where h.wedding_id = $1 order by h.name`,
-      [guest.weddingId, guest.guestId],
+      [guest.weddingId, guest.partyId],
     )
     return rows.map((r) => ({ ...toHotel(r as never), mine: r.mine }))
   })
@@ -1106,14 +1135,15 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['optionId'],
           additionalProperties: false,
-          properties: { optionId: UUID_ID },
+          properties: { optionId: UUID_ID, guestId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { optionId } = request.body as { optionId: string }
+      const { optionId, guestId } = request.body as { optionId: string; guestId?: string }
       const guest = await guestByToken(db(), guestToken)
+      const memberId = await familyMemberId(db(), guest, guestId)
 
       const { rows: option } = await db().query('select 1 from menu_options where id = $1 and wedding_id = $2', [
         optionId,
@@ -1128,11 +1158,11 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         await client.query(
           `insert into menu_votes (guest_id, option_id) values ($1,$2)
            on conflict (guest_id) do update set option_id = excluded.option_id, at = now()`,
-          [guest.guestId, optionId],
+          [memberId, optionId],
         )
-        await client.query('update guests set menu_option_id = $2 where id = $1', [guest.guestId, optionId])
+        await client.query('update guests set menu_option_id = $2 where id = $1', [memberId, optionId])
       })
-      return { optionId }
+      return { guestId: memberId, optionId }
     },
   )
 
