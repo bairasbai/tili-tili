@@ -3,8 +3,7 @@ import type { ShortlistEntry } from '@/lib/api/shortlist'
 import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import { requestOffers, type OfferRequestInput, type OfferRequestResult } from '@/lib/api/offers'
 import { explainError } from '@/lib/api/useApi'
-import { parseWholeRubles } from '@/lib/paymentAmount'
-import { rub } from '@/lib/money'
+import { parseWholeRubles, rub } from '@/lib/money'
 import { t } from '@/lib/i18n'
 
 function resultFromError(error: unknown): OfferRequestResult[] | null {
