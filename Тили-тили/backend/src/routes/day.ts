@@ -5,7 +5,7 @@ import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { buildPage, encodeCursor, parsePageQuery } from '../pagination.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { guestByToken, type GuestCaller } from '../guests/access.js'
+import { guestByToken, guestPersonByToken, type GuestCaller } from '../guests/access.js'
 import { personCount } from './guests.js'
 import { messagePage, notifyOthers, toMessage } from './chats.js'
 import { notifyWedding } from '../notify/notify.js'
@@ -842,14 +842,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['busId'],
           additionalProperties: false,
-          properties: { busId: UUID_ID },
+          properties: { busId: UUID_ID, personId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { busId } = request.body as { busId: string }
-      const guest = await guestByToken(db(), guestToken)
+      const { busId, personId } = request.body as { busId: string; personId?: string }
+      const guest = personId
+        ? await guestPersonByToken(db(), guestToken, personId)
+        : await guestByToken(db(), guestToken)
 
       // Ответ собирается ВНУТРИ транзакции, а отправляется после неё.
       // `reply.send()` внутри `tx` уходит клиенту до коммита: он видит 200,
@@ -941,14 +943,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['hotelId'],
           additionalProperties: false,
-          properties: { hotelId: UUID_ID },
+          properties: { hotelId: UUID_ID, personId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { hotelId } = request.body as { hotelId: string }
-      const guest = await guestByToken(db(), guestToken)
+      const { hotelId, personId } = request.body as { hotelId: string; personId?: string }
+      const guest = personId
+        ? await guestPersonByToken(db(), guestToken, personId)
+        : await guestByToken(db(), guestToken)
 
       return db().tx(async (client) => {
         /* Тот же порядок замков, что у автобуса: строка гостя, затем оба
@@ -1104,14 +1108,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           type: 'object',
           required: ['optionId'],
           additionalProperties: false,
-          properties: { optionId: UUID_ID },
+          properties: { optionId: UUID_ID, personId: UUID_ID },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const { optionId } = request.body as { optionId: string }
-      const guest = await guestByToken(db(), guestToken)
+      const { optionId, personId } = request.body as { optionId: string; personId?: string }
+      const guest = personId
+        ? await guestPersonByToken(db(), guestToken, personId)
+        : await guestByToken(db(), guestToken)
 
       const { rows: option } = await db().query('select 1 from menu_options where id = $1 and wedding_id = $2', [
         optionId,
@@ -1130,7 +1136,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         )
         await client.query('update guests set menu_option_id = $2 where id = $1', [guest.guestId, optionId])
       })
-      return { optionId }
+      return { personId: guest.guestId, optionId }
     },
   )
 
