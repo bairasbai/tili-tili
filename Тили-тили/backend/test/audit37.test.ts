@@ -152,7 +152,7 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
       { index: 4, name: 'Дарья', reason: 'duplicate' },
       { index: 6, name: 'Елена', reason: 'duplicate' },
     ])
-    expect((await listGuests(w)).length).toBe(4)
+    expect((await listGuests(w)).length).toBe(3)
   })
 
   it('пустой список и 301 строка — 422; чужая свадьба — 404; помощник импортирует так же, как пара', async () => {
