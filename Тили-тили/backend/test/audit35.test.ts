@@ -233,8 +233,19 @@ describe.skipIf(!live)('фича 006, BE-006: перевозчик как под
     return res.json() as BusRoute[]
   }
 
-  const board = (guestToken: string, busId: string) =>
-    app.inject({ method: 'POST', url: `/join/${guestToken}/shuttle`, headers: key(), payload: { busId } })
+  const peopleOf = async (guestToken: string) => {
+    const res = await app.inject({ method: 'GET', url: `/rsvp/${guestToken}` })
+    expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
+    return (res.json().people ?? []) as { id: string; name: string }[]
+  }
+
+  const board = (guestToken: string, busId: string, personId?: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/join/${guestToken}/shuttle`,
+      headers: key(),
+      payload: { busId, ...(personId ? { personId } : {}) },
+    })
 
   const cancelSlot = (w: Wedding, slotId: string) =>
     app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/slots/${slotId}/cancel`, headers: { ...auth(w.token), ...key() } })
@@ -312,7 +323,7 @@ describe.skipIf(!live)('фича 006, BE-006: перевозчик как под
 
   /* ── PATCH ────────────────────────────────────────────────────────── */
 
-  it('PATCH: мест меньше занятых персон (гость «с +1» — двое) — 409 bus_full с числом; правка времени — 200 и заметка перевозчику', async () => {
+  it('PATCH/020: мест меньше занятых отдельных персон — 409 bus_full; правка времени — 200', async () => {
     const w = await newWedding()
     const carrier = await newVendor()
     const { dealId } = await bookVendor(w, carrier.vendorId)
@@ -320,10 +331,12 @@ describe.skipIf(!live)('фича 006, BE-006: перевозчик как под
     expect(created.statusCode, created.body.slice(0, 200)).toBe(201)
     const busId = created.json().id as string
 
-    const pair = await newGuest(w, 'Ольга с мужем', true)
-    expect((await board(pair.token, busId)).statusCode).toBe(200)
+    const family = await newGuest(w, 'Ольга и Денис', true)
+    const people = await peopleOf(family.token)
+    expect(people).toHaveLength(2)
+    for (const person of people) expect((await board(family.token, busId, person.id)).statusCode).toBe(200)
 
-    // Персоны, не записи: одна запись — два места, и один автобус на одного не станет.
+    // Две отдельные персоны занимают два места.
     const tooSmall = await patchBus(w, busId, { seats: 1 })
     expect(errorOf(tooSmall)).toEqual({ status: 409, code: 'bus_full' })
     expect(tooSmall.json().error.message).toContain('Занято 2 персоны')
@@ -435,10 +448,12 @@ describe.skipIf(!live)('фича 006, BE-006: перевозчик как под
     const alone = await postBus(w, { name: 'Микроавтобус дяди', seats: 8 })
     expect(alone.statusCode).toBe(201)
 
-    const secretName = `Ольга-Секретова-${RUN}`
-    const secretPhone = `+7999${RUN}5`
-    const guest = await newGuest(w, secretName, true, secretPhone)
-    expect((await board(guest.token, busId)).statusCode).toBe(200)
+    const privacyName = `Ольга-Секретова-${RUN}`
+    const privacyPhone = nextPhone()
+    const guest = await newGuest(w, privacyName, true, privacyPhone)
+    const familyPeople = await peopleOf(guest.token)
+    expect(familyPeople).toHaveLength(2)
+    for (const person of familyPeople) expect((await board(guest.token, busId, person.id)).statusCode).toBe(200)
 
     // Тот же перевозчик — фотографом в другой свадьбе (другая дата, чтобы не упереться в занятость).
     const other = await newWedding({ date: '2027-06-20' })
@@ -454,8 +469,8 @@ describe.skipIf(!live)('фича 006, BE-006: перевозчик как под
 
     // 152-ФЗ: перевозчику — сколько мест готовить, а не кто едет.
     const raw = deals.body
-    expect(raw).not.toContain(secretName)
-    expect(raw).not.toContain(secretPhone)
+    expect(raw).not.toContain(privacyName)
+    expect(raw).not.toContain(privacyPhone)
     expect(raw).not.toContain('Микроавтобус дяди')
   })
 
