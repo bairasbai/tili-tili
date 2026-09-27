@@ -433,9 +433,10 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     }
 
     expect((await accept(accepted)).statusCode).toBe(200)
+    await app.db!.query("update deals set state = 'done', done_at = now() where slot_id = $1", [accepted.slotId])
     await hardErase(accepted.vendor)
     expect(await rows('select vendor_id, external_name, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
-      .toEqual([{ vendor_id: null, external_name: null, package_title_snapshot: 'Съёмка 8 часов',
+      .toEqual([{ vendor_id: null, external_name: 'Удалённый подрядчик', package_title_snapshot: 'Съёмка 8 часов',
         package_includes_snapshot: ['Ретушь', '500 фотографий'], price: '7654321' }])
     for (const erased of [accepted.vendor.id, accepted.vendor.phone, `Accept ${accepted.vendor.id}`]) {
       expect(await findPersonalValueEverywhere(String(erased)), String(erased)).toEqual([])
