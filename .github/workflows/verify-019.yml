@@ -1,0 +1,84 @@
+name: Verify 019 acceptance (temporary)
+on:
+  push:
+    branches: ['test/019-acceptance-20260928']
+    paths-ignore: ['.github/workflows/source-export-019.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U tili' --health-interval 5s
+          --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+      TEST_REDIS_URL: redis://localhost:6379
+      DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned package manager
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+      - name: Install locked dependencies
+        run: |
+          mkdir -p /tmp/verify019
+          set -o pipefail
+          (cd 'Тили-тили/backend' && pnpm install --frozen-lockfile --node-linker=hoisted) > /tmp/verify019/install-backend.log 2>&1
+          (cd 'Тили-тили/app' && pnpm install --frozen-lockfile --node-linker=hoisted) > /tmp/verify019/install-app.log 2>&1
+      - name: Generate contracts and migrate
+        run: |
+          cd 'Тили-тили/backend'
+          pnpm run gen
+          cd ../app
+          pnpm run gen:api
+          cd ../backend
+          pnpm exec node-pg-migrate up -m migrations
+      - name: Check backend
+        run: |
+          set -o pipefail
+          cd 'Тили-тили/backend'
+          pnpm run typecheck > /tmp/verify019/typecheck-backend.log 2>&1
+          pnpm run lint > /tmp/verify019/lint-backend.log 2>&1
+          pnpm exec vitest run --reporter=default --reporter=json --outputFile=/tmp/verify019/backend-tests.json > /tmp/verify019/backend-tests.log 2>&1
+          pnpm run build > /tmp/verify019/build-backend.log 2>&1
+      - name: Check frontend
+        if: '!cancelled()'
+        run: |
+          cd 'Тили-тили/app'
+          pnpm exec tsc -b > /tmp/verify019/typecheck-app.log 2>&1
+          pnpm run lint > /tmp/verify019/lint-app.log 2>&1
+          pnpm exec vitest run --reporter=default --reporter=json --outputFile=/tmp/verify019/app-tests.json > /tmp/verify019/app-tests.log 2>&1
+          pnpm run build > /tmp/verify019/build-app.log 2>&1
+      - name: Export verification evidence and generated source
+        if: always()
+        run: |
+          mkdir -p /tmp/verify019
+          git rev-parse HEAD > /tmp/verify019/commit.txt
+          git diff > /tmp/verify019/generated.diff
+          tail -n 50 /tmp/verify019/*.log > /tmp/verify019/summary.txt || true
+          tar --exclude=.git --exclude=node_modules --exclude=dist -czf /tmp/verify019/verified-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify019
+          path: /tmp/verify019/
+          retention-days: 3
