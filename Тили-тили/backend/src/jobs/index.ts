@@ -774,11 +774,10 @@ export async function cateringSummary(app: FastifyInstance): Promise<number> {
       if (!(await claimJobKey(db, `catering:${w.id}:${w.date}:${w.days}`))) return false
       const { rows: guests } = await db.query<{
         status: string
-        plus_one: boolean
         diet: string | null
         transfer: string | null
-      }>('select rsvp as status, plus_one, diet, transfer from guests where wedding_id = $1', [w.id])
-      const portions = personCount(guests.map((g) => ({ status: g.status, plusOne: g.plus_one })))
+      }>('select rsvp as status, diet, transfer from guests where wedding_id = $1', [w.id])
+      const portions = personCount(guests)
       const { rows: options } = await db.query<{ name: string; votes: string }>(
         `select o.name, (select count(*)::text from menu_votes v where v.option_id = o.id) as votes
            from menu_options o where o.wedding_id = $1 order by o.sort, o.name`,
