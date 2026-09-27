@@ -225,7 +225,27 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
  * «Аккаунт удалён», — SMS потрачена, войти нельзя. Вход стирает строку сразу
  * тем же путём и заводит аккаунт заново.
  */
-export async function eraseUser(client: Queryable, id: string): Promise<void> {
+export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId: string | null = null): Promise<void> {
+  /* 019/T039: request is the response mutex. Lock all vendor requests before
+   * the user cascade so account erasure and an offer reply use one order. */
+  const { rows: ownedVendors } = await client.query<{ id: string }>(
+    'select id from vendors where user_id = $1',
+    [id],
+  )
+  for (const vendor of ownedVendors) {
+    await client.query('select id from offer_requests where vendor_id = $1 order by id for update', [vendor.id])
+    await client.query(
+      `delete from offers o using offer_requests r
+        where o.request_id = r.id and r.vendor_id = $1`,
+      [vendor.id],
+    )
+    await client.query(
+      `update offer_requests
+          set status = 'closed', close_reason = 'vendor_erased', closed_at = coalesce(closed_at, now())
+        where vendor_id = $1 and status = 'open'`,
+      [vendor.id],
+    )
+  }
   /* Наследник — живой партнёр, а если такого нет — партнёр, мягко удалённый
    * в своём 30-дневном окне: он ещё может вернуться входом (`auth.ts`), и
    * свадьба должна дождаться его, а не уйти каскадом вместе с первым
@@ -256,9 +276,23 @@ export async function eraseUser(client: Queryable, id: string): Promise<void> {
     [id],
   )
   await client.query(
-    `update deals d set vendor_id = null, external_name = coalesce(d.external_name, v.name)
+    `update deals d set vendor_id = null, external_name = 'Удалённый подрядчик'
        from vendors v where v.id = d.vendor_id and v.user_id = $1`,
     [id],
+  )
+  /* Idempotency responses are a one-day transport cache, not archive
+   * data. Scheduled cleanup runs this before hard erasure; stale-account
+   * login can call eraseUser directly, so enforce the same TTL here too.
+   * Never match/delete live caches by free-form names. */
+  await client.query("delete from idempotency_keys where created_at < now() - interval '1 day'")
+  /* OTP rows are not FK-linked to users, but still contain the phone.
+   * A stale-account login must keep only the code currently being verified;
+   * scheduled/final erasure keeps none. */
+  await client.query(
+    `delete from otp_codes
+      where phone = (select phone from users where id = $1)
+        and ($2::text is null or id::text <> $2)`,
+    [id, preserveOtpCodeId],
   )
   await client.query('delete from users where id = $1', [id])
 }

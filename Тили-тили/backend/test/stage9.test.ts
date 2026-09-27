@@ -204,7 +204,7 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
     expect(Number(audit[0]!.n)).toBeGreaterThan(0)
   })
 
-  it('до тридцать первого дня аккаунт ещё можно вернуть', async () => {
+  it('до тридцать первого дня аккаунт можно вернуть настоящим входом по коду', async () => {
     const user = await newUser()
     await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(user.token) })
     await app.db!.query("update users set deleted_at = now() - interval '29 days' where id = $1", [user.userId])
@@ -215,6 +215,29 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
     ])
     // Тридцать дней — это обещание, а не приблизительный срок.
     expect(Number(rows[0]!.n)).toBe(1)
+
+    // Старый уже использованный OTP не должен мешать новой выдаче в этом
+    // детерминированном тесте; сам вход проходит тем же публичным API.
+    await app.db!.query("update otp_codes set created_at = now() - interval '2 hours' where phone = $1", [user.phone])
+    const otp = await app.inject({
+      method: 'POST',
+      url: '/auth/otp',
+      payload: { phone: user.phone },
+      remoteAddress: IP,
+    })
+    expect(otp.statusCode, otp.body).toBe(200)
+    const restored = await app.inject({
+      method: 'POST',
+      url: '/auth/otp/verify',
+      payload: { phone: user.phone, code: await readCode(user.phone) },
+    })
+    expect(restored.statusCode, restored.body).toBe(200)
+    expect(restored.json().user.id).toBe(user.userId)
+    const { rows: liveRows } = await app.db!.query<{ deleted_at: Date | null }>(
+      'select deleted_at from users where id = $1',
+      [user.userId],
+    )
+    expect(liveRows[0]!.deleted_at).toBeNull()
   })
 
   /* ── экспорт данных ───────────────────────────────────────────────── */
