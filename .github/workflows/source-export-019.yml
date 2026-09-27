@@ -1,0 +1,26 @@
+name: Source export 019 (temporary)
+on:
+  push:
+    branches: ['test/019-acceptance-20260928']
+    paths: ['.github/workflows/source-export-019.yml']
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export tracked source only
+        run: |
+          mkdir -p /tmp/source019
+          git archive --format=tar.gz HEAD > /tmp/source019/source.tar.gz
+          git rev-parse HEAD > /tmp/source019/commit.txt
+          sha256sum /tmp/source019/source.tar.gz > /tmp/source019/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source019
+          path: /tmp/source019/
+          retention-days: 1
