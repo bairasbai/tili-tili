@@ -20,6 +20,9 @@ export interface NewNotification {
   link?: string | null
   /** Сделки и день X идут мимо тихих часов и мимо лимита. */
   critical?: boolean
+  /** Personal task notices never bypass the recipient's quiet hours, even on day X. */
+  respectQuietHours?: boolean
+  task?: { id: string; version: string; event: 'assignment' | 'reminder'; expiresAt: Date }
 }
 
 /** Сколько НЕкритичных push в сутки вне дня X (План §18.6). */
@@ -100,7 +103,7 @@ export async function notify(
   const tz = knownTimeZone(prefs.tz || weddingTz)
   /* В день X тишины и лимита нет вовсе (План §18.6): свадьба идёт прямо
    * сейчас, и «разбудим утром» тут значит «уже неважно». */
-  const unlimited = item.critical || prefs.wedding_today
+  const unlimited = !item.respectQuietHours && (item.critical || prefs.wedding_today)
   const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, unlimited)
 
   /*
@@ -137,7 +140,8 @@ export async function notify(
         const bounds = localDayBounds(after, tz)
         const { rows: planned } = await client.query<{ n: string }>(
           `select count(*)::text as n from notifications
-            where user_id = $1 and deliver_after >= $2 and deliver_after < $3`,
+            where user_id = $1 and deliver_after >= $2 and deliver_after < $3
+              and (cancelled_at is null or pushed_at is not null)`,
           [item.userId, bounds.from, bounds.to],
         )
         // Свыше лимита — не выбрасываем, а переносим: непрочитанное
@@ -158,9 +162,11 @@ export async function notify(
     if (!placed) after = now
     const id = uuidv7()
     await client.query(
-      `insert into notifications (id, user_id, kind, title, body, link, deliver_after, pushed_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after, placed ? null : now],
+      `insert into notifications (id, user_id, kind, title, body, link, deliver_after, pushed_at,
+         task_id,task_version,task_event,expires_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after, placed ? null : now,
+        item.task?.id ?? null, item.task?.version ?? null, item.task?.event ?? null, item.task?.expiresAt ?? null],
     )
     return id
   }

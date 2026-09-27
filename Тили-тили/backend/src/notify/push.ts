@@ -1,6 +1,7 @@
 import webpush from 'web-push'
 import type { Config } from '../config.js'
 import type { Db } from '../plugins/db.js'
+import { pruneTaskNotifications, taskPushReady } from './task-notifications.js'
 
 /**
  * Отправка накопленных push.
@@ -36,6 +37,7 @@ interface Due {
   title: string
   body: string
   link: string | null
+  task_id: string | null
 }
 
 interface Subscription {
@@ -49,13 +51,14 @@ export function pushConfigured(config: Config): boolean {
 }
 
 export async function sendDuePushes(db: Db, config: Config, limit = 200): Promise<PushResult> {
+  await pruneTaskNotifications(db)
   if (!pushConfigured(config)) return { sent: 0, dropped: 0, expired: 0 }
   webpush.setVapidDetails(config.vapidSubject, config.vapidPublicKey!, config.vapidPrivateKey!)
 
   // Просроченное — мимо отправки, но с отметкой: иначе оно созревает вечно.
   const stale = await db.query(
     `update notifications set pushed_at = now()
-      where pushed_at is null and deliver_after <= now() - ($1 || ' milliseconds')::interval`,
+      where cancelled_at is null and pushed_at is null and deliver_after <= now() - ($1 || ' milliseconds')::interval`,
     [String(PUSH_MAX_AGE_MS)],
   )
   const expired = stale.rowCount ?? 0
@@ -69,12 +72,12 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
     `update notifications set pushed_at = now()
       where id in (
         select id from notifications
-         where pushed_at is null and deliver_after <= now()
+         where cancelled_at is null and pushed_at is null and deliver_after <= now()
          order by deliver_after
          limit $1
          for update skip locked
       )
-      returning id, user_id, title, body, link`,
+      returning id, user_id, title, body, link, task_id`,
     [limit],
   )
   if (due.length === 0) return { sent: 0, dropped: 0, expired }
@@ -91,6 +94,10 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
   let dropped = 0
   for (const sub of subs) {
     for (const item of byUser.get(sub.user_id) ?? []) {
+      if (item.task_id) {
+        // A task may change after this batch was claimed, before this subscription is sent.
+        if (!await taskPushReady(db, item.id)) continue
+      }
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: sub.keys },

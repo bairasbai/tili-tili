@@ -335,12 +335,12 @@ describe('T3: тап по задаче раскрывает срок и пери
     expect(patches(calls, T1)[0]!.body).toEqual({ done: true })
   })
 
-  it('у задачи без срока — «дата свадьбы не задана» словами, не пустота', async () => {
+  it('у задачи без срока — «Срок не задан» словами, даже если дата свадьбы известна', async () => {
     serve(base({ '/weddings/w1/tasks': [OWN] }))
     const r = openList()
     await waitFor(() => expect(text(r)).toContain('Заказать торт'), { timeout: 4000 })
     fireEvent.click(row('Заказать торт'))
-    expect(text(r)).toContain('Срок: дата свадьбы не задана')
+    expect(text(r)).toContain('Срок: Срок не задан')
   })
 
   it('«Переименовать» → поле с текущим названием → «Сохранить» → PATCH { title } → список перечитан', async () => {
