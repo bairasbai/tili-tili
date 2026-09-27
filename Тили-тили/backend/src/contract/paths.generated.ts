@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.44.0).
- * Операций: 176. Путей: 131. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.45.0).
+ * Операций: 183. Путей: 138. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -109,6 +109,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/deals","url":"/vendor/deals","operationId":null,"summary":"Сделки подрядчика","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/leads","url":"/vendor/leads","operationId":null,"summary":"Входящие лиды","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/leads/{leadId}","url":"/vendor/leads/:leadId","operationId":null,"summary":"Действие с лидом: ответить / холд 72ч / отклонить / вернуть","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/offer-requests","url":"/vendor/offer-requests","operationId":null,"summary":"Запросы предложений подрядчику","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/offer-requests/{requestId}/offers","url":"/vendor/offer-requests/:requestId/offers","operationId":null,"summary":"Ответить предложением или отказом","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/profile","url":"/vendor/profile","operationId":null,"summary":"Моя анкета подрядчика","tag":"vendor"},
   {"method":"PUT","openapi":"/vendor/profile","url":"/vendor/profile","operationId":null,"summary":"Создать/обновить анкету (мастер: категория → пакеты → город → публикация)","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/profile/publish","url":"/vendor/profile/publish","operationId":null,"summary":"Опубликовать анкету (модерация → live)","tag":"vendor"},
@@ -162,6 +164,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Заметки и идеи свадьбы","tag":"wedding"},
   {"method":"POST","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Добавить заметку","tag":"wedding"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/notes/{noteId}","url":"/weddings/:weddingId/notes/:noteId","operationId":null,"summary":"Удалить заметку","tag":"wedding"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/offers/{offerId}/accept","url":"/weddings/:weddingId/offers/:offerId/accept","operationId":null,"summary":"Принять предложение и забронировать подрядчика","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
@@ -172,7 +175,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/external","url":"/weddings/:weddingId/slots/:slotId/external","operationId":null,"summary":"Удалить своего подрядчика","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/external","url":"/weddings/:weddingId/slots/:slotId/external","operationId":null,"summary":"Добавить своего подрядчика (не из каталога)","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/external/invite","url":"/weddings/:weddingId/slots/:slotId/external/invite","operationId":null,"summary":"Ссылка-приглашение для своего подрядчика","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/offer-requests","url":"/weddings/:weddingId/slots/:slotId/offer-requests","operationId":null,"summary":"Запросить предложение у кандидатов места","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/pay","url":"/weddings/:weddingId/slots/:slotId/pay","operationId":null,"summary":"Оплата слота (доплата/полная)","tag":"bookings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/slots/{slotId}/shortlist","url":"/weddings/:weddingId/slots/:slotId/shortlist","operationId":null,"summary":"Кандидаты места","tag":"bookings"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}","url":"/weddings/:weddingId/slots/:slotId/shortlist/:entryId","operationId":null,"summary":"Убрать кандидата из места","tag":"bookings"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/prebooked","url":"/weddings/:weddingId/slots/:slotId/prebooked","operationId":null,"summary":"Снять отметку «уже забронировано» («Нет, ещё ищем»)","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Рассадка (столы + гости)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Добавить стол","tag":"guests"},
