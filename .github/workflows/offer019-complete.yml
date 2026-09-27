@@ -1,0 +1,126 @@
+name: Verify and deliver one offer acceptance feature
+
+on:
+  push:
+    branches: ['test/019-offer-complete-20260928']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify-deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U tili -d tili_test'
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd 'redis-cli ping'
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      FEATURE_BRANCH: feature/019-accept-offer-complete-20260928
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: payload
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: work
+          ref: c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply exact reviewed delta
+        run: |
+          set -euo pipefail
+          test "$(git -C work rev-parse HEAD)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          python payload/.delivery019/apply.py work
+          git -C work diff --check
+          mkdir -p "$RUNNER_TEMP/offer019-evidence"
+      - name: Install pinned dependencies
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          for part in app backend; do
+            pushd "work/Тили-тили/$part"
+            printf 'minimum-release-age=0\n' > .npmrc
+            pnpm install --frozen-lockfile --node-linker=hoisted
+            rm .npmrc
+            popd
+          done
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Migrate and run full gate without skips
+        working-directory: work
+        run: |
+          set -euo pipefail
+          (cd Тили-тили/backend && DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up) > "$RUNNER_TEMP/offer019-evidence/migrations.log" 2>&1
+          bash init.sh 2>&1 | tee "$RUNNER_TEMP/offer019-evidence/full-gate.log"
+      - name: Real browser acceptance
+        run: |
+          set -euo pipefail
+          export E2E_FIXTURE_FILE="$RUNNER_TEMP/offer019-fixture.json"
+          export E2E_RESULT_DIR="$RUNNER_TEMP/offer019-evidence/browser"
+          BACK="$GITHUB_WORKSPACE/work/Тили-тили/backend"
+          FRONT="$GITHUB_WORKSPACE/work/Тили-тили/app"
+          cd "$BACK"
+          node --input-type=module -e 'import pg from "pg";const c=new pg.Client({connectionString:process.env.TEST_DATABASE_URL});await c.connect();await c.query("CREATE DATABASE offers_test OWNER tili");await c.end()'
+          export TEST_DATABASE_URL=postgres://tili:tili@127.0.0.1:5432/offers_test
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/offer019-evidence/browser-migrations.log" 2>&1
+          node --import tsx scripts/offers-e2e-server.mts > "$RUNNER_TEMP/offer019-server.log" 2>&1 &
+          BACK_PID=$!
+          cd "$FRONT"
+          node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort > "$RUNNER_TEMP/offer019-vite.log" 2>&1 &
+          FRONT_PID=$!
+          cleanup() { kill "$FRONT_PID" "$BACK_PID" 2>/dev/null || true; wait "$FRONT_PID" "$BACK_PID" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"; }
+          trap cleanup EXIT
+          for i in $(seq 1 60); do
+            if test -f "$E2E_FIXTURE_FILE" && grep -q OFFERS_BROWSER_FIXTURE_READY "$RUNNER_TEMP/offer019-server.log" && curl --fail --silent http://127.0.0.1:3000/ >/dev/null; then break; fi
+            kill -0 "$BACK_PID" "$FRONT_PID"
+            sleep 1
+          done
+          test -f "$E2E_FIXTURE_FILE"
+          python "$BACK/scripts/offers-e2e-browser.py" 2>&1 | tee "$RUNNER_TEMP/offer019-evidence/browser.log"
+      - name: Record actual observations and publish one feature commit
+        run: |
+          set -euo pipefail
+          python payload/.delivery019/report.py
+          cd work
+          test "$(git rev-parse HEAD)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          test ! -e .delivery019
+          test ! -e .github/workflows/offer019-complete.yml
+          git diff --check
+          git config user.name 'ChatGPT'
+          git config user.email 'noreply@openai.com'
+          git add --all
+          git commit -m 'feat(019): accept vendor offers into immutable bookings' -m 'Complete US3 T032-T038 and browser acceptance T041. Add 21 PostgreSQL and 21 frontend checks; preserve original offer terms, privacy and concurrent booking invariants. Update API 0.49.0, maps, roadmap and verification report. Main and production unchanged.'
+          test "$(git rev-parse HEAD^)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          git push --force-with-lease="refs/heads/$FEATURE_BRANCH:" origin "HEAD:refs/heads/$FEATURE_BRANCH"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/offer019-evidence/feature-commit.txt"
+          cat tasks/фичи/019-кандидаты-и-предложения/verification-acceptance.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offer019-verification
+          path: ${{ runner.temp }}/offer019-evidence/
+          retention-days: 7
