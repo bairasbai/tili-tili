@@ -47,7 +47,7 @@ const GUEST_COLUMNS = `
   g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
-  (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
+  (select h.hotel_id from hotel_bookings h where h.party_id = g.party_id limit 1) as hotel_id,
   (select c.code from guest_invite_codes c where c.party_id = g.party_id and c.used_at is null
     order by c.issued_at desc limit 1) as invite_code,
   (select true from guest_invite_codes c where c.party_id = g.party_id and c.used_at is not null limit 1) as invite_used`
@@ -98,8 +98,10 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     transfer: r.transfer,
     busId: r.bus_id,
     hotelId: r.hotel_id,
-    ...(asCouple ? { inviteUrl: r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null } : {}),
-    inviteUrlUsed: r.invite_used === true,
+    ...(asCouple ? {
+      inviteUrl: r.party_position === 1 && r.invite_code ? `https://tili-tili.ru/i/${r.invite_code}` : null,
+    } : {}),
+    inviteUrlUsed: r.party_position === 1 && r.invite_used === true,
   }
 }
 
@@ -211,6 +213,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 120 },
             plusOne: { type: 'boolean', default: false },
+            members: {
+              type: 'array',
+              maxItems: 9,
+              items: {
+                type: 'object',
+                required: ['name'],
+                additionalProperties: false,
+                properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
+              },
+            },
             group: { type: 'string', maxLength: 120 },
             phone: { type: 'string', maxLength: 32 },
           },
@@ -218,7 +230,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (request, reply) => {
-      const body = request.body as { name: string; plusOne?: boolean; group?: string; phone?: string }
+      const body = request.body as {
+        name: string
+        plusOne?: boolean
+        members?: { name: string }[]
+        group?: string
+        phone?: string
+      }
       assertPhoneByCouple(request.member!.role, body.phone !== undefined)
       /* Телефон — к виду `+7XXXXXXXXXX`, как у импорта: сырой «8 917 000-55-66»
        * не совпадал с нормализованным у дедупликации импорта и уходил
@@ -248,12 +266,23 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             partyId,
           ],
         )
-        if (body.plusOne) {
+        const extraMembers = body.members ?? (body.plusOne ? [{ name: `Спутник ${body.name}`, placeholder: true }] : [])
+        for (const [index, member] of extraMembers.entries()) {
+          const placeholder = 'placeholder' in member && member.placeholder === true
           await client.query(
             `insert into guests
                (id, wedding_id, name, plus_one, group_name, rsvp_token, party_id, party_position, is_placeholder)
-             values ($1,$2,$3,false,$4,$5,$6,2,true)`,
-            [uuidv7(), request.member!.weddingId, `Спутник ${body.name}`, body.group ?? null, newGuestToken(), partyId],
+             values ($1,$2,$3,false,$4,$5,$6,$7,$8)`,
+            [
+              uuidv7(),
+              request.member!.weddingId,
+              member.name,
+              body.group ?? null,
+              newGuestToken(),
+              partyId,
+              index + 2,
+              placeholder,
+            ],
           )
         }
       })
@@ -355,6 +384,50 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const created: unknown[] = []
       for (const id of createdIds) created.push(await loadGuest(db(), id, request.member!.role))
       return reply.code(201).send({ created, skipped })
+    },
+  )
+
+  app.post(
+    '/weddings/:weddingId/guests/:guestId/members',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name'],
+          additionalProperties: false,
+          properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const weddingId = request.member!.weddingId
+      const { guestId } = request.params as { guestId: string }
+      const { name } = request.body as { name: string }
+      if (!isUuid(guestId)) throw notFound('Гость не найден')
+      return db().tx(async (client) => {
+        const { rows: primary } = await client.query<{ party_id: string; group_name: string | null }>(
+          `select party_id, group_name from guests
+            where id = $1 and wedding_id = $2 and party_position = 1
+            for update`,
+          [guestId, weddingId],
+        )
+        if (!primary[0]) throw notFound('Основной приглашённый не найден')
+        await client.query('select id from guest_parties where id = $1 for update', [primary[0].party_id])
+        const { rows: positions } = await client.query<{ next: number }>(
+          'select coalesce(max(party_position),0)::int + 1 as next from guests where party_id = $1',
+          [primary[0].party_id],
+        )
+        const position = positions[0]!.next
+        if (position > 10) throw conflict('family_full', 'В одном приглашении не больше 10 человек')
+        const id = uuidv7()
+        await client.query(
+          `insert into guests
+             (id,wedding_id,name,plus_one,group_name,rsvp_token,party_id,party_position,is_placeholder)
+           values($1,$2,$3,false,$4,$5,$6,$7,false)`,
+          [id, weddingId, name, primary[0].group_name, newGuestToken(), primary[0].party_id, position],
+        )
+        return reply.code(201).send(await loadGuest(client, id, request.member!.role))
+      })
     },
   )
 
@@ -655,11 +728,21 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/weddings/:weddingId/guests/:guestId', async (request, reply) => {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
-    const res = await db().query('delete from guests where id = $1 and wedding_id = $2', [
-      guestId,
-      request.member!.weddingId,
-    ])
-    if (res.rowCount === 0) throw notFound('Гость не найден')
+    await db().tx(async (client) => {
+      const { rows } = await client.query<{ party_id: string; party_position: number }>(
+        'select party_id, party_position from guests where id = $1 and wedding_id = $2 for update',
+        [guestId, request.member!.weddingId],
+      )
+      const guest = rows[0]
+      if (!guest) throw notFound('Гость не найден')
+      if (guest.party_position === 1) {
+        // Primary card represents the invitation itself: deleting it removes
+        // members, code, room and the family's current gift reservation.
+        await client.query('delete from guest_parties where id = $1', [guest.party_id])
+      } else {
+        await client.query('delete from guests where id = $1', [guestId])
+      }
+    })
     return reply.code(204).send()
   })
 
