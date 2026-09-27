@@ -734,56 +734,56 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.get('/rsvp/:guestToken', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
     const guest = await guestByToken(db(), guestToken)
-    const { rows } = await db().query<{
-      rsvp: string
-      plus_one: boolean
-      diet: string | null
-      diet_note: string | null
-      transfer: string | null
-      title: string
-      date: string | null
-      city: string | null
-      region: string | null
-      invite_text: string | null
-      invite_theme_id: number
-      venue: string | null
-      dress_code: string | null
-      dress_note: string | null
-      tz: string
+    const { rows: wedding } = await db().query<{
+      title: string; date: string | null; city: string | null; region: string | null
+      invite_text: string | null; invite_theme_id: number; venue: string | null
+      dress_code: string | null; dress_note: string | null; tz: string
     }>(
-      `select g.rsvp, g.plus_one, g.diet, g.diet_note, g.transfer,
-              w.title, w.date::text as date, c.name as city, c.region,
+      `select w.title, w.date::text as date, c.name as city, c.region,
               w.invite_text, w.invite_theme_id, w.venue, w.dress_code, w.dress_note,
               coalesce(w.tz, 'Europe/Moscow') as tz
-         from guests g join weddings w on w.id = g.wedding_id
-         left join cities c on c.id = w.city_id
-        where g.id = $1`,
-      [guest.guestId],
+         from weddings w left join cities c on c.id = w.city_id
+        where w.id = $1`,
+      [guest.weddingId],
     )
-    const r = rows[0]!
+    const { rows: persons } = await db().query<{
+      id: string; name: string; is_primary: boolean; rsvp: string
+      diet: string | null; diet_note: string | null; transfer: string | null
+    }>(
+      `select id, name, is_primary, rsvp, diet, diet_note, transfer
+         from guests where party_id = $1
+        order by is_primary desc, created_at, id`,
+      [guest.partyId],
+    )
+    const primary = persons.find((p) => p.is_primary) ?? persons[0]!
+    const w = wedding[0]!
     return {
-      guestName: guest.name,
-      status: r.rsvp,
-      /* Свой ответ целиком (v0.25): гость видит, что уже выбрал, и может
-         поправить, а не отвечать вслепую поверх старого. */
-      plusOne: r.plus_one,
-      diet: r.diet,
-      dietNote: r.diet_note,
-      transfer: r.transfer,
+      guestName: primary.name,
+      /* Legacy single-person surface mirrors the primary during migration. */
+      status: primary.rsvp,
+      plusOne: persons.length > 1,
+      diet: primary.diet,
+      dietNote: primary.diet_note,
+      transfer: primary.transfer,
+      persons: persons.map((p) => ({
+        id: p.id,
+        name: p.name,
+        primary: p.is_primary,
+        status: p.rsvp,
+        diet: p.diet,
+        dietNote: p.diet_note,
+        transfer: p.transfer,
+      })),
       wedding: {
-        title: r.title,
-        date: r.date,
-        city: r.city ? { name: r.city, region: r.region } : null,
-        inviteText: r.invite_text,
-        inviteThemeId: r.invite_theme_id,
-        venue: r.venue,
-        /* Дресс-код видит гость — ради него он и заводится (План ч. 976). */
-        dressCode: r.dress_code,
-        dressNote: r.dress_note,
-        /* Пояс места (`WeddingPublic.tz`): раздел «День свадьбы» на экране гостя
-         * появляется с кануна по нему, а не по поясу телефона (фича 009); пустой
-         * пояс — Москва, как у остальных гостевых путей. */
-        tz: r.tz,
+        title: w.title,
+        date: w.date,
+        city: w.city ? { name: w.city, region: w.region } : null,
+        inviteText: w.invite_text,
+        inviteThemeId: w.invite_theme_id,
+        venue: w.venue,
+        dressCode: w.dress_code,
+        dressNote: w.dress_note,
+        tz: w.tz,
       },
     }
   })
@@ -794,9 +794,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['status'],
           additionalProperties: false,
+          anyOf: [{ required: ['status'] }, { required: ['persons'] }],
           properties: {
+            /* Legacy primary-person response. */
             status: { type: 'string', enum: ['yes', 'no'] },
             plusOne: { type: 'boolean' },
             comment: { type: 'string', maxLength: 1000 },
@@ -807,71 +808,151 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             },
             dietNote: { type: 'string', maxLength: 300 },
             transfer: { type: 'string', enum: ['need', 'own'] },
+            /* 020 family response: every person is explicit. */
+            persons: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 10,
+              items: {
+                type: 'object',
+                required: ['id', 'status'],
+                additionalProperties: false,
+                properties: {
+                  id: UUID_ID,
+                  status: { type: 'string', enum: ['yes', 'no'] },
+                  diet: {
+                    type: 'string',
+                    nullable: true,
+                    enum: [null, 'vegetarian', 'vegan', 'halal', 'kosher', 'gluten_free', 'other'],
+                  },
+                  dietNote: { type: 'string', nullable: true, maxLength: 300 },
+                  transfer: { type: 'string', nullable: true, enum: [null, 'need', 'own'] },
+                },
+              },
+            },
           },
         },
       },
     },
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
-      const body = request.body as Record<string, unknown>
+      const body = request.body as {
+        status?: 'yes' | 'no'
+        plusOne?: boolean
+        comment?: string
+        diet?: string | null
+        dietNote?: string | null
+        transfer?: 'need' | 'own' | null
+        persons?: Array<{
+          id: string
+          status: 'yes' | 'no'
+          diet?: string | null
+          dietNote?: string | null
+          transfer?: 'need' | 'own' | null
+        }>
+      }
       const guest = await guestByToken(db(), guestToken)
 
-      /* Ответ и освобождение мест — одна транзакция (R-122): «не приду»
-       * с сиденьем, оставшимся за гостем, — состояние, которого не бывает
-       * в норме, а до 2026-09-06 сбой между запросами его давал. */
-      /* Еда: присланный `null` — это «без ограничений», а не «не трогать».
-       * Через `coalesce` гость, однажды выбравший «веган», не мог вернуться к
-       * обычному меню: контракт разрешает null, обработчик его глотал. */
-      const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key)
       await db().tx(async (client) => {
-        /* Строка гостя — первой: тот же порядок замков, что у посадки в
-         * автобус (гость → маршрут, RF-BE-06). «Не приду» — значит держать
-         * под него сиденье и номер незачем; освобождаются ДО записи ответа:
-         * с «+1» в том же теле у гостя из полного автобуса база иначе
-         * отказала бы тому, кто место как раз освобождает. Счётчики
-         * поправит триггер: он считает по факту строк. */
-        await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
-        if (body.status === 'no') {
-          await client.query(
-            `delete from bus_bookings b using bus_routes r
-              where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
-            [guest.guestId, guest.weddingId],
+        await client.query('select id from guest_parties where id = $1 for update', [guest.partyId])
+
+        /* Legacy bridge: a late plusOne=true on an old client creates an
+         * explicit companion exactly once. A named family person is never
+         * removed by plusOne=false. */
+        if (!body.persons && body.plusOne === true) {
+          const { rows: size } = await client.query<{ n: string }>(
+            'select count(*)::text as n from guests where party_id = $1',
+            [guest.partyId],
           )
-          await client.query(
-            `delete from hotel_bookings b using hotel_blocks h
-              where b.hotel_id = h.id and b.guest_id = $1 and h.wedding_id = $2`,
-            [guest.guestId, guest.weddingId],
-          )
-        }
-        try {
-          await client.query(
-            `update guests set rsvp = $2, rsvp_at = now(),
-                    plus_one = coalesce($3, plus_one),
-                    comment = coalesce($4, comment),
-                    diet = case when $5 then $6 else diet end,
-                    diet_note = case when $7 then $8 else diet_note end,
-                    transfer = coalesce($9, transfer)
-              where id = $1`,
-            [
-              guest.guestId,
-              body.status,
-              (body.plusOne as boolean) ?? null,
-              (body.comment as string) ?? null,
-              has('diet'),
-              (body.diet as string) ?? null,
-              has('diet') || has('dietNote'),
-              (body.dietNote as string) ?? null,
-              (body.transfer as string) ?? null,
-            ],
-          )
-        } catch (error) {
-          if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
-          throw error
+          if (Number(size[0]!.n) === 1) {
+            await client.query(
+              `insert into guests (
+                 id, wedding_id, name, rsvp, group_name, diet, diet_note,
+                 transfer, table_id, menu_option_id, party_id, is_primary, rsvp_at
+               )
+               select $2, wedding_id, 'Спутник/спутница', $3, group_name,
+                      $4, $5, $6, table_id, menu_option_id, party_id, false, now()
+                 from guests where id = $1`,
+              [
+                guest.guestId,
+                uuidv7(),
+                body.status ?? 'pending',
+                body.diet ?? null,
+                body.dietNote ?? null,
+                body.transfer ?? null,
+              ],
+            )
+          }
         }
 
-        /* Гостевые счётчики — тоже новость для подрядчика (§13.2):
-         * кейтеринг закупает по числу «приду», и разница в десять человек
-         * это разница в закупке, а не в таблице. */
+        const updates = body.persons ?? [{
+          id: guest.guestId,
+          status: body.status!,
+          ...(Object.prototype.hasOwnProperty.call(body, 'diet') ? { diet: body.diet } : {}),
+          ...(Object.prototype.hasOwnProperty.call(body, 'dietNote') ? { dietNote: body.dietNote } : {}),
+          ...(Object.prototype.hasOwnProperty.call(body, 'transfer') ? { transfer: body.transfer } : {}),
+        }]
+        const unique = [...new Set(updates.map((p) => p.id))]
+        if (unique.length !== updates.length) {
+          throw new AppError(422, 'validation_failed', 'Одна персона не может быть в ответе дважды')
+        }
+
+        const { rows: owned } = await client.query<{ id: string }>(
+          `select id from guests
+            where party_id = $1 and id = any($2::uuid[])
+            order by id for update`,
+          [guest.partyId, unique],
+        )
+        if (owned.length !== unique.length) throw notFound('Персона не найдена')
+
+        for (const p of updates) {
+          if (p.status === 'no') {
+            await client.query(
+              `delete from bus_bookings b using bus_routes r
+                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+              [p.id, guest.weddingId],
+            )
+          }
+          const hasDiet = Object.prototype.hasOwnProperty.call(p, 'diet')
+          const hasDietNote = Object.prototype.hasOwnProperty.call(p, 'dietNote')
+          const hasTransfer = Object.prototype.hasOwnProperty.call(p, 'transfer')
+          await client.query(
+            `update guests set
+                 rsvp = $2,
+                 rsvp_at = now(),
+                 diet = case when $3 then $4 else diet end,
+                 diet_note = case when $5 then $6 else diet_note end,
+                 transfer = case when $7 then $8 else transfer end
+               where id = $1 and party_id = $9`,
+            [
+              p.id,
+              p.status,
+              hasDiet,
+              p.diet ?? null,
+              hasDiet || hasDietNote,
+              p.dietNote ?? null,
+              hasTransfer,
+              p.transfer ?? null,
+              guest.partyId,
+            ],
+          )
+        }
+
+        if (body.comment !== undefined) {
+          await client.query(
+            'update guests set comment = $2 where party_id = $1 and is_primary',
+            [guest.partyId, body.comment],
+          )
+        }
+
+        const { rows: active } = await client.query<{ n: string }>(
+          "select count(*)::text as n from guests where party_id = $1 and rsvp <> 'no'",
+          [guest.partyId],
+        )
+        if (Number(active[0]!.n) === 0) {
+          await client.query('delete from hotel_bookings where party_id = $1', [guest.partyId])
+        }
+
         const { rows: counters } = await client.query<{ yes: string }>(
           "select count(*)::text as yes from guests where wedding_id = $1 and rsvp = 'yes'",
           [guest.weddingId],
@@ -879,8 +960,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         await noteVendorUpdate(client, guest.weddingId, 'guests', `Гостей «приду»: ${counters[0]!.yes}`)
       })
 
-      // Ответ гостю — без чужих данных: он видит только себя.
-      return { status: body.status, guestName: guest.name }
+      const { rows: persons } = await db().query<{ id: string; name: string; is_primary: boolean; rsvp: string }>(
+        'select id, name, is_primary, rsvp from guests where party_id = $1 order by is_primary desc, created_at, id',
+        [guest.partyId],
+      )
+      const primary = persons.find((p) => p.is_primary) ?? persons[0]!
+      return {
+        status: primary.rsvp,
+        guestName: primary.name,
+        persons: persons.map((p) => ({ id: p.id, name: p.name, primary: p.is_primary, status: p.rsvp })),
+      }
     },
   )
 
