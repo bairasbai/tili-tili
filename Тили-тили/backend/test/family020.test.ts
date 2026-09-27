@@ -44,9 +44,16 @@ describe.skipIf(!DB)('020 / family invitations migration invariants', () => {
     const invitationId = randomUUID()
     const guestId = randomUUID()
     const busId = randomUUID()
-    await app.db!.query('insert into weddings (id, owner_id, partner_name, city_name, city_region, timezone) select $1, id, $2, $3, $4, $5 from users limit 1', [
-      weddingId, '020', 'Уфа', 'Башкортостан', 'Asia/Yekaterinburg',
-    ])
+    const ownerId = randomUUID()
+    await app.db!.query(
+      `insert into users (id, phone, display_name) values ($1, $2, $3)`,
+      [ownerId, '+7999' + String(Math.floor(Math.random() * 1e7)).padStart(7, '0'), '020 owner'],
+    )
+    await app.db!.query(
+      `insert into weddings (id, owner_id, title, tz, invite_code)
+       values ($1, $2, $3, $4, $5)`,
+      [weddingId, ownerId, '020', 'Asia/Yekaterinburg', 'f020-' + randomUUID()],
+    )
     await app.db!.query('insert into guest_invitations (id,wedding_id,label,rsvp_token) values ($1,$2,$3,$4)', [
       invitationId,weddingId,'Семья','inv-'+randomUUID(),
     ])
