@@ -3,7 +3,7 @@ import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
-import { isCheckViolation, type Queryable } from '../plugins/db.js'
+import type { Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import { requireRole, type Role } from '../wedding/access.js'
 
@@ -113,17 +113,6 @@ export function assertPhoneByCouple(role: Role, hasPhone: boolean): void {
     throw new AppError(403, 'forbidden', 'Телефоны гостей ведёт пара — остальной команде они не показываются и не правятся')
   }
 }
-
-/**
- * «+1» у гостя, который уже сидит в полном автобусе.
- *
- * Места считает база: смена `plus_one` пересчитывает персоны его записи
- * триггером, и переполнение приходит как `23514` от `bus_taken_bounded`
- * (фича 005). Это сработавшее правило, а не поломка сервера — человеку
- * нужен 409 с тем, что делать дальше, а не 500.
- */
-const busFullForPlusOne = () =>
-  conflict('bus_full', 'в автобусе нет места для +1 — снимите бронь автобуса или выберите другой')
 
 /**
  * Телефон из списка гостей — к виду `+7XXXXXXXXXX` (фича 008).
@@ -1067,7 +1056,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
         if (body.capacity !== undefined) {
           const { rows: seated } = await client.query<{ persons: string }>(
-            'select coalesce(sum(1 + plus_one::int), 0)::text as persons from guests where table_id = $1',
+            'select count(*)::text as persons from guests where table_id = $1',
             [tableId],
           )
           const persons = Number(seated[0]!.persons)
