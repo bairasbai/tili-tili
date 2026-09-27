@@ -84,10 +84,18 @@ const click = (label: string) => fireEvent.click(screen.getByText(label))
 const next = () => fireEvent.click(screen.getByText('Далее'))
 const skip = () => fireEvent.click(screen.getByText('Пропустить вопрос'))
 
-interface Walk { format?: string; planner?: string; booked?: string[] }
-/** Квиз от даты до шага имён: дата «ещё не решили», Уфа; формат, «кто планирует» и «уже забронировано» — по `w`, остальное — «Пропустить». */
+interface Walk { format?: string; planner?: string; booked?: string[]; dateDay?: string }
+/** Квиз от даты до шага имён: по умолчанию «ещё не решили», но тесты отказа могут выбрать реальную дату; Уфа; остальные ответы — по `w`. */
 function walkToNames(w: Walk = {}) {
-  click('Ещё не решили'); next()
+  if (w.dateDay) {
+    click('Выбрать день в календаре')
+    const day = screen.getAllByRole('button').find(b => b.textContent === w.dateDay && !(b as HTMLButtonElement).disabled)
+    expect(day, `день ${w.dateDay} должен быть доступен в календаре`).toBeTruthy()
+    fireEvent.click(day!)
+  } else {
+    click('Ещё не решили')
+  }
+  next()
   click('Уфа'); next()
   skip() // гости
   skip() // бюджет
@@ -205,16 +213,18 @@ describe('К2: имя уходит в профиль до создания св�
         : []),
     }))
     const r = quizScreen()
-    walkToNames({ format: 'Классика: ЗАГС + банкет' })
+    walkToNames({ format: 'Классика: ЗАГС + банкет', dateDay: '15' })
     await waitFor(() => expect(ownInput().value).toBe('Алина'), { timeout: 4000 })
     type(partnerInput(), 'Тимур')
     fireEvent.click(createButton())
 
     await waitFor(() => expect(text(r)).toContain('Сервер недоступен'), { timeout: 4000 })
     expect(postIndex(calls)).toBeGreaterThanOrEqual(0)
+    expect((postOf(calls)!.body as { date?: string }).date).toMatch(/^\d{4}-\d{2}-15$/)
     expect(localStorage.getItem('tt_onboarded')).toBeNull()
     expect(JSON.parse(localStorage.getItem('tt_quiz') ?? 'null')).toMatchObject({
       format: 'Классика: ЗАГС + банкет',
+      date: expect.stringMatching(/^\d{4}-\d{2}-15$/),
     })
     expect(localStorage.getItem('tt_wedding_date')).toBeNull()
     expect(text(r)).not.toContain('ГЛАВНАЯ')
