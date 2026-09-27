@@ -875,8 +875,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         const { rows: selected } = await client.query<{ id: string }>(
           guestId
             ? `select id from guests where id = $1 and party_id = $2 order by id for update`
-            : `select id from guests where party_id = $2 order by id for update`,
-          guestId ? [guestId, guest.partyId] : [null, guest.partyId],
+            : `select id from guests where party_id = $1 order by id for update`,
+          guestId ? [guestId, guest.partyId] : [guest.partyId],
         )
         if (selected.length === 0) throw notFound('Человек не входит в это приглашение')
         const memberIds = selected.map((row) => row.id)
@@ -1166,8 +1166,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         const { rows: selected } = await client.query<{ id: string }>(
           guestId
             ? 'select id from guests where id = $1 and party_id = $2 order by id for update'
-            : 'select id from guests where party_id = $2 order by id for update',
-          guestId ? [guestId, guest.partyId] : [null, guest.partyId],
+            : 'select id from guests where party_id = $1 order by id for update',
+          guestId ? [guestId, guest.partyId] : [guest.partyId],
         )
         if (selected.length === 0) throw notFound('Человек не входит в это приглашение')
         const ids = selected.map((row) => row.id)
