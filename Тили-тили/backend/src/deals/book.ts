@@ -206,10 +206,12 @@ export async function bookVendor(
     )
   }
 
-  const taken = await client.query('update slots set deal_id = $2 where id = $1 and deal_id is null', [
-    context.slotId,
-    dealId,
-  ])
+  // 018 prebooked и 019 booking должны оставаться одной атомарной операцией:
+  // сделка и отметка «уже забронировано вне приложения» одновременно запрещены CHECK базы.
+  const taken = await client.query(
+    'update slots set deal_id = $2, prebooked_at = null where id = $1 and deal_id is null',
+    [context.slotId, dealId],
+  )
   if (taken.rowCount === 0) {
     throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
   }
