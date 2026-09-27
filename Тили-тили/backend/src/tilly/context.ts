@@ -128,16 +128,15 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   lines.push(`Общий бюджет: ${rub(wedding.budget_total)}`)
 
   /* Гости — имена и ответы, без телефонов, e-mail и комментариев. */
-  const { rows: guests } = await db.query<{ name: string; rsvp: string; plus_one: boolean }>(
-    'select name, rsvp, plus_one from guests where wedding_id = $1 order by created_at',
+  const { rows: guests } = await db.query<{ name: string; rsvp: string }>(
+    'select name, rsvp from guests where wedding_id = $1 order by created_at, id',
     [weddingId],
   )
   const count = (status: string) => guests.filter((g) => g.rsvp === status).length
-  const plusOnes = guests.filter((g) => g.plus_one && g.rsvp !== 'no').length
   lines.push('', '## Гости')
-  lines.push(`В списке: ${guests.length} (придут: ${count('yes')}, не придут: ${count('no')}, без ответа: ${count('pending')}); с «+1»: ${plusOnes}`)
+  lines.push(`В списке персон: ${guests.length} (придут: ${count('yes')}, не придут: ${count('no')}, без ответа: ${count('pending')})`)
   for (const g of guests.slice(0, GUEST_NAMES_MAX)) {
-    lines.push(`- ${safeText(g.name)} — ${RSVP_RU[g.rsvp] ?? g.rsvp}${g.plus_one ? ', +1' : ''}`)
+    lines.push(`- ${safeText(g.name)} — ${RSVP_RU[g.rsvp] ?? g.rsvp}`)
   }
   if (guests.length > GUEST_NAMES_MAX) lines.push(`… и ещё ${guests.length - GUEST_NAMES_MAX}`)
 
