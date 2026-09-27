@@ -219,7 +219,7 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
     expect((await app.inject({ method: 'GET', url: `/weddings/${weddingId}`, headers: auth(partner.token) })).statusCode).toBe(200)
   })
 
-  it('стирание подрядчика: сделка остаётся паре историей с именем исполнителя', async () => {
+  it('стирание подрядчика: сделка сохраняет условия без личности исполнителя', async () => {
     const couple = await newUser()
     const weddingId = await newWedding(couple.token)
     const vendor = await newVendor('decor')
@@ -244,11 +244,11 @@ describe.skipIf(!live)('блок 3: отказ по ролям, журнал с�
       'select vendor_id, external_name, state from deals where id = $1',
       [dealId],
     )
-    expect(rows[0]).toEqual({ vendor_id: null, external_name: vendor.name, state: 'done' })
+    expect(rows[0]).toEqual({ vendor_id: null, external_name: 'Удалённый подрядчик', state: 'done' })
     const slot = await app.inject({ method: 'GET', url: `/weddings/${weddingId}/slots`, headers: auth(couple.token) })
     expect(slot.statusCode).toBe(200)
     const mine = (slot.json() as { id: string; deal?: { vendor?: unknown; externalName?: string | null } | null }[]).find((s) => s.id === slotId)
     expect(mine?.deal?.vendor ?? null).toBeNull()
-    expect(mine?.deal?.externalName).toBe(vendor.name)
+    expect(mine?.deal?.externalName).toBe('Удалённый подрядчик')
   })
 })
