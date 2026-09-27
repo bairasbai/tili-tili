@@ -609,13 +609,14 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
 
 /* ── чистая функция ───────────────────────────────────────────────── */
 describe('счётчик персон', () => {
-  it('запись с «+1» считается за двоих', () => {
+  it('персоны считаются по отдельным строкам, без скрытого множителя +1', () => {
     expect(
       personCount([
-        { status: 'yes', plusOne: true },
-        { status: 'yes', plusOne: false },
-        { status: 'no', plusOne: true },
-        { status: 'pending', plusOne: false },
+        { status: 'yes' },
+        { status: 'yes' },
+        { status: 'yes' },
+        { status: 'no' },
+        { status: 'pending' },
       ]),
     ).toBe(3)
   })
