@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.44.0
+  version: 0.46.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1834,6 +1834,13 @@ paths:
         городов подходят под название — 422 `city_ambiguous`; портфолио с
         видео без длительности — 422 `video_duration_required`; видео длиннее
         предела — 422 `video_too_long`.
+
+        Пакеты сохраняются по `id` (019, FR-006): `id` не своего пакета —
+        чужого, уже удалённого или не uuid — 422 `unknown_package` с полем
+        `packages/{i}/id`, и не записывается ничего; один `id` дважды — 422
+        `validation_failed` с тем же полем. Ответ — анкета, прочитанная в той
+        же транзакции: пакеты в нём идут в присланном порядке, и новый пакет
+        получает `id` на том же месте списка.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -5146,21 +5153,52 @@ components:
                   durationS: { type: integer, nullable: true }
             packages:
               type: array
-              items:
-                type: object
-                properties:
-                  id: { type: string }
-                  name: { type: string }
-                  price: { $ref: '#/components/schemas/Money' }
-                  includes: { type: array, items: { type: string } }
+              description: 'В порядке, заданном подрядчиком.'
+              items: { $ref: '#/components/schemas/VendorPackage' }
             reviews:
               type: array
               items: { $ref: '#/components/schemas/Review' }
+    VendorPackage:
+      type: object
+      description: |
+        Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не
+        удаляющая пакет, его не меняет, и брони называют пакет, как до правки
+        (019, FR-006).
+      required: [id, name, price, includes]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        price:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          nullable: true
+          description: '`null` — цена не названа («по запросу»), а не 0 ₽ (R-281).'
+        includes:
+          type: array
+          description: 'Что входит в пакет — пунктами.'
+          items: { type: string }
+    VendorPackageInput:
+      type: object
+      description: |
+        Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который
+        остаётся тем же (имя, цена, состав и место в списке обновляются);
+        без `id` — новый. Цены нет — поле не присылается: `null` не
+        принимается, пакет хранится без цены (R-281).
+      required: [name]
+      properties:
+        id: { type: string, maxLength: 64 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        price: { $ref: '#/components/schemas/Money' }
+        includes:
+          type: array
+          maxItems: 40
+          items: { type: string, maxLength: 200 }
     VendorUpsert:
       type: object
       description: |
         Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):
-        **поля нет — список не трогаем, пустой массив — очищаем**.
+        **поля нет — список не трогаем, пустой массив — очищаем**. Пакеты
+        сохраняются по `id`: присланный с `id` — тот же пакет, без `id` —
+        новый, неприсланный удаляется (019, FR-006).
 
         Иначе экран, который списком не занимается — мастер анкеты портфолио не
         редактирует, загрузка ждёт хранилища, — стирал бы чужие работы при
@@ -5199,12 +5237,8 @@ components:
             поля прежнее подтверждение не трогают.
         packages:
           type: array
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              price: { $ref: '#/components/schemas/Money' }
-              includes: { type: array, items: { type: string } }
+          maxItems: 20
+          items: { $ref: '#/components/schemas/VendorPackageInput' }
         portfolioUrls:
           type: array
           description: 'Фотографии портфолио. Для видео нужен `media` — там есть длительность.'
