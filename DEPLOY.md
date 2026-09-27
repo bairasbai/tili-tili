@@ -38,7 +38,7 @@ SPA-fallback, прокси `/api` → бэкенд, `deploy/nginx.conf`), `api` 
 | push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`backend/scripts/gen-vapid.mjs`, блокер №4) + тот же публичный ключ в сборку фронта (`VITE_VAPID_PUBLIC_KEY` — аргумент `web` в compose) | подписка отвечает 501 `push_not_configured`; уведомления видны в приложении |
 | Тиль | `TILLY_PROVIDER=openrouter` + `TILLY_API_KEY`, или `ollama` на сервере (блокер №27; `backend/README.md` «Тиль: провайдеры») | Тиль честно отвечает «пока без ИИ» |
 | наблюдение | `SENTRY_DSN` (блокер №14) | ошибки только в логе контейнера |
-| пределы | `OTP_*`, `RATE_LIMIT_PER_SECOND`, `ALBUM_MAX_PER_GUEST`, `CONTRIBUTIONS_MAX_PER_GUEST`, `RESERVATIONS_MAX_PER_GUEST`, `COLD_OUTREACH_PER_DAY`, `WEDDING_ARCHIVE_DAYS` | значения по умолчанию из `.env.example` — менять только осознанно |
+| пределы | `OTP_*`, `RATE_LIMIT_PER_SECOND`, `RATE_LIMIT_WINDOW_SECONDS` (окно, по умолчанию 10 с), `ALBUM_MAX_PER_GUEST`, `CONTRIBUTIONS_MAX_PER_GUEST`, `RESERVATIONS_MAX_PER_GUEST`, `COLD_OUTREACH_PER_DAY`, `WEDDING_ARCHIVE_DAYS` | значения по умолчанию из `.env.example` — менять только осознанно |
 
 Redis включается вместе с составом и обязателен в production: без него нет
 ограничителя запросов, фоновых задач (push, уборка архива и удалённых

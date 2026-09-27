@@ -250,6 +250,8 @@ describe.skipIf(!live)('этап 9: эксплуатация и 152-ФЗ', () =>
       jwtRefreshSecret: SECRET_R,
       policyVersion: '2026-09-02',
       rateLimitPerSecond: 10,
+      // «Одиннадцатый за секунду» — про секундное окно; по умолчанию окно 10 с (ERR-0307, ratelimit.test.ts).
+      rateLimitWindowSeconds: 1,
     })
     await limited.ready()
     try {

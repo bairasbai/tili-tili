@@ -16,8 +16,11 @@ import { withRedisTimeout } from './redis.js'
  *
  * Ключ — токен, а не адрес: за одним адресом сидит целый свадебный чат
  * с общим Wi-Fi, а токен принадлежит одному человеку.
+ *
+ * Окно — `config.rateLimitWindowSeconds` (по умолчанию 10 с), предел за окно —
+ * лимит × окно. Секундная рамка резала обычную загрузку экрана: главная новой
+ * свадьбы шлёт десяток запросов за доли секунды, и хвост получал 429 (ERR-0307).
  */
-const WINDOW_SECONDS = 1
 
 /** Проверки здоровья считает балансировщик — им ограничение только мешает. */
 const SKIP = /^\/health/
@@ -78,18 +81,21 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
   }
   const limit = config.rateLimitPerSecond
   if (limit <= 0) return
+  const windowSeconds = Math.max(1, Math.floor(config.rateLimitWindowSeconds))
+  const per = windowSeconds === 1 ? 'в секунду' : `за ${windowSeconds} с`
 
   app.addHook('onRequest', async (request) => {
     if (SKIP.test(request.url)) return
     const caller = await rateLimitKey(request, config.jwtAccessSecret ?? null)
-    const window = Math.floor(Date.now() / 1000 / WINDOW_SECONDS)
+    const now = Math.floor(Date.now() / 1000)
+    const window = Math.floor(now / windowSeconds)
     /* Гостевой токен не подписан — рядом с его счётчиком считается адрес,
      * с потолком выше (см. `GUEST_IP_FACTOR`). Префикс `gip` держит этот
      * потолок отдельно от анонимного счётчика `ip`: общая строка ключа
      * отдавала бы гостям на одном Wi-Fi чужой лимит адреса — вход по SMS,
      * обмен токенов, каталог без входа — и наоборот (F-RL-1-03). */
-    const checks: { key: string; max: number }[] = [{ key: `rl:${caller}:${window}`, max: limit }]
-    if (caller.startsWith('g:')) checks.push({ key: `rl:gip:${request.ip}:${window}`, max: limit * GUEST_IP_FACTOR })
+    const checks: { key: string; max: number }[] = [{ key: `rl:${caller}:${window}`, max: limit * windowSeconds }]
+    if (caller.startsWith('g:')) checks.push({ key: `rl:gip:${request.ip}:${window}`, max: limit * GUEST_IP_FACTOR * windowSeconds })
 
     for (const { key, max } of checks) {
       let count: number
@@ -97,7 +103,7 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
         count = await withRedisTimeout(app.redis!.incr(key))
         // Срок ставим только на первом запросе окна: лишний EXPIRE на каждый
         // запрос — лишний поход в Redis без всякой пользы.
-        if (count === 1) await withRedisTimeout(app.redis!.expire(key, WINDOW_SECONDS + 1))
+        if (count === 1) await withRedisTimeout(app.redis!.expire(key, windowSeconds + 1))
       } catch (err) {
         // Redis прилёг — пропускаем. Ограничитель защищает от перегрузки,
         // а не наоборот: превращать его сбой в отказ всему сервису нельзя.
@@ -105,7 +111,8 @@ export async function registerRateLimit(app: FastifyInstance, config: Config): P
         return
       }
       if (count > max) {
-        throw new TooManyRequests(WINDOW_SECONDS, `Не больше ${max} запросов в секунду`, 'rate_limited')
+        // Повтор — с началом следующего окна, а не через всё окно целиком.
+        throw new TooManyRequests(windowSeconds - (now % windowSeconds), `Не больше ${max} запросов ${per}`, 'rate_limited')
       }
     }
   })

@@ -57,6 +57,12 @@ export interface Config {
   reservationsMaxPerGuest: number
   /** Запросов в секунду на токен (§13.4). Ноль выключает ограничитель. */
   rateLimitPerSecond: number
+  /**
+   * Окно счёта ограничителя, секунд (целое, не меньше 1). Предел за окно —
+   * `rateLimitPerSecond × окно`: среднее то же, а загрузка экрана разом —
+   * десяток запросов за доли секунды — не упирается в секундную рамку (ERR-0307).
+   */
+  rateLimitWindowSeconds: number
   /** Сколько новых переписок в день начинает НЕпроверенный подрядчик (§18.2). */
   coldOutreachPerDay: number
   /** Сколько дней отменённая свадьба лежит в архиве, прежде чем уборка сотрёт её. */
@@ -255,6 +261,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     contributionsMaxPerGuest: envNumber(source.CONTRIBUTIONS_MAX_PER_GUEST, 20),
     reservationsMaxPerGuest: envNumber(source.RESERVATIONS_MAX_PER_GUEST, 5),
     rateLimitPerSecond: envNumber(source.RATE_LIMIT_PER_SECOND, 10),
+    rateLimitWindowSeconds: Math.max(1, Math.floor(envNumber(source.RATE_LIMIT_WINDOW_SECONDS, 10))),
     coldOutreachPerDay: envNumber(source.COLD_OUTREACH_PER_DAY, 5),
     weddingArchiveDays: parseArchiveDays(source.WEDDING_ARCHIVE_DAYS),
     sentryDsn: envText(source.SENTRY_DSN),

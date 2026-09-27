@@ -1,0 +1,132 @@
+name: Живой обход
+
+# Шесть ролей кликом в headless-Chromium и восемь сквозных сценариев на чистой базе (Тили-тили/e2e/walkthrough).
+# Долгий (40–90 минут), поэтому не на каждый push: кнопкой «Run workflow» и при правке самого обхода.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Тили-тили/e2e/walkthrough/**'
+      - '.github/workflows/walkthrough.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: walkthrough
+  cancel-in-progress: true
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d tili"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    # Сервер как на машине разработчика, только с Redis и без внешних служб (SMS — в лог, откуда раздатчик
+    # берёт код входа). Секреты — одноразовые, заводятся ниже на каждый прогон.
+    env:
+      NODE_ENV: development
+      PORT: '3001'
+      HOST: 127.0.0.1
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+      REDIS_URL: redis://localhost:6379
+      POLICY_VERSION: '2026-09-02'
+      OTP_MAX_PER_IP_HOUR: '100000'
+      OTP_MAX_PER_HOUR_TOTAL: '100000'
+      # Сценарии входят под одним номером по нескольку раз (онбординг, отзыв согласия, удаление и вход заново),
+      # и все — с одного адреса: боевые потолки (3 кода на номер с адреса в час) здесь резали бы сам обход.
+      OTP_MAX_PER_PHONE_IP_HOUR: '100'
+      OTP_MAX_PER_PHONE_HOUR: '100'
+      OTP_MAX_PER_PHONE_DAY: '1000'
+      RATE_LIMIT_PER_SECOND: '10'
+      VAPID_SUBJECT: mailto:support@tili-tili.ru
+      WALK_MAKE_STAFF: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Та же закреплённая версия pnpm, что в ci.yml и образах (FL-16).
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - name: Зависимости фронта
+        working-directory: Тили-тили/app
+        run: |
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Зависимости бэка
+        working-directory: Тили-тили/backend
+        run: |
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Браузер (playwright-core и Chromium вне проекта)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-package-lock playwright-core@1.54.2
+          node "$RUNNER_TEMP/pw/node_modules/playwright-core/cli.js" install --with-deps chromium
+          echo "PW_CORE=$RUNNER_TEMP/pw/node_modules/playwright-core" >> "$GITHUB_ENV"
+          echo "LIVE_DIR=$RUNNER_TEMP/walk" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/walk"
+      - name: Одноразовые секреты прогона
+        working-directory: Тили-тили/backend
+        run: |
+          echo "JWT_ACCESS_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "JWT_REFRESH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          node scripts/gen-vapid.mjs | grep -E '^VAPID_(PUBLIC|PRIVATE)_KEY=' >> "$GITHUB_ENV"
+      - name: Миграции на чистой базе
+        working-directory: Тили-тили/backend
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      # NODE_ENV=development выше — для сервера; сборка с ним вышла бы dev-версией React (StrictMode дважды
+      # запускает эффекты — каждый запрос уходил парой) и без service worker. Собираем как на проде.
+      - name: Прод-сборка фронта
+        working-directory: Тили-тили/app
+        env:
+          NODE_ENV: production
+        run: node node_modules/vite/bin/vite.js build
+      - name: Стенд — бэк, фронт (vite preview, прокси /api → 3001), раздатчик
+        run: |
+          (cd Тили-тили/backend && nohup node node_modules/tsx/dist/cli.mjs src/index.ts > "$LIVE_DIR/be.log" 2>&1 &)
+          (cd Тили-тили/app && nohup node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 3000 --strictPort > "$LIVE_DIR/fe.log" 2>&1 &)
+          nohup node Тили-тили/e2e/walkthrough/tok-server.mjs > "$LIVE_DIR/tok.log" 2>&1 &
+          for i in $(seq 1 60); do
+            b=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/health/ready || true)
+            f=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/ || true)
+            t=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3999/nothing || true)
+            [ "$b" = 200 ] && [ "$f" = 200 ] && [ "$t" = 404 ] && { echo "стенд готов: бэк $b, фронт $f, раздатчик $t"; exit 0; }
+            sleep 2
+          done
+          echo "стенд не поднялся: бэк $b, фронт $f, раздатчик $t"
+          tail -c 3000 "$LIVE_DIR/be.log"; tail -c 1500 "$LIVE_DIR/fe.log"; tail -c 500 "$LIVE_DIR/tok.log"
+          exit 1
+      - name: Обход
+        run: bash Тили-тили/e2e/walkthrough/walk.sh
+      - name: Ошибки сервера (5xx) за прогон
+        if: always()
+        run: |
+          grep -hE '"statusCode":5[0-9]{2}' "$LIVE_DIR/be.log" | head -40 || true
+          grep -hE '"level":50' "$LIVE_DIR/be.log" | cut -c1-400 | head -20 || true
+      - name: Отчёты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: walkthrough-out
+          path: |
+            ${{ runner.temp }}/walk/crawl/out/
+            ${{ runner.temp }}/walk/*.log
+            ${{ runner.temp }}/walk/fixtures-public.json
+          retention-days: 14

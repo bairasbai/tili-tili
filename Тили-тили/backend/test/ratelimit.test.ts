@@ -31,6 +31,8 @@ describe.skipIf(!live)('ограничение частоты', () => {
       jwtRefreshSecret: SECRET_R,
       policyVersion: '2026-09-02',
       rateLimitPerSecond: 3,
+      // Точная арифметика секундного окна (предел = лимит); окно по умолчанию (10 с) — отдельный блок ниже.
+      rateLimitWindowSeconds: 1,
     })
     await app.ready()
     // Подключение к Redis идёт параллельно старту — дожидаемся его здесь,
@@ -198,6 +200,70 @@ describe.skipIf(!live)('ограничение частоты', () => {
       expect(refused[0]!.json().error.code).toBe('rate_limited')
       expect(refused[0]!.json().error.message).toBe('Не больше 30 запросов в секунду')
     })
+  })
+})
+
+/*
+ * Окно по умолчанию — 10 секунд (ERR-0307). Жёсткая секундная рамка резала
+ * обычную загрузку экрана: живой обход 2026-09-26 на прод-сборке поймал 429
+ * у новой пары на главной сразу после квиза (подсказки Тиля, уведомления).
+ * Предел за окно — лимит × окно: среднее то же, всплеск загрузки проходит.
+ */
+describe.skipIf(!live)('окно по умолчанию — 10 секунд: всплеск проходит, среднее держится', () => {
+  const WINDOW = 10
+  let app: FastifyInstance
+
+  beforeAll(async () => {
+    // Окно не задано — берётся умолчание конфига, его и проверяем.
+    app = await buildApp({
+      env: 'test',
+      databaseUrl: null,
+      redisUrl: REDIS ?? null,
+      corsOrigins: [],
+      jwtAccessSecret: SECRET_A,
+      jwtRefreshSecret: SECRET_R,
+      policyVersion: '2026-09-02',
+      rateLimitPerSecond: 3,
+    })
+    await app.ready()
+    await new Promise<void>((resolve, reject) => {
+      const redis = app.redis!
+      if (redis.status === 'ready') return resolve()
+      const timer = setTimeout(() => reject(new Error('Redis не поднялся за 10 с')), 10_000)
+      redis.once('ready', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
+  })
+
+  afterAll(async () => {
+    await app?.close()
+  })
+
+  const windowOf = () => Math.floor(Date.now() / 1000 / WINDOW)
+
+  it('пачка из 30 за доли секунды проходит целиком, 31-я — 429 с Retry-After не дальше конца окна', async () => {
+    let held = false
+    let burst: Awaited<ReturnType<FastifyInstance['inject']>>[] = []
+    for (let attempt = 0; attempt < 3 && !held; attempt++) {
+      // Свой адрес на попытку: пачка, перешагнувшая границу окна, оставила бы
+      // в новом окне хвост счёта, и следующая попытка стартовала бы не с нуля.
+      const ip = `198.19.${randomInt(0, 255)}.${randomInt(1, 254)}`
+      const before = windowOf()
+      burst = await Promise.all(Array.from({ length: 31 }, () =>
+        app.inject({ method: 'GET', url: '/geo/cities?q=Ка', remoteAddress: ip })))
+      held = before === windowOf()
+    }
+    if (!held) throw new Error('окно не удержано')
+    const refused = burst.filter((r) => r.statusCode === 429)
+    expect(burst.filter((r) => r.statusCode !== 429).length).toBe(30)
+    expect(refused.length).toBe(1)
+    expect(refused[0]!.json().error.code).toBe('rate_limited')
+    expect(refused[0]!.json().error.message).toBe('Не больше 30 запросов за 10 с')
+    const retry = Number(refused[0]!.headers['retry-after'])
+    expect(retry).toBeGreaterThanOrEqual(1)
+    expect(retry).toBeLessThanOrEqual(WINDOW)
   })
 })
 
