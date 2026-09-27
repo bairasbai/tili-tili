@@ -379,6 +379,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           additionalProperties: false,
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 120 },
+            /* Compatibility bridge. Explicit family clients do not use it. */
+            plusOne: { type: 'boolean' },
             status: { type: 'string', enum: ['yes', 'no', 'pending'] },
             group: { type: 'string', nullable: true, maxLength: 120 },
             phone: { type: 'string', nullable: true, maxLength: 32 },
@@ -404,35 +406,117 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
 
       return db().tx(async (client) => {
-        /* Person row is the mutex. The family party is read from it so no
-         * caller can move a person across invitations by supplying an id. */
-        const { rows: locked } = await client.query<{ party_id: string; is_primary: boolean }>(
-          'select party_id, is_primary from guests where id = $1 and wedding_id = $2 for update',
+        const { rows: owner } = await client.query<{ party_id: string }>(
+          'select party_id from guests where id = $1 and wedding_id = $2',
           [guestId, weddingId],
         )
-        const current = locked[0]
-        if (!current) throw notFound('Гость не найден')
+        const partyId = owner[0]?.party_id
+        if (!partyId) throw notFound('Гость не найден')
 
-        const tableToCheck = has('tableId') ? (body.tableId as string | null) : undefined
-        if (tableToCheck) {
+        /* Family mutex first, then person rows: same order as family RSVP. */
+        await client.query('select id from guest_parties where id = $1 for update', [partyId])
+        const { rows: locked } = await client.query<{
+          id: string
+          is_primary: boolean
+          name: string
+          table_id: string | null
+          rsvp: string
+          group_name: string | null
+          diet: string | null
+          diet_note: string | null
+          transfer: string | null
+          menu_option_id: string | null
+        }>(
+          `select id, is_primary, name, table_id, rsvp, group_name, diet, diet_note, transfer, menu_option_id
+             from guests where party_id = $1 order by id for update`,
+          [partyId],
+        )
+        const current = locked.find((p) => p.id === guestId)
+        if (!current) throw notFound('Гость не найден')
+        const auto = locked.find((p) => !p.is_primary && p.name === 'Спутник/спутница') ?? null
+        const legacySolo = locked.length === 1 && current.is_primary
+        const addAuto = body.plusOne === true && legacySolo
+        const removeAuto = body.plusOne === false && current.is_primary && auto !== null
+
+        /* Legacy +1 follows primary seating. Named family members never do. */
+        const targetTable = has('tableId')
+          ? (body.tableId as string | null)
+          : addAuto
+            ? current.table_id
+            : undefined
+        if (targetTable) {
           const { rows: table } = await client.query<{ name: string; capacity: number }>(
             'select name, capacity from tables where id = $1 and wedding_id = $2 for update',
-            [tableToCheck, weddingId],
+            [targetTable, weddingId],
           )
           if (!table[0]) throw notFound('Стол не найден')
+          const movingIds = [guestId, ...(auto ? [auto.id] : [])]
           const { rows: seated } = await client.query<{ persons: string }>(
             `select count(*)::text as persons
                from guests
-              where wedding_id = $2 and table_id = $1 and id <> $3`,
-            [tableToCheck, weddingId, guestId],
+              where wedding_id = $2 and table_id = $1 and not (id = any($3::uuid[]))`,
+            [targetTable, weddingId, movingIds],
           )
-          const total = Number(seated[0]!.persons) + 1
+          const requested = current.is_primary && (addAuto || auto) ? 2 : 1
+          const total = Number(seated[0]!.persons) + requested
           if (total > table[0].capacity) {
             throw conflict(
               'table_full',
-              `За столом «${table[0].name}» ${table[0].capacity} ${plural(table[0].capacity, 'место', 'места', 'мест')}, а с этой персоной сидело бы ${total}`,
+              `За столом «${table[0].name}» ${table[0].capacity} ${plural(table[0].capacity, 'место', 'места', 'мест')}, а после изменения сидело бы ${total}`,
             )
           }
+        }
+
+        if (addAuto) {
+          const companionId = uuidv7()
+          await client.query(
+            `insert into guests (
+               id, wedding_id, name, rsvp, group_name, diet, diet_note, transfer,
+               table_id, menu_option_id, party_id, is_primary, rsvp_at
+             ) values ($1,$2,'Спутник/спутница',$3,$4,$5,$6,$7,$8,$9,$10,false,
+                       case when $3 <> 'pending' then now() else null end)`,
+            [
+              companionId,
+              weddingId,
+              (body.status as string | undefined) ?? current.rsvp,
+              has('group') ? (body.group as string | null) : current.group_name,
+              has('diet') ? (body.diet as string | null) : current.diet,
+              has('dietNote') ? (body.dietNote as string | null) : current.diet_note,
+              has('transfer') ? (body.transfer as string | null) : current.transfer,
+              has('tableId') ? (body.tableId as string | null) : current.table_id,
+              current.menu_option_id,
+              partyId,
+            ],
+          )
+          /* Old client expects its +1 to ride with it. The trigger enforces
+           * remaining capacity atomically. */
+          const { rows: primaryBus } = await client.query<{ bus_id: string }>(
+            'select bus_id from bus_bookings where guest_id = $1 limit 1',
+            [guestId],
+          )
+          if (primaryBus[0]) {
+            try {
+              await client.query(
+                'insert into bus_bookings(bus_id, guest_id) values ($1,$2)',
+                [primaryBus[0].bus_id, companionId],
+              )
+            } catch (error) {
+              if (isCheckViolation(error, 'bus_taken_bounded')) {
+                throw conflict('bus_full', 'В автобусе нет места для второй персоны — выберите другой маршрут')
+              }
+              throw error
+            }
+          }
+          if (current.menu_option_id) {
+            await client.query(
+              'insert into menu_votes(guest_id, option_id) values ($1,$2) on conflict (guest_id) do nothing',
+              [companionId, current.menu_option_id],
+            )
+          }
+        }
+
+        if (removeAuto && auto) {
+          await client.query('delete from guests where id = $1', [auto.id])
         }
 
         if (body.status === 'no') {
@@ -441,6 +525,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
             [guestId, weddingId],
           )
+          if (auto && !removeAuto) {
+            await client.query(
+              `delete from bus_bookings b using bus_routes r
+                where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2`,
+              [auto.id, weddingId],
+            )
+          }
         }
 
         const res = await client.query(
@@ -451,7 +542,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
              table_id = case when $7 then $8::uuid else table_id end,
              diet = case when $9 then $10 else diet end,
              diet_note = case when $11 then $12 else diet_note end,
-             transfer = case when $13 then $14 else transfer end
+             transfer = case when $13 then $14 else transfer end,
+             rsvp_at = case when $4::text is null then rsvp_at else now() end
            where id = $1 and wedding_id = $2`,
           [
             guestId,
@@ -472,29 +564,49 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         )
         if (res.rowCount === 0) throw notFound('Гость не найден')
 
-        /* Contact phone belongs to the invitation, represented by its primary
-         * person during the transition. Editing a companion updates the same
-         * family contact instead of silently creating a second contact. */
-        if (has('phone')) {
+        /* Existing auto companion mirrors legacy primary edits; named family
+         * members remain independent. */
+        if (auto && !removeAuto) {
           await client.query(
-            'update guests set phone = $2 where party_id = $1 and is_primary',
-            [current.party_id, phone],
+            `update guests set
+               rsvp = coalesce($2, rsvp),
+               group_name = case when $3 then $4 else group_name end,
+               table_id = case when $5 then $6::uuid else table_id end,
+               diet = case when $7 then $8 else diet end,
+               diet_note = case when $9 then $10 else diet_note end,
+               transfer = case when $11 then $12 else transfer end,
+               rsvp_at = case when $2::text is null then rsvp_at else now() end
+             where id = $1`,
+            [
+              auto.id,
+              (body.status as string) ?? null,
+              has('group'),
+              (body.group as string) ?? null,
+              has('tableId'),
+              (body.tableId as string) ?? null,
+              has('diet'),
+              (body.diet as string) ?? null,
+              has('dietNote'),
+              (body.dietNote as string) ?? null,
+              has('transfer'),
+              (body.transfer as string) ?? null,
+            ],
           )
         }
 
-        /* A room is a family-level booking. One declining person must not
-         * cancel it while another still attends or has not answered. */
+        if (has('phone')) {
+          await client.query('update guests set phone = $2 where party_id = $1 and is_primary', [partyId, phone])
+        }
+
         if (body.status === 'no') {
           const { rows: remaining } = await client.query<{ n: string }>(
             "select count(*)::text as n from guests where party_id = $1 and rsvp <> 'no'",
-            [current.party_id],
+            [partyId],
           )
-          if (Number(remaining[0]!.n) === 0) {
-            await client.query('delete from hotel_bookings where party_id = $1', [current.party_id])
-          }
+          if (Number(remaining[0]!.n) === 0) await client.query('delete from hotel_bookings where party_id = $1', [partyId])
         }
 
-        if (has('tableId')) {
+        if (has('tableId') || addAuto || removeAuto) {
           const { rows: seated } = await client.query<{ n: string }>(
             'select count(*)::text as n from guests where wedding_id = $1 and table_id is not null',
             [weddingId],
