@@ -45,9 +45,9 @@ const GUEST_COLUMNS = `
   g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
   (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id,
-  (select c.code from guest_invite_codes c where c.guest_id = g.id and c.used_at is null
+  (select c.code from guest_invite_codes c where c.party_id = g.party_id and c.used_at is null
     order by c.issued_at desc limit 1) as invite_code,
-  (select true from guest_invite_codes c where c.guest_id = g.id and c.used_at is not null limit 1) as invite_used`
+  (select true from guest_invite_codes c where c.party_id = g.party_id and c.used_at is not null limit 1) as invite_used`
 
 /**
  * Гость в форме контракта.
@@ -627,8 +627,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
 
-    const { rows } = await db().query('select 1 from guests where id = $1 and wedding_id = $2', [guestId, weddingId])
+    const { rows } = await db().query<{ party_id: string }>(
+      'select party_id from guests where id = $1 and wedding_id = $2',
+      [guestId, weddingId],
+    )
     if (rows.length === 0) throw notFound('Гость не найден')
+    const partyId = rows[0]!.party_id
 
     return db().tx(async (client) => {
       /* Прежний код гаснет: «выдать новую ссылку» означает, что старая
@@ -641,8 +645,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       await client.query(
         `update guest_invite_codes
             set expires_at = least(expires_at, now())
-          where guest_id = $1 and expires_at > now()`,
-        [guestId],
+          where party_id = $1 and expires_at > now()`,
+        [partyId],
       )
 
       /* Вместе с кодом гаснет и сам токен.
@@ -659,16 +663,24 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * Отзыв гостя ключуется самим гостем (`reviews.guest_id`, фича 005), а
        * не токеном: переносить его за новой ссылкой больше не нужно — пара,
        * выпускающая ссылки, гостевых голосов в рейтинг не множит (D3-09). */
-      await client.query('update guests set rsvp_token = $2 where id = $1', [guestId, newGuestToken()])
+      const token = newGuestToken()
+      await client.query('update guest_parties set invite_token = $2 where id = $1', [partyId, token])
+      /* Primary keeps the party token only as a legacy mirror for tables and
+       * old exports; authorization already resolves guest_parties. Other
+       * members keep private internal tokens and never become a second link. */
+      await client.query(
+        'update guests set rsvp_token = $2 where party_id = $1 and party_position = 1',
+        [partyId, token],
+      )
       let code = ''
       for (let attempt = 0; attempt < 3; attempt++) {
         code = newShareCode()
         const res = await client.query(
-          `insert into guest_invite_codes (code, guest_id, expires_at)
-           values ($1, $2, greatest(now(), (select coalesce(date::timestamptz, now()) from weddings where id = $3))
-                   + ($4 || ' days')::interval)
+          `insert into guest_invite_codes (code, guest_id, party_id, expires_at)
+           values ($1, $2, $3, greatest(now(), (select coalesce(date::timestamptz, now()) from weddings where id = $4))
+                   + ($5 || ' days')::interval)
            on conflict (code) do nothing`,
-          [code, guestId, weddingId, String(SHARE_TTL_DAYS)],
+          [code, guestId, partyId, weddingId, String(SHARE_TTL_DAYS)],
         )
         if (res.rowCount === 1) break
         code = ''
@@ -698,13 +710,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     /* Свадьба отменена или убрана — ссылка мертва: обмен сжигал код и отдавал
      * название, дату и площадку отменённой свадьбы с токеном, который дальше
      * везде отвечал 401 (ревью 015). */
-    const claimed = await db().query<{ guest_id: string }>(
+    const claimed = await db().query<{ party_id: string }>(
       `update guest_invite_codes c set used_at = coalesce(c.used_at, now())
-        from guests g join weddings w on w.id = g.wedding_id
-        where c.code = $1 and c.expires_at > now() and g.id = c.guest_id
+        from guest_parties p join weddings w on w.id = p.wedding_id
+        where c.code = $1 and c.expires_at > now() and p.id = c.party_id
           and w.cancelled_at is null and w.archived_at is null
           and (c.used_at is null or c.used_at > now() - make_interval(mins => $2))
-        returning c.guest_id`,
+        returning c.party_id`,
       [shareCode.toUpperCase(), REDEEM_RETRY_MINUTES],
     )
     if (claimed.rowCount === 0) {
@@ -721,12 +733,14 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       invite_theme_id: number
       venue: string | null
     }>(
-      `select g.name, g.rsvp_token as token, w.title, w.date::text as date,
+      `select g.name, p.invite_token as token, w.title, w.date::text as date,
               c.name as city, c.region, w.invite_text, w.invite_theme_id, w.venue
-         from guests g join weddings w on w.id = g.wedding_id
+         from guest_parties p
+         join weddings w on w.id = p.wedding_id
+         join guests g on g.party_id = p.id and g.party_position = 1
          left join cities c on c.id = w.city_id
-        where g.id = $1`,
-      [claimed.rows[0]!.guest_id],
+        where p.id = $1`,
+      [claimed.rows[0]!.party_id],
     )
     const g = rows[0]!
     return {
