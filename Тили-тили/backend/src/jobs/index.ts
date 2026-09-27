@@ -276,7 +276,7 @@ export async function eraseUser(client: Queryable, id: string): Promise<void> {
     [id],
   )
   await client.query(
-    `update deals d set vendor_id = null, external_name = coalesce(d.external_name, v.name)
+    `update deals d set vendor_id = null, external_name = null
        from vendors v where v.id = d.vendor_id and v.user_id = $1`,
     [id],
   )
