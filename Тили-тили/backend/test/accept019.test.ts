@@ -128,11 +128,9 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const found: string[] = []
     for (const c of columns) {
       if (c.table_name === 'audit_log' || c.table_name === 'pgmigrations') continue
-      const json = c.data_type === 'json' || c.data_type === 'jsonb'
-      const cast = c.data_type === 'uuid' ? '::text' : ''
-      const where = json
-        ? `position($1 in "${c.column_name}"::text) > 0`
-        : `"${c.column_name}"${cast} = $1`
+      const where = c.data_type === 'uuid'
+        ? `"${c.column_name}"::text = $1`
+        : `position($1 in coalesce("${c.column_name}"::text, '')) > 0`
       const { rows } = await app.db!.query<{ n: string }>(
         `select count(*)::text as n from "${c.table_name}" where ${where}`,
         [value],
