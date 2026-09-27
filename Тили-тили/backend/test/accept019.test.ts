@@ -142,9 +142,23 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     return found
   }
 
-  async function hardErase(user: User): Promise<void> {
+  async function hardErase(user: User, relatedValues: string[] = []): Promise<void> {
     const deleted = await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(user.token) })
     expect(deleted.statusCode, deleted.body).toBe(204)
+    // The test advances this account by 31 days. Advance only transient
+    // idempotency rows belonging to or serializing this fixture as well;
+    // production removes them after one day naturally.
+    await app.db!.query(
+      "update idempotency_keys set created_at = now() - interval '31 days' where user_id = $1",
+      [user.id],
+    )
+    for (const value of relatedValues) {
+      await app.db!.query(
+        `update idempotency_keys set created_at = now() - interval '31 days'
+          where position($1 in coalesce(body::text, '')) > 0`,
+        [value],
+      )
+    }
     await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [user.id])
     await cleanup(app)
     expect(await rows('select id from users where id = $1', [user.id])).toEqual([])
@@ -424,7 +438,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const revised = await answer(pending, { ...offerBody, title: secret, includes: [secret], message: secret })
     expect(revised.statusCode, revised.body).toBe(201)
 
-    await hardErase(pending.vendor)
+    await hardErase(pending.vendor, [pending.vendor.id, pending.vendor.phone, `Accept ${pending.vendor.id}`, secret])
     expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
       .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
     expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
@@ -434,7 +448,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
 
     expect((await accept(accepted)).statusCode).toBe(200)
     await app.db!.query("update deals set state = 'done', done_at = now() where slot_id = $1", [accepted.slotId])
-    await hardErase(accepted.vendor)
+    await hardErase(accepted.vendor, [accepted.vendor.id, accepted.vendor.phone, `Accept ${accepted.vendor.id}`])
     expect(await rows('select vendor_id, external_name, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
       .toEqual([{ vendor_id: null, external_name: 'Удалённый подрядчик', package_title_snapshot: 'Съёмка 8 часов',
         package_includes_snapshot: ['Ретушь', '500 фотографий'], price: '7654321' }])
