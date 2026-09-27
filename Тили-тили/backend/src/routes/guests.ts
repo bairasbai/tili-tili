@@ -22,6 +22,7 @@ interface GuestRow {
   id: string
   party_id: string
   is_primary: boolean
+  party_size: string
   name: string
   group_name: string | null
   phone: string | null
@@ -39,7 +40,9 @@ interface GuestRow {
 }
 
 const GUEST_COLUMNS = `
-  g.id, g.party_id, g.is_primary, g.name, g.group_name,
+  g.id, g.party_id, g.is_primary,
+  (select count(*)::text from guests member where member.party_id = g.party_id) as party_size,
+  g.name, g.group_name,
   (select p.phone from guests p where p.party_id = g.party_id and p.is_primary limit 1) as phone,
   (select p.comment from guests p where p.party_id = g.party_id and p.is_primary limit 1) as comment,
   g.rsvp, g.table_id, g.diet, g.diet_note, g.menu_option_id, g.transfer,
@@ -77,6 +80,8 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     id: r.id,
     partyId: r.party_id,
     primary: r.is_primary,
+    /* Compatibility only: derived from explicit persons, never stored. */
+    plusOne: Number(r.party_size) > 1,
     name: r.name,
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
