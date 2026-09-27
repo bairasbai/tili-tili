@@ -506,6 +506,16 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
       vendorOfferRequests: [expect.objectContaining({ id: f.requestId })],
       vendorOffers: [expect.objectContaining({ request_id: f.requestId, title: 'Индивидуальная съёмка' })],
     })
+
+    const helper = await member(f.wedding, 'helper')
+    const helperDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(helper.token) })
+    expect(helperDump.statusCode, helperDump.body).toBe(200)
+    expect(helperDump.json()).toMatchObject({ shortlist: [], offerRequests: [], offers: [] })
+
+    const outsider = await newVendor()
+    const outsiderDump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(outsider.token) })
+    expect(outsiderDump.statusCode, outsiderDump.body).toBe(200)
+    expect(outsiderDump.json()).toMatchObject({ vendorOfferRequests: [], vendorOffers: [] })
   })
 
 })
