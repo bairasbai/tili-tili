@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 70. */
+ * Схем: 78. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -30,6 +30,384 @@ export const CONTRACT_SCHEMAS = {
                   "type": "string",
                   "pattern": "^[0-9a-f]{16}$",
                   "description": "Отпечаток содержимого справочника — шестнадцать шестнадцатеричных знаков.\nМеняется от ЛЮБОЙ правки категорий или словаря, в том числе сделанной\nмимо панели: он считается по самим строкам, а не по времени сохранения.\nВозвращается в теле PUT, чтобы сохранение не затёрло чужую правку.\n"
+              }
+          }
+      },
+      "PositiveMoney": {
+          "type": "object",
+          "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              }
+          }
+      },
+      "Offer": {
+          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдевять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
+          "oneOf": [
+              {
+                  "type": "object",
+                  "title": "Предложение",
+                  "required": [
+                      "id",
+                      "requestId",
+                      "kind",
+                      "packageId",
+                      "title",
+                      "price",
+                      "includes",
+                      "message",
+                      "validUntil"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "requestId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "packageId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid"
+                      },
+                      "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "includes": {
+                          "type": "array",
+                          "maxItems": 40,
+                          "items": {
+                              "type": "string",
+                              "maxLength": 200
+                          }
+                      },
+                      "message": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Отказ",
+                  "required": [
+                      "id",
+                      "requestId",
+                      "kind",
+                      "packageId",
+                      "title",
+                      "price",
+                      "includes",
+                      "message",
+                      "validUntil"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "requestId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "decline"
+                          ]
+                      },
+                      "packageId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid",
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "title": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "price": {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "includes": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 0,
+                          "items": {
+                              "type": "string"
+                          }
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date",
+                          "enum": [
+                              null
+                          ]
+                      }
+                  }
+              }
+          ]
+      },
+      "OfferInput": {
+          "description": "Пакет, своё предложение или отказ — ровно одна из трёх строгих форм.",
+          "oneOf": [
+              {
+                  "type": "object",
+                  "title": "Ответ пакетом анкеты",
+                  "required": [
+                      "kind",
+                      "packageId",
+                      "price"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "packageId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Собственное предложение",
+                  "required": [
+                      "kind",
+                      "title",
+                      "price",
+                      "includes"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "includes": {
+                          "type": "array",
+                          "maxItems": 40,
+                          "items": {
+                              "type": "string",
+                              "maxLength": 200
+                          }
+                      },
+                      "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Отказ",
+                  "required": [
+                      "kind",
+                      "message"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "decline"
+                          ]
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      }
+                  }
+              }
+          ]
+      },
+      "OfferPublic": {
+          "type": "object",
+          "description": "Безопасный статус для помощника и координатора без условий и ответа подрядчика.",
+          "required": [
+              "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "responded"
+                  ]
+              }
+          }
+      },
+      "OfferRequest": {
+          "type": "object",
+          "description": "Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику.",
+          "required": [
+              "id",
+              "status",
+              "weddingDate",
+              "guests",
+              "city",
+              "wishes",
+              "createdAt"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "closed"
+                  ]
+              },
+              "closeReason": {
+                  "type": "string",
+                  "enum": [
+                      "removed",
+                      "booked_other",
+                      "booked",
+                      "wedding_cancelled",
+                      "date_changed",
+                      "vendor_erased"
+                  ]
+              },
+              "weddingDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "guests": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 5000
+              },
+              "city": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "wishes": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "budgetHint": {
+                  "$ref": "contract#/definitions/PositiveMoney"
+              },
+              "offer": {
+                  "$ref": "contract#/definitions/Offer"
               }
           }
       },
@@ -821,7 +1199,17 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book`). null — бронь без пакета или пакет снят с витрины.\n"
+                  "description": "Снимок принятого названия, только couple: текст может содержать цену.\nУдаление живого пакета/предложения не меняет его. null — название неизвестно.\n"
+              },
+              "packageIncludes": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "items": {
+                      "type": "string"
+                  },
+                  "description": "Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав."
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -1622,6 +2010,152 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ShortlistEntry": {
+          "type": "object",
+          "required": [
+              "id",
+              "slotId",
+              "position",
+              "createdAt",
+              "available",
+              "occupancy",
+              "vendor"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Стабильный id записи шорт-листа; по нему запись удаляется."
+              },
+              "slotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "position": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "available": {
+                  "type": [
+                      "boolean",
+                      "null"
+                  ],
+                  "description": "`true` — живая анкета той же категории; `false` — анкета скрыта,\nзаблокирована или сменила категорию; `null` — обезличенный tombstone.\n"
+              },
+              "occupancy": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "free",
+                      "held",
+                      "busy",
+                      null
+                  ],
+                  "description": "Занятость на дату свадьбы. `null` — дата не выбрана или анкета стёрта;\nсвоя бронь этой свадьбы считается `free`.\n"
+              },
+              "request": {
+                  "description": "Паре — полный запрос с действующим ответом, если он уже есть;\nпомощнику и координатору — только обезличенный статус. Поля нет,\nпока пара не отправила запрос этому кандидату.\n",
+                  "oneOf": [
+                      {
+                          "$ref": "contract#/definitions/OfferRequest"
+                      },
+                      {
+                          "$ref": "contract#/definitions/OfferPublic"
+                      }
+                  ]
+              },
+              "vendor": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "id",
+                      "name",
+                      "categoryId",
+                      "city",
+                      "priceFrom",
+                      "rating",
+                      "reviewsCount",
+                      "photoUrl",
+                      "verified",
+                      "hasVideo",
+                      "packages"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Публичная карточка кандидата. `null` — подрядчик стёрт: прежние id,\nимя и другие данные не возвращаются. У скрытой/заблокированной анкеты\nмедиа, цены и пакеты не возвращаются.\n",
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      },
+                      "categoryId": {
+                          "type": "string"
+                      },
+                      "city": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "priceFrom": {
+                          "allOf": [
+                              {
+                                  "$ref": "contract#/definitions/Money"
+                              }
+                          ],
+                          "type": [
+                              "object",
+                              "array",
+                              "string",
+                              "number",
+                              "boolean",
+                              "null"
+                          ]
+                      },
+                      "rating": {
+                          "type": [
+                              "number",
+                              "null"
+                          ]
+                      },
+                      "reviewsCount": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "photoUrl": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "verified": {
+                          "type": "boolean"
+                      },
+                      "hasVideo": {
+                          "type": "boolean"
+                      },
+                      "packages": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "contract#/definitions/VendorPackage"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "Slot": {
           "type": "object",
           "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой. Пустой слот может нести отметку `prebooked`\n(«уже забронировано вне приложения», фича 018) — она приходит всегда.\n",
@@ -2346,25 +2880,9 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "packages": {
                           "type": "array",
+                          "description": "В порядке, заданном подрядчиком.",
                           "items": {
-                              "type": "object",
-                              "properties": {
-                                  "id": {
-                                      "type": "string"
-                                  },
-                                  "name": {
-                                      "type": "string"
-                                  },
-                                  "price": {
-                                      "$ref": "contract#/definitions/Money"
-                                  },
-                                  "includes": {
-                                      "type": "array",
-                                      "items": {
-                                          "type": "string"
-                                      }
-                                  }
-                              }
+                              "$ref": "contract#/definitions/VendorPackage"
                           }
                       },
                       "reviews": {
@@ -2376,6 +2894,76 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           ]
+      },
+      "VendorPackage": {
+          "type": "object",
+          "description": "Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не\nудаляющая пакет, его не меняет, и брони называют пакет, как до правки\n(019, FR-006).\n",
+          "required": [
+              "id",
+              "name",
+              "price",
+              "includes"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "price": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "`null` — цена не названа («по запросу»), а не 0 ₽ (R-281).",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "includes": {
+                  "type": "array",
+                  "description": "Что входит в пакет — пунктами.",
+                  "items": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "VendorPackageInput": {
+          "type": "object",
+          "description": "Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который\nостаётся тем же (имя, цена, состав и место в списке обновляются);\nбез `id` — новый. Цены нет — поле не присылается: `null` не\nпринимается, пакет хранится без цены (R-281).\n",
+          "required": [
+              "name"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "maxLength": 64
+              },
+              "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "price": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "includes": {
+                  "type": "array",
+                  "maxItems": 40,
+                  "items": {
+                      "type": "string",
+                      "maxLength": 200
+                  }
+              }
+          }
       },
       "VendorPage": {
           "type": "object",
@@ -2396,7 +2984,7 @@ export const CONTRACT_SCHEMAS = {
       },
       "VendorUpsert": {
           "type": "object",
-          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**.\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
+          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
           "required": [
               "name",
               "categoryId",
@@ -2438,22 +3026,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "packages": {
                   "type": "array",
+                  "maxItems": 20,
                   "items": {
-                      "type": "object",
-                      "properties": {
-                          "name": {
-                              "type": "string"
-                          },
-                          "price": {
-                              "$ref": "contract#/definitions/Money"
-                          },
-                          "includes": {
-                              "type": "array",
-                              "items": {
-                                  "type": "string"
-                              }
-                          }
-                      }
+                      "$ref": "contract#/definitions/VendorPackageInput"
                   }
               },
               "portfolioUrls": {
@@ -2951,10 +3526,15 @@ export type ContractSchemaName =
   | "Money"
   | "Note"
   | "Notification"
+  | "Offer"
+  | "OfferInput"
+  | "OfferPublic"
+  | "OfferRequest"
   | "PrebookedCategory"
   | "Readiness"
   | "Review"
   | "Session"
+  | "ShortlistEntry"
   | "Slot"
   | "SupportDeal"
   | "Table"
@@ -2968,6 +3548,8 @@ export type ContractSchemaName =
   | "Vendor"
   | "VendorDecision"
   | "VendorDetail"
+  | "VendorPackage"
+  | "VendorPackageInput"
   | "VendorPage"
   | "VendorUpsert"
   | "VerificationDecision"
