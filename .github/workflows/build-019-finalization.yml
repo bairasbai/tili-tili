@@ -90,6 +90,22 @@ jobs:
               expect(await rows('select vendor_id, package_title_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
                 .toEqual([{ vendor_id: null, package_title_snapshot: 'Съёмка 8 часов', price: '7654321' }])
             })
+            it('T039 keeps the request lock order under concurrent cleanup and reply', async () => {
+              const f = await ready()
+              let reply: Promise<any> | null = null
+              let cleanupRun: Promise<any> | null = null
+              await app.db!.tx(async client => {
+                await client.query('select id from vendors where id = $1 for update', [f.vendor.vendorId])
+                const { rows: [holder] } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+                reply = Promise.resolve(answer(f, { ...offerBody, title: 'Race check' }))
+                await waitForBlocked(client, holder!.pid, 1)
+                cleanupRun = app.db!.tx(c => eraseUser(c, f.vendor.id))
+                await waitForBlocked(client, holder!.pid, 2)
+              })
+              const settled = await Promise.allSettled([reply!, cleanupRun!])
+              expect(settled.every(x => x.status === 'fulfilled')).toBe(true)
+              expect(await rows('select id from offers where request_id = $1', [f.requestId])).toEqual([])
+            })
             it('T040 exports candidate and offer history to its owners', async () => {
               const f = await ready()
               const couple = (await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.wedding.token) })).json()
