@@ -9,8 +9,12 @@
 /** Шесть состояний сделки плюс отмена — те же, что в контракте. */
 export type DealState = 'candidate' | 'contacted' | 'negotiating' | 'booked' | 'paid_deposit' | 'done' | 'cancelled'
 
-/** Состояние плитки в мозаике команды: производное от сделки, считает сервер. */
-export type SlotState = 'empty' | 'candidate' | 'hold' | 'booked'
+/**
+ * Состояние плитки в мозаике команды: производное от сделки, считает сервер.
+ * `prebooked` — сделки нет, но пара ответила в квизе, что подрядчик уже найден вне
+ * приложения (`Slot.prebooked`, фича 018): для счётчиков готовности это бронь.
+ */
+export type SlotState = 'empty' | 'candidate' | 'hold' | 'booked' | 'prebooked'
 
 export interface Slot {
   id: string

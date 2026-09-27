@@ -450,6 +450,8 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
 
       const tilly = (await chatsOf(w.token)).find((c) => c.kind === 'tilly')!
       expect((await say(w.token, tilly.id, `Что дарить гостям? ${RUN}`)).statusCode).toBe(201)
+      /* Ответ Тиля пишется в фоне — дождаться его, а не надеяться обогнать (ERR-0310). */
+      await app.tilly.settle()
       const reply = (await historyOf(w.token, tilly.id)).find((m) => m.senderId === null)
       expect(reply).toMatchObject({ system: false })
     })

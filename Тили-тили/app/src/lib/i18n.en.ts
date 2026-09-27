@@ -238,10 +238,11 @@ export const EN: Record<string, string> = {
   'К списку гостей →': 'To the guest list →',
   'Кабинет подрядчика': 'Vendor dashboard',
   'Казань': 'Kazan',
-  'Как зовут вашего партнёра?': 'What is the name of your partner?',
+  'Как вас зовут?': 'What are your names?',
   'Из имён сложится название вашей свадьбы': 'Your names will make up the title of your wedding',
-  'Имя': 'Name',
-  '💡 Ваше имя подставится из профиля — его можно изменить в настройках.': '💡 Your own name comes from your profile - you can change it in settings.',
+  'Ваше имя': 'Your name',
+  'Имя партнёра': 'Your partner’s name',
+  '💡 Ваше имя сохранится в профиле — его можно изменить в настройках.': '💡 Your name will be saved to your profile — you can change it in settings.',
   'Создаём…': 'Creating…',
   'Как гость отвечает на приглашение?': 'How does a guest answer the invitation?',
   'Как работает бронирование даты?': 'How does date booking work?',
@@ -2046,4 +2047,14 @@ Object.assign(EN, {
   'дн. до срока': 'days before the deadline',
   'Время напоминания': 'Reminder time',
   'По часовому поясу ответственного; тихие часы и настройка уведомлений учитываются': 'In the assignee’s time zone; quiet hours and notification preferences apply',
+})
+
+/* Фича 018 «Ответы квиза влияют на свадьбу»: слот «Уже забронировано вне приложения» (ключ «Уже забронировано» — выше). */
+Object.assign(EN, {
+  'Вне приложения — по вашему ответу в квизе': 'Outside the app — from your quiz answer',
+  'Добавить подрядчика': 'Add the vendor',
+  'Нет, ещё ищем': 'No, still looking',
+  'Снимаем отметку…': 'Removing the mark…',
+  'Отметку ведёт пара': 'Only the couple can change this mark',
+  'Вы отметили в квизе, что этот подрядчик уже есть. Добавьте его — он впишется в команду, бюджет и тайминг.': 'You said in the quiz that this vendor is already booked. Add them — they will join the team, budget and timeline.',
 })

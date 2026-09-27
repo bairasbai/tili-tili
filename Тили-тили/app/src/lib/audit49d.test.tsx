@@ -92,7 +92,7 @@ async function skipToNameStep() {
     if (!skip) break
     fireEvent.click(skip)
   }
-  await waitFor(() => expect(screen.queryByPlaceholderText(t('Имя'))).not.toBeNull(), { timeout: 4000 })
+  await waitFor(() => expect(screen.queryByPlaceholderText(t('Имя партнёра'))).not.toBeNull(), { timeout: 4000 })
 }
 
 describe('audit49d · ERR-0274/R-274 · EN-квиз: быстрый выбор города хранит ключ, не перевод', () => {
@@ -120,7 +120,9 @@ describe('audit49d · ERR-0274/R-274 · EN-квиз: быстрый выбор �
     fireEvent.click(screen.getByRole('button', { name: t('Уфа') }))
     fireEvent.click(screen.getByRole('button', { name: t('Далее') }))
     await skipToNameStep()
-    fireEvent.change(screen.getByPlaceholderText(t('Имя')), { target: { value: 'Тимур' } })
+    /* Шаг имён — два поля (фича 018): своё и партнёра. */
+    fireEvent.change(screen.getByPlaceholderText(t('Ваше имя')), { target: { value: 'Аня' } })
+    fireEvent.change(screen.getByPlaceholderText(t('Имя партнёра')), { target: { value: 'Тимур' } })
     fireEvent.click(screen.getByRole('button', { name: new RegExp(escapeRe(t('Создать мою свадьбу ✨'))) }))
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/weddings')).toBe(true), { timeout: 4000 })
     const post = calls.find(c => c.method === 'POST' && c.path === '/weddings')!

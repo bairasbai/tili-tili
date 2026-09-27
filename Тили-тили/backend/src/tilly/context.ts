@@ -147,7 +147,10 @@ export async function weddingContext(db: Db, weddingId: string, now = new Date()
   lines.push('', '## Команда подрядчиков (слоты)')
   for (const s of slots) {
     if (!s.deal) {
-      lines.push(`- ${safeText(s.label)}: пусто — подрядчик не выбран`)
+      /* Отметка из квиза (фича 018): подрядчик найден вне приложения — не «пусто», иначе Тиль зовёт его искать. */
+      lines.push(s.prebooked
+        ? `- ${safeText(s.label)}: уже забронировано вне приложения (отметка пары в квизе) — подрядчик в приложение не внесён`
+        : `- ${safeText(s.label)}: пусто — подрядчик не выбран`)
       continue
     }
     const who = safeText(s.deal.vendor?.name ?? s.deal.externalName) || 'без имени'

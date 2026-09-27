@@ -164,6 +164,76 @@ describe.skipIf(!live)('перепроверка после этапа 4', () =>
     expect(rows[0]!.n).toBe(1)
   })
 
+  /* ── та же гонка, когда обе брони успели сослаться на слот ────────── */
+  it.each(['book', 'external'] as const)(
+    'две брони через %s, обе дошедшие до слота раньше захвата, — 200 и 409, а не взаимная блокировка и 500 (ERR-0312)',
+    async (door) => {
+      const vendorA = await newVendor('cake')
+      const vendorB = await newVendor('cake')
+      const w = await newWedding()
+      const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
+      const book = (vendorId: string) =>
+        app.inject({
+          method: 'POST',
+          url: `/weddings/${w.weddingId}/slots/${slot.id}/book`,
+          headers: idem(w.token),
+          payload: { vendorId, price: { amount: 1_000_000, currency: 'RUB' } },
+        })
+      // Свой подрядчик — вторая дверь, которая заводит сделку в слот. Каждая
+      // дверь сталкивается сама с собой: дверь с замком до вставки не держит
+      // `FOR KEY SHARE`, и пара из разных дверей блокировку ловила бы не всегда.
+      const external = (vendorName: string) =>
+        app.inject({
+          method: 'POST',
+          url: `/weddings/${w.weddingId}/slots/${slot.id}/external`,
+          headers: auth(w.token),
+          payload: { vendorName, price: { amount: 1_000_000, currency: 'RUB' } },
+        })
+
+      /* Тест выше ловит только удачное чередование. Здесь оно задано: «третий»
+       * держит на слоте `FOR KEY SHARE` — тот же замок, что берёт вставка сделки
+       * по внешнему ключу `deals.slot_id`. Обе брони упираются в него на захвате
+       * слота; без замка слота до вставки к этому моменту обе уже вставили
+       * сделку и держат такой же замок — и, когда «третий» уходит, ждут друг
+       * друга на `FOR UPDATE` (уникальный индекс `slots.deal_id`). */
+      let both!: Promise<Awaited<ReturnType<typeof book>>[]>
+      await app.db!.tx(async (client) => {
+        await client.query('select 1 from slots where id = $1 for key share', [slot.id])
+        const { rows: pidRows } = await client.query<{ pid: number }>('select pg_backend_pid() as pid')
+        const pid = pidRows[0]!.pid
+        both = Promise.all(
+          door === 'book'
+            ? [book(vendorA.vendorId), book(vendorB.vendorId)]
+            : [external('Кондитерская «Первая»'), external('Кондитерская «Вторая»')],
+        )
+
+        let waiting = 0
+        for (let waited = 0; waited < 5000 && waiting < 2; waited += 20) {
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          await client.query('select pg_stat_clear_snapshot()') // снимок pg_stat_activity кэшируется в транзакции (audit26)
+          // Ждущие на слоте: прямо за «третьим» или в очереди за первой бронью.
+          const { rows } = await client.query<{ n: number }>(
+            `select count(*)::int as n from pg_stat_activity a
+              where $1 = any(pg_blocking_pids(a.pid))
+                 or exists (select 1 from pg_stat_activity b
+                             where $1 = any(pg_blocking_pids(b.pid)) and b.pid = any(pg_blocking_pids(a.pid)))`,
+            [pid],
+          )
+          waiting = rows[0]!.n
+        }
+        expect(waiting, 'обе брони должны дойти до слота и ждать').toBe(2)
+      })
+
+      const [a, b] = await both
+      expect([a.statusCode, b.statusCode].sort(), `${a.body.slice(0, 120)} | ${b.body.slice(0, 120)}`).toEqual([200, 409])
+      const { rows } = await app.db!.query<{ n: number }>(
+        "select count(*)::int as n from deals where slot_id = $1 and state <> 'cancelled'",
+        [slot.id],
+      )
+      expect(rows[0]!.n).toBe(1)
+    },
+  )
+
   /* ── отменённый слот можно занять снова ───────────────────────────── */
   it('после отмены слот занимается снова', async () => {
     const { w, slotId } = await bookOne('dj', 3_000_000)

@@ -72,7 +72,8 @@ export function SearchCategories() {
               {typeof c.vendorsCount === 'number' && c.vendorsCount > 0 && (
                 <span className="block text-[9.5px] text-[var(--soft)] mt-0.5 tabular">{c.vendorsCount} {t('рядом')}</span>
               )}
-              {st === 'booked' && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] mt-1.5">{t('✓ Есть')}</span>}
+              {/* «Уже забронировано вне приложения» из квиза (фича 018) — тоже «есть». */}
+              {(st === 'booked' || st === 'prebooked') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--sage-soft)] text-[var(--sage-ink)] mt-1.5">{t('✓ Есть')}</span>}
               {(st === 'hold' || st === 'candidate') && <span className="inline-block text-[8px] font-bold px-2 py-0.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] mt-1.5">{t('⏳ Ищем')}</span>}
             </button>
           )

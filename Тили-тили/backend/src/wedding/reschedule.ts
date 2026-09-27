@@ -4,7 +4,7 @@ import { OPEN_BOOKINGS } from '../deals/state.js'
 import { holdVendorDate } from '../deals/repo.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
-import { TIMELINE_TEMPLATE } from './templates.js'
+import { timelineTemplate, type WeddingFormat } from './templates.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -36,8 +36,8 @@ export async function rescheduleWedding(
    * старую дату, и второй сдвигал сроки задач и тайминг на свою разницу
    * ПОВЕРХ уже сделанного первого — итог не совпадал ни с одной из дат
    * (D2-08, R-187). Второй теперь ждёт первого и считает разницу от его даты. */
-  const { rows: w } = await client.query<{ date: string | null; tz: string | null }>(
-    'select date::text as date, tz from weddings where id = $1 for update',
+  const { rows: w } = await client.query<{ date: string | null; tz: string | null; format: WeddingFormat | null }>(
+    'select date::text as date, tz, format from weddings where id = $1 for update',
     [weddingId],
   )
   const oldDate = w[0]?.date ?? null
@@ -166,14 +166,17 @@ export async function rescheduleWedding(
         where wedding_id = $1 and due is null and due_mode = 'relative' and period ~ '^[0-9]+$'`,
       [weddingId, date],
     )
-    // Время шаблона местное для площадки: пояс берём у свадьбы.
-    for (const e of TIMELINE_TEMPLATE) {
+    // Время шаблона местное для площадки: пояс берём у свадьбы. Шаблон — по
+    // формату, как при создании (фича 018): у «Классики» под `sort` 3 —
+    // ЗАГС в 14:00, а не выездная церемония в 16:00; второй день двухдневной
+    // свадьбы — на следующее число.
+    for (const e of timelineTemplate(w[0]?.format ?? null)) {
       await client.query(
         `update timeline_events
-            set starts_at = ($2::date + $3::time) at time zone $5,
-                ends_at = ($2::date + $4::time) at time zone $5
+            set starts_at = (($2::date + $7::int) + $3::time) at time zone $5,
+                ends_at = (($2::date + $7::int) + $4::time) at time zone $5
           where wedding_id = $1 and sort = $6 and starts_at is null`,
-        [weddingId, date, e.startsAt, e.endsAt, tz, e.sort],
+        [weddingId, date, e.startsAt, e.endsAt, tz, e.sort, e.dayOffset ?? 0],
       )
     }
   }

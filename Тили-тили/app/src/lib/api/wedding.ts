@@ -1,5 +1,5 @@
 import { api, isAuthorized, newIdempotencyKey, url } from './client'
-import type { paths } from './schema'
+import type { components, paths } from './schema'
 
 /*
  * Свадьба на сервере: создание из квиза и восстановление после переустановки.
@@ -19,6 +19,11 @@ export interface WeddingDraft {
   /** Общий бюджет в копейках. */
   budgetTotal?: number
   style?: string
+  /* Ответы квиза кодами (фича 018): по ним сервер собирает мозаику, тайминг и чек-лист. */
+  format?: components['schemas']['WeddingFormat']
+  planner?: components['schemas']['WeddingPlanner']
+  /** Что уже забронировано вне приложения; пустой список — «Пока ничего». */
+  prebooked?: components['schemas']['PrebookedCategory'][]
   quizAnswers?: Record<string, unknown>
 }
 
@@ -60,6 +65,9 @@ export async function createWedding(draft: WeddingDraft): Promise<string> {
     ...(draft.guestsPlanned !== undefined ? { guestsPlanned: draft.guestsPlanned } : {}),
     ...(draft.budgetTotal !== undefined ? { budgetTotal: { amount: draft.budgetTotal, currency: 'RUB' } } : {}),
     ...(draft.style ? { style: draft.style } : {}),
+    ...(draft.format ? { format: draft.format } : {}),
+    ...(draft.planner ? { planner: draft.planner } : {}),
+    ...(draft.prebooked ? { prebooked: draft.prebooked } : {}),
     ...(draft.quizAnswers ? { quizAnswers: draft.quizAnswers } : {}),
   })
   const id = created?.id

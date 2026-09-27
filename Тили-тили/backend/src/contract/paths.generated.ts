@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.43.0).
- * Операций: 175. Путей: 130. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.44.0).
+ * Операций: 176. Путей: 131. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -165,7 +165,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},
-  {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца) плюс добавленные парой","tag":"bookings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца), слоты по формату и «кто планирует» из квиза (фича 018) и добавленные парой","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots","url":"/weddings/:weddingId/slots","operationId":null,"summary":"Добавить слот категории в мозаику","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/book","url":"/weddings/:weddingId/slots/:slotId/book","operationId":null,"summary":"Забронировать подрядчика в слот («Добавить в свадьбу»)","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/cancel","url":"/weddings/:weddingId/slots/:slotId/cancel","operationId":null,"summary":"Отменить бронь (слот → free, бюджет минус)","tag":"bookings"},
@@ -173,6 +173,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/external","url":"/weddings/:weddingId/slots/:slotId/external","operationId":null,"summary":"Добавить своего подрядчика (не из каталога)","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/external/invite","url":"/weddings/:weddingId/slots/:slotId/external/invite","operationId":null,"summary":"Ссылка-приглашение для своего подрядчика","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/pay","url":"/weddings/:weddingId/slots/:slotId/pay","operationId":null,"summary":"Оплата слота (доплата/полная)","tag":"bookings"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/prebooked","url":"/weddings/:weddingId/slots/:slotId/prebooked","operationId":null,"summary":"Снять отметку «уже забронировано» («Нет, ещё ищем»)","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Рассадка (столы + гости)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Добавить стол","tag":"guests"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/tables/{tableId}","url":"/weddings/:weddingId/tables/:tableId","operationId":null,"summary":"Удалить стол","tag":"guests"},

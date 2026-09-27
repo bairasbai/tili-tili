@@ -40,6 +40,8 @@ export interface ServerSlot {
   label?: string
   tileState?: 'empty' | 'candidate' | 'hold' | 'booked' | 'paid'
   deal?: SlotDeal | null
+  /* «Уже забронировано вне приложения» из квиза (фича 018): только у слота без сделки. */
+  prebooked?: boolean
 }
 
 const slotPath = (weddingId: string, slotId: string, tail: string) =>
@@ -105,6 +107,13 @@ export const addExternal = (weddingId: string, slotId: string, vendorName: strin
 
 export const removeExternal = (weddingId: string, slotId: string) =>
   api.delete(slotPath(weddingId, slotId, 'external') as '/weddings/{weddingId}/slots/{slotId}/external')
+
+/**
+ * «Нет, ещё ищем» — снять отметку «уже забронировано вне приложения» (фича 018).
+ * Слот становится обычным пустым; повтор безвреден — сервер отвечает 204 и без отметки.
+ */
+export const unmarkPrebookedSlot = (weddingId: string, slotId: string) =>
+  api.delete(slotPath(weddingId, slotId, 'prebooked') as '/weddings/{weddingId}/slots/{slotId}/prebooked')
 
 /**
  * Позвать своего подрядчика в приложение.

@@ -21,7 +21,7 @@ vi.mock('@/lib/api/catalog', async () => {
     getVendor: async () => (globalThis as { __phone?: boolean }).__phone ? m.VENDOR_DETAIL_BOOKED : m.VENDOR_DETAIL,
   }
 })
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { StoreProvider } from './store'
 import Quiz from '@/pages/Quiz'
@@ -41,7 +41,10 @@ import {
 } from './weddingDate'
 
 beforeEach(() => localStorage.clear())
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 describe('арифметика даты', () => {
   it('несуществующий день не проходит', () => {
@@ -90,6 +93,20 @@ const renderPage = (ui: React.ReactElement) =>
     </MemoryRouter>,
   )
 
+/** Фича 018 считает квиз завершённым только после подтверждённого POST /weddings. */
+const serveWeddingCreation = () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const path = new URL(raw, 'http://test').pathname.replace(/^\/api/, '')
+    const method = init?.method ?? 'GET'
+    const body = method === 'POST' && path === '/weddings' ? { id: 'w-new' } : {}
+    return new Response(JSON.stringify(body), {
+      status: method === 'POST' && path === '/weddings' ? 201 : 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }))
+}
+
 describe('квиз', () => {
   it('первый шаг — календарь, а не три готовые строки', () => {
     renderPage(<Quiz />)
@@ -122,7 +139,8 @@ describe('квиз', () => {
     expect(next.disabled).toBe(false)
   })
 
-  it('выбранная дата переживает квиз и попадает в состояние', () => {
+  it('выбранная дата переживает успешное создание свадьбы и попадает в состояние', async () => {
+    serveWeddingCreation()
     renderPage(<Quiz />)
     fireEvent.click(screen.getByText('Выбрать день в календаре'))
     const day = screen.getAllByRole('button').find(b => b.textContent === '20' && !(b as HTMLButtonElement).disabled)
@@ -133,21 +151,26 @@ describe('квиз', () => {
     // Город: берём готовую подсказку, чтобы не открывать второй оверлей.
     fireEvent.click(screen.getByText('Уфа'))
     fireEvent.click(screen.getByText('Далее'))
-    /* Остальные шаги — первый вариант из списка. Последний шаг спрашивает имя
-       партнёра полем ввода, а не выбором: без него сервер свадьбу не создаст. */
+    /* Остальные шаги — первый вариант из списка. Последний шаг спрашивает оба
+       имени полями ввода, а не выбором: без них свадьбу не создать (фича 018). */
     for (let step = 0; step < 7; step++) {
-      const name = screen.queryByPlaceholderText('Имя')
-      if (name) fireEvent.change(name, { target: { value: 'Тимур' } })
+      const partner = screen.queryByPlaceholderText('Имя партнёра')
+      if (partner) {
+        fireEvent.change(screen.getByPlaceholderText('Ваше имя'), { target: { value: 'Аня' } })
+        fireEvent.change(partner, { target: { value: 'Тимур' } })
+      }
       else fireEvent.click(screen.getAllByRole('button').filter(b => b.className.includes('card-s'))[0]!)
       fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
     }
     /* Раньше `finishOnboarding` только ставил флаг: что человек выбрал,
      * исчезало между последним «Далее» и главным экраном. */
-    const saved = JSON.parse(localStorage.getItem('tt_wedding_date') ?? 'null') as string | null
-    expect(saved).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(saved!.endsWith('-20')).toBe(true)
-    // И весь остальной опрос тоже: он и есть план свадьбы.
-    expect(JSON.parse(localStorage.getItem('tt_quiz')!).guests).toBeTruthy()
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('tt_wedding_date') ?? 'null') as string | null
+      expect(saved).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(saved!.endsWith('-20')).toBe(true)
+      // И весь остальной опрос тоже: он и есть план свадьбы.
+      expect(JSON.parse(localStorage.getItem('tt_quiz')!).guests).toBeTruthy()
+    })
   })
 })
 
@@ -188,17 +211,21 @@ describe('стили в квизе', () => {
     for (const option of options) expect(option.textContent!.length).toBeGreaterThan(20)
   })
 
-  it('выбранный стиль сохраняется вместе с остальным квизом', () => {
+  it('выбранный стиль сохраняется вместе с остальным квизом после создания свадьбы', async () => {
+    serveWeddingCreation()
     toStyleStep()
     fireEvent.click(screen.getByText('🍇 Усадьба'))
     fireEvent.click(screen.getByText('Далее'))
     for (let step = 0; step < 3; step++) {
-      const name = screen.queryByPlaceholderText('Имя')
-      if (name) fireEvent.change(name, { target: { value: 'Тимур' } })
+      const partner = screen.queryByPlaceholderText('Имя партнёра')
+      if (partner) {
+        fireEvent.change(screen.getByPlaceholderText('Ваше имя'), { target: { value: 'Аня' } })
+        fireEvent.change(partner, { target: { value: 'Тимур' } })
+      }
       else fireEvent.click(screen.getAllByRole('button').filter(b => b.className.includes('card-s'))[0]!)
       fireEvent.click(screen.queryByText('Далее') ?? screen.getByText('Создать мою свадьбу ✨'))
     }
-    expect(JSON.parse(localStorage.getItem('tt_quiz')!).style).toBe('🍇 Усадьба')
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('tt_quiz') ?? 'null')?.style).toBe('🍇 Усадьба'))
   })
 })
 

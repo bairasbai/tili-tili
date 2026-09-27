@@ -276,6 +276,19 @@ export interface paths {
          * @description Город не найден в справочнике — 404 (ARB-4). Дата свадьбы вне
          *     диапазона «год назад … пять лет вперёд» — 422 `date_out_of_range`;
          *     несуществующий день вроде 30 февраля — 422 `bad_date`.
+         *
+         *     Ответы квиза (фича 018) — кодами, а не подписями вариантов: `format`
+         *     и `planner` меняют состав мозаики и тайминг (см. `WeddingFormat`,
+         *     `WeddingPlanner`), `prebooked` ставит слотам этих категорий отметку
+         *     «уже забронировано вне приложения» (`Slot.prebooked`), а задачи шаблона
+         *     «Забронировать площадку», «Найти фотографа», «Забронировать ведущего»
+         *     заводит выполненными. Всё — в той же транзакции, что и сама свадьба.
+         *     Неизвестный код, повтор или больше четырёх значений в `prebooked` —
+         *     422 `validation_failed` с полем в `error.fields`. Без этих полей — как
+         *     до фичи: 12 слотов шаблона и тайминг выездной церемонии.
+         *     Название свадьбы — «имя из профиля ♥ `partnerName`» (без имени в
+         *     профиле — только `partnerName`): квиз сохраняет имя в профиль
+         *     (`PATCH /users/me`) до этого вызова.
          */
         post: {
             parameters: {
@@ -300,6 +313,11 @@ export interface paths {
                         guestsPlanned?: number;
                         /** @example нежная классика */
                         style?: string;
+                        format?: components["schemas"]["WeddingFormat"];
+                        planner?: components["schemas"]["WeddingPlanner"];
+                        /** @description что уже забронировано вне приложения; пустой массив — «Пока ничего» */
+                        prebooked?: components["schemas"]["PrebookedCategory"][];
+                        /** @description сырые ответы квиза подписями вариантов — сервер их принимает, но не хранит и не читает: значимые ответы приходят кодами (`format`, `planner`, `prebooked`) */
                         quizAnswers?: {
                             [key: string]: unknown;
                         };
@@ -1453,7 +1471,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца) плюс добавленные парой */
+        /** Слоты команды: 12 из шаблона (площадка, фотограф, видеограф, ведущий, флорист, кондитер, стилист, DJ, декоратор, транспорт, платье, кольца), слоты по формату и «кто планирует» из квиза (фича 018) и добавленные парой */
         get: {
             parameters: {
                 query?: never;
@@ -1730,6 +1748,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/slots/{slotId}/prebooked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Снять отметку «уже забронировано» («Нет, ещё ищем»)
+         * @description Пара ответила в квизе, что подрядчик этой категории уже найден вне
+         *     приложения (`Slot.prebooked`, фича 018), а потом передумала: слот
+         *     становится обычным пустым. Идемпотентно — слот без отметки тоже
+         *     отвечает 204. Решает пара, как и бронь: помощник и координатор — 403.
+         *     Слот не этой свадьбы или несуществующий — 404. Бронь из каталога и
+         *     свой подрядчик снимают отметку сами, этот вызов им не нужен.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    slotId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Отметки нет — снята сейчас или её не было */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/budget": {
         parameters: {
             query?: never;
@@ -1783,6 +1849,9 @@ export interface paths {
          *     лимит бюджета (категория обещана больше чем на 85 % плана). Пустой список —
          *     поводов нет. Внутри суммы — только паре (матрица §6). До 2026-09-18 правила
          *     жили на клиенте: порог 80 % по загруженной странице, остальных не было.
+         *     Слот с отметкой `Slot.prebooked` (фича 018) — не «без брони» и не пустой:
+         *     ни дефицита, ни блокирующего слота по нему нет. Шаблон — любого формата
+         *     свадьбы (`WeddingFormat`).
          */
         get: {
             parameters: {
@@ -8752,6 +8821,34 @@ export interface components {
             name: string;
             region: string;
         };
+        /**
+         * @description Формат свадьбы из квиза (фича 018). Код, а не подпись варианта: подпись
+         *     переводится на экране, и «Классика» на другом языке стала бы другим
+         *     ответом.
+         *     - `classic` — «Классика: ЗАГС + банкет»: 12 слотов шаблона; в тайминге
+         *       «Регистрация в ЗАГСе» 14:00–15:00 вместо «Выездной церемонии» 16:00–17:00.
+         *     - `outdoor` — «Выездная церемония»: плюс слоты «Площадка выездной
+         *       церемонии» (`ceremony`) и «Церемониймейстер» (`registrar`); тайминг
+         *       шаблона.
+         *     - `intimate` — «Камерная свадьба»: 12 слотов; «Ужин» 18:00–22:00 вместо
+         *       «Банкета», без «Салюта и финала».
+         *     - `two_day` — «Банкет+ на 2 дня»: плюс слот «Отель для гостей» (`hotel`);
+         *       тайминг выездной и два блока на следующее число — «День 2: бранч»
+         *       12:00–14:00 и «День 2: продолжение праздника» 14:00–20:00. Перенос даты
+         *       двигает их вместе с первым днём.
+         * @enum {string}
+         */
+        WeddingFormat: "classic" | "outdoor" | "intimate" | "two_day";
+        /**
+         * @description Кто планирует (фича 018): `agency` — плюс слот «Организатор» (`agency`), `coordinator` — плюс «Координатор дня» (`coordinator`), `self` — ничего.
+         * @enum {string}
+         */
+        WeddingPlanner: "self" | "agency" | "coordinator";
+        /**
+         * @description Категория слота шаблона, подрядчик которой уже найден вне приложения (фича 018): площадка, фотограф, видеограф, ведущий.
+         * @enum {string}
+         */
+        PrebookedCategory: "venue" | "photo" | "video" | "host";
         Wedding: {
             id?: string;
             /** @example Алина ♥ Тимур */
@@ -8762,6 +8859,10 @@ export interface components {
             budgetTotal?: components["schemas"]["Money"];
             guestsPlanned?: number;
             style?: string;
+            /** @description формат из квиза (фича 018); null — не указан: вопрос пропущен или свадьба заведена раньше */
+            format?: components["schemas"]["WeddingFormat"] | null;
+            /** @description кто планирует (фича 018); null — не указано */
+            planner?: components["schemas"]["WeddingPlanner"] | null;
             /**
              * @description таймзона места свадьбы. По ней открывается чат дня X и считаются напоминания — не по таймзоне пользователя
              * @example Asia/Yekaterinburg
@@ -9010,7 +9111,8 @@ export interface components {
          * @description Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного
          *     статуса у него нет. tileState — производная подпись для мозаики команды,
          *     только для чтения: клиент не должен вычислять её сам, чтобы экраны не
-         *     разошлись между собой.
+         *     разошлись между собой. Пустой слот может нести отметку `prebooked`
+         *     («уже забронировано вне приложения», фича 018) — она приходит всегда.
          */
         Slot: {
             /** @example s4 */
@@ -9025,6 +9127,16 @@ export interface components {
              * @enum {string}
              */
             readonly tileState?: "empty" | "candidate" | "hold" | "booked" | "paid";
+            /**
+             * @description Пара ответила в квизе, что подрядчик этой категории уже найден вне
+             *     приложения (`POST /weddings`, поле `prebooked`). Бывает только у
+             *     слота без сделки — это держит ограничение базы: бронь из каталога и
+             *     свой подрядчик снимают отметку той же операцией. Снять вручную —
+             *     `DELETE …/slots/{slotId}/prebooked`. Счётчики готовности и подсказки
+             *     Тиля (`GET …/tips`) считают такой слот забронированным, а `tileState`
+             *     остаётся производной от сделки — `empty`.
+             */
+            readonly prebooked: boolean;
         };
         Budget: {
             total?: components["schemas"]["Money"];
