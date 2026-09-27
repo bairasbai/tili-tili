@@ -4,7 +4,7 @@ on:
     branches: ['test/019-acceptance-20260928']
     paths: ['.github/patches/019/**', '.github/workflows/verify-019.yml']
 permissions:
-  contents: read
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -53,7 +53,6 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.34.5 --activate
       - name: Install locked dependencies
-        id: dependencies
         run: |
           (cd 'Тили-тили/backend' && pnpm install --frozen-lockfile --node-linker=hoisted) > /tmp/verify019/install-backend.log 2>&1
           (cd 'Тили-тили/app' && pnpm install --frozen-lockfile --node-linker=hoisted) > /tmp/verify019/install-app.log 2>&1
@@ -64,14 +63,14 @@ jobs:
           pnpm run gen > /tmp/verify019/generate.log 2>&1
           cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
           pnpm exec node-pg-migrate up -m migrations > /tmp/verify019/migrate.log 2>&1
-      - name: Run independent checks
+      - name: Run independent checks and complete repository gate
         id: checks
         if: always() && steps.generated.outcome == 'success'
         run: |
           set +e
           runcheck() {
             local name="$1" dir="$2"; shift 2
-            (cd "$dir" && "$@") > "/tmp/verify019/$name.log" 2>&1
+            (cd "$dir" && timeout 600 "$@") > "/tmp/verify019/$name.log" 2>&1
             printf '%s\t%s\n' "$name" "$?" >> /tmp/verify019/checks.tsv
           }
           runcheck typecheck-backend 'Тили-тили/backend' pnpm run typecheck
@@ -86,13 +85,39 @@ jobs:
           runcheck build-app 'Тили-тили/app' pnpm run build
           cat /tmp/verify019/checks.tsv
           if grep -v $'\t0$' /tmp/verify019/checks.tsv; then exit 1; fi
-      - name: Export evidence and generated source
+          runcheck init . bash init.sh
+          cat /tmp/verify019/checks.tsv
+          if grep -v $'\t0$' /tmp/verify019/checks.tsv; then exit 1; fi
+      - name: Finalize tested documentation and publish one feature commit
+        if: success() && steps.checks.outcome == 'success'
+        env:
+          GH_PUSH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          python /tmp/patch019/finalize.py
+          git diff --check
+          git add --all
+          if git diff --cached --name-only | grep '^.github/'; then
+            echo 'Temporary verification files must not enter the feature commit'; exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(019): accept offers with atomic booking and immutable terms'
+          test "$(git rev-parse HEAD^)" = c4d37c2995d2aeb28bd988cb5144af164ff9fb60
+          branch='feature/019-offer-acceptance-20260928'
+          auth="$(printf 'x-access-token:%s' "$GH_PUSH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$branch"
+          git rev-parse HEAD > /tmp/verify019/published-commit.txt
+          printf '%s\n' "$branch" > /tmp/verify019/feature-branch.txt
+          git show --format=fuller --stat HEAD > /tmp/verify019/feature-commit.txt
+      - name: Export verification evidence and source
         if: always()
         run: |
           mkdir -p /tmp/verify019
           git rev-parse HEAD > /tmp/verify019/commit.txt
-          git diff --check > /tmp/verify019/diff-check.txt
-          git diff > /tmp/verify019/verified.diff
+          git diff --check c4d37c2995d2aeb28bd988cb5144af164ff9fb60 > /tmp/verify019/diff-check.txt
+          git diff c4d37c2995d2aeb28bd988cb5144af164ff9fb60 > /tmp/verify019/verified.diff
           tail -n 45 /tmp/verify019/*.log > /tmp/verify019/summary.txt || true
           tar --exclude=.git --exclude=node_modules --exclude=dist -czf /tmp/verify019/verified-source.tar.gz .
       - uses: actions/upload-artifact@v4
@@ -100,4 +125,4 @@ jobs:
         with:
           name: verify019
           path: /tmp/verify019/
-          retention-days: 3
+          retention-days: 14
