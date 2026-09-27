@@ -19,6 +19,7 @@ exports.up = (pgm) => {
   pgm.addColumns('guests', {
     invitation_id: { type: 'uuid', references: 'guest_invitations', onDelete: 'CASCADE' },
     legacy_plus_one: { type: 'boolean', notNull: true, default: false },
+    migrated_plus_one_companion: { type: 'boolean', notNull: true, default: false },
   })
   pgm.addColumns('guest_invite_codes', {
     invitation_id: { type: 'uuid', references: 'guest_invitations', onDelete: 'CASCADE' },
@@ -78,12 +79,12 @@ exports.up = (pgm) => {
     INSERT INTO guests (
       id, wedding_id, name, phone, rsvp, plus_one, group_name, diet, diet_note,
       transfer, table_id, menu_option_id, rsvp_token, comment, created_at,
-      invitation_id, legacy_plus_one
+      invitation_id, legacy_plus_one, migrated_plus_one_companion
     )
     SELECT gen_random_uuid(), g.wedding_id, 'Гость ' || g.name, NULL,
            'pending', false, g.group_name, NULL, NULL, NULL, NULL, NULL,
            encode(gen_random_bytes(32), 'hex'), NULL, g.created_at,
-           g.invitation_id, false
+           g.invitation_id, false, true
       FROM guests g
      WHERE g.legacy_plus_one = true;
 
@@ -149,22 +150,69 @@ exports.down = (pgm) => {
     DROP FUNCTION IF EXISTS ensure_guest_invitation();
     ALTER TABLE guests DROP CONSTRAINT IF EXISTS guests_plus_one_disabled;
 
-    UPDATE guests g SET plus_one = true
-      WHERE g.legacy_plus_one = true;
+    UPDATE guests SET plus_one = true
+      WHERE legacy_plus_one = true;
 
-    DELETE FROM guests child
-     WHERE child.legacy_plus_one = false
-       AND child.name LIKE 'Гость %'
-       AND EXISTS (
-         SELECT 1 FROM guests parent
-          WHERE parent.invitation_id = child.invitation_id
-            AND parent.legacy_plus_one = true
-       );
+    DELETE FROM guests
+      WHERE migrated_plus_one_companion = true;
+
+    /* Restore the exact pre-020 bus invariant from migration 175930…:
+     * one legacy guest row may represent one or two people. */
+    DROP TRIGGER IF EXISTS bus_bookings_count ON bus_bookings;
+
+    CREATE FUNCTION bus_booking_persons() RETURNS trigger AS $
+    BEGIN
+      SELECT 1 + plus_one::int INTO NEW.persons FROM guests WHERE id = NEW.guest_id;
+      NEW.persons := coalesce(NEW.persons, 1);
+      RETURN NEW;
+    END;
+    $ LANGUAGE plpgsql;
+
+    CREATE TRIGGER bus_bookings_persons
+      BEFORE INSERT ON bus_bookings
+      FOR EACH ROW EXECUTE FUNCTION bus_booking_persons();
+
+    CREATE OR REPLACE FUNCTION bus_seat_counter() RETURNS trigger AS $
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        UPDATE bus_routes SET taken = taken + NEW.persons WHERE id = NEW.bus_id;
+        RETURN NEW;
+      ELSIF TG_OP = 'UPDATE' THEN
+        UPDATE bus_routes SET taken = taken + (NEW.persons - OLD.persons) WHERE id = NEW.bus_id;
+        RETURN NEW;
+      ELSE
+        UPDATE bus_routes SET taken = taken - OLD.persons WHERE id = OLD.bus_id;
+        RETURN OLD;
+      END IF;
+    END;
+    $ LANGUAGE plpgsql;
+
+    CREATE TRIGGER bus_bookings_count
+      AFTER INSERT OR DELETE OR UPDATE OF persons ON bus_bookings
+      FOR EACH ROW EXECUTE FUNCTION bus_seat_counter();
+
+    CREATE FUNCTION bus_bookings_follow_plus_one() RETURNS trigger AS $
+    BEGIN
+      UPDATE bus_bookings SET persons = 1 + NEW.plus_one::int WHERE guest_id = NEW.id;
+      RETURN NEW;
+    END;
+    $ LANGUAGE plpgsql;
+
+    CREATE TRIGGER guests_plus_one_seats
+      AFTER UPDATE OF plus_one ON guests
+      FOR EACH ROW WHEN (OLD.plus_one IS DISTINCT FROM NEW.plus_one)
+      EXECUTE FUNCTION bus_bookings_follow_plus_one();
+
+    UPDATE bus_bookings b SET persons = 1 + g.plus_one::int
+      FROM guests g WHERE g.id = b.guest_id;
 
     ALTER TABLE bus_bookings DROP CONSTRAINT IF EXISTS bus_bookings_persons_range;
     ALTER TABLE bus_bookings ADD CONSTRAINT bus_bookings_persons_range CHECK (persons BETWEEN 1 AND 2);
+
+    UPDATE bus_routes r SET taken = coalesce(
+      (SELECT sum(b.persons) FROM bus_bookings b WHERE b.bus_id = r.id), 0);
   `)
   pgm.dropColumns('guest_invite_codes', ['invitation_id'])
-  pgm.dropColumns('guests', ['invitation_id', 'legacy_plus_one'])
+  pgm.dropColumns('guests', ['invitation_id', 'legacy_plus_one', 'migrated_plus_one_companion'])
   pgm.dropTable('guest_invitations')
 }
