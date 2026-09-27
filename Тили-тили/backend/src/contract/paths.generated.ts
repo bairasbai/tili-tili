@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.49.0).
- * Операций: 195. Путей: 147. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.50.0).
+ * Операций: 192. Путей: 145. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -69,16 +69,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Отозвать приглашение","tag":"invites"},
   {"method":"GET","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Просмотр приглашения (экран /join/:code)","tag":"invites"},
   {"method":"POST","openapi":"/invites/{code}/accept","url":"/invites/:code/accept","operationId":null,"summary":"Принять приглашение (после регистрации/входа)","tag":"invites"},
-  {"method":"GET","openapi":"/join/{guestToken}/day","url":"/join/:guestToken/day","operationId":null,"summary":"День свадьбы глазами гостя","tag":"logistics-guest"},
-  {"method":"GET","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Чат дня X глазами гостя","tag":"logistics-guest"},
-  {"method":"POST","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Гость пишет в чат дня X","tag":"logistics-guest"},
-  {"method":"GET","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Отельные блоки для гостя","tag":"logistics-guest"},
-  {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Гость занимает номер в блоке","tag":"logistics-guest"},
-  {"method":"GET","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Опрос по горячему глазами гостя","tag":"logistics-guest"},
-  {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Гость выбирает блюдо","tag":"catering"},
-  {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты трансфера, доступные гостю","tag":"logistics-guest"},
-  {"method":"POST","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Гость записывается в автобус","tag":"logistics-guest"},
-  {"method":"GET","openapi":"/join/{guestToken}/team","url":"/join/:guestToken/team","operationId":null,"summary":"Кто работал на свадьбе — глазами гостя","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Отельные блоки для семейного приглашения","tag":"logistics-guest"},
+  {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Семья занимает один номер в блоке","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Меню всех персон семейного приглашения","tag":"logistics-guest"},
+  {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Выбрать блюдо конкретной персоне семьи","tag":"catering"},
+  {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты и места всех персон семейного приглашения","tag":"logistics-guest"},
+  {"method":"POST","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Записать конкретную персону семьи в автобус","tag":"logistics-guest"},
   {"method":"GET","openapi":"/legal/policy","url":"/legal/policy","operationId":null,"summary":"Действующая редакция оферты и политики","tag":"legal"},
   {"method":"GET","openapi":"/me/favorites","url":"/me/favorites","operationId":null,"summary":"Избранное пользователя","tag":"catalog"},
   {"method":"DELETE","openapi":"/me/favorites/{vendorId}","url":"/me/favorites/:vendorId","operationId":null,"summary":"Убрать из избранного","tag":"catalog"},
@@ -88,8 +84,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/notifications/{id}/read","url":"/notifications/:id/read","operationId":null,"summary":"Отметить прочитанным","tag":"notifications"},
   {"method":"POST","openapi":"/notifications/read-all","url":"/notifications/read-all","operationId":null,"summary":"Отметить прочитанными все","tag":"notifications"},
   {"method":"POST","openapi":"/referral/{code}/apply","url":"/referral/:code/apply","operationId":null,"summary":"Применить чужой реферальный код","tag":"auth"},
-  {"method":"GET","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Публичная страница гостя (из ссылки в приглашении)","tag":"guests"},
-  {"method":"POST","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Ответ гостя (RSVP)","tag":"guests"},
+  {"method":"GET","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Публичная страница семейного приглашения","tag":"guests"},
+  {"method":"POST","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"RSVP одной или нескольких персон семейного приглашения","tag":"guests"},
   {"method":"DELETE","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Удалить аккаунт","tag":"auth"},
   {"method":"GET","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Мой профиль","tag":"auth"},
   {"method":"PATCH","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Изменить профиль и настройки уведомлений","tag":"auth"},
@@ -146,6 +142,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Удалить гостя","tag":"guests"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Обновить гостя (статус RSVP циклом yes→no→pending)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/invite-link","url":"/weddings/:weddingId/guests/:guestId/invite-link","operationId":null,"summary":"Выдать (или перевыпустить) одноразовую ссылку-приглашение гостю","tag":"guests"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/members","url":"/weddings/:weddingId/guests/:guestId/members","operationId":null,"summary":"Добавить человека в семейное приглашение","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/import","url":"/weddings/:weddingId/guests/import","operationId":null,"summary":"Завести гостей списком","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/remind","url":"/weddings/:weddingId/guests/remind","operationId":null,"summary":"Напомнить гостям, которые не ответили","tag":"guests"},
   {"method":"GET","openapi":"/weddings/{weddingId}/invites","url":"/weddings/:weddingId/invites","operationId":null,"summary":"Активные приглашения","tag":"invites"},

@@ -2747,9 +2747,18 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @description primary person */
                         name: string;
-                        /** @default false */
+                        /**
+                         * @deprecated
+                         * @description legacy shortcut: создать системного второго человека
+                         * @default false
+                         */
                         plusOne?: boolean;
+                        /** @description дополнительные реальные персоны в том же семейном приглашении */
+                        members?: {
+                            name: string;
+                        }[];
                         /** @example Родня невесты */
                         group?: string;
                         /** @description для напоминаний по SMS (POST …/guests/remind) */
@@ -2767,6 +2776,58 @@ export interface paths {
                         "application/json": components["schemas"]["Guest"];
                     };
                 };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/guests/{guestId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Добавить человека в семейное приглашение
+         * @description guestId — primary person (partyPosition=1). Добавляется отдельная
+         *     персона с собственными RSVP/меню/столом/автобусом; семейный token,
+         *     ссылка, номер и gift identity не меняются. Максимум 10 персон.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    guestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Персона добавлена */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Guest"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -3010,13 +3071,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Публичная страница гостя (из ссылки в приглашении) */
+        /** Публичная страница семейного приглашения */
         get: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    guestToken: string;
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
                 };
                 cookie?: never;
             };
@@ -3029,16 +3112,27 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            guestName?: string;
-                            wedding?: components["schemas"]["WeddingPublic"];
-                            /** @enum {string} */
-                            status?: "yes" | "no" | "pending";
+                            /** Format: uuid */
+                            partyId: string;
+                            /** @description primary person; переходное поле */
+                            guestName: string;
+                            wedding: components["schemas"]["WeddingPublic"];
+                            /**
+                             * @description primary person; переходное поле
+                             * @enum {string}
+                             */
+                            status: "yes" | "no" | "pending";
+                            /**
+                             * @deprecated
+                             * @description true, если в приглашении больше одной персоны
+                             */
                             plusOne?: boolean;
                             /** @enum {string|null} */
                             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
                             dietNote?: string | null;
                             /** @enum {string|null} */
                             transfer?: null | "need" | "own";
+                            members: components["schemas"]["GuestPersonRsvp"][];
                         };
                     };
                 };
@@ -3047,32 +3141,72 @@ export interface paths {
         };
         put?: never;
         /**
-         * Ответ гостя (RSVP)
-         * @description `plusOne: true` при уже забронированном автобусе может не поместиться
-         *     в его границу мест — тогда 409 `bus_full`, ответ RSVP не сохраняется.
+         * RSVP одной или нескольких персон семейного приглашения
+         * @description Новый клиент передаёт members[] и меняет только перечисленных людей.
+         *     Старый payload status/plusOne остаётся переходно совместимым:
+         *     plusOne материализуется как реальная placeholder-персона, а не
+         *     увеличивает скрытый счётчик. Отказ одной персоны освобождает только
+         *     её автобус; семейный номер снимается лишь когда в party не осталось yes.
          */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    guestToken: string;
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
                 };
                 cookie?: never;
             };
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        status: "yes" | "no";
+                        /**
+                         * @deprecated
+                         * @enum {string}
+                         */
+                        status?: "yes" | "no";
+                        /** @deprecated */
                         plusOne?: boolean;
                         comment?: string;
                         /** @enum {string|null} */
                         diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
-                        dietNote?: string;
-                        /** @enum {string} */
-                        transfer?: "need" | "own";
-                    };
+                        dietNote?: string | null;
+                        /** @enum {string|null} */
+                        transfer?: null | "need" | "own";
+                        members?: {
+                            /** Format: uuid */
+                            guestId: string;
+                            /** @enum {string} */
+                            status: "yes" | "no";
+                            /** @enum {string|null} */
+                            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                            dietNote?: string | null;
+                            /** @enum {string|null} */
+                            transfer?: null | "need" | "own";
+                        }[];
+                    } | unknown | unknown;
                 };
             };
             responses: {
@@ -3084,15 +3218,9 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
-                /** @description `bus_full` — мест в автобусе не осталось */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6058,13 +6186,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Маршруты трансфера, доступные гостю
-         * @description Записаться гость мог, а увидеть, куда именно, — нет: путь был только на
-         *     запись, и `busId` брать было неоткуда. `myBusId` говорит, куда он уже
-         *     записан: без этого гость, вернувшийся по ссылке, видит пустой выбор и
-         *     занимает второе место.
-         */
+        /** Маршруты и места всех персон семейного приглашения */
         get: {
             parameters: {
                 query?: never;
@@ -6105,7 +6227,14 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description primary person; переходное поле */
                             myBusId?: string | null;
+                            members?: {
+                                /** Format: uuid */
+                                guestId: string;
+                                name: string;
+                                myBusId?: string | null;
+                            }[];
                             routes?: components["schemas"]["BusRoute"][];
                         };
                     };
@@ -6115,10 +6244,8 @@ export interface paths {
         };
         put?: never;
         /**
-         * Гость записывается в автобус
-         * @description Место занимается атомарно; при переполнении — 409. Повтор безопасен по
-         *     построению (`on conflict do nothing` + признак «уже записан») —
-         *     `Idempotency-Key` не читается и не объявляется.
+         * Записать конкретную персону семьи в автобус
+         * @description Одна guest row = одна персона = одно место; guestId должен входить в party токена.
          */
         post: {
             parameters: {
@@ -6154,7 +6281,13 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
                         busId: string;
+                        /**
+                         * Format: uuid
+                         * @description пропуск = primary для старого клиента
+                         */
+                        guestId?: string;
                     };
                 };
             };
@@ -6167,355 +6300,10 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
             };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/join/{guestToken}/day": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * День свадьбы глазами гостя
-         * @description Одним запросом всё, что нужно гостю в день X (План §8.8, фича 009):
-         *     программа — только блоки с `forGuests`, в поясе места; адрес и дресс-код;
-         *     свой стол; свой автобус с перевозчиком; координатор (имя и телефон — он
-         *     для того и назначен, «не жениха»); окно чата дня. Телефона пары здесь
-         *     нет. Раздел на экране гостя появляется с кануна (по `tz`).
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /**
-                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
-                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
-                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
-                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
-                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
-                     *     пары этот токен не отдаёт никогда (§9).
-                     *
-                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
-                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
-                     *     `GET /join/{guestToken}/day-chat/messages` и
-                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
-                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
-                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
-                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
-                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
-                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
-                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
-                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
-                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
-                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
-                     */
-                    guestToken: components["parameters"]["GuestToken"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /** Format: date */
-                            date: string | null;
-                            /** @example Europe/Moscow */
-                            tz: string;
-                            venue?: string | null;
-                            dressCode?: string | null;
-                            dressNote?: string | null;
-                            timeline: components["schemas"]["TimelineEvent"][];
-                            table: {
-                                name?: string;
-                            } | null;
-                            bus: components["schemas"]["BusRoute"] | null;
-                            coordinator: {
-                                name?: string | null;
-                                phone?: string | null;
-                            } | null;
-                            chat: {
-                                /** @description чат дня открыт гостям: с 09:00 кануна по конец дня после свадьбы (по tz) */
-                                open: boolean;
-                                /** Format: date-time */
-                                opensAt?: string | null;
-                                /** Format: date-time */
-                                closesAt?: string | null;
-                            };
-                        };
-                    };
-                };
-                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
-                410: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/join/{guestToken}/day-chat/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Чат дня X глазами гостя
-         * @description Та же лента, что у пары и команды (`kind=day`), только по токену гостя и
-         *     только в окне дня; вне окна — 423 `chat_closed_for_guests` с `opensAt`
-         *     в `details`. Реплики гостей несут `guestName`.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    limit?: components["parameters"]["Limit"];
-                    cursor?: components["parameters"]["Cursor"];
-                };
-                header?: never;
-                path: {
-                    /**
-                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
-                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
-                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
-                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
-                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
-                     *     пары этот токен не отдаёт никогда (§9).
-                     *
-                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
-                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
-                     *     `GET /join/{guestToken}/day-chat/messages` и
-                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
-                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
-                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
-                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
-                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
-                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
-                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
-                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
-                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
-                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
-                     */
-                    guestToken: components["parameters"]["GuestToken"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            items?: components["schemas"]["Message"][];
-                            nextCursor?: string | null;
-                        };
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
-                410: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                423: components["responses"]["Locked"];
-            };
-        };
-        put?: never;
-        /**
-         * Гость пишет в чат дня X
-         * @description Реплика от имени гостя из списка (`guestName`), в общий чат дня — её
-         *     видят пара, команда и забронированные подрядчики (решение владельца,
-         *     В3 фичи 009). Команде уходит уведомление, как от участника.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /**
-                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
-                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
-                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
-                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
-                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
-                     *     пары этот токен не отдаёт никогда (§9).
-                     *
-                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
-                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
-                     *     `GET /join/{guestToken}/day-chat/messages` и
-                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
-                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
-                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
-                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
-                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
-                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
-                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
-                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
-                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
-                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
-                     */
-                    guestToken: components["parameters"]["GuestToken"];
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        text: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Отправлено */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Message"];
-                    };
-                };
-                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
-                410: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-                422: components["responses"]["Validation"];
-                423: components["responses"]["Locked"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/join/{guestToken}/team": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Кто работал на свадьбе — глазами гостя
-         * @description Нужен, чтобы гость мог оставить отзыв: `POST /weddings/{weddingId}/guest-reviews`
-         *     принимает `vendorId`, а взять его гостю было неоткуда — списка команды
-         *     по гостевому токену не существовало, и форма отзыва предлагала имена из
-         *     мока.
-         *
-         *     Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
-         *     идентификатор. Сумма сделки, телефон и состояние сделки — нет.
-         *     Подрядчики только забронированные: оценивать того, кто не работал,
-         *     нечего.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /**
-                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
-                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
-                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
-                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
-                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
-                     *     пары этот токен не отдаёт никогда (§9).
-                     *
-                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
-                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
-                     *     `GET /join/{guestToken}/day-chat/messages` и
-                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
-                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
-                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
-                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
-                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
-                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
-                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
-                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
-                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
-                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
-                     */
-                    guestToken: components["parameters"]["GuestToken"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /**
-                             * @description Нужен гостю, чтобы отправить отзыв: путь отзыва —
-                             *     `/weddings/{weddingId}/guest-reviews`, а взять этот
-                             *     идентификатор ему больше неоткуда. Секрета в нём нет:
-                             *     токен гостя и так привязан к этой свадьбе.
-                             */
-                            weddingId?: string;
-                            /**
-                             * Format: date
-                             * @description Отзыв принимается только после дня свадьбы. Без даты гость
-                             *     заполнил бы форму и получил отказ там, где сказать нужно
-                             *     было заранее.
-                             */
-                            weddingDate?: string | null;
-                            /**
-                             * @description пояс места свадьбы — «день прошёл» считается по нему, не по телефону гостя
-                             * @example Europe/Moscow
-                             */
-                            tz?: string;
-                            vendors?: {
-                                vendorId?: string;
-                                name?: string;
-                                categoryId?: string;
-                            }[];
-                        };
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-            };
-        };
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6529,7 +6317,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Отельные блоки для гостя */
+        /**
+         * Отельные блоки для семейного приглашения
+         * @description mine относится ко всей семье: одно приглашение занимает не больше одного номера.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -6577,13 +6368,9 @@ export interface paths {
         };
         put?: never;
         /**
-         * Гость занимает номер в блоке
-         * @description Место занимается атомарно, при переполнении — 409 `hotel_full`. Пути
-         *     записи не было вовсе: блоки показывались, а занять номер было нечем,
-         *     хотя план требует «атомарные места в автобусе И НОМЕРЕ». После
-         *     `deadline_passed` (дедлайн заселения прошёл) — тоже 409. Повтор
-         *     безопасен по построению (`on conflict do nothing` + признак «уже
-         *     занято») — `Idempotency-Key` не читается и не объявляется.
+         * Семья занимает один номер в блоке
+         * @description Бронь ключуется partyId. Две персоны одного приглашения не расходуют
+         *     два номера. Повтор того же блока безопасен; переезд освобождает старый.
          */
         post: {
             parameters: {
@@ -6619,6 +6406,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
                         hotelId: string;
                     };
                 };
@@ -6632,15 +6420,7 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
-                /** @description `hotel_full` — мест не осталось; `deadline_passed` — дедлайн заселения прошёл */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -6778,11 +6558,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Опрос по горячему глазами гостя
-         * @description Варианты блюд задаёт пара, а голосовать гость мог вслепую: путь был
-         *     только на отправку выбора. `chosenOptionId` — что он уже выбрал.
-         */
+        /** Меню всех персон семейного приглашения */
         get: {
             parameters: {
                 query?: never;
@@ -6824,7 +6600,14 @@ export interface paths {
                     content: {
                         "application/json": {
                             question?: string;
+                            /** @description primary; переходное поле */
                             chosenOptionId?: string | null;
+                            members?: {
+                                /** Format: uuid */
+                                guestId?: string;
+                                name?: string;
+                                chosenOptionId?: string | null;
+                            }[];
                             options?: {
                                 id?: string;
                                 name?: string;
@@ -6837,8 +6620,8 @@ export interface paths {
         };
         put?: never;
         /**
-         * Гость выбирает блюдо
-         * @description Один голос на гостя; повторный вызов меняет выбор, а не добавляет второй.
+         * Выбрать блюдо конкретной персоне семьи
+         * @description Один голос на одну персону; guestId должен входить в party токена.
          */
         post: {
             parameters: {
@@ -6874,7 +6657,13 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
                         optionId: string;
+                        /**
+                         * Format: uuid
+                         * @description пропуск = primary для старого клиента
+                         */
+                        guestId?: string;
                     };
                 };
             };
@@ -6887,6 +6676,7 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
             };
         };
         delete?: never;
@@ -10722,6 +10512,20 @@ export interface components {
         Guest: {
             id?: string;
             name?: string;
+            /**
+             * Format: uuid
+             * @description одно семейное приглашение для 1–10 персон
+             */
+            readonly partyId?: string;
+            readonly partyPosition?: number;
+            /** @description только у primary показывается inviteUrl */
+            readonly isPrimary?: boolean;
+            /** @description системное имя, созданное из старого +1; пара может переименовать */
+            readonly isPlaceholder?: boolean;
+            /**
+             * @deprecated
+             * @description переходное поле: true у primary, если в party больше одной персоны; новые клиенты используют partyId/отдельные строки
+             */
             plusOne?: boolean;
             group?: string | null;
             /**
@@ -10761,6 +10565,19 @@ export interface components {
             inviteUrl?: string | null;
             /** @description true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link */
             readonly inviteUrlUsed?: boolean;
+        };
+        GuestPersonRsvp: {
+            /** Format: uuid */
+            guestId: string;
+            name: string;
+            /** @enum {string} */
+            status: "yes" | "no" | "pending";
+            /** @enum {string|null} */
+            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+            dietNote?: string | null;
+            /** @enum {string|null} */
+            transfer?: null | "need" | "own";
+            readonly isPlaceholder?: boolean;
         };
         Table: {
             id?: string;
