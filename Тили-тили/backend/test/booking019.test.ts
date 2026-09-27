@@ -151,6 +151,16 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
   const vendorDealPackages = async (v: { token: string }) =>
     ((await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(v.token) })).json().items as { packageName: string | null }[])
       .map((d) => d.packageName)
+  const dealSnapshot = async (dealId: string) =>
+    (await app.db!.query<{
+      package_id: string | null
+      package_title_snapshot: string | null
+      package_includes_snapshot: string[] | null
+    }>(
+      `select package_id, package_title_snapshot, package_includes_snapshot
+         from deals where id = $1`,
+      [dealId],
+    )).rows[0]!
 
 
   const book = (w: { token: string; weddingId: string }, slotId: string, vendorId: string, packageId?: string) =>
@@ -170,6 +180,15 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
   const liveDeals = async (slotId: string) =>
     (await app.db!.query<{ n: number }>("select count(*)::int as n from deals where slot_id = $1 and state <> 'cancelled'", [slotId]))
       .rows[0]!.n
+  const openRequest = async (slotId: string, vendorId: string, createdBy: string) => {
+    const id = randomUUID()
+    await app.db!.query(
+      `insert into offer_requests (id, slot_id, vendor_id, created_by)
+       values ($1, $2, $3, $4)`,
+      [id, slotId, vendorId, createdBy],
+    )
+    return id
+  }
 
   it('двадцать раз по две одновременные брони одного места — 200 и 409, ни одного 500', async () => {
     const vendorA = await newVendor('cake')
@@ -197,6 +216,70 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     }
     expect(seen).toEqual(Array(20).fill('200/409'))
   }, 120_000)
+
+  it('бронь из каталога закрывает запрос выбранного как booked, остальных — booked_other без раскрытия победителя', async () => {
+    const selected = await newVendor('cake')
+    const other = await newVendor('cake')
+    const w = await newWedding('2030-03-03')
+    const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
+    const selectedRequest = await openRequest(slot.id, selected.vendorId, w.id)
+    const otherRequest = await openRequest(slot.id, other.vendorId, w.id)
+
+    const booked = await book(w, slot.id, selected.vendorId)
+    expect(booked.statusCode, booked.body).toBe(200)
+    const { rows } = await app.db!.query<{ id: string; status: string; close_reason: string; closed: boolean }>(
+      `select id, status, close_reason, closed_at is not null as closed
+         from offer_requests where id = any($1::uuid[]) order by id`,
+      [[selectedRequest, otherRequest]],
+    )
+    expect(Object.fromEntries(rows.map((r) => [r.id, [r.status, r.close_reason, r.closed]]))).toEqual({
+      [selectedRequest]: ['closed', 'booked', true],
+      [otherRequest]: ['closed', 'booked_other', true],
+    })
+
+    const { rows: notices } = await app.db!.query<{ user_id: string; title: string; body: string }>(
+      `select user_id, title, body from notifications
+        where user_id = any($1::uuid[]) and title = 'Пара выбрала другого исполнителя'
+        order by user_id`,
+      [[selected.id, other.id]],
+    )
+    expect(notices).toEqual([
+      {
+        user_id: other.id,
+        title: 'Пара выбрала другого исполнителя',
+        body: 'Запрос предложения закрыт: пара выбрала другого исполнителя.',
+      },
+    ])
+    expect(JSON.stringify(notices)).not.toContain(selected.vendorId)
+    expect(JSON.stringify(notices)).not.toContain('1000000')
+  }, 60_000)
+
+  it('бронь своего подрядчика закрывает все открытые запросы как booked_other', async () => {
+    const first = await newVendor('cake')
+    const second = await newVendor('cake')
+    const w = await newWedding('2030-04-04')
+    const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
+    const requestIds = [
+      await openRequest(slot.id, first.vendorId, w.id),
+      await openRequest(slot.id, second.vendorId, w.id),
+    ]
+
+    const booked = await external(w, slot.id)
+    expect(booked.statusCode, booked.body).toBe(200)
+    const { rows } = await app.db!.query<{ id: string; close_reason: string }>(
+      'select id, close_reason from offer_requests where id = any($1::uuid[]) order by id',
+      [requestIds],
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r) => r.close_reason === 'booked_other')).toBe(true)
+    const { rows: notices } = await app.db!.query<{ user_id: string }>(
+      `select user_id from notifications
+        where user_id = any($1::uuid[]) and title = 'Пара выбрала другого исполнителя'
+        order by user_id`,
+      [[first.id, second.id]],
+    )
+    expect(notices.map((n) => n.user_id).sort()).toEqual([first.id, second.id].sort())
+  }, 60_000)
 
   it('пакет удаляют, пока бронь по нему в пути, — 422 unknown_package, а не 500', async () => {
     const vendor = await newVendor('cake')
@@ -233,7 +316,7 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     expect(await liveDeals(slot.id)).toBe(0)
   }, 60_000)
 
-  it('FR-006: правка анкеты, не удаляющая пакет, сохраняет его id и состав — бронь называет пакет у пары и у подрядчика', async () => {
+  it('FR-006/FR-018: бронь фиксирует название и состав — правка и удаление живого пакета её не меняют', async () => {
     const vendor = await newVendor('cake')
     const first = await saveProfile(vendor, [
       { name: 'Торт на 50 гостей', price: { amount: 2_000_000, currency: 'RUB' }, includes: ['три яруса', 'доставка'] },
@@ -244,7 +327,14 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     expect(before.map((p) => p.includes)).toEqual([['три яруса', 'доставка'], ['60 штук']])
     const w = await newWedding('2030-06-06')
     const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
-    expect((await book(w, slot.id, vendor.vendorId, before[0]!.id)).statusCode).toBe(200)
+    const booked = await book(w, slot.id, vendor.vendorId, before[0]!.id)
+    expect(booked.statusCode, booked.body).toBe(200)
+    const dealId = booked.json().deal.id as string
+    expect(await dealSnapshot(dealId)).toEqual({
+      package_id: before[0]!.id,
+      package_title_snapshot: 'Торт на 50 гостей',
+      package_includes_snapshot: ['три яруса', 'доставка'],
+    })
 
     // «Далее» мастера на шаге «О себе»: пакеты уходят как пришли — с id и составом.
     const again = await saveProfile(vendor, before.map(asInput), { about: 'Торты на заказ' })
@@ -254,14 +344,31 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('Торт на 50 гостей')
     expect(await vendorDealPackages(vendor)).toEqual(['Торт на 50 гостей'])
 
-    // Правка самого пакета — тот же пакет: бронь называет новое имя, id прежний.
+    // Правка самого пакета меняет витрину, но не уже принятую бронь.
     const renamed = await saveProfile(vendor, [{ ...asInput(before[0]!), name: 'Торт на 60 гостей', includes: ['три яруса'] }, asInput(before[1]!)])
     expect(renamed.statusCode, renamed.body).toBe(200)
     expect((renamed.json().packages as Pkg[]).map((p) => [p.id, p.name, p.includes])).toEqual([
       [before[0]!.id, 'Торт на 60 гостей', ['три яруса']],
       [before[1]!.id, 'Капкейки', ['60 штук']],
     ])
-    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('Торт на 60 гостей')
+    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('Торт на 50 гостей')
+    expect(await vendorDealPackages(vendor)).toEqual(['Торт на 50 гостей'])
+    expect(await dealSnapshot(dealId)).toEqual({
+      package_id: before[0]!.id,
+      package_title_snapshot: 'Торт на 50 гостей',
+      package_includes_snapshot: ['три яруса', 'доставка'],
+    })
+
+    // Снятие пакета с витрины обнуляет только живую ссылку; условия сделки остаются.
+    const removed = await saveProfile(vendor, [asInput(before[1]!)])
+    expect(removed.statusCode, removed.body).toBe(200)
+    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('Торт на 50 гостей')
+    expect(await vendorDealPackages(vendor)).toEqual(['Торт на 50 гостей'])
+    expect(await dealSnapshot(dealId)).toEqual({
+      package_id: null,
+      package_title_snapshot: 'Торт на 50 гостей',
+      package_includes_snapshot: ['три яруса', 'доставка'],
+    })
   }, 60_000)
 
   it('FR-006: новый пакет без id получает id, порядок — как прислан, неприсланный удаляется и не воскресает', async () => {
@@ -278,8 +385,8 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     expect(after.map((p) => p.name)).toEqual(['C', 'A'])
     expect(after[1]!.id).toBe(a!.id)
     expect([a!.id, b!.id]).not.toContain(after[0]!.id)
-    // Убранный пакет честно пропадает из брони (`on delete set null`), а не остаётся ссылкой в пустоту.
-    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBeNull()
+    // Убранный пакет пропадает с витрины, но снимок уже заключённой сделки остаётся.
+    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('B')
 
     // Устаревший черновик с id удалённого пакета: 422, пакет не воскресает, ничего не записано.
     const stale = await saveProfile(vendor, [asInput(a!), asInput(b!)], { about: 'не должно записаться' })
