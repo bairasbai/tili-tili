@@ -10,7 +10,7 @@ import { eraseUser } from '../src/jobs/index.js'
 const TEST_YEAR = new Date().getUTCFullYear() + 1
 const DB = process.env.TEST_DATABASE_URL
 const SECRET_R = 'b'.repeat(48)
-type User = { id: string; token: string }
+type User = { id: string; token: string; phone: string }
 type Wedding = User & { weddingId: string }
 type Vendor = User & { vendorId: string; packageId: string }
 type ReadyOffer = { wedding: Wedding; vendor: Vendor; slotId: string; requestId: string; offerId: string }
@@ -58,7 +58,7 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     const consent = await app.inject({ method: 'POST', url: '/users/me/consent', headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' } })
     expect(consent.statusCode, consent.body).toBe(201)
-    return { id: body.user.id, token: body.accessToken }
+    return { id: body.user.id, token: body.accessToken, phone }
   }
   async function newWedding(date: string | null = `${TEST_YEAR}-06-14`): Promise<Wedding> {
     const user = await newUser()
@@ -115,6 +115,31 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
   const assertError = (response: { statusCode: number; body: string; json: () => { error: { code: string } } }, code: string, status = 409) => {
     expect(response.statusCode, response.body).toBe(status)
     expect(response.json().error.code).toBe(code)
+  }
+
+  async function findPersonalValueEverywhere(value: string): Promise<string[]> {
+    const { rows: columns } = await app.db!.query<{ table_name: string; column_name: string; data_type: string }>(
+      `select table_name, column_name, data_type
+         from information_schema.columns
+        where table_schema = 'public'
+          and data_type in ('uuid', 'text', 'character varying', 'json', 'jsonb')
+        order by table_name, column_name`,
+    )
+    const found: string[] = []
+    for (const c of columns) {
+      if (c.table_name === 'audit_log' || c.table_name === 'pgmigrations') continue
+      const json = c.data_type === 'json' || c.data_type === 'jsonb'
+      const cast = c.data_type === 'uuid' ? '::text' : ''
+      const where = json
+        ? `position($1 in "${c.column_name}"::text) > 0`
+        : `"${c.column_name}"${cast} = $1`
+      const { rows } = await app.db!.query<{ n: string }>(
+        `select count(*)::text as n from "${c.table_name}" where ${where}`,
+        [value],
+      )
+      if (Number(rows[0]!.n) > 0) found.push(`${c.table_name}.${c.column_name}`)
+    }
+    return found
   }
 
   async function waitForBlocked(client: Queryable, holder: number, expected: number): Promise<void> {
@@ -391,6 +416,15 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
       .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
     expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
+    for (const erased of [
+      pending.vendor.id,
+      pending.vendor.phone,
+      `Accept ${pending.vendor.id}`,
+      offerBody.title,
+      offerBody.message,
+    ]) {
+      expect(await findPersonalValueEverywhere(String(erased))).toEqual([])
+    }
     expect((await accept(accepted)).statusCode).toBe(200)
     await app.db!.tx(client => eraseUser(client, accepted.vendor.id))
     expect(await rows('select vendor_id, package_title_snapshot, package_includes_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
