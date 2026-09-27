@@ -4,7 +4,7 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import type { Queryable } from '../plugins/db.js'
-import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
+import { guestByToken, guestPersonByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import { requireRole, type Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
@@ -783,7 +783,28 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       [guest.guestId],
     )
     const r = rows[0]!
+    const { rows: people } = await db().query<{
+      id: string
+      name: string
+      rsvp: string
+      diet: string | null
+      diet_note: string | null
+      transfer: string | null
+      table_id: string | null
+      menu_option_id: string | null
+      bus_id: string | null
+      hotel_id: string | null
+    }>(
+      `select g.id, g.name, g.rsvp, g.diet, g.diet_note, g.transfer, g.table_id, g.menu_option_id,
+              (select b.bus_id from bus_bookings b where b.guest_id = g.id limit 1) as bus_id,
+              (select h.hotel_id from hotel_bookings h where h.guest_id = g.id limit 1) as hotel_id
+         from guests g
+        where g.invitation_id = $1
+        order by g.created_at, g.id`,
+      [guest.invitationId],
+    )
     return {
+      invitationId: guest.invitationId,
       guestName: guest.name,
       status: r.rsvp,
       /* Свой ответ целиком (v0.25): гость видит, что уже выбрал, и может
@@ -807,6 +828,18 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
          * пояс — Москва, как у остальных гостевых путей. */
         tz: r.tz,
       },
+      people: people.map((person) => ({
+        id: person.id,
+        name: person.name,
+        status: person.rsvp,
+        diet: person.diet,
+        dietNote: person.diet_note,
+        transfer: person.transfer,
+        tableId: person.table_id,
+        menuOptionId: person.menu_option_id,
+        busId: person.bus_id,
+        hotelId: person.hotel_id,
+      })),
     }
   })
 
@@ -820,6 +853,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           additionalProperties: false,
           properties: {
             status: { type: 'string', enum: ['yes', 'no'] },
+            personId: UUID_ID,
             plusOne: { type: 'boolean' },
             comment: { type: 'string', maxLength: 1000 },
             diet: {
@@ -836,7 +870,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       const { guestToken } = request.params as { guestToken: string }
       const body = request.body as Record<string, unknown>
-      const guest = await guestByToken(db(), guestToken)
+      const guest =
+        typeof body.personId === 'string'
+          ? await guestPersonByToken(db(), guestToken, body.personId)
+          : await guestByToken(db(), guestToken)
 
       /* Ответ и освобождение мест — одна транзакция (R-122): «не приду»
        * с сиденьем, оставшимся за гостем, — состояние, которого не бывает
@@ -912,7 +949,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       })
 
       // Ответ гостю — без чужих данных: он видит только себя.
-      return { status: body.status, guestName: guest.name }
+      return { personId: guest.guestId, status: body.status, guestName: guest.name }
     },
   )
 
