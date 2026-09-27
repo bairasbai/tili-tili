@@ -488,7 +488,7 @@ const DEAL_AUDIENCE = ['couple'] as const
 
 /** Человеческое название состояния сделки — в тексте уведомления. */
 const STATE_TITLE: Record<string, string> = {
-  candidate: 'Сделка вернулась в кандидаты',
+  candidate: 'Сделка вернулась к статусу «Не связывались»',
   contacted: 'Подрядчику написали',
   negotiating: 'Дата под мягкой бронью',
   booked: 'Дата забронирована',
