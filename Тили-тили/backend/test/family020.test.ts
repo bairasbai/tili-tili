@@ -46,7 +46,7 @@ describe.skipIf(!live)('020: family invitation = one party, many persons', () =>
 
   afterAll(async () => { await app?.close() })
 
-  const nextPhone = () => `+7998${run}${String(++seq).padStart(2,'0')}`
+  const nextPhone = () => `+798${run}${String(++seq).padStart(2,'0')}`
 
   async function code(phone: string) {
     const { rows } = await app.db!.query<{ code_hash: string }>(
