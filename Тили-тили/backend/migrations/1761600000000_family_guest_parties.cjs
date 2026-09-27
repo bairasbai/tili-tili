@@ -33,6 +33,30 @@ exports.up = (pgm) => {
   })
   pgm.addConstraint('guests', 'guests_party_position_range', 'CHECK (party_position BETWEEN 1 AND 10)')
 
+  /* Compatibility door for old fixtures/workers during the rollout.
+   * Any legacy INSERT that only knows guests creates a one-person party in
+   * the same statement. New 020 paths pass party_id explicitly and skip it. */
+  pgm.sql(`
+    CREATE FUNCTION guest_party_for_legacy_insert() RETURNS trigger AS $
+    DECLARE
+      new_party_id uuid;
+    BEGIN
+      IF NEW.party_id IS NULL THEN
+        new_party_id := gen_random_uuid();
+        INSERT INTO guest_parties (id, wedding_id, invite_token, label, contact_phone, created_at)
+        VALUES (new_party_id, NEW.wedding_id, NEW.rsvp_token, NEW.name, NEW.phone, coalesce(NEW.created_at, now()));
+        NEW.party_id := new_party_id;
+        NEW.party_position := 1;
+      END IF;
+      RETURN NEW;
+    END;
+    $ LANGUAGE plpgsql;
+
+    CREATE TRIGGER guests_legacy_party
+      BEFORE INSERT ON guests
+      FOR EACH ROW EXECUTE FUNCTION guest_party_for_legacy_insert();
+  `)
+
   pgm.sql(`
     INSERT INTO guest_parties (id, wedding_id, invite_token, label, contact_phone, created_at)
     SELECT gen_random_uuid(), g.wedding_id, g.rsvp_token, g.name, g.phone, g.created_at
@@ -183,6 +207,9 @@ exports.down = (pgm) => {
    * old model without data loss, so only generated migration companions are
    * collapsed automatically. */
   pgm.sql(`
+    DROP TRIGGER IF EXISTS guests_legacy_party ON guests;
+    DROP FUNCTION IF EXISTS guest_party_for_legacy_insert();
+
     UPDATE guests primary_guest
        SET plus_one = true
       FROM guests companion
