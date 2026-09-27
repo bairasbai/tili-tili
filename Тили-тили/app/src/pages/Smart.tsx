@@ -20,6 +20,7 @@ import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { OfferSummary } from '@/components/OfferSummary'
 
 /*
  * ИИ-координатор «Тиль».
@@ -78,9 +79,10 @@ type CompareItem = {
   vendor: CompareVendor | null
   available: boolean | null
   occupancy: ShortlistEntry['occupancy']
+  request?: ShortlistEntry['request']
 }
 
-function CompareTable({ items, icons }: { items: CompareItem[]; icons: Record<string, string> }) {
+function CompareTable({ items, icons, weddingDate }: { items: CompareItem[]; icons: Record<string, string>; weddingDate?: string | null }) {
   const nav = useNavigate()
   const rows: [string, (item: CompareItem) => ReactNode][] = [
     [t('Цена «от»'), ({ vendor }) => vendor?.priceFrom?.amount != null ? fmt(vendor.priceFrom.amount) : '—'],
@@ -99,6 +101,7 @@ function CompareTable({ items, icons }: { items: CompareItem[]; icons: Record<st
         </div>)}
       </div>
     ) : '—'],
+    [t('Предложение'), ({ request }) => <OfferSummary request={request} currentWeddingDate={weddingDate} compact />],
     [t('Видео-визитка'), ({ vendor }) => vendor?.hasVideo ? t('▶ Есть') : '—'],
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
@@ -130,7 +133,7 @@ function CompareTable({ items, icons }: { items: CompareItem[]; icons: Record<st
 
 export function Compare() {
   const nav = useNavigate()
-  const { weddingId, weddingsState, slots, slotsState } = useStore()
+  const { weddingId, weddingDate, weddingsState, slots, slotsState } = useStore()
   const [params] = useSearchParams()
   const hasSlot = params.has('slot')
   const slotId = params.get('slot') ?? ''
@@ -165,7 +168,7 @@ export function Compare() {
   const slotEntries = (shortlist.data ?? [])
     .filter(entry => requested.includes(entry.id) && entry.slotId === slotId)
     .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-  const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy }))
+  const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy, request: entry.request }))
   const favoriteItems: CompareItem[] = (details.data ?? []).filter(v => selectedIds.includes(v.id ?? '')).map(v => ({ id: v.id!, vendor: v, available: true, occupancy: null }))
   const slotCurrent = ready(shortlist) && !shortlist.refreshing
   const detailsCurrent = ready(details) && !details.refreshing
@@ -186,7 +189,7 @@ export function Compare() {
                 <p className="text-[12.5px] text-[var(--soft)]">{requestedKey ? t('Выбранные кандидаты изменились — отметьте их снова на месте в команде') : t('Отметьте двух или трёх кандидатов на месте в команде')}</p>
                 <button onClick={() => nav(`/wedding/slot/${slotId}`)} className="press mt-4 px-5 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12.5px] font-semibold">{t('Открыть место в команде')}</button>
               </div>}
-              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} />}
+              {slotCurrent && slotItems.length >= 2 && slotItems.length === requested.length && <CompareTable items={slotItems} icons={icons} weddingDate={weddingDate} />}
             </>
     ) : <>
       <AsyncState q={favs} />
