@@ -1,0 +1,42 @@
+name: Generate 020 contract
+
+on:
+  push:
+    branches: ['feature/020-family-invitations-20260928']
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          cd Тили-тили/backend
+          printf 'minimum-release-age=0\n' > .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          rm .npmrc
+          pnpm run gen
+      - name: Commit generated contract
+        run: |
+          set -euo pipefail
+          git add Тили-тили/backend/src/contract/paths.generated.ts \
+                  Тили-тили/backend/src/contract/schemas.generated.ts \
+                  Тили-тили/backend/src/contract/api.generated.ts
+          if git diff --cached --quiet; then
+            echo "generated files already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(020): regenerate API contract"
+          git push
