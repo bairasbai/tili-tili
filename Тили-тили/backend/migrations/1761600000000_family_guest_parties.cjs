@@ -37,7 +37,7 @@ exports.up = (pgm) => {
    * Any legacy INSERT that only knows guests creates a one-person party in
    * the same statement. New 020 paths pass party_id explicitly and skip it. */
   pgm.sql(`
-    CREATE FUNCTION guest_party_for_legacy_insert() RETURNS trigger AS $
+    CREATE FUNCTION guest_party_for_legacy_insert() RETURNS trigger AS $family020$
     DECLARE
       new_party_id uuid;
     BEGIN
@@ -50,7 +50,7 @@ exports.up = (pgm) => {
       END IF;
       RETURN NEW;
     END;
-    $ LANGUAGE plpgsql;
+    $family020$ LANGUAGE plpgsql;
 
     CREATE TRIGGER guests_legacy_party
       BEFORE INSERT ON guests
