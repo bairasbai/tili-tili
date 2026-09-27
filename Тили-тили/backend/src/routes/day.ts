@@ -867,69 +867,72 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       const { busId, guestId } = request.body as { busId: string; guestId?: string }
       const guest = await guestByToken(db(), guestToken)
 
-      // Ответ собирается ВНУТРИ транзакции, а отправляется после неё.
-      // `reply.send()` внутри `tx` уходит клиенту до коммита: он видит 200,
-      // а данных ещё нет — и если коммит упадёт, ему уже сказали «готово».
       return db().tx(async (client) => {
-        const memberId = await familyMemberId(client, guest, guestId)
-        /* Сначала строка гостя, потом маршрут — тот же порядок замков, что у
-         * `PATCH …/guests/{id}` (гость → брони → триггер маршрута): иначе
-         * «не придёт» рукой пары и посадка гостя в ту же секунду взаимно
-         * ждали друг друга и одна из сторон получала 500 (RF-BE-06). */
-        await client.query('select 1 from guests where id = $1 for update', [memberId])
-        /* Маршруты под блокировкой строк — и целевой, и тот, откуда гость
-         * пересаживается, ОДНИМ запросом в порядке `id`: два гостя, меняющиеся
-         * автобусами навстречу, иначе брали замки в разном порядке (один —
-         * A потом B через триггер удаления брони, другой — B потом A) и
-         * упирались в deadlock — 500 одному из них (ревью 015). Заодно два
-         * гостя на последнее место проходят подсчёт персон по очереди (R-49). */
+        /* New 020 clients pass guestId and book exactly one person. A legacy
+         * client has no guestId; for compatibility its old single action
+         * applies to the whole invitation (the former +1 semantics), but the
+         * database still stores one row/seat per real person. */
+        const { rows: selected } = await client.query<{ id: string }>(
+          guestId
+            ? `select id from guests where id = $1 and party_id = $2 order by id for update`
+            : `select id from guests where party_id = $2 order by id for update`,
+          guestId ? [guestId, guest.partyId] : [null, guest.partyId],
+        )
+        if (selected.length === 0) throw notFound('Человек не входит в это приглашение')
+        const memberIds = selected.map((row) => row.id)
+
+        /* Lock every involved route in stable id order before moving seats.
+         * This is the same parent order for one person and a whole family. */
         await client.query(
           `select r.id from bus_routes r
             where r.wedding_id = $2
-              and (r.id = $1 or r.id in (select b.bus_id from bus_bookings b where b.guest_id = $3))
+              and (
+                r.id = $1
+                or r.id in (
+                  select b.bus_id from bus_bookings b
+                   where b.guest_id = any($3::uuid[])
+                )
+              )
             order by r.id for update`,
-          [busId, guest.weddingId, memberId],
+          [busId, guest.weddingId, memberIds],
         )
-        const { rows: bus } = await client.query<{ seats: number; taken: number }>(
+        const { rows: exists } = await client.query<{ seats: number; taken: number }>(
           'select seats, taken from bus_routes where id = $1 and wedding_id = $2',
           [busId, guest.weddingId],
         )
-        if (bus.length === 0) throw notFound('Маршрут не найден')
+        if (!exists[0]) throw notFound('Маршрут не найден')
 
-        // Гость едет ОДНИМ автобусом. Пересел на другой рейс — место
-        // в прежнем обязано освободиться, иначе водитель ждёт того,
-        // кто уехал с другой точки сбора.
+        /* Each selected person rides one bus. Moving the family frees all old
+         * routes first; their counters are maintained by the trigger. */
         await client.query(
           `delete from bus_bookings b using bus_routes r
-            where b.bus_id = r.id and b.guest_id = $1 and r.wedding_id = $2 and b.bus_id <> $3`,
-          [memberId, guest.weddingId, busId],
+            where b.bus_id = r.id
+              and b.guest_id = any($1::uuid[])
+              and r.wedding_id = $2
+              and b.bus_id <> $3`,
+          [memberIds, guest.weddingId, busId],
         )
 
-        /* Места считаются в персонах, а не в записях (R-29): гость «с +1»
-         * едет вдвоём, и `taken` маршрута — сумма персон по записям: её ведёт
-         * триггер (фича 005, миграция 17593…), обработчик персоны не
-         * пересчитывает. Ранний отказ здесь, под блокировкой маршрута, —
-         * потому что дешевле отката транзакции по `CHECK` ниже; правило
-         * держит база (D3-16). */
-        const { rows: aboard } = await client.query<{ already: boolean }>(
-          `select exists(
-                   select 1 from bus_bookings b where b.bus_id = $1 and b.guest_id = $2
-                 ) as already`,
-          [busId, memberId],
+        const { rows: current } = await client.query<{ seats: number; taken: number }>(
+          'select seats, taken from bus_routes where id = $1',
+          [busId],
         )
-        // В 020 одна строка guest = одна персона = одно место.
-        if (!aboard[0]!.already && bus[0]!.taken + 1 > bus[0]!.seats) {
+        const { rows: alreadyRows } = await client.query<{ n: string }>(
+          'select count(*)::text as n from bus_bookings where bus_id = $1 and guest_id = any($2::uuid[])',
+          [busId, memberIds],
+        )
+        const missing = memberIds.length - Number(alreadyRows[0]!.n)
+        if (current[0]!.taken + missing > current[0]!.seats) {
           throw conflict('bus_full', 'Мест в этом автобусе не осталось')
         }
 
-        // Счётчик ведёт триггер: строки исчезают и мимо обработчика —
-        // удаление гостя уносит запись каскадом. Переполнение по персонам
-        // ловит `CHECK bus_taken_bounded`, и оно же откатывает транзакцию.
         let booked
         try {
           booked = await client.query(
-            'insert into bus_bookings (bus_id, guest_id) values ($1,$2) on conflict do nothing',
-            [busId, memberId],
+            `insert into bus_bookings (bus_id, guest_id)
+             select $1, x.id from unnest($2::uuid[]) as x(id)
+             on conflict do nothing`,
+            [busId, memberIds],
           )
         } catch (error) {
           if (isCheckViolation(error, 'bus_taken_bounded')) {
@@ -938,15 +941,21 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           throw error
         }
 
+        await client.query(
+          `update guests set transfer = 'need' where id = any($1::uuid[])`,
+          [memberIds],
+        )
         const { rows } = await client.query<{ taken: number; seats: number }>(
           'select taken, seats from bus_routes where id = $1',
           [busId],
         )
-        if (booked.rowCount === 0) {
-          return { guestId: memberId, busId, alreadyBooked: true, ...rows[0]! }
+        return {
+          guestId: guestId ?? guest.guestId,
+          guestIds: memberIds,
+          busId,
+          alreadyBooked: booked.rowCount === 0,
+          ...rows[0]!,
         }
-        await client.query(`update guests set transfer = 'need' where id = $1`, [memberId])
-        return { guestId: memberId, busId, alreadyBooked: false, ...rows[0]! }
       })
     },
   )
