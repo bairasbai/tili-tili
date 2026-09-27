@@ -225,7 +225,7 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
  * «Аккаунт удалён», — SMS потрачена, войти нельзя. Вход стирает строку сразу
  * тем же путём и заводит аккаунт заново.
  */
-export async function eraseUser(client: Queryable, id: string): Promise<void> {
+export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId: string | null = null): Promise<void> {
   /* 019/T039: request is the response mutex. Lock all vendor requests before
    * the user cascade so account erasure and an offer reply use one order. */
   const { rows: ownedVendors } = await client.query<{ id: string }>(
@@ -276,9 +276,18 @@ export async function eraseUser(client: Queryable, id: string): Promise<void> {
     [id],
   )
   await client.query(
-    `update deals d set vendor_id = null, external_name = null
+    `update deals d set vendor_id = null, external_name = 'Удалённый подрядчик'
        from vendors v where v.id = d.vendor_id and v.user_id = $1`,
     [id],
+  )
+  /* OTP rows are not FK-linked to users, but still contain the phone.
+   * A stale-account login must keep only the code currently being verified;
+   * scheduled/final erasure keeps none. */
+  await client.query(
+    `delete from otp_codes
+      where phone = (select phone from users where id = $1)
+        and ($2::text is null or id::text <> $2)`,
+    [id, preserveOtpCodeId],
   )
   await client.query('delete from users where id = $1', [id])
 }
