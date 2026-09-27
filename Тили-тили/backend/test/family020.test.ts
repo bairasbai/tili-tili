@@ -15,6 +15,7 @@ interface Person {
   id: string
   partyId: string
   primary: boolean
+  plusOne: boolean
   name: string
   status: 'yes' | 'no' | 'pending'
   tableId?: string | null
@@ -95,7 +96,7 @@ describe.skipIf(!live)('020: family invitation = one party, many persons', () =>
     const members=all.filter(g=>g.partyId===primary.partyId)
     expect(members.map(g=>g.name)).toEqual(names)
     expect(members.filter(g=>g.primary)).toHaveLength(1)
-    for (const p of members) expect((p as unknown as {plusOne?:unknown}).plusOne).toBeUndefined()
+    expect(members.every((p) => p.plusOne)).toBe(true)
     return { primary, members }
   }
 
