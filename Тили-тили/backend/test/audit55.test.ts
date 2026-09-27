@@ -44,18 +44,48 @@ const live = Boolean(DB)
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const
 type Method = (typeof METHODS)[number]
 
+interface YamlSchema {
+  type?: string | string[]
+  format?: string
+  description?: string
+  required?: string[]
+  additionalProperties?: boolean | YamlSchema
+  properties?: Record<string, YamlSchema>
+  oneOf?: YamlSchema[]
+  allOf?: YamlSchema[]
+  items?: YamlSchema
+  $ref?: string
+  enum?: unknown[]
+  nullable?: boolean
+  minimum?: number
+  maximum?: number
+  minLength?: number
+  maxLength?: number
+  minItems?: number
+  maxItems?: number
+  uniqueItems?: boolean
+}
+
 interface YamlParam {
   name?: string
   in?: string
   required?: boolean
   $ref?: string
-  schema?: Record<string, unknown>
+  schema?: YamlSchema
 }
 interface YamlOperation {
   description?: string
   parameters?: YamlParam[]
-  requestBody?: { content?: Record<string, { schema?: Record<string, unknown> }> }
-  responses?: Record<string, { description?: string; $ref?: string }>
+  requestBody?: { content?: Record<string, { schema?: YamlSchema }> }
+  responses?: Record<
+    string,
+    {
+      description?: string
+      $ref?: string
+      headers?: Record<string, { description?: string; schema?: YamlSchema }>
+      content?: Record<string, { schema?: YamlSchema }>
+    }
+  >
 }
 interface Op {
   method: Method
@@ -130,6 +160,13 @@ function namesCode(text: string, code: string): boolean {
 const opKey = (method: string, openapiPath: string) => `${method.toUpperCase()} ${openapiPath}`
 function findOp(ops: Op[], method: string, openapiPath: string): Op | undefined {
   return ops.find((o) => o.method === method.toLowerCase() && o.openapiPath === openapiPath)
+}
+
+function exactObject(schema: YamlSchema, required: string[], properties = required): void {
+  expect(schema.type).toBe('object')
+  expect(schema.additionalProperties).toBe(false)
+  expect([...(schema.required ?? [])].sort()).toEqual([...required].sort())
+  expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...properties].sort())
 }
 
 // ───────────────────────── исходники: сканирование ─────────────────────────
@@ -220,7 +257,7 @@ function idempotencyUsage(slice: string): { reads: boolean; required: boolean } 
   return { reads: false, required: false }
 }
 
-// ───────────────────────── F5-13: код → операции, называющие его в тексте (128 пар + 1 из F5-14) ─────────────────────────
+// ───────────────────────── F5-13: код → операции, называющие его в тексте ─────────────────────────
 
 const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['active_deals', [['DELETE', '/users/me']]],
@@ -374,6 +411,9 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['referral_used', [['POST', '/referral/{code}/apply']]],
   ['refresh_superseded', [['POST', '/auth/refresh']]],
   ['reservation_limit', [['POST', '/gifts/{guestToken}/{giftId}/reserve']]],
+  ['request_open', [['DELETE', '/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}']]],
+  ['shortlist_full', [['PUT', '/weddings/{weddingId}/shortlist/{vendorId}']]],
+  ['slot_missing', [['PUT', '/weddings/{weddingId}/shortlist/{vendorId}']]],
   ['slot_empty', [['POST', '/weddings/{weddingId}/slots/{slotId}/cancel'], ['POST', '/weddings/{weddingId}/slots/{slotId}/pay']]],
   ['slot_taken', [['POST', '/weddings/{weddingId}/slots/{slotId}/book'], ['POST', '/weddings/{weddingId}/slots/{slotId}/external']]],
   ['system_task', [['DELETE', '/weddings/{weddingId}/tasks/{taskId}']]],
@@ -381,9 +421,10 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['text_required', [['POST', '/vendor/leads/{leadId}']]],
   ['too_many_requests', [['POST', '/auth/otp'], ['POST', '/auth/otp/verify']]],
   ['too_often', [['POST', '/weddings/{weddingId}/guests/remind']]],
-  ['unknown_package', [['POST', '/weddings/{weddingId}/slots/{slotId}/book']]],
+  ['unknown_package', [['POST', '/weddings/{weddingId}/slots/{slotId}/book'], ['PUT', '/vendor/profile']]],
   ['unknown_timezone', [['PATCH', '/users/me'], ['PATCH', '/weddings/{weddingId}']]],
   ['upgrade_required', [['GET', '/chats/{chatId}/ws']]],
+  ['vendor_unavailable', [['PUT', '/weddings/{weddingId}/shortlist/{vendorId}']]],
   ['video_duration_required', [['PUT', '/vendor/profile']]],
   ['video_too_long', [['PUT', '/vendor/profile']]],
   [
@@ -393,6 +434,13 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
       ['POST', '/chats/{chatId}/messages'],
       ['POST', '/chats/{chatId}/typing'],
       ['GET', '/chats/{chatId}/ws'],
+    ],
+  ],
+  [
+    'wedding_cancelled',
+    [
+      ['PUT', '/weddings/{weddingId}/shortlist/{vendorId}'],
+      ['DELETE', '/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}'],
     ],
   ],
 ]
@@ -460,6 +508,193 @@ describe('audit55 — контракт v0.41.0, единственный вла�
 
   it('версия контракта — 0.44.0 (017-B + фича 018; F5-14 сохранён)', () => {
     expect((doc.info as { version: string }).version).toBe('0.44.0')
+  it('версия контракта — 0.45.0 (019: shortlist, offers и принятие; F5-14 сохранён)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.45.0')
+  })
+
+  it('019: PUT принимает атомарную замену, shortlist_full — три записи, DELETE — entryId', () => {
+    const put = findOp(ops, 'put', '/weddings/{weddingId}/shortlist/{vendorId}')!
+    const body = put.item.requestBody?.content?.['application/json']?.schema as {
+      required?: string[]
+      additionalProperties: boolean
+      properties: { replaceEntryId: { type: string; format: string } }
+    }
+    expect(body.required).toBeUndefined()
+    expect(body.additionalProperties).toBe(false)
+    expect(body.properties.replaceEntryId).toEqual({ type: 'string', format: 'uuid' })
+    expect(hasStatus(put, '422')).toBe(true)
+    const conflictSchema = put.item.responses?.['409']?.content?.['application/json']?.schema as {
+      properties: {
+        error: {
+          properties: {
+            details: {
+              properties: {
+                shortlist: { minItems: number; maxItems: number; items: { $ref: string } }
+              }
+            }
+          }
+        }
+      }
+    }
+    const shortlist = conflictSchema.properties.error.properties.details.properties.shortlist
+    expect(shortlist.minItems).toBe(3)
+    expect(shortlist.maxItems).toBe(3)
+    expect(shortlist.items.$ref).toBe('#/components/schemas/ShortlistEntry')
+
+    const del = findOp(ops, 'delete', '/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}')!
+    expect(findParam(doc, del, 'entryId', 'path')?.required).toBe(true)
+    expect(findParam(doc, del, 'vendorId', 'path')).toBeUndefined()
+  })
+
+  describe('T023: строгий контракт запросов и предложений', () => {
+    const offerKeys = ['id', 'requestId', 'kind', 'packageId', 'title', 'price', 'includes', 'message', 'validUntil']
+    const requestRequired = ['id', 'status', 'weddingDate', 'guests', 'city', 'wishes', 'createdAt']
+    const requestKeys = [...requestRequired, 'closeReason', 'budgetHint', 'offer']
+
+    it('Offer — strict oneOf: оба варианта имеют девять ключей, а отказ не маскируется предложением', () => {
+      const variants = schemas.Offer!.oneOf ?? []
+      expect(variants).toHaveLength(2)
+      const offered = variants.find((variant) => variant.properties?.kind?.enum?.[0] === 'offer')!
+      const declined = variants.find((variant) => variant.properties?.kind?.enum?.[0] === 'decline')!
+
+      exactObject(offered, offerKeys)
+      expect(offered.properties!.kind!.enum).toEqual(['offer'])
+      expect(offered.properties!.packageId).toMatchObject({ type: 'string', format: 'uuid', nullable: true })
+      expect(offered.properties!.packageId!.enum).toBeUndefined()
+      expect(offered.properties!.title).toMatchObject({ type: 'string', minLength: 1, maxLength: 200 })
+      expect(offered.properties!.title!.nullable).not.toBe(true)
+      expect(offered.properties!.price).toEqual({ $ref: '#/components/schemas/PositiveMoney' })
+      expect(offered.properties!.message).toMatchObject({ type: 'string', maxLength: 2000, nullable: true })
+      expect(offered.properties!.validUntil).toMatchObject({ type: 'string', format: 'date' })
+      expect(offered.properties!.validUntil!.nullable).not.toBe(true)
+
+      exactObject(declined, offerKeys)
+      expect(declined.properties!.kind!.enum).toEqual(['decline'])
+      for (const key of ['packageId', 'title', 'price', 'validUntil']) {
+        expect(declined.properties![key]!.nullable, key).toBe(true)
+        expect(declined.properties![key]!.enum, key).toEqual([null])
+      }
+      expect(declined.properties!.includes).toMatchObject({ type: 'array', minItems: 0, maxItems: 0 })
+      expect(declined.properties!.message).toMatchObject({ type: 'string', minLength: 1, maxLength: 2000 })
+      expect(declined.properties!.message!.nullable).not.toBe(true)
+    })
+
+    it('OfferRequest и безопасный OfferPublic не раскрывают лишнего', () => {
+
+      const request = schemas.OfferRequest!
+      exactObject(request, requestRequired, requestKeys)
+      expect(request.properties!.status!.enum).toEqual(['open', 'closed'])
+      expect(request.properties!.weddingDate!.nullable).toBe(true)
+      expect(request.properties!.guests!.nullable).toBe(true)
+      expect(request.properties!.city!.nullable).toBe(true)
+      expect(request.properties!.wishes!.nullable).toBe(true)
+      expect(request.properties!.budgetHint!.$ref).toBe('#/components/schemas/PositiveMoney')
+      expect(request.properties!.offer!.$ref).toBe('#/components/schemas/Offer')
+
+      const publicRequest = schemas.OfferPublic!
+      exactObject(publicRequest, ['status'])
+      expect(publicRequest.properties!.status!.enum).toEqual(['pending', 'responded'])
+
+      const shortlist = schemas.ShortlistEntry!
+      expect(shortlist.required).not.toContain('request')
+      expect(shortlist.properties!.request!.oneOf).toEqual([
+        { $ref: '#/components/schemas/OfferRequest' },
+        { $ref: '#/components/schemas/OfferPublic' },
+      ])
+    })
+
+    it('OfferInput — три непересекающиеся строгие формы: пакет, custom с includes и отказ с текстом', () => {
+      const variants = schemas.OfferInput!.oneOf ?? []
+      expect(variants).toHaveLength(3)
+      const byPackage = variants.find((variant) => Boolean(variant.properties?.packageId))!
+      const custom = variants.find((variant) => Boolean(variant.properties?.title))!
+      const decline = variants.find((variant) => variant.properties?.kind?.enum?.[0] === 'decline')!
+
+      exactObject(byPackage, ['kind', 'packageId', 'price'], ['kind', 'packageId', 'price', 'message', 'validUntil'])
+      exactObject(custom, ['kind', 'title', 'price', 'includes'], ['kind', 'title', 'price', 'includes', 'message', 'validUntil'])
+      exactObject(decline, ['kind', 'message'])
+      expect(byPackage.properties!.title).toBeUndefined()
+      expect(byPackage.properties!.includes).toBeUndefined()
+      expect(custom.properties!.packageId).toBeUndefined()
+      expect(custom.required).toContain('includes')
+      expect(decline.properties!.message!.minLength).toBe(1)
+      expect(decline.properties!.packageId).toBeUndefined()
+      expect(decline.properties!.price).toBeUndefined()
+    })
+
+    it('batch пары возвращает строгий union в порядке entryIds и атомарно отказывает по квоте без Retry-After', () => {
+      const op = findOp(ops, 'post', '/weddings/{weddingId}/slots/{slotId}/offer-requests')!
+      expect(op).toBeDefined()
+      const idem = findParam(doc, op, 'Idempotency-Key', 'header')!
+      expect(idem.required).toBe(true)
+      expect(idem.schema?.maxLength).toBe(200)
+
+      const input = op.item.requestBody!.content!['application/json']!.schema!
+      exactObject(input, ['entryIds'], ['entryIds', 'wishes', 'budgetHint'])
+      const entryIds = input.properties!.entryIds!
+      expect(entryIds).toMatchObject({ type: 'array', minItems: 1, maxItems: 3, uniqueItems: true })
+      expect(entryIds.items).toMatchObject({ type: 'string', format: 'uuid' })
+      expect(input.properties!.budgetHint!.$ref).toBe('#/components/schemas/PositiveMoney')
+
+      const created = op.item.responses!['201']!
+      expect(created.headers!['Idempotent-Replay']!.schema).toEqual({ type: 'string', enum: ['true'] })
+      const success = created.content!['application/json']!.schema!
+      exactObject(success, ['results'])
+      const results = success.properties!.results!
+      expect(results.description).toMatch(/порядке.*entryIds/i)
+      expect(results).toMatchObject({ type: 'array', minItems: 1, maxItems: 3 })
+      const resultVariants = results.items!.oneOf ?? []
+      expect(resultVariants).toHaveLength(2)
+      const sent = resultVariants.find((variant) => variant.properties?.status?.enum?.[0] === 'sent')!
+      const skipped = resultVariants.find((variant) => variant.properties?.status?.enum?.[0] !== 'sent')!
+      exactObject(sent, ['entryId', 'status', 'requestId'])
+      exactObject(skipped, ['entryId', 'status'])
+      expect(skipped.properties!.status!.enum).toEqual([
+        'not_shortlisted', 'busy', 'already_open', 'unavailable', 'category_changed',
+      ])
+
+      const conflict = op.item.responses!['409']!.content!['application/json']!.schema!
+      const noSent = conflict.oneOf![0]!
+      exactObject(noSent, ['error'])
+      const error = noSent.properties!.error!
+      exactObject(error, ['code', 'message', 'details'])
+      expect(error.properties!.code!.enum).toEqual(['no_request_sent'])
+      const details = error.properties!.details!
+      exactObject(details, ['results'])
+      expect(details.properties!.results!.description).toMatch(/порядке.*entryIds/i)
+      expect(details.properties!.results!.items).toEqual(results.items)
+
+      const quota = op.item.responses!['429']!
+      expect(quota.headers).toBeUndefined()
+      expect(`${op.item.description}\n${quota.description}`).toMatch(/остатка квоты не хватает|квоты не хватает всем/i)
+      expect(`${op.item.description}\n${quota.description}`).toMatch(/целиком|ни одна строка/i)
+      const quotaError = quota.content!['application/json']!.schema!.properties!.error!
+      expect(quotaError.properties!.code!.enum).toEqual(['offer_requests_limit'])
+    })
+
+    it('кабинет получает bare array, а ответ объявляет replay и ограниченный Retry-After только у квоты версий', () => {
+      const list = findOp(ops, 'get', '/vendor/offer-requests')!
+      expect(list).toBeDefined()
+      const listSchema = list.item.responses!['200']!.content!['application/json']!.schema!
+      expect(listSchema.type).toBe('array')
+      expect(listSchema.items).toEqual({ $ref: '#/components/schemas/OfferRequest' })
+
+      const answer = findOp(ops, 'post', '/vendor/offer-requests/{requestId}/offers')!
+      expect(answer).toBeDefined()
+      expect(findParam(doc, answer, 'Idempotency-Key', 'header')).toMatchObject({ required: true })
+      expect(answer.item.requestBody!.content!['application/json']!.schema).toEqual({
+        $ref: '#/components/schemas/OfferInput',
+      })
+      const created = answer.item.responses!['201']!
+      expect(created.content!['application/json']!.schema).toEqual({ $ref: '#/components/schemas/Offer' })
+      expect(created.headers!['Idempotent-Replay']!.schema).toEqual({ type: 'string', enum: ['true'] })
+
+      const limited = answer.item.responses!['429']!
+      expect(limited.description).toMatch(/offer_revisions_limit/)
+      expect(limited.headers!['Retry-After']!.schema).toEqual({ type: 'integer', minimum: 1, maximum: 86400 })
+      const limitError = limited.content!['application/json']!.schema!.properties!.error!
+      expect(limitError.properties!.code!.enum).toEqual(['offer_revisions_limit'])
+    })
   })
 
   describe('G-a: идемпотентность — 400 и правильный Idempotency-Key у операций, чей обработчик её читает', () => {
