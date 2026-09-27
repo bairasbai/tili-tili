@@ -1,0 +1,23 @@
+name: Export source for 019 finalization
+
+on:
+  push:
+    branches: ['test/019-finalization-source-20260928']
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack exact feature source
+        run: |
+          set -euo pipefail
+          tar --exclude=.git --exclude='.github/workflows/source-export-019-finalization.yml' -czf "$RUNNER_TEMP/source019-finalization.tgz" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source019-finalization
+          path: ${{ runner.temp }}/source019-finalization.tgz
+          retention-days: 1
