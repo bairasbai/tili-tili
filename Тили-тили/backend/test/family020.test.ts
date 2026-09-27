@@ -46,7 +46,7 @@ describe.skipIf(!DB)('020 / family invitations migration invariants', () => {
     const busId = randomUUID()
     const ownerId = randomUUID()
     await app.db!.query(
-      `insert into users (id, phone, display_name) values ($1, $2, $3)`,
+      `insert into users (id, phone, name) values ($1, $2, $3)`,
       [ownerId, '+7999' + String(Math.floor(Math.random() * 1e7)).padStart(7, '0'), '020 owner'],
     )
     await app.db!.query(
