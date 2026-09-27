@@ -6336,6 +6336,352 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/join/{guestToken}/day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * День свадьбы глазами гостя
+         * @description Одним запросом всё, что нужно гостю в день X (План §8.8, фича 009):
+         *     программа — только блоки с `forGuests`, в поясе места; адрес и дресс-код;
+         *     свой стол; свой автобус с перевозчиком; координатор (имя и телефон — он
+         *     для того и назначен, «не жениха»); окно чата дня. Телефона пары здесь
+         *     нет. Раздел на экране гостя появляется с кануна (по `tz`).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: date */
+                            date: string | null;
+                            /** @example Europe/Moscow */
+                            tz: string;
+                            venue?: string | null;
+                            dressCode?: string | null;
+                            dressNote?: string | null;
+                            timeline: components["schemas"]["TimelineEvent"][];
+                            table: {
+                                name?: string;
+                            } | null;
+                            bus: components["schemas"]["BusRoute"] | null;
+                            coordinator: {
+                                name?: string | null;
+                                phone?: string | null;
+                            } | null;
+                            chat: {
+                                /** @description чат дня открыт гостям: с 09:00 кануна по конец дня после свадьбы (по tz) */
+                                open: boolean;
+                                /** Format: date-time */
+                                opensAt?: string | null;
+                                /** Format: date-time */
+                                closesAt?: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/join/{guestToken}/day-chat/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Чат дня X глазами гостя
+         * @description Та же лента, что у пары и команды (`kind=day`), только по токену гостя и
+         *     только в окне дня; вне окна — 423 `chat_closed_for_guests` с `opensAt`
+         *     в `details`. Реплики гостей несут `guestName`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: components["parameters"]["Limit"];
+                    cursor?: components["parameters"]["Cursor"];
+                };
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items?: components["schemas"]["Message"][];
+                            nextCursor?: string | null;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                423: components["responses"]["Locked"];
+            };
+        };
+        put?: never;
+        /**
+         * Гость пишет в чат дня X
+         * @description Реплика от имени гостя из списка (`guestName`), в общий чат дня — её
+         *     видят пара, команда и забронированные подрядчики (решение владельца,
+         *     В3 фичи 009). Команде уходит уведомление, как от участника.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        text: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Отправлено */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Message"];
+                    };
+                };
+                /** @description `gone` — ссылка отозвана, свадьба отменена или в архиве: попросите пару прислать новую */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+                423: components["responses"]["Locked"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/join/{guestToken}/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Кто работал на свадьбе — глазами гостя
+         * @description Нужен, чтобы гость мог оставить отзыв: `POST /weddings/{weddingId}/guest-reviews`
+         *     принимает `vendorId`, а взять его гостю было неоткуда — списка команды
+         *     по гостевому токену не существовало, и форма отзыва предлагала имена из
+         *     мока.
+         *
+         *     Отдаётся только то, что гость и так видел на свадьбе: имя, категория и
+         *     идентификатор. Сумма сделки, телефон и состояние сделки — нет.
+         *     Подрядчики только забронированные: оценивать того, кто не работал,
+         *     нечего.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @description Нужен гостю, чтобы отправить отзыв: путь отзыва —
+                             *     `/weddings/{weddingId}/guest-reviews`, а взять этот
+                             *     идентификатор ему больше неоткуда. Секрета в нём нет:
+                             *     токен гостя и так привязан к этой свадьбе.
+                             */
+                            weddingId?: string;
+                            /**
+                             * Format: date
+                             * @description Отзыв принимается только после дня свадьбы. Без даты гость
+                             *     заполнил бы форму и получил отказ там, где сказать нужно
+                             *     было заранее.
+                             */
+                            weddingDate?: string | null;
+                            /**
+                             * @description пояс места свадьбы — «день прошёл» считается по нему, не по телефону гостя
+                             * @example Europe/Moscow
+                             */
+                            tz?: string;
+                            vendors?: {
+                                vendorId?: string;
+                                name?: string;
+                                categoryId?: string;
+                            }[];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/join/{guestToken}/hotels": {
         parameters: {
             query?: never;

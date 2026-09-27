@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
  * Источник: Тили-тили_API_openapi.yaml (версия 0.50.0).
- * Операций: 192. Путей: 145. */
+ * Операций: 196. Путей: 148. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -69,12 +69,16 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"DELETE","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Отозвать приглашение","tag":"invites"},
   {"method":"GET","openapi":"/invites/{code}","url":"/invites/:code","operationId":null,"summary":"Просмотр приглашения (экран /join/:code)","tag":"invites"},
   {"method":"POST","openapi":"/invites/{code}/accept","url":"/invites/:code/accept","operationId":null,"summary":"Принять приглашение (после регистрации/входа)","tag":"invites"},
+  {"method":"GET","openapi":"/join/{guestToken}/day","url":"/join/:guestToken/day","operationId":null,"summary":"День свадьбы глазами гостя","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Чат дня X глазами гостя","tag":"logistics-guest"},
+  {"method":"POST","openapi":"/join/{guestToken}/day-chat/messages","url":"/join/:guestToken/day-chat/messages","operationId":null,"summary":"Гость пишет в чат дня X","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Отельные блоки для семейного приглашения","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/hotels","url":"/join/:guestToken/hotels","operationId":null,"summary":"Семья занимает один номер в блоке","tag":"logistics-guest"},
   {"method":"GET","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Меню всех персон семейного приглашения","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/menu-vote","url":"/join/:guestToken/menu-vote","operationId":null,"summary":"Выбрать блюдо конкретной персоне семьи","tag":"catering"},
   {"method":"GET","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Маршруты и места всех персон семейного приглашения","tag":"logistics-guest"},
   {"method":"POST","openapi":"/join/{guestToken}/shuttle","url":"/join/:guestToken/shuttle","operationId":null,"summary":"Записать конкретную персону семьи в автобус","tag":"logistics-guest"},
+  {"method":"GET","openapi":"/join/{guestToken}/team","url":"/join/:guestToken/team","operationId":null,"summary":"Кто работал на свадьбе — глазами гостя","tag":"logistics-guest"},
   {"method":"GET","openapi":"/legal/policy","url":"/legal/policy","operationId":null,"summary":"Действующая редакция оферты и политики","tag":"legal"},
   {"method":"GET","openapi":"/me/favorites","url":"/me/favorites","operationId":null,"summary":"Избранное пользователя","tag":"catalog"},
   {"method":"DELETE","openapi":"/me/favorites/{vendorId}","url":"/me/favorites/:vendorId","operationId":null,"summary":"Убрать из избранного","tag":"catalog"},
