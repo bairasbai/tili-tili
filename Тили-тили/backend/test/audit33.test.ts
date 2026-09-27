@@ -303,18 +303,31 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect(errorOf(await patchGuest(w, anna.guestId, { plusOne: true }))).toEqual({ status: 409, code: 'bus_full' })
 
     expect(await takenOf(w, busId)).toBe(2)
-    const { rows } = await app.db!.query<{ plus_one: boolean }>('select plus_one from guests where id = $1', [anna.guestId])
-    expect(rows[0]!.plus_one).toBe(false)
+    const { rows } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from guests where party_id = (select party_id from guests where id = $1)',
+      [anna.guestId],
+    )
+    expect(Number(rows[0]!.n)).toBe(1)
   })
 
-  it('T011: прямой SQL «plus_one = true» у гостя в полном автобусе — 23514 bus_taken_bounded', async () => {
+  it('T011: прямой SQL второй person в полный автобус — 23514 bus_taken_bounded', async () => {
     const w = await newWedding()
     const busId = await newBus(w, 1)
     const anna = await newGuest(w, 'Анна')
     expect((await board(anna.token, busId)).statusCode).toBe(200)
 
-    // Правило держит база: обработчик тут ни при чём.
-    expect(await pgFail(app.db!.query('update guests set plus_one = true where id = $1', [anna.guestId]))).toEqual({
+    const { rows: party } = await app.db!.query<{ party_id: string }>(
+      'select party_id from guests where id = $1',
+      [anna.guestId],
+    )
+    const companionId = uuidv7()
+    await app.db!.query(
+      `insert into guests(id,wedding_id,name,party_id,is_primary)
+       values($1,$2,'Спутник/спутница',$3,false)`,
+      [companionId, w.weddingId, party[0]!.party_id],
+    )
+    // Правило вместимости по-прежнему держит база, теперь на второй booking-row.
+    expect(await pgFail(app.db!.query('insert into bus_bookings(bus_id,guest_id) values($1,$2)', [busId, companionId]))).toEqual({
       code: '23514',
       constraint: 'bus_taken_bounded',
     })
@@ -332,11 +345,13 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const res = await rsvp(anna.token, { status: 'no', plusOne: true })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
     expect(await takenOf(w, busId)).toBe(0)
-    const { rows } = await app.db!.query<{ rsvp: string; plus_one: boolean }>(
-      'select rsvp, plus_one from guests where id = $1',
+    const { rows } = await app.db!.query<{ rsvp: string }>(
+      `select rsvp from guests
+        where party_id = (select party_id from guests where id = $1)
+        order by is_primary desc, created_at, id`,
       [anna.guestId],
     )
-    expect(rows[0]).toEqual({ rsvp: 'no', plus_one: true })
+    expect(rows).toEqual([{ rsvp: 'no' }, { rsvp: 'no' }])
   })
 
   it('T011: гость «с +1» на одно свободное место — ранняя 409 без отката, taken прежний', async () => {
@@ -570,7 +585,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect(errorOf(await patchTable(w, tableId, { capacity: 2 }))).toEqual({ status: 409, code: 'table_full' })
     expect((await patchTable(w, tableId, { capacity: 3 })).statusCode).toBe(200)
     const table = (await tablesOf(w)).find((t) => t.id === tableId)!
-    expect({ capacity: table.capacity, seated: table.guestIds.length }).toEqual({ capacity: 3, seated: 2 })
+    expect({ capacity: table.capacity, seated: table.guestIds.length }).toEqual({ capacity: 3, seated: 3 })
   })
 
   it('столы: чужой стол и мусорный идентификатор — 404, схема тела — 422', async () => {
