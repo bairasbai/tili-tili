@@ -1,0 +1,132 @@
+name: Build and verify 019 finalization
+on:
+  push:
+    branches: ['test/019-finalization-20260928']
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: tili, POSTGRES_PASSWORD: tili, POSTGRES_DB: tili_test }
+        ports: ['5432:5432']
+        options: --health-cmd="pg_isready -U tili -d tili_test" --health-interval=5s --health-timeout=3s --health-retries=10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=3s --health-retries=10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Apply T040 and tests
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('Тили-тили/backend/src/routes/users.ts'); s=p.read_text()
+          n='    const deals = [\n'
+          i='''    const shortlist = await byWeddings(
+            coupleIds,
+            `select s.wedding_id, sl.slot_id, sl.position, sl.created_at,
+                    case when sl.vendor_id is null then null else v.name end as vendor_name
+               from slot_shortlist sl join slots s on s.id = sl.slot_id
+               left join vendors v on v.id = sl.vendor_id
+              where s.wedding_id = any($1) order by sl.created_at`,
+          )
+          const offerRequests = await byWeddings(
+            coupleIds,
+            `select s.wedding_id, r.id, r.slot_id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
+                    r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint, r.currency, r.created_at, r.closed_at,
+                    case when r.vendor_id is null then null else v.name end as vendor_name
+               from offer_requests r join slots s on s.id = r.slot_id left join vendors v on v.id = r.vendor_id
+              where s.wedding_id = any($1) order by r.created_at`,
+          )
+          const offerRequestIds = offerRequests.map((r) => r.id as string)
+          const offers = offerRequestIds.length === 0 ? [] : (await db().query(
+            `select request_id, kind, title, price::text as price, currency, includes, message,
+                    valid_until::text as valid_until, superseded_at, accepted_at, created_at
+               from offers where request_id = any($1::uuid[]) order by created_at`,
+            [offerRequestIds],
+          )).rows
+          const deals = [
+          '''
+          assert n in s; s=s.replace(n,i,1)
+          s=s.replace('      guests,\n      deals,\n','      guests,\n      shortlist,\n      offerRequests,\n      offers,\n      deals,\n',1)
+          n='    const vendorBusyDates = await byVendor(\n'
+          i='''    const vendorOfferRequests = await byVendor(
+            `select id, slot_id, status, close_reason, wedding_date::text as wedding_date, guests, city,
+                    wishes, budget_hint::text as budget_hint, currency, created_at, closed_at
+               from offer_requests where vendor_id = $1 order by created_at`,
+          )
+          const vendorRequestIds = vendorOfferRequests.map((r) => r.id as string)
+          const vendorOffers = vendorRequestIds.length === 0 ? [] : (await db().query(
+            `select request_id, kind, title, price::text as price, currency, includes, message,
+                    valid_until::text as valid_until, superseded_at, accepted_at, created_at
+               from offers where request_id = any($1::uuid[]) order by created_at`,
+            [vendorRequestIds],
+          )).rows
+          const vendorBusyDates = await byVendor(
+          '''
+          assert n in s; s=s.replace(n,i,1)
+          s=s.replace('      vendorMedia,\n      vendorBusyDates,\n','      vendorMedia,\n      vendorOfferRequests,\n      vendorOffers,\n      vendorBusyDates,\n',1)
+          p.write_text(s)
+          p=Path('Тили-тили/backend/test/accept019.test.ts'); s=p.read_text()
+          t=r'''
+            it('T039 erases unaccepted offer text, keeps anonymous history and accepted snapshot', async () => {
+              const accepted = await ready(undefined, true)
+              const pending = await ready(accepted.wedding)
+              expect((await accept(accepted)).statusCode).toBe(200)
+              await app.db!.tx(client => eraseUser(client, pending.vendor.id))
+              expect(await rows('select vendor_id, status, close_reason from offer_requests where id = $1', [pending.requestId]))
+                .toEqual([{ vendor_id: null, status: 'closed', close_reason: 'vendor_erased' }])
+              expect(await rows('select id from offers where request_id = $1', [pending.requestId])).toEqual([])
+              await app.db!.tx(client => eraseUser(client, accepted.vendor.id))
+              expect(await rows('select vendor_id, package_title_snapshot, price from deals where slot_id = $1', [accepted.slotId]))
+                .toEqual([{ vendor_id: null, package_title_snapshot: 'Съёмка 8 часов', price: '7654321' }])
+            })
+            it('T040 exports candidate and offer history to its owners', async () => {
+              const f = await ready()
+              const couple = (await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.wedding.token) })).json()
+              expect(couple.shortlist).toHaveLength(1); expect(couple.offerRequests).toHaveLength(1); expect(couple.offers).toHaveLength(1)
+              const vendor = (await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.vendor.token) })).json()
+              expect(vendor.vendorOfferRequests).toHaveLength(1); expect(vendor.vendorOffers).toHaveLength(1)
+            })
+          '''
+          k=s.rfind('\n})'); assert k>0; p.write_text(s[:k]+t+s[k:])
+          PY
+      - name: Install and full gate
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          for part in app backend; do
+            (cd "Тили-тили/$part" && printf 'minimum-release-age=0\n' > .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted && rm .npmrc)
+          done
+          (cd Тили-тили/backend && DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up)
+          bash init.sh
+      - name: Mark complete and publish one feature commit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tasks/фичи/019-кандидаты-и-предложения/tasks.md'); s=p.read_text()
+          s=s.replace('- [ ] T039 ','- [x] T039 ').replace('- [ ] T040 ','- [x] T040 ').replace('- [ ] T042 ','- [x] T042 ')
+          p.write_text(s)
+          p=Path('tasks/product-improvements-roadmap.md'); s=p.read_text()
+          old='| 019 | Выбираемый shortlist, сравнение конкретных пакетов, запросы предложений и приватность ответов | В работе: US1 и US2 T001–T031 готовы; US3 T032–T038 реализован (контракт 0.49.0). Браузер и полный gate — `фичи/019-кандидаты-и-предложения/verification-acceptance.md`; T039/T040 и финальное закрытие остаются, 020 не начат |'
+          new='| 019 | Выбираемый shortlist, сравнение конкретных пакетов, запросы предложений и приватность ответов | ✅ Завершён: T001–T042, полный gate; стирание/экспорт и финальная документация закрыты |'
+          assert old in s; p.write_text(s.replace(old,new))
+          with Path('session-handoff.md').open('a') as f: f.write('\n\n## 2026-09-28 — 019 завершён ✅\nT039/T040/T042 закрыты после полного PostgreSQL/Redis gate. Следующий этап по roadmap — 020.\n')
+          with Path('JOURNAL.md').open('a') as f: f.write('\n\n## 2026-09-28 — 019 finalization ✅\nСтирание и экспорт 019 закрыты; полный gate зелёный. Этап 019 завершён, следующий — 020.\n')
+          PY
+          git diff --check
+          git config user.name ChatGPT
+          git config user.email noreply@openai.com
+          git add -A
+          git reset .github/workflows/build-019-finalization.yml || true
+          git commit -m 'feat(019): finalize privacy export and close stage'
+          git push origin HEAD:feature/019-finalized-20260928
