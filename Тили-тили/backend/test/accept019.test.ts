@@ -209,6 +209,28 @@ describe.skipIf(!DB)('019 / US3: accept an offer into a booking', () => {
     expect(await rows('select id from notifications where user_id = $1', [other.vendor.id])).toHaveLength(notices.length)
   })
 
+  it('rolls back request closures and notifications when the selected vendor becomes unavailable inside booking', async () => {
+    const f = await ready()
+    const other = await ready(f.wedding)
+    const noticesBefore = await rows('select id from notifications where user_id = $1', [other.vendor.id])
+
+    // Acceptance reads the offer first, then bookVendor re-checks the live vendor.
+    // Force that second check to fail: no request may remain closed from the
+    // earlier closeSlotRequests() call because the whole booking is atomic.
+    await app.db!.query('update vendors set blocked_at = now() where id = $1', [f.vendor.vendorId])
+    assertError(await accept(f), 'vendor_unavailable')
+
+    expect(await rows('select status, close_reason from offer_requests where id = any($1::uuid[]) order by id',
+      [[f.requestId, other.requestId]])).toEqual([
+        { status: 'open', close_reason: null },
+        { status: 'open', close_reason: null },
+      ])
+    expect(await rows('select id from deals where slot_id = $1', [f.slotId])).toHaveLength(0)
+    expect(await rows('select accepted_at, deal_id from offers where id = $1', [f.offerId]))
+      .toEqual([{ accepted_at: null, deal_id: null }])
+    expect(await rows('select id from notifications where user_id = $1', [other.vendor.id])).toHaveLength(noticesBefore.length)
+  })
+
   it('accepts a package snapshot after the live package was deleted', async () => {
     const f = await ready(undefined, true)
     await app.db!.query('delete from vendor_packages where id = $1', [f.vendor.packageId])
