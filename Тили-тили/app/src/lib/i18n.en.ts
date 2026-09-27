@@ -2171,3 +2171,17 @@ Object.assign(EN, {
   "Ответ на запрос предложения": "Response to an offer request",
   "Подрядчик отказался от запроса.": "A vendor declined the request.",
 })
+/* 019: offer acceptance feedback. */
+Object.assign(EN, {
+  "Принять предложение": "Accept offer",
+  "Принимаем…": "Accepting…",
+  "Бронь создана по условиям предложения": "Booked on the agreed offer terms",
+  "Обновить предложения": "Refresh offers",
+  "Место уже занято — обновите предложения": "This slot is already booked — refresh offers",
+  "Срок предложения истёк — запросите новое": "The offer expired — request a new one",
+  "Предложение на прежнюю дату — запросите заново": "This offer is for the previous date — request a new one",
+  "Подрядчик изменил предложение — проверьте новые условия": "The vendor changed the offer — review the new terms",
+  "Запрос уже закрыт": "This request is already closed",
+  "Анкета подрядчика недоступна": "The vendor profile is unavailable",
+  "Эта дата у подрядчика уже занята": "The vendor is already booked on this date",
+})
