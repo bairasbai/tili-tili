@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError, conflict, notFound, forbidden } from '../errors.js'
+import { AppError, conflict, notFound, forbidden, validationFailed } from '../errors.js'
 import { uuidv7 } from '../ids.js'
+import type { Queryable } from '../plugins/db.js'
 import { holdDatesOf } from '../catalog/holds.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
@@ -38,7 +39,8 @@ interface UpsertBody {
   priceFrom?: { amount: number }
   /** Права на фото и видео портфолио и согласие снятых (152-ФЗ, план §7): `true` ставит момент, не снимается. */
   mediaRights?: boolean
-  packages?: { name: string; price?: { amount: number }; includes?: string[] }[]
+  /** С `id` — свой пакет, который остаётся тем же; без `id` — новый (019, FR-006). */
+  packages?: { id?: string; name: string; price?: { amount: number }; includes?: string[] }[]
   portfolioUrls?: string[]
   media?: { kind: 'photo' | 'video'; url: string; durationS?: number | null }[]
 }
@@ -69,8 +71,9 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
     return id
   }
 
-  const loadMine = async (vendorId: string) => {
-    const { rows } = await db().query<VendorRow & { about: string | null; city_region: string | null }>(
+  /** `q` — клиент транзакции, когда ответ должен показать именно эту запись, а не следующую. */
+  const loadMine = async (vendorId: string, q: Queryable = db()) => {
+    const { rows } = await q.query<VendorRow & { about: string | null; city_region: string | null }>(
       `select ${VENDOR_COLUMNS}, v.about, c.region as city_region
          from vendors v left join cities c on c.id = v.city_id
         where v.id = $1`,
@@ -78,8 +81,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
     )
     // Своя анкета видна владельцу и до публикации — иначе мастер не покажет,
     // что уже заполнено.
-    const detail = await loadDetail(db(), vendorId, rows[0]!)
-    const { rows: state } = await db().query<{
+    const detail = await loadDetail(q, vendorId, rows[0]!)
+    const { rows: state } = await q.query<{
       published_at: Date | null
       moderated_at: Date | null
       blocked_at: Date | null
@@ -157,6 +160,9 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
                 required: ['name'],
                 additionalProperties: false,
                 properties: {
+                  /* Не uuid-формат схемой: чужая или битая строка — один отказ `unknown_package`
+                     с именем поля, как у пакета, которого уже нет, а не два разных. */
+                  id: { type: 'string', maxLength: 64 },
                   name: { type: 'string', minLength: 1, maxLength: 120 },
                   price: MONEY_SCHEMA,
                   includes: { type: 'array', maxItems: 40, items: { type: 'string', maxLength: 200 } },
@@ -245,13 +251,17 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
 
       /* Сохранение — одной транзакцией.
        *
-       * Пакеты и медиа заменяются целиком, то есть сначала удаляются. Раздельными
+       * Медиа заменяются целиком, пакеты — по id; и там и там есть удаление. Раздельными
        * запросами сбой на середине оставлял анкету разорённой: пакеты стёрты,
        * медиа заменены наполовину, и вернуть их неоткуда — форму прислали
        * один раз. Портфолио из шестидесяти работ так теряется от одной ошибки
        * вставки (ERR-0109). Соседние «заменить целиком» — тайминг и опрос меню
-       * в `day.ts` — давно в транзакции; этот выпал. */
-      const vendorId = await db().tx(async (client) => {
+       * в `day.ts` — давно в транзакции; этот выпал.
+       *
+       * Ответ читается в той же транзакции: мастер переносит из него id новых пакетов
+       * в черновик по порядку (019, FR-006), и сохранение из второй вкладки, вставшее
+       * между коммитом и чтением, раздало бы черновику чужие id. */
+      return db().tx(async (client) => {
         // Вставка с разрешением конфликта, а не «проверить и вставить»: двойное
         // нажатие «Сохранить» на медленной связи даёт два запроса, и раздельная
         // проверка позволяет уникальному ключу сработать — человек видит
@@ -282,16 +292,49 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           await client.query('update vendors set media_rights_at = coalesce(media_rights_at, now()) where id = $1', [id])
         }
 
-        // Присланный список заменяет прежний целиком: дописывание оставило бы
-        // удалённые позиции. Не присланный — не трогается вовсе.
+        /* Пакеты — по id (019, FR-006). Присланный с id — тот же пакет: имя, цена, состав и
+         * место в списке обновляются, id остаётся, и брони, которые на него ссылаются,
+         * называют его и дальше. Без id — новый. Неприсланный — удаляется: сделка честно
+         * теряет название (`on delete set null`), а не ссылается на снятое с витрины.
+         * Список не прислан — не трогается вовсе.
+         *
+         * Прежде присланный список заменял прежний целиком — стереть всё и вставить
+         * заново, — и каждое «Далее» мастера выдавало пакетам новые id: брони теряли
+         * пакет, а мастер, не знавший состава, стирал его (ERR-0318).
+         *
+         * Чужой, удалённый или не-uuid id — 422 `unknown_package` до единой записи пакетов;
+         * повтор одного id — 422 поля. Сверка идёт со своими пакетами под замком строки
+         * анкеты — его взяла вставка с `on conflict do update` выше и держит до конца
+         * транзакции, — поэтому сохранения из двух вкладок идут по очереди, и пакет,
+         * удалённый одной, не воскресает из устаревшего черновика другой. */
         if (touchesPackages) {
-          await client.query('delete from vendor_packages where vendor_id = $1', [id])
-          let sort = 0
-          for (const pkg of body.packages ?? []) {
-            await client.query(
-              'insert into vendor_packages (id, vendor_id, name, price, currency, items, sort) values ($1,$2,$3,$4,$5,$6,$7)',
-              [uuidv7(), id, pkg.name, pkg.price?.amount ?? null, 'RUB', JSON.stringify(pkg.includes ?? []), sort++],
-            )
+          const incoming = body.packages ?? []
+          const { rows: own } = await client.query<{ id: string }>('select id from vendor_packages where vendor_id = $1', [id])
+          const known = new Set(own.map((r) => r.id))
+          const kept = new Set<string>()
+          for (const [i, pkg] of incoming.entries()) {
+            if (pkg.id === undefined) continue
+            if (kept.has(pkg.id)) throw validationFailed({ [`packages/${i}/id`]: 'пакет указан дважды' })
+            if (!known.has(pkg.id)) {
+              throw new AppError(422, 'unknown_package', 'Такого пакета в анкете уже нет — обновите страницу', {
+                [`packages/${i}/id`]: 'пакет не найден в этой анкете',
+              })
+            }
+            kept.add(pkg.id)
+          }
+          await client.query('delete from vendor_packages where vendor_id = $1 and id <> all($2::uuid[])', [id, [...kept]])
+          for (const [sort, pkg] of incoming.entries()) {
+            const fields = [pkg.name, pkg.price?.amount ?? null, JSON.stringify(pkg.includes ?? []), sort]
+            await (pkg.id === undefined
+              ? client.query(
+                  `insert into vendor_packages (id, vendor_id, name, price, items, sort, currency)
+                   values ($1, $2, $3, $4, $5, $6, 'RUB')`,
+                  [uuidv7(), id, ...fields],
+                )
+              : client.query(
+                  'update vendor_packages set name = $3, price = $4, items = $5, sort = $6 where id = $1 and vendor_id = $2',
+                  [pkg.id, id, ...fields],
+                ))
           }
         }
 
@@ -307,10 +350,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
           const firstPhoto = all.find((m) => m.kind === 'photo')?.url ?? null
           await client.query('update vendors set photo_url = $2 where id = $1', [id, firstPhoto])
         }
-        return id
+        return loadMine(id, client)
       })
-
-      return loadMine(vendorId)
     },
   )
 

@@ -3462,6 +3462,13 @@ export interface paths {
          *     городов подходят под название — 422 `city_ambiguous`; портфолио с
          *     видео без длительности — 422 `video_duration_required`; видео длиннее
          *     предела — 422 `video_too_long`.
+         *
+         *     Пакеты сохраняются по `id` (019, FR-006): `id` не своего пакета —
+         *     чужого, уже удалённого или не uuid — 422 `unknown_package` с полем
+         *     `packages/{i}/id`, и не записывается ничего; один `id` дважды — 422
+         *     `validation_failed` с тем же полем. Ответ — анкета, прочитанная в той
+         *     же транзакции: пакеты в нём идут в присланном порядке, и новый пакет
+         *     получает `id` на том же месте списка.
          */
         put: {
             parameters: {
@@ -9835,17 +9842,40 @@ export interface components {
                 url?: string;
                 durationS?: number | null;
             }[];
-            packages?: {
-                id?: string;
-                name?: string;
-                price?: components["schemas"]["Money"];
-                includes?: string[];
-            }[];
+            /** @description В порядке, заданном подрядчиком. */
+            packages?: components["schemas"]["VendorPackage"][];
             reviews?: components["schemas"]["Review"][];
         };
         /**
+         * @description Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не
+         *     удаляющая пакет, его не меняет, и брони называют пакет, как до правки
+         *     (019, FR-006).
+         */
+        VendorPackage: {
+            id: string;
+            name: string;
+            /** @description `null` — цена не названа («по запросу»), а не 0 ₽ (R-281). */
+            price: components["schemas"]["Money"] | null;
+            /** @description Что входит в пакет — пунктами. */
+            includes: string[];
+        };
+        /**
+         * @description Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который
+         *     остаётся тем же (имя, цена, состав и место в списке обновляются);
+         *     без `id` — новый. Цены нет — поле не присылается: `null` не
+         *     принимается, пакет хранится без цены (R-281).
+         */
+        VendorPackageInput: {
+            id?: string;
+            name: string;
+            price?: components["schemas"]["Money"];
+            includes?: string[];
+        };
+        /**
          * @description Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):
-         *     **поля нет — список не трогаем, пустой массив — очищаем**.
+         *     **поля нет — список не трогаем, пустой массив — очищаем**. Пакеты
+         *     сохраняются по `id`: присланный с `id` — тот же пакет, без `id` —
+         *     новый, неприсланный удаляется (019, FR-006).
          *
          *     Иначе экран, который списком не занимается — мастер анкеты портфолио не
          *     редактирует, загрузка ждёт хранилища, — стирал бы чужие работы при
@@ -9875,11 +9905,7 @@ export interface components {
              *     поля прежнее подтверждение не трогают.
              */
             mediaRights?: boolean;
-            packages?: {
-                name?: string;
-                price?: components["schemas"]["Money"];
-                includes?: string[];
-            }[];
+            packages?: components["schemas"]["VendorPackageInput"][];
             /** @description Фотографии портфолио. Для видео нужен `media` — там есть длительность. */
             portfolioUrls?: string[];
             /**

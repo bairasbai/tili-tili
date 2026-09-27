@@ -6,6 +6,10 @@
  * друг друга, одна падала «deadlock detected», пара получала 500 вместо 409. На этой
  * машине — 14 пар из 40; одиночный тест audit4 проходил в двух случаях из трёх.
  * Здесь двадцать повторов: вероятность ни разу не поймать дефект при 35 % — 0,65^20 ≈ 0,02 %.
+ *
+ * 019, FR-006: сохранение анкеты стирало все пакеты и вставляло их заново с новыми id — каждое
+ * «Далее» мастера, и брони теряли пакет (`deals.package_id` — `on delete set null`). Пакеты
+ * теперь сохраняются по id: присланный с id — обновляется, без id — новый, неприсланный — удаляется.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
@@ -129,8 +133,24 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     (await app.inject({ method: 'GET', url: `/weddings/${weddingId}/slots`, headers: auth(token) })).json() as {
       id: string
       categoryId: string
-      deal: { id: string } | null
+      deal: { id: string; packageName: string | null } | null
     }[]
+
+  type Pkg = { id: string; name: string; price: { amount: number; currency: string } | null; includes: string[] }
+  const saveProfile = (v: { token: string }, packages: unknown[], extra: Record<string, unknown> = {}) =>
+    app.inject({
+      method: 'PUT',
+      url: '/vendor/profile',
+      headers: auth(v.token),
+      payload: { name: `Кондитер ${RUN}`, categoryId: 'cake', city: { name: 'Уфа', region: 'Башкортостан' }, packages, ...extra },
+    })
+  /** Пакет обратно в анкету — как его вернёт мастер: с id и составом, без цены, если её нет. */
+  const asInput = (p: Pkg) => ({ id: p.id, name: p.name, ...(p.price ? { price: p.price } : {}), includes: p.includes })
+  const packagesOf = async (v: { token: string }) =>
+    (await app.inject({ method: 'GET', url: '/vendor/profile', headers: auth(v.token) })).json().packages as Pkg[]
+  const vendorDealPackages = async (v: { token: string }) =>
+    ((await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(v.token) })).json().items as { packageName: string | null }[])
+      .map((d) => d.packageName)
 
 
   const book = (w: { token: string; weddingId: string }, slotId: string, vendorId: string, packageId?: string) =>
@@ -211,5 +231,85 @@ describe.skipIf(!live)('разведка 019: бронь места без вз�
     expect(res.statusCode).toBe(422)
     expect(res.json().error?.code).toBe('unknown_package')
     expect(await liveDeals(slot.id)).toBe(0)
+  }, 60_000)
+
+  it('FR-006: правка анкеты, не удаляющая пакет, сохраняет его id и состав — бронь называет пакет у пары и у подрядчика', async () => {
+    const vendor = await newVendor('cake')
+    const first = await saveProfile(vendor, [
+      { name: 'Торт на 50 гостей', price: { amount: 2_000_000, currency: 'RUB' }, includes: ['три яруса', 'доставка'] },
+      { name: 'Капкейки', includes: ['60 штук'] },
+    ])
+    expect(first.statusCode, first.body).toBe(200)
+    const before = first.json().packages as Pkg[]
+    expect(before.map((p) => p.includes)).toEqual([['три яруса', 'доставка'], ['60 штук']])
+    const w = await newWedding('2030-06-06')
+    const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
+    expect((await book(w, slot.id, vendor.vendorId, before[0]!.id)).statusCode).toBe(200)
+
+    // «Далее» мастера на шаге «О себе»: пакеты уходят как пришли — с id и составом.
+    const again = await saveProfile(vendor, before.map(asInput), { about: 'Торты на заказ' })
+    expect(again.statusCode, again.body).toBe(200)
+    // До исправления: 422 на поле id, а без id — новые id и пустой состав у брони.
+    expect(again.json().packages).toEqual(before)
+    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('Торт на 50 гостей')
+    expect(await vendorDealPackages(vendor)).toEqual(['Торт на 50 гостей'])
+
+    // Правка самого пакета — тот же пакет: бронь называет новое имя, id прежний.
+    const renamed = await saveProfile(vendor, [{ ...asInput(before[0]!), name: 'Торт на 60 гостей', includes: ['три яруса'] }, asInput(before[1]!)])
+    expect(renamed.statusCode, renamed.body).toBe(200)
+    expect((renamed.json().packages as Pkg[]).map((p) => [p.id, p.name, p.includes])).toEqual([
+      [before[0]!.id, 'Торт на 60 гостей', ['три яруса']],
+      [before[1]!.id, 'Капкейки', ['60 штук']],
+    ])
+    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBe('Торт на 60 гостей')
+  }, 60_000)
+
+  it('FR-006: новый пакет без id получает id, порядок — как прислан, неприсланный удаляется и не воскресает', async () => {
+    const vendor = await newVendor('cake')
+    const [a, b] = (await saveProfile(vendor, [{ name: 'A' }, { name: 'B' }])).json().packages as Pkg[]
+    const w = await newWedding('2030-07-07')
+    const slot = (await slotsOf(w.token, w.weddingId)).find((s) => s.categoryId === 'cake')!
+    expect((await book(w, slot.id, vendor.vendorId, b!.id)).statusCode).toBe(200)
+
+    // B убран, C добавлен в начало: у A прежний id, у C — новый, порядок как прислан.
+    const saved = await saveProfile(vendor, [{ name: 'C' }, asInput(a!)])
+    expect(saved.statusCode, saved.body).toBe(200)
+    const after = saved.json().packages as Pkg[]
+    expect(after.map((p) => p.name)).toEqual(['C', 'A'])
+    expect(after[1]!.id).toBe(a!.id)
+    expect([a!.id, b!.id]).not.toContain(after[0]!.id)
+    // Убранный пакет честно пропадает из брони (`on delete set null`), а не остаётся ссылкой в пустоту.
+    expect((await slotsOf(w.token, w.weddingId)).find((s) => s.id === slot.id)!.deal!.packageName).toBeNull()
+
+    // Устаревший черновик с id удалённого пакета: 422, пакет не воскресает, ничего не записано.
+    const stale = await saveProfile(vendor, [asInput(a!), asInput(b!)], { about: 'не должно записаться' })
+    expect(stale.statusCode, stale.body).toBe(422)
+    expect(stale.json().error?.code).toBe('unknown_package')
+    expect((await packagesOf(vendor)).map((p) => p.name)).toEqual(['C', 'A'])
+    const { rows } = await app.db!.query<{ about: string | null }>('select about from vendors where id = $1', [vendor.vendorId])
+    expect(rows[0]!.about).toBeNull()
+  }, 60_000)
+
+  it('FR-006: чужой id пакета — 422 unknown_package, чужой пакет не тронут; один id дважды — 422 поля', async () => {
+    const owner = await newVendor('cake')
+    const [theirs] = (await saveProfile(owner, [{ name: 'Свадебный торт', price: { amount: 3_000_000, currency: 'RUB' }, includes: ['ярус'] }]))
+      .json().packages as Pkg[]
+    const intruder = await newVendor('cake')
+
+    const foreign = await saveProfile(intruder, [{ id: theirs!.id, name: 'Переименовал чужой', includes: [] }])
+    expect(foreign.statusCode, foreign.body).toBe(422)
+    expect(foreign.json().error?.code).toBe('unknown_package')
+    expect(await packagesOf(owner)).toEqual([theirs])
+
+    const [mine] = (await saveProfile(intruder, [{ name: 'Свой' }])).json().packages as Pkg[]
+    const twice = await saveProfile(intruder, [asInput(mine!), { ...asInput(mine!), name: 'Второй раз' }])
+    expect(twice.statusCode, twice.body).toBe(422)
+    expect(twice.json().error).toMatchObject({ code: 'validation_failed', fields: { 'packages/1/id': 'пакет указан дважды' } })
+    expect(await packagesOf(intruder)).toEqual([mine])
+
+    // Не uuid вместо id — тот же 422, а не 500 из приведения типа в базе.
+    const garbage = await saveProfile(intruder, [{ id: 'не-uuid', name: 'X' }])
+    expect(garbage.statusCode, garbage.body).toBe(422)
+    expect(garbage.json().error?.code).toBe('unknown_package')
   }, 60_000)
 })

@@ -2203,3 +2203,13 @@ Object.assign(EN, {
   'Загрузка подтверждений оплаты не включена на сервере': 'Uploading payment evidence is not enabled on the server',
   'Место под подтверждения оплат у свадьбы закончилось — удалите ненужные файлы': 'The wedding has used up its space for payment evidence; delete files you no longer need',
 })
+
+/* 019, FR-006: пакеты подрядчика сохраняются по id, у пакета — состав и правка на месте (ERR-0318). */
+Object.assign(EN, {
+  'Что входит': 'What’s included',
+  'Что входит — по пункту в строке': 'What’s included — one item per line',
+  'Изменить пакет': 'Edit package',
+  'Правка пакета': 'Editing a package',
+  'В составе пакета — до 40 пунктов, каждый до 200 знаков': 'A package lists up to 40 items, each up to 200 characters',
+  'Такого пакета в анкете уже нет — обновите страницу': 'This package is no longer in your profile — reload the page',
+})

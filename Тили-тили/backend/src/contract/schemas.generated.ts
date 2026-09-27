@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 80. */
+ * Схем: 82. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2925,25 +2925,9 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "packages": {
                           "type": "array",
+                          "description": "В порядке, заданном подрядчиком.",
                           "items": {
-                              "type": "object",
-                              "properties": {
-                                  "id": {
-                                      "type": "string"
-                                  },
-                                  "name": {
-                                      "type": "string"
-                                  },
-                                  "price": {
-                                      "$ref": "contract#/definitions/Money"
-                                  },
-                                  "includes": {
-                                      "type": "array",
-                                      "items": {
-                                          "type": "string"
-                                      }
-                                  }
-                              }
+                              "$ref": "contract#/definitions/VendorPackage"
                           }
                       },
                       "reviews": {
@@ -2955,6 +2939,76 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           ]
+      },
+      "VendorPackage": {
+          "type": "object",
+          "description": "Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не\nудаляющая пакет, его не меняет, и брони называют пакет, как до правки\n(019, FR-006).\n",
+          "required": [
+              "id",
+              "name",
+              "price",
+              "includes"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "price": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "`null` — цена не названа («по запросу»), а не 0 ₽ (R-281).",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "includes": {
+                  "type": "array",
+                  "description": "Что входит в пакет — пунктами.",
+                  "items": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "VendorPackageInput": {
+          "type": "object",
+          "description": "Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который\nостаётся тем же (имя, цена, состав и место в списке обновляются);\nбез `id` — новый. Цены нет — поле не присылается: `null` не\nпринимается, пакет хранится без цены (R-281).\n",
+          "required": [
+              "name"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "maxLength": 64
+              },
+              "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "price": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "includes": {
+                  "type": "array",
+                  "maxItems": 40,
+                  "items": {
+                      "type": "string",
+                      "maxLength": 200
+                  }
+              }
+          }
       },
       "VendorPage": {
           "type": "object",
@@ -2975,7 +3029,7 @@ export const CONTRACT_SCHEMAS = {
       },
       "VendorUpsert": {
           "type": "object",
-          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**.\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
+          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
           "required": [
               "name",
               "categoryId",
@@ -3017,22 +3071,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "packages": {
                   "type": "array",
+                  "maxItems": 20,
                   "items": {
-                      "type": "object",
-                      "properties": {
-                          "name": {
-                              "type": "string"
-                          },
-                          "price": {
-                              "$ref": "contract#/definitions/Money"
-                          },
-                          "includes": {
-                              "type": "array",
-                              "items": {
-                                  "type": "string"
-                              }
-                          }
-                      }
+                      "$ref": "contract#/definitions/VendorPackageInput"
                   }
               },
               "portfolioUrls": {
@@ -3508,6 +3549,8 @@ export type ContractSchemaName =
   | "Vendor"
   | "VendorDecision"
   | "VendorDetail"
+  | "VendorPackage"
+  | "VendorPackageInput"
   | "VendorPage"
   | "VendorUpsert"
   | "VerificationDecision"

@@ -381,7 +381,7 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
   ['text_required', [['POST', '/vendor/leads/{leadId}']]],
   ['too_many_requests', [['POST', '/auth/otp'], ['POST', '/auth/otp/verify']]],
   ['too_often', [['POST', '/weddings/{weddingId}/guests/remind']]],
-  ['unknown_package', [['POST', '/weddings/{weddingId}/slots/{slotId}/book']]],
+  ['unknown_package', [['POST', '/weddings/{weddingId}/slots/{slotId}/book'], ['PUT', '/vendor/profile']]],
   ['unknown_timezone', [['PATCH', '/users/me'], ['PATCH', '/weddings/{weddingId}']]],
   ['upgrade_required', [['GET', '/chats/{chatId}/ws']]],
   ['video_duration_required', [['PUT', '/vendor/profile']]],
@@ -458,8 +458,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.45.0 (018-B; F5-14 сохранён)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.45.0')
+  it('версия контракта — 0.46.0 (019: пакеты по id; F5-14 сохранён)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.46.0')
   })
 
   describe('G-a: идемпотентность — 400 и правильный Idempotency-Key у операций, чей обработчик её читает', () => {
