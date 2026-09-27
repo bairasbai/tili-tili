@@ -1,0 +1,33 @@
+name: Offer 019 disposable database tools
+on:
+  push:
+    branches: ['test/019-accept-offer-20260928']
+    paths: ['.github/workflows/019-local-services.yml']
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Export PostgreSQL 16 and Redis 7 binaries, no data or credentials
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tools/pg /tmp/tools/redis
+          docker run --rm -v /tmp/tools/pg:/out postgres:16-bookworm bash -ceu '
+            cp -a /usr/lib/postgresql/16 /out/pgsql
+            cp -a /usr/share/postgresql/16 /out/share
+            mkdir -p /out/deps
+            ldd /usr/lib/postgresql/16/bin/postgres /usr/lib/postgresql/16/bin/initdb /usr/lib/postgresql/16/lib/*.so | awk "\$2 == \"=>\" && \$3 ~ /^\\// {print \$3}" | sort -u | xargs -r cp -Lt /out/deps
+          '
+          docker run --rm -v /tmp/tools/redis:/out redis:7-bookworm bash -ceu '
+            cp /usr/local/bin/redis-server /usr/local/bin/redis-cli /out/
+            mkdir -p /out/deps
+            ldd /usr/local/bin/redis-server /usr/local/bin/redis-cli | awk "\$2 == \"=>\" && \$3 ~ /^\\// {print \$3}" | sort -u | xargs -r cp -Lt /out/deps
+          '
+          tar -C /tmp/tools -czf /tmp/database-tools.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offer019-database-tools
+          path: /tmp/database-tools.tar.gz
+          retention-days: 1
