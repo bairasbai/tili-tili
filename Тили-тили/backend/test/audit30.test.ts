@@ -597,24 +597,40 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     expect(ok.statusCode).toBe(200)
   })
 
-  it('D3-16: место в автобусе считает персоны — гость с +1 в автобус на одно место не садится', async () => {
+  it('D3-16/020: автобус считает отдельные персоны семейного приглашения', async () => {
     const w = await newWedding()
     const tiny = await newBus(w, 1)
     const pair = await newBus(w, 2)
-    const withPlusOne = await newGuest(w, 'Ольга', true)
-    const alone = await newGuest(w, 'Денис')
+    const family = await newGuest(w, 'Ольга', true)
+    const familyState = await app.inject({ method: 'GET', url: `/rsvp/${family.token}` })
+    const people = familyState.json().people as { id: string }[]
+    expect(people).toHaveLength(2)
 
-    const refused = await app.inject({ method: 'POST', url: `/join/${withPlusOne.token}/shuttle`, headers: key(), payload: { busId: tiny } })
+    // На одно место садится ровно одна персона; вторая получает честный bus_full.
+    expect((await app.inject({
+      method: 'POST', url: `/join/${family.token}/shuttle`, headers: key(),
+      payload: { busId: tiny, personId: people[0]!.id },
+    })).statusCode).toBe(200)
+    const refused = await app.inject({
+      method: 'POST', url: `/join/${family.token}/shuttle`, headers: key(),
+      payload: { busId: tiny, personId: people[1]!.id },
+    })
     expect({ status: refused.statusCode, code: refused.json().error?.code }).toEqual({ status: 409, code: 'bus_full' })
 
-    expect(
-      (await app.inject({ method: 'POST', url: `/join/${withPlusOne.token}/shuttle`, headers: key(), payload: { busId: pair } })).statusCode,
-    ).toBe(200)
-    // Двое уже едут — третьему в автобусе на два места нет сиденья.
+    for (const person of people) {
+      expect((await app.inject({
+        method: 'POST', url: `/join/${family.token}/shuttle`, headers: key(),
+        payload: { busId: pair, personId: person.id },
+      })).statusCode).toBe(200)
+    }
+    const alone = await newGuest(w, 'Денис')
     const third = await app.inject({ method: 'POST', url: `/join/${alone.token}/shuttle`, headers: key(), payload: { busId: pair } })
     expect({ status: third.statusCode, code: third.json().error?.code }).toEqual({ status: 409, code: 'bus_full' })
-    // Тот, кто уже едет, повтором записи места не отнимает — и отказа не получает.
-    const again = await app.inject({ method: 'POST', url: `/join/${withPlusOne.token}/shuttle`, headers: key(), payload: { busId: pair } })
+
+    const again = await app.inject({
+      method: 'POST', url: `/join/${family.token}/shuttle`, headers: key(),
+      payload: { busId: pair, personId: people[0]!.id },
+    })
     expect({ status: again.statusCode, alreadyBooked: again.json().alreadyBooked }).toEqual({ status: 200, alreadyBooked: true })
   })
 
