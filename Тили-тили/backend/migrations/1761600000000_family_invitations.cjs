@@ -159,20 +159,21 @@ exports.down = (pgm) => {
     /* Restore the exact pre-020 bus invariant from migration 175930…:
      * one legacy guest row may represent one or two people. */
     DROP TRIGGER IF EXISTS bus_bookings_count ON bus_bookings;
+    ALTER TABLE bus_bookings DROP CONSTRAINT IF EXISTS bus_bookings_persons_range;
 
-    CREATE FUNCTION bus_booking_persons() RETURNS trigger AS $
+    CREATE FUNCTION bus_booking_persons() RETURNS trigger AS $$
     BEGIN
       SELECT 1 + plus_one::int INTO NEW.persons FROM guests WHERE id = NEW.guest_id;
       NEW.persons := coalesce(NEW.persons, 1);
       RETURN NEW;
     END;
-    $ LANGUAGE plpgsql;
+    $$ LANGUAGE plpgsql;
 
     CREATE TRIGGER bus_bookings_persons
       BEFORE INSERT ON bus_bookings
       FOR EACH ROW EXECUTE FUNCTION bus_booking_persons();
 
-    CREATE OR REPLACE FUNCTION bus_seat_counter() RETURNS trigger AS $
+    CREATE OR REPLACE FUNCTION bus_seat_counter() RETURNS trigger AS $$
     BEGIN
       IF TG_OP = 'INSERT' THEN
         UPDATE bus_routes SET taken = taken + NEW.persons WHERE id = NEW.bus_id;
@@ -185,18 +186,18 @@ exports.down = (pgm) => {
         RETURN OLD;
       END IF;
     END;
-    $ LANGUAGE plpgsql;
+    $$ LANGUAGE plpgsql;
 
     CREATE TRIGGER bus_bookings_count
       AFTER INSERT OR DELETE OR UPDATE OF persons ON bus_bookings
       FOR EACH ROW EXECUTE FUNCTION bus_seat_counter();
 
-    CREATE FUNCTION bus_bookings_follow_plus_one() RETURNS trigger AS $
+    CREATE FUNCTION bus_bookings_follow_plus_one() RETURNS trigger AS $$
     BEGIN
       UPDATE bus_bookings SET persons = 1 + NEW.plus_one::int WHERE guest_id = NEW.id;
       RETURN NEW;
     END;
-    $ LANGUAGE plpgsql;
+    $$ LANGUAGE plpgsql;
 
     CREATE TRIGGER guests_plus_one_seats
       AFTER UPDATE OF plus_one ON guests
@@ -206,7 +207,6 @@ exports.down = (pgm) => {
     UPDATE bus_bookings b SET persons = 1 + g.plus_one::int
       FROM guests g WHERE g.id = b.guest_id;
 
-    ALTER TABLE bus_bookings DROP CONSTRAINT IF EXISTS bus_bookings_persons_range;
     ALTER TABLE bus_bookings ADD CONSTRAINT bus_bookings_persons_range CHECK (persons BETWEEN 1 AND 2);
 
     UPDATE bus_routes r SET taken = coalesce(
