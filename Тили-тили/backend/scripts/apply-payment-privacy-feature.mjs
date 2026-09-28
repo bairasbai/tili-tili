@@ -220,15 +220,15 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
 function replaceBlock(text, startMarker, endMarker, replacement, label) {
   const from = text.indexOf(startMarker)
   const to = text.indexOf(endMarker, from + startMarker.length)
-  if (from < 0 || to < 0) throw new Error(\`\${label}: schema boundaries not found\`)
+  if (from < 0 || to < 0) throw new Error(`${label}: schema boundaries not found`)
   return text.slice(0, from) + replacement + text.slice(to)
 }
 
 edit('Тили-тили_API_openapi.yaml', (s0) => {
   let s = replaceOne(s0, '  version: 0.51.0', '  version: 0.52.0', 'contract version')
 
-  const vendorPathsMarker = '  /vendor/updates:\\n'
-  const vendorPaths = \`  /vendor/deals/{dealId}/payments:
+  const vendorPathsMarker = '  /vendor/updates:\n'
+  const vendorPaths = `  /vendor/deals/{dealId}/payments:
     get:
       tags: [vendor]
       summary: Оплаты своей сделки, раскрытые парой подрядчику
@@ -270,11 +270,11 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
                   contentBase64: {type: string}
         '404': {$ref: '#/components/responses/NotFound'}
 
-\`
+`
   if (!s.includes(vendorPathsMarker)) throw new Error('vendor OpenAPI insertion marker missing')
   s = s.replace(vendorPathsMarker, vendorPaths + vendorPathsMarker)
 
-  const enums = \`    PaymentMethod:
+  const enums = `    PaymentMethod:
       type: string
       enum: [cash, bank_transfer, card, other]
     PaymentVisibility:
@@ -283,11 +283,11 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
       description: |
         private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы
         по-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.
-\`
-  if (!s.includes('    PaymentSummary:\\n')) throw new Error('PaymentSummary marker missing')
-  s = s.replace('    PaymentSummary:\\n', enums + '    PaymentSummary:\\n')
+`
+  if (!s.includes('    PaymentSummary:\n')) throw new Error('PaymentSummary marker missing')
+  s = s.replace('    PaymentSummary:\n', enums + '    PaymentSummary:\n')
 
-  const summary = \`    PaymentSummary:
+  const summary = `    PaymentSummary:
       type: object
       required:
       - committed
@@ -322,10 +322,10 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
         Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма
         известных отметок минус возвраты; remaining — положительный числовой остаток по каждой
         активной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.
-\`
-  s = replaceBlock(s, '    PaymentSummary:\\n', '    PaymentInstallment:\\n', summary, 'PaymentSummary')
+`
+  s = replaceBlock(s, '    PaymentSummary:\n', '    PaymentInstallment:\n', summary, 'PaymentSummary')
 
-  const installment = \`    PaymentInstallment:
+  const installment = `    PaymentInstallment:
       type: object
       required:
       - id
@@ -382,10 +382,10 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
           type: integer
           minimum: 0
           description: Факты оплаты этого этапа без сохранённой суммы.
-\`
-  s = replaceBlock(s, '    PaymentInstallment:\\n', '    PaymentInstallmentStatus:\\n', installment, 'PaymentInstallment')
+`
+  s = replaceBlock(s, '    PaymentInstallment:\n', '    PaymentInstallmentStatus:\n', installment, 'PaymentInstallment')
 
-  const record = \`    PaymentRecord:
+  const record = `    PaymentRecord:
       type: object
       required:
       - id
@@ -448,10 +448,10 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
             type: array
             items:
               $ref: '#/components/schemas/PaymentReceiptMeta'
-\`
-  s = replaceBlock(s, '    PaymentRecord:\\n', '    PaymentDeal:\\n', record, 'PaymentRecord')
+`
+  s = replaceBlock(s, '    PaymentRecord:\n', '    PaymentDeal:\n', record, 'PaymentRecord')
 
-  const deal = \`    PaymentDeal:
+  const deal = `    PaymentDeal:
       type: object
       required:
       - id
@@ -492,10 +492,10 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
         unknownAmountPayments:
           type: integer
           minimum: 0
-\`
-  s = replaceBlock(s, '    PaymentDeal:\\n', '    PaymentSchedule:\\n', deal, 'PaymentDeal')
+`
+  s = replaceBlock(s, '    PaymentDeal:\n', '    PaymentSchedule:\n', deal, 'PaymentDeal')
 
-  const schedule = \`    PaymentSchedule:
+  const schedule = `    PaymentSchedule:
       type: object
       required: [range, readOnly, summary, dueInWindow, overdueRemaining, items, deals, payments, allInstallments]
       properties:
@@ -537,10 +537,10 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
               status: {$ref: '#/components/schemas/PaymentInstallmentStatus'}
               remaining: {$ref: '#/components/schemas/Money'}
               unknownAmountPayments: {type: integer, minimum: 0}
-\`
-  s = replaceBlock(s, '    PaymentSchedule:\\n', '    PaymentHistoryExport:\\n', schedule, 'PaymentSchedule')
+`
+  s = replaceBlock(s, '    PaymentSchedule:\n', '    PaymentHistoryExport:\n', schedule, 'PaymentSchedule')
 
-  const pay = \`    PaymentInstallmentPay:
+  const pay = `    PaymentInstallmentPay:
       type: object
       required: [version]
       properties:
@@ -568,8 +568,8 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
       description: |
         Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.
         При amountKnown=false числовой долг не уменьшается и итог помечается неполным.
-\`
-  s = replaceBlock(s, '    PaymentInstallmentPay:\\n', '    PaymentPlanLink:\\n', pay, 'PaymentInstallmentPay')
+`
+  s = replaceBlock(s, '    PaymentInstallmentPay:\n', '    PaymentPlanLink:\n', pay, 'PaymentInstallmentPay')
   return s
 })
 
