@@ -409,7 +409,7 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     }).toEqual({ taken: 0, booked: 0 })
   })
 
-  it('D3-03: стол считает персоны — гость с +1 занимает два места', async () => {
+  it('D3-03: legacy +1 становится второй персоной и занимает отдельное место', async () => {
     const w = await newWedding()
     const table = await app.inject({
       method: 'POST',
@@ -422,12 +422,12 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     const denis = await newGuest(w, 'Денис')
 
     expect((await patchGuest(w, olga.guestId, { tableId })).statusCode).toBe(200)
-    // «Ольга и Денис» с +1 — двое за столом (R-29). Третьему места нет.
+    // 020: legacy +1 уже материализован второй строкой-персоной. Третьему места нет.
     const full = await patchGuest(w, denis.guestId, { tableId })
     expect({ status: full.statusCode, code: full.json().error?.code }).toEqual({ status: 409, code: 'table_full' })
     // Повторная посадка той же Ольги за тот же стол — не второе место: она уже там.
     expect((await patchGuest(w, olga.guestId, { tableId })).statusCode).toBe(200)
-    // Плюс-один, присланный вместе с посадкой, считается сразу: Денис «с +1» за стол на двоих не сядет и один.
+    // Legacy plusOne при правке создаёт/использует отдельную персону; скрытого множителя больше нет.
     await patchGuest(w, olga.guestId, { tableId: null })
     const withPlusOne = await patchGuest(w, denis.guestId, { tableId, plusOne: true })
     expect(withPlusOne.statusCode).toBe(200)
@@ -437,7 +437,8 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     const tables = (
       await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tables`, headers: auth(w.token) })
     ).json() as { id: string; guestIds: string[] }[]
-    expect(tables.find((t) => t.id === tableId)!.guestIds).toEqual([denis.guestId])
+    expect(tables.find((t) => t.id === tableId)!.guestIds).toHaveLength(2)
+    expect(tables.find((t) => t.id === tableId)!.guestIds).toContain(denis.guestId)
   })
 
   it('D3-09/D5-04: перевыпуск ссылки переносит отзыв гостя — второго отзыва не будет', async () => {
