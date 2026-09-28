@@ -2277,6 +2277,15 @@ Object.assign(EN, {
   'Выберите кандидата для замены, затем подтвердите новую бронь в его анкете': 'Choose a replacement candidate, then confirm the new booking in their profile',
 })
 
+/* 020: семейное приглашение — отдельный ответ каждой персоны. */
+Object.assign(EN, {
+  'Ответьте за каждого человека в приглашении отдельно': 'Reply for each person in the invitation separately',
+  'имя можно уточнить у пары': 'you can confirm the name with the couple',
+  'Приду': 'Attending',
+  'Сохранить ответы семьи': 'Save family responses',
+  'Выберите ответ для каждого человека': 'Choose a response for each person',
+})
+
 /* 019, US2: запрос предложения пары, ответ подрядчика и постоянные уведомления. */
 Object.assign(EN, {
   'Запросить предложение': 'Request an offer',
