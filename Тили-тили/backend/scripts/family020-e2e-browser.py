@@ -26,14 +26,6 @@ def member_card(page, name: str):
     )
 
 
-def member_resource(block, name: str, button_text: str):
-    # The member name is a direct child of its resource row. Do not embed
-    # json.dumps(button_text) into XPath: Cyrillic becomes literal \\uXXXX
-    # escapes, which XPath does not decode, so valid buttons are never found.
-    del button_text
-    return block.get_by_text(name, exact=True).first.locator("xpath=parent::div")
-
-
 def checked(response, status: int, label: str) -> Any:
     if response.status != status:
         raise AssertionError(f"{label}: expected {status}, got {response.status}: {response.text()}")
@@ -123,19 +115,19 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     menu_block = guest_page.get_by_text("Что будете есть E2E?", exact=True).locator(
         "xpath=ancestor::div[contains(@class,'rounded-[24px]')][1]"
     )
-    first_menu = member_resource(menu_block, PRIMARY, "Стейк E2E")
+    first_menu = menu_block.get_by_text(PRIMARY, exact=True).first.locator("..")
     first_menu.get_by_role("button", name="Стейк E2E", exact=True).click()
     expect(menu_block.get_by_text(PRIMARY, exact=True)).to_be_visible(timeout=10_000)
-    second_menu = member_resource(menu_block, SECOND, "Паста E2E")
+    second_menu = menu_block.get_by_text(SECOND, exact=True).first.locator("..")
     second_menu.get_by_role("button", name="Паста E2E", exact=True).click()
 
     shuttle_block = guest_page.get_by_text("Трансфер", exact=True).locator(
         "xpath=ancestor::div[contains(@class,'rounded-[24px]')][1]"
     )
-    first_bus = member_resource(shuttle_block, PRIMARY, "Автобус семьи E2E")
+    first_bus = shuttle_block.get_by_text(PRIMARY, exact=True).first.locator("..")
     first_bus.get_by_role("button", name=re.compile("Автобус семьи E2E")).click()
     expect(shuttle_block.get_by_text(PRIMARY, exact=True)).to_be_visible(timeout=10_000)
-    second_bus = member_resource(shuttle_block, SECOND, "Автобус семьи E2E")
+    second_bus = shuttle_block.get_by_text(SECOND, exact=True).first.locator("..")
     second_bus.get_by_role("button", name=re.compile("Автобус семьи E2E")).click()
 
     hotel_block = guest_page.get_by_text("Где остановиться", exact=True).locator(
