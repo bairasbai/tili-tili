@@ -1,57 +1,77 @@
-# Передача сессии — 019 / US3: принятие предложения
+# Передача сессии — 020 / семейные приглашения и отдельные персоны
 
-Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`, новая ветка
-`feature/019-accept-offer-complete-20260928`, база — `c4d37c2995d2aeb28bd988cb5144af164ff9fb60`
-из `codex/continue-019-orchestrated-20260927`. Это код feature-ветки, не production.
+Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`, рабочая ветка
+`test/020-finalize-20260928`. База этапа — завершённый 019
+`da87f1fe9aab19342f68e4a58453a4b35decb943`. Main/production не менять.
 
-## Границы владельца
+## Границы
 
-Одна фича и один feature-коммит в этой сессии. Main, PR №1/№2/№3 и production не менять;
-merge/deploy только по отдельному решению владельца. Архитектура сохранена. Порядок —
-`tasks/product-improvements-roadmap.md`; 019 завершён ✅, 020 не начат.
-Ранее принятые ответы: 018 — Б/А/А/Б/А; 019 — Б/Б/А/А/А. Иконки PWA и работа 017/018 сохранены.
+020 — текущий этап roadmap. 021 не начинать, пока 020 не прошёл финальные gates.
+Старый `plusOne` остаётся только compatibility-входом; новая доменная модель:
+одно `guest_party` приглашение содержит 1–10 отдельных `guests`.
 
-## Сделано
+## Реализовано
 
-US3 T032–T038: принятие предложения на месте и в сравнении, один повторяемый API-вызов,
-неизменяемые цена/название/состав, единое ядро брони, атомарное закрытие запросов и анонимные
-уведомления, закрытие при первой дате/переносе/подтверждённой отмене. Helper/coordinator не
-получают авторский текст с потенциальной ценой. Поля снимка доступны в деталях сделки пары
-и подрядчика. Контракт 0.49.0 и generated-файлы, RU/EN, карты, business logic, журнал обновлены.
-Порядок блокировок: wedding → actor → slot → request → user/vendor → package → offer update.
+- DB migration `1761600000000_family_guest_parties.cjs`: `guest_parties`,
+  `guests.party_id/party_position/is_placeholder`, перенос invite codes и hotel
+  ownership на party, materialization legacy `plusOne=true`.
+- RSVP/menu/table/bus — на person; hotel/gift/fund identity — на party/family token.
+- Family API: создание `members[]`, добавление/переименование/удаление персоны,
+  сохранение family token при удалении primary, максимум 10.
+- Import поддерживает explicit `members[]`; legacy `plusOne` создаёт placeholder.
+- Guest API отдаёт `partyId`, `partyPosition`, `partySize`, `isPrimary`,
+  `isPlaceholder`; одна inviteUrl на семью.
+- Гостевой экран: независимый RSVP, меню и автобус для каждого `guestId`;
+  один family hotel и один общий gift reserve.
+- Экран пары: создание семьи, отображение размера, добавление человека в
+  существующую семью, отдельное удаление/статусы; кейтеринг считает person rows
+  ровно один раз.
+- Export и 31-day erase покрывают family structure без выдачи invite token.
+- Контракт 0.50.0; generated artifacts перегенерированы коммитом
+  `5b4432db5891ad5374a6cafe8c043e45c240a479`.
 
-Добавлены 21 PostgreSQL-тест и 21 frontend-тест; исправлены неработавшие фикстуры и барьеры
-прежних offers019/shortlist019 (ERR-0327). Снимок/приватность — ERR-0328.
+## Аудит продолжения
 
-## Проверки и воспроизведение
+После восстановления 020 закрыты дополнительные расхождения:
+ERR-0331 — primary-delete стирал party; ERR-0332 — import не принимал family
+members; ERR-0333 — partySize терялся в serializer; ERR-0334 — кейтеринг
+повторно прибавлял +1; ERR-0335 — T030 tests были вне suite и lint ловил
+stale helper.
 
-Фактические результаты полного gate и браузера, версии и ссылка на GitHub Actions:
-[`verification-acceptance.md`](tasks/фичи/019-кандидаты-и-предложения/verification-acceptance.md).
+## Migration / browser acceptance
 
-```sh
-TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili_test \
-TEST_REDIS_URL=redis://localhost:6379 bash init.sh
-```
+Workflow `.github/workflows/verify-020-family-browser.yml` работает с
+одноразовой PostgreSQL `*_test` базой и real Fastify/Vite/Chromium. Перед
+browser flow он выполняет migration rehearsal:
 
-Тестовый PostgreSQL должен содержать все миграции. Браузер: `backend/scripts/offers-e2e-server.mts`
-с отдельной локальной базой `*_test`, `TEST_DATABASE_URL` и `E2E_FIXTURE_FILE`; frontend Vite на
-3000; `offers-e2e-browser.py` с `E2E_RESULT_DIR`. Файл fixture содержит только тестовые токены,
-режим 0600; не публиковать его. SIGTERM сервера стирает созданные фикстуры. Системный Chromium
-локальной среды запрещает навигацию; политику не обходить, использовать обычный CI runner.
+1. применить все миграции;
+2. откатить только 020;
+3. создать legacy guest с `plusOne=true`, RSVP, menu vote, bus, hotel,
+   invite code и gift reserve;
+4. снова применить 020;
+5. проверить 2 person rows, 2 bus seats, 1 hotel room, общий party token/code
+   и ту же gift identity.
 
-## Следующий шаг строго по плану
+Browser flow затем создаёт семью через UI пары, выдаёт одну ссылку, проходит
+per-person RSVP/menu/bus, один hotel booking и один family gift reserve.
 
-019 закрыт полностью: T001–T042. Финальная проверка — GitHub Actions 36352817493:
-accept019 25/25, полный gate 1056 frontend + 1217 backend, browser T041 5/5 без ошибок.
-Следующий этап по roadmap — **020**. Не начинать 021 до закрытия 020.
+## Текущий статус задач
 
-Внешние блокеры выпуска остаются в RELEASE-BLOCKERS.md: юридические тексты, SMS/S3,
-реальная репетиция восстановления, тестовый домен. Миграции 018-A/B ранее менялись на месте:
-базу из первоначального transfer-архива пересоздать. Production-готовность не заявляется.
+T001–T030 закрыты, включая T023 generated contract. Открыты только:
 
+- T031 — зелёный browser E2E именно на финальном HEAD;
+- T032 — полный PostgreSQL/Redis CI: frontend/backend types/tests/lint/build,
+  contract-sync и migration rehearsal;
+- T033 — финальный verification report, roadmap/handoff и отметка 020 ✅.
 
-## Финал 019 · 2026-09-28 ✅
+Не считать 020 завершённым до этих трёх пунктов. После зелёных gates обновить
+`tasks/фичи/020-семейные-приглашения/verification-acceptance.md`, отметить
+T031–T033, перевести roadmap 020 в ✅ и только затем формировать финальную
+feature-ветку/merge-кандидат.
 
-Feature №2 завершена отдельной поставкой поверх `776d61fef00c05625f7382988baaded8604d9476`.
-T039/T040/T042 закрыты; документация, privacy-инварианты и экспорт синхронизированы.
-Main/production этой поставкой не менялись.
+## Внешние release blockers
+
+Как и после 019: юридические тексты, реальные SMS/S3/VAPID, production deployment,
+эксплуатационный backup/restore drill и пилот на физических устройствах остаются
+отдельными release gates. Они не являются доказательством или блокером завершения
+самой product feature 020 в test-ветке.
