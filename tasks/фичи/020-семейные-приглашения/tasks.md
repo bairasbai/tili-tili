@@ -51,7 +51,7 @@ Main не менять. Рабочая ветка — `test/020-finalize-2026092
 
 ## Фаза 5 — контракт и UI
 
-- [ ] T023 OpenAPI + generated schemas/types: GuestParty, GuestPerson, family RSVP/resources.
+- [x] T023 OpenAPI + generated schemas/types: GuestParty, GuestPerson, family RSVP/resources.
 - [x] T024 Экран пары: создать семью, добавить/удалить персон, одна кнопка приглашения на семью.
 - [x] T025 Гостевой экран: выбрать RSVP/меню/автобус для каждого человека; подарок остаётся общим для семьи.
 - [x] T026 Рассадка показывает каждую персону отдельно; старой кнопки «+1» нет для новых данных.
@@ -77,7 +77,7 @@ T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 Фактически реализованы T001–T022 и T024–T030. После аудита дополнительно закрыты: сохранение family token при удалении primary, explicit-family import, partySize в Guest API, управление составом семьи на экране пары и повторный double-count кейтеринга.
 
 Открытые финальные ворота:
-- T023 — OpenAPI уже обновлён, но generated schemas/types должны быть перегенерированы на последнем HEAD и пройти sync.
+- T023 — закрыт автогенерацией `5b4432db`: OpenAPI 0.50.0 и generated backend/frontend artifacts синхронизированы; финальный contract-sync подтверждается общим CI.
 - T031 — real browser flow существует, но нужен зелёный запуск именно на финальном HEAD.
 - T032 — полный PostgreSQL/Redis frontend/backend types/tests/lint/build + migration rehearsal.
 - T033 — финальная запись verification/handoff/roadmap и отметка 020 ✅ только после предыдущих трёх.
