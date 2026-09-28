@@ -269,6 +269,23 @@ describe.skipIf(!live)('этап 2: свадьба и команда', () => {
     expect(allowedRoles('/weddings/:weddingId/guests', 'GET')).toContain('helper')
   })
 
+  it('кандидатов ведут пара и помощник, а запросы — только пара', () => {
+    const shortlist = '/weddings/:weddingId/slots/:slotId/shortlist'
+    const candidate = `${shortlist}/:entryId`
+    const offerRequests = '/weddings/:weddingId/slots/:slotId/offer-requests'
+    const addCandidate = '/weddings/:weddingId/shortlist/:vendorId'
+
+    expect(allowedRoles(shortlist, 'GET')).toEqual(['couple', 'helper', 'coordinator'])
+    expect(allowedRoles(candidate, 'DELETE')).toEqual(['couple', 'helper'])
+    expect(allowedRoles(addCandidate, 'PUT')).toEqual(['couple', 'helper'])
+    expect(allowedRoles(offerRequests, 'POST')).toEqual(['couple'])
+
+    expect(allowedRoles(shortlist, 'POST')).toEqual([])
+    expect(allowedRoles(candidate, 'GET')).toEqual([])
+    expect(allowedRoles(addCandidate, 'GET')).toEqual([])
+    expect(allowedRoles(offerRequests, 'GET')).toEqual([])
+  })
+
   /* ── приглашения ──────────────────────────────────────────────────── */
   it('ссылка принимается ровно один раз', async () => {
     const { token } = await newUser('Алина')
