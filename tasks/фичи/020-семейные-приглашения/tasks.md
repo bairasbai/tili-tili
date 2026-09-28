@@ -83,3 +83,8 @@ T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 - T033 — verification/handoff/roadmap/JOURNAL обновлены; временный clean-browser workflow удаляется финализационным коммитом.
 
 Этап 020 завершён как merge-кандидат. 021 начинать только после слияния 020 в актуальный `main` и зелёного post-merge CI.
+
+
+## Merge в main · 2026-09-28 ✅
+
+PR #12 слит merge-коммитом `3b2dbabd26701b33da372126fa33b2e4caad4b82`. PR CI `36365523795`, Offers 019 browser regression `36365523816`, Task Planning browser regression `36365523769` и post-merge CI `36365783985` — success. Этап 020 закрыт полностью; следующий — 021.

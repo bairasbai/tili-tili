@@ -1,48 +1,68 @@
-# Передача сессии — 020 готова к merge
+# Передача сессии — 020 слита в main
 
 Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`.
 
 ## Текущее состояние
 
-- 017-A/B и 018 quiz уже в main.
-- 019 слита через PR #5; последующие 019 hardening/docs находятся в актуальном main.
-- 020 «семейные приглашения и отдельные персоны» завершена T001–T033 в clean integration `integration/020-clean-main-20260928`.
-- Исходную `test/020-finalize-20260928` целиком не сливать: она построена на старой линии. Полезная дельта 020 перенесена и проверена отдельно.
+- 017-A/B слиты через PR #1.
+- 018 quiz слита через PR #2.
+- 019 shortlist/offers слита через PR #5 и дополнительно усилена 019 workflow/test/docs в main.
+- 020 «семейные приглашения и отдельные персоны» слита через **PR #12**.
+- Merge commit 020: `3b2dbabd26701b33da372126fa33b2e4caad4b82`.
+- Post-merge CI на этом exact SHA: run `36365783985` — success.
 
-## Что входит в 020
+## Что закрыто в 020
 
-- `guest_party` отделена от конкретной персоны: одна семейная ссылка содержит 1–10 `guests`.
-- Legacy `plusOne=true` мигрирует в отдельную companion-person; скрытый +1 больше не участвует в арифметике новых путей.
-- RSVP, diet/menu, table и bus booking — по `guestId` конкретной персоны.
-- Hotel booking и gift/fund identity — по family party/token: один номер и одна анонимная gift identity на приглашение.
-- Создание/импорт поддерживают `members[]`; добавление, переименование и удаление человека не меняет family token, пока семья не пуста.
-- Guest API отдаёт `partyId/partyPosition/partySize/isPrimary/isPlaceholder`; inviteUrl только одна на семью и только паре.
-- Export/31-day erasure включают family structure без утечки invite token.
-- UI пары и гостевой UI работают с именованными персонами; рассадка/кейтеринг считают person rows ровно один раз.
+T001–T033:
+- одна семейная ссылка / `guest_party` на 1–10 отдельных персон;
+- legacy `plusOne` материализуется в отдельную companion-person без двойного счёта;
+- RSVP, diet/menu, table и bus — на конкретного `guestId`;
+- hotel booking и gift/fund identity — на family party/token;
+- один invite link на семью, без выдачи party token паре/helper/coordinator;
+- создание/импорт `members[]`, добавление/переименование/удаление отдельной персоны;
+- family token сохраняется при удалении primary, пока семья не пуста;
+- person-based рассадка, кейтеринг, меню и автобус;
+- один room booking и одна gift identity на приглашение;
+- export/31-day erasure family structure без invite secret;
+- RU/EN, карты экранов/кнопок, OpenAPI 0.50.0 и generated artifacts.
 
-## Контракт и миграция
+## Миграция
 
-- OpenAPI: **0.50.0**.
-- Generated backend/frontend contract artifacts синхронизированы штатными генераторами.
-- Миграция: `1761600000000_family_guest_parties.cjs`.
-- Rehearsal проверяет legacy round-trip: откат 020 → старый `plusOne` + menu/bus/hotel/invite/gift → повторное применение 020 → 2 person rows / 2 bus seats / 1 hotel room / тот же family token и gift identity.
+`1761600000000_family_guest_parties.cjs`.
 
-## Финальные gates clean integration
+Rehearsal проверен в реальном GitHub Actions: применить все миграции → откатить только 020 → создать legacy guest с `plusOne=true`, menu/bus/hotel/invite/gift состоянием → снова применить 020 → получить 2 person rows, 2 bus seats, 1 hotel room, общий family token/code и ту же gift identity.
 
-Проверочный кодовый HEAD: `661d2ae98c2a6feb03da7553dcb2f1ad294ce73b`.
+## Принятые gates
 
-- Full CI: **success**, run `36365055384`.
-  - frontend: **78 файлов / 1023 теста**;
-  - backend: **106 файлов / 1178 тестов**;
-  - PostgreSQL migrations, TypeScript, ESLint, frontend/backend production build — success.
-- Family browser E2E: **success**, run `36365055383`.
-  - artifact `10947465988`;
-  - SHA-256 `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`;
-  - 2 персоны, 1 family invite link, 2 menu votes, 2 bus seats, 1 hotel room, 1 family gift reserve, page errors = 0.
-- Независимая source-проверка после тех же test-harness fixes: CI `36364877609` success, browser `36364877628` success.
+Clean code head: `661d2ae98c2a6feb03da7553dcb2f1ad294ce73b`.
 
-## Следующий обязательный шаг
+- Clean CI `36365055384` — success:
+  - frontend 78 файлов / 1023 теста;
+  - backend 106 файлов / 1178 тестов;
+  - PostgreSQL migrations, TypeScript, ESLint, frontend/backend production builds — success.
+- Family browser E2E `36365055383` — success:
+  - 2 family members;
+  - 1 invite link;
+  - 2 menu votes;
+  - 2 bus seats;
+  - 1 hotel room;
+  - 1 family gift reservation;
+  - page errors = 0.
+- Evidence artifact `10947465988`, SHA-256 `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`.
+- PR #12 merge-candidate gates:
+  - CI `36365523795` — success;
+  - Offers 019 browser `36365523816` — success;
+  - Task planning browser `36365523769` — success.
+- Post-merge CI on main `3b2dbabd…`: `36365783985` — success.
 
-Открыть PR `integration/020-clean-main-20260928 → main`. Актуальный main после clean-ветки получил только hardening 019 workflow/test/docs, поэтому обязательна PR-проверка merge-кандидата. После зелёного PR CI — merge, затем post-merge CI на main. Только после этого переходить к этапу 021.
+## Важная история интеграции
 
-Production deployment этим не подтверждается. Юридические тексты, реальные SMS/S3/VAPID, эксплуатационный backup/restore, тестовый домен и пилот на физических устройствах остаются отдельными release gates.
+Старую `test/020-finalize-20260928` не сливали целиком: она была построена на прежней 019-линии. В `integration/020-clean-main-20260928` переносилась только дельта 020, затем контракт пересобирался на clean-базе. Это не вернуло старые 018-A/B payment changes или другие посторонние изменения.
+
+Два финальных исправления были только test-harness corrections: Cyrillic locator в Playwright и ожидание CSV `Family` вместо legacy `+1`. Product behavior ими не менялся.
+
+## Следующий этап
+
+Следующий roadmap stage — **021**: постоянные ID событий и контроль версии расписания, затем зависимости/фиксированные блоки/исполнители/переезды.
+
+Production deployment не выполнен. Юридические тексты, реальные SMS/S3/VAPID, эксплуатационный backup/restore, тестовый домен и пилот на физических устройствах остаются отдельными release gates.
