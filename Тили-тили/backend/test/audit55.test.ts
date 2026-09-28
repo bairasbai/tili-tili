@@ -463,8 +463,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.51.0 (018-A/B payments поверх 020; F5-14 сохранён)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.51.0')
+  it('версия контракта — 0.52.0 (021 payment privacy поверх 018-A/B и 020)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.52.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

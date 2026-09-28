@@ -527,9 +527,10 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     ]
     const payments = await byWeddings(
       coupleIds,
-      `select p.id, p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.installment_id, p.created_at
+      `select p.id, p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.installment_id,
+              p.payment_method, p.visibility, p.amount_known, p.paid_on::text as paid_on, p.created_at
          from payments p join deals d on d.id = p.deal_id
-        where d.wedding_id = any($1) order by p.created_at`,
+        where d.wedding_id = any($1) order by p.paid_on, p.created_at`,
     )
     /* График платежей (018-A) — такие же деньги пары, как оплаты: только по свадьбам,
      * где человек «пара». Без него выгрузка по 152-ФЗ теряла названия, суммы, сроки и

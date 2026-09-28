@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.51.0).
- * Операций: 197. Путей: 149. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.52.0).
+ * Операций: 199. Путей: 151. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -107,6 +107,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/calendar","url":"/vendor/calendar","operationId":null,"summary":"Занятость (календарь подрядчика)","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/calendar/busy","url":"/vendor/calendar/busy","operationId":null,"summary":"Отметить даты занятыми/свободными","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/deals","url":"/vendor/deals","operationId":null,"summary":"Сделки подрядчика","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/deals/{dealId}/payments","url":"/vendor/deals/:dealId/payments","operationId":null,"summary":"Оплаты своей сделки, раскрытые парой подрядчику","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/deals/{dealId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/vendor/deals/:dealId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Подтверждение раскрытой оплаты своей сделки","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/leads","url":"/vendor/leads","operationId":null,"summary":"Входящие лиды","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/leads/{leadId}","url":"/vendor/leads/:leadId","operationId":null,"summary":"Действие с лидом: ответить / холд 72ч / отклонить / вернуть","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/offer-requests","url":"/vendor/offer-requests","operationId":null,"summary":"Запросы предложений подрядчику","tag":"vendor"},
