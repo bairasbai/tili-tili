@@ -126,11 +126,11 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
   )
   s = replaceOne(
     s,
-    `           (${PAYMENTS_SUM}
+    `           (\${PAYMENTS_SUM}
               and p.created_at between now() - make_interval(days => $2 * 2) and now() - make_interval(days => $2))::text
               as prev_revenue\`,
 `,
-    `           (${PAYMENTS_SUM}
+    `           (\${PAYMENTS_SUM}
               and p.paid_on between (now() - make_interval(days => $2 * 2))::date and (now() - make_interval(days => $2))::date)::text
               as prev_revenue,
            (select count(*) from payments p join deals d on d.id=p.deal_id
@@ -141,9 +141,9 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
   )
   s = replaceOne(
     s,
-    `           (${PAYMENTS_SUM} and p.created_at > now() - make_interval(days => $2))::text as revenue,
+    `           (\${PAYMENTS_SUM} and p.created_at > now() - make_interval(days => $2))::text as revenue,
 `,
-    `           (${PAYMENTS_SUM} and p.paid_on > (now() - make_interval(days => $2))::date)::text as revenue,
+    `           (\${PAYMENTS_SUM} and p.paid_on > (now() - make_interval(days => $2))::date)::text as revenue,
 `,
     'vendor analytics paid date',
   )
