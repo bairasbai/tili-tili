@@ -739,12 +739,46 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       )
       const guest = rows[0]
       if (!guest) throw notFound('Гость не найден')
-      if (guest.party_position === 1) {
-        // Primary card represents the invitation itself: deleting it removes
-        // members, code, room and the family's current gift reservation.
+
+      /* Family membership is protected by the party row. Removing one person
+       * must not rotate the shared invite token while somebody else remains:
+       * RSVP, hotel and gift identity belong to the invitation, not to the
+       * person who happened to be position 1. */
+      await client.query('select id from guest_parties where id = $1 for update', [guest.party_id])
+      const { rows: members } = await client.query<{
+        id: string
+        party_position: number
+        name: string
+        phone: string | null
+      }>(
+        'select id, party_position, name, phone from guests where party_id = $1 order by party_position for update',
+        [guest.party_id],
+      )
+
+      if (members.length <= 1) {
         await client.query('delete from guest_parties where id = $1', [guest.party_id])
-      } else {
-        await client.query('delete from guests where id = $1', [guestId])
+        return
+      }
+
+      await client.query('delete from guests where id = $1', [guestId])
+      const remaining = members.filter((member) => member.id !== guestId)
+
+      /* Compact positions one-by-one from the first gap. The unique
+       * (party_id, party_position) index makes a bulk renumber unsafe, while
+       * ascending moves are conflict-free because the previous slot is empty. */
+      for (const [index, member] of remaining.entries()) {
+        const position = index + 1
+        if (member.party_position !== position) {
+          await client.query('update guests set party_position = $2 where id = $1', [member.id, position])
+        }
+      }
+
+      if (guest.party_position === 1) {
+        const nextPrimary = remaining[0]!
+        await client.query(
+          'update guest_parties set label = $2, contact_phone = $3 where id = $1',
+          [guest.party_id, nextPrimary.name, nextPrimary.phone],
+        )
       }
     })
     return reply.code(204).send()
