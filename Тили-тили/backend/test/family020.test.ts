@@ -345,7 +345,6 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(rows[0]).toEqual({ booked: 1, n: '1' })
   })
 
-})
   it('export keeps family structure but never exposes the shared invite token', async () => {
     const f = await family()
     const dump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.token) })
@@ -368,4 +367,4 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(people).toEqual([])
     expect((await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).statusCode).toBe(401)
   })
-
+})
