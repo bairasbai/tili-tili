@@ -83,6 +83,7 @@ jobs:
     branches:
     - feature/product-improvements-stage1-tasks
     - integration/018-payments-clean-main-20260928
+    - feature/payment-methods-privacy-20260928
   pull_request:
     branches:
     - main
