@@ -447,7 +447,14 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
           receipts:
             type: array
             items:
-              $ref: '#/components/schemas/PaymentReceiptMeta'
+              type: object
+              required: [id, filename, mimeType, sizeBytes, createdAt]
+              properties:
+                id: {type: string, format: uuid}
+                filename: {type: string}
+                mimeType: {type: string}
+                sizeBytes: {type: integer, minimum: 0}
+                createdAt: {type: string, format: date-time}
 `
   s = replaceBlock(s, '    PaymentRecord:\n', '    PaymentDeal:\n', record, 'PaymentRecord')
 
