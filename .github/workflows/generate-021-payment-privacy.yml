@@ -1,0 +1,64 @@
+name: Generate 021 payment privacy contract
+
+on:
+  push:
+    branches:
+      - feature/payment-methods-privacy-20260928
+    paths:
+      - .github/workflows/generate-021-payment-privacy.yml
+      - Тили-тили/backend/scripts/apply-payment-privacy-feature.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/payment-methods-privacy-20260928
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Apply deterministic source patch
+        working-directory: Тили-тили
+        run: node backend/scripts/apply-payment-privacy-feature.mjs
+
+      - name: Install backend generator dependencies
+        working-directory: Тили-тили/backend
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+
+      - name: Generate OpenAPI artifacts
+        working-directory: Тили-тили/backend
+        run: pnpm run gen
+
+      - name: Sync frontend generated schema
+        run: cp "Тили-тили/backend/src/contract/api.generated.ts" "Тили-тили/app/src/lib/api/schema.ts"
+
+      - name: Guard generated sync
+        run: |
+          cmp "Тили-тили/backend/src/contract/api.generated.ts" "Тили-тили/app/src/lib/api/schema.ts"
+          git diff --check
+
+      - name: Commit generated integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Тили-тили/backend/src/routes/users.ts" \
+                  "Тили-тили/backend/src/routes/vendorCabinet.ts" \
+                  "Тили-тили/Тили-тили_API_openapi.yaml" \
+                  "Тили-тили/backend/src/contract/api.generated.ts" \
+                  "Тили-тили/backend/src/contract/schemas.generated.ts" \
+                  "Тили-тили/app/src/lib/api/schema.ts"
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(021): sync payment privacy contract"
+          git push origin HEAD:feature/payment-methods-privacy-20260928
