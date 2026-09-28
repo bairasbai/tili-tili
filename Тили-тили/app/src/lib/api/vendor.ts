@@ -1,5 +1,4 @@
 import { api, url } from './client'
-import type { components } from './schema'
 
 /*
  * Кабинет подрядчика.
@@ -16,20 +15,6 @@ import type { components } from './schema'
 /** Своя анкета. 404 — анкеты ещё нет, это нормальный ответ для нового подрядчика. */
 export const getVendorProfile = () => api.get('/vendor/profile')
 
-/** Пакет услуг в черновике анкеты (019, FR-006). */
-export interface VendorDraftPackage {
-  /** id сервера. С ним пакет остаётся тем же, и брони, которые на него ссылаются, называют
-   *  его после правки анкеты; без него пакет новый. Мастер переносит id из ответа `PUT`. */
-  id?: string
-  name: string
-  /** Копейки; `null` — цена не названа (пакет заведён вне мастера: сервер хранит и отдаёт
-   *  его без цены). Мастер `null` не подменяет нулём и сам пакет без цены не заводит
-   *  (ERR-0281, R-281). */
-  price: number | null
-  /** Что входит — пунктами. Мастер, не знавший состава, стирал его при каждом «Далее». */
-  includes: string[]
-}
-
 export interface VendorDraft {
   name: string
   categoryId: string
@@ -39,8 +24,10 @@ export interface VendorDraft {
   phone?: string
   /** Цена «от» в копейках. */
   priceFrom?: number
-  /** Пакеты услуг — в порядке показа. */
-  packages?: VendorDraftPackage[]
+  /** Пакеты услуг. Цена — копейки; `null` — цена не названа (пакет заведён вне
+   *  мастера: сервер хранит и отдаёт его без цены). Мастер `null` не подменяет
+   *  нулём и сам пакет без цены не заводит (ERR-0281, R-281). */
+  packages?: { name: string; price: number | null }[]
   /**
    * Права на фото и видео портфолио и согласие снятых (152-ФЗ, план бэкенда §7).
    * Только `true` что-то значит — сервер ставит момент и не снимает его;
@@ -62,17 +49,14 @@ export const saveVendorProfile = (draft: VendorDraft) =>
        «поля нет, значит не трогай». Без этого удалённый последний пакет
        остался бы жить в анкете. Портфолио, наоборот, не отправляем вовсе —
        мастер им не занимается, и стирать его нечем. */
-    /* Пакет без цены уходит без поля `price`: контракт `VendorPackageInput` знает
-       только отсутствие цены, а `null` сервер отвергает 422 (`MONEY_SCHEMA` без
-       `nullable`, routes/vendor.ts). Отсутствующее поле он хранит как `null` — цена
-       остаётся не названной, а не становится «0 ₽» (ERR-0281, R-281).
-       `id` и состав уходят всегда: без `id` сервер заводит пакет заново, и брони
-       теряют его (019, FR-006, ERR-0318); без состава — стирает, что входит. */
+    /* Пакет без цены уходит без поля `price`: контракт `VendorUpsert` знает
+       только отсутствие цены (`price?: Money`, openapi.yaml:4652), а `null`
+       сервер отвергает 422 (`MONEY_SCHEMA` без `nullable`, routes/vendor.ts:22-30).
+       Отсутствующее поле он хранит как `null` (routes/vendor.ts:293) — цена
+       остаётся не названной, а не становится «0 ₽» (ERR-0281, R-281). */
     packages: (draft.packages ?? []).map(p => ({
-      ...(p.id ? { id: p.id } : {}),
       name: p.name,
       ...(p.price === null ? {} : { price: { amount: p.price, currency: 'RUB' } }),
-      includes: p.includes,
     })),
   })
 
@@ -98,25 +82,6 @@ export const setVendorBusy = (dates: string[], status: 'busy' | 'free') =>
 /* ── заявки ── */
 
 export const getVendorLeads = () => api.get('/vendor/leads')
-
-/* ── запросы предложений (019) ── */
-
-export type VendorOfferRequest = components['schemas']['OfferRequest']
-export type VendorOfferInput = components['schemas']['OfferInput']
-
-/** Только запросы текущего подрядчика; чужие кандидаты в ответ не входят. */
-export const getVendorOfferRequests = () => api.get('/vendor/offer-requests')
-
-/** Одна попытка ответа. Ключ приходит с формы и переживает сетевой повтор. */
-export const sendVendorOffer = (
-  requestId: string,
-  body: VendorOfferInput,
-  idempotencyKey: string,
-) => api.post(
-  url('/vendor/offer-requests/{requestId}/offers', { requestId }),
-  body,
-  { idempotencyKey },
-)
 
 /**
  * Действие по заявке: ответить, взять дату на 72 часа, отклонить, вернуть.

@@ -1,5 +1,5 @@
 import { createElement, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, Copy, FileText, Plus, Armchair, Bus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { dressPalettes } from '@/lib/dressPalettes'
@@ -37,7 +37,7 @@ import { formatWeddingDate } from '@/lib/weddingDate'
  * поэтому кнопка предлагает ровно один следующий шаг.
  */
 const DEAL_STEPS: ReadonlyArray<{ state: DealState; label: string }> = [
-  { state: 'candidate', label: 'Не связывались' },
+  { state: 'candidate', label: 'Кандидат' },
   { state: 'contacted', label: 'Написали' },
   { state: 'negotiating', label: 'Переговоры' },
   { state: 'booked', label: 'Забронировано' },
@@ -186,7 +186,6 @@ function DealView({ s }: { s: Slot }) {
               <p className="text-[11px] text-[var(--soft)]">{t(s.label)}</p>
               {/* Пакет из брони (`Deal.packageName`, фича 005) — только когда он есть. */}
               {s.packageName && <p className="text-[11px] text-[var(--ink2)] mt-0.5 truncate">{t('Пакет:')} {s.packageName}</p>}
-              {s.packageIncludes && s.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{s.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
             </div>
             {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
@@ -209,10 +208,9 @@ function DealView({ s }: { s: Slot }) {
         </div>
 
         {/* Сумма — та, что записана в сделке, и та, что по ней уже внесена.
-            Этапы и сроки живут на экране «График платежей» (018-A) — отсюда
-            ссылка на него, а не своя копия графика: раньше здесь стояли «аванс
-            10 фев» и «доплата 14 июн» с суммами, не связанными ни с какой
-            сделкой. */}
+            Графика платежей контракт не отдаёт, и выдумывать его здесь нельзя:
+            раньше на экране стояли «аванс 10 фев» и «доплата 14 июн» с суммами,
+            не связанными ни с какой сделкой. */}
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
           {money ? (
@@ -240,9 +238,6 @@ function DealView({ s }: { s: Slot }) {
                 <b className="text-[13px]">{t('Итого по договору')}</b>
                 <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{s.price != null ? fmt(s.price) : '—'}</b>
               </div>
-              {/* Оплата отсюда пишет весь остаток без этапа; разнести деньги по этапам и
-                  отметить часть суммы — на графике (ревью 018, F-03). */}
-              <Link to="/wedding/payments" className="block text-[12px] underline mt-3">{t('График платежей')} →</Link>
             </>
           ) : (
             /* Сервер не отдал денег — их не показываем и не выдумываем нулём:
@@ -329,7 +324,7 @@ function DealView({ s }: { s: Slot }) {
  * получают отсюда чужой идентификатор.
  */
 const EVENT_STATE: Record<string, string> = {
-  candidate: 'Не связывались',
+  candidate: 'Кандидат',
   contacted: 'Написали',
   negotiating: 'Переговоры — бронь держится 72 часа',
   booked: 'Забронировано',
