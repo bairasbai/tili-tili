@@ -612,7 +612,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
 
 /* ── чистая функция ───────────────────────────────────────────────── */
 describe('счётчик персон', () => {
-  it('запись с «+1» считается за двоих', () => {
+  it('020: считает реальные person rows ровно один раз и игнорирует deprecated plusOne', () => {
     expect(
       personCount([
         { status: 'yes', plusOne: true },
@@ -620,7 +620,7 @@ describe('счётчик персон', () => {
         { status: 'no', plusOne: true },
         { status: 'pending', plusOne: false },
       ]),
-    ).toBe(3)
+    ).toBe(2)
   })
 
   it('пустой список — ноль персон', () => {
