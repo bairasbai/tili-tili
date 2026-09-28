@@ -320,6 +320,15 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
     const g1 = (await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers: auth(w.token), payload: { name: 'Ольга', plusOne: true } })).json() as { id: string }
     const g2 = (await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/guests`, headers: auth(w.token), payload: { name: 'Марк' } })).json() as { id: string }
     await app.db!.query(`update guests set rsvp = 'yes', rsvp_at = now(), diet = 'vegan', transfer = 'need' where id = $1`, [g1.id])
+    const { rows: companionRows } = await app.db!.query<{ id: string }>(
+      `select sibling.id
+         from guests anchor
+         join guests sibling on sibling.invitation_id = anchor.invitation_id and sibling.id <> anchor.id
+        where anchor.id = $1`,
+      [g1.id],
+    )
+    expect(companionRows).toHaveLength(1)
+    await app.db!.query(`update guests set rsvp = 'yes', rsvp_at = now() where id = $1`, [companionRows[0]!.id])
     await app.db!.query(`update guests set rsvp = 'yes', rsvp_at = now() where id = $1`, [g2.id])
     const poll = await app.inject({
       method: 'PUT',
