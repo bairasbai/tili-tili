@@ -1,0 +1,27 @@
+name: Apply 020 clean integration
+
+on:
+  push:
+    branches:
+      - integration/020-clean-main-20260928
+
+permissions:
+  contents: write
+
+jobs:
+  cherry-pick-020:
+    if: "github.event.head_commit.message == 'chore(020): bootstrap clean integration'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply stage 020 commits on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin test/020-finalize-20260928
+          git cherry-pick 050b826c5b1edc9ff5abd96ff705508796c88c0e^..351d17174bf7c537a0b3b927b8da377a7469662c
+          git push origin HEAD:integration/020-clean-main-20260928
