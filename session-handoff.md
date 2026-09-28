@@ -1,4 +1,4 @@
-# Передача сессии — 019 завершён на clean integration
+# Передача сессии — 019 завершён и слит в main
 
 Обновлено 2026-09-28.
 
@@ -6,16 +6,18 @@
 
 Репозиторий `bairasbai/tili-tili`.
 
-- Текущий `main` при сборке clean integration: `e413afd1cc164da1e1e40563275fce79ccee425b`.
 - Этап 019: **T001–T042 завершены**.
-- Чистая ветка: `integration/019-complete-clean-20260928`.
-- Проверенный application/test HEAD: `38a34e10f839bda9a9c5289287f5925b3b3a087f`.
-- Последующие коммиты закрытия 019 меняют только документацию.
-- Draft PR для проверки/слияния: https://github.com/bairasbai/tili-tili/pull/5
-- Production не менялся.
+- Проверенный application/test HEAD clean integration:
+  `38a34e10f839bda9a9c5289287f5925b3b3a087f`.
+- PR #5 слит в `main`: https://github.com/bairasbai/tili-tili/pull/5
+- Merge commit: `027d6c3eb76e6a31c4ecd8b73c0376a910bd488d`.
+- Production самим merge не выкладывался.
+- После проверенного кодового SHA в clean-ветке были добавлены только документы закрытия 019;
+  application/test code после `38a34e10` не менялся.
 
-Старую линию `feature/019-complete-20260928` напрямую не сливать: она расходится с текущим `main`
-и содержит чужую дельту отдельной 018-A/B payment-ветки. Для merge использовать только clean integration / PR #5.
+Старую линию `feature/019-complete-20260928` больше не использовать для интеграции: она расходилась с актуальным
+`main` и содержала дельту отдельной 018-A/B payment-ветки. Канонический код 019 теперь находится в `main`
+через merge PR #5.
 
 ## Что входит в 019
 
@@ -30,7 +32,7 @@
 
 - batch-запрос отмеченным кандидатам;
 - приватные ответы/отказы подрядчиков;
-- версии предложений, квоты, idempotency;
+- версии предложений, квоты и idempotency;
 - отображение ответа на месте, в карточке и сравнении.
 
 ### US3 — принятие и бронь
@@ -48,7 +50,7 @@
 - export пары и подрядчика изолирован по ролям;
 - детерминированная гонка reply ↔ erase закреплена тестом.
 
-## Проверка clean integration
+## Проверка перед merge
 
 ### Standard CI
 
@@ -58,7 +60,7 @@ Run: https://github.com/bairasbai/tili-tili/actions/runs/36363006056
 - backend: **105 files / 1164 tests**;
 - PostgreSQL/Redis, миграции, TypeScript, ESLint и production builds — success.
 
-Первый clean CI нашёл только три `no-explicit-any` в `backend/test/audit55.test.ts`.
+Первый clean CI выявил только три `no-explicit-any` в `backend/test/audit55.test.ts`.
 Коммит `38a34e10` заменил их на `YamlSchema`; application code не менялся.
 
 ### Offers 019 browser E2E
@@ -86,19 +88,22 @@ SHA-256 `9be1f45ea90650e1c569ace6bf01c72ce410e0fea51b26a0627f1573ae201c2b`.
 
 Полный протокол: `tasks/фичи/019-кандидаты-и-предложения/verification-finalization.md`.
 
-## Scope перед merge
+## Scope merge
 
-Clean diff относительно `main` содержит 019-код, миграцию
-`1761500000000_shortlist_offers.cjs`, 019 API/UI/tests/contract и необходимые общие интеграционные точки.
-Отдельные payment-файлы 018-A/B (`payment_schedule`, `budget_controls_receipts`) не входят.
-Временный workflow, которым ремонтировалась генерация схем, удалён из итогового дерева.
+Clean delta 019 содержала миграцию `1761500000000_shortlist_offers.cjs`, 019 API/UI/tests/contract
+и необходимые общие интеграционные точки. Отдельные payment-файлы 018-A/B
+(`payment_schedule`, `budget_controls_receipts`) в PR #5 не входили.
+Временный workflow ремонта generated schema был удалён до merge.
 
-## Следующий шаг
+## Что делать дальше
 
-1. Дождаться зелёных checks на финальном docs-only HEAD PR #5.
-2. Убедиться, что после `38a34e10` нет изменений application/test code кроме документации.
-3. После разрешённого merge слить **PR #5 в `main`**, не PR #4 и не старую feature-ветку.
-4. Следующий продуктовый этап roadmap — **020: семейные приглашения и отдельные персоны**.
+Следующий продуктовый этап roadmap — **020: семейные приглашения и отдельные персоны**.
 
-Внешние production-gates (юридические тексты, SMS/S3/VAPID, тестовый/production deployment,
-эксплуатационный backup/restore и физические устройства) остаются отдельными и не считаются закрытыми 019.
+Перед началом 020:
+1. Работать от актуального `main` после `027d6c3e`, а не от старых 019-веток.
+2. Не переносить в 020 payment-дельту 018-A/B, если она отдельно не интегрирована.
+3. Сначала обновить spec/plan/tasks этапа 020 относительно фактической схемы после 019.
+4. Сохранять отдельный browser gate для затрагиваемых пользовательских сценариев.
+
+Внешние production-gates (юридические тексты, SMS/S3/VAPID, test/production deployment,
+эксплуатационный backup/restore и физические устройства) остаются отдельными и не считаются закрытыми этапом 019.
