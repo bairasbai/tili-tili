@@ -35,8 +35,12 @@ try {
     assert.equal(p.status,0,`Migration ${args.join(' ')} failed; raw logs are deliberately not published`)
   }
 
-  // Seed a row in the exact pre-021 schema. Historical method is unknowable.
-  migrate(['up',PREV])
+  // Build the exact pre-021 schema. node-pg-migrate --to on a fresh database can
+  // skip prerequisite migrations, so apply the normal chain then step 021 back while empty.
+  migrate(['up'])
+  migrate(['down','1'])
+  const before021=await client.query('select name from pgmigrations order by id desc limit 1')
+  assert.equal(before021.rows[0].name,PREV)
   const owner=randomUUID(), wedding=randomUUID(), slot=randomUUID(), deal=randomUUID(), payment=randomUUID()
   await client.query("insert into users(id,phone) values($1,'+79000000211')",[owner])
   await client.query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'021 migration','2027-06-18','Asia/Yekaterinburg',$3)",
