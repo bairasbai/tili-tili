@@ -143,7 +143,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/guest-reviews","url":"/weddings/:weddingId/guest-reviews","operationId":null,"summary":"Гость оставляет отзыв","tag":"reviews"},
   {"method":"GET","openapi":"/weddings/{weddingId}/guests","url":"/weddings/:weddingId/guests","operationId":null,"summary":"Список гостей","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests","url":"/weddings/:weddingId/guests","operationId":null,"summary":"Добавить гостя","tag":"guests"},
-  {"method":"DELETE","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Удалить персону или семейное приглашение","tag":"guests"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Удалить отдельную персону семейного приглашения","tag":"guests"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/guests/{guestId}","url":"/weddings/:weddingId/guests/:guestId","operationId":null,"summary":"Обновить отдельную персону приглашения","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/invite-link","url":"/weddings/:weddingId/guests/:guestId/invite-link","operationId":null,"summary":"Выдать (или перевыпустить) одноразовую ссылку-приглашение гостю","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/guests/{guestId}/members","url":"/weddings/:weddingId/guests/:guestId/members","operationId":null,"summary":"Добавить человека в семейное приглашение","tag":"guests"},
