@@ -304,6 +304,59 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect([401, 404]).toContain(response.statusCode)
   })
 
+  it('removing the primary person promotes the next member without rotating the family token', async () => {
+    const w = await newWedding()
+    const created = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests`,
+      headers: auth(w.token),
+      payload: {
+        name: 'Марина',
+        members: [{ name: 'Илья' }, { name: 'Анна' }],
+        phone: nextPhone(),
+      },
+    })
+    expect(created.statusCode, created.body).toBe(201)
+    const primaryId = created.json().id as string
+    const partyId = created.json().partyId as string
+
+    const link = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests/${primaryId}/invite-link`,
+      headers: auth(w.token),
+    })
+    expect(link.statusCode, link.body).toBe(200)
+    const code = (link.json().url as string).split('/').pop()!
+    const token = (await app.inject({ method: 'GET', url: `/invite/${code}` })).json().guestToken as string
+
+    const deleted = await app.inject({
+      method: 'DELETE',
+      url: `/weddings/${w.weddingId}/guests/${primaryId}`,
+      headers: auth(w.token),
+    })
+    expect(deleted.statusCode, deleted.body).toBe(204)
+
+    const { rows: party } = await app.db!.query<{ invite_token: string; label: string | null }>(
+      'select invite_token, label from guest_parties where id = $1',
+      [partyId],
+    )
+    expect(party[0]).toMatchObject({ invite_token: token, label: 'Илья' })
+
+    const { rows: people } = await app.db!.query<{ name: string; party_position: number }>(
+      'select name, party_position from guests where party_id = $1 order by party_position',
+      [partyId],
+    )
+    expect(people).toEqual([
+      { name: 'Илья', party_position: 1 },
+      { name: 'Анна', party_position: 2 },
+    ])
+
+    const page = await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(token)}` })
+    expect(page.statusCode, page.body).toBe(200)
+    expect(page.json().guestName).toBe('Илья')
+    expect(page.json().members).toHaveLength(2)
+  })
+
   it('two families racing for the last hotel room create exactly one family booking', async () => {
     const a = await family()
     const hotel = await app.inject({
