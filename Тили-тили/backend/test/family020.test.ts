@@ -305,7 +305,6 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
 
   it('two families racing for the last hotel room create exactly one family booking', async () => {
     const a = await family()
-    const b = await family()
     const hotel = await app.inject({
       method: 'POST',
       url: `/weddings/${a.weddingId}/logistics/hotels`,
