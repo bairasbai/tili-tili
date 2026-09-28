@@ -15,7 +15,7 @@ describe('020 family invitation UI guards', () => {
 
   it('guest family form submits one answer per guestId', () => {
     const source = fs.readFileSync(path.join(ROOT, 'pages/Invite.tsx'), 'utf8')
-    expect(source).toContain('sendFamilyRsvp(token, payload)')
+    expect(source).toContain('sendFamilyRsvp(token, draft.map')
     expect(source).toContain('guestId: member.guestId')
     expect(source).toContain('Ответьте за каждого человека в приглашении отдельно')
   })
