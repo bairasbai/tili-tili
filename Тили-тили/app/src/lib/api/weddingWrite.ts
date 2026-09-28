@@ -88,7 +88,7 @@ export const addGuestMember = (weddingId: string, primaryGuestId: string, name: 
 
 
 /** Одна строка вставленного списка гостей — уже разобранная экраном (`lib/guestsImport.ts`). */
-export type GuestImportRow = { name: string; phone?: string; plusOne?: boolean; group?: string }
+export type GuestImportRow = { name: string; phone?: string; plusOne?: boolean; members?: { name: string }[]; group?: string }
 
 /**
  * Завести гостей списком (контракт v0.31.0, фича 008).
