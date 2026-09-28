@@ -13,6 +13,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
+import { assertTimelineGraph, type TimelineDependencyInput } from '../timeline/graph.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
 const DEBOUNCE_SECONDS = 30
@@ -130,11 +131,33 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     icon: string | null
     outdoor: boolean
     for_guests: boolean
+    timing_mode: 'fixed' | 'flexible'
+    assignee_user_ids: string[]
+    deal_ids: string[]
+    depends_on: TimelineDependencyInput[]
   }
-  /* Одни колонки на все чтения тайминга: список, ответ `PUT`, автоплан. Пока
-   * их перечисляли в каждом запросе, новая колонка (`for_guests`, фича 009)
-   * означала бы четыре правки — и одна забытая отдавала бы блок без признака. */
-  const EVENT_COLUMNS = 'id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests'
+  /* 021: один projection на pair/editor reads. Связи агрегируются рядом с
+   * событием, чтобы клиент сохранял полный snapshot под одним ETag. */
+  const EVENT_COLUMNS = `
+    e.id, e.name, e.location, e.starts_at, e.ends_at, e.who, e.icon, e.outdoor, e.for_guests, e.timing_mode,
+    coalesce((
+      select array_agg(m.user_id::text order by m.user_id)
+        from timeline_event_members m where m.event_id = e.id
+    ), '{}'::text[]) as assignee_user_ids,
+    coalesce((
+      select array_agg(d.deal_id::text order by d.deal_id)
+        from timeline_event_deals d where d.event_id = e.id
+    ), '{}'::text[]) as deal_ids,
+    coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'eventId', dep.depends_on_event_id::text,
+          'travelMinutes', dep.travel_minutes,
+          'bufferMinutes', dep.buffer_minutes
+        ) order by dep.depends_on_event_id
+      )
+        from timeline_event_dependencies dep where dep.event_id = e.id
+    ), '[]'::jsonb) as depends_on`
   const toEvent = (r: EventRow) => ({
     id: r.id,
     name: r.name,
@@ -144,9 +167,22 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     who: r.who,
     icon: r.icon,
     outdoor: r.outdoor,
-    /* Видят ли блок гости в день X (`GET /join/{t}/day`, фича 009). Признак
-     * хранит база и по умолчанию ставит «да»: программа праздника — норма,
-     * «сборы невесты» пара снимает галочкой. */
+    forGuests: r.for_guests,
+    timingMode: r.timing_mode,
+    assigneeUserIds: r.assignee_user_ids,
+    dealIds: r.deal_ids,
+    dependsOn: r.depends_on,
+  })
+  // Гостевой день не получает внутренние user/deal IDs и граф организации.
+  const toGuestEvent = (r: EventRow) => ({
+    id: r.id,
+    name: r.name,
+    location: r.location,
+    startsAt: r.starts_at?.toISOString() ?? null,
+    endsAt: r.ends_at?.toISOString() ?? null,
+    who: r.who,
+    icon: r.icon,
+    outdoor: r.outdoor,
     forGuests: r.for_guests,
   })
   const timelineEtag = (version: number) => `"timeline-${version}"`
@@ -155,7 +191,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const weddingId = request.member!.weddingId
     const [{ rows }, { rows: state }] = await Promise.all([
       db().query<EventRow>(
-        `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort, starts_at`,
+        `select ${EVENT_COLUMNS} from timeline_events e where e.wedding_id = $1 order by e.sort, e.starts_at`,
         [weddingId],
       ),
       db().query<{ timeline_version: number }>('select timeline_version from weddings where id = $1', [weddingId]),
@@ -186,6 +222,36 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               outdoor: { type: 'boolean', default: false },
               // Пропущено — виден: как у колонки в базе и у блока без галочки.
               forGuests: { type: 'boolean', default: true },
+              timingMode: { type: 'string', enum: ['fixed', 'flexible'], default: 'flexible' },
+              assigneeUserIds: {
+                type: 'array',
+                maxItems: 20,
+                uniqueItems: true,
+                items: UUID_ID,
+                default: [],
+              },
+              dealIds: {
+                type: 'array',
+                maxItems: 20,
+                uniqueItems: true,
+                items: UUID_ID,
+                default: [],
+              },
+              dependsOn: {
+                type: 'array',
+                maxItems: 60,
+                default: [],
+                items: {
+                  type: 'object',
+                  required: ['eventId'],
+                  additionalProperties: false,
+                  properties: {
+                    eventId: UUID_ID,
+                    travelMinutes: { type: 'integer', minimum: 0, maximum: 1440, default: 0 },
+                    bufferMinutes: { type: 'integer', minimum: 0, maximum: 1440, default: 0 },
+                  },
+                },
+              },
             },
           },
         },
@@ -203,6 +269,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         icon?: string | null
         outdoor?: boolean
         forGuests?: boolean
+        timingMode?: 'fixed' | 'flexible'
+        assigneeUserIds?: string[]
+        dealIds?: string[]
+        dependsOn?: { eventId: string; travelMinutes?: number; bufferMinutes?: number }[]
       }[]
 
       const ifMatch = request.headers['if-match']
@@ -226,6 +296,28 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       if (new Set(suppliedIds).size !== suppliedIds.length) {
         throw validationFailed({ id: 'Один и тот же блок тайминга передан несколько раз' })
       }
+      const resolved = events.map((event) => ({
+        ...event,
+        id: event.id ?? uuidv7(),
+        existingId: event.id ?? null,
+        timingMode: event.timingMode ?? 'flexible',
+        assigneeUserIds: event.assigneeUserIds ?? [],
+        dealIds: event.dealIds ?? [],
+        dependsOn: (event.dependsOn ?? []).map((dependency) => ({
+          eventId: dependency.eventId,
+          travelMinutes: dependency.travelMinutes ?? 0,
+          bufferMinutes: dependency.bufferMinutes ?? 0,
+        })),
+      }))
+      assertTimelineGraph(
+        resolved.map((event, i) => ({
+          id: event.id,
+          name: event.name,
+          startsAt: moments[i]!.startsAt,
+          endsAt: moments[i]!.endsAt,
+          dependsOn: event.dependsOn,
+        })),
+      )
 
       const result = await db().tx(async (client) => {
         // Aggregate-lock сериализует full replace, Day-X shift и перенос даты.
@@ -251,20 +343,44 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         const currentIds = new Set(current.map((row) => row.id))
         const keptIds: string[] = []
 
+        const assigneeUserIds = [...new Set(resolved.flatMap((event) => event.assigneeUserIds))]
+        if (assigneeUserIds.length > 0) {
+          const { rows: allowed } = await client.query<{ user_id: string }>(
+            `select m.user_id
+               from wedding_members m join users u on u.id = m.user_id
+              where m.wedding_id = $1 and m.user_id = any($2::uuid[]) and u.deleted_at is null`,
+            [weddingId, assigneeUserIds],
+          )
+          if (allowed.length !== assigneeUserIds.length) {
+            throw validationFailed({ assigneeUserIds: 'Ответственный больше не состоит в этой свадьбе' })
+          }
+        }
+
+        const assignedDealIds = [...new Set(resolved.flatMap((event) => event.dealIds))]
+        if (assignedDealIds.length > 0) {
+          const { rows: allowed } = await client.query<{ id: string }>(
+            'select id from deals where wedding_id = $1 and id = any($2::uuid[]) and state = any($3::text[])',
+            [weddingId, assignedDealIds, COMMITTED],
+          )
+          if (allowed.length !== assignedDealIds.length) {
+            throw validationFailed({ dealIds: 'Исполнитель больше не является активной сделкой этой свадьбы' })
+          }
+        }
+
         let sort = 0
-        for (const [i, e] of events.entries()) {
-          const id = e.id ?? uuidv7()
-          if (e.id && !currentIds.has(e.id)) {
+        for (const [i, e] of resolved.entries()) {
+          const id = e.id
+          if (e.existingId && !currentIds.has(e.existingId)) {
             // Не различаем «удалён» и «принадлежит другой свадьбе»: чужой ID
             // не должен становиться oracle для межсвадебной изоляции.
             throw conflict('timeline_event_stale', 'Тайминг уже изменился — обновите страницу и повторите правку')
           }
 
-          if (e.id) {
+          if (e.existingId) {
             await client.query(
               `update timeline_events
                   set name = $3, location = $4, starts_at = $5::timestamptz, ends_at = $6::timestamptz,
-                      who = $7, icon = $8, outdoor = $9, for_guests = $10, sort = $11
+                      who = $7, icon = $8, outdoor = $9, for_guests = $10, sort = $11, timing_mode = $12
                 where id = $1 and wedding_id = $2`,
               [
                 id,
@@ -278,12 +394,13 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
                 e.outdoor ?? false,
                 e.forGuests ?? true,
                 sort,
+                e.timingMode,
               ],
             )
           } else {
             await client.query(
-              `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort)
-               values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11)`,
+              `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort, timing_mode)
+               values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11,$12)`,
               [
                 id,
                 weddingId,
@@ -296,6 +413,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
                 e.outdoor ?? false,
                 e.forGuests ?? true,
                 sort,
+                e.timingMode,
               ],
             )
           }
@@ -309,6 +427,32 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           [weddingId, keptIds],
         )
 
+        await client.query('delete from timeline_event_dependencies where wedding_id = $1', [weddingId])
+        await client.query('delete from timeline_event_members where wedding_id = $1', [weddingId])
+        await client.query('delete from timeline_event_deals where wedding_id = $1', [weddingId])
+        for (const event of resolved) {
+          for (const dependency of event.dependsOn) {
+            await client.query(
+              `insert into timeline_event_dependencies
+                 (wedding_id, event_id, depends_on_event_id, travel_minutes, buffer_minutes)
+               values ($1,$2,$3,$4,$5)`,
+              [weddingId, event.id, dependency.eventId, dependency.travelMinutes, dependency.bufferMinutes],
+            )
+          }
+          for (const userId of event.assigneeUserIds) {
+            await client.query(
+              'insert into timeline_event_members (wedding_id, event_id, user_id) values ($1,$2,$3)',
+              [weddingId, event.id, userId],
+            )
+          }
+          for (const dealId of event.dealIds) {
+            await client.query(
+              'insert into timeline_event_deals (wedding_id, event_id, deal_id) values ($1,$2,$3)',
+              [weddingId, event.id, dealId],
+            )
+          }
+        }
+
         const { rows: versionRows } = await client.query<{ timeline_version: number }>(
           'update weddings set timeline_version = timeline_version + 1 where id = $1 returning timeline_version',
           [weddingId],
@@ -316,7 +460,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         // Тайминг переписали целиком — подрядчику приезжать к другому часу.
         await noteVendorUpdate(client, weddingId, 'timeline', 'Тайминг дня обновлён')
         const { rows } = await client.query<EventRow>(
-          `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
+          `select ${EVENT_COLUMNS} from timeline_events e where e.wedding_id = $1 order by e.sort`,
           [weddingId],
         )
         return { events: rows.map(toEvent), version: versionRows[0]!.timeline_version }
@@ -329,7 +473,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   app.post('/weddings/:weddingId/timeline/autogen', async (request) => {
     const weddingId = request.member!.weddingId
     const { rows: current } = await db().query<EventRow>(
-      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
+      `select ${EVENT_COLUMNS} from timeline_events e where e.wedding_id = $1 order by e.sort`,
       [weddingId],
     )
     const { rows: team } = await db().query<{ label: string; performer: string | null }>(
@@ -1351,7 +1495,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const guest = await guestOfDay(db(), guestToken)
     const day = await guestDayOf(guest.weddingId)
     const { rows: timeline } = await db().query<EventRow>(
-      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 and for_guests order by sort, starts_at`,
+      `select ${EVENT_COLUMNS} from timeline_events e where e.wedding_id = $1 and e.for_guests order by e.sort, e.starts_at`,
       [guest.weddingId],
     )
     const { rows: table } = await db().query<{ name: string }>(
@@ -1376,7 +1520,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       venue: day.venue,
       dressCode: day.dress_code,
       dressNote: day.dress_note,
-      timeline: timeline.map(toEvent),
+      timeline: timeline.map(toGuestEvent),
       table: table[0] ? { name: table[0].name } : null,
       bus: bus[0] ? toBus(bus[0]) : null,
       coordinator: day.eve_reached && coordinator[0] ? { name: coordinator[0].name, phone: coordinator[0].phone } : null,
