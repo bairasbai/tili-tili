@@ -94,7 +94,8 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       if(amountKnown && body.amount===undefined)throw validationFailed({amount:'Укажите сумму или выберите «Сумма не сохранена»'})
       if(!amountKnown && body.amount!==undefined)throw validationFailed({amount:'Не передавайте сумму, если она не сохраняется'})
       await recordPayment(client,deal,uid,body.amount?.amount,current,{
-        amountKnown,paymentMethod:body.paymentMethod ?? 'other',visibility:body.visibility ?? 'private',paidOn:body.paidOn})
+        amountKnown,paymentMethod:body.paymentMethod ?? 'other',visibility:body.visibility ?? 'private',
+        ...(body.paidOn===undefined?{}:{paidOn:body.paidOn})})
       return {status:200,body:await output(client,wid,id)}
     }))
   })
