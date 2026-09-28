@@ -1399,7 +1399,7 @@ export function Guests() {
   const [filter, setFilter] = useState('all')
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
-  const [plus, setPlus] = useState(false)
+  const [familyMember, setFamilyMember] = useState('')
   /* Телефон гостя — десять цифр после +7. Раньше ввести его было негде, и
      «Напомнить не ответившим» не находила ни одного адресата: сервер честно
      отвечал «без телефона» на каждого. */
@@ -1480,8 +1480,12 @@ export function Guests() {
        выбрасывались, и гость заводился без SMS-напоминания (ревью 015). */
     if (phone.length > 0 && phone.length !== PHONE_DIGITS) { setErr(t('Телефон — десять цифр после +7, или оставьте поле пустым')); return }
     void write('new', async () => {
-      await addGuest(weddingId!, { name: name.trim(), plusOne: plus, ...(phone.length === PHONE_DIGITS ? { phone: `+7${phone}` } : {}) })
-      setName(''); setPlus(false); setPhone(''); setAdding(false)
+      await addGuest(weddingId!, {
+        name: name.trim(),
+        ...(familyMember.trim() ? { members: [{ name: familyMember.trim() }] } : {}),
+        ...(phone.length === PHONE_DIGITS ? { phone: `+7${phone}` } : {}),
+      })
+      setName(''); setFamilyMember(''); setPhone(''); setAdding(false)
     })
   }
   /* Пустое поле стирает номер (`null`): контракт различает «не трогать» и «убрать». */
@@ -1496,10 +1500,8 @@ export function Guests() {
   })
 
   const yes = list.filter(g => g.status === 'yes').length
-  // Считаем людей, а не записи: «Ольга и Денис» с +1 — это двое за столом
-  // и две порции у кейтеринга. Иначе счётчики расходятся со сводкой ниже.
-  const persons = (status: string) =>
-    list.filter(g => g.status === status).reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
+  // 020: одна строка списка = одна реальная персона. Скрытого +1 больше нет.
+  const persons = (status: string) => list.filter(g => g.status === status).length
   const shown = filter === 'all' ? list : list.filter(g => g.status === filter)
   const waiting = list.filter(g => g.status === 'pending').length
 
@@ -1568,8 +1570,11 @@ export function Guests() {
               <span className="text-[13px] text-[var(--soft)] tabular">+7</span>
               <input value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, PHONE_DIGITS))} onKeyDown={e => e.key === 'Enter' && add()} inputMode="tel" placeholder={t('Телефон — для SMS-напоминания (необязательно)')} className="flex-1 bg-transparent text-[13px] outline-none tabular" />
             </div>
+            <input value={familyMember} onChange={e => setFamilyMember(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()}
+              placeholder={t('Второй человек семьи (необязательно)')} aria-label={t('Второй человек семьи')}
+              className="w-full h-11 px-4 rounded-full bg-[var(--bg)] text-[13px] outline-none" />
+            <p className="text-[10.5px] text-[var(--soft)]">{t('У каждого человека будет отдельный RSVP, меню, место и трансфер; ссылка у семьи одна.')}</p>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPlus(!plus)} className={cn('press px-3.5 py-2 rounded-full text-[11.5px] font-semibold', plus ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)] text-[var(--soft)]')}>{t('с +1')}</button>
               <div className="flex-1" />
               <button onClick={() => setAdding(false)} className="press px-4 py-2 text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
               <button disabled={busyId === 'new'} onClick={add} className="press px-5 py-2 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">{busyId === 'new' ? t('Сохраняем…') : t('Добавить')}</button>
@@ -1604,7 +1609,7 @@ export function Guests() {
               </div>
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{g.name}</b>
-                <span className="text-[10px] text-[var(--soft)]">{g.plus ? t('с +1') : t('один/одна')}</span>
+                <span className="text-[10px] text-[var(--soft)]">{t('отдельная персона')}</span>
                 {/* Телефон — единственное, что пара вводит за гостя: по нему
                     уходит напоминание. Пустое поле стирает номер. */}
                 {phoneEdit === g.id ? (
