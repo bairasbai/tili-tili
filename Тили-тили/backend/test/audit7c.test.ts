@@ -252,8 +252,8 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
     await drainDealEvents()
     // Раздел 5 требует «push паре и подрядчику» — раньше истечение брони
     // не сообщало никому.
-    expect(await titlesOf(vendor.userId)).toContain('Сделка вернулась в кандидаты')
-    expect(await titlesOf(w.userId)).toContain('Сделка вернулась в кандидаты')
+    expect(await titlesOf(vendor.userId)).toContain('Сделка вернулась к статусу «Не связывались»')
+    expect(await titlesOf(w.userId)).toContain('Сделка вернулась к статусу «Не связывались»')
   })
 
   /* ── сводка по гостям ─────────────────────────────────────────────── */
