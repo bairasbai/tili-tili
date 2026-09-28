@@ -57,6 +57,11 @@ interface YamlOperation {
   requestBody?: { content?: Record<string, { schema?: Record<string, unknown> }> }
   responses?: Record<string, { description?: string; $ref?: string }>
 }
+interface YamlSchema {
+  [key: string]: unknown
+  properties?: Record<string, YamlSchema>
+  oneOf?: YamlSchema[]
+}
 interface Op {
   method: Method
   openapiPath: string
@@ -458,8 +463,80 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.44.0 (017-B + фича 018; F5-14 сохранён)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.44.0')
+  it('версия контракта — 0.45.0 (017 + 018 + 019; F5-14 сохранён)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.45.0')
+  })
+
+  describe('019: shortlist, запросы предложений и принятие', () => {
+    const schemas = (doc.components as { schemas: Record<string, YamlSchema> }).schemas
+
+    it('семь операций 019 присутствуют ровно на ожидаемых путях', () => {
+      const expected = [
+        'GET /vendor/offer-requests',
+        'POST /vendor/offer-requests/{requestId}/offers',
+        'POST /weddings/{weddingId}/offers/{offerId}/accept',
+        'PUT /weddings/{weddingId}/shortlist/{vendorId}',
+        'POST /weddings/{weddingId}/slots/{slotId}/offer-requests',
+        'GET /weddings/{weddingId}/slots/{slotId}/shortlist',
+        'DELETE /weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}',
+      ]
+      const actual = ops
+        .filter((op) => expected.includes(opKey(op.method, op.openapiPath)))
+        .map((op) => opKey(op.method, op.openapiPath))
+        .sort()
+      expect(actual).toEqual([...expected].sort())
+    })
+
+    it('shortlist адресует замену/удаление stable entryId', () => {
+      const put = findOp(ops, 'put', '/weddings/{weddingId}/shortlist/{vendorId}')!
+      const body = put.item.requestBody?.content?.['application/json']?.schema as YamlSchema
+      expect(body).toMatchObject({
+        type: 'object',
+        additionalProperties: false,
+        properties: { replaceEntryId: { type: 'string', format: 'uuid' } },
+      })
+      expect(body.required).toBeUndefined()
+      expect(hasStatus(put, '409')).toBe(true)
+      expect(hasStatus(put, '422')).toBe(true)
+
+      const del = findOp(ops, 'delete', '/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}')!
+      expect(findParam(doc, del, 'entryId', 'path')).toMatchObject({ required: true })
+      expect(findParam(doc, del, 'vendorId', 'path')).toBeUndefined()
+    })
+
+    it('схемы предложения разделяют приватный ответ, безопасный статус и строгий ввод', () => {
+      for (const name of [
+        'Offer', 'OfferInput', 'OfferPublic', 'OfferRequest',
+        'PositiveMoney', 'ShortlistEntry', 'VendorPackage', 'VendorPackageInput',
+      ]) expect(schemas[name], name).toBeDefined()
+
+      expect(schemas.Offer.oneOf).toHaveLength(2)
+      expect(schemas.OfferInput.oneOf).toHaveLength(3)
+      expect(schemas.OfferPublic).toMatchObject({ additionalProperties: false, required: ['status'] })
+      expect(schemas.ShortlistEntry.properties?.request?.oneOf).toEqual([
+        { $ref: '#/components/schemas/OfferRequest' },
+        { $ref: '#/components/schemas/OfferPublic' },
+      ])
+    })
+
+    it('batch пары и ответ подрядчика закрепляют idempotency и квоты', () => {
+      const batch = findOp(ops, 'post', '/weddings/{weddingId}/slots/{slotId}/offer-requests')!
+      expect(findParam(doc, batch, 'Idempotency-Key', 'header')).toMatchObject({ required: true })
+      const input = batch.item.requestBody?.content?.['application/json']?.schema as YamlSchema
+      expect(input.properties?.entryIds).toMatchObject({ type: 'array', minItems: 1, maxItems: 3, uniqueItems: true })
+      expect(hasStatus(batch, '429')).toBe(true)
+
+      const answer = findOp(ops, 'post', '/vendor/offer-requests/{requestId}/offers')!
+      expect(findParam(doc, answer, 'Idempotency-Key', 'header')).toMatchObject({ required: true })
+      expect(answer.item.requestBody?.content?.['application/json']?.schema).toEqual({
+        $ref: '#/components/schemas/OfferInput',
+      })
+      expect(hasStatus(answer, '429')).toBe(true)
+
+      const accept = findOp(ops, 'post', '/weddings/{weddingId}/offers/{offerId}/accept')!
+      expect(findParam(doc, accept, 'Idempotency-Key', 'header')).toMatchObject({ required: true })
+      expect(hasStatus(accept, '409')).toBe(true)
+    })
   })
 
   describe('G-a: идемпотентность — 400 и правильный Idempotency-Key у операций, чей обработчик её читает', () => {

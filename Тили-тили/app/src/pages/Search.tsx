@@ -1,24 +1,154 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router'
 import { Search as SearchIcon, SlidersHorizontal, Play, MapPin, Calendar, Check, Phone } from 'lucide-react'
 import { fmt, rub } from '@/lib/money'
 import { CATEGORY_TILE, DEFAULT_TILE } from '@/lib/categoryTiles'
 import { getAvailability, getCategories, getVendors, getVendor, requestConcierge, reviewsPendingRating, type Vendor, type VendorFilters } from '@/lib/api/catalog'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { formatWeddingDate, monthGrid, monthTitle } from '@/lib/weddingDate'
-import { TopBar, VendorCard } from '@/components/chrome'
+import { ShortlistReplaceDialog, TopBar, VendorCard } from '@/components/chrome'
 import { AsyncState, ErrorState, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { getVendorReviews } from '@/lib/api/reviews'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { getWedding } from '@/lib/api/weddingData'
-import { ensureSlotForCategory } from '@/lib/api/slots'
+import { bookSlot, cancelSlot, ensureSlotForCategory, removeExternal } from '@/lib/api/slots'
+import { addShortlistCandidate, getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
 import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
 import { cn, copyText, currentMonth, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { isAuthorized } from '@/lib/api/client'
+import { ApiError, isAuthorized } from '@/lib/api/client'
+import { listMyWeddings } from '@/lib/api/wedding'
 import { t } from '@/lib/i18n'
+import { OfferRequestComposer } from '@/components/OfferRequestComposer'
+import { OfferSummary } from '@/components/OfferSummary'
+
+function shortlistFromError(error: unknown): ShortlistEntry[] | null {
+  if (!(error instanceof ApiError) || error.code !== 'shortlist_full') return null
+  const entries = error.details.shortlist
+  return Array.isArray(entries) ? entries as ShortlistEntry[] : null
+}
+
+function candidateError(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'slot_missing')
+    return t('Сначала пара должна добавить это место в свадьбу')
+  return explainError(error)
+}
+
+/** Явное подтверждение, какую существующую отметку заменить при лимите в три. */
+function CandidateControl({ weddingId, slotId, vendorId, vendorName, entries, canAdd, onAdded, onSettled }: {
+  weddingId: string | null
+  slotId?: string
+  vendorId: string
+  vendorName: string
+  entries: ShortlistEntry[]
+  canAdd: boolean
+  onAdded: (entry: ShortlistEntry) => void
+  onSettled: () => void
+}) {
+  const nav = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [replace, setReplace] = useState<ShortlistEntry[] | null>(null)
+  const [replaceErr, setReplaceErr] = useState<string | null>(null)
+  const existing = entries.find(entry => entry.vendor?.id === vendorId)
+
+  const add = async () => {
+    if (!weddingId || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setErr(null)
+    try {
+      const entry = await addShortlistCandidate(weddingId, vendorId)
+      onAdded(entry)
+      onSettled()
+    } catch (error) {
+      const full = shortlistFromError(error)
+      if (full) {
+        setReplace(full)
+        setReplaceErr(null)
+        onSettled()
+      } else {
+        setErr(candidateError(error))
+      }
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
+
+  const replaceEntry = async (entry: ShortlistEntry) => {
+    if (!weddingId || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setReplaceErr(null)
+    try {
+      /* Сервер проверяет stable entryId и меняет запись под одной блокировкой.
+         Клиент не может оставить список без кандидата между DELETE и PUT. */
+      const added = await addShortlistCandidate(weddingId, vendorId, entry.id)
+      onAdded(added)
+      setReplace(null)
+      onSettled()
+    } catch (error) {
+      const full = shortlistFromError(error)
+      if (full) {
+        setReplace(full)
+        setReplaceErr(t('Кандидаты изменились. Выберите, кого заменить'))
+      } else {
+        setReplaceErr(candidateError(error))
+      }
+      onSettled()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
+
+  if (existing) return slotId === existing.slotId
+    ? <button type="button" onClick={() => nav(`/wedding/slot/${existing.slotId}`)} className="press text-[10.5px] font-semibold text-[var(--sage-ink)] underline underline-offset-2">{t('✓ Уже в кандидатах')}</button>
+    : <span role="status" className="text-[10.5px] font-semibold text-[var(--sage-ink)]">{t('✓ Добавлено — обновляем место…')}</span>
+  if (!weddingId || (!canAdd && !replace && !err)) return null
+
+  return (
+    <>
+      {canAdd && <button type="button" disabled={busy} onClick={() => void add()} className="press px-3.5 h-9 rounded-full bg-[var(--rose-soft)] text-[var(--rose-ink)] text-[11px] font-semibold disabled:opacity-50">
+        {busy ? t('Добавляем…') : t('В кандидаты')}
+      </button>}
+      {err && <p role="alert" className="text-[10.5px] text-[var(--rose-ink)] mt-1.5">{err}</p>}
+      {replace && <ShortlistReplaceDialog
+        entries={replace}
+        incomingName={vendorName}
+        busy={busy}
+        error={replaceErr}
+        onClose={() => { if (!busy) { setReplace(null); setReplaceErr(null) } }}
+        onReplace={entry => void replaceEntry(entry)}
+      />}
+    </>
+  )
+}
+
+/** Кандидатские действия не притворяются пустыми, пока права и места ещё неизвестны. */
+function CandidateLoadState({ active, slotsState, roles, shortlist, readsShortlist, hasSlot, retrySlots }: {
+  active: boolean
+  slotsState: 'idle' | 'loading' | 'ready' | 'error'
+  roles: ReturnType<typeof useApi>
+  shortlist: ReturnType<typeof useApi>
+  readsShortlist: boolean
+  hasSlot: boolean
+  retrySlots: () => void
+}) {
+  if (!active) return null
+  if (!ready(roles)) return <div className="mt-2"><AsyncState q={roles} /></div>
+  if (slotsState === 'error') return <div className="mt-2"><ErrorState error={t('Сервер недоступен. Попробуйте позже')} retry={retrySlots} /></div>
+  if (slotsState !== 'ready') return <p className="mt-2 py-2 text-center text-[11px] text-[var(--soft)]">{t('Проверяем доступ…')}</p>
+  if (readsShortlist && hasSlot && (!ready(shortlist) || shortlist.refreshing)) {
+    if (shortlist.refreshing) return <p className="mt-2 py-2 text-center text-[11px] text-[var(--soft)]">{t('Проверяем доступ…')}</p>
+    return <div className="mt-2"><AsyncState q={shortlist} /></div>
+  }
+  return null
+}
 
 /* Каталог категорий */
 export function SearchCategories() {
@@ -113,7 +243,7 @@ export function SearchCategories() {
 export function VendorList() {
   const { catId = 'photo' } = useParams()
   const nav = useNavigate()
-  const { city, weddingDate, weddingId } = useStore()
+  const { city, weddingDate, weddingId, slots, slotsState, refreshSlots } = useStore()
   const [filter, setFilter] = useState('free')
   const [showFilters, setShowFilters] = useState(true)
   /* Радиус поиска (фича 011, блокер №16). Умолчание 100 — ровно то, что сервер
@@ -123,6 +253,26 @@ export function VendorList() {
 
   const cats = useApi(() => getCategories(), [])
   const cat = (cats.data ?? []).find(c => c.id === catId)
+  const slot = slots.find(s => s.categoryId === catId)
+  const myWeddings = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const role = myWeddings.data?.find(w => w.id === weddingId)?.role
+  const canReadShortlist = role === 'couple' || role === 'helper' || role === 'coordinator'
+  const shortlist = useApi(
+    () => weddingId && slot?.id && canReadShortlist ? getShortlist(weddingId, slot.id) : Promise.resolve([] as ShortlistEntry[]),
+    [weddingId, slot?.id, canReadShortlist],
+  )
+  const candidateAccessReady = ready(myWeddings) && slotsState === 'ready'
+  const canManageCandidates = candidateAccessReady
+    && (role === 'couple' || (role === 'helper' && !!slot))
+  const canAddCandidate = canManageCandidates
+    && !shortlist.refreshing
+    && (!slot || ready(shortlist))
+  const [justAdded, setJustAdded] = useState<{ scope: string; entry: ShortlistEntry } | null>(null)
+  const shortlistScope = `${weddingId ?? ''}:${catId}`
+  const shortlistEntries = [
+    ...(shortlist.data ?? []),
+    ...(justAdded?.scope === shortlistScope && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
+  ]
 
   /*
    * Фильтры отрабатывает сервер, а не браузер.
@@ -248,7 +398,7 @@ export function VendorList() {
         ))}
         {/* Сравниваем ту категорию, которую человек и открыл: без неё экран
             сравнения показывал бы избранное, а он пришёл из списка фотографов. */}
-        <button onClick={() => nav(`/compare?cat=${catId}`)} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
+        <button onClick={() => nav(slot?.id ? `/compare?slot=${slot.id}` : `/compare?cat=${catId}`)} className="press px-4 py-2.5 rounded-full text-[11.5px] font-semibold whitespace-nowrap bg-[var(--card)] text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{t('⇄ Сравнить')}</button>
         {/* Радиус — отдельным выбором, не чипом-переключателем: он сочетается с
             любым чипом. Смена — новый запрос и новая первая страница (ключ). */}
         <select value={radius} onChange={e => setRadius(Number(e.target.value))} aria-label={t('Радиус поиска')}
@@ -257,6 +407,17 @@ export function VendorList() {
           {[50, 100, 300].map(km => <option key={km} value={km}>{`${t('до')} ${km} ${t('км')}`}</option>)}
         </select>
       </div>}
+      <div className="px-5">
+        <CandidateLoadState
+          active={!!weddingId}
+          slotsState={slotsState}
+          roles={myWeddings}
+          shortlist={shortlist}
+          readsShortlist={canReadShortlist}
+          hasSlot={!!slot}
+          retrySlots={refreshSlots}
+        />
+      </div>
       <div className="px-5 mt-4 space-y-3.5 stagger">
         {list.loading && <p className="text-[12px] text-[var(--soft)] py-6 text-center">{t('Загружаем каталог…')}</p>}
         {/* Перезапрашиваем оба: при недоступном сервере падает и список, и
@@ -276,6 +437,17 @@ export function VendorList() {
             categoryIcon={cat?.icon}
             tile={CATEGORY_TILE[catId] ?? DEFAULT_TILE}
             freeOnDate={filter === 'free' && !!weddingDate}
+            candidateAction={v.id && (canManageCandidates || shortlistEntries.some(entry => entry.vendor?.id === v.id)) ? <CandidateControl
+              weddingId={weddingId}
+              slotId={slot?.id}
+              vendorId={v.id}
+              vendorName={v.name ?? t('Подрядчик')}
+              entries={shortlistEntries}
+              canAdd={canAddCandidate}
+              onAdded={entry => setJustAdded({ scope: shortlistScope, entry })}
+              onSettled={() => { shortlist.reload(); refreshSlots() }}
+            /> : undefined}
+            candidateStatus={candidateAccessReady && role === 'helper' && !slot ? t('Сначала пара должна добавить это место в свадьбу') : undefined}
             onOpen={() => nav(`/vendor/${v.id}`)} />
         ))}
         {/* Кнопка стоит, пока сервер отдаёт курсор: без него список дочитан. */}
@@ -338,10 +510,14 @@ export function VendorDetail() {
 
 function VendorDetailView({ id }: { id: string | undefined }) {
   const nav = useNavigate()
-  const { slots, bookVendor, city, weddingDate, weddingId } = useStore()
+  const location = useLocation()
+  const { slots, slotsState, bookVendor, city, weddingDate, weddingId, refreshSlots } = useStore()
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [replaceBusy, setReplaceBusy] = useState(false)
+  const [replaceError, setReplaceError] = useState<string | null>(null)
+  const [replaced, setReplaced] = useState(false)
   const [chatBusy, setChatBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /* Жалоба на анкету (§18.2) — своя шторка, `POST /complaints`. */
@@ -430,7 +606,54 @@ function VendorDetailView({ id }: { id: string | undefined }) {
    */
   const own = useApi(() => getVendorProfile().catch(() => null), [])
   const mine = !!v?.id && ((!!own.data?.id && own.data.id === v.id) || v.published !== undefined || v.blocked !== undefined)
+  const replaceSlotId = new URLSearchParams(location.search).get('replaceSlot')
+  const replaceIntent = !!replaceSlotId
   const slot = slots.find(s => s.categoryId === v?.categoryId)
+  const requestedReplaceSlot = replaceSlotId ? slots.find(s => s.id === replaceSlotId) : undefined
+  const myWeddings = useApi(() => weddingId ? listMyWeddings() : Promise.resolve([]), [weddingId])
+  const role = myWeddings.data?.find(w => w.id === weddingId)?.role
+  const canReadShortlist = role === 'couple' || role === 'helper' || role === 'coordinator'
+  const shortlistSlot = replaceIntent ? requestedReplaceSlot : slot
+  const shortlist = useApi(
+    () => weddingId && shortlistSlot?.id && canReadShortlist ? getShortlist(weddingId, shortlistSlot.id) : Promise.resolve([] as ShortlistEntry[]),
+    [weddingId, shortlistSlot?.id, canReadShortlist],
+  )
+  const candidateAccessReady = ready(myWeddings) && slotsState === 'ready'
+  const canManageCandidates = candidateAccessReady
+    && (role === 'couple' || (role === 'helper' && !!slot))
+  const canAddCandidate = canManageCandidates
+    && !shortlist.refreshing
+    && (!slot || ready(shortlist))
+  const [justAdded, setJustAdded] = useState<{ scope: string; entry: ShortlistEntry } | null>(null)
+  const shortlistScope = `${weddingId ?? ''}:${v?.categoryId ?? ''}`
+  const shortlistEntries = [
+    ...(shortlist.data ?? []),
+    ...(justAdded?.scope === shortlistScope && !shortlist.data?.some(entry => entry.id === justAdded.entry.id) ? [justAdded.entry] : []),
+  ]
+  const candidateEntry = v?.id ? shortlistEntries.find(entry => entry.vendor?.id === v.id) : undefined
+  const alreadyCandidate = !!candidateEntry
+  const replaceEntry = replaceIntent && v?.id
+    ? shortlistEntries.find(entry => entry.vendor?.id === v.id && entry.available === true && entry.occupancy !== 'busy')
+    : undefined
+  const replaceReady = candidateAccessReady && ready(shortlist) && ready(detail)
+  const canReplace = replaceReady
+    && role === 'couple'
+    && !!replaceSlotId
+    && !!requestedReplaceSlot
+    && requestedReplaceSlot.categoryId === v?.categoryId
+    && requestedReplaceSlot.state === 'booked'
+    && !!requestedReplaceSlot.dealId
+    && requestedReplaceSlot.dealState !== 'done'
+    && requestedReplaceSlot.vendorId !== v?.id
+    && !!replaceEntry
+  const replaceIntentError = !replaceIntent || replaceError || replaced || !replaceReady ? null
+    : role !== 'couple' ? t('Замену брони может подтвердить только пара')
+    : !requestedReplaceSlot || requestedReplaceSlot.categoryId !== v?.categoryId
+      || requestedReplaceSlot.state !== 'booked' || !requestedReplaceSlot.dealId
+      || requestedReplaceSlot.dealState === 'done' || requestedReplaceSlot.vendorId === v?.id
+      ? t('Это место больше нельзя заменить из этой анкеты')
+      : !replaceEntry ? t('Этот кандидат больше не доступен для замены')
+      : null
   /* Этот подрядчик уже в слоте свадьбы (кандидат, бронь, оплата): кнопка
      «Добавить в свадьбу» вела бы в 409 `slot_taken` с советом «сначала
      отмените сделку» — про сделку с ним же. Вместо неё — путь к сделке
@@ -473,6 +696,33 @@ function VendorDetailView({ id }: { id: string | undefined }) {
       setErr(explainError(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const replaceBooking = async () => {
+    const price = v?.packages?.[pkg]?.price?.amount
+    const replaceWeddingId = weddingId
+    if (!canReplace || !replaceWeddingId || !requestedReplaceSlot || !v?.id || price == null || replaceBusy) return
+    setReplaceError(null)
+    setReplaceBusy(true)
+    let oldBookingCancelled = false
+    try {
+      await (requestedReplaceSlot.external
+        ? removeExternal(replaceWeddingId, requestedReplaceSlot.id)
+        : cancelSlot(replaceWeddingId, requestedReplaceSlot.id))
+      oldBookingCancelled = true
+      await bookSlot(replaceWeddingId, requestedReplaceSlot.id, v.id, price, v.packages?.[pkg]?.id)
+      setReplaced(true)
+    } catch (error) {
+      const detail = explainError(error)
+      setReplaceError(oldBookingCancelled
+        ? `${t('Старая бронь уже отменена, но новую подтвердить не удалось')}: ${detail}`
+        : detail)
+    } finally {
+      setReplaceBusy(false)
+      /* Сначала завершены обе операции, поэтому только один перечитанный
+         снимок состояния может обновить форму после замены. */
+      refreshSlots()
     }
   }
 
@@ -522,7 +772,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
     <div className="pb-32">
       <TopBar back title={cat?.title ?? t('Анкета подрядчика')} sub={t('Анкета подрядчика')} right={
         <button onClick={() => {
-          const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${cat?.title ?? ''} · ${t(city)}${v.priceFrom?.amount != null ? `${t(' · от ')}${fmt(v.priceFrom.amount)}` : ''}`, url: location.href }
+          const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${cat?.title ?? ''} · ${t(city)}${v.priceFrom?.amount != null ? `${t(' · от ')}${fmt(v.priceFrom.amount)}` : ''}`, url: window.location.href }
           if (navigator.share) navigator.share(data).catch(() => {})
           else { copyText(`${data.title}\n${data.text}\n${data.url}`); setShared(true); setTimeout(() => setShared(false), 1500) }
         }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{shared ? t('Скопировано') : t('Поделиться')}</button>
@@ -643,19 +893,66 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         <h2 className="font-serif-d text-[19px] px-1 mb-2">{t('Пакеты и цены')}</h2>
         <div className="space-y-2.5">
           {(v.packages ?? []).map((p, k) => (
-            <button key={p.name} onClick={() => setPkg(k)} className={cn('press w-full card p-4 text-left', pkg === k && 'ring-2 ring-[var(--rose)]')}>
+            <button key={p.id ?? `${k}-${p.name}`} onClick={() => setPkg(k)} className={cn('press w-full card p-4 text-left', pkg === k && 'ring-2 ring-[var(--rose)]')}>
               <div className="flex justify-between items-center">
                 <b className="text-[14px]">{p.name}</b>
-                <span className="font-serif-d text-[17px] text-[var(--rose-ink)] font-semibold tabular">{p.price?.amount != null ? fmt(p.price.amount) : ''}</span>
+                <span className={cn('font-serif-d text-[17px] font-semibold tabular', p.price?.amount != null ? 'text-[var(--rose-ink)]' : 'text-[var(--soft)] text-[12px]')}>{p.price?.amount != null ? fmt(p.price.amount) : t('цена не названа')}</span>
               </div>
               <ul className="mt-2 space-y-1">
-                {(p.includes ?? []).map(it => (
-                  <li key={it} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[var(--sage-deep)]" />{it}</li>
+                {(p.includes ?? []).map((it, index) => (
+                  <li key={`${index}-${it}`} className="text-[11.5px] text-[var(--soft)] flex items-center gap-1.5"><Check size={11} className="text-[var(--sage-deep)]" />{it}</li>
                 ))}
               </ul>
             </button>
           ))}
         </div>
+        <CandidateLoadState
+          active={!!weddingId}
+          slotsState={slotsState}
+          roles={myWeddings}
+          shortlist={shortlist}
+          readsShortlist={canReadShortlist}
+          hasSlot={!!shortlistSlot}
+          retrySlots={refreshSlots}
+        />
+        {replaceIntent && replaceIntentError && <p role="alert" className="mt-3 text-[11px] text-[var(--rose-ink)]">{replaceIntentError}</p>}
+        {replaceIntent && !mine && (canReplace || !!replaceError || replaced) && (
+          <div className="mt-3">
+            {replaceError && <p role="alert" className="mb-2 text-[11px] text-[var(--rose-ink)]">{replaceError}</p>}
+            {replaced ? (
+              <p role="status" className="text-[11px] font-semibold text-[var(--sage-ink)]">{t('Подрядчик заменён в свадьбе')}</p>
+            ) : canReplace ? (
+              <button type="button" disabled={replaceBusy || v.packages?.[pkg]?.price?.amount == null} onClick={() => void replaceBooking()} className="press px-4 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">
+                {replaceBusy ? t('Заменяем подрядчика…') : t('Заменить в свадьбе')}
+              </button>
+            ) : null}
+          </div>
+        )}
+        {!replaceIntent && v.id && !mine && (canManageCandidates || alreadyCandidate) && (
+          <div className="mt-3">
+            <div className="flex items-center gap-3">
+              <CandidateControl
+                weddingId={weddingId}
+                slotId={slot?.id}
+                vendorId={v.id}
+                vendorName={v.name ?? t('Подрядчик')}
+                entries={shortlistEntries}
+                canAdd={canAddCandidate}
+                onAdded={entry => setJustAdded({ scope: shortlistScope, entry })}
+                onSettled={() => { shortlist.reload(); refreshSlots() }}
+              />
+            </div>
+            {role === 'couple' && weddingId && candidateEntry && (
+              <>
+                {candidateEntry.request && <div className="card-s rounded-[16px] p-3 mt-3 text-[11px]"><OfferSummary request={candidateEntry.request} currentWeddingDate={weddingDate} /></div>}
+                <OfferRequestComposer weddingId={weddingId} slotId={candidateEntry.slotId} entries={[candidateEntry]} onChanged={shortlist.reload} />
+              </>
+            )}
+          </div>
+        )}
+        {v.id && !mine && candidateAccessReady && role === 'helper' && !slot && (
+          <p className="mt-3 text-[11px] text-[var(--soft)]">{t('Сначала пара должна добавить это место в свадьбу')}</p>
+        )}
       </div>
 
       {/* Календарь */}
@@ -791,13 +1088,13 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             нём показывается словами: плавающий промис без catch молча не
             делал ничего при 401/403/429 и обрыве сети (ревью D5-15). */}
         <button disabled={chatBusy} onClick={openChat} className="press flex-1 h-[52px] rounded-full bg-[var(--card)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: 'var(--shadow)' }}>{chatBusy ? t('Открываем чат…') : t('Написать')}</button>
-        {dealHere && !added ? (
+        {!replaceIntent && (dealHere && !added ? (
           <button onClick={() => nav(`/deal/${dealHere}`)} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('✓ В моей свадьбе · открыть сделку')}</button>
         ) : (
         <button onClick={add} disabled={busy || added} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
           {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
         </button>
-        )}
+        ))}
       </div>
       )}
       {err && (

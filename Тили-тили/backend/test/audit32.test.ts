@@ -360,7 +360,7 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
    * T013 · пакет сделки
    * ═══════════════════════════════════════════════════════════════════ */
   describe('T013 · сделка помнит пакет', () => {
-    it('бронь по пакету → packageName в слоте и в сделке; снятый пакет → null', async () => {
+    it('бронь по пакету → неизменяемый packageName в слоте и сделке после снятия пакета', async () => {
       const vendor = await newVendor('Пакетный', 'photo', { packages: [{ name: `Базовый ${RUN}`, price: RUB(5_000_000) }] })
       const { rows: packages } = await sql<{ id: string }>('select id from vendor_packages where vendor_id = $1', [
         vendor.vendorId,
@@ -374,8 +374,16 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
       const dealId = (booked.json() as SlotView).deal!.id
       // До фикса: пакет проверялся и забывался — колонка пустая, имени нет.
       expect((booked.json() as SlotView).deal!.packageName).toBe(`Базовый ${RUN}`)
-      const { rows } = await sql<{ package_id: string | null }>('select package_id from deals where id = $1', [dealId])
-      expect(rows[0]!.package_id).toBe(packageId)
+      const { rows } = await sql<{
+        package_id: string | null
+        package_title_snapshot: string | null
+        package_includes_snapshot: string[] | null
+      }>('select package_id, package_title_snapshot, package_includes_snapshot from deals where id = $1', [dealId])
+      expect(rows[0]).toEqual({
+        package_id: packageId,
+        package_title_snapshot: `Базовый ${RUN}`,
+        package_includes_snapshot: [],
+      })
       expect((await slotIn(w, 'photo')).deal!.packageName).toBe(`Базовый ${RUN}`)
 
       // Карточка сделки — тот же `toDeal`: правка сметы отдаёт сделку с пакетом.
@@ -394,9 +402,19 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
       const mine = (cabinet.json() as { items: { id: string; packageName: string | null }[] }).items.find((d) => d.id === dealId)
       expect(mine?.packageName, 'кабинет подрядчика видит пакет проданной брони').toBe(`Базовый ${RUN}`)
 
-      // Подрядчик снял пакет с витрины — сделка остаётся, имя пакета честно пустое.
+      // Подрядчик снял пакет с витрины — ссылка обнулилась, но условия сделки неизменны.
       await sql('delete from vendor_packages where id = $1', [packageId])
-      expect((await slotIn(w, 'photo')).deal!.packageName).toBeNull()
+      expect((await slotIn(w, 'photo')).deal!.packageName).toBe(`Базовый ${RUN}`)
+      const { rows: after } = await sql<{
+        package_id: string | null
+        package_title_snapshot: string | null
+        package_includes_snapshot: string[] | null
+      }>('select package_id, package_title_snapshot, package_includes_snapshot from deals where id = $1', [dealId])
+      expect(after[0]).toEqual({
+        package_id: null,
+        package_title_snapshot: `Базовый ${RUN}`,
+        package_includes_snapshot: [],
+      })
     })
 
     it('бронь без пакета → packageName: null', async () => {

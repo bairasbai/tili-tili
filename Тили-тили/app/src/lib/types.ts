@@ -37,4 +37,5 @@ export interface Slot {
   dealState?: DealState
   /** Название пакета, по которому бронировали; нет — бронь без пакета или пакет снят с витрины. */
   packageName?: string
+  packageIncludes?: string[]
 }

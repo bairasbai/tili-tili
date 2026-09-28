@@ -12,6 +12,7 @@ import { fmt } from '@/lib/money'
 import { useT } from '@/lib/useT'
 import { activeTab, cn, goBack } from '@/lib/utils'
 import { catIcon } from '@/lib/icons'
+import type { ShortlistEntry } from '@/lib/api/shortlist'
 
 /* Верхняя шапка страницы */
 /*
@@ -167,12 +168,14 @@ export function VendorTabBar() {
  * `rating` — null при честном `reviewsCount`. Прежняя шаблонная строка
  * печатала «★ null (2)» буквами (ревью D5-02).
  */
-export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, onOpen }: {
+export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, candidateAction, candidateStatus, onOpen }: {
   v: ServerVendor
   categoryTitle?: string
   categoryIcon?: string
   tile?: string
   freeOnDate?: boolean
+  candidateAction?: React.ReactNode
+  candidateStatus?: string
   onOpen: () => void
 }) {
   const { favorites, toggleFav } = useStore()
@@ -211,6 +214,61 @@ export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, o
         <button onClick={() => toggleFav(id)} className="press w-9 h-9 rounded-full bg-[var(--bg)] flex items-center justify-center shrink-0" aria-label={t('В избранное')}>
           <Heart size={16} className={fav ? 'fill-[#C98A8A] text-[var(--rose-ink)]' : 'text-[var(--soft)]'} />
         </button>
+      </div>
+      {(candidateAction || candidateStatus) && <div className="px-3.5 pb-3.5 -mt-1 flex items-center justify-between gap-2">
+        {candidateStatus && <span className="text-[10.5px] font-semibold text-[var(--sage-ink)]">{candidateStatus}</span>}
+        {candidateAction}
+      </div>}
+    </div>
+  )
+}
+
+/** Выбор конкретной отметки для замены — никогда не удаляем кандидата неявно. */
+export function ShortlistReplaceDialog({ entries, incomingName, busy, error, onClose, onReplace }: {
+  entries: ShortlistEntry[]
+  incomingName: string
+  busy: boolean
+  error: string | null
+  onClose: () => void
+  onReplace: (entry: ShortlistEntry) => void
+}) {
+  const dialog = useRef<HTMLDivElement>(null)
+  const close = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    close.current?.focus()
+    return () => previous?.focus()
+  }, [])
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={t('Заменить кандидата')} className="fixed inset-0 z-[70] bg-black/45 flex items-end justify-center" onClick={onClose} onKeyDown={e => {
+      if (e.key === 'Escape' && !busy) { e.preventDefault(); onClose(); return }
+      if (e.key !== 'Tab') return
+      const controls = Array.from(dialog.current?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') ?? [])
+      if (!controls.length) return
+      const first = controls[0]!
+      const last = controls[controls.length - 1]!
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+    }}>
+      <div ref={dialog} className="w-full max-w-[430px] rounded-t-[26px] bg-[var(--bg)] px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-serif-d text-[20px]">{t('Место заполнено')}</h2>
+            <p className="text-[12px] text-[var(--soft)] mt-1 leading-relaxed">{t('Выберите, кого заменить, чтобы добавить')} {incomingName}.</p>
+          </div>
+          <button ref={close} type="button" onClick={onClose} disabled={busy} className="press w-9 h-9 rounded-full bg-[var(--card)] text-[var(--soft)] disabled:opacity-50" aria-label={t('Закрыть')}>×</button>
+        </div>
+        {error && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] mt-3 leading-relaxed">{error}</p>}
+        <div className="space-y-2 mt-4">
+          {entries.map(entry => (
+            <button key={entry.id} type="button" disabled={busy} onClick={() => onReplace(entry)} className="press w-full card-s px-4 py-3 flex items-center justify-between gap-3 text-left disabled:opacity-50">
+              <span className="min-w-0"><b className="block text-[12.5px] truncate">{entry.position}. {entry.vendor?.name ?? t('Анкета недоступна')}</b><span className="text-[10px] text-[var(--soft)]">{t('Заменить этого кандидата')}</span></span>
+              <span className="text-[11px] font-semibold text-[var(--rose-deep)] shrink-0">{busy ? t('Заменяем…') : t('Заменить')}</span>
+            </button>
+          ))}
+        </div>
+        {!entries.length && <p className="text-[12px] text-[var(--soft)] mt-4">{t('Список кандидатов изменился. Обновите страницу и попробуйте снова.')}</p>}
       </div>
     </div>
   )

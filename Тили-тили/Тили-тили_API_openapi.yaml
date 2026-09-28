@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.44.0
+  version: 0.45.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -929,6 +929,352 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '422': { $ref: '#/components/responses/Validation' }
+  /weddings/{weddingId}/shortlist/{vendorId}:
+    put:
+      tags: [bookings]
+      summary: Добавить подрядчика в кандидаты места
+      description: |
+        Место ищется по текущей категории живой опубликованной анкеты.
+        Если места нет, пара создаёт его этим же вызовом; помощник получает
+        409 `slot_missing`. Повторный PUT того же подрядчика идемпотентен и возвращает
+        ту же запись. Необязательный `replaceEntryId` атомарно заменяет запись,
+        но только если тройка всё ещё полна и этот id всё ещё принадлежит этому
+        месту. Входящий уже есть — ничего не удаляется; позиция освободилась — он
+        просто добавляется. Устаревший или чужой `replaceEntryId` — 409 `shortlist_full` со
+        свежей тройкой без удаления. Открытый запрос пара закрывает как `removed`,
+        помощник получает 409 `request_open`. Больше трёх без действующей замены —
+        409 `shortlist_full` с текущими тремя в `error.details.shortlist`; скрытая,
+        заблокированная, удалённая или
+        неизвестная анкета — 409 `vendor_unavailable`. Отменённая свадьба —
+        409 `wedding_cancelled`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: vendorId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                replaceEntryId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Кандидат добавлен или уже был в этом месте
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShortlistEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`shortlist_full`, `request_open`, `vendor_unavailable`, `slot_missing` или `wedding_cancelled`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                additionalProperties: false
+                properties:
+                  error:
+                    type: object
+                    required: [code, message]
+                    additionalProperties: false
+                    properties:
+                      code:
+                        type: string
+                        enum: [shortlist_full, request_open, vendor_unavailable, slot_missing, wedding_cancelled]
+                      message: { type: string }
+                      details:
+                        type: object
+                        required: [shortlist]
+                        additionalProperties: false
+                        properties:
+                          shortlist:
+                            type: array
+                            minItems: 3
+                            maxItems: 3
+                            items: { $ref: '#/components/schemas/ShortlistEntry' }
+        '422': { $ref: '#/components/responses/Validation' }
+  /weddings/{weddingId}/slots/{slotId}/shortlist:
+    get:
+      tags: [bookings]
+      summary: Кандидаты места
+      description: |
+        Карточки и публичные пакеты видит вся команда свадьбы. Занятость:
+        `free` — свободен или занят этой же свадьбой; `held` — идут переговоры с
+        другой парой; `busy` — дата занята; `null` — у свадьбы нет даты или анкета
+        стёрта. После стирания подрядчика остаётся обезличенная позиция с
+        `vendor: null`, `available: null` — без прежних id и имени.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: slotId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ShortlistEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}:
+    delete:
+      tags: [bookings]
+      summary: Убрать кандидата из места
+      description: |
+        Удаление идёт по `ShortlistEntry.id`, поэтому пара может освободить и
+        обезличенную позицию после стирания подрядчика. Бронь и сделка не
+        меняются. Открытый запрос пара закрывает как `removed`; помощник в этом
+        случае получает 409 `request_open`. Отменённая свадьба — 409 `wedding_cancelled`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: slotId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: entryId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Кандидат убран }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`request_open` — помощник не отзывает запрос пары; `wedding_cancelled` — свадьба отменена'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /weddings/{weddingId}/slots/{slotId}/offer-requests:
+    post:
+      tags: [bookings]
+      summary: Запросить предложение у кандидатов места
+      description: |
+        Только пара. `entryIds` — от одного до трёх уникальных идентификаторов
+        записей кандидатов этого места, не id подрядчиков. Ответ `results`
+        сохраняет порядок `entryIds`; `requestId` есть только у `sent`.
+
+        Запрос может уйти части кандидатов: занятая дата, скрытая анкета,
+        смена категории или уже открытый запрос не отменяют `sent` остальным.
+        Если не ушёл ни один, ответ — 409 `no_request_sent` с теми же итогами в
+        `error.details.results`.
+
+        Обязательный `Idempotency-Key`: без него — 400
+        `idempotency_key_required`, длиннее 200 символов — 400
+        `idempotency_key_too_long`, тот же ключ на другое тело — 409
+        `idempotency_key_reused`, ещё выполняется — 409
+        `idempotency_in_progress`.
+
+        Новых запросов — не больше десяти за скользящие 24 часа на свадьбу.
+        Если остатка квоты не хватает на всех пригодных адресатов вызова, он
+        целиком отвечает 429 `offer_requests_limit`: новых строк и уведомлений нет.
+        Эта квота не несёт `Retry-After`. Повтор той же успешной попытки по
+        `Idempotency-Key` возвращает тот же 201 до проверки уже заполненной квоты.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: slotId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entryIds]
+              additionalProperties: false
+              properties:
+                entryIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+                wishes: { type: string, maxLength: 2000 }
+                budgetHint: { $ref: '#/components/schemas/PositiveMoney' }
+      responses:
+        '201':
+          description: Итог по каждому `entryId` в порядке запроса; хотя бы один запрос отправлен
+          headers:
+            Idempotent-Replay:
+              description: '`true` — возвращён сохранённый ответ той же попытки'
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                additionalProperties: false
+                properties:
+                  results:
+                    type: array
+                    minItems: 1
+                    maxItems: 3
+                    description: 'В том же порядке, что `entryIds` в запросе.'
+                    items:
+                      oneOf:
+                        - type: object
+                          required: [entryId, status, requestId]
+                          additionalProperties: false
+                          properties:
+                            entryId: { type: string, format: uuid }
+                            status: { type: string, enum: [sent] }
+                            requestId: { type: string, format: uuid }
+                        - type: object
+                          required: [entryId, status]
+                          additionalProperties: false
+                          properties:
+                            entryId: { type: string, format: uuid }
+                            status:
+                              type: string
+                              enum: [not_shortlisted, busy, already_open, unavailable, category_changed]
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            `no_request_sent` — ни один запрос не ушёл, итоги в `details.results`;
+            `wedding_cancelled` — свадьба отменена; `idempotency_key_reused` и
+            `idempotency_in_progress` — конфликт попытки.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [error]
+                    additionalProperties: false
+                    properties:
+                      error:
+                        type: object
+                        required: [code, message, details]
+                        additionalProperties: false
+                        properties:
+                          code: { type: string, enum: [no_request_sent] }
+                          message: { type: string }
+                          details:
+                            type: object
+                            required: [results]
+                            additionalProperties: false
+                            properties:
+                              results:
+                                type: array
+                                minItems: 1
+                                maxItems: 3
+                                description: 'В том же порядке, что `entryIds` в запросе.'
+                                items:
+                                  oneOf:
+                                    - type: object
+                                      required: [entryId, status, requestId]
+                                      additionalProperties: false
+                                      properties:
+                                        entryId: { type: string, format: uuid }
+                                        status: { type: string, enum: [sent] }
+                                        requestId: { type: string, format: uuid }
+                                    - type: object
+                                      required: [entryId, status]
+                                      additionalProperties: false
+                                      properties:
+                                        entryId: { type: string, format: uuid }
+                                        status:
+                                          type: string
+                                          enum: [not_shortlisted, busy, already_open, unavailable, category_changed]
+                  - type: object
+                    required: [error]
+                    additionalProperties: false
+                    properties:
+                      error:
+                        type: object
+                        required: [code, message]
+                        additionalProperties: false
+                        properties:
+                          code:
+                            type: string
+                            enum: [wedding_cancelled, idempotency_key_reused, idempotency_in_progress]
+                          message: { type: string }
+        '422': { $ref: '#/components/responses/Validation' }
+        '429':
+          description: |
+            `offer_requests_limit` — десять новых запросов за скользящие 24 часа на свадьбу.
+            Вызов атомарен: если квоты не хватает всем пригодным адресатам, ни одна
+            строка и ни одно уведомление не создаются. Заголовка `Retry-After` нет.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                additionalProperties: false
+                properties:
+                  error:
+                    type: object
+                    required: [code, message]
+                    additionalProperties: false
+                    properties:
+                      code: { type: string, enum: [offer_requests_limit] }
+                      message: { type: string }
+  /weddings/{weddingId}/offers/{offerId}/accept:
+    post:
+      tags: [bookings]
+      summary: Принять предложение и забронировать подрядчика
+      description: |
+        Только couple. Цена, название и состав берутся из неизменяемого предложения,
+        а не из тела запроса или нынешнего пакета. Срок включительно по поясу свадьбы.
+        Удаление пакета не отменяет предложение; снятая/заблокированная анкета недоступна.
+        Одна транзакция создаёт сделку, занимает место/дату, закрывает запросы места
+        и анонимно сообщает остальным подрядчикам о выборе другого исполнителя.
+        Повтор успешной попытки с тем же Idempotency-Key возвращает сохранённый Slot.
+        Обязательный ключ: 400 idempotency_key_required/idempotency_key_too_long;
+        409 idempotency_key_reused/idempotency_in_progress — другая/незавершённая попытка.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - name: offerId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Слот с забронированным предложением; повтор не создаёт второй сделки
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Slot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: |
+            offer_expired — срок истёк; offer_stale_date — дата свадьбы изменилась;
+            offer_superseded — подрядчик заменил условия; offer_declined — это отказ;
+            request_closed — запрос закрыт; slot_taken — место уже занято;
+            date_taken — дата у подрядчика занята; vendor_unavailable — анкета недоступна.
+            idempotency_key_reused/idempotency_in_progress — см. описание.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /weddings/{weddingId}/slots/{slotId}/book:
     post:
       tags: [bookings]
@@ -1834,6 +2180,13 @@ paths:
         городов подходят под название — 422 `city_ambiguous`; портфолио с
         видео без длительности — 422 `video_duration_required`; видео длиннее
         предела — 422 `video_too_long`.
+
+        Пакеты сохраняются по `id` (019, FR-006): `id` не своего пакета —
+        чужого, уже удалённого или не uuid — 422 `unknown_package` с полем
+        `packages/{i}/id`, и не записывается ничего; один `id` дважды — 422
+        `validation_failed` с тем же полем. Ответ — анкета, прочитанная в той
+        же транзакции: пакеты в нём идут в присланном порядке, и новый пакет
+        получает `id` на том же месте списка.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1921,6 +2274,108 @@ paths:
       responses:
         '204': { description: OK }
         '422': { $ref: '#/components/responses/Validation' }
+  /vendor/offer-requests:
+    get:
+      tags: [vendor]
+      summary: Запросы предложений подрядчику
+      description: |
+        Возвращает bare array только запросов текущего подрядчика. Условия
+        свадьбы — неизменяемый снимок на момент запроса; данные других
+        кандидатов и их ответы сюда не попадают. Без анкеты подрядчика — 403.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OfferRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /vendor/offer-requests/{requestId}/offers:
+    post:
+      tags: [vendor]
+      summary: Ответить предложением или отказом
+      description: |
+        Только подрядчик, которому адресован запрос. Ответ — либо пакет своей
+        живой анкеты, либо собственные название, цена и обязательный список
+        состава, либо отказ с непустым сообщением. Формы взаимоисключающие:
+        смешивать `packageId` с `title`/`includes` или добавлять поля предложения
+        к отказу нельзя. Если `validUntil` не передан для предложения, сервер
+        ставит седьмой календарный день от сегодня в часовом поясе свадьбы.
+
+        Обязательный `Idempotency-Key`: без него — 400
+        `idempotency_key_required`, длиннее 200 символов — 400
+        `idempotency_key_too_long`, тот же ключ на другое тело — 409
+        `idempotency_key_reused`, ещё выполняется — 409
+        `idempotency_in_progress`. Replay успешной попытки возвращает тот же 201
+        и `Idempotent-Replay: true` до проверки квоты.
+
+        Не больше пяти новых версий за скользящие 24 часа на запрос. Шестая —
+        429 `offer_revisions_limit` с `Retry-After` от 1 до 86400 секунд; replay
+        уже записанной версии квоту не расходует. Закрытый запрос и запрос с
+        уже принятым предложением — 409 `request_closed`; скрытая, заблокированная
+        или удалённая анкета — 409 `vendor_unavailable`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OfferInput' }
+      responses:
+        '201':
+          description: Новая версия ответа создана
+          headers:
+            Idempotent-Replay:
+              description: '`true` только у повторного ответа на уже выполненную попытку'
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`request_closed`, `vendor_unavailable`, `idempotency_key_reused` или `idempotency_in_progress`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: '`validation_failed` или `unknown_package` — пакет не принадлежит анкете подрядчика'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: '`offer_revisions_limit` — пять новых версий за 24 часа уже созданы'
+          headers:
+            Retry-After:
+              description: Секунд до освобождения места в скользящем окне
+              schema: { type: integer, minimum: 1, maximum: 86400 }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                additionalProperties: false
+                properties:
+                  error:
+                    type: object
+                    required: [code, message]
+                    additionalProperties: false
+                    properties:
+                      code: { type: string, enum: [offer_revisions_limit] }
+                      message: { type: string }
   /vendor/leads:
     get:
       tags: [vendor]
@@ -2059,7 +2514,12 @@ paths:
                         packageName:
                           type: string
                           nullable: true
-                          description: 'пакет, по которому бронировали; null — без пакета или пакет снят с витрины'
+                          description: 'снимок принятого названия; не зависит от удаления живого пакета'
+                        packageIncludes:
+                          type: array
+                          nullable: true
+                          items: { type: string }
+                          description: 'снимок принятого состава; null — состав не был известен'
                         state: { type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled] }
                         paid:
                           allOf: [{ $ref: '#/components/schemas/Money' }]
@@ -5146,21 +5606,236 @@ components:
                   durationS: { type: integer, nullable: true }
             packages:
               type: array
-              items:
-                type: object
-                properties:
-                  id: { type: string }
-                  name: { type: string }
-                  price: { $ref: '#/components/schemas/Money' }
-                  includes: { type: array, items: { type: string } }
+              description: 'В порядке, заданном подрядчиком.'
+              items: { $ref: '#/components/schemas/VendorPackage' }
             reviews:
               type: array
               items: { $ref: '#/components/schemas/Review' }
+    VendorPackage:
+      type: object
+      description: |
+        Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не
+        удаляющая пакет, его не меняет, и брони называют пакет, как до правки
+        (019, FR-006).
+      required: [id, name, price, includes]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        price:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          nullable: true
+          description: '`null` — цена не названа («по запросу»), а не 0 ₽ (R-281).'
+        includes:
+          type: array
+          description: 'Что входит в пакет — пунктами.'
+          items: { type: string }
+    ShortlistEntry:
+      type: object
+      required: [id, slotId, position, createdAt, available, occupancy, vendor]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 'Стабильный id записи шорт-листа; по нему запись удаляется.'
+        slotId: { type: string, format: uuid }
+        position: { type: integer, minimum: 1, maximum: 3 }
+        createdAt: { type: string, format: date-time }
+        available:
+          type: boolean
+          nullable: true
+          description: |
+            `true` — живая анкета той же категории; `false` — анкета скрыта,
+            заблокирована или сменила категорию; `null` — обезличенный tombstone.
+        occupancy:
+          type: string
+          nullable: true
+          enum: [free, held, busy, null]
+          description: |
+            Занятость на дату свадьбы. `null` — дата не выбрана или анкета стёрта;
+            своя бронь этой свадьбы считается `free`.
+        request:
+          description: |
+            Паре — полный запрос с действующим ответом, если он уже есть;
+            помощнику и координатору — только обезличенный статус. Поля нет,
+            пока пара не отправила запрос этому кандидату.
+          oneOf:
+            - { $ref: '#/components/schemas/OfferRequest' }
+            - { $ref: '#/components/schemas/OfferPublic' }
+        vendor:
+          type: object
+          nullable: true
+          required: [id, name, categoryId, city, priceFrom, rating, reviewsCount, photoUrl, verified, hasVideo, packages]
+          additionalProperties: false
+          description: |
+            Публичная карточка кандидата. `null` — подрядчик стёрт: прежние id,
+            имя и другие данные не возвращаются. У скрытой/заблокированной анкеты
+            медиа, цены и пакеты не возвращаются.
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            categoryId: { type: string }
+            city: { type: string, nullable: true }
+            priceFrom:
+              allOf: [{ $ref: '#/components/schemas/Money' }]
+              nullable: true
+            rating: { type: number, nullable: true }
+            reviewsCount: { type: integer, minimum: 0 }
+            photoUrl: { type: string, nullable: true }
+            verified: { type: boolean }
+            hasVideo: { type: boolean }
+            packages:
+              type: array
+              items: { $ref: '#/components/schemas/VendorPackage' }
+    PositiveMoney:
+      type: object
+      description: Положительная сумма в копейках; в 019 принимается только RUB.
+      required: [amount, currency]
+      additionalProperties: false
+      properties:
+        amount: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        currency: { type: string, enum: [RUB] }
+    Offer:
+      description: |
+        Точная публичная форма одной версии ответа: оба варианта имеют ровно
+        девять полей. У `decline` поля предложения равны только `null`, а
+        `includes` строго пуст; у `offer` название, положительная цена и срок
+        не могут быть `null`.
+      oneOf:
+        - type: object
+          title: Предложение
+          required: [id, requestId, kind, packageId, title, price, includes, message, validUntil]
+          additionalProperties: false
+          properties:
+            id: { type: string, format: uuid }
+            requestId: { type: string, format: uuid }
+            kind: { type: string, enum: [offer] }
+            packageId: { type: string, format: uuid, nullable: true }
+            title: { type: string, minLength: 1, maxLength: 200 }
+            price: { $ref: '#/components/schemas/PositiveMoney' }
+            includes:
+              type: array
+              maxItems: 40
+              items: { type: string, maxLength: 200 }
+            message: { type: string, maxLength: 2000, nullable: true }
+            validUntil:
+              type: string
+              format: date
+              pattern: ^\d{4}-\d{2}-\d{2}$
+        - type: object
+          title: Отказ
+          required: [id, requestId, kind, packageId, title, price, includes, message, validUntil]
+          additionalProperties: false
+          properties:
+            id: { type: string, format: uuid }
+            requestId: { type: string, format: uuid }
+            kind: { type: string, enum: [decline] }
+            packageId: { type: string, format: uuid, nullable: true, enum: [null] }
+            title: { type: string, nullable: true, enum: [null] }
+            price: { type: object, nullable: true, enum: [null] }
+            includes:
+              type: array
+              minItems: 0
+              maxItems: 0
+              items: { type: string }
+            message: { type: string, minLength: 1, maxLength: 2000 }
+            validUntil:
+              type: string
+              format: date
+              nullable: true
+              enum: [null]
+    OfferRequest:
+      type: object
+      description: Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику.
+      required: [id, status, weddingDate, guests, city, wishes, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [open, closed] }
+        closeReason:
+          type: string
+          enum: [removed, booked_other, booked, wedding_cancelled, date_changed, vendor_erased]
+        weddingDate:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          nullable: true
+        guests: { type: integer, minimum: 0, maximum: 5000, nullable: true }
+        city: { type: string, minLength: 1, maxLength: 200, nullable: true }
+        wishes: { type: string, maxLength: 2000, nullable: true }
+        createdAt: { type: string, format: date-time }
+        budgetHint: { $ref: '#/components/schemas/PositiveMoney' }
+        offer: { $ref: '#/components/schemas/Offer' }
+    OfferPublic:
+      type: object
+      description: Безопасный статус для помощника и координатора без условий и ответа подрядчика.
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [pending, responded] }
+    OfferInput:
+      description: Пакет, своё предложение или отказ — ровно одна из трёх строгих форм.
+      oneOf:
+        - type: object
+          title: Ответ пакетом анкеты
+          required: [kind, packageId, price]
+          additionalProperties: false
+          properties:
+            kind: { type: string, enum: [offer] }
+            packageId: { type: string, format: uuid }
+            price: { $ref: '#/components/schemas/PositiveMoney' }
+            message: { type: string, maxLength: 2000 }
+            validUntil:
+              type: string
+              format: date
+              pattern: ^\d{4}-\d{2}-\d{2}$
+        - type: object
+          title: Собственное предложение
+          required: [kind, title, price, includes]
+          additionalProperties: false
+          properties:
+            kind: { type: string, enum: [offer] }
+            title: { type: string, minLength: 1, maxLength: 200 }
+            price: { $ref: '#/components/schemas/PositiveMoney' }
+            includes:
+              type: array
+              maxItems: 40
+              items: { type: string, maxLength: 200 }
+            message: { type: string, maxLength: 2000 }
+            validUntil:
+              type: string
+              format: date
+              pattern: ^\d{4}-\d{2}-\d{2}$
+        - type: object
+          title: Отказ
+          required: [kind, message]
+          additionalProperties: false
+          properties:
+            kind: { type: string, enum: [decline] }
+            message: { type: string, minLength: 1, maxLength: 2000 }
+    VendorPackageInput:
+      type: object
+      description: |
+        Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который
+        остаётся тем же (имя, цена, состав и место в списке обновляются);
+        без `id` — новый. Цены нет — поле не присылается: `null` не
+        принимается, пакет хранится без цены (R-281).
+      required: [name]
+      properties:
+        id: { type: string, maxLength: 64 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        price: { $ref: '#/components/schemas/Money' }
+        includes:
+          type: array
+          maxItems: 40
+          items: { type: string, maxLength: 200 }
     VendorUpsert:
       type: object
       description: |
         Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):
-        **поля нет — список не трогаем, пустой массив — очищаем**.
+        **поля нет — список не трогаем, пустой массив — очищаем**. Пакеты
+        сохраняются по `id`: присланный с `id` — тот же пакет, без `id` —
+        новый, неприсланный удаляется (019, FR-006).
 
         Иначе экран, который списком не занимается — мастер анкеты портфолио не
         редактирует, загрузка ждёт хранилища, — стирал бы чужие работы при
@@ -5199,12 +5874,8 @@ components:
             поля прежнее подтверждение не трогают.
         packages:
           type: array
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              price: { $ref: '#/components/schemas/Money' }
-              includes: { type: array, items: { type: string } }
+          maxItems: 20
+          items: { $ref: '#/components/schemas/VendorPackageInput' }
         portfolioUrls:
           type: array
           description: 'Фотографии портфолио. Для видео нужен `media` — там есть длительность.'
@@ -5651,8 +6322,13 @@ components:
           type: string
           nullable: true
           description: |
-            Название пакета, по которому бронировали (`packageId` в
-            `POST …/book`). null — бронь без пакета или пакет снят с витрины.
+            Снимок принятого названия, только couple: текст может содержать цену.
+            Удаление живого пакета/предложения не меняет его. null — название неизвестно.
+        packageIncludes:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: 'Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав.'
         price: { $ref: '#/components/schemas/Money' }
         paid:
           allOf: [{ $ref: '#/components/schemas/Money' }]

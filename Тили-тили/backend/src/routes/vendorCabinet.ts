@@ -1,13 +1,58 @@
 import type { FastifyInstance } from 'fastify'
 import { ref } from '../contract/schemas.generated.js'
-import { AppError, conflict, forbidden, notFound } from '../errors.js'
-import { uuidv7, isUuid } from '../ids.js'
+import { withIdempotency } from '../deals/idempotency.js'
+import { AppError, TooManyRequests, conflict, forbidden, notFound, validationFailed } from '../errors.js'
+import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { PAID_SUM } from '../deals/repo.js'
 import { sendChatMessage } from '../chats/post.js'
+import { notifyCoupleOfferEvent } from '../offers/notify.js'
 import { isUniqueViolation } from '../plugins/db.js'
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
+
+type OfferInput =
+  | {
+      kind: 'offer'
+      packageId: string
+      price: { amount: number; currency: 'RUB' }
+      message?: string
+      validUntil?: string
+    }
+  | {
+      kind: 'offer'
+      title: string
+      price: { amount: number; currency: 'RUB' }
+      includes: string[]
+      message?: string
+      validUntil?: string
+    }
+  | { kind: 'decline'; message: string }
+
+interface OfferViewRow {
+  id: string
+  request_id: string
+  kind: 'offer' | 'decline'
+  package_id: string | null
+  title: string | null
+  price: string | null
+  currency: string
+  includes: string[]
+  message: string | null
+  valid_until: string | null
+}
+
+const toOffer = (row: OfferViewRow) => ({
+  id: row.id,
+  requestId: row.request_id,
+  kind: row.kind,
+  packageId: row.package_id,
+  title: row.title,
+  price: row.price === null ? null : { amount: Number(row.price), currency: row.currency },
+  includes: row.includes,
+  message: row.message,
+  validUntil: row.valid_until,
+})
 
 export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -67,14 +112,283 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     )
   }
 
-  /* ── обновления от пар (§13.2) ────────────────────────────────────── */
+  /* ── запросы предложений (019) ───────────────────────────────────── */
+  /** Снимки условий и только активная версия ответа текущего подрядчика. */
+  app.get('/vendor/offer-requests', { preHandler: app.requireConsent }, async (request) => {
+    const vendorId = await myVendorId(request.caller!.userId)
+    const { rows } = await db().query<{
+      id: string
+      status: 'open' | 'closed'
+      close_reason: string | null
+      wedding_date: string | null
+      guests: number | null
+      city: string | null
+      wishes: string | null
+      budget_hint: string | null
+      currency: string
+      created_at: Date
+      offer_id: string | null
+      offer_kind: 'offer' | 'decline' | null
+      offer_package_id: string | null
+      offer_title: string | null
+      offer_price: string | null
+      offer_currency: string | null
+      offer_includes: string[] | null
+      offer_message: string | null
+      offer_valid_until: string | null
+    }>(
+      `select r.id, r.status, r.close_reason, r.wedding_date::text as wedding_date,
+              r.guests, r.city, r.wishes, r.budget_hint::text as budget_hint,
+              r.currency, r.created_at,
+              o.id as offer_id, o.kind as offer_kind, o.package_id as offer_package_id,
+              o.title as offer_title, o.price::text as offer_price,
+              o.currency as offer_currency, o.includes as offer_includes,
+              o.message as offer_message, o.valid_until::text as offer_valid_until
+         from offer_requests r
+         left join lateral (
+           select id, request_id, kind, package_id, title, price, currency,
+                  includes, message, valid_until
+             from offers
+            where request_id = r.id and superseded_at is null
+            limit 1
+         ) o on true
+        where r.vendor_id = $1
+        order by r.created_at desc, r.id desc`,
+      [vendorId],
+    )
+
+    // Bare array: кабинет не видит ни других кандидатов, ни их ответов.
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      ...(row.close_reason === null ? {} : { closeReason: row.close_reason }),
+      weddingDate: row.wedding_date,
+      guests: row.guests,
+      city: row.city,
+      wishes: row.wishes,
+      createdAt: row.created_at.toISOString(),
+      ...(row.budget_hint === null
+        ? {}
+        : { budgetHint: { amount: Number(row.budget_hint), currency: row.currency } }),
+      ...(row.offer_id === null
+        ? {}
+        : {
+            offer: toOffer({
+              id: row.offer_id,
+              request_id: row.id,
+              kind: row.offer_kind!,
+              package_id: row.offer_package_id,
+              title: row.offer_title,
+              price: row.offer_price,
+              currency: row.offer_currency!,
+              includes: row.offer_includes!,
+              message: row.offer_message,
+              valid_until: row.offer_valid_until,
+            }),
+          }),
+    }))
+  })
+
+  app.post(
+    '/vendor/offer-requests/:requestId/offers',
+    {
+      preHandler: app.requireConsent,
+      schema: {
+        params: {
+          type: 'object',
+          required: ['requestId'],
+          additionalProperties: false,
+          properties: { requestId: UUID_ID },
+        },
+        body: ref('OfferInput'),
+      },
+    },
+    async (request, reply) => {
+      const { requestId } = request.params as { requestId: string }
+      const body = request.body as OfferInput
+
+      /* Replay идёт до проверок статуса, анкеты и квоты: после
+       * успеха запрос могли закрыть, а пятая версия — заполнить квоту;
+       * оба события не отменяют уже сохранённый ответ. */
+      return withIdempotency(db(), request, reply, 'vendor.offer-response', (tx) =>
+        tx(async (client) => {
+          /* Запрос FOR UPDATE сериализует ответы, будущий accept, квоту
+           * и смену активной версии. Сам offer здесь не запираем: правка
+           * анкеты сначала держит vendor, а удаление пакета через FK
+           * SET NULL обновляет offer; замок offer перед vendor дал бы deadlock. */
+          const { rows: requests } = await client.query<{
+            status: 'open' | 'closed'
+            vendor_id: string
+            slot_id: string
+            wedding_id: string
+            wedding_tz: string | null
+            default_valid_until: string
+          }>(
+            `select r.status, r.vendor_id, r.slot_id, s.wedding_id,
+                    w.tz as wedding_tz,
+                    ((now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date + 7)::text
+                      as default_valid_until
+               from offer_requests r
+               join vendors owner on owner.id = r.vendor_id and owner.user_id = $2
+               join slots s on s.id = r.slot_id
+               join weddings w on w.id = s.wedding_id
+              where r.id = $1
+              for update of r`,
+            [requestId, request.caller!.userId],
+          )
+          const offerRequest = requests[0]
+          // Чужой и несуществующий UUID неразличимы: никакого оракула чужих запросов.
+          if (!offerRequest) throw notFound('Запрос не найден')
+
+          const { rows: activeRows } = await client.query<{ id: string; accepted_at: Date | null }>(
+            `select id, accepted_at from offers
+              where request_id = $1 and superseded_at is null`,
+            [requestId],
+          )
+          const active = activeRows[0] ?? null
+          if (offerRequest.status !== 'open' || active?.accepted_at) {
+            throw conflict('request_closed', 'Запрос уже закрыт')
+          }
+
+          const { rows: vendors } = await client.query<{
+            published_at: Date | null
+            blocked_at: Date | null
+            deleted_at: Date | null
+          }>(
+            `select v.published_at, v.blocked_at, u.deleted_at
+               from vendors v join users u on u.id = v.user_id
+              where v.id = $1 and v.user_id = $2
+              for share of v, u`,
+            [offerRequest.vendor_id, request.caller!.userId],
+          )
+          const vendor = vendors[0]
+          if (!vendor || !vendor.published_at || vendor.blocked_at || vendor.deleted_at) {
+            throw conflict('vendor_unavailable', 'Анкета недоступна')
+          }
+
+          const { rows: usageRows } = await client.query<{ n: number; retry_after: number | null }>(
+            `select count(*)::int as n,
+                    greatest(1, least(86400,
+                      ceil(extract(epoch from
+                        (min(created_at) + interval '24 hours' - now())))::int
+                    )) as retry_after
+               from offers
+              where request_id = $1 and created_at > now() - interval '24 hours'`,
+            [requestId],
+          )
+          const usage = usageRows[0]!
+          if (usage.n >= 5) {
+            throw new TooManyRequests(
+              usage.retry_after ?? 86_400,
+              'На один запрос можно отправить не более пяти версий за 24 часа',
+              'offer_revisions_limit',
+            )
+          }
+
+          let packageId: string | null = null
+          let packageSnapshot: Record<string, unknown> | null = null
+          let title: string | null = null
+          let price: number | null = null
+          let includes: string[] = []
+          let message: string | null
+          let validUntil: string | null = null
+
+          if (body.kind === 'decline') {
+            message = body.message.trim()
+            if (!message) throw validationFailed({ message: 'Напишите причину отказа' })
+          } else {
+            price = body.price.amount
+            message = body.message?.trim() || null
+            validUntil = body.validUntil ?? offerRequest.default_valid_until
+            // Ограничение хранилища не должно выливать как 500 на форматно верную дату.
+            if (validUntil < '2000-01-01' || validUntil > '2100-12-31') {
+              throw validationFailed({ validUntil: 'Дата должна быть между 2000-01-01 и 2100-12-31' })
+            }
+
+            if ('packageId' in body) {
+              const { rows: packages } = await client.query<{
+                id: string
+                name: string
+                price: string | null
+                currency: string
+                items: string[]
+              }>(
+                `select id, name, price::text as price, currency, items
+                   from vendor_packages
+                  where id = $1 and vendor_id = $2
+                  for key share`,
+                [body.packageId, offerRequest.vendor_id],
+              )
+              const selected = packages[0]
+              if (!selected) {
+                throw new AppError(422, 'unknown_package', 'Такого пакета у подрядчика нет', {
+                  packageId: 'пакет не найден в вашей анкете',
+                })
+              }
+              packageId = selected.id
+              title = selected.name
+              includes = selected.items
+              packageSnapshot = {
+                id: selected.id,
+                name: selected.name,
+                price:
+                  selected.price === null
+                    ? null
+                    : { amount: Number(selected.price), currency: selected.currency },
+                includes: selected.items,
+              }
+            } else {
+              title = body.title.trim()
+              if (!title) throw validationFailed({ title: 'Введите название предложения' })
+              includes = body.includes
+            }
+          }
+
+          if (active) {
+            await client.query('update offers set superseded_at = now() where id = $1', [active.id])
+          }
+
+          const id = uuidv7()
+          const { rows: inserted } = await client.query<OfferViewRow>(
+            `insert into offers (
+               id, request_id, kind, package_id, package_snapshot, title, price,
+               currency, includes, message, valid_until, created_by)
+             values ($1,$2,$3,$4,$5::jsonb,$6,$7,'RUB',$8::jsonb,$9,$10::date,$11)
+             returning id, request_id, kind, package_id, title, price::text as price,
+                       currency, includes, message, valid_until::text as valid_until`,
+            [
+              id,
+              requestId,
+              body.kind,
+              packageId,
+              packageSnapshot === null ? null : JSON.stringify(packageSnapshot),
+              title,
+              price,
+              JSON.stringify(includes),
+              message,
+              validUntil,
+              request.caller!.userId,
+            ],
+          )
+
+          // Только пара; ни помощникам, ни координатору деньги и тексты не уходят.
+          await notifyCoupleOfferEvent(
+            client,
+            offerRequest.wedding_id,
+            offerRequest.slot_id,
+            offerRequest.wedding_tz,
+            body.kind,
+          )
+          return { status: 201, body: toOffer(inserted[0]!) }
+        }),
+      )
+    },
+  )
+
+  /* ── обновления от пар (§13.2) ───────────────────────────── */
   /**
-   * Что изменилось у пар по забронированным свадьбам.
-   *
-   * Не уведомление: уведомление уходит в общий список и тонет между
-   * «новое сообщение» и «гость ответил». Здесь короткий список того,
-   * что надо УЧЕСТЬ — пересчитать порции, переставить технику, приехать
-   * к другому часу, — и он закрывается подтверждением.
+   * Короткий список того, что надо учесть по забронированным свадьбам:
+   * пересчитать порции, переставить технику или приехать к другому часу.
    */
   app.get('/vendor/updates', { preHandler: app.requireConsent }, async (request) => {
     const vendorId = await myVendorId(request.caller!.userId)
@@ -240,6 +554,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       paid: string
       hold_alive: boolean
       package_name: string | null
+      package_includes: string[] | null
       bus_routes: { id: string; name: string; from: string | null; time: string | null; seats: number; taken: number }[]
       chat_id: string | null
       contract: { id: string; templateCode: string; version: number; status: string; createdAt: string } | null
@@ -248,7 +563,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
               d.price::text as price, d.currency, d.state, d.negotiating_until,
               ${PAID_SUM}::text as paid,
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
-              pkg.name as package_name,
+              coalesce(d.package_title_snapshot, pkg.name) as package_name,
+              coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
               /* Чат с парой — по свадьбе и анкете (уникальный ключ kind=vendor). */
               (select c.id from chats c where c.kind = 'vendor' and c.wedding_id = d.wedding_id and c.vendor_id = d.vendor_id) as chat_id,
               /* Последняя редакция договора по сделке — только заголовок:
@@ -291,8 +607,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         coupleName: r.couple_name,
         weddingDate: r.wedding_date,
         price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
-        // Что именно продано: пакет с витрины; снятый пакет — null честно (FK SET NULL).
+        // Что именно продано: неизменяемый снимок сделки; живая витрина — fallback старых строк.
         packageName: r.package_name,
+        packageIncludes: r.package_includes,
         state: r.state,
         /* Карточка сделки (План §8.2): отметки оплат — те же `payments`, что у
            пары; чат с парой и заголовок договора — чтобы с карточки было куда

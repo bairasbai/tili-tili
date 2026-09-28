@@ -32,6 +32,7 @@ export interface SlotDeal {
      null — бронь без пакета или пакет снят с витрины; экран сделки показывает
      его только когда он есть. */
   packageName?: string | null
+  packageIncludes?: string[] | null
 }
 
 export interface ServerSlot {

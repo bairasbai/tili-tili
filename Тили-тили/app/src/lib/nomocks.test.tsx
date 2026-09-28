@@ -42,6 +42,7 @@ const ROUTES = [
   '/favorites', '/venues', '/notes', '/tools/alcohol',
   '/vendor-app', '/vendor-app/profile', '/vendor-app/deals', '/vendor-app/verification',
   '/vendor-app/leads/l1', '/vendor-app/deals/d1', '/vendor-app/reviews', '/vendor-app/analytics',
+  '/vendor-app/offer-requests',
   /* Фича 007: чаты и настройки кабинета — те же экраны пары в режиме кабинета. */
   '/vendor-app/chats', '/vendor-app/chats/c1', '/vendor-app/settings', '/vendor-app/notifications',
   '/admin', '/admin/moderation', '/admin/moderation/v1',

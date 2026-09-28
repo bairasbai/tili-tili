@@ -11,8 +11,9 @@ export interface DealRow {
   vendor_city: string | null
   external_name: string | null
   external_phone: string | null
-  /** Название пакета, по которому бронировали; пусто — без пакета или пакет снят с витрины. */
+  /** Название пакета в момент брони; пусто — сделка была без пакета. */
   package_name: string | null
+  package_includes?: string[] | null
   price: string | null
   currency: string
   negotiating_until: Date | null
@@ -44,11 +45,12 @@ export const DEAL_COLUMNS = `
   ${PAID_SUM}::text as paid,
   (select max(p.created_at) from payments p where p.deal_id = d.id and p.status <> 'cancelled') as paid_at,
   ven.name as vendor_name, ven.category_id as vendor_category, vc.name as vendor_city,
-  pkg.name as package_name`
+  coalesce(d.package_title_snapshot, pkg.name) as package_name,
+  coalesce(d.package_includes_snapshot, pkg.items) as package_includes`
 
-/* Пакет — `left join`, а не подзапрос: `deals.package_id` ссылается на
- * `vendor_packages` с `on delete set null`, и снятый с витрины пакет честно
- * оставляет `null`, а не имя из ниоткуда (фича 005). */
+/* Новая сделка читает неизменяемый снимок; `left join` остаётся только
+ * fallback для старой строки без снимка. Миграция 019 заполняет все живые
+ * ссылки, но потерянные до неё пакеты восстановить достоверно нельзя. */
 export const DEAL_JOINS = `
   left join vendors ven on ven.id = d.vendor_id
   left join cities vc on vc.id = ven.city_id
@@ -69,9 +71,11 @@ export function toDeal(r: DealRow, seesMoney: boolean) {
       : null,
     externalName: r.external_name,
     externalPhone: r.external_phone,
-    packageName: r.package_name,
     ...(seesMoney
       ? {
+          // Negotiated titles/includes may themselves contain a price.
+          packageName: r.package_name,
+          packageIncludes: r.package_includes ?? null,
           price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
           // Оплаченное — те же деньги: кто не видит цену, не видит и платежей.
           paid: { amount: Number(r.paid ?? 0), currency: r.currency },

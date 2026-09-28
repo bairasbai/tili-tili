@@ -1335,7 +1335,7 @@ type DealsLookup =
 
 /** Состояние сделки словами — те же слова, что у пары на мозаике. */
 const DEAL_STATE_RU: Record<string, string> = {
-  candidate: 'кандидат',
+  candidate: 'не связывались',
   contacted: 'связались',
   negotiating: 'мягкая бронь',
   booked: 'забронирован',
