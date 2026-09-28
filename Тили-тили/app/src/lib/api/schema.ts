@@ -3033,12 +3033,38 @@ export interface paths {
                             wedding?: components["schemas"]["WeddingPublic"];
                             /** @enum {string} */
                             status?: "yes" | "no" | "pending";
+                            /**
+                             * @deprecated
+                             * @description С 020 всегда false; семейные персоны перечислены в people
+                             */
                             plusOne?: boolean;
                             /** @enum {string|null} */
                             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
                             dietNote?: string | null;
                             /** @enum {string|null} */
                             transfer?: null | "need" | "own";
+                            /** Format: uuid */
+                            invitationId?: string;
+                            people?: {
+                                /** Format: uuid */
+                                id: string;
+                                name: string;
+                                /** @enum {string} */
+                                status: "yes" | "no" | "pending";
+                                /** @enum {string|null} */
+                                diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                                dietNote?: string | null;
+                                /** @enum {string|null} */
+                                transfer?: null | "need" | "own";
+                                /** Format: uuid */
+                                tableId?: string | null;
+                                /** Format: uuid */
+                                menuOptionId?: string | null;
+                                /** Format: uuid */
+                                busId?: string | null;
+                                /** Format: uuid */
+                                hotelId?: string | null;
+                            }[];
                         };
                     };
                 };
@@ -3048,8 +3074,10 @@ export interface paths {
         put?: never;
         /**
          * Ответ гостя (RSVP)
-         * @description `plusOne: true` при уже забронированном автобусе может не поместиться
-         *     в его границу мест — тогда 409 `bus_full`, ответ RSVP не сохраняется.
+         * @description Для семейной ссылки `personId` выбирает конкретную персону. Без него
+         *     старый клиент отвечает за первую персону приглашения. `plusOne: true`
+         *     оставлен только для совместимости и материализует отдельную персону;
+         *     автобус/отель/меню за неё автоматически не выбираются.
          */
         post: {
             parameters: {
@@ -3065,6 +3093,9 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         status: "yes" | "no";
+                        /** Format: uuid */
+                        personId?: string;
+                        /** @deprecated */
                         plusOne?: boolean;
                         comment?: string;
                         /** @enum {string|null} */
@@ -3093,6 +3124,69 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/guest-invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Создать семейное или одиночное приглашение
+         * @description Один канал приглашения объединяет 1–8 реальных персон. Каждая персона
+         *     остаётся отдельной строкой Guest и отдельно отвечает RSVP, выбирает меню,
+         *     стол, автобус и отель. Телефон — канал приглашения; скрытого «+1» нет.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        label?: string;
+                        phone?: string;
+                        group?: string;
+                        people: {
+                            name: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Приглашение создано */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            invitationId: string;
+                            label: string;
+                            people: components["schemas"]["Guest"][];
+                        };
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -6155,6 +6249,8 @@ export interface paths {
                 content: {
                     "application/json": {
                         busId: string;
+                        /** Format: uuid */
+                        personId?: string;
                     };
                 };
             };
@@ -6620,6 +6716,8 @@ export interface paths {
                 content: {
                     "application/json": {
                         hotelId: string;
+                        /** Format: uuid */
+                        personId?: string;
                     };
                 };
             };
@@ -6875,6 +6973,8 @@ export interface paths {
                 content: {
                     "application/json": {
                         optionId: string;
+                        /** Format: uuid */
+                        personId?: string;
                     };
                 };
             };
@@ -6884,9 +6984,17 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            personId?: string;
+                            /** Format: uuid */
+                            optionId?: string;
+                        };
+                    };
                 };
                 401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
             };
         };
         delete?: never;
@@ -10720,8 +10828,20 @@ export interface components {
             custom?: boolean;
         };
         Guest: {
+            /** Format: uuid */
             id?: string;
+            /**
+             * Format: uuid
+             * @description Семейное/одиночное приглашение, к которому относится персона
+             */
+            invitationId?: string;
+            invitationLabel?: string | null;
+            familySize?: number;
             name?: string;
+            /**
+             * @deprecated
+             * @description Совместимость старых клиентов; с 020 всегда false. plusOne=true во входе создаёт отдельную персону.
+             */
             plusOne?: boolean;
             group?: string | null;
             /**
