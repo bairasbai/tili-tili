@@ -64,19 +64,22 @@ Main не менять. Рабочая ветка — `test/020-finalize-2026092
 - [x] T030 Export/erasure: party/token/people корректно входят в выгрузку и 31-day cleanup.
 - [x] T031 Browser E2E: пара создаёт семью из двух персон → одна ссылка → разный RSVP/menu → два места/один номер → один family gift reserve.
 - [x] T032 Полный PostgreSQL/Redis gate, frontend/backend tests/types/lint/build.
-- [x] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
+- [ ] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
 
 ## Порядок
 
 T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 021 не начинать до полного закрытия 020.
 
+## Финализация T033 · 2026-09-28
 
-## Финал · 2026-09-28 ✅
+T001–T032 повторно подтверждены по коду и зелёным gate на code/test SHA `28ed3859293fc83fb5d50705b92cad9812ad4210`.
 
-T001–T033 закрыты. OpenAPI 0.50.0 и generated artifacts синхронизированы. Финальный технический кандидат `a5a40f30f2` прошёл:
-- GitHub Actions CI `36364877609`: frontend 79 файлов / 1059 тестов, backend 107 файлов / 1231 тест, TypeScript, ESLint и production build — success;
-- browser/migration workflow `36364877628`: migration rehearsal `down → legacy seed → up → verify` — success; real Chromium — 5/5 шагов, `pageErrors=[]`;
-- artifact `family020-browser-evidence` id `10946996800`, SHA-256 `5debaeaae6e0b25f7f397af6787ad4537dfb26a56629f4932db0553a8d58ffa5`.
+- CI `36385058391` — success: frontend 79 файлов / 1059 тестов; backend 107 файлов / 1233 теста; `family020.test.ts` 16/16; TypeScript, ESLint, production build, PostgreSQL/Redis migrations — success.
+- В том же CI `schemas.test.ts` 8/8 и `contract-sync.test.ts` 4/4 — generated artifacts соответствуют OpenAPI 0.50.0.
+- Последний отдельный generator run `36382068390` — success на `03e9b7b2c80ef92ebf38218bbe3bf4867021c0ee`. После него OpenAPI не менялся; четыре последующих коммита затронули только person-counting/regressions, а текущий contract-sync остаётся зелёным.
+- Verify 020 family browser `36385058399` — success на `28ed3859…`: legacy rehearsal `down → seed → up → verify` и реальный Chromium без route mocks.
+- Artifact `family020-browser-evidence` id `10954420756`, digest `sha256:1c9bc62a2a63235819c3ecbb8d03c268016946914f78a6071c1d0564abb8f7ae`.
+- Финальный аудит после прежнего handoff закрыл stale `plusOne` в `personCount`/кейтеринге и вместимости столов; частичный family-RSVP закреплён отдельной регрессией.
 
-Main/production не менялись. Подробности — `verification-acceptance.md`.
+T033 остаётся открытым до прохождения полного gate уже на документационном коммите этой финализации. До этого этап 020 **не помечать завершённым** и 021 не начинать.

@@ -1,94 +1,75 @@
-# Передача сессии — 020 завершён ✅
+# Передача сессии — 020 / T033 финализация
 
 Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`.
-Рабочая/принятая ветка этапа: `test/020-finalize-20260928`.
-База этапа — завершённый 019 `da87f1fe9aab19342f68e4a58453a4b35decb943`.
-Main/production этой работой не менялись.
+Рабочая ветка: `test/020-finalize-20260928`.
+В этой работе **не менять main** и **не начинать 021**.
 
-## Что закрыто
+## Текущее фактическое состояние
 
-020 «Семейные приглашения и отдельные персоны» закрыт полностью: T001–T033.
+Code/test base перед документационным коммитом T033:
+`28ed3859293fc83fb5d50705b92cad9812ad4210`
+(`refactor(020): detach catering from plusOne`).
 
-Доменная модель:
-- одно `guest_party` приглашение содержит 1–10 отдельных `guests`;
-- RSVP/menu/table/bus принадлежат конкретной персоне;
-- hotel/gift/fund identity принадлежат семье/party;
-- старый `plusOne` — только compatibility-вход и materialization placeholder-персоны, не скрытый счётчик.
+После переданного владельцем HEAD `03e9b7b2…` ветка получила ещё четыре коммита:
 
-Ключевые свойства:
-- legacy `plusOne=true` мигрирует в две person rows без потери RSVP/menu/table/bus semantics;
-- старый guest token становится общим party token;
-- invite code переводится на party;
-- один старый hotel booking остаётся одним семейным номером;
-- gift identity сохраняется на том же token;
-- создание и импорт принимают `members[]`;
-- добавление/удаление/переименование персоны не меняет family token;
-- при удалении primary следующий человек становится primary;
-- `Guest` отдаёт `partyId/partyPosition/partySize/isPrimary/isPlaceholder`;
-- family token не может изменить человека другой party;
-- menu/shuttle адресуют `guestId`;
-- hotel уникален по `hotel_id + party_id`;
-- fairPrice/кейтринг/рассадка считают person rows ровно один раз;
-- export включает структуру семьи, но не invite token;
-- 31-day cleanup каскадно стирает party/person-owned данные.
+1. `d66b2f4546f9a6674c1eeac428e60dad3e86e81f` — `personCount` считает materialized person rows один раз.
+2. `06cca3f692e10dcbea7e67d8ee7fe3952a87046a` — capacity стола считает `count(*)`, а не `sum(1 + plus_one)`.
+3. `014e7a10326366a7f4e9ac49826f3554d5114721` — regression частичного family-RSVP: отказ одного освобождает только его автобусное место, hotel остаётся пока есть attending member.
+4. `28ed3859293fc83fb5d50705b92cad9812ad4210` — кейтеринг больше даже не читает deprecated `plus_one`.
 
-## Контракт
+## Что подтверждено по T001–T032
 
-OpenAPI: `0.50.0`.
-Generated backend/frontend artifacts синхронизированы коммитом
-`5b4432db5891ad5374a6cafe8c043e45c240a479`.
-Финальный проверенный code/test SHA:
-`a5a40f30f2fb19a4e5ebadc9e6d6b6e72ee256a8`.
+- `guest_parties`, explicit person rows, legacy plusOne migration и compatibility — в миграции `1761600000000_family_guest_parties.cjs` и live migration rehearsal.
+- Family API / import / add-remove-rename / один family token — backend + `family020.test.ts`.
+- Family RSVP по `guestId`, независимые RSVP/diet/transfer — backend regressions.
+- Menu/table/bus — на person; hotel/gift — на party; `fairPrice`/catering/table capacity не используют `1 + plusOne`.
+- Export/31-day erasure, privacy и cross-party isolation — regressions.
+- Concurrency: last bus seat, family hotel tabs, shared gift quota — regressions.
+- OpenAPI 0.50.0 и generated contracts — contract-sync/schemas.
+- Frontend family UI RU/EN — общий frontend gate и `family020Ui.test.ts`.
+- Real browser E2E — PostgreSQL + Fastify + Vite + Chromium, без route mocks.
 
-## Финальная приёмка
+## Последние зелёные gates на code/test base
 
-### CI
-GitHub Actions run `36364877609`:
-- frontend: 79 test files, **1059/1059** tests;
-- backend: 107 test files, **1231/1231** tests;
-- frontend/backend typecheck — success;
-- ESLint — success;
-- frontend production build — success;
-- backend TypeScript build — success;
-- PostgreSQL 16 + Redis 7 подняты в CI;
-- migrations up — success;
-- `contract-sync.test.ts` и `schemas.test.ts` — success.
+### CI — run 36385058391 — SUCCESS
+SHA: `28ed3859293fc83fb5d50705b92cad9812ad4210`.
 
-### Migration rehearsal + real browser
-GitHub Actions run `36364877628`:
-- fresh migrations — success;
-- rollback только 020 → legacy seed → повторный up → verify — success;
-- verification: people=2, menuVotes=2, busBookings=2, hotelBookings=1,
-  inviteCodes=1, giftReservations=1;
-- real Chromium steps:
-  1. пара создаёт двух человек через UI;
-  2. выдаётся одна family invite-link;
-  3. независимый RSVP сохраняется по двум guestId;
-  4. два menu votes + два bus seats + один hotel room;
-  5. один общий family gift reserve;
-- `pageErrors=[]`;
-- artifact `family020-browser-evidence`: id `10946996800`,
-  SHA-256 `5debaeaae6e0b25f7f397af6787ad4537dfb26a56629f4932db0553a8d58ffa5`.
+- frontend: 79 test files, 1059/1059 tests;
+- backend: 107 test files, 1233/1233 tests;
+- `family020.test.ts`: 16/16;
+- `schemas.test.ts`: 8/8;
+- `contract-sync.test.ts`: 4/4;
+- TypeScript, ESLint, frontend production build, backend build — success;
+- PostgreSQL 16 + Redis 7 и migrations — success.
 
-Подробный отчёт:
-`tasks/фичи/020-семейные-приглашения/verification-acceptance.md`.
+### Verify 020 family browser — run 36385058399 — SUCCESS
+SHA: `28ed3859293fc83fb5d50705b92cad9812ad4210`.
 
-## Исправления, найденные при финальном аудите
+Migration rehearsal:
+`{"ok":true,"people":2,"menuVotes":2,"busBookings":2,"hotelBookings":1,"inviteCodes":1,"giftReservations":1}`.
 
-ERR-0331 — primary-delete стирал всю party.
-ERR-0332 — bulk import не принимал explicit family members.
-ERR-0333 — рассчитанный partySize не сериализовался.
-ERR-0334 — сводка кейтеринга повторно прибавляла +1.
-ERR-0335 — два T030-теста лежали вне suite, затем lint поймал stale helper.
-Дополнительно финальный gate обновил устаревшее ожидание CSV `+1` → `Family`
-и browser locator person-resource card; production business logic этим последним
-исправлением не ослаблялась.
+Chromium:
+- pair-created-two-person-family-through-ui;
+- one-family-invite-link-issued;
+- per-person-rsvp-saved;
+- two-menu-votes-two-bus-seats-one-family-room;
+- one-shared-family-gift-reservation;
+- `pageErrors=[]`.
 
-## Следующий этап
+Artifact: `family020-browser-evidence`, id `10954420756`,
+digest `sha256:1c9bc62a2a63235819c3ecbb8d03c268016946914f78a6071c1d0564abb8f7ae`.
 
-Следующий этап roadmap — **021**: постоянные ID событий и контроль версии расписания.
-Не начинать 022 до полного закрытия 021.
+### Generated contract
+Последний отдельный `Generate 020 final contract`: run `36382068390`, SUCCESS,
+SHA `03e9b7b2c80ef92ebf38218bbe3bf4867021c0ee`.
+После него OpenAPI не менялся. Текущий CI на `28ed3859…` повторно подтверждает
+`schemas.test.ts` и `contract-sync.test.ts`, поэтому generated artifacts не stale.
 
-Внешние release blockers остаются прежними: юридические тексты, реальные SMS/S3/VAPID,
-production deployment, эксплуатационный backup/restore drill и пилот на физических устройствах.
-Они не отменяют факт завершения product feature 020 в feature/test поставке.
+## T033
+
+Этот handoff входит в документационную часть T033. До повторного полного gate на самом документационном коммите:
+- T033 оставлять `[ ]`;
+- roadmap 020 не помечать ✅;
+- 021 не начинать.
+
+Новая реальная ошибка финального аудита записана как ERR-0336: вместимость стола после materialization всё ещё использовала deprecated `plus_one`.
