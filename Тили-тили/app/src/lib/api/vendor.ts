@@ -98,6 +98,26 @@ export const getVendorReviews = () => api.get('/vendor/reviews')
 export const replyToReview = (reviewId: string, text: string) =>
   api.post(url('/vendor/reviews/{reviewId}/reply', { reviewId }), { text })
 
+/* ── запросы предложений (019) ── */
+
+export type VendorOfferRequest = components['schemas']['OfferRequest']
+export type VendorOfferInput = components['schemas']['OfferInput']
+
+/** Только запросы текущего подрядчика; чужие кандидаты в ответ не входят. */
+export const getVendorOfferRequests = () => api.get('/vendor/offer-requests')
+
+/** Одна попытка ответа. Ключ приходит с формы и переживает сетевой повтор. */
+export const sendVendorOffer = (
+  requestId: string,
+  body: VendorOfferInput,
+  idempotencyKey: string,
+) => api.post(
+  url('/vendor/offer-requests/{requestId}/offers', { requestId }),
+  body,
+  { idempotencyKey },
+)
+
+
 /* ── сделки, обновления, аналитика ── */
 
 export const getVendorDeals = () => api.get('/vendor/deals')
