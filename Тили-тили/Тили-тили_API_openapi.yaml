@@ -6988,6 +6988,7 @@ components:
         name: { type: string }
         partyId: { type: string, format: uuid, readOnly: true, description: 'одно семейное приглашение для 1–10 персон' }
         partyPosition: { type: integer, minimum: 1, maximum: 10, readOnly: true }
+        partySize: { type: integer, minimum: 1, maximum: 10, readOnly: true, description: 'текущее число персон в семейном приглашении' }
         isPrimary: { type: boolean, readOnly: true, description: 'только у primary показывается inviteUrl' }
         isPlaceholder: { type: boolean, readOnly: true, description: 'системное имя, созданное из старого +1; пара может переименовать' }
         plusOne: { type: boolean, deprecated: true, description: 'переходное поле: true у primary, если в party больше одной персоны; новые клиенты используют partyId/отдельные строки' }
