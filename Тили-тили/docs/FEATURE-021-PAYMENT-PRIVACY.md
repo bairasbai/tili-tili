@@ -14,7 +14,7 @@ Wedding finance endpoints сохраняют RBAC 018-A/B: helper/coordinator/ve
 
 visibility=vendor раскрывает запись только vendor собственной сделки через vendor-scoped endpoints. Все запросы связывают текущий vendorId с dealId; receipt content дополнительно связывает paymentId, receiptId и wedding. Чужая или архивная сделка отвечает безопасным 404.
 
-Новые private и finance_members записи не входят в vendor payment list, receipts, analytics и totals. Для старых записей до миграции сохраняется прежняя vendor-совместимость агрегатов: 021 не может ретроспективно знать намерение видимости.
+Новые private и finance_members записи не входят в vendor payment list, receipts, analytics и totals. Старые строки мигрируются в private, поэтому после 021 они также не раскрываются vendor автоматически; это намеренно безопаснее, чем угадывать историческое согласие.
 
 ## Подтверждения
 
