@@ -621,9 +621,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         packageName: r.package_name,
         packageIncludes: r.package_includes,
         state: r.state,
-        /* Карточка сделки (План §8.2): paid содержит только известные payments,
-           которые пара явно раскрыла этому vendor. private/finance_members не
-           участвуют ни в строке, ни в expected/shortfall. */
+        /* Карточка сделки: новые private/finance_members оплаты не участвуют.
+           Для строк до 021 сохраняется прежняя совместимость агрегатов: их
+           ретроспективную видимость достоверно восстановить нельзя. */
         paid: { amount: Number(r.paid), currency: r.currency },
         unknownAmountPayments: r.unknown_payments,
         chatId: r.chat_id,
