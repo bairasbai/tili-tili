@@ -217,11 +217,18 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
   return s
 })
 
+function replaceBlock(text, startMarker, endMarker, replacement, label) {
+  const from = text.indexOf(startMarker)
+  const to = text.indexOf(endMarker, from + startMarker.length)
+  if (from < 0 || to < 0) throw new Error(\`\${label}: schema boundaries not found\`)
+  return text.slice(0, from) + replacement + text.slice(to)
+}
+
 edit('Тили-тили_API_openapi.yaml', (s0) => {
   let s = replaceOne(s0, '  version: 0.51.0', '  version: 0.52.0', 'contract version')
 
-  const vendorPathsMarker = `  /vendor/updates:`
-  const vendorPaths = `  /vendor/deals/{dealId}/payments:
+  const vendorPathsMarker = '  /vendor/updates:\\n'
+  const vendorPaths = \`  /vendor/deals/{dealId}/payments:
     get:
       tags: [vendor]
       summary: Оплаты своей сделки, раскрытые парой подрядчику
@@ -263,61 +270,11 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
                   contentBase64: {type: string}
         '404': {$ref: '#/components/responses/NotFound'}
 
-`
+\`
   if (!s.includes(vendorPathsMarker)) throw new Error('vendor OpenAPI insertion marker missing')
   s = s.replace(vendorPathsMarker, vendorPaths + vendorPathsMarker)
 
-  s = replaceOne(
-    s,
-    `                    description: 'остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус платежи'`,
-    `                    description: 'остаток по ОТКРЫТЫМ броням по раскрытым подрядчику известным оплатам; private/finance_members не учитываются'`,
-    'vendor expected description',
-  )
-  s = replaceOne(
-    s,
-    `                   items:
-                     type: array
-`,
-    `                   amountIncomplete:
-                     type: boolean
-                     description: Есть раскрытые подрядчику оплаты без сохранённой суммы; числовые итоги являются нижней границей.
-                   items:
-                     type: array
-`,
-    'vendor deal aggregate contract',
-  )
-  s = replaceOne(
-    s,
-    `                        paid:
-                           allOf: [$ref: '#/components/schemas/Money']
-                           description: 'внесено платежами (те же \`payments\`, что видит пара; возвраты с минусом) — карточка сделки, План §8.2'
-`,
-    `                        paid:
-                           allOf: [$ref: '#/components/schemas/Money']
-                           description: 'известная сумма только тех payments этой сделки, для которых пара выбрала visibility=vendor'
-                         unknownAmountPayments:
-                           type: integer
-                           minimum: 0
-                           description: Раскрытые подрядчику факты оплаты без сохранённой суммы.
-`,
-    'vendor paid contract',
-  )
-  s = replaceOne(
-    s,
-    `                   revenue: {$ref: '#/components/schemas/Money'}
-                   revenueDeltaPct:
-`,
-    `                   revenue: {$ref: '#/components/schemas/Money'}
-                   revenueIncomplete:
-                     type: boolean
-                     description: В периоде есть раскрытые подрядчику платежи без сохранённой суммы.
-                   revenueDeltaPct:
-`,
-    'vendor analytics contract',
-  )
-
-  const schemaMarker = `    PaymentSummary:`
-  const paymentEnums = `    PaymentMethod:
+  const enums = \`    PaymentMethod:
       type: string
       enum: [cash, bank_transfer, card, other]
     PaymentVisibility:
@@ -326,113 +283,109 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
       description: |
         private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы
         по-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.
-`
-  if (!s.includes(schemaMarker)) throw new Error('payment schema marker missing')
-  s = s.replace(schemaMarker, paymentEnums + schemaMarker)
+\`
+  if (!s.includes('    PaymentSummary:\\n')) throw new Error('PaymentSummary marker missing')
+  s = s.replace('    PaymentSummary:\\n', enums + '    PaymentSummary:\\n')
 
-  s = replaceOne(
-    s,
-    `      - unknownPrices
-      properties:
-`,
-    `      - unknownPrices
+  const summary = \`    PaymentSummary:
+      type: object
+      required:
+      - committed
+      - recorded
+      - remaining
+      - unallocated
+      - inactiveDealRecorded
+      - unknownPrices
       - unknownAmountPayments
       - amountIncomplete
       properties:
-`,
-    'payment summary required',
-  )
-  s = replaceOne(
-    s,
-    `        unknownPrices:
-           type: integer
-           minimum: 0
-`,
-    `        unknownPrices:
-           type: integer
-           minimum: 0
-         unknownAmountPayments:
-           type: integer
-           minimum: 0
-         amountIncomplete:
-           type: boolean
-           description: true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница.
-`,
-    'payment summary fields',
-  )
-  s = replaceOne(
-    s,
-    `      - allocated
-      properties:
-`,
-    `      - allocated
-      - unknownAmountPayments
-      properties:
-`,
-    'installment required',
-  )
-  s = replaceOne(
-    s,
-    `        cancelReason:
-           type: string
-           nullable: true
-`,
-    `        cancelReason:
-           type: string
-           nullable: true
-         unknownAmountPayments:
-           type: integer
-           minimum: 0
-           description: Факты оплаты этого этапа без сохранённой суммы; не уменьшают числовой remaining.
-`,
-    'installment unknown field',
-  )
+        committed:
+          $ref: '#/components/schemas/FinancialBalance'
+        recorded:
+          $ref: '#/components/schemas/FinancialBalance'
+        remaining:
+          $ref: '#/components/schemas/FinancialBalance'
+        unallocated:
+          $ref: '#/components/schemas/FinancialBalance'
+        inactiveDealRecorded:
+          $ref: '#/components/schemas/FinancialBalance'
+        unknownPrices:
+          type: integer
+          minimum: 0
+        unknownAmountPayments:
+          type: integer
+          minimum: 0
+        amountIncomplete:
+          type: boolean
+          description: true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница.
+      description: |
+        Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма
+        известных отметок минус возвраты; remaining — положительный числовой остаток по каждой
+        активной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.
+\`
+  s = replaceBlock(s, '    PaymentSummary:\\n', '    PaymentInstallment:\\n', summary, 'PaymentSummary')
 
-  const oldRecord = `    PaymentRecord:
+  const installment = \`    PaymentInstallment:
       type: object
       required:
       - id
       - dealId
-      - kind
+      - title
       - amount
-      - status
-      - createdAt
-      - installmentId
+      - paid
+      - remaining
+      - due
       - version
+      - status
+      - overdue
+      - cancelReason
+      - cancelledAt
+      - allocated
+      - unknownAmountPayments
       properties:
+        cancelledAt: {type: string, format: date-time, nullable: true}
         id:
           type: string
           format: uuid
         dealId:
           type: string
           format: uuid
-        kind:
+        title:
           type: string
-          enum:
-          - deposit
-          - balance
-          - refund
         amount:
           $ref: '#/components/schemas/Money'
-        status:
+        paid:
+          $ref: '#/components/schemas/FinancialBalance'
+        allocated:
+          allOf: [$ref: '#/components/schemas/Money']
+          description: |
+            Сколько на этап легло неразнесённых известных денег сделки. Только для показа —
+            привязки не меняются.
+        remaining:
+          allOf: [$ref: '#/components/schemas/Money']
+          description: Сколько осталось по этапу с учётом известных оплат; неизвестная сумма его не уменьшает.
+        due:
           type: string
-          enum:
-          - recorded
-          - confirmed
-          - cancelled
-        createdAt:
-          type: string
-          format: date-time
-        installmentId:
-          type: string
-          format: uuid
-          nullable: true
+          format: date
+          pattern: ^\\d{4}-\\d{2}-\\d{2}$
         version:
           type: integer
           minimum: 1
           maximum: 2147483647
-`
-  const newRecord = `    PaymentRecord:
+        status: {$ref: '#/components/schemas/PaymentInstallmentStatus'}
+        overdue:
+          type: boolean
+        cancelReason:
+          type: string
+          nullable: true
+        unknownAmountPayments:
+          type: integer
+          minimum: 0
+          description: Факты оплаты этого этапа без сохранённой суммы.
+\`
+  s = replaceBlock(s, '    PaymentInstallment:\\n', '    PaymentInstallmentStatus:\\n', installment, 'PaymentInstallment')
+
+  const record = \`    PaymentRecord:
       type: object
       required:
       - id
@@ -456,10 +409,7 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
           format: uuid
         kind:
           type: string
-          enum:
-          - deposit
-          - balance
-          - refund
+          enum: [deposit, balance, refund]
         amount:
           allOf: [{$ref: '#/components/schemas/Money'}]
           nullable: true
@@ -476,10 +426,7 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
           pattern: ^\\d{4}-\\d{2}-\\d{2}$
         status:
           type: string
-          enum:
-          - recorded
-          - confirmed
-          - cancelled
+          enum: [recorded, confirmed, cancelled]
         createdAt:
           type: string
           format: date-time
@@ -501,80 +448,101 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
             type: array
             items:
               $ref: '#/components/schemas/PaymentReceiptMeta'
-`
-  s = replaceOne(s, oldRecord, newRecord, 'PaymentRecord schema')
+\`
+  s = replaceBlock(s, '    PaymentRecord:\\n', '    PaymentDeal:\\n', record, 'PaymentRecord')
 
-  s = replaceOne(
-    s,
-    `      - canPlan
-      properties:
-`,
-    `      - canPlan
+  const deal = \`    PaymentDeal:
+      type: object
+      required:
+      - id
+      - slotId
+      - name
+      - state
+      - price
+      - recorded
+      - remaining
+      - planned
+      - unallocated
+      - needsReview
+      - active
+      - canPlan
       - unknownAmountPayments
       properties:
-`,
-    'payment deal required',
-  )
-  s = replaceOne(
-    s,
-    `        canPlan:
-           type: boolean
-     PaymentSchedule:
-`,
-    `        canPlan:
-           type: boolean
-         unknownAmountPayments:
-           type: integer
-           minimum: 0
-     PaymentSchedule:
-`,
-    'payment deal unknown field',
-  )
-  s = replaceOne(
-    s,
-    `            - remaining
-            properties:
-`,
-    `            - remaining
-            - unknownAmountPayments
-            properties:
-`,
-    'all installments required',
-  )
-  s = replaceOne(
-    s,
-    `              remaining:
-                $ref: '#/components/schemas/Money'
-    PaymentHistoryExport:
-`,
-    `              remaining:
-                $ref: '#/components/schemas/Money'
-              unknownAmountPayments:
-                type: integer
-                minimum: 0
-    PaymentHistoryExport:
-`,
-    'all installments unknown field',
-  )
-
-  const oldPay = `    PaymentInstallmentPay:
-      type: object
-      required:
-      - version
-      - amount
-      properties:
-        version:
+        id: {type: string, format: uuid}
+        slotId: {type: string, format: uuid}
+        name: {type: string}
+        state:
+          type: string
+          enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled]
+        price:
+          $ref: '#/components/schemas/Money'
+          nullable: true
+        recorded:
+          $ref: '#/components/schemas/FinancialBalance'
+        remaining:
+          $ref: '#/components/schemas/Money'
+          nullable: true
+        planned:
+          $ref: '#/components/schemas/Money'
+        unallocated:
+          $ref: '#/components/schemas/FinancialBalance'
+        needsReview: {type: boolean}
+        active: {type: boolean}
+        canPlan: {type: boolean}
+        unknownAmountPayments:
           type: integer
-          minimum: 1
-          maximum: 2147483647
-        amount:
-          $ref: '#/components/schemas/PositivePaymentMoney'
-      additionalProperties: false
-`
-  const newPay = `    PaymentInstallmentPay:
+          minimum: 0
+\`
+  s = replaceBlock(s, '    PaymentDeal:\\n', '    PaymentSchedule:\\n', deal, 'PaymentDeal')
+
+  const schedule = \`    PaymentSchedule:
       type: object
-      required:
-      - version
+      required: [range, readOnly, summary, dueInWindow, overdueRemaining, items, deals, payments, allInstallments]
+      properties:
+        range:
+          type: object
+          required: [from, to, today, timeZone, includeOverdue, includeCancelled]
+          properties:
+            from: {type: string, format: date, pattern: '^\\\\d{4}-\\\\d{2}-\\\\d{2}$'}
+            to: {type: string, format: date, pattern: '^\\\\d{4}-\\\\d{2}-\\\\d{2}$'}
+            today: {type: string, format: date, pattern: '^\\\\d{4}-\\\\d{2}-\\\\d{2}$'}
+            timeZone: {type: string}
+            includeOverdue: {type: boolean}
+            includeCancelled: {type: boolean}
+        readOnly: {type: boolean}
+        summary:
+          $ref: '#/components/schemas/PaymentSummary'
+        dueInWindow:
+          allOf: [$ref: '#/components/schemas/Money']
+        overdueRemaining:
+          allOf: [$ref: '#/components/schemas/Money']
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentInstallment'}
+        deals:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentDeal'}
+        payments:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentRecord'}
+        allInstallments:
+          type: array
+          items:
+            type: object
+            required: [id, dealId, title, status, remaining, unknownAmountPayments]
+            properties:
+              id: {type: string, format: uuid}
+              dealId: {type: string, format: uuid}
+              title: {type: string}
+              status: {$ref: '#/components/schemas/PaymentInstallmentStatus'}
+              remaining: {$ref: '#/components/schemas/Money'}
+              unknownAmountPayments: {type: integer, minimum: 0}
+\`
+  s = replaceBlock(s, '    PaymentSchedule:\\n', '    PaymentHistoryExport:\\n', schedule, 'PaymentSchedule')
+
+  const pay = \`    PaymentInstallmentPay:
+      type: object
+      required: [version]
       properties:
         version:
           type: integer
@@ -600,8 +568,8 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
       description: |
         Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.
         При amountKnown=false числовой долг не уменьшается и итог помечается неполным.
-`
-  s = replaceOne(s, oldPay, newPay, 'PaymentInstallmentPay schema')
+\`
+  s = replaceBlock(s, '    PaymentInstallmentPay:\\n', '    PaymentPlanLink:\\n', pay, 'PaymentInstallmentPay')
   return s
 })
 
