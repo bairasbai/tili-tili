@@ -57,3 +57,16 @@ Source-ветка после тех же финальных test-harness correct
 ## Итог
 
 T001–T033 этапа 020 закрыты как clean merge-candidate. Временный workflow clean-browser удаляется финализационным коммитом. Следующий gate — PR на актуальный `main`, затем post-merge CI. Этап 021 до этого не начинается.
+
+
+## PR / main acceptance · 2026-09-28 ✅
+
+- PR: **#12** `integration/020-clean-main-20260928 → main`.
+- PR head: `d865ef45557314b54dc01ff017dfadfd99055d37`.
+- PR CI: `36365523795` — success.
+- Offers 019 browser regression: `36365523816` — success.
+- Task planning browser regression: `36365523769` — success.
+- Merge commit: `3b2dbabd26701b33da372126fa33b2e4caad4b82`.
+- Post-merge main CI: `36365783985` — success.
+
+Этап 020 слит и проверен на итоговом main. Следующий product stage — 021. Production deployment этими gates не подтверждается.
