@@ -10,27 +10,27 @@ permissions:
 
 jobs:
   integrate-020:
-    if: "github.event.head_commit.message == 'chore(020): resolve clean integration conflicts v2'"
+    if: "github.event.head_commit.message == 'integrate-020-resolved-v3'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply only the 020 delta with three-way merges
+      - name: Apply stage 020 delta on current main
         shell: bash
         run: |
           set -euo pipefail
           BASE=da87f1fe9aab19342f68e4a58453a4b35decb943
-          SOURCE=4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc
+          SOURCE=3663ec8af617d39e7b763db009adad57672b0fc5
           OURS=$(git rev-parse HEAD)
-          git fetch --no-tags origin test/020-finalize-20260928
           git config core.quotepath false
+          git fetch --no-tags origin test/020-finalize-20260928
 
           conflicts=0
           while IFS=$'\t' read -r status path extra; do
             case "$path" in
               .github/workflows/gen-020-contract.yml|.github/workflows/gen-020-final-contract.yml|.github/workflows/verify-020-family-browser.yml)
-                echo "skip disposable workflow: $path"
+                echo "skip source-only workflow: $path"
                 continue
                 ;;
               Тили-тили/backend/src/contract/api.generated.ts|Тили-тили/backend/src/contract/paths.generated.ts|Тили-тили/backend/src/contract/schemas.generated.ts|Тили-тили/app/src/lib/api/schema.ts)
@@ -55,23 +55,22 @@ jobs:
                 git show "$SOURCE:$path" > "$theirs_file"
                 if ! git merge-file -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"; then
                   case "$path" in
-                    Тили-тили/app/src/pages/Wedding.tsx)
-                      sed -i "/^<<<<<<< /,/^>>>>>>> /c\\import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@\/lib\/api\/weddingWrite'" "$out_file"
+                    "Тили-тили/app/src/pages/Wedding.tsx")
+                      python3 -c 'import re,sys; p=sys.argv[1]; s=open(p,encoding="utf-8").read(); pat=re.compile(r"<<<<<<<[^\n]*\n(.*?)=======\n(.*?)>>>>>>>[^\n]*\n",re.S); s,n=pat.subn(lambda m:m.group(1).replace("addGuest, addTask as addTaskApi","addGuest, addGuestMember, addTask as addTaskApi"),s,count=1); assert n==1,n; open(p,"w",encoding="utf-8").write(s)' "$out_file"
                       ;;
-                    Тили-тили/backend/test/audit55.test.ts)
-                      sed -i "/^<<<<<<< /,/^>>>>>>> /c\\  it('версия контракта — 0.50.0 (020: семейное приглашение и отдельные персоны; F5-14 сохранён)', () => {\\n    expect((doc.info as { version: string }).version).toBe('0.50.0')" "$out_file"
+                    "Тили-тили/backend/test/audit55.test.ts"|"Тили-тили/Тили-тили_API_openapi.yaml")
+                      python3 -c 'import re,sys; p=sys.argv[1]; s=open(p,encoding="utf-8").read(); pat=re.compile(r"<<<<<<<[^\n]*\n(.*?)=======\n(.*?)>>>>>>>[^\n]*\n",re.S); s,n=pat.subn(lambda m:m.group(2),s,count=1); assert n==1,n; open(p,"w",encoding="utf-8").write(s)' "$out_file"
                       ;;
-                    Тили-тили/Тили-тили_API_openapi.yaml)
-                      sed -i "/^<<<<<<< /,/^>>>>>>> /c\\  version: 0.50.0" "$out_file"
+                    *)
+                      echo "::error file=$path::unresolved three-way conflict"
+                      grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
+                      conflicts=$((conflicts + 1))
                       ;;
                   esac
-                  if grep -q -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file"; then
-                    echo "::error file=$path::unresolved three-way conflict"
-                    grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
-                    conflicts=$((conflicts + 1))
-                  else
-                    echo "resolved known 020/main overlap: $path"
-                  fi
+                fi
+                if grep -q -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file"; then
+                  echo "::error file=$path::conflict markers remain"
+                  conflicts=$((conflicts + 1))
                 fi
                 cat "$out_file" > "$path"
                 rm -f "$ours_file" "$base_file" "$theirs_file" "$out_file"
