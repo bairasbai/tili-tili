@@ -157,13 +157,13 @@ describe.skipIf(!live)('блок 10: сквозной сценарий трёх 
     const redeemed = ok(await app.inject({ method: 'GET', url: `/invite/${code}` }), 'обмен ссылки')
     const token = redeemed.json().guestToken as string
     const t = encodeURIComponent(token)
-    ok(await app.inject({ method: 'POST', url: `/rsvp/${t}`, payload: { status: 'yes', plusOne: true, diet: 'vegan', transfer: 'need' } }), 'RSVP')
+    ok(await app.inject({ method: 'POST', url: `/rsvp/${t}`, payload: { status: 'yes', diet: 'vegan', transfer: 'need' } }), 'RSVP')
     ok(await app.inject({ method: 'POST', url: `/join/${t}/shuttle`, headers: key(), payload: { busId: bus.json().id } }), 'место в автобусе')
     ok(await app.inject({ method: 'POST', url: `/join/${t}/hotels`, headers: key(), payload: { hotelId: hotel.json().id } }), 'номер в отеле')
     ok(await app.inject({ method: 'POST', url: `/join/${t}/menu-vote`, payload: { optionId } }), 'голос за блюдо')
     ok(await app.inject({ method: 'POST', url: `/gifts/${t}/${gift.json().id as string}/reserve`, headers: key(), payload: {} }), 'резерв подарка')
     const page = ok(await app.inject({ method: 'GET', url: `/rsvp/${t}` }), 'страница гостя')
-    expect(page.json()).toMatchObject({ status: 'yes', plusOne: true, diet: 'vegan', transfer: 'need' })
+    expect(page.json()).toMatchObject({ status: 'yes', plusOne: false, diet: 'vegan', transfer: 'need' })
 
     /* ── 8. После дня свадьбы: отзывы ────────────────────────────────────── */
     await app.db!.query('update weddings set date = current_date - 1 where id = $1', [weddingId])
