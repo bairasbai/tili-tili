@@ -8,6 +8,7 @@ exports.up = (pgm) => {
     payment_method: { type: 'text', notNull: true, default: 'other' },
     visibility: { type: 'text', notNull: true, default: 'private' },
     amount_known: { type: 'boolean', notNull: true, default: true },
+    legacy_vendor_visible: { type: 'boolean', notNull: true, default: false },
     paid_on: { type: 'date' },
   })
 
@@ -53,6 +54,6 @@ exports.down = (pgm) => {
   pgm.dropConstraint('payments', 'payments_amount_known_consistent')
   pgm.dropConstraint('payments', 'payments_visibility_known')
   pgm.dropConstraint('payments', 'payments_method_known')
-  pgm.dropColumns('payments', ['payment_method', 'visibility', 'amount_known', 'paid_on'])
+  pgm.dropColumns('payments', ['payment_method', 'visibility', 'amount_known', 'legacy_vendor_visible', 'paid_on'])
   pgm.alterColumn('payments', 'amount', { notNull: true })
 }
