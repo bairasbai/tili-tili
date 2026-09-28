@@ -409,7 +409,7 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
     }).toEqual({ taken: 0, booked: 0 })
   })
 
-  it('D3-03: стол считает персоны — гость с +1 занимает два места', async () => {
+  it('D3-03/020: стол считает явные персоны семейного приглашения', async () => {
     const w = await newWedding()
     const table = await app.inject({
       method: 'POST',
@@ -418,26 +418,24 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
       payload: { name: 'Стол молодых друзей', capacity: 2 },
     })
     const tableId = table.json().id as string
-    const olga = await newGuest(w, 'Ольга', true)
-    const denis = await newGuest(w, 'Денис')
+    const family = await newGuest(w, 'Ольга', true)
+    const familyPage = await app.inject({ method: 'GET', url: `/rsvp/${family.token}` })
+    const people = familyPage.json().people as { id: string }[]
+    expect(people).toHaveLength(2)
 
-    expect((await patchGuest(w, olga.guestId, { tableId })).statusCode).toBe(200)
-    // «Ольга и Денис» с +1 — двое за столом (R-29). Третьему места нет.
+    for (const person of people) {
+      expect((await patchGuest(w, person.id, { tableId })).statusCode).toBe(200)
+    }
+    const denis = await newGuest(w, 'Денис')
     const full = await patchGuest(w, denis.guestId, { tableId })
     expect({ status: full.statusCode, code: full.json().error?.code }).toEqual({ status: 409, code: 'table_full' })
-    // Повторная посадка той же Ольги за тот же стол — не второе место: она уже там.
-    expect((await patchGuest(w, olga.guestId, { tableId })).statusCode).toBe(200)
-    // Плюс-один, присланный вместе с посадкой, считается сразу: Денис «с +1» за стол на двоих не сядет и один.
-    await patchGuest(w, olga.guestId, { tableId: null })
-    const withPlusOne = await patchGuest(w, denis.guestId, { tableId, plusOne: true })
-    expect(withPlusOne.statusCode).toBe(200)
-    const back = await patchGuest(w, olga.guestId, { tableId })
-    expect({ status: back.statusCode, code: back.json().error?.code }).toEqual({ status: 409, code: 'table_full' })
 
+    // Повторная посадка той же персоны не занимает ещё одно место.
+    expect((await patchGuest(w, people[0]!.id, { tableId })).statusCode).toBe(200)
     const tables = (
       await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/tables`, headers: auth(w.token) })
     ).json() as { id: string; guestIds: string[] }[]
-    expect(tables.find((t) => t.id === tableId)!.guestIds).toEqual([denis.guestId])
+    expect(tables.find((t) => t.id === tableId)!.guestIds.sort()).toEqual(people.map((p) => p.id).sort())
   })
 
   it('D3-09/D5-04: перевыпуск ссылки переносит отзыв гостя — второго отзыва не будет', async () => {
