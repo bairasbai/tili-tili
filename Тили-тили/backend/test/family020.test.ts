@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
+import { cleanup } from '../src/jobs/index.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const live = Boolean(DB)
@@ -69,7 +70,7 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
       headers: auth(body.accessToken),
       payload: { policyVersion: '2026-09-02' },
     })
-    return { token: body.accessToken, phone }
+    return { id: (verified.json() as { user: { id: string } }).user.id, token: body.accessToken, phone }
   }
 
   async function newWedding() {
@@ -345,3 +346,26 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
   })
 
 })
+  it('export keeps family structure but never exposes the shared invite token', async () => {
+    const f = await family()
+    const dump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.token) })
+    expect(dump.statusCode, dump.body).toBe(200)
+    const body = dump.json() as { guests: { party_id: string; party_position: number; is_placeholder: boolean }[] }
+    const familyGuests = body.guests.filter((g) => g.party_id === f.partyId)
+    expect(familyGuests.map((g) => g.party_position).sort()).toEqual([1, 2])
+    expect(dump.body).not.toContain(f.guestToken)
+  })
+
+  it('31-day account cleanup cascades family people, party token and family-owned rows', async () => {
+    const f = await family()
+    const deleted = await app.inject({ method: 'DELETE', url: '/users/me', headers: auth(f.token) })
+    expect(deleted.statusCode, deleted.body).toBe(204)
+    await app.db!.query("update users set deleted_at = now() - interval '31 days' where id = $1", [f.id])
+    await cleanup(app)
+    const { rows: parties } = await app.db!.query('select 1 from guest_parties where id = $1', [f.partyId])
+    const { rows: people } = await app.db!.query('select 1 from guests where party_id = $1', [f.partyId])
+    expect(parties).toEqual([])
+    expect(people).toEqual([])
+    expect((await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).statusCode).toBe(401)
+  })
+
