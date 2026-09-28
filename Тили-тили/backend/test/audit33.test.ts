@@ -560,19 +560,22 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect((await tablesOf(w)).find((t) => t.id === tableId)).toMatchObject({ name: 'Родня невесты', capacity: 6 })
   })
 
-  it('столы: вместимость ниже уже сидящих — 409 table_full, персоны считаются с «+1»', async () => {
+  it('столы/020: вместимость ниже числа явных персон — 409 table_full', async () => {
     const w = await newWedding()
     const tableId = await newTable(w, 8)
-    const pair = await newGuest(w, 'Ольга и Денис', true)
+    const family = await newGuest(w, 'Ольга и Денис', true)
+    const familyPeople = await peopleOf(family.token)
+    expect(familyPeople).toHaveLength(2)
     const one = await newGuest(w, 'Марат')
-    expect((await patchGuest(w, pair.guestId, { tableId })).statusCode).toBe(200)
+    for (const person of familyPeople) {
+      expect((await patchGuest(w, person.id, { tableId })).statusCode).toBe(200)
+    }
     expect((await patchGuest(w, one.guestId, { tableId })).statusCode).toBe(200)
 
-    // Сидят трое (двое + один): двух мест мало, трёх — ровно.
     expect(errorOf(await patchTable(w, tableId, { capacity: 2 }))).toEqual({ status: 409, code: 'table_full' })
     expect((await patchTable(w, tableId, { capacity: 3 })).statusCode).toBe(200)
     const table = (await tablesOf(w)).find((t) => t.id === tableId)!
-    expect({ capacity: table.capacity, seated: table.guestIds.length }).toEqual({ capacity: 3, seated: 2 })
+    expect({ capacity: table.capacity, seated: table.guestIds.length }).toEqual({ capacity: 3, seated: 3 })
   })
 
   it('столы: чужой стол и мусорный идентификатор — 404, схема тела — 422', async () => {
