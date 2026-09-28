@@ -1,5 +1,6 @@
 # final 020 clean verification
 # final 020 clean verification trigger
+# locator fix verification
 name: Verify 020 clean family flow
 
 on:
