@@ -217,6 +217,7 @@ describe.skipIf(!live)('корзина 1: бэкенд', () => {
       payload: { amount: { amount: 3_000_000, currency: 'RUB' } },
     })
     expect(paid.statusCode, paid.body.slice(0, 200)).toBe(200)
+    await app.db!.query(`update payments set visibility='vendor' where deal_id=(select id from deals where slot_id=$1)`,[slotId])
     const chat = await app.inject({ method: 'POST', url: `/chats/vendor/${v.id}`, headers: auth(w.token) })
     expect([200, 201]).toContain(chat.statusCode)
     const slots = (await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/slots`, headers: auth(w.token) })).json() as { id: string; deal: { id: string } | null }[]
