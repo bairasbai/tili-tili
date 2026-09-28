@@ -127,12 +127,12 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
   s = replaceOne(
     s,
     `           (\${PAYMENTS_SUM}
-              and p.created_at between now() - make_interval(days => $2 * 2) and now() - make_interval(days => $2))::text
-              as prev_revenue\`,
+             and p.created_at between now() - make_interval(days => $2 * 2) and now() - make_interval(days => $2))::text
+             as prev_revenue\`,
 `,
     `           (\${PAYMENTS_SUM}
-              and p.paid_on between (now() - make_interval(days => $2 * 2))::date and (now() - make_interval(days => $2))::date)::text
-              as prev_revenue,
+             and p.paid_on between (now() - make_interval(days => $2 * 2))::date and (now() - make_interval(days => $2))::date)::text
+             as prev_revenue,
            (select count(*) from payments p join deals d on d.id=p.deal_id
              where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
                and p.paid_on > (now() - make_interval(days => $2))::date)::text as unknown_payments\`,
