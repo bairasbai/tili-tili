@@ -91,7 +91,7 @@ with sync_playwright() as pw:
         card.get_by_role('button', name='Отметить оплату: Аванс фотографу', exact=True).click()
         form = page.get_by_role('form', name='Редактор платежа')
         form.get_by_label('Сумма, ₽', exact=True).fill('1000')
-        form.get_by_label('Способ оплаты', exact=True).select_option('cash')
+        form.locator('select').select_option('cash')
         form.get_by_label('Только мы', exact=True).check()
         save(page)
         state = data()
