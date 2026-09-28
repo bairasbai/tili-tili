@@ -1,0 +1,26 @@
+name: Apply 019 finalization cleanly
+on:
+  push:
+    branches:
+      - integration/019-complete-clean-20260928
+
+permissions:
+  contents: write
+
+jobs:
+  cherry-pick-finalization:
+    if: github.event.head_commit.message == 'chore(019): bootstrap clean finalization'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cherry-pick verified T039-T042 commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin feature/019-finalized-20260928
+          git cherry-pick e33e4403f93441061fcc144e49ee9161a96ea1ee
+          git push origin HEAD:integration/019-complete-clean-20260928
