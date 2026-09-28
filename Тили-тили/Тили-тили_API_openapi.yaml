@@ -2,6 +2,7 @@ openapi: 3.0.3
 info:
   title: Тили-тили API
   version: 0.50.0
+  # Этап 020: guest_party + отдельные person rows; generated artifacts должны следовать этому контракту.
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
