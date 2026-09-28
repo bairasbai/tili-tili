@@ -66,6 +66,9 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         /* Ответ — из транзакции действия: туда же ложится и запись
          * идемпотентности (D2-13). Рассылка — после: она не часть ответа. */
         const result = await tx(async (client) => {
+          // Один aggregate-lock с full PUT/reschedule: shift всегда применяется
+          // к последнему committed расписанию, а не гоняется с его заменой.
+          await client.query('select id from weddings where id = $1 for update', [weddingId])
           /* Двигаются блоки, которые ЕЩЁ НЕ НАЧАЛИСЬ. Прошедшие не трогаем:
            * церемония, которая уже прошла, не сдвинется от того, что банкет
            * задержался, а в расписании поедет всё. */
@@ -82,6 +85,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
            * критический push всей команде мимо тихих часов ни о чём (ревью
            * 015). Ответ честный — `shiftedBlocks: 0`, рассылки ниже нет. */
           if (moved.length === 0) return { status: 200, body: { minutes, shiftedBlocks: 0, guestsAffected: 0 } }
+          await client.query('update weddings set timeline_version = timeline_version + 1 where id = $1', [weddingId])
           await client.query('insert into timeline_shifts (id, wedding_id, minutes, actor_id) values ($1,$2,$3,$4)', [
             uuidv7(),
             weddingId,

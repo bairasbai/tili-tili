@@ -34,10 +34,10 @@ Base: `main@a9f17aea32351e32b996c3b6246cee629b9ad98b`
 
 ## Порядок реализации
 
-- [ ] T001 — инвентаризация текущей модели/API/UI тайминга.
-- [ ] T002 — зафиксировать schema/API contract 021.
-- [ ] T003 — миграция: stable event IDs + schedule version.
-- [ ] T004 — backend read/write по stable ID.
+- [x] T001 — инвентаризация текущей модели/API/UI тайминга.
+- [x] T002 — зафиксировать schema/API contract 021.
+- [x] T003 — миграция: aggregate schedule version (stable ID уже существовал в схеме).
+- [x] T004 — backend read/write сохраняет существующие event ID; shift/reschedule увеличивают aggregate version.
 - [ ] T005 — optimistic concurrency + regression tests.
 - [ ] T006 — generated OpenAPI contracts.
 - [ ] T007 — frontend stable-ID state/update flow.
@@ -54,3 +54,8 @@ Base: `main@a9f17aea32351e32b996c3b6246cee629b9ad98b`
 ## Gate
 
 Stage 021 не считается завершённым до зелёных migration up/down/up, OpenAPI drift check, backend/frontend suites, TypeScript, ESLint, production builds и browser E2E. `main` не менять до отдельного решения о merge.
+
+
+## Progress · identity foundation
+
+Commit foundation добавляет `timeline_version`, стабильное обновление существующих строк `timeline_events` и единый aggregate-lock между full PUT, Day-X shift и reschedule. GET/PUT уже отдают ETag версии, но обязательный `If-Match` включается только в T005 вместе с regression двух клиентов и frontend conflict UX.

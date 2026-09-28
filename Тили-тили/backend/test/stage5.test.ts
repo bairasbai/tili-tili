@@ -482,26 +482,31 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
   })
 
   /* ── тайминг ──────────────────────────────────────────────────────── */
-  it('тайминг заменяется целиком, автоплан только предлагает', async () => {
+  it('021: тайминг заменяется целиком без смены ID, автоплан только предлагает', async () => {
     const w = await newWedding()
     const before = await app.inject({
       method: 'GET',
       url: `/weddings/${w.weddingId}/timeline`,
       headers: auth(w.token),
     })
-    expect((before.json() as unknown[]).length).toBe(6)
+    const initial = before.json() as { id: string }[]
+    expect(initial.length).toBe(6)
+    expect(before.headers.etag).toMatch(/^"timeline-\d+"$/)
 
     const replaced = await app.inject({
       method: 'PUT',
       url: `/weddings/${w.weddingId}/timeline`,
       headers: auth(w.token),
       payload: [
-        { name: 'Сборы', startsAt: '2027-06-14T05:00:00Z', endsAt: '2027-06-14T09:00:00Z' },
-        { name: 'Церемония', startsAt: '2027-06-14T08:00:00Z', endsAt: '2027-06-14T09:00:00Z', outdoor: true },
+        { id: initial[0]!.id, name: 'Сборы', startsAt: '2027-06-14T05:00:00Z', endsAt: '2027-06-14T09:00:00Z' },
+        { id: initial[1]!.id, name: 'Церемония', startsAt: '2027-06-14T08:00:00Z', endsAt: '2027-06-14T09:00:00Z', outdoor: true },
       ],
     })
     expect(replaced.statusCode).toBe(200)
-    expect((replaced.json() as unknown[]).length).toBe(2)
+    const saved = replaced.json() as { id: string; name: string }[]
+    expect(saved.map((event) => event.id)).toEqual([initial[0]!.id, initial[1]!.id])
+    expect(replaced.headers.etag).toMatch(/^"timeline-\d+"$/)
+    expect(replaced.headers.etag).not.toBe(before.headers.etag)
 
     const auto = await app.inject({
       method: 'POST',
@@ -517,7 +522,9 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       url: `/weddings/${w.weddingId}/timeline`,
       headers: auth(w.token),
     })
-    expect((still.json() as { name: string }[]).map((e) => e.name)).toEqual(['Сборы', 'Церемония'])
+    const persisted = still.json() as { id: string; name: string }[]
+    expect(persisted.map((e) => e.name)).toEqual(['Сборы', 'Церемония'])
+    expect(persisted.map((e) => e.id)).toEqual(saved.map((e) => e.id))
   })
 
   /* ── альбом ───────────────────────────────────────────────────────── */
