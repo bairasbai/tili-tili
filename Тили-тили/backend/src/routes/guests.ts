@@ -183,9 +183,11 @@ export function guestNameKey(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
-/** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
+/** 020: после materialization каждая строка guests — одна реальная персона.
+ * Deprecated plusOne остаётся только compatibility-сигналом и не участвует
+ * в счётчиках, вместимости или деньгах. */
 export function personCount(guests: { status: string; plusOne: boolean }[]): number {
-  return guests.filter((g) => g.status === 'yes').reduce((a, g) => a + (g.plusOne ? 2 : 1), 0)
+  return guests.filter((g) => g.status === 'yes').length
 }
 
 export async function guestRoutes(app: FastifyInstance): Promise<void> {
