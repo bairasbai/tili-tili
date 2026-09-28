@@ -7,7 +7,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser:
-    if: github.head_ref == 'feature/product-improvements-stage1-tasks' || github.ref == 'refs/heads/feature/product-improvements-stage1-tasks'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -83,6 +82,7 @@ jobs:
   push:
     branches:
     - feature/product-improvements-stage1-tasks
+    - integration/018-payments-clean-main-20260928
   pull_request:
     branches:
     - main
