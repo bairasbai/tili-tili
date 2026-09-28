@@ -381,7 +381,7 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
   })
 
   /* ── G2 / G4 ──────────────────────────────────────────────────────── */
-  it('G4: телефон гостя нормализуется до +7…, мусор — 422; G2: «+1» за полным столом без пересадки — 409 table_full', async () => {
+  it('G4: телефон нормализуется; G2/020: вторая явная персона не садится за полный стол', async () => {
     const w = await newWedding()
     const g = await newGuest(w, 'Ольга', '8 917 000-55-66')
     expect(g.phone).toBe('+79170005566')
@@ -396,9 +396,21 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
     const tableId = table.json().id as string
     const seated = await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/guests/${g.guestId}`, headers: auth(w.token), payload: { tableId } })
     expect(seated.statusCode, seated.body.slice(0, 200)).toBe(200)
-    const plusOne = await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/guests/${g.guestId}`, headers: auth(w.token), payload: { plusOne: true } })
-    expect(plusOne.statusCode, plusOne.body.slice(0, 200)).toBe(409)
-    expect(plusOne.json().error.code).toBe('table_full')
+    const addPerson = await app.inject({ method: 'PATCH', url: `/weddings/${w.weddingId}/guests/${g.guestId}`, headers: auth(w.token), payload: { plusOne: true } })
+    expect(addPerson.statusCode, addPerson.body.slice(0, 200)).toBe(200)
+    const token = await guestToken(w, g.guestId)
+    const family = await app.inject({ method: 'GET', url: `/rsvp/${token}` })
+    const people = family.json().people as { id: string }[]
+    expect(people).toHaveLength(2)
+    const companion = people.find((person) => person.id !== g.guestId)!
+    const secondSeat = await app.inject({
+      method: 'PATCH',
+      url: `/weddings/${w.weddingId}/guests/${companion.id}`,
+      headers: auth(w.token),
+      payload: { tableId },
+    })
+    expect(secondSeat.statusCode, secondSeat.body.slice(0, 200)).toBe(409)
+    expect(secondSeat.json().error.code).toBe('table_full')
   })
 
   /* ── G6 / G7 / G14 ────────────────────────────────────────────────── */
