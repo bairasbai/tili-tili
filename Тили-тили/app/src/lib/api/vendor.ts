@@ -1,4 +1,5 @@
 import { api, url } from './client'
+import type { components } from './schema'
 
 /*
  * Кабинет подрядчика.
@@ -15,6 +16,13 @@ import { api, url } from './client'
 /** Своя анкета. 404 — анкеты ещё нет, это нормальный ответ для нового подрядчика. */
 export const getVendorProfile = () => api.get('/vendor/profile')
 
+export interface VendorDraftPackage {
+  id?: string
+  name: string
+  price: number | null
+  includes: string[]
+}
+
 export interface VendorDraft {
   name: string
   categoryId: string
@@ -24,10 +32,8 @@ export interface VendorDraft {
   phone?: string
   /** Цена «от» в копейках. */
   priceFrom?: number
-  /** Пакеты услуг. Цена — копейки; `null` — цена не названа (пакет заведён вне
-   *  мастера: сервер хранит и отдаёт его без цены). Мастер `null` не подменяет
-   *  нулём и сам пакет без цены не заводит (ERR-0281, R-281). */
-  packages?: { name: string; price: number | null }[]
+  /** Пакеты услуг. `id` сохраняет идентичность пакета, `includes` — состав. */
+  packages?: VendorDraftPackage[]
   /**
    * Права на фото и видео портфолио и согласие снятых (152-ФЗ, план бэкенда §7).
    * Только `true` что-то значит — сервер ставит момент и не снимает его;
@@ -55,8 +61,10 @@ export const saveVendorProfile = (draft: VendorDraft) =>
        Отсутствующее поле он хранит как `null` (routes/vendor.ts:293) — цена
        остаётся не названной, а не становится «0 ₽» (ERR-0281, R-281). */
     packages: (draft.packages ?? []).map(p => ({
+      ...(p.id ? { id: p.id } : {}),
       name: p.name,
       ...(p.price === null ? {} : { price: { amount: p.price, currency: 'RUB' } }),
+      includes: p.includes,
     })),
   })
 
