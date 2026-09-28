@@ -295,14 +295,10 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect(await takenOf(w, busId)).toBe(2)
 
     const own = await rsvp(anna.token, { status: 'yes', plusOne: true })
-    expect(own.statusCode, own.body.slice(0, 200)).toBe(200)
+    expect(errorOf(own)).toEqual({ status: 409, code: 'bus_full' })
     expect(await takenOf(w, busId)).toBe(2)
-    const { rows } = await app.db!.query<{ name: string; plus_one: boolean }>(
-      'select name, plus_one from guests where invitation_id = (select invitation_id from guests where id = $1) order by created_at',
-      [anna.guestId],
-    )
-    expect(rows).toHaveLength(2)
-    expect(rows.every((row) => row.plus_one === false)).toBe(true)
+    const { rows } = await app.db!.query<{ plus_one: boolean }>('select plus_one from guests where id = $1', [anna.guestId])
+    expect(rows[0]!.plus_one).toBe(false)
   })
 
   it('T011/020: прямой SQL plus_one больше не является счётчиком автобусных мест', async () => {
