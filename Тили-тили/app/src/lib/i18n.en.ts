@@ -2,6 +2,14 @@ import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  // 020: family invitations and explicit guest people.
+  'Семейное приглашение': 'Family invitation',
+  'Один человек в приглашении': 'One person in this invitation',
+  'Человек семьи': 'Family member',
+  'Добавить человека в семью': 'Add family member',
+  'Имя человека': 'Person name',
+  'Имя;Статус;Семья': 'Name;Status;Family',
+  'чел.': 'people',
   // 019: acceptance, explicit conflicts and retry feedback.
   'Принять предложение': 'Accept offer',
   'Принимаем…': 'Accepting…',
