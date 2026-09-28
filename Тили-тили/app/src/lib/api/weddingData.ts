@@ -29,8 +29,8 @@ export const getMembers = (weddingId: string) =>
 export const getGuests = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/guests', { weddingId }))
 
-export const getTimeline = (weddingId: string) =>
-  api.get(url('/weddings/{weddingId}/timeline', { weddingId }))
+export const getTimeline = (weddingId: string, onEtag?: (etag: string | null) => void) =>
+  api.get(url('/weddings/{weddingId}/timeline', { weddingId }), { onEtag })
 
 export const getDocuments = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/documents', { weddingId }))

@@ -338,12 +338,12 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
           // на экране в 13:00 — ровно на разницу поясов. Второй день
           // двухдневной свадьбы — следующее число (`dayOffset`, фича 018).
           await client.query(
-            `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort)
+            `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort, timing_mode)
              values ($1, $2, $3,
                      case when $4::date is null then null else ((($4::date + $10::int) + $5::time) at time zone $8) end,
                      case when $4::date is null then null else ((($4::date + $10::int) + $6::time) at time zone $8) end,
-                     $7, $9)`,
-            [uuidv7(), weddingId, e.name, date, e.startsAt, e.endsAt, e.icon, cityTz, e.sort, e.dayOffset ?? 0],
+                     $7, $9, $11)`,
+            [uuidv7(), weddingId, e.name, date, e.startsAt, e.endsAt, e.icon, cityTz, e.sort, e.dayOffset ?? 0, e.timingMode ?? 'flexible'],
           )
         }
         await client.query(

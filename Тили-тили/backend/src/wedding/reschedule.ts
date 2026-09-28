@@ -97,7 +97,10 @@ export async function rescheduleWedding(
     })
   }
 
-  await client.query('update weddings set date = $2::date where id = $1', [weddingId, date])
+  await client.query(
+    'update weddings set date = $2::date, timeline_version = timeline_version + 1 where id = $1',
+    [weddingId, date],
+  )
   /* Старые даты освобождаются, новые захватываются в той же транзакции.
    * Снимаются только строки открытых броней: строка `done`-сделки остаётся
    * на отработанном дне (D2-22).

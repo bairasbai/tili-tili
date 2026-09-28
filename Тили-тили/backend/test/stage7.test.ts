@@ -469,6 +469,10 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       'select starts_at from timeline_events where wedding_id = $1 order by sort limit 1',
       [w.weddingId],
     )
+    const versionBefore = await app.db!.query<{ timeline_version: number }>(
+      'select timeline_version from weddings where id = $1',
+      [w.weddingId],
+    )
     const shift = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/timeline/shift`,
@@ -483,6 +487,11 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       'select starts_at from timeline_events where wedding_id = $1 order by sort limit 1',
       [w.weddingId],
     )
+    const versionAfter = await app.db!.query<{ timeline_version: number }>(
+      'select timeline_version from weddings where id = $1',
+      [w.weddingId],
+    )
+    expect(versionAfter.rows[0]!.timeline_version).toBe(versionBefore.rows[0]!.timeline_version + 1)
     // Церемония, которая уже прошла, не сдвигается от того, что банкет
     // задержался — иначе в расписании поедет всё.
     expect(after.rows[0]!.starts_at.getTime()).toBe(before.rows[0]!.starts_at.getTime())

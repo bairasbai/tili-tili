@@ -33,6 +33,7 @@ export interface TimelineTemplate {
   readonly endsAt: string
   readonly who: string | null
   readonly sort: number
+  readonly timingMode?: 'fixed' | 'flexible'
   /** На сколько дней после даты свадьбы — второй день праздника (фича 018). Нет — в сам день. */
   readonly dayOffset?: number
 }
@@ -84,7 +85,7 @@ export const TIMELINE_TEMPLATE: readonly TimelineTemplate[] = [
   {"icon":"🌅","name":"Сборы невесты","location":null,"startsAt":"08:00","endsAt":"13:00","who":null,"sort":0},
   {"icon":"🤵","name":"Сборы жениха","location":null,"startsAt":"09:00","endsAt":"12:00","who":null,"sort":1},
   {"icon":"💍","name":"Доставка букета и деталей","location":null,"startsAt":"12:00","endsAt":"13:00","who":null,"sort":2},
-  {"icon":"💐","name":"Выездная церемония","location":null,"startsAt":"16:00","endsAt":"17:00","who":null,"sort":3},
+  {"icon":"💐","name":"Выездная церемония","location":null,"startsAt":"16:00","endsAt":"17:00","who":null,"sort":3,"timingMode":"fixed"},
   {"icon":"🥂","name":"Банкет","location":null,"startsAt":"18:00","endsAt":"23:00","who":null,"sort":4},
   {"icon":"🎆","name":"Салют и финал","location":null,"startsAt":"22:30","endsAt":"23:00","who":null,"sort":5},
 ] as const
@@ -119,7 +120,7 @@ export function slotTemplate(format: WeddingFormat | null, planner: WeddingPlann
 }
 
 /* Блоки, которыми форматы отличаются от шаблона выше (решение владельца 2026-09-26). */
-const ZAGS: TimelineTemplate = {"icon":"🏛️","name":"Регистрация в ЗАГСе","location":null,"startsAt":"14:00","endsAt":"15:00","who":null,"sort":3}
+const ZAGS: TimelineTemplate = {"icon":"🏛️","name":"Регистрация в ЗАГСе","location":null,"startsAt":"14:00","endsAt":"15:00","who":null,"sort":3,"timingMode":"fixed"}
 const DINNER: TimelineTemplate = {"icon":"🥂","name":"Ужин","location":null,"startsAt":"18:00","endsAt":"22:00","who":null,"sort":4}
 const SECOND_DAY: readonly TimelineTemplate[] = [
   {"icon":"🥐","name":"День 2: бранч","location":null,"startsAt":"12:00","endsAt":"14:00","who":null,"sort":6,"dayOffset":1},

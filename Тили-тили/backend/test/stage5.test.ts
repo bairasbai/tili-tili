@@ -482,26 +482,31 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
   })
 
   /* ── тайминг ──────────────────────────────────────────────────────── */
-  it('тайминг заменяется целиком, автоплан только предлагает', async () => {
+  it('021: тайминг заменяется целиком без смены ID, автоплан только предлагает', async () => {
     const w = await newWedding()
     const before = await app.inject({
       method: 'GET',
       url: `/weddings/${w.weddingId}/timeline`,
       headers: auth(w.token),
     })
-    expect((before.json() as unknown[]).length).toBe(6)
+    const initial = before.json() as { id: string }[]
+    expect(initial.length).toBe(6)
+    expect(before.headers.etag).toMatch(/^"timeline-\d+"$/)
 
     const replaced = await app.inject({
       method: 'PUT',
       url: `/weddings/${w.weddingId}/timeline`,
-      headers: auth(w.token),
+      headers: { ...auth(w.token), 'if-match': before.headers.etag! },
       payload: [
-        { name: 'Сборы', startsAt: '2027-06-14T05:00:00Z', endsAt: '2027-06-14T09:00:00Z' },
-        { name: 'Церемония', startsAt: '2027-06-14T08:00:00Z', endsAt: '2027-06-14T09:00:00Z', outdoor: true },
+        { id: initial[0]!.id, name: 'Сборы', startsAt: '2027-06-14T05:00:00Z', endsAt: '2027-06-14T09:00:00Z' },
+        { id: initial[1]!.id, name: 'Церемония', startsAt: '2027-06-14T08:00:00Z', endsAt: '2027-06-14T09:00:00Z', outdoor: true },
       ],
     })
     expect(replaced.statusCode).toBe(200)
-    expect((replaced.json() as unknown[]).length).toBe(2)
+    const saved = replaced.json() as { id: string; name: string }[]
+    expect(saved.map((event) => event.id)).toEqual([initial[0]!.id, initial[1]!.id])
+    expect(replaced.headers.etag).toMatch(/^"timeline-\d+"$/)
+    expect(replaced.headers.etag).not.toBe(before.headers.etag)
 
     const auto = await app.inject({
       method: 'POST',
@@ -517,7 +522,91 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       url: `/weddings/${w.weddingId}/timeline`,
       headers: auth(w.token),
     })
-    expect((still.json() as { name: string }[]).map((e) => e.name)).toEqual(['Сборы', 'Церемония'])
+    const persisted = still.json() as { id: string; name: string }[]
+    expect(persisted.map((e) => e.name)).toEqual(['Сборы', 'Церемония'])
+    expect(persisted.map((e) => e.id)).toEqual(saved.map((e) => e.id))
+  })
+
+  it('021: stale вкладка получает 409 и не затирает более свежий тайминг', async () => {
+    const w = await newWedding()
+    const tabA = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    const tabB = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    expect(tabA.headers.etag).toBe(tabB.headers.etag)
+    const original = tabA.json() as { id: string; name: string; startsAt?: string | null; endsAt?: string | null; forGuests?: boolean }[]
+    const first = original[0]!
+
+    const accepted = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: { ...auth(w.token), 'if-match': tabA.headers.etag! },
+      payload: original.map((event, index) => ({
+        id: event.id,
+        name: index === 0 ? 'Правка из вкладки A' : event.name,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt,
+        forGuests: event.forGuests ?? true,
+      })),
+    })
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    expect(accepted.headers.etag).not.toBe(tabA.headers.etag)
+
+    const stale = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: { ...auth(w.token), 'if-match': tabB.headers.etag! },
+      payload: original.map((event, index) => ({
+        id: event.id,
+        name: index === 0 ? 'Устаревшая правка из вкладки B' : event.name,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt,
+        forGuests: event.forGuests ?? true,
+      })),
+    })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('timeline_version_conflict')
+    expect(stale.headers.etag).toBe(accepted.headers.etag)
+
+    const finalState = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    const finalEvents = finalState.json() as { id: string; name: string }[]
+    expect(finalEvents[0]).toEqual({ ...finalEvents[0], id: first.id, name: 'Правка из вкладки A' })
+    expect(finalState.headers.etag).toBe(accepted.headers.etag)
+  })
+
+  it('021: full PUT без версии не меняет тайминг', async () => {
+    const w = await newWedding()
+    const before = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    const attempted = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+      payload: [],
+    })
+    expect(attempted.statusCode, attempted.body).toBe(428)
+    expect(attempted.json().error.code).toBe('timeline_version_required')
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    expect(after.body).toBe(before.body)
+    expect(after.headers.etag).toBe(before.headers.etag)
   })
 
   /* ── альбом ───────────────────────────────────────────────────────── */

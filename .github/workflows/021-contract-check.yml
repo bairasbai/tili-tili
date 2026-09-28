@@ -1,0 +1,29 @@
+name: Verify 021 generated contract
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-contract:
+    if: github.head_ref == 'feature/021-timeline-concurrency'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Тили-тили/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - run: printf 'minimum-release-age=0\n' >> .npmrc
+      - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Regenerate contract
+        run: pnpm run gen
+      - name: Backend generated files are committed exactly
+        run: git diff --exit-code -- src/contract/api.generated.ts src/contract/paths.generated.ts src/contract/schemas.generated.ts
+      - name: Frontend schema is the same generated API type
+        run: cmp -s src/contract/api.generated.ts ../app/src/lib/api/schema.ts || { diff --no-index src/contract/api.generated.ts ../app/src/lib/api/schema.ts; exit 1; }

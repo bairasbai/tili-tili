@@ -149,12 +149,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
      * «сборы невесты» пара снимает галочкой. */
     forGuests: r.for_guests,
   })
+  const timelineEtag = (version: number) => `"timeline-${version}"`
 
-  app.get('/weddings/:weddingId/timeline', async (request) => {
-    const { rows } = await db().query<EventRow>(
-      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort, starts_at`,
-      [request.member!.weddingId],
-    )
+  app.get('/weddings/:weddingId/timeline', async (request, reply) => {
+    const weddingId = request.member!.weddingId
+    const [{ rows }, { rows: state }] = await Promise.all([
+      db().query<EventRow>(
+        `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort, starts_at`,
+        [weddingId],
+      ),
+      db().query<{ timeline_version: number }>('select timeline_version from weddings where id = $1', [weddingId]),
+    ])
+    reply.header('ETag', timelineEtag(state[0]!.timeline_version))
     return rows.map(toEvent)
   })
 
@@ -170,7 +176,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             required: ['name'],
             additionalProperties: false,
             properties: {
-              id: { type: 'string' },
+              id: UUID_ID,
               name: { type: 'string', minLength: 1, maxLength: 200 },
               location: { type: 'string', nullable: true, maxLength: 300 },
               startsAt: { type: 'string', nullable: true },
@@ -185,9 +191,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const weddingId = request.member!.weddingId
       const events = request.body as {
+        id?: string
         name: string
         location?: string | null
         startsAt?: string | null
@@ -198,6 +205,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         forGuests?: boolean
       }[]
 
+      const ifMatch = request.headers['if-match']
+      if (typeof ifMatch !== 'string') {
+        throw new AppError(428, 'timeline_version_required', 'Тайминг нужно перечитать перед сохранением')
+      }
+      const match = /^"timeline-(\d+)"$/.exec(ifMatch)
+      const expectedVersion = match ? Number(match[1]) : Number.NaN
+      if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+        throw new AppError(400, 'timeline_version_invalid', 'Некорректная версия тайминга')
+      }
+
       // Время проверяется ДО базы: иначе «вчера» и 30 февраля доходят до
       // `::timestamptz`, и человек получает 500 вместо отказа (D2-12).
       const moments = events.map((e, i) => ({
@@ -205,38 +222,107 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         endsAt: momentOrNull(e.endsAt, `${i}.endsAt`),
       }))
 
-      return db().tx(async (client) => {
-        // Замена целиком: клиент присылает состояние экрана, а не список
-        // правок. Дописывание оставило бы удалённые блоки.
-        await client.query('delete from timeline_events where wedding_id = $1', [weddingId])
-        let sort = 0
-        for (const [i, e] of events.entries()) {
-          await client.query(
-            `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort)
-             values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11)`,
-            [
-              uuidv7(),
-              weddingId,
-              e.name,
-              e.location ?? null,
-              moments[i]!.startsAt,
-              moments[i]!.endsAt,
-              e.who ?? null,
-              e.icon ?? null,
-              e.outdoor ?? false,
-              e.forGuests ?? true,
-              sort++,
-            ],
+      const suppliedIds = events.flatMap((event) => (event.id ? [event.id] : []))
+      if (new Set(suppliedIds).size !== suppliedIds.length) {
+        throw validationFailed({ id: 'Один и тот же блок тайминга передан несколько раз' })
+      }
+
+      const result = await db().tx(async (client) => {
+        // Aggregate-lock сериализует full replace, Day-X shift и перенос даты.
+        // Версия проверяется ПОСЛЕ захвата замка: проверка до него оставила бы
+        // окно между compare и write и снова допустила lost update.
+        const { rows: state } = await client.query<{ timeline_version: number }>(
+          'select timeline_version from weddings where id = $1 for update',
+          [weddingId],
+        )
+        const currentVersion = state[0]!.timeline_version
+        if (currentVersion !== expectedVersion) {
+          reply.header('ETag', timelineEtag(currentVersion))
+          throw conflict(
+            'timeline_version_conflict',
+            'Тайминг уже изменился в другой вкладке или на другом устройстве — перечитайте его перед сохранением',
           )
         }
+
+        const { rows: current } = await client.query<{ id: string }>(
+          'select id from timeline_events where wedding_id = $1',
+          [weddingId],
+        )
+        const currentIds = new Set(current.map((row) => row.id))
+        const keptIds: string[] = []
+
+        let sort = 0
+        for (const [i, e] of events.entries()) {
+          const id = e.id ?? uuidv7()
+          if (e.id && !currentIds.has(e.id)) {
+            // Не различаем «удалён» и «принадлежит другой свадьбе»: чужой ID
+            // не должен становиться oracle для межсвадебной изоляции.
+            throw conflict('timeline_event_stale', 'Тайминг уже изменился — обновите страницу и повторите правку')
+          }
+
+          if (e.id) {
+            await client.query(
+              `update timeline_events
+                  set name = $3, location = $4, starts_at = $5::timestamptz, ends_at = $6::timestamptz,
+                      who = $7, icon = $8, outdoor = $9, for_guests = $10, sort = $11
+                where id = $1 and wedding_id = $2`,
+              [
+                id,
+                weddingId,
+                e.name,
+                e.location ?? null,
+                moments[i]!.startsAt,
+                moments[i]!.endsAt,
+                e.who ?? null,
+                e.icon ?? null,
+                e.outdoor ?? false,
+                e.forGuests ?? true,
+                sort,
+              ],
+            )
+          } else {
+            await client.query(
+              `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort)
+               values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11)`,
+              [
+                id,
+                weddingId,
+                e.name,
+                e.location ?? null,
+                moments[i]!.startsAt,
+                moments[i]!.endsAt,
+                e.who ?? null,
+                e.icon ?? null,
+                e.outdoor ?? false,
+                e.forGuests ?? true,
+                sort,
+              ],
+            )
+          }
+          keptIds.push(id)
+          sort += 1
+        }
+
+        // Семантика endpoint остаётся full replacement: пропущенный ID удалён.
+        await client.query(
+          'delete from timeline_events where wedding_id = $1 and not (id = any($2::uuid[]))',
+          [weddingId, keptIds],
+        )
+
+        const { rows: versionRows } = await client.query<{ timeline_version: number }>(
+          'update weddings set timeline_version = timeline_version + 1 where id = $1 returning timeline_version',
+          [weddingId],
+        )
         // Тайминг переписали целиком — подрядчику приезжать к другому часу.
         await noteVendorUpdate(client, weddingId, 'timeline', 'Тайминг дня обновлён')
         const { rows } = await client.query<EventRow>(
           `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
           [weddingId],
         )
-        return rows.map(toEvent)
+        return { events: rows.map(toEvent), version: versionRows[0]!.timeline_version }
       })
+      reply.header('ETag', timelineEtag(result.version))
+      return result.events
     },
   )
 

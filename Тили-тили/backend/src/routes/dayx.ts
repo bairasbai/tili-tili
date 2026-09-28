@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { AppError } from '../errors.js'
+import { AppError, conflict } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { notifyWedding } from '../notify/notify.js'
@@ -66,6 +66,9 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         /* Ответ — из транзакции действия: туда же ложится и запись
          * идемпотентности (D2-13). Рассылка — после: она не часть ответа. */
         const result = await tx(async (client) => {
+          // Один aggregate-lock с full PUT/reschedule: shift всегда применяется
+          // к последнему committed расписанию, а не гоняется с его заменой.
+          await client.query('select id from weddings where id = $1 for update', [weddingId])
           /* Двигаются блоки, которые ЕЩЁ НЕ НАЧАЛИСЬ. Прошедшие не трогаем:
            * церемония, которая уже прошла, не сдвинется от того, что банкет
            * задержался, а в расписании поедет всё. */
@@ -73,7 +76,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
             `update timeline_events
                 set starts_at = starts_at + make_interval(mins => $2),
                     ends_at = ends_at + make_interval(mins => $2)
-              where wedding_id = $1 and starts_at is not null and starts_at > now()
+              where wedding_id = $1 and timing_mode = 'flexible' and starts_at is not null and starts_at > now()
               returning id`,
             [weddingId, minutes],
           )
@@ -82,6 +85,27 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
            * критический push всей команде мимо тихих часов ни о чём (ревью
            * 015). Ответ честный — `shiftedBlocks: 0`, рассылки ниже нет. */
           if (moved.length === 0) return { status: 200, body: { minutes, shiftedBlocks: 0, guestsAffected: 0 } }
+
+          const { rows: broken } = await client.query<{ child: string; parent: string }>(
+            `select child.name as child, parent.name as parent
+               from timeline_event_dependencies dep
+               join timeline_events child on child.id = dep.event_id and child.wedding_id = dep.wedding_id
+               join timeline_events parent on parent.id = dep.depends_on_event_id and parent.wedding_id = dep.wedding_id
+              where dep.wedding_id = $1
+                and child.starts_at is not null and parent.ends_at is not null
+                and child.starts_at < parent.ends_at
+                    + make_interval(mins => dep.travel_minutes + dep.buffer_minutes)
+              limit 1`,
+            [weddingId],
+          )
+          if (broken[0]) {
+            throw conflict(
+              'timeline_dependency_conflict',
+              `Сдвиг нарушит зависимость: «${broken[0].child}» начнётся слишком рано после «${broken[0].parent}»`,
+            )
+          }
+
+          await client.query('update weddings set timeline_version = timeline_version + 1 where id = $1', [weddingId])
           await client.query('insert into timeline_shifts (id, wedding_id, minutes, actor_id) values ($1,$2,$3,$4)', [
             uuidv7(),
             weddingId,
