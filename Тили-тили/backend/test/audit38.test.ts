@@ -238,7 +238,24 @@ describe.skipIf(!live)('фича 009, BE-009: день X глазами гост
   }
 
   const putTimeline = async (w: Wedding, events: Record<string, unknown>[]) => {
-    const res = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/timeline`, headers: auth(w.token), payload: events })
+    const snapshot = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    const payload = events.map(event => ({
+      ...event,
+      timingMode: event.timingMode ?? 'flexible',
+      assigneeUserIds: event.assigneeUserIds ?? [],
+      dealIds: event.dealIds ?? [],
+      dependsOn: event.dependsOn ?? [],
+    }))
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: { ...auth(w.token), 'if-match': snapshot.headers.etag! },
+      payload,
+    })
     expect(res.statusCode, res.body.slice(0, 300)).toBe(200)
     return res.json() as TimelineEvent[]
   }

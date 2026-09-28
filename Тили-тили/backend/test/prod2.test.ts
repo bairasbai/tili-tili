@@ -231,12 +231,26 @@ describe.skipIf(!live)('прод: мягкая бронь, отзывы и св�
 
   it('кабинет своего подрядчика отдаёт чат и тайминг, а не пустое поле', async () => {
     const { couple, token } = await externalSetup('T')
-    await app.inject({
-      method: 'PUT',
+    const timeline = await app.inject({
+      method: 'GET',
       url: `/weddings/${couple.weddingId}/timeline`,
       headers: auth(couple.token),
-      payload: [{ name: 'Сбор гостей', startsAt: '2027-07-05T12:00:00.000Z', who: 'Дядя Ваня' }],
     })
+    const savedTimeline = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${couple.weddingId}/timeline`,
+      headers: { ...auth(couple.token), 'if-match': timeline.headers.etag! },
+      payload: [{
+        name: 'Сбор гостей',
+        startsAt: '2027-07-05T12:00:00.000Z',
+        who: 'Дядя Ваня',
+        timingMode: 'flexible',
+        assigneeUserIds: [],
+        dealIds: [],
+        dependsOn: [],
+      }],
+    })
+    expect(savedTimeline.statusCode, savedTimeline.body).toBe(200)
 
     const view = await app.inject({ method: 'GET', url: `/guest-vendor/${token}` })
     expect(view.statusCode).toBe(200)
