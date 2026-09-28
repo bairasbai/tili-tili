@@ -1,4 +1,4 @@
-name: Verify 020 clean family browser
+name: Finalize 020 clean integration
 
 on:
   push:
@@ -6,16 +6,128 @@ on:
       - integration/020-clean-main-20260928
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: family020-clean-browser-${{ github.ref_name }}
-  cancel-in-progress: true
+  group: finalize-020-clean-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  browser:
+  finalize:
+    if: "github.event.head_commit.message == 'chore(020): finalize clean gate'"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Merge final 020 docs and regenerate contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_DOC=3663ec8af617d39e7b763db009adad57672b0fc5
+          git config core.quotepath false
+          git fetch --no-tags origin test/020-finalize-20260928
+          SOURCE_DOC=$(git rev-parse origin/test/020-finalize-20260928)
+          OURS=$(git rev-parse HEAD)
+
+          echo "020 source docs: $SOURCE_DOC"
+          unexpected=0
+          while IFS= read -r path; do
+            case "$path" in
+              ERRORS.md|JOURNAL.md|tasks/product-improvements-roadmap.md|tasks/фичи/020-семейные-приглашения/*|Тили-тили/Тили-тили_Бизнес-логика_и_бэкенд.md|Тили-тили/Тили-тили_Карта_кнопок.md|Тили-тили/Тили-тили_Карта_экранов.md)
+                ;;
+              *)
+                echo "::error file=$path::production/code change appeared after pinned 020 source; re-audit required"
+                unexpected=$((unexpected + 1))
+                ;;
+            esac
+          done < <(git diff --name-only "$BASE_DOC" "$SOURCE_DOC")
+          test "$unexpected" -eq 0
+
+          while IFS=$'\t' read -r status path extra; do
+            case "$path" in
+              ERRORS.md|JOURNAL.md|tasks/product-improvements-roadmap.md|tasks/фичи/020-семейные-приглашения/*|Тили-тили/Тили-тили_Бизнес-логика_и_бэкенд.md|Тили-тили/Тили-тили_Карта_кнопок.md|Тили-тили/Тили-тили_Карта_экранов.md)
+                ;;
+              *)
+                continue
+                ;;
+            esac
+
+            case "$status" in
+              A)
+                mkdir -p "$(dirname "$path")"
+                git show "$SOURCE_DOC:$path" > "$path"
+                ;;
+              M)
+                ours_file=$(mktemp)
+                base_file=$(mktemp)
+                theirs_file=$(mktemp)
+                out_file=$(mktemp)
+                git show "$OURS:$path" > "$ours_file"
+                git show "$BASE_DOC:$path" > "$base_file"
+                git show "$SOURCE_DOC:$path" > "$theirs_file"
+                if ! git merge-file -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"; then
+                  case "$path" in
+                    tasks/фичи/020-семейные-приглашения/tasks.md)
+                      cp "$theirs_file" "$out_file"
+                      ;;
+                    tasks/product-improvements-roadmap.md)
+                      cp "$ours_file" "$out_file"
+                      source_line=$(grep '^| 020 |' "$theirs_file")
+                      python3 -c 'import sys; p=sys.argv[1]; line=sys.argv[2]; s=open(p,encoding="utf-8").read().splitlines(); s=[line if x.startswith("| 020 |") else x for x in s]; open(p,"w",encoding="utf-8").write("\n".join(s)+"\n")' "$out_file" "$source_line"
+                      ;;
+                    ERRORS.md|JOURNAL.md|Тили-тили/Тили-тили_Бизнес-логика_и_бэкенд.md|Тили-тили/Тили-тили_Карта_кнопок.md|Тили-тили/Тили-тили_Карта_экранов.md)
+                      git merge-file --union -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"
+                      ;;
+                    *)
+                      echo "::error file=$path::unexpected documentation conflict"
+                      exit 1
+                      ;;
+                  esac
+                fi
+                if grep -q -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file"; then
+                  echo "::error file=$path::conflict markers remain"
+                  exit 1
+                fi
+                cat "$out_file" > "$path"
+                rm -f "$ours_file" "$base_file" "$theirs_file" "$out_file"
+                ;;
+              D)
+                rm -f "$path"
+                ;;
+            esac
+          done < <(git diff --name-status "$BASE_DOC" "$SOURCE_DOC")
+
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          cd Тили-тили/backend
+          printf 'minimum-release-age=0\n' > .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          rm .npmrc
+          pnpm run gen
+          node node_modules/openapi-typescript/bin/cli.js ../Тили-тили_API_openapi.yaml -o ../app/src/lib/api/schema.ts
+          cd ../..
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ERRORS.md JOURNAL.md tasks/product-improvements-roadmap.md tasks/фичи/020-семейные-приглашения Тили-тили/Тили-тили_Бизнес-логика_и_бэкенд.md Тили-тили/Тили-тили_Карта_кнопок.md Тили-тили/Тили-тили_Карта_экранов.md Тили-тили/backend/src/contract/paths.generated.ts Тили-тили/backend/src/contract/schemas.generated.ts Тили-тили/backend/src/contract/api.generated.ts Тили-тили/app/src/lib/api/schema.ts
+          if git diff --cached --quiet; then
+            echo "nothing to finalize"
+            exit 0
+          fi
+          git commit -m "chore(020): finalize docs and generated contract"
+          git push origin HEAD:integration/020-clean-main-20260928
+
+  browser:
+    if: "github.event.head_commit.message == 'chore(020): finalize docs and generated contract'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -43,6 +155,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install locked application dependencies
+        shell: bash
         run: |
           set -euo pipefail
           corepack enable
@@ -57,7 +170,7 @@ jobs:
       - name: Migrate disposable database
         working-directory: Тили-тили/backend
         run: DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
-      - name: Rehearse legacy family migration down → seed → up
+      - name: Rehearse legacy family migration down seed up
         working-directory: Тили-тили/backend
         run: |
           set -euo pipefail
@@ -66,6 +179,7 @@ jobs:
           DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js up 1 -m migrations
           DATABASE_URL="$TEST_DATABASE_URL" node scripts/family020-migration-rehearsal.mjs verify
       - name: Run real family browser acceptance
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$E2E_RESULT_DIR"
@@ -85,11 +199,9 @@ jobs:
             sleep 1
           done
           if test "$ready" != 1; then
-            {
-              echo 'fixture startup failed'
-              tail -n 150 "$RUNNER_TEMP/family020-api.log" || true
-              tail -n 150 "$RUNNER_TEMP/family020-vite.log" || true
-            } > "$E2E_RESULT_DIR/startup-error.txt"
+            echo "fixture startup failed" > "$E2E_RESULT_DIR/startup-error.txt"
+            tail -n 150 "$RUNNER_TEMP/family020-api.log" >> "$E2E_RESULT_DIR/startup-error.txt" || true
+            tail -n 150 "$RUNNER_TEMP/family020-vite.log" >> "$E2E_RESULT_DIR/startup-error.txt" || true
             exit 1
           fi
           python 'Тили-тили/backend/scripts/family020-e2e-browser.py'
