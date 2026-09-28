@@ -591,9 +591,10 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       [vendorId],
     )
 
-    /* «Ожидается по сделкам» — остаток по открытым броням: цена минус то,
-     * что уже пришло платежами (те же `payments`, что видит пара; возвраты
-     * с минусом, отменённые не считаются). Раньше складывалась цена целиком,
+    /* «Ожидается по сделкам» — остаток по открытым броням: цена минус только
+     * те известные `payments`, которые пара раскрыла этому подрядчику.
+     * private/finance_members сюда не попадают даже косвенно через агрегат.
+     * Раньше складывалась цена целиком,
      * и сделка 100 000 ₽ с внесённым авансом 50 000 ₽ показывала «ожидается
      * 100 000 ₽» (D5-08). Закрытые и отменённые в ожидание не входят. */
     const owed = (r: { price: string | null; paid: string }) => Math.max(0, Number(r.price ?? 0) - Number(r.paid))
@@ -649,7 +650,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
   }, async (request) => {
     const vendorId = await myVendorId(request.caller!.userId)
     const { dealId } = request.params as { dealId: string }
-    const own = await db().query('select 1 from deals where id=$1 and vendor_id=$2', [dealId, vendorId])
+    const own = await db().query(`select 1 from deals d join weddings w on w.id=d.wedding_id
+      where d.id=$1 and d.vendor_id=$2 and w.archived_at is null`, [dealId, vendorId])
     if (!own.rows[0]) throw notFound('Сделка не найдена')
     const { rows } = await db().query<{
       id:string; kind:string; amount:string|null; status:string; installment_id:string|null; plan_version:number
@@ -685,7 +687,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         from payment_receipts r
         join payments p on p.id=r.payment_id
         join deals d on d.id=p.deal_id
-       where d.id=$1 and d.vendor_id=$2 and p.id=$3 and p.visibility='vendor'
+        join weddings w on w.id=d.wedding_id
+       where d.id=$1 and d.vendor_id=$2 and w.archived_at is null
+         and p.id=$3 and p.visibility='vendor'
          and r.id=$4 and r.payment_id=p.id and r.wedding_id=d.wedding_id`,
       [dealId,vendorId,paymentId,receiptId])
     const found=rows[0]
