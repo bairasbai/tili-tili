@@ -64,7 +64,7 @@ jobs:
         \    result['logs'][name]=text\n(pathlib.Path(os.environ['E2E_RESULT_DIR'])/'startup-error.json').write_text(json.dumps(result,indent=2))\n\
         print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')\nPYCODE\n  exit 1\nfi\npython 'Тили-тили/backend/scripts/payment-e2e-browser.py'\n\
         python - <<'PYCODE'\nimport json,os,pathlib\nr=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'payment-browser-result.json').read_text())\n\
-        assert len(r['passed'])==12 and not r['page_errors'] and 'error' not in r\nPYCODE\n"
+        assert len(r['passed'])==14 and not r['page_errors'] and 'error' not in r\nPYCODE\n"
     - uses: actions/upload-artifact@v4
       if: always()
       with:
