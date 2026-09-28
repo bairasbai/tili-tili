@@ -37,6 +37,8 @@ import { inspirationRoutes } from './routes/inspiration.js'
 import { inviteRoutes } from './routes/invites.js'
 import { vendorRoutes } from './routes/vendor.js'
 import { weddingRoutes } from './routes/weddings.js'
+import { shortlistRoutes } from './routes/shortlist.js'
+import { offerRoutes } from './routes/offers.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
@@ -311,6 +313,8 @@ export async function buildApp(
   await app.register(userRoutes)
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
+  await app.register(shortlistRoutes)
+  await app.register(offerRoutes)
   await app.register(inviteRoutes)
   await app.register(inspirationRoutes)
   await app.register(catalogRoutes)
