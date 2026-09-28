@@ -1,4 +1,4 @@
-# Передача сессии — 020 / T033 финализация
+# Передача сессии — 020 завершён ✅
 
 Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`.
 Рабочая ветка: `test/020-finalize-20260928`.
@@ -65,11 +65,19 @@ SHA `03e9b7b2c80ef92ebf38218bbe3bf4867021c0ee`.
 После него OpenAPI не менялся. Текущий CI на `28ed3859…` повторно подтверждает
 `schemas.test.ts` и `contract-sync.test.ts`, поэтому generated artifacts не stale.
 
-## T033
+## T033 — закрыт
 
-Этот handoff входит в документационную часть T033. До повторного полного gate на самом документационном коммите:
-- T033 оставлять `[ ]`;
-- roadmap 020 не помечать ✅;
-- 021 не начинать.
+Документационный commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be` прошёл повторный gate уже после обновления JOURNAL/ERRORS/business logic/карт/handoff/roadmap/acceptance:
 
-Новая реальная ошибка финального аудита записана как ERR-0336: вместимость стола после materialization всё ещё использовала deprecated `plus_one`.
+- CI `36386064858` — **SUCCESS**;
+- Verify 020 family browser `36386064786` — **SUCCESS**;
+- browser/migration gate повторно подтвердил live PostgreSQL + Fastify + Vite + Chromium без route mocks.
+
+Новая реальная ошибка финального аудита записана как ERR-0336: вместимость стола после materialization всё ещё использовала deprecated `plus_one`; исправление и regression находятся в 020.
+
+## Итог
+
+T001–T033 закрыты. Этап **020 «Семейные приглашения и отдельные персоны» завершён ✅**.
+Main/production этой работой не менялись. Этап 021 в этой работе не начинался.
+
+Внешние release blockers остаются отдельными: юридические тексты, реальные SMS/S3/VAPID, production deployment, эксплуатационный backup/restore drill и пилот на физических устройствах.

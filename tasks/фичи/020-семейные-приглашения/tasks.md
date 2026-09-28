@@ -64,14 +64,14 @@ Main не менять. Рабочая ветка — `test/020-finalize-2026092
 - [x] T030 Export/erasure: party/token/people корректно входят в выгрузку и 31-day cleanup.
 - [x] T031 Browser E2E: пара создаёт семью из двух персон → одна ссылка → разный RSVP/menu → два места/один номер → один family gift reserve.
 - [x] T032 Полный PostgreSQL/Redis gate, frontend/backend tests/types/lint/build.
-- [ ] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
+- [x] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
 
 ## Порядок
 
 T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 021 не начинать до полного закрытия 020.
 
-## Финализация T033 · 2026-09-28
+## Финал T033 · 2026-09-28 ✅
 
 T001–T032 повторно подтверждены по коду и зелёным gate на code/test SHA `28ed3859293fc83fb5d50705b92cad9812ad4210`.
 
@@ -82,4 +82,4 @@ T001–T032 повторно подтверждены по коду и зелё�
 - Artifact `family020-browser-evidence` id `10954420756`, digest `sha256:1c9bc62a2a63235819c3ecbb8d03c268016946914f78a6071c1d0564abb8f7ae`.
 - Финальный аудит после прежнего handoff закрыл stale `plusOne` в `personCount`/кейтеринге и вместимости столов; частичный family-RSVP закреплён отдельной регрессией.
 
-T033 остаётся открытым до прохождения полного gate уже на документационном коммите этой финализации. До этого этап 020 **не помечать завершённым** и 021 не начинать.
+Документационный commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be` прошёл повторный final gate: CI `36386064858` — success; Verify 020 family browser `36386064786` — success. T033 закрыт, этап **020 завершён ✅**. Main/production не менялись; 021 в этой работе не начинался.

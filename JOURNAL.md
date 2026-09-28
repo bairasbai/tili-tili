@@ -2894,3 +2894,12 @@ SHA-256 5debaeaae6e0b25f7f397af6787ad4537dfb26a56629f4932db0553a8d58ffa5.
 **Что найдено после старого T033.** `d66b2f4` довёл общий `personCount` до materialized rows, `06cca3f` исправил реальный double-count вместимости стола через `plus_one` (ERR-0336), `014e7a1` добавил прямую регрессию частичного family-RSVP, `28ed385` полностью убрал `plus_one` из кейтерингового запроса. Это не новая архитектура: legacy compatibility оставлена, но deprecated флаг больше не участвует в счётчиках.
 
 **Решение по статусу.** T001–T032 подтверждены заново. T033 снова открыт только на документацию + final gate самого документационного коммита. До этого roadmap 020 не ✅, 021 не начинать.
+
+
+## 2026-09-28 — 020 окончательно закрыт после T033 ✅
+
+**Документационный final gate.** Commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be` содержал актуализацию tasks/roadmap, session-handoff, JOURNAL/ERRORS, business logic, карт экранов/кнопок и verification/acceptance после post-handoff исправлений 020.
+
+**Проверка.** CI `36386064858` — SUCCESS; Verify 020 family browser `36386064786` — SUCCESS. Тем самым документационный commit прошёл повторный полный gate после всех исправлений и не сломал frontend/backend проверки, миграции или live Chromium acceptance.
+
+**Статус.** T001–T033 закрыты, roadmap 020 отмечен ✅. Main/production не менялись. 021 в рамках этой работы не начинался.
