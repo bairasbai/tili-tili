@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 70. */
+ * Схем: 88. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -283,12 +283,30 @@ export const CONTRACT_SCHEMAS = {
       },
       "Budget": {
           "type": "object",
+          "required": [
+              "reserveBps",
+              "settingsVersion"
+          ],
           "properties": {
+              "paymentSummary": {
+                  "$ref": "contract#/definitions/PaymentSummary"
+              },
               "total": {
                   "$ref": "contract#/definitions/Money"
               },
               "spent": {
                   "$ref": "contract#/definitions/Money"
+              },
+              "reserveBps": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 5000,
+                  "description": "Доля резерва в базисных пунктах: 1000 = 10 %. От 0 до 5000 (50 %), по умолчанию 1000."
+              },
+              "settingsVersion": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Версия настроек резерва для `PATCH …/budget/settings`; 0 — резерв ни разу не меняли."
               },
               "reserve": {
                   "allOf": [
@@ -296,12 +314,16 @@ export const CONTRACT_SCHEMAS = {
                           "$ref": "contract#/definitions/Money"
                       }
                   ],
-                  "description": "Резерв на непредвиденное — 10% от общего бюджета (План ч. 283).\nОтдельная строка, а не категория: категории делят сто процентов\nмежду собой, и резерв внутри них означал бы, что часть сметы\nпросто уменьшили.\n\nСчитает сервер, чтобы доля не разошлась между экранами.\n"
+                  "description": "Резерв на непредвиденное — `reserveBps` от общего бюджета: по\nумолчанию 10 % (План ч. 283), пара меняет долю от 0 до 50 % (018-B).\nОтдельная строка, а не категория: категории делят сто процентов\nмежду собой, и резерв внутри них означал бы, что часть сметы\nпросто уменьшили.\n\nСчитает сервер, чтобы доля не разошлась между экранами.\n"
               },
               "categories": {
                   "type": "array",
                   "items": {
                       "type": "object",
+                      "required": [
+                          "limitCustom",
+                          "limitVersion"
+                      ],
                       "properties": {
                           "id": {
                               "type": "string"
@@ -310,7 +332,21 @@ export const CONTRACT_SCHEMAS = {
                               "type": "string"
                           },
                           "planned": {
-                              "$ref": "contract#/definitions/Money"
+                              "allOf": [
+                                  {
+                                      "$ref": "contract#/definitions/Money"
+                                  }
+                              ],
+                              "description": "Лимит категории: доля общего бюджета или, при `limitCustom`, сумма, заданная парой."
+                          },
+                          "limitCustom": {
+                              "type": "boolean",
+                              "description": "true — лимит задан парой (`PUT …/limit`), false — автоматическая доля."
+                          },
+                          "limitVersion": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Версия лимита для `PUT`/`PATCH …/limit`; 0 — лимит ни разу не задавали."
                           },
                           "fromSlots": {
                               "type": "integer",
@@ -821,7 +857,17 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book`). null — бронь без пакета или пакет снят с витрины.\n"
+                  "description": "Снимок принятого названия, только couple: текст может содержать цену.\nУдаление живого пакета/предложения не меняет его. null — название неизвестно.\n"
+              },
+              "packageIncludes": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "items": {
+                      "type": "string"
+                  },
+                  "description": "Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав."
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -960,6 +1006,27 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           }
+      },
+      "FinancialBalance": {
+          "type": "object",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              }
+          },
+          "description": "Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются нулём."
       },
       "Fund": {
           "type": "object",
@@ -1522,15 +1589,923 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
-      "PrebookedCategory": {
+      "Offer": {
+          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдевять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
+          "oneOf": [
+              {
+                  "type": "object",
+                  "title": "Предложение",
+                  "required": [
+                      "id",
+                      "requestId",
+                      "kind",
+                      "packageId",
+                      "title",
+                      "price",
+                      "includes",
+                      "message",
+                      "validUntil"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "requestId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "packageId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid"
+                      },
+                      "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "includes": {
+                          "type": "array",
+                          "maxItems": 40,
+                          "items": {
+                              "type": "string",
+                              "maxLength": 200
+                          }
+                      },
+                      "message": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Отказ",
+                  "required": [
+                      "id",
+                      "requestId",
+                      "kind",
+                      "packageId",
+                      "title",
+                      "price",
+                      "includes",
+                      "message",
+                      "validUntil"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "requestId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "decline"
+                          ]
+                      },
+                      "packageId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid",
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "title": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "price": {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
+                      "includes": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 0,
+                          "items": {
+                              "type": "string"
+                          }
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date",
+                          "enum": [
+                              null
+                          ]
+                      }
+                  }
+              }
+          ]
+      },
+      "OfferInput": {
+          "description": "Пакет, своё предложение или отказ — ровно одна из трёх строгих форм.",
+          "oneOf": [
+              {
+                  "type": "object",
+                  "title": "Ответ пакетом анкеты",
+                  "required": [
+                      "kind",
+                      "packageId",
+                      "price"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "packageId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Собственное предложение",
+                  "required": [
+                      "kind",
+                      "title",
+                      "price",
+                      "includes"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "offer"
+                          ]
+                      },
+                      "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "price": {
+                          "$ref": "contract#/definitions/PositiveMoney"
+                      },
+                      "includes": {
+                          "type": "array",
+                          "maxItems": 40,
+                          "items": {
+                              "type": "string",
+                              "maxLength": 200
+                          }
+                      },
+                      "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                      },
+                      "validUntil": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "title": "Отказ",
+                  "required": [
+                      "kind",
+                      "message"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "decline"
+                          ]
+                      },
+                      "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                      }
+                  }
+              }
+          ]
+      },
+      "OfferPublic": {
+          "type": "object",
+          "description": "Безопасный статус для помощника и координатора без условий и ответа подрядчика.",
+          "required": [
+              "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "responded"
+                  ]
+              }
+          }
+      },
+      "OfferRequest": {
+          "type": "object",
+          "description": "Условия свадьбы, зафиксированные в момент отправки запроса этому подрядчику.",
+          "required": [
+              "id",
+              "status",
+              "weddingDate",
+              "guests",
+              "city",
+              "wishes",
+              "createdAt"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "open",
+                      "closed"
+                  ]
+              },
+              "closeReason": {
+                  "type": "string",
+                  "enum": [
+                      "removed",
+                      "booked_other",
+                      "booked",
+                      "wedding_cancelled",
+                      "date_changed",
+                      "vendor_erased"
+                  ]
+              },
+              "weddingDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "guests": {
+                  "type": [
+                      "integer",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 5000
+              },
+              "city": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "wishes": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "budgetHint": {
+                  "$ref": "contract#/definitions/PositiveMoney"
+              },
+              "offer": {
+                  "$ref": "contract#/definitions/Offer"
+              }
+          }
+      },
+      "PaymentDeal": {
+          "type": "object",
+          "required": [
+              "id",
+              "slotId",
+              "name",
+              "state",
+              "price",
+              "recorded",
+              "remaining",
+              "planned",
+              "unallocated",
+              "needsReview",
+              "active",
+              "canPlan"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "slotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "candidate",
+                      "contacted",
+                      "negotiating",
+                      "booked",
+                      "paid_deposit",
+                      "done",
+                      "cancelled"
+                  ]
+              },
+              "price": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      },
+                      {
+                          "type": "null"
+                      }
+                  ]
+              },
+              "recorded": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "remaining": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      },
+                      {
+                          "type": "null"
+                      }
+                  ]
+              },
+              "planned": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "unallocated": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "needsReview": {
+                  "type": "boolean"
+              },
+              "active": {
+                  "type": "boolean"
+              },
+              "canPlan": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "PaymentHistoryExport": {
+          "type": "object",
+          "required": [
+              "filename",
+              "csv",
+              "records"
+          ],
+          "properties": {
+              "filename": {
+                  "type": "string"
+              },
+              "csv": {
+                  "type": "string"
+              },
+              "records": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          }
+      },
+      "PaymentInstallment": {
+          "type": "object",
+          "required": [
+              "id",
+              "dealId",
+              "title",
+              "amount",
+              "paid",
+              "remaining",
+              "due",
+              "version",
+              "status",
+              "overdue",
+              "cancelReason",
+              "cancelledAt",
+              "allocated"
+          ],
+          "properties": {
+              "cancelledAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "paid": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "allocated": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на\nотменённом этапе), распределённых по этапам в порядке срока. Только для показа —\nпривязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной\nотметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной\nсделке (ревью 018, M-01).\n"
+              },
+              "remaining": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки."
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "status": {
+                  "$ref": "contract#/definitions/PaymentInstallmentStatus"
+              },
+              "overdue": {
+                  "type": "boolean",
+                  "description": "Срок прошёл, а `remaining` больше нуля."
+              },
+              "cancelReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "PaymentInstallmentCreate": {
+          "type": "object",
+          "required": [
+              "dealId",
+              "title",
+              "amount",
+              "due"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              }
+          },
+          "additionalProperties": false
+      },
+      "PaymentInstallmentPatch": {
+          "type": "object",
+          "required": [
+              "version"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "cancelled": {
+                  "type": "boolean",
+                  "enum": [
+                      true
+                  ]
+              },
+              "reason": {
+                  "type": "string",
+                  "maxLength": 500
+              }
+          },
+          "additionalProperties": false,
+          "description": "Оптимистическая версия обязательна. Отмена допускает только version/cancelled/reason: она не меняет суммы и не создаёт возврат. После снижения цены несогласованный план исправляется явно; старый черновик получает 409.",
+          "minProperties": 2
+      },
+      "PaymentInstallmentPay": {
+          "type": "object",
+          "required": [
+              "version",
+              "amount"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              }
+          },
+          "additionalProperties": false
+      },
+      "PaymentInstallmentStatus": {
           "type": "string",
           "enum": [
-              "venue",
-              "photo",
-              "video",
-              "host"
+              "pending",
+              "partial",
+              "paid",
+              "covered",
+              "cancelled"
           ],
-          "description": "Категория слота шаблона, подрядчик которой уже найден вне приложения (фича 018): площадка, фотограф, видеограф, ведущий."
+          "description": "paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами\nсделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —\nничего; cancelled — этап отменён. Одна схема на этап и на его строку в\n`PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).\n"
+      },
+      "PaymentPlanLink": {
+          "type": "object",
+          "required": [
+              "version",
+              "installmentId"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "installmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              }
+          },
+          "additionalProperties": false,
+          "description": "Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным."
+      },
+      "PaymentRecord": {
+          "type": "object",
+          "required": [
+              "id",
+              "dealId",
+              "kind",
+              "amount",
+              "status",
+              "createdAt",
+              "installmentId",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "deposit",
+                      "balance",
+                      "refund"
+                  ]
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "recorded",
+                      "confirmed",
+                      "cancelled"
+                  ]
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "installmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              }
+          }
+      },
+      "PaymentSchedule": {
+          "type": "object",
+          "required": [
+              "range",
+              "readOnly",
+              "summary",
+              "dueInWindow",
+              "overdueRemaining",
+              "items",
+              "deals",
+              "payments",
+              "allInstallments"
+          ],
+          "properties": {
+              "range": {
+                  "type": "object",
+                  "required": [
+                      "from",
+                      "to",
+                      "today",
+                      "timeZone",
+                      "includeOverdue",
+                      "includeCancelled"
+                  ],
+                  "properties": {
+                      "from": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      "to": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      "today": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      "timeZone": {
+                          "type": "string"
+                      },
+                      "includeOverdue": {
+                          "type": "boolean"
+                      },
+                      "includeCancelled": {
+                          "type": "boolean"
+                      }
+                  }
+              },
+              "readOnly": {
+                  "type": "boolean"
+              },
+              "summary": {
+                  "$ref": "contract#/definitions/PaymentSummary"
+              },
+              "dueInWindow": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`."
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentInstallment"
+                  }
+              },
+              "deals": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentDeal"
+                  }
+              },
+              "payments": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentRecord"
+                  }
+              },
+              "overdueRemaining": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09)."
+              },
+              "allInstallments": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "dealId",
+                          "title",
+                          "status",
+                          "remaining"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "dealId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "title": {
+                              "type": "string"
+                          },
+                          "status": {
+                              "$ref": "contract#/definitions/PaymentInstallmentStatus"
+                          },
+                          "remaining": {
+                              "$ref": "contract#/definitions/Money"
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "PaymentSummary": {
+          "type": "object",
+          "required": [
+              "committed",
+              "recorded",
+              "remaining",
+              "unallocated",
+              "inactiveDealRecorded",
+              "unknownPrices"
+          ],
+          "properties": {
+              "committed": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "recorded": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "remaining": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "unallocated": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "inactiveDealRecorded": {
+                  "$ref": "contract#/definitions/FinancialBalance"
+              },
+              "unknownPrices": {
+                  "type": "integer",
+                  "minimum": 0
+              }
+          },
+          "description": "Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке."
+      },
+      "PositiveMoney": {
+          "type": "object",
+          "description": "Положительная сумма в копейках; в 019 принимается только RUB.",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              }
+          }
+      },
+      "PositivePaymentMoney": {
+          "type": "object",
+          "required": [
+              "amount",
+              "currency"
+          ],
+          "properties": {
+              "amount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+              },
+              "currency": {
+                  "type": "string",
+                  "enum": [
+                      "RUB"
+                  ]
+              }
+          },
+          "additionalProperties": false
       },
       "Readiness": {
           "type": "object",
@@ -1622,12 +2597,155 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "ShortlistEntry": {
+          "type": "object",
+          "required": [
+              "id",
+              "slotId",
+              "position",
+              "createdAt",
+              "available",
+              "occupancy",
+              "vendor"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Стабильный id записи шорт-листа; по нему запись удаляется."
+              },
+              "slotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "position": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "available": {
+                  "type": [
+                      "boolean",
+                      "null"
+                  ],
+                  "description": "`true` — живая анкета той же категории; `false` — анкета скрыта,\nзаблокирована или сменила категорию; `null` — обезличенный tombstone.\n"
+              },
+              "occupancy": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "free",
+                      "held",
+                      "busy",
+                      null
+                  ],
+                  "description": "Занятость на дату свадьбы. `null` — дата не выбрана или анкета стёрта;\nсвоя бронь этой свадьбы считается `free`.\n"
+              },
+              "request": {
+                  "description": "Паре — полный запрос с действующим ответом, если он уже есть;\nпомощнику и координатору — только обезличенный статус. Поля нет,\nпока пара не отправила запрос этому кандидату.\n",
+                  "oneOf": [
+                      {
+                          "$ref": "contract#/definitions/OfferRequest"
+                      },
+                      {
+                          "$ref": "contract#/definitions/OfferPublic"
+                      }
+                  ]
+              },
+              "vendor": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "id",
+                      "name",
+                      "categoryId",
+                      "city",
+                      "priceFrom",
+                      "rating",
+                      "reviewsCount",
+                      "photoUrl",
+                      "verified",
+                      "hasVideo",
+                      "packages"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Публичная карточка кандидата. `null` — подрядчик стёрт: прежние id,\nимя и другие данные не возвращаются. У скрытой/заблокированной анкеты\nмедиа, цены и пакеты не возвращаются.\n",
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      },
+                      "categoryId": {
+                          "type": "string"
+                      },
+                      "city": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "priceFrom": {
+                          "allOf": [
+                              {
+                                  "$ref": "contract#/definitions/Money"
+                              }
+                          ],
+                          "type": [
+                              "object",
+                              "array",
+                              "string",
+                              "number",
+                              "boolean",
+                              "null"
+                          ]
+                      },
+                      "rating": {
+                          "type": [
+                              "number",
+                              "null"
+                          ]
+                      },
+                      "reviewsCount": {
+                          "type": "integer",
+                          "minimum": 0
+                      },
+                      "photoUrl": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "verified": {
+                          "type": "boolean"
+                      },
+                      "hasVideo": {
+                          "type": "boolean"
+                      },
+                      "packages": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "contract#/definitions/VendorPackage"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "Slot": {
           "type": "object",
-          "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой. Пустой слот может нести отметку `prebooked`\n(«уже забронировано вне приложения», фича 018) — она приходит всегда.\n",
-          "required": [
-              "prebooked"
-          ],
+          "description": "Место в команде свадьбы. Слот либо пуст, либо несёт сделку — собственного\nстатуса у него нет. tileState — производная подпись для мозаики команды,\nтолько для чтения: клиент не должен вычислять её сам, чтобы экраны не\nразошлись между собой.\n",
           "properties": {
               "id": {
                   "type": "string"
@@ -1667,11 +2785,6 @@ export const CONTRACT_SCHEMAS = {
                       "booked",
                       "paid"
                   ]
-              },
-              "prebooked": {
-                  "type": "boolean",
-                  "readOnly": true,
-                  "description": "Пара ответила в квизе, что подрядчик этой категории уже найден вне\nприложения (`POST /weddings`, поле `prebooked`). Бывает только у\nслота без сделки — это держит ограничение базы: бронь из каталога и\nсвой подрядчик снимают отметку той же операцией. Снять вручную —\n`DELETE …/slots/{slotId}/prebooked`. Счётчики готовности и подсказки\nТиля (`GET …/tips`) считают такой слот забронированным, а `tileState`\nостаётся производной от сделки — `empty`.\n"
               }
           }
       },
@@ -2346,25 +3459,9 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "packages": {
                           "type": "array",
+                          "description": "В порядке, заданном подрядчиком.",
                           "items": {
-                              "type": "object",
-                              "properties": {
-                                  "id": {
-                                      "type": "string"
-                                  },
-                                  "name": {
-                                      "type": "string"
-                                  },
-                                  "price": {
-                                      "$ref": "contract#/definitions/Money"
-                                  },
-                                  "includes": {
-                                      "type": "array",
-                                      "items": {
-                                          "type": "string"
-                                      }
-                                  }
-                              }
+                              "$ref": "contract#/definitions/VendorPackage"
                           }
                       },
                       "reviews": {
@@ -2376,6 +3473,76 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           ]
+      },
+      "VendorPackage": {
+          "type": "object",
+          "description": "Пакет услуг подрядчика в ответе. `id` постоянен: правка анкеты, не\nудаляющая пакет, его не меняет, и брони называют пакет, как до правки\n(019, FR-006).\n",
+          "required": [
+              "id",
+              "name",
+              "price",
+              "includes"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "price": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "`null` — цена не названа («по запросу»), а не 0 ₽ (R-281).",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "includes": {
+                  "type": "array",
+                  "description": "Что входит в пакет — пунктами.",
+                  "items": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "VendorPackageInput": {
+          "type": "object",
+          "description": "Пакет услуг в `PUT /vendor/profile`. С `id` — свой пакет, который\nостаётся тем же (имя, цена, состав и место в списке обновляются);\nбез `id` — новый. Цены нет — поле не присылается: `null` не\nпринимается, пакет хранится без цены (R-281).\n",
+          "required": [
+              "name"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "maxLength": 64
+              },
+              "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+              },
+              "price": {
+                  "$ref": "contract#/definitions/Money"
+              },
+              "includes": {
+                  "type": "array",
+                  "maxItems": 40,
+                  "items": {
+                      "type": "string",
+                      "maxLength": 200
+                  }
+              }
+          }
       },
       "VendorPage": {
           "type": "object",
@@ -2396,7 +3563,7 @@ export const CONTRACT_SCHEMAS = {
       },
       "VendorUpsert": {
           "type": "object",
-          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**.\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
+          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
           "required": [
               "name",
               "categoryId",
@@ -2438,22 +3605,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "packages": {
                   "type": "array",
+                  "maxItems": 20,
                   "items": {
-                      "type": "object",
-                      "properties": {
-                          "name": {
-                              "type": "string"
-                          },
-                          "price": {
-                              "$ref": "contract#/definitions/Money"
-                          },
-                          "includes": {
-                              "type": "array",
-                              "items": {
-                                  "type": "string"
-                              }
-                          }
-                      }
+                      "$ref": "contract#/definitions/VendorPackageInput"
                   }
               },
               "portfolioUrls": {
@@ -2719,38 +3873,6 @@ export const CONTRACT_SCHEMAS = {
               "style": {
                   "type": "string"
               },
-              "format": {
-                  "allOf": [
-                      {
-                          "$ref": "contract#/definitions/WeddingFormat"
-                      }
-                  ],
-                  "description": "формат из квиза (фича 018); null — не указан: вопрос пропущен или свадьба заведена раньше",
-                  "type": [
-                      "object",
-                      "array",
-                      "string",
-                      "number",
-                      "boolean",
-                      "null"
-                  ]
-              },
-              "planner": {
-                  "allOf": [
-                      {
-                          "$ref": "contract#/definitions/WeddingPlanner"
-                      }
-                  ],
-                  "description": "кто планирует (фича 018); null — не указано",
-                  "type": [
-                      "object",
-                      "array",
-                      "string",
-                      "number",
-                      "boolean",
-                      "null"
-                  ]
-              },
               "tz": {
                   "type": "string",
                   "description": "таймзона места свадьбы. По ней открывается чат дня X и считаются напоминания — не по таймзоне пользователя"
@@ -2796,25 +3918,6 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           }
-      },
-      "WeddingFormat": {
-          "type": "string",
-          "enum": [
-              "classic",
-              "outdoor",
-              "intimate",
-              "two_day"
-          ],
-          "description": "Формат свадьбы из квиза (фича 018). Код, а не подпись варианта: подпись\nпереводится на экране, и «Классика» на другом языке стала бы другим\nответом.\n- `classic` — «Классика: ЗАГС + банкет»: 12 слотов шаблона; в тайминге\n  «Регистрация в ЗАГСе» 14:00–15:00 вместо «Выездной церемонии» 16:00–17:00.\n- `outdoor` — «Выездная церемония»: плюс слоты «Площадка выездной\n  церемонии» (`ceremony`) и «Церемониймейстер» (`registrar`); тайминг\n  шаблона.\n- `intimate` — «Камерная свадьба»: 12 слотов; «Ужин» 18:00–22:00 вместо\n  «Банкета», без «Салюта и финала».\n- `two_day` — «Банкет+ на 2 дня»: плюс слот «Отель для гостей» (`hotel`);\n  тайминг выездной и два блока на следующее число — «День 2: бранч»\n  12:00–14:00 и «День 2: продолжение праздника» 14:00–20:00. Перенос даты\n  двигает их вместе с первым днём.\n"
-      },
-      "WeddingPlanner": {
-          "type": "string",
-          "enum": [
-              "self",
-              "agency",
-              "coordinator"
-          ],
-          "description": "Кто планирует (фича 018): `agency` — плюс слот «Организатор» (`agency`), `coordinator` — плюс «Координатор дня» (`coordinator`), `self` — ничего."
       },
       "WeddingPublic": {
           "type": "object",
@@ -2937,6 +4040,7 @@ export type ContractSchemaName =
   | "DealState"
   | "Document"
   | "Error"
+  | "FinancialBalance"
   | "Fund"
   | "Gift"
   | "Guest"
@@ -2951,10 +4055,27 @@ export type ContractSchemaName =
   | "Money"
   | "Note"
   | "Notification"
-  | "PrebookedCategory"
+  | "Offer"
+  | "OfferInput"
+  | "OfferPublic"
+  | "OfferRequest"
+  | "PaymentDeal"
+  | "PaymentHistoryExport"
+  | "PaymentInstallment"
+  | "PaymentInstallmentCreate"
+  | "PaymentInstallmentPatch"
+  | "PaymentInstallmentPay"
+  | "PaymentInstallmentStatus"
+  | "PaymentPlanLink"
+  | "PaymentRecord"
+  | "PaymentSchedule"
+  | "PaymentSummary"
+  | "PositiveMoney"
+  | "PositivePaymentMoney"
   | "Readiness"
   | "Review"
   | "Session"
+  | "ShortlistEntry"
   | "Slot"
   | "SupportDeal"
   | "Table"
@@ -2968,6 +4089,8 @@ export type ContractSchemaName =
   | "Vendor"
   | "VendorDecision"
   | "VendorDetail"
+  | "VendorPackage"
+  | "VendorPackageInput"
   | "VendorPage"
   | "VendorUpsert"
   | "VerificationDecision"
@@ -2977,7 +4100,5 @@ export type ContractSchemaName =
   | "VerificationStatus"
   | "VerificationSubmit"
   | "Wedding"
-  | "WeddingFormat"
-  | "WeddingPlanner"
   | "WeddingPublic"
   | "WeddingSupportCard"
