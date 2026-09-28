@@ -8049,7 +8049,8 @@ security:
         Полная замена/reorder текущего тайминга. Существующие события сохраняют
         свои ID; новый блок без id получает новый ID. If-Match обязан содержать
         ETag последнего GET/успешного PUT. Устаревшая версия отвечает 409
-        timeline_version_conflict и ничего не меняет.
+        timeline_version_conflict и ничего не меняет. Некорректный If-Match —
+        400 timeline_version_invalid; отсутствующий — 428 timeline_version_required.
       security: [bearerAuth: []]
       parameters:
       - {$ref: '#/components/parameters/WeddingId'}
