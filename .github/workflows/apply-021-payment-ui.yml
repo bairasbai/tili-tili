@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/apply-021-payment-ui.yml
       - Тили-тили/app/scripts/apply-021-payment-ui.mjs
+      - Тили-тили/app/src/lib/paymentSchedule.test.tsx
   workflow_dispatch:
 
 permissions:
