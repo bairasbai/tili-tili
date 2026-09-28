@@ -27,9 +27,11 @@ def member_card(page, name: str):
 
 
 def member_resource(block, name: str, button_text: str):
-    return block.get_by_text(name, exact=True).first.locator(
-        f"xpath=ancestor::div[.//button[contains(normalize-space(.), {json.dumps(button_text)})]][1]"
-    )
+    # The member name is a direct child of its resource row. Do not embed
+    # json.dumps(button_text) into XPath: Cyrillic becomes literal \\uXXXX
+    # escapes, which XPath does not decode, so valid buttons are never found.
+    del button_text
+    return block.get_by_text(name, exact=True).first.locator("xpath=parent::div")
 
 
 def checked(response, status: int, label: str) -> Any:
