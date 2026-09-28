@@ -9,7 +9,7 @@ import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } fro
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -23,9 +23,10 @@ import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { isAuthorized } from '@/lib/api/client'
-import { t, key } from '@/lib/i18n'
+import { ApiError, isAuthorized } from '@/lib/api/client'
+import { getI18nLang, t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
+import { parseReservePercent, parseWholeRubles } from '@/lib/paymentAmount'
 import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '@/components/TaskPlanning'
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
 import { OfferAcceptance } from '@/components/OfferAcceptance'
@@ -582,6 +583,12 @@ function SlotView({ s }: { s: Slot }) {
 const thousands = (kopecks: number) => Math.round(kopecks / 100 / 1000)
 
 /* Бюджет */
+const numberLocale = () => getI18nLang() === 'en' ? 'en-GB' : 'ru-RU'
+/* Доля и рубли в полях бюджета — через Intl, с разделителем языка (инвариант 7; ревью 018, BF-10). */
+const percentText = (bps: number) => new Intl.NumberFormat(numberLocale(), { maximumFractionDigits: 2 }).format(bps / 100)
+const wholeRubles = (kopecks: number) => new Intl.NumberFormat(numberLocale()).format(Math.round(kopecks / 100))
+
+/* Бюджет */
 export function Budget() {
   const nav = useNavigate()
   const { weddingId } = useStore()
@@ -591,6 +598,10 @@ export function Budget() {
   const [cat, setCat] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  /* Где показать ошибку: у резерва и лимита — рядом с полем, остальное — под карточкой (ревью 018, BF-08). */
+  const [errAt, setErrAt] = useState<string | null>(null)
+  const [reserveDraft, setReserveDraft] = useState('')
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, string>>({})
 
   /*
    * Бюджет считает сервер, а не браузер.
@@ -632,6 +643,8 @@ export function Budget() {
          `spent` статьи считает — считаем и здесь. */
       amount: (c.fromSlots ?? 0) + items.reduce((a, it) => a + it.amount, 0),
       limit: c.planned?.amount ?? 0,
+      limitCustom: !!c.limitCustom,
+      limitVersion: c.limitVersion ?? 0,
       color: c.color ?? 'var(--lav)',
       /* `live` в контракте — имена забронированной команды через разделитель,
          а не флаг: экран показывает их подписью «из команды». */
@@ -652,11 +665,20 @@ export function Budget() {
   const write = async (id: string, fn: () => Promise<unknown>) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
-    if (!weddingId) { setErr(t('Сначала создайте свадьбу — бюджет живёт в ней')); return }
     if (busyId) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
+    setErrAt(id)
+    if (!weddingId) { setErr(t('Сначала создайте свадьбу — бюджет живёт в ней')); return }
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusyId(null) }
+    try { await fn(); q.reload() } catch (e) {
+      /* Устаревшая версия резерва или лимита: бюджет перечитывается, черновик остаётся —
+         иначе каждое следующее «Сохранить» шло со старой версией и снова получало 409
+         (ревью 018, BF-08). */
+      if (e instanceof ApiError && (e.code === 'stale_budget_settings' || e.code === 'stale_budget_limit')) {
+        q.reload()
+        setErr(t('Бюджет изменился на другом устройстве — данные обновлены. Проверьте и сохраните ещё раз.'))
+      } else setErr(explainError(e))
+    } finally { setBusyId(null) }
   }
   /* Итог задаётся здесь же: до этого `budgetTotal` уходил только из квиза,
      и паре, ответившей «пока не знаем», задать его было негде. */
@@ -676,6 +698,20 @@ export function Budget() {
     setName(''); setAmount(''); setAdding(false)
   })
   const removeItem = (id: string) => void write(id, () => deleteBudgetItem(weddingId!, id))
+  const saveReserve = () => void write('reserve', async () => {
+    if (!server) return
+    const bps = parseReservePercent(reserveDraft)
+    if (bps === null) { setErr(t('Резерв — число от 0 до 50, не больше двух знаков после запятой')); return }
+    await setBudgetReserve(weddingId!, bps, server.settingsVersion)
+    setReserveDraft('')
+  })
+  const saveLimit = (categoryId: string, version: number) => void write(`limit-${categoryId}`, async () => {
+    const rubles = parseWholeRubles(limitDrafts[categoryId] ?? '')
+    if (rubles === null) { setErr(t('Введите лимит целым числом рублей, например 150 000')); return }
+    await setBudgetCategoryLimit(weddingId!, categoryId, { amount: rub(rubles), currency: 'RUB' }, version)
+    setLimitDrafts(v => ({ ...v, [categoryId]: '' }))
+  })
+  const resetLimit = (categoryId: string, version: number) => void write(`limit-${categoryId}`, () => resetBudgetCategoryLimit(weddingId!, categoryId, version))
 
   return (
     <div className="pb-28">
@@ -709,15 +745,13 @@ export function Budget() {
               <p className="text-[10px] text-[var(--soft2)] mt-2 leading-relaxed">{t('Лимиты категорий и резерв появятся, когда задан общий бюджет.')}</p>
             </div>
           )}
-          {reserve > 0 && (
-            /* Отдельной строкой, а не категорией: категории делят сто процентов
-               между собой, и резерв внутри них означал бы, что часть сметы
-               просто уменьшили. */
-            <div className="flex justify-between items-center mt-3 pt-3 border-t border-[var(--track)]">
-              <span className="text-[11.5px] text-[var(--soft)]">🛟 {t('Резерв на непредвиденное (10%)')}</span>
-              <b className="text-[12.5px] tabular">{fmt(reserve)}</b>
-            </div>
-          )}
+          {hasTotal && <div className="mt-3 pt-3 border-t border-[var(--track)] space-y-2">
+            <div className="flex justify-between items-center"><span className="text-[11.5px] text-[var(--soft)]">🛟 {t('Резерв на непредвиденное')}</span><b className="text-[12.5px] tabular">{fmt(reserve)}</b></div>
+            {server && <p className="text-[11px] text-[var(--soft)]">{t('Сейчас')}: <span className="tabular">{percentText(server.reserveBps)} %</span></p>}
+            <div className="flex gap-2 items-center"><input aria-label={t('Резерв, %')} value={reserveDraft} onChange={e => setReserveDraft(e.target.value)} inputMode="decimal" placeholder={server ? percentText(server.reserveBps) : ''} className="w-24 bg-[var(--bg)] rounded-lg px-3 py-2 text-xs" /><span className="text-xs">%</span><button disabled={busyId === 'reserve' || !reserveDraft.trim()} onClick={saveReserve} className="press px-3 py-2 rounded-lg bg-[var(--bg)] text-xs font-semibold disabled:opacity-50">{busyId === 'reserve' ? t('Сохраняем…') : t('Сохранить')}</button></div>
+            {err && errAt === 'reserve' && <p role="alert" className="text-[11px] text-[var(--rose-ink)]">{err}</p>}
+            <p className="text-[10px] text-[var(--soft2)]">{t('Можно выбрать от 0 до 50%. Резерв не увеличивает категории и не считается расходом.')}</p>
+          </div>}
           {reserve > 0 && total > budgetTotal - reserve && (
             <p className="text-[10.5px] text-[var(--rose-ink)] mt-1.5">{t('Обязательства уже съели резерв — на неожиданности запаса нет')}</p>
           )}
@@ -732,9 +766,20 @@ export function Budget() {
                 </div>
                 {hasTotal && (
                   <div className="h-1.5 rounded-full bg-[var(--track)] mt-1.5 overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${pct(b.amount, b.limit)}%`, background: b.color }} />
+                    {/* Лимит 0 при расходах — полная полоса перерасхода, а не пустая (pct(x, 0) = 0; ревью 018, BF-11). */}
+                    <div className="h-full rounded-full" style={{ width: `${b.limit > 0 ? Math.min(100, pct(b.amount, b.limit)) : b.amount > 0 ? 100 : 0}%`, background: b.amount > b.limit ? 'var(--rose-deep)' : b.color }} />
                   </div>
                 )}
+                {hasTotal && b.amount > b.limit && <p className="text-[10.5px] text-[var(--rose-ink)] mt-1">{t('Сверх лимита')}: <span className="tabular">{fmt(b.amount - b.limit)}</span></p>}
+                {/* Лимит — своей строкой под категорией: третьим элементом в строке с названием
+                    и суммой он сжимал её (ревью 018, BF-11). Имя категории — в доступных именах кнопок (BF-12). */}
+                {hasTotal && <div className="flex flex-wrap gap-1 items-center mt-1.5">
+                  <input aria-label={`${b.name} ${t('лимит, ₽')}`} value={limitDrafts[b.id] ?? ''} onChange={e => setLimitDrafts(v => ({...v,[b.id]:e.target.value}))} inputMode="numeric" placeholder={wholeRubles(b.limit)} className="w-28 bg-[var(--bg)] rounded-lg px-2 py-1.5 text-[11px] tabular" />
+                  <button disabled={busyId === `limit-${b.id}` || !(limitDrafts[b.id] ?? '').trim()} onClick={() => saveLimit(b.id,b.limitVersion)} aria-label={`${t('Задать лимит')}: ${b.name}`} className="press px-2.5 py-1.5 rounded-lg bg-[var(--bg)] text-[11px] font-semibold disabled:opacity-50">{t('Лимит')}</button>
+                  {b.limitCustom && <button disabled={busyId === `limit-${b.id}`} onClick={() => resetLimit(b.id,b.limitVersion)} aria-label={`${t('Вернуть автоматический лимит')}: ${b.name}`} className="press px-2.5 py-1.5 rounded-lg text-[11px] underline disabled:opacity-50">{t('Авто')}</button>}
+                  {b.limitCustom && <span className="text-[10px] text-[var(--soft)]">{t('лимит задан вами')}</span>}
+                </div>}
+                {err && errAt === `limit-${b.id}` && <p role="alert" className="text-[11px] text-[var(--rose-ink)] mt-1">{err}</p>}
                 {/* Свои статьи живут внутри своей категории: сервер помечает их
                     `custom`, и удалять можно только их. Прежний экран решал это
                     сравнением номера строки с длиной мок-списка — при другом
@@ -778,7 +823,7 @@ export function Budget() {
           * его на клиенте значит показывать деньги, которых никто не отложил.
           */}
 
-        {err && <p className="text-[12px] text-[var(--rose-ink)] mt-3.5">{err}</p>}
+        {err && errAt !== 'reserve' && !errAt?.startsWith('limit-') && <p role="alert" className="text-[12px] text-[var(--rose-ink)] mt-3.5">{err}</p>}
 
         {adding ? (
           <div className="card p-4 mt-3.5 fade-up">
