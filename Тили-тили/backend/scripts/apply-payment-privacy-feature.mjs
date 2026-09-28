@@ -581,14 +581,4 @@ edit('Тили-тили_API_openapi.yaml', (s0) => {
 })
 
 
-// Fix OpenAPI date patterns produced by the historical generator patch: YAML plain scalars
-// need a single backslash so AJV receives ^\\d, not a literal backslash followed by d.
-{
-  const rel='Тили-тили_API_openapi.yaml'
-  let y=fs.readFileSync(file(rel),'utf8')
-  y=y.replaceAll('^\\\\d{4}-\\\\d{2}-\\\\d{2}
-,'^\\d{4}-\\d{2}-\\d{2}
-)
-  fs.writeFileSync(file(rel),y,'utf8')
-}
 console.log('Feature 021 source patches applied')
