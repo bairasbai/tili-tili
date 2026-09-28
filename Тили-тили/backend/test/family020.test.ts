@@ -290,4 +290,59 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(rows[0]!.party_id).toBeTruthy()
     expect(rows[0]!.invite_token).toBe(token)
   })
+  it('family token cannot answer for a person from another invitation', async () => {
+    const a = await family()
+    const b = await family()
+    const other = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(b.guestToken)}` })).json()
+    const foreignId = other.members[0].guestId as string
+    const response = await app.inject({
+      method: 'POST',
+      url: `/rsvp/${encodeURIComponent(a.guestToken)}`,
+      payload: { members: [{ guestId: foreignId, status: 'yes' }] },
+    })
+    expect([401, 404]).toContain(response.statusCode)
+  })
+
+  it('two families racing for the last hotel room create exactly one family booking', async () => {
+    const a = await family()
+    const b = await family()
+    const hotel = await app.inject({
+      method: 'POST',
+      url: `/weddings/${a.weddingId}/logistics/hotels`,
+      headers: auth(a.token),
+      payload: { name: 'Последний номер', rooms: 1 },
+    })
+    expect(hotel.statusCode, hotel.body).toBe(201)
+    const hotelId = hotel.json().id as string
+    /* b belongs to another wedding, so create a second family in a's wedding
+       through the same public guest model rather than sharing a foreign block. */
+    const created = await app.inject({
+      method: 'POST',
+      url: `/weddings/${a.weddingId}/guests`,
+      headers: auth(a.token),
+      payload: { name: 'Вторая семья', plusOne: true },
+    })
+    const secondId = created.json().id as string
+    const link = await app.inject({
+      method: 'POST',
+      url: `/weddings/${a.weddingId}/guests/${secondId}/invite-link`,
+      headers: auth(a.token),
+    })
+    const code = (link.json().url as string).split('/').pop()!
+    const secondToken = (await app.inject({ method: 'GET', url: `/invite/${code}` })).json().guestToken as string
+
+    const results = await Promise.all([
+      app.inject({ method: 'POST', url: `/join/${encodeURIComponent(a.guestToken)}/hotels`, payload: { hotelId } }),
+      app.inject({ method: 'POST', url: `/join/${encodeURIComponent(secondToken)}/hotels`, payload: { hotelId } }),
+    ])
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409])
+    const { rows } = await app.db!.query<{ booked: number; n: string }>(
+      `select h.booked, count(b.*)::text as n
+         from hotel_blocks h left join hotel_bookings b on b.hotel_id = h.id
+        where h.id = $1 group by h.id`,
+      [hotelId],
+    )
+    expect(rows[0]).toEqual({ booked: 1, n: '1' })
+  })
+
 })
