@@ -57,6 +57,11 @@ interface YamlOperation {
   requestBody?: { content?: Record<string, { schema?: Record<string, unknown> }> }
   responses?: Record<string, { description?: string; $ref?: string }>
 }
+interface YamlSchema {
+  [key: string]: unknown
+  properties?: Record<string, YamlSchema>
+  oneOf?: YamlSchema[]
+}
 interface Op {
   method: Method
   openapiPath: string
@@ -463,7 +468,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
-    const schemas = ((doc.components as { schemas: Record<string, any> }).schemas)
+    const schemas = (doc.components as { schemas: Record<string, YamlSchema> }).schemas
 
     it('семь операций 019 присутствуют ровно на ожидаемых путях', () => {
       const expected = [
@@ -484,7 +489,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
 
     it('shortlist адресует замену/удаление stable entryId', () => {
       const put = findOp(ops, 'put', '/weddings/{weddingId}/shortlist/{vendorId}')!
-      const body = put.item.requestBody?.content?.['application/json']?.schema as any
+      const body = put.item.requestBody?.content?.['application/json']?.schema as YamlSchema
       expect(body).toMatchObject({
         type: 'object',
         additionalProperties: false,
@@ -508,7 +513,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
       expect(schemas.Offer.oneOf).toHaveLength(2)
       expect(schemas.OfferInput.oneOf).toHaveLength(3)
       expect(schemas.OfferPublic).toMatchObject({ additionalProperties: false, required: ['status'] })
-      expect(schemas.ShortlistEntry.properties.request.oneOf).toEqual([
+      expect(schemas.ShortlistEntry.properties?.request?.oneOf).toEqual([
         { $ref: '#/components/schemas/OfferRequest' },
         { $ref: '#/components/schemas/OfferPublic' },
       ])
@@ -517,8 +522,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     it('batch пары и ответ подрядчика закрепляют idempotency и квоты', () => {
       const batch = findOp(ops, 'post', '/weddings/{weddingId}/slots/{slotId}/offer-requests')!
       expect(findParam(doc, batch, 'Idempotency-Key', 'header')).toMatchObject({ required: true })
-      const input = batch.item.requestBody?.content?.['application/json']?.schema as any
-      expect(input.properties.entryIds).toMatchObject({ type: 'array', minItems: 1, maxItems: 3, uniqueItems: true })
+      const input = batch.item.requestBody?.content?.['application/json']?.schema as YamlSchema
+      expect(input.properties?.entryIds).toMatchObject({ type: 'array', minItems: 1, maxItems: 3, uniqueItems: true })
       expect(hasStatus(batch, '429')).toBe(true)
 
       const answer = findOp(ops, 'post', '/vendor/offer-requests/{requestId}/offers')!
