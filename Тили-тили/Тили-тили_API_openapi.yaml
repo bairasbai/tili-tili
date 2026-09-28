@@ -5739,6 +5739,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+# guest_duplicate — 409: человек с таким именем или телефоном уже есть в этом приглашении/свадьбе.
 components:
   securitySchemes:
     bearerAuth:
