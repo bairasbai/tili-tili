@@ -452,7 +452,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
   })
 
   /* ── день X ───────────────────────────────────────────────────────── */
-  it('сдвиг тайминга двигает будущие блоки и не трогает прошедшие', async () => {
+  it('021: сдвиг тайминга двигает только будущие flexible и не трогает fixed/прошедшие', async () => {
     const w = await newWedding()
     await app.db!.query(
       `update timeline_events set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour'
@@ -460,13 +460,22 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       [w.weddingId],
     )
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours'
+      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', timing_mode = 'flexible'
         where wedding_id = $1 and sort > (select min(sort) from timeline_events where wedding_id = $1)`,
       [w.weddingId],
     )
+    await app.db!.query(
+      `update timeline_events set timing_mode = 'fixed'
+        where wedding_id = $1 and sort = (
+          select min(sort) from timeline_events where wedding_id = $1 and sort > (
+            select min(sort) from timeline_events where wedding_id = $1
+          )
+        )`,
+      [w.weddingId],
+    )
 
-    const before = await app.db!.query<{ starts_at: Date }>(
-      'select starts_at from timeline_events where wedding_id = $1 order by sort limit 1',
+    const before = await app.db!.query<{ id: string; starts_at: Date; timing_mode: string }>(
+      'select id, starts_at, timing_mode from timeline_events where wedding_id = $1 order by sort',
       [w.weddingId],
     )
     const versionBefore = await app.db!.query<{ timeline_version: number }>(
@@ -479,12 +488,12 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       headers: { ...auth(w.token), ...key() },
       payload: { minutes: 15 },
     })
-    expect(shift.statusCode).toBe(200)
+    expect(shift.statusCode, shift.body).toBe(200)
     expect(shift.json().minutes).toBe(15)
     expect(shift.json().shiftedBlocks).toBeGreaterThan(0)
 
-    const after = await app.db!.query<{ starts_at: Date }>(
-      'select starts_at from timeline_events where wedding_id = $1 order by sort limit 1',
+    const after = await app.db!.query<{ id: string; starts_at: Date; timing_mode: string }>(
+      'select id, starts_at, timing_mode from timeline_events where wedding_id = $1 order by sort',
       [w.weddingId],
     )
     const versionAfter = await app.db!.query<{ timeline_version: number }>(
@@ -492,9 +501,79 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       [w.weddingId],
     )
     expect(versionAfter.rows[0]!.timeline_version).toBe(versionBefore.rows[0]!.timeline_version + 1)
-    // Церемония, которая уже прошла, не сдвигается от того, что банкет
-    // задержался — иначе в расписании поедет всё.
-    expect(after.rows[0]!.starts_at.getTime()).toBe(before.rows[0]!.starts_at.getTime())
+
+    const beforeById = new Map(before.rows.map(row => [row.id, row]))
+    for (const row of after.rows) {
+      const previous = beforeById.get(row.id)!
+      if (previous.timing_mode === 'flexible' && previous.starts_at.getTime() > Date.now()) {
+        expect(row.starts_at.getTime()).toBe(previous.starts_at.getTime() + 15 * 60_000)
+      } else {
+        expect(row.starts_at.getTime()).toBe(previous.starts_at.getTime())
+      }
+    }
+  })
+
+  it('021: shift откатывается целиком, если flexible-блок нарушит зависимость fixed-блока', async () => {
+    const w = await newWedding()
+    const current = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    const ids = (current.json() as { id: string }[]).slice(0, 2).map(event => event.id)
+    const now = Date.now()
+    const parentStart = new Date(now + 2 * 60 * 60_000).toISOString()
+    const parentEnd = new Date(now + 3 * 60 * 60_000).toISOString()
+    const childStart = new Date(now + 4 * 60 * 60_000).toISOString()
+    const childEnd = new Date(now + 5 * 60 * 60_000).toISOString()
+
+    const configured = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: { ...auth(w.token), 'if-match': current.headers.etag! },
+      payload: [
+        {
+          id: ids[0],
+          name: 'Фотосессия',
+          startsAt: parentStart,
+          endsAt: parentEnd,
+          forGuests: false,
+          timingMode: 'flexible',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [],
+        },
+        {
+          id: ids[1],
+          name: 'Церемония',
+          startsAt: childStart,
+          endsAt: childEnd,
+          forGuests: true,
+          timingMode: 'fixed',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [{ eventId: ids[0]!, travelMinutes: 15, bufferMinutes: 15 }],
+        },
+      ],
+    })
+    expect(configured.statusCode, configured.body).toBe(200)
+
+    const shift = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/timeline/shift`,
+      headers: { ...auth(w.token), ...key() },
+      payload: { minutes: 60 },
+    })
+    expect(shift.statusCode, shift.body).toBe(409)
+    expect(shift.json().error.code).toBe('timeline_dependency_conflict')
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    expect(after.headers.etag).toBe(configured.headers.etag)
+    expect(after.body).toBe(configured.body)
   })
 
   it('повтор сдвига с тем же ключом не двигает дважды', async () => {

@@ -498,8 +498,27 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       url: `/weddings/${w.weddingId}/timeline`,
       headers: { ...auth(w.token), 'if-match': before.headers.etag! },
       payload: [
-        { id: initial[0]!.id, name: 'Сборы', startsAt: '2027-06-14T05:00:00Z', endsAt: '2027-06-14T09:00:00Z' },
-        { id: initial[1]!.id, name: 'Церемония', startsAt: '2027-06-14T08:00:00Z', endsAt: '2027-06-14T09:00:00Z', outdoor: true },
+        {
+          id: initial[0]!.id,
+          name: 'Сборы',
+          startsAt: '2027-06-14T05:00:00Z',
+          endsAt: '2027-06-14T09:00:00Z',
+          timingMode: 'flexible',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [],
+        },
+        {
+          id: initial[1]!.id,
+          name: 'Церемония',
+          startsAt: '2027-06-14T10:00:00Z',
+          endsAt: '2027-06-14T11:00:00Z',
+          outdoor: true,
+          timingMode: 'fixed',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [{ eventId: initial[0]!.id, travelMinutes: 30, bufferMinutes: 30 }],
+        },
       ],
     })
     expect(replaced.statusCode).toBe(200)
@@ -514,7 +533,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       headers: auth(w.token),
     })
     // Пересечение времени обязано попасть в отчёт.
-    expect(auto.json().conflicts.join(' ')).toContain('Церемония')
+    expect(auto.json().conflicts).toEqual([])
 
     // И автоплан ничего не переписал: контракт обещает предпросмотр.
     const still = await app.inject({
@@ -540,7 +559,17 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       headers: auth(w.token),
     })
     expect(tabA.headers.etag).toBe(tabB.headers.etag)
-    const original = tabA.json() as { id: string; name: string; startsAt?: string | null; endsAt?: string | null; forGuests?: boolean }[]
+    const original = tabA.json() as {
+      id: string
+      name: string
+      startsAt?: string | null
+      endsAt?: string | null
+      forGuests?: boolean
+      timingMode?: 'fixed' | 'flexible'
+      assigneeUserIds?: string[]
+      dealIds?: string[]
+      dependsOn?: { eventId: string; travelMinutes: number; bufferMinutes: number }[]
+    }[]
     const first = original[0]!
 
     const accepted = await app.inject({
@@ -553,6 +582,10 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
         startsAt: event.startsAt,
         endsAt: event.endsAt,
         forGuests: event.forGuests ?? true,
+        timingMode: event.timingMode ?? 'flexible',
+        assigneeUserIds: event.assigneeUserIds ?? [],
+        dealIds: event.dealIds ?? [],
+        dependsOn: event.dependsOn ?? [],
       })),
     })
     expect(accepted.statusCode, accepted.body).toBe(200)
@@ -568,6 +601,10 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
         startsAt: event.startsAt,
         endsAt: event.endsAt,
         forGuests: event.forGuests ?? true,
+        timingMode: event.timingMode ?? 'flexible',
+        assigneeUserIds: event.assigneeUserIds ?? [],
+        dealIds: event.dealIds ?? [],
+        dependsOn: event.dependsOn ?? [],
       })),
     })
     expect(stale.statusCode, stale.body).toBe(409)
@@ -582,6 +619,131 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
     const finalEvents = finalState.json() as { id: string; name: string }[]
     expect(finalEvents[0]).toEqual({ ...finalEvents[0], id: first.id, name: 'Правка из вкладки A' })
     expect(finalState.headers.etag).toBe(accepted.headers.etag)
+  })
+
+  it('021: DAG сохраняет переезд/запас, а цикл отклоняется без изменения версии', async () => {
+    const w = await newWedding()
+    const before = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    const initial = before.json() as { id: string; name: string }[]
+    const [parent, child] = initial
+    expect(parent && child).toBeTruthy()
+
+    const saved = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: { ...auth(w.token), 'if-match': before.headers.etag! },
+      payload: [
+        {
+          id: parent!.id,
+          name: 'Фотосессия',
+          startsAt: '2027-06-14T08:00:00Z',
+          endsAt: '2027-06-14T09:00:00Z',
+          forGuests: false,
+          timingMode: 'flexible',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [],
+        },
+        {
+          id: child!.id,
+          name: 'Церемония',
+          startsAt: '2027-06-14T10:00:00Z',
+          endsAt: '2027-06-14T11:00:00Z',
+          forGuests: true,
+          timingMode: 'fixed',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [{ eventId: parent!.id, travelMinutes: 30, bufferMinutes: 15 }],
+        },
+      ],
+    })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const body = saved.json() as { id: string; timingMode: string; dependsOn: unknown[] }[]
+    expect(body[1]).toMatchObject({
+      id: child!.id,
+      timingMode: 'fixed',
+      dependsOn: [{ eventId: parent!.id, travelMinutes: 30, bufferMinutes: 15 }],
+    })
+
+    const cycle = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: { ...auth(w.token), 'if-match': saved.headers.etag! },
+      payload: [
+        {
+          id: parent!.id,
+          name: 'Фотосессия',
+          startsAt: '2027-06-14T08:00:00Z',
+          endsAt: '2027-06-14T09:00:00Z',
+          forGuests: false,
+          timingMode: 'flexible',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [{ eventId: child!.id, travelMinutes: 0, bufferMinutes: 0 }],
+        },
+        {
+          id: child!.id,
+          name: 'Церемония',
+          startsAt: '2027-06-14T10:00:00Z',
+          endsAt: '2027-06-14T11:00:00Z',
+          forGuests: true,
+          timingMode: 'fixed',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [{ eventId: parent!.id, travelMinutes: 30, bufferMinutes: 15 }],
+        },
+      ],
+    })
+    expect(cycle.statusCode, cycle.body).toBe(422)
+    expect(cycle.json().error.code).toBe('validation_failed')
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/weddings/${w.weddingId}/timeline`,
+      headers: auth(w.token),
+    })
+    expect(after.headers.etag).toBe(saved.headers.etag)
+    expect(after.body).toBe(saved.body)
+  })
+
+  it('021: нельзя назначить участника другой свадьбы на блок тайминга', async () => {
+    const own = await newWedding()
+    const foreign = await newWedding()
+    const foreignMembers = await app.inject({
+      method: 'GET',
+      url: `/weddings/${foreign.weddingId}/members`,
+      headers: auth(foreign.token),
+    })
+    const foreignUserId = foreignMembers.json()[0].user.id as string
+
+    const before = await app.inject({
+      method: 'GET',
+      url: `/weddings/${own.weddingId}/timeline`,
+      headers: auth(own.token),
+    })
+    const events = before.json() as { id: string; name: string; startsAt?: string | null; endsAt?: string | null; forGuests?: boolean }[]
+    const attempted = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${own.weddingId}/timeline`,
+      headers: { ...auth(own.token), 'if-match': before.headers.etag! },
+      payload: events.map((event, index) => ({
+        id: event.id,
+        name: event.name,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt,
+        forGuests: event.forGuests ?? true,
+        timingMode: 'flexible',
+        assigneeUserIds: index === 0 ? [foreignUserId] : [],
+        dealIds: [],
+        dependsOn: [],
+      })),
+    })
+    expect(attempted.statusCode, attempted.body).toBe(422)
+    expect(attempted.json().error.fields.assigneeUserIds).toBeTruthy()
   })
 
   it('021: full PUT без версии не меняет тайминг', async () => {
