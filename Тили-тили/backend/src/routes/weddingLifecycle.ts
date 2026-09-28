@@ -1,3 +1,4 @@
+import { closeWeddingOfferRequests } from '../offers/close.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError } from '../errors.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -85,6 +86,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         cancel_requested_by: string | null
         cancel_requested_at: Date | null
         cancelled_at: Date | null
+        tz: string | null
         couples: string
       }>(
         /* `for update of w` — на строку свадьбы, а не на всю выборку: двое
@@ -98,7 +100,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
          * удаливший аккаунт, продолжал числиться в `wedding_members`, и
          * оставшийся не мог отменить свадьбу вовсе — каждое нажатие давало
          * `confirmation_required`, а подтвердить было некому. */
-        `select w.cancel_requested_by, w.cancel_requested_at, w.cancelled_at,
+        `select w.cancel_requested_by, w.cancel_requested_at, w.cancelled_at, w.tz,
                 (select count(*)::text from wedding_members m
                    join users u on u.id = m.user_id and u.deleted_at is null
                   where m.wedding_id = w.id and m.role = 'couple') as couples
@@ -144,6 +146,8 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       if (couples > 1 && w.cancel_requested_by === userId) {
         return { state: 'confirmation_required' as const, requestedBy: userId }
       }
+
+      await closeWeddingOfferRequests(client, weddingId, w.tz, 'wedding_cancelled')
 
       /* Отбор броней под блокировкой строк, до отмены: from_state в
        * deal_events пишет cancelDeal() (F1) из своего собственного select

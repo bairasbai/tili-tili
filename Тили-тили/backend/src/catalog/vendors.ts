@@ -1,4 +1,4 @@
-import type { Db, Queryable } from '../plugins/db.js'
+import type { Queryable } from '../plugins/db.js'
 import { notFound } from '../errors.js'
 import { publicRating } from '../reviews/rating.js'
 
@@ -128,7 +128,7 @@ export interface MediaRow {
  * ПОДР-ссылкой) в решении не назван: без условия по роли он читал телефоны
  * всех забронированных коллег по свадьбе (D5-25, D1-04).
  */
-async function mayCall(db: Db, vendorId: string, userId: string | null): Promise<boolean> {
+async function mayCall(db: Queryable, vendorId: string, userId: string | null): Promise<boolean> {
   if (!userId) return false
   const { rows } = await db.query<{ ok: boolean }>(
     `select exists (
@@ -142,7 +142,7 @@ async function mayCall(db: Db, vendorId: string, userId: string | null): Promise
   return rows[0]!.ok
 }
 
-export async function loadDetail(db: Db, vendorId: string, row: VendorRow, viewerId: string | null = null) {
+export async function loadDetail(db: Queryable, vendorId: string, row: VendorRow, viewerId: string | null = null) {
   const { rows: packages } = await db.query<PackageRow>(
     `select id, name, price::text as price, currency, items from vendor_packages
       where vendor_id = $1 order by sort, name`,
