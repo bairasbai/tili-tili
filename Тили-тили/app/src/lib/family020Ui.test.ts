@@ -10,6 +10,11 @@ describe('020 family invitation UI guards', () => {
     expect(source).toContain("members: [{ name: familyMember.trim() }]")
     expect(source).toContain("Второй человек семьи (необязательно)")
     expect(source).toContain("const persons = (status: string) => list.filter(g => g.status === status).length")
+    expect(source).toContain("addGuestMember")
+    expect(source).toContain("Добавить человека в семью")
+    expect(source).toContain("partySize")
+    expect(source).toContain("const seats = yesGuests.length")
+    expect(source).not.toContain("1 + (g.plus ? 1 : 0)")
     expect(source).not.toContain("setPlus(!plus)")
   })
 
