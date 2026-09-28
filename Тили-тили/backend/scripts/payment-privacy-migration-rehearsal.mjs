@@ -35,22 +35,15 @@ try {
     assert.equal(p.status,0,`Migration ${args.join(' ')} failed; raw logs are deliberately not published`)
   }
 
-  // Build the exact pre-021 schema. node-pg-migrate --to on a fresh database can
-  // skip prerequisite migrations, so apply the normal chain then step 021 back while empty.
+  // Build the exact pre-021 schema. Apply the normal chain, then use the same
+  // node-pg-migrate down-one semantics as production while the database is empty.
   migrate(['up'])
-  const migrationModule=await import('../migrations/1761700000000_payment_methods_privacy.cjs')
-  const pgmModule=await import('node-pg-migrate')
-  const MigrationBuilder=pgmModule.MigrationBuilder ?? pgmModule.default?.MigrationBuilder
-  assert(MigrationBuilder,'MigrationBuilder unavailable')
-  async function down021() {
-    const builder=new MigrationBuilder(()=>{}, {schema:'public'}, false)
-    migrationModule.down(builder)
-    for(const sql of builder.getSql()) await client.query(sql)
-    await client.query('delete from pgmigrations where name=$1',[STAGE])
-  }
-  await down021()
+  const latestBeforeDown=await client.query('select name from pgmigrations order by id desc limit 1')
+  assert.equal(latestBeforeDown.rows[0].name,STAGE)
+  migrate(['down','1'])
   const before021=await client.query('select name from pgmigrations order by id desc limit 1')
   assert.equal(before021.rows[0].name,PREV)
+
   const owner=randomUUID(), wedding=randomUUID(), slot=randomUUID(), deal=randomUUID(), payment=randomUUID()
   await client.query("insert into users(id,phone) values($1,'+79000000211')",[owner])
   await client.query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'021 migration','2027-06-18','Asia/Yekaterinburg',$3)",
@@ -92,7 +85,7 @@ try {
   // Empty/disposable rollback is reversible, then the stage applies again.
   await client.query('delete from payment_receipts where wedding_id=$1',[wedding])
   await client.query('delete from payments where deal_id=$1',[deal])
-  await down021()
+  migrate(['down','1'])
   const cols=await client.query(`select column_name from information_schema.columns
     where table_schema='public' and table_name='payments' and column_name in
       ('payment_method','visibility','amount_known','paid_on')`)
