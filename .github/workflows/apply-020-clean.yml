@@ -9,74 +9,75 @@ permissions:
   contents: write
 
 jobs:
-  cherry-pick-020:
-    if: "github.event.head_commit.message == 'retry-020-clean-code'"
+  integrate-020:
+    if: "github.event.head_commit.message == 'chore(020): merge clean delta snapshot'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply stage 020 code without stale contract artifacts
+      - name: Apply only the 020 delta with three-way merges
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BASE=da87f1fe9aab19342f68e4a58453a4b35decb943
+          SOURCE=4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc
+          OURS=$(git rev-parse HEAD)
           git fetch --no-tags origin test/020-finalize-20260928
 
-          protected=(
-            "Тили-тили/Тили-тили_API_openapi.yaml"
-            "Тили-тили/app/src/lib/api/schema.ts"
-            "Тили-тили/backend/src/contract/api.generated.ts"
-            "Тили-тили/backend/src/contract/paths.generated.ts"
-            "Тили-тили/backend/src/contract/schemas.generated.ts"
-            "Тили-тили/backend/test/audit55.test.ts"
-            ".github/workflows/gen-020-contract.yml"
-            ".github/workflows/gen-020-final-contract.yml"
-            ".github/workflows/verify-020-family-browser.yml"
-          )
+          conflicts=0
+          while IFS=$'\t' read -r status path extra; do
+            case "$path" in
+              .github/workflows/gen-020-contract.yml|.github/workflows/gen-020-final-contract.yml|.github/workflows/verify-020-family-browser.yml)
+                echo "skip disposable workflow: $path"
+                continue
+                ;;
+              Тили-тили/backend/src/contract/api.generated.ts|Тили-тили/backend/src/contract/paths.generated.ts|Тили-тили/backend/src/contract/schemas.generated.ts|Тили-тили/app/src/lib/api/schema.ts)
+                echo "skip generated artifact: $path"
+                continue
+                ;;
+            esac
 
-          for sha in $(git rev-list --reverse 050b826c5b1edc9ff5abd96ff705508796c88c0e^..4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc); do
-            echo "Applying $sha $(git log -1 --format=%s "$sha")"
-            if ! git cherry-pick -n "$sha"; then
-              conflicts="$(git diff --name-only --diff-filter=U || true)"
-              bad=0
-              while IFS= read -r file; do
-                test -z "$file" && continue
-                allowed=0
-                for p in "${protected[@]}"; do
-                  if test "$file" = "$p"; then allowed=1; break; fi
-                done
-                if test "$allowed" = 1; then
-                  git checkout --ours -- "$file"
-                  git add "$file"
-                else
-                  echo "UNRESOLVED_NON_CONTRACT_CONFLICT=$file"
-                  bad=1
+            case "$status" in
+              A)
+                mkdir -p "$(dirname "$path")"
+                git show "$SOURCE:$path" > "$path"
+                ;;
+              M)
+                mkdir -p "$(dirname "$path")"
+                ours_file=$(mktemp)
+                base_file=$(mktemp)
+                theirs_file=$(mktemp)
+                out_file=$(mktemp)
+                git show "$OURS:$path" > "$ours_file"
+                git show "$BASE:$path" > "$base_file"
+                git show "$SOURCE:$path" > "$theirs_file"
+                if ! git merge-file -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"; then
+                  echo "::error file=$path::three-way conflict"
+                  grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
+                  conflicts=$((conflicts + 1))
                 fi
-              done <<< "$conflicts"
-              if test "$bad" = 1; then
-                git status --short
-                exit 2
-              fi
-            fi
+                cat "$out_file" > "$path"
+                rm -f "$ours_file" "$base_file" "$theirs_file" "$out_file"
+                ;;
+              D)
+                rm -f "$path"
+                ;;
+              *)
+                echo "::error::unsupported diff status $status for $path"
+                conflicts=$((conflicts + 1))
+                ;;
+            esac
+          done < <(git diff --name-status "$BASE" "$SOURCE")
 
-            for p in "${protected[@]}"; do
-              if git ls-files --error-unmatch "$p" >/dev/null 2>&1; then
-                git restore --source=HEAD --staged --worktree -- "$p" || true
-              else
-                git rm --cached --ignore-unmatch "$p" >/dev/null 2>&1 || true
-                rm -f "$p"
-              fi
-            done
+          if [ "$conflicts" -ne 0 ]; then
+            echo "::error::$conflicts merge conflict(s)"
+            exit 1
+          fi
 
-            git add -A
-            if git diff --cached --quiet; then
-              git reset --hard HEAD
-              git cherry-pick --abort >/dev/null 2>&1 || true
-              continue
-            fi
-            git commit -C "$sha"
-          done
-
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(020): integrate family invitations on current main"
           git push origin HEAD:integration/020-clean-main-20260928
