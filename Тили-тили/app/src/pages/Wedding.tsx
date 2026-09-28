@@ -23,10 +23,13 @@ import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized } from '@/lib/api/client'
-import { getI18nLang, t, key } from '@/lib/i18n'
+import { isAuthorized } from '@/lib/api/client'
+import { t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
 import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '@/components/TaskPlanning'
+import { OfferRequestComposer } from '@/components/OfferRequestComposer'
+import { OfferAcceptance } from '@/components/OfferAcceptance'
+import { OfferSummary } from '@/components/OfferSummary'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
