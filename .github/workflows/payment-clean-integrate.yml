@@ -1,0 +1,62 @@
+name: Payment 018 clean integration helper
+
+'on':
+  push:
+    branches:
+      - integration/018-payments-clean-main-20260928
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: "!contains(github.event.head_commit.message, '[payment-clean-result]')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Fetch source branch
+        run: git fetch origin claude/review-018a-018b-roadmap-kqhovt --no-tags
+      - name: Cherry-pick audited 018-A/B chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          commits=(
+            e7a27e4b82691d941d1240bbda6bcc48a8df4144
+            08d79530f033c2e2a0a1d184c7c6fc7b2dca8a05
+            7ef72a5cff8bffa9ea5f18273e1b725c0dbc516d
+            8244ab774b11a2fadf2cc0da5b23260e6693e349
+            403554e0162de686795415b359f288eeea185bed
+            f66f8f8fd2b7196160e213829dc754daa7f4927c
+            0b7199f2c27ff0e90999f6cb0599a0afbc177d7b
+            c3f8f1252b6f543b994783f075c1a538db3f66fc
+            a23868fb7c13cf031fb4e08d2f07c2817e89d9dd
+            6a106fd043f12f0ed5a5b76d845bc598d1fbbcac
+          )
+          for c in "${commits[@]}"; do
+            echo "=== cherry-pick $c ==="
+            if ! git cherry-pick "$c"; then
+              echo "=== CONFLICT STATUS ==="
+              git status --short
+              echo "=== CONFLICT FILES ==="
+              git diff --name-only --diff-filter=U
+              echo "=== CONFLICT HUNKS ==="
+              for f in $(git diff --name-only --diff-filter=U); do
+                echo "--- $f ---"
+                git diff --cc -- "$f" || true
+              done
+              exit 1
+            fi
+          done
+      - name: Remove helper workflow and push result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/payment-clean-integrate.yml
+          git commit -m "chore(018-payments): finalize clean integration [payment-clean-result]"
+          git push origin HEAD:integration/018-payments-clean-main-20260928
