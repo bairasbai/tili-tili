@@ -1,0 +1,43 @@
+name: Verify 020 family browser
+on:
+  push:
+    branches: ['test/020-finalize-20260928']
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install frontend and browser
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          cd Тили-тили/app
+          printf 'minimum-release-age=0\n' > .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          rm .npmrc
+          cd ../..
+          pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Run family browser acceptance
+        run: |
+          set -euo pipefail
+          cd Тили-тили/app
+          node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort > "$RUNNER_TEMP/family020-vite.log" 2>&1 &
+          VITE_PID=$!
+          trap 'kill "$VITE_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl --fail --silent http://127.0.0.1:3000/ >/dev/null && break; sleep 1; done
+          cd ../..
+          E2E_RESULT_DIR="$RUNNER_TEMP/family020-browser" python Тили-тили/backend/scripts/family020-e2e-browser.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: family020-browser-evidence
+          path: |
+            ${{ runner.temp }}/family020-browser/
+            ${{ runner.temp }}/family020-vite.log
+          retention-days: 7
