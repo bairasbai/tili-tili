@@ -9,7 +9,7 @@ import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } fro
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -1336,6 +1336,11 @@ interface GuestRow {
   name: string
   status: 'yes' | 'no' | 'pending'
   plus: boolean
+  partyId: string
+  partyPosition: number
+  partySize: number
+  isPrimary: boolean
+  isPlaceholder: boolean
   tableId?: string | null
   /** Телефон вводит пара — по нему уходит SMS-напоминание молчащим. */
   phone?: string | null
@@ -1383,6 +1388,11 @@ export function Guests() {
       name: g.name ?? '',
       status: g.status === 'yes' ? 'yes' : g.status === 'no' ? 'no' : 'pending',
       plus: !!g.plusOne,
+      partyId: g.partyId ?? g.id ?? String(i),
+      partyPosition: g.partyPosition ?? 1,
+      partySize: g.partySize ?? (g.plusOne ? 2 : 1),
+      isPrimary: g.isPrimary ?? (g.partyPosition ?? 1) === 1,
+      isPlaceholder: g.isPlaceholder ?? false,
       tableId: g.tableId,
       phone: g.phone,
       hasPhone: g.hasPhone,
@@ -1400,6 +1410,8 @@ export function Guests() {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [familyMember, setFamilyMember] = useState('')
+  const [familyAddFor, setFamilyAddFor] = useState<string | null>(null)
+  const [familyDraft, setFamilyDraft] = useState('')
   /* Телефон гостя — десять цифр после +7. Раньше ввести его было негде, и
      «Напомнить не ответившим» не находила ни одного адресата: сервер честно
      отвечал «без телефона» на каждого. */
@@ -1493,6 +1505,15 @@ export function Guests() {
     await patchGuest(weddingId!, g.id, { phone: phoneDraft.length === PHONE_DIGITS ? `+7${phoneDraft}` : null })
     setPhoneEdit(null)
   })
+  const addMember = (g: GuestRow) => {
+    const memberName = familyDraft.trim()
+    if (!memberName || !g.isPrimary || g.partySize >= 10) return
+    void write(`family-${g.id}`, async () => {
+      await addGuestMember(weddingId!, g.id, memberName)
+      setFamilyDraft('')
+      setFamilyAddFor(null)
+    })
+  }
   const cycle = (g: GuestRow) => void write(g.id, () => patchGuest(weddingId!, g.id, { status: RSVP_NEXT[g.status] }))
   const remove = (g: GuestRow) => void write(g.id, async () => {
     await deleteGuest(weddingId!, g.id)
@@ -1609,7 +1630,43 @@ export function Guests() {
               </div>
               <div className="flex-1 min-w-0">
                 <b className="text-[12.5px] block truncate">{g.name}</b>
-                <span className="text-[10px] text-[var(--soft)]">{t('отдельная персона')}</span>
+                <span className="text-[10px] text-[var(--soft)]">
+                  {g.isPrimary
+                    ? g.partySize > 1
+                      ? `${t('Семейное приглашение')} · ${g.partySize} ${t('чел.')}`
+                      : t('Один человек в приглашении')
+                    : t('Человек семьи')}
+                </span>
+                {g.isPrimary && g.partySize < 10 && familyAddFor !== g.id && (
+                  <button
+                    onClick={() => { setFamilyAddFor(g.id); setFamilyDraft('') }}
+                    className="press block text-[10px] mt-1 text-[var(--sage-deep)] font-semibold"
+                  >
+                    + {t('Добавить человека в семью')}
+                  </button>
+                )}
+                {familyAddFor === g.id && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <input
+                      autoFocus
+                      value={familyDraft}
+                      onChange={e => setFamilyDraft(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addMember(g)}
+                      placeholder={t('Имя человека')}
+                      className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-[var(--bg)] text-[11px] outline-none"
+                    />
+                    <button
+                      disabled={busyId === `family-${g.id}` || !familyDraft.trim()}
+                      onClick={() => addMember(g)}
+                      className="press text-[10px] font-bold text-[var(--sage-deep)] disabled:opacity-50"
+                    >
+                      {t('Добавить')}
+                    </button>
+                    <button onClick={() => { setFamilyAddFor(null); setFamilyDraft('') }} className="press text-[10px] text-[var(--soft)]">
+                      {t('Отмена')}
+                    </button>
+                  </div>
+                )}
                 {/* Телефон — единственное, что пара вводит за гостя: по нему
                     уходит напоминание. Пустое поле стирает номер. */}
                 {phoneEdit === g.id ? (
@@ -1660,7 +1717,7 @@ export function Guests() {
           <button onClick={() => {
             /* Заголовок и «да/нет» — через словарь, как и статусы: иначе в
                английском интерфейсе файл выходил смешанным (R-07, ревью D3-21). */
-            const csv = `${t('Имя;Статус;+1')}\n` + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.plus ? t('да') : t('нет')}`).join('\n')
+            const csv = `${t('Имя;Статус;Семья')}\n` + list.map(g => `${g.name};${g.status === 'yes' ? t('Придёт') : g.status === 'no' ? t('Не придёт') : t('Ждём')};${g.partySize > 1 ? t('да') : t('нет')}`).join('\n')
             const a = document.createElement('a')
             a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }))
             /* Имя файла общее: пара в нём не названа, а прежнее «alina-timur»
@@ -1677,7 +1734,7 @@ export function Guests() {
             const yesGuests = list.filter(g => g.status === 'yes')
             const special = yesGuests.filter(g => g.diet || g.dietNote).length
             const transfer = yesGuests.filter(g => g.transfer === 'need').length
-            const seats = yesGuests.reduce((a, g) => a + 1 + (g.plus ? 1 : 0), 0)
+            const seats = yesGuests.length
             return (
               <div className="card p-4">
                 <p className="text-[12px] font-semibold mb-1.5">🍽 {t('Для кейтеринга')}</p>
