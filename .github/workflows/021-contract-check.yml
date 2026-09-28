@@ -1,6 +1,9 @@
 name: Verify 021 generated contract
 
 on:
+  push:
+    branches:
+      - feature/021-timeline-concurrency
   pull_request:
 
 permissions:
@@ -8,7 +11,7 @@ permissions:
 
 jobs:
   generated-contract:
-    if: github.head_ref == 'feature/021-timeline-concurrency'
+    if: github.event_name == 'push' || github.head_ref == 'feature/021-timeline-concurrency'
     runs-on: ubuntu-latest
     defaults:
       run:
