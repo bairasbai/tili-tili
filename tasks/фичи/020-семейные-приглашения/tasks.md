@@ -62,9 +62,9 @@ Main не менять. Рабочая ветка — `test/020-finalize-2026092
 - [x] T028 DB regressions: old +1 migration, family invite, independent RSVP/menu/table/bus, one hotel room, one gift identity.
 - [x] T029 Concurrency: два члена семьи на последнее место автобуса; две вкладки меняют family hotel; gift quota общая.
 - [x] T030 Export/erasure: party/token/people корректно входят в выгрузку и 31-day cleanup.
-- [ ] T031 Browser E2E: пара создаёт семью из двух персон → одна ссылка → разный RSVP/menu → два места/один номер → один family gift reserve.
-- [ ] T032 Полный PostgreSQL/Redis gate, frontend/backend tests/types/lint/build.
-- [ ] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
+- [x] T031 Browser E2E: пара создаёт семью из двух персон → одна ссылка → разный RSVP/menu → два места/один номер → один family gift reserve.
+- [x] T032 Полный PostgreSQL/Redis gate, frontend/backend tests/types/lint/build.
+- [x] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
 
 ## Порядок
 
@@ -72,12 +72,11 @@ T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 021 не начинать до полного закрытия 020.
 
 
-## Текущее состояние · 2026-09-28
+## Финал · 2026-09-28 ✅
 
-Фактически реализованы T001–T022 и T024–T030. После аудита дополнительно закрыты: сохранение family token при удалении primary, explicit-family import, partySize в Guest API, управление составом семьи на экране пары и повторный double-count кейтеринга.
+T001–T033 закрыты. OpenAPI 0.50.0 и generated artifacts синхронизированы. Финальный технический кандидат `a5a40f30f2` прошёл:
+- GitHub Actions CI `36364877609`: frontend 79 файлов / 1059 тестов, backend 107 файлов / 1231 тест, TypeScript, ESLint и production build — success;
+- browser/migration workflow `36364877628`: migration rehearsal `down → legacy seed → up → verify` — success; real Chromium — 5/5 шагов, `pageErrors=[]`;
+- artifact `family020-browser-evidence` id `10946996800`, SHA-256 `5debaeaae6e0b25f7f397af6787ad4537dfb26a56629f4932db0553a8d58ffa5`.
 
-Открытые финальные ворота:
-- T023 — закрыт автогенерацией `5b4432db`: OpenAPI 0.50.0 и generated backend/frontend artifacts синхронизированы; финальный contract-sync подтверждается общим CI.
-- T031 — real browser flow существует, но нужен зелёный запуск именно на финальном HEAD.
-- T032 — полный PostgreSQL/Redis frontend/backend types/tests/lint/build + migration rehearsal.
-- T033 — финальная запись verification/handoff/roadmap и отметка 020 ✅ только после предыдущих трёх.
+Main/production не менялись. Подробности — `verification-acceptance.md`.
