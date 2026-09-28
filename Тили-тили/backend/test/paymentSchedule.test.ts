@@ -690,6 +690,133 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     ])
   })
 
+
+  /* ── Feature 021: способы оплаты, неполная сумма и vendor isolation ───── */
+
+  const pay021 = (w: W, id: string, body: Record<string, unknown>, key = randomUUID()) =>
+    app.inject({method:'POST',url:`/weddings/${w.id}/payment-schedule/${id}/pay`,
+      headers:headers(w,key),payload:body})
+
+  async function catalogVendor(name: string) {
+    const account=await user(), vendorId=randomUUID()
+    await app.db!.query(`insert into vendors(id,user_id,category_id,name,published_at)
+      values($1,$2,'photo',$3,now())`,[vendorId,account.id,name])
+    return {account,vendorId}
+  }
+
+  async function attachVendor(w: W, vendorId: string) {
+    await app.db!.query('update deals set vendor_id=$2,external_name=null where id=$1',[w.dealId,vendorId])
+  }
+
+  it.each(['cash','bank_transfer','card','other'])('021: %s сохраняется на конкретной оплате и не меняет математику', async paymentMethod => {
+    const w=await setup(), stage=(await create(w)).json()
+    const res=await pay021(w,stage.id,{version:1,amount:money(150000),paymentMethod,visibility:'private',paidOn:'2027-06-18'})
+    expect(res.statusCode,res.body).toBe(200)
+    expect(res.json()).toMatchObject({paid:money(150000),remaining:money(250000),status:'partial'})
+    const row=(await app.db!.query('select amount::text as amount,payment_method,visibility,amount_known,paid_on::text as paid_on from payments where deal_id=$1',[w.dealId])).rows[0]
+    expect(row).toEqual({amount:'150000',payment_method:paymentMethod,visibility:'private',amount_known:true,paid_on:'2027-06-18'})
+  })
+
+  it('021: неизвестная сумма — NULL, не 0, не гасит долг и помечает агрегаты неполными', async () => {
+    const w=await setup(), stage=(await create(w)).json()
+    expect((await pay(w,stage.id,100000)).statusCode).toBe(200)
+    const current=(await read(w)).json().items[0]
+    const res=await pay021(w,stage.id,{version:current.version,amountKnown:false,paymentMethod:'cash',visibility:'private',paidOn:'2027-06-18'})
+    expect(res.statusCode,res.body).toBe(200)
+    expect(res.json()).toMatchObject({paid:money(100000),remaining:money(300000),unknownAmountPayments:1})
+    const data=(await read(w)).json()
+    expect(data.summary).toMatchObject({recorded:money(100000),remaining:money(900000),unknownAmountPayments:1,amountIncomplete:true})
+    const unknown=(await app.db!.query('select amount,amount_known from payments where deal_id=$1 and not amount_known',[w.dealId])).rows[0]
+    expect(unknown).toEqual({amount:null,amount_known:false})
+  })
+
+  it('021: idempotency держит cash, transfer и unknown amount одной строкой на retry', async () => {
+    for(const body of [
+      {amount:money(10000),paymentMethod:'cash',visibility:'private',paidOn:'2027-06-18'},
+      {amount:money(10000),paymentMethod:'bank_transfer',visibility:'private',paidOn:'2027-06-18'},
+      {amountKnown:false,paymentMethod:'cash',visibility:'private',paidOn:'2027-06-18'},
+    ]) {
+      const w=await setup(), stage=(await create(w)).json(), key=randomUUID()
+      const first=await pay021(w,stage.id,{version:1,...body},key)
+      const replay=await pay021(w,stage.id,{version:1,...body},key)
+      expect(first.statusCode,first.body).toBe(200); expect(replay.statusCode,replay.body).toBe(200)
+      expect((await app.db!.query('select id from payments where deal_id=$1',[w.dealId])).rowCount).toBe(1)
+    }
+  })
+
+  it('021: два устройства не могут одновременно переплатить остаток этапа', async () => {
+    const w=await setup(20000), stage=(await create(w,{amount:money(20000)})).json()
+    const [a,b]=await Promise.all([
+      pay021(w,stage.id,{version:1,amount:money(20000),paymentMethod:'cash',visibility:'private',paidOn:'2027-06-18'}),
+      pay021(w,stage.id,{version:1,amount:money(20000),paymentMethod:'card',visibility:'private',paidOn:'2027-06-18'}),
+    ])
+    expect([a.statusCode,b.statusCode].sort()).toEqual([200,409])
+    expect((await app.db!.query<{total:string}>('select coalesce(sum(amount),0)::text as total from payments where deal_id=$1',[w.dealId])).rows[0]!.total).toBe('20000')
+  })
+
+  it('021: vendor видит только visibility=vendor своей сделки; private/finance_members не текут в список и агрегаты', async () => {
+    const a=await setup(), b=await setup(), va=await catalogVendor('Vendor A'), vb=await catalogVendor('Vendor B')
+    await attachVendor(a,va.vendorId); await attachVendor(b,vb.vendorId)
+    const sa=(await create(a)).json(), sb=(await create(b)).json()
+    let version=1
+    for(const payment of [
+      {amount:money(30000),paymentMethod:'cash',visibility:'private'},
+      {amount:money(20000),paymentMethod:'card',visibility:'finance_members'},
+      {amount:money(10000),paymentMethod:'bank_transfer',visibility:'vendor'},
+    ]) {
+      const res=await pay021(a,sa.id,{version,...payment,paidOn:'2027-06-18'})
+      expect(res.statusCode,res.body).toBe(200); version=res.json().version
+    }
+    expect((await pay021(b,sb.id,{version:1,amount:money(150000),paymentMethod:'bank_transfer',visibility:'vendor',paidOn:'2027-06-18'})).statusCode).toBe(200)
+
+    const own=await app.inject({method:'GET',url:`/vendor/deals/${a.dealId}/payments`,headers:bearer(va.account.token)})
+    expect(own.statusCode,own.body).toBe(200)
+    expect(own.json()).toHaveLength(1)
+    expect(own.json()[0]).toMatchObject({dealId:a.dealId,amount:money(10000),paymentMethod:'bank_transfer',visibility:'vendor'})
+
+    const deals=await app.inject({method:'GET',url:'/vendor/deals',headers:bearer(va.account.token)})
+    expect(deals.statusCode,deals.body).toBe(200)
+    const item=deals.json().items.find((x:{id:string})=>x.id===a.dealId)
+    expect(item.paid).toEqual(money(10000))
+    expect(deals.json().expected.amount).toBe(990000)
+
+    const foreign=await app.inject({method:'GET',url:`/vendor/deals/${b.dealId}/payments`,headers:bearer(va.account.token)})
+    expectError(foreign,404,'not_found')
+    const enumerated=await app.inject({method:'GET',url:`/vendor/deals/${randomUUID()}/payments`,headers:bearer(va.account.token)})
+    expectError(enumerated,404,'not_found')
+  })
+
+  it('021: vendor receipt content требует свою сделку + vendor-visible payment + receipt id', async () => {
+    const a=await setup(), b=await setup(), va=await catalogVendor('Receipt A'), vb=await catalogVendor('Receipt B')
+    await attachVendor(a,va.vendorId); await attachVendor(b,vb.vendorId)
+    const sa=(await create(a)).json(), sb=(await create(b)).json()
+    expect((await pay021(a,sa.id,{version:1,amount:money(10000),paymentMethod:'cash',visibility:'private',paidOn:'2027-06-18'})).statusCode).toBe(200)
+    expect((await pay021(b,sb.id,{version:1,amount:money(10000),paymentMethod:'cash',visibility:'vendor',paidOn:'2027-06-18'})).statusCode).toBe(200)
+    const pa=(await app.db!.query<{id:string}>('select id from payments where deal_id=$1',[a.dealId])).rows[0]!.id
+    const pb=(await app.db!.query<{id:string}>('select id from payments where deal_id=$1',[b.dealId])).rows[0]!.id
+    const ra=randomUUID(), rb=randomUUID()
+    await app.db!.query(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
+      values($1,$2,$3,'a.png','image/png',$4,$5,$6),($7,$8,$9,'b.png','image/png',$4,$5,$10)`,
+      [ra,a.id,pa,PNG.length,PNG,a.owner.id,rb,b.id,pb,b.owner.id])
+    const url=(deal:string,payment:string,receipt:string)=>`/vendor/deals/${deal}/payments/${payment}/receipts/${receipt}/content`
+    expectError(await app.inject({method:'GET',url:url(a.dealId,pa,ra),headers:bearer(va.account.token)}),404,'not_found')
+    expectError(await app.inject({method:'GET',url:url(b.dealId,pb,rb),headers:bearer(va.account.token)}),404,'not_found')
+    const own=await app.inject({method:'GET',url:url(b.dealId,pb,rb),headers:bearer(vb.account.token)})
+    expect(own.statusCode,own.body).toBe(200)
+    expect(own.json().contentBase64).toBe(PNG.toString('base64'))
+  })
+
+  it('021: архив скрывает vendor payment endpoints, deleted vendor user не авторизуется', async () => {
+    const w=await setup(), v=await catalogVendor('Archived vendor'); await attachVendor(w,v.vendorId)
+    const stage=(await create(w)).json()
+    expect((await pay021(w,stage.id,{version:1,amount:money(10000),paymentMethod:'cash',visibility:'vendor',paidOn:'2027-06-18'})).statusCode).toBe(200)
+    await app.db!.query('update weddings set archived_at=now() where id=$1',[w.id])
+    expectError(await app.inject({method:'GET',url:`/vendor/deals/${w.dealId}/payments`,headers:bearer(v.account.token)}),404,'not_found')
+    await app.db!.query('update users set deleted_at=now() where id=$1',[v.account.id])
+    expect((await app.inject({method:'GET',url:`/vendor/deals/${w.dealId}/payments`,headers:bearer(v.account.token)})).statusCode).toBe(401)
+  })
+
+
   /* ── Выгрузка 152-ФЗ (P-02) ──────────────────────────────────────────── */
   it('P-02: выгрузка своих данных — у пары этапы графика и привязка оплат, у помощника денег нет', async () => {
     const w = await setup(), helper = await user(), title = 'Этап выгрузки ' + randomUUID()
