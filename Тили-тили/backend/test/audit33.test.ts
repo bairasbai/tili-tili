@@ -553,10 +553,16 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const tableId = await newTable(w, 8)
     const pair = await newGuest(w, 'Ольга и Денис', true)
     const one = await newGuest(w, 'Марат')
+    const { rows: companions } = await app.db!.query<{ id: string }>(
+      `select x.id from guests x
+        where x.party_id = (select party_id from guests where id = $1) and x.id <> $1`,
+      [pair.guestId],
+    )
     expect((await patchGuest(w, pair.guestId, { tableId })).statusCode).toBe(200)
+    expect((await patchGuest(w, companions[0]!.id, { tableId })).statusCode).toBe(200)
     expect((await patchGuest(w, one.guestId, { tableId })).statusCode).toBe(200)
 
-    // Сидят трое (двое + один): двух мест мало, трёх — ровно.
+    // 020: три отдельные персоны сидят за столом; двух мест мало, трёх — ровно.
     expect(errorOf(await patchTable(w, tableId, { capacity: 2 }))).toEqual({ status: 409, code: 'table_full' })
     expect((await patchTable(w, tableId, { capacity: 3 })).statusCode).toBe(200)
     const table = (await tablesOf(w)).find((t) => t.id === tableId)!
