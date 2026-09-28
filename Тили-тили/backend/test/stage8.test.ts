@@ -795,6 +795,7 @@ describe.skipIf(!live)('этап 8: кабинет, отзывы, модерац
       payload: { amount: { amount: 2_000_000, currency: 'RUB' } },
     })
     expect(paid.statusCode).toBe(200)
+    await app.db!.query(`update payments set visibility='vendor' where deal_id=$1`,[dealId])
 
     const stats = await app.inject({ method: 'GET', url: '/vendor/analytics', headers: auth(vendor.token) })
     expect(stats.statusCode).toBe(200)
