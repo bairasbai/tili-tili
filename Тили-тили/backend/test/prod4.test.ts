@@ -54,6 +54,30 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
   const auth = (token: string) => ({ authorization: `Bearer ${token}` })
   const key = () => ({ 'idempotency-key': `k-${RUN}-${++counter}` })
   const nextPhone = () => `+79${RUN}${String(counter++).padStart(3, '0')}`
+  const replaceTimeline = async (
+    wedding: { weddingId: string; token: string },
+    events: Record<string, unknown>[],
+  ) => {
+    const snapshot = await app.inject({
+      method: 'GET',
+      url: `/weddings/${wedding.weddingId}/timeline`,
+      headers: auth(wedding.token),
+    })
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/weddings/${wedding.weddingId}/timeline`,
+      headers: { ...auth(wedding.token), 'if-match': snapshot.headers.etag! },
+      payload: events.map(event => ({
+        ...event,
+        timingMode: event.timingMode ?? 'flexible',
+        assigneeUserIds: event.assigneeUserIds ?? [],
+        dealIds: event.dealIds ?? [],
+        dependsOn: event.dependsOn ?? [],
+      })),
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    return response
+  }
 
   async function readCode(phone: string): Promise<string> {
     const { rows } = await app.db!.query<{ code_hash: string }>(
@@ -222,12 +246,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
       headers: auth(w.token),
       payload: { options: [{ name: 'Рыба' }, { name: 'Мясо' }] },
     })
-    await app.inject({
-      method: 'PUT',
-      url: `/weddings/${w.weddingId}/timeline`,
-      headers: auth(w.token),
-      payload: [{ name: 'Банкет', startsAt: '2027-10-02T15:00:00.000Z' }],
-    })
+    await replaceTimeline(w, [{ name: 'Банкет', startsAt: '2027-10-02T15:00:00.000Z' }])
 
     const updates = await app.inject({ method: 'GET', url: '/vendor/updates', headers: auth(vendor.token) })
     expect(updates.statusCode).toBe(200)
@@ -295,12 +314,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
     const vendor = await newVendor()
     const other = await newVendor()
     await book(w, vendor.vendorId)
-    await app.inject({
-      method: 'PUT',
-      url: `/weddings/${w.weddingId}/timeline`,
-      headers: auth(w.token),
-      payload: [{ name: 'Сборы', startsAt: '2027-10-02T09:00:00.000Z' }],
-    })
+    await replaceTimeline(w, [{ name: 'Сборы', startsAt: '2027-10-02T09:00:00.000Z' }])
 
     const mine = (await app.inject({ method: 'GET', url: '/vendor/updates', headers: auth(vendor.token) })).json() as {
       id: string
@@ -325,12 +339,7 @@ describe.skipIf(!live)('прод: сквозной сценарий подряд
       url: `/chats/vendor/${vendor.vendorId}`,
       headers: auth(w.token),
     })
-    await app.inject({
-      method: 'PUT',
-      url: `/weddings/${w.weddingId}/timeline`,
-      headers: auth(w.token),
-      payload: [{ name: 'Сборы', startsAt: '2027-10-02T09:00:00.000Z' }],
-    })
+    await replaceTimeline(w, [{ name: 'Сборы', startsAt: '2027-10-02T09:00:00.000Z' }])
     /* §13.2 говорит про подрядчика, «чья сделка в статусе booked».
      * Кандидату чужой тайминг не нужен, а знать его он не должен. */
     expect((await app.inject({ method: 'GET', url: '/vendor/updates', headers: auth(vendor.token) })).json()).toEqual([])
