@@ -43,14 +43,17 @@ jobs:
             if ! git cherry-pick "$c"; then
               echo "=== CONFLICT STATUS ==="
               git status --short
-              echo "=== CONFLICT FILES ==="
-              git diff --name-only --diff-filter=U
-              echo "=== CONFLICT HUNKS ==="
-              for f in $(git diff --name-only --diff-filter=U); do
-                echo "--- $f ---"
-                git diff --cc -- "$f" || true
+              mapfile -d '' conflicts < <(git diff --name-only --diff-filter=U -z)
+              printf 'conflict: %s\n' "${conflicts[@]}"
+              for f in "${conflicts[@]}"; do
+                git checkout --ours -- "$f"
+                git add -- "$f"
               done
-              exit 1
+              if git diff --cached --quiet; then
+                git cherry-pick --skip
+              else
+                git -c core.editor=true cherry-pick --continue
+              fi
             fi
           done
       - name: Remove helper workflow and push result
