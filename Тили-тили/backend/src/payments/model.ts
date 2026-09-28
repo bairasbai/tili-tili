@@ -12,6 +12,22 @@ export const asMoney = (value: bigint | string | number) => {
 }
 export const positive = (n: bigint) => n > 0n ? n : 0n
 
+export type PaymentMethod = 'cash' | 'bank_transfer' | 'card' | 'other'
+export type PaymentVisibility = 'private' | 'finance_members' | 'vendor'
+export interface PaymentRecordOptions {
+  paymentMethod?: PaymentMethod
+  visibility?: PaymentVisibility
+  amountKnown?: boolean
+  paidOn?: string
+}
+export function assertPaidOn(value: string) {
+  assertRealDate(value, 'paidOn')
+  if (value < '2000-01-01' || value > '2100-12-31') {
+    throw new AppError(422, 'bad_date', 'Дата оплаты — между 2000 и 2100 годом',
+      { paidOn: 'ожидается дата между 2000-01-01 и 2100-12-31' })
+  }
+}
+
 /** Wedding → user → membership → deal, matching rescheduling/account deletion.
  * Re-check under locks; middleware alone cannot prevent concurrent role removal. */
 export async function lockFinanceAccess(tx: Queryable, weddingId: string, userId: string) {
@@ -38,15 +54,16 @@ export function assertPayable(deal: FinancialDeal) {
 }
 export interface InstallmentRow {
   id: string; deal_id: string; title: string; amount: string; due: string; version: number
-  cancelled_at: Date | null; cancel_reason: string | null; paid: string
-  /** Цена и все оплаты сделки — для распределения неразнесённых денег по этапам. */
+  cancelled_at: Date | null; cancel_reason: string | null; paid: string; unknown_payments: number
+  /** Цена и все известные оплаты сделки — для распределения неразнесённых денег по этапам. */
   deal_price: string | null; deal_paid: string
 }
 /** Выборка этапа. Требует `deals d` в запросе: цена и оплаты сделки берутся оттуда. */
 export const INSTALLMENT_SELECT = `i.id,i.deal_id,i.title,i.amount::text as amount,i.due::text as due,
   i.version,i.cancelled_at,i.cancel_reason,
-  -- Сумму привязанных отметок ведёт триггер, CHECK держит её в [0; amount] (ревью 018, M-02).
+  -- Сумму привязанных известных отметок ведёт триггер; NULL неизвестной суммы не участвует.
   i.paid::text as paid,
+  (select count(*)::int from payments up where up.installment_id=i.id and up.status<>'cancelled' and not up.amount_known) as unknown_payments,
   d.price::text as deal_price,${PAID_SUM}::text as deal_paid`
 /** Порядок этапов: по сроку, затем по созданию. Им же неразнесённые деньги ложатся на этапы. */
 export const INSTALLMENT_ORDER = 'i.due,i.created_at,i.id'
@@ -56,23 +73,16 @@ export interface InstallmentView {
   id: string; dealId: string; title: string; amount: { amount: number; currency: 'RUB' }; due: string
   version: number; paid: { amount: number; currency: 'RUB' }; allocated: { amount: number; currency: 'RUB' }
   remaining: { amount: number; currency: 'RUB' }; status: InstallmentStatus; overdue: boolean
+  unknownAmountPayments: number
   cancelledAt: string | null; cancelReason: string | null
 }
 
 /**
- * Этапы с учётом всех денег сделки (ревью 018, M-01).
+ * Этапы с учётом всех ИЗВЕСТНЫХ денег сделки (ревью 018, M-01).
  *
- * `paid` — отметки, привязанные к этапу. Но старая кнопка «Оплатить» пишет весь
- * остаток одной отметкой без этапа, а одну отметку нельзя разнести на несколько
- * этапов: раньше такой график застревал — этапы «Просрочено», привязка и оплата
- * этапа отвечали 409, хотя деньги отмечены. Поэтому неразнесённые деньги сделки
- * (без этапа или на отменённом этапе) для показа ложатся на её этапы по сроку
- * (`allocated`), а остаток каждого этапа не превышает остатка сделки. Ничего не
- * записывается: привязки меняет только пара. Сумма `remaining` по этапам сделки
- * никогда не больше её остатка, и просрочен только этап, за который правда
- * ещё не заплачено.
- *
- * Строки одной сделки должны идти в порядке `INSTALLMENT_ORDER`.
+ * Неизвестная сумма существует как факт оплаты, но не уменьшает числовой остаток:
+ * PostgreSQL SUM игнорирует NULL, а `unknownAmountPayments` сообщает UI о неполноте.
+ * Остальная логика распределения 018-A остаётся прежней.
  */
 export function stageViews(rows: InstallmentRow[], today: string): InstallmentView[] {
   const byDeal = new Map<string, InstallmentRow[]>()
@@ -91,7 +101,7 @@ export function stageViews(rows: InstallmentRow[], today: string): InstallmentVi
       const amount = BigInt(row.amount), paid = BigInt(row.paid)
       const base = {
         id: row.id, dealId: row.deal_id, title: row.title, amount: asMoney(amount), due: row.due,
-        version: row.version, paid: asMoney(paid),
+        version: row.version, paid: asMoney(paid), unknownAmountPayments: row.unknown_payments,
         cancelledAt: row.cancelled_at?.toISOString() ?? null, cancelReason: row.cancel_reason,
       }
       if (row.cancelled_at) {
@@ -123,12 +133,7 @@ export async function dealStageRows(tx: Queryable, weddingId: string, dealId: st
   return rows
 }
 
-/**
- * Журнал финансовых действий — без свободного текста (ревью 018, M-03/P-03).
- * `audit_log` только дописывается и переживает стирание аккаунта (152-ФЗ): название
- * этапа или причина отмены, написанные парой, остались бы в нём навсегда. Пишем
- * id, версии, суммы, даты и имена изменённых полей.
- */
+/** Журнал финансовых действий — только структурированные поля, без свободного текста. */
 export async function financeAudit(tx: Queryable, uid: string, entity: 'payment' | 'payment_installment' | 'payment_receipt',
   id: string, action: string, diff: Record<string, unknown>) {
   await tx.query('insert into audit_log(actor_id,action,entity,entity_id,diff) values($1,$2,$3,$4,$5)',
@@ -146,34 +151,44 @@ export const stalePlan = () => conflict('stale_payment_plan','График из�
 export function assertVersion(actual: number,expected: number) {
   if (actual!==expected) throw stalePlan()
 }
-/** Срок этапа: календарная дата в разумных пределах — как CHECK в миграции (ревью 018, M-11). */
 export function assertDue(value: string) {
   assertRealDate(value,'due')
   if (value<'2000-01-01' || value>'2100-12-31') throw new AppError(422,'bad_date','Срок платежа — между 2000 и 2100 годом',{due:'ожидается дата между 2000-01-01 и 2100-12-31'})
 }
 
-/** Single money-writing door for the existing slot button and the new schedule. */
+/** Single money-writing door for the existing slot button and the payment schedule.
+ * `amountKnown=false` records a payment fact without inventing zero or reducing debt. */
 export async function recordPayment(tx: Queryable,deal: FinancialDeal,userId: string,
-  amountInput?: number,stage?: InstallmentRow) {
+  amountInput?: number,stage?: InstallmentRow,options: PaymentRecordOptions = {}) {
   assertPayable(deal)
   if (stage?.cancelled_at) throw conflict('installment_cancelled','Этап платежа отменён')
+  const amountKnown=options.amountKnown ?? true
+  if (!amountKnown && amountInput !== undefined) {
+    throw new AppError(422,'validation_failed','Запрос не прошёл проверку',{amount:'Не передавайте сумму, если она не сохраняется'})
+  }
+  const paymentMethod=options.paymentMethod ?? 'other'
+  const visibility=options.visibility ?? 'private'
+  if (options.paidOn !== undefined) assertPaidOn(options.paidOn)
   const price=BigInt(deal.price!)
   const {rows}=await tx.query<{total:string}>(`select ${PAID_SUM}::text as total from deals d where d.id=$1`,[deal.id])
   const already=BigInt(rows[0]!.total)
-  const amount=amountInput===undefined ? positive(price-already) : BigInt(amountInput)
-  if (amount<=0n) {
+  const amount=amountKnown ? (amountInput===undefined ? positive(price-already) : BigInt(amountInput)) : null
+  if (amount !== null && amount<=0n) {
     if (amountInput===undefined) throw conflict('overpay','Сделка уже оплачена целиком')
     throw new AppError(422,'bad_amount','Сумма оплаты должна быть больше нуля')
   }
-  if (already+amount>price) throw conflict('overpay','Сумма оплат превысила цену сделки')
-  if (stage && BigInt(stage.paid)+amount>BigInt(stage.amount)) throw conflict('installment_overpay','Сумма превысила остаток этапа')
+  if (amount !== null && already+amount>price) throw conflict('overpay','Сумма оплат превысила цену сделки')
+  if (amount !== null && stage && BigInt(stage.paid)+amount>BigInt(stage.amount)) throw conflict('installment_overpay','Сумма превысила остаток этапа')
   const id=uuidv7()
-  await tx.query(`insert into payments(id,deal_id,kind,amount,currency,status,installment_id)
-    values($1,$2,$3,$4,'RUB','recorded',$5)`,[id,deal.id,already+amount>=price?'balance':'deposit',amount.toString(),stage?.id ?? null])
-  /* Журнал — здесь, в единой двери: раньше его писал только новый экран, и та же
-   * запись денег через старую кнопку слота в журнал не попадала (ревью 018, M-05). */
-  await financeAudit(tx,userId,'payment',id,'payment.recorded',
-    {dealId:deal.id,installmentId:stage?.id ?? null,amount:Number(amount)})
+  const kind=amount !== null && already+amount>=price ? 'balance' : 'deposit'
+  await tx.query(`insert into payments(id,deal_id,kind,amount,currency,status,installment_id,payment_method,visibility,amount_known,paid_on)
+    values($1,$2,$3,$4,'RUB','recorded',$5,$6,$7,$8,
+      coalesce($9::date,(select (now() at time zone coalesce(w.tz,'Europe/Moscow'))::date
+        from deals d join weddings w on w.id=d.wedding_id where d.id=$2)))`,
+    [id,deal.id,kind,amount?.toString() ?? null,stage?.id ?? null,paymentMethod,visibility,amountKnown,options.paidOn ?? null])
+  await financeAudit(tx,userId,'payment',id,'payment.recorded',{
+    dealId:deal.id,installmentId:stage?.id ?? null,paymentMethod,visibility,amountKnown,
+    paidOn:options.paidOn ?? null,version:1,...(amount===null?{}:{amount:Number(amount)})})
   if (deal.state==='booked') {
     await tx.query("update deals set state='paid_deposit' where id=$1",[deal.id])
     await tx.query(`insert into deal_events(id,deal_id,from_state,to_state,actor_id)
