@@ -1105,7 +1105,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
 
 /* Тайминг дня */
 export function Timeline() {
-  const { weddingId, weddingDate } = useStore()
+  const { weddingId, weddingDate, slots } = useStore()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
   const [from, setFrom] = useState('')
@@ -1136,8 +1136,16 @@ export function Timeline() {
      смотреть тайминг из другого города, и «13:00» должно означать 13:00 на
      площадке. */
   const wq = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
+  const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
   const tz = wq.data?.tz
   const raw = q.data ?? []
+  const members = membersQ.data ?? []
+  const memberName = new Map(members.map(member => [member.user.id, member.user.name || t('Участник команды')]))
+  const dealSlots = slots.filter(slot =>
+    !!slot.dealId && (slot.dealState === 'booked' || slot.dealState === 'paid_deposit' || slot.dealState === 'done'),
+  )
+  const dealName = new Map(dealSlots.map(slot => [slot.dealId!, slot.vendor || slot.label]))
+  const eventName = new Map(raw.map(event => [event.id ?? '', event.name ?? '']))
   const events = raw.map(e => ({
     id: e.id ?? '',
     /* Сервер отдаёт метку времени, экран показывает часы и минуты в поясе
@@ -1264,6 +1272,49 @@ export function Timeline() {
   const toggleTimingMode = (id: string) => void save(
     asDraft().map(e => (e.id === id ? { ...e, timingMode: e.timingMode === 'fixed' ? 'flexible' : 'fixed' } : e)),
   )
+  const addMemberAssignee = (id: string, userId: string) => {
+    if (!userId) return
+    void save(asDraft().map(e => e.id === id && !e.assigneeUserIds.includes(userId)
+      ? { ...e, assigneeUserIds: [...e.assigneeUserIds, userId] }
+      : e))
+  }
+  const removeMemberAssignee = (id: string, userId: string) => void save(
+    asDraft().map(e => e.id === id ? { ...e, assigneeUserIds: e.assigneeUserIds.filter(value => value !== userId) } : e),
+  )
+  const addDealAssignee = (id: string, dealId: string) => {
+    if (!dealId) return
+    void save(asDraft().map(e => e.id === id && !e.dealIds.includes(dealId)
+      ? { ...e, dealIds: [...e.dealIds, dealId] }
+      : e))
+  }
+  const removeDealAssignee = (id: string, dealId: string) => void save(
+    asDraft().map(e => e.id === id ? { ...e, dealIds: e.dealIds.filter(value => value !== dealId) } : e),
+  )
+  const addDependency = (id: string, parentId: string) => {
+    if (!parentId) return
+    void save(asDraft().map(e => e.id === id && !e.dependsOn.some(dep => dep.eventId === parentId)
+      ? { ...e, dependsOn: [...e.dependsOn, { eventId: parentId, travelMinutes: 0, bufferMinutes: 0 }] }
+      : e))
+  }
+  const removeDependency = (id: string, parentId: string) => void save(
+    asDraft().map(e => e.id === id
+      ? { ...e, dependsOn: e.dependsOn.filter(dep => dep.eventId !== parentId) }
+      : e),
+  )
+  const updateDependencyMinutes = (
+    id: string,
+    parentId: string,
+    field: 'travelMinutes' | 'bufferMinutes',
+    value: number,
+  ) => {
+    const safe = Math.max(0, Math.min(1440, Number.isFinite(value) ? Math.trunc(value) : 0))
+    void save(asDraft().map(e => e.id === id
+      ? {
+          ...e,
+          dependsOn: e.dependsOn.map(dep => dep.eventId === parentId ? { ...dep, [field]: safe } : dep),
+        }
+      : e))
+  }
 
   /*
    * Автоплан сервер отдаёт предпросмотром и сам ничего не меняет — так же
@@ -1385,6 +1436,75 @@ export function Timeline() {
                 >
                   {e.timingMode === 'fixed' ? t('Сделать подвижным') : t('Зафиксировать время')}
                 </button>
+
+                <div className="mt-2.5 space-y-2 border-t border-[var(--track)] pt-2.5">
+                  <span className="text-[10px] uppercase tracking-[.12em] text-[var(--soft)]">{t('Ответственные')}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(raw.find(item => item.id === e.id)?.assigneeUserIds ?? []).map(userId => (
+                      <button key={userId} type="button" disabled={locked} onClick={() => removeMemberAssignee(e.id, userId)}
+                        className="press px-2 py-1 rounded-full bg-[var(--bg)] text-[10px] disabled:opacity-50">
+                        {memberName.get(userId) ?? t('Участник')} ×
+                      </button>
+                    ))}
+                    {(raw.find(item => item.id === e.id)?.dealIds ?? []).map(dealId => (
+                      <button key={dealId} type="button" disabled={locked} onClick={() => removeDealAssignee(e.id, dealId)}
+                        className="press px-2 py-1 rounded-full bg-[var(--bg)] text-[10px] disabled:opacity-50">
+                        {dealName.get(dealId) ?? t('Подрядчик')} ×
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select disabled={locked || !ready(membersQ)} value="" onChange={event => addMemberAssignee(e.id, event.target.value)}
+                      className="h-9 rounded-lg bg-[var(--bg)] px-2 text-[10.5px] outline-none disabled:opacity-50">
+                      <option value="">{t('+ человек')}</option>
+                      {members.filter(member => !(raw.find(item => item.id === e.id)?.assigneeUserIds ?? []).includes(member.user.id)).map(member => (
+                        <option key={member.user.id} value={member.user.id}>{member.user.name || t('Участник')}</option>
+                      ))}
+                    </select>
+                    <select disabled={locked} value="" onChange={event => addDealAssignee(e.id, event.target.value)}
+                      className="h-9 rounded-lg bg-[var(--bg)] px-2 text-[10.5px] outline-none disabled:opacity-50">
+                      <option value="">{t('+ подрядчик')}</option>
+                      {dealSlots.filter(slot => !(raw.find(item => item.id === e.id)?.dealIds ?? []).includes(slot.dealId!)).map(slot => (
+                        <option key={slot.dealId} value={slot.dealId}>{slot.vendor || slot.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="block text-[10px] uppercase tracking-[.12em] text-[var(--soft)] pt-1">{t('Зависит от')}</span>
+                  {(raw.find(item => item.id === e.id)?.dependsOn ?? []).map(dependency => (
+                    <div key={dependency.eventId} className="rounded-xl bg-[var(--bg)] p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[10.5px] font-semibold">{eventName.get(dependency.eventId) || t('Событие')}</span>
+                        <button type="button" disabled={locked} onClick={() => removeDependency(e.id, dependency.eventId)}
+                          className="press text-[11px] text-[var(--rose-deep)] disabled:opacity-50">×</button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mt-1.5">
+                        <label className="text-[9.5px] text-[var(--soft)]">
+                          {t('Дорога, мин')}
+                          <input type="number" min={0} max={1440} defaultValue={dependency.travelMinutes ?? 0} disabled={locked}
+                            onBlur={event => updateDependencyMinutes(e.id, dependency.eventId, 'travelMinutes', Number(event.currentTarget.value))}
+                            className="mt-1 w-full h-8 rounded-lg bg-[var(--card)] px-2 text-[10.5px] outline-none" />
+                        </label>
+                        <label className="text-[9.5px] text-[var(--soft)]">
+                          {t('Запас, мин')}
+                          <input type="number" min={0} max={1440} defaultValue={dependency.bufferMinutes ?? 0} disabled={locked}
+                            onBlur={event => updateDependencyMinutes(e.id, dependency.eventId, 'bufferMinutes', Number(event.currentTarget.value))}
+                            className="mt-1 w-full h-8 rounded-lg bg-[var(--card)] px-2 text-[10.5px] outline-none" />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                  <select disabled={locked} value="" onChange={event => addDependency(e.id, event.target.value)}
+                    className="w-full h-9 rounded-lg bg-[var(--bg)] px-2 text-[10.5px] outline-none disabled:opacity-50">
+                    <option value="">{t('+ добавить предыдущий блок')}</option>
+                    {raw.filter(candidate =>
+                      candidate.id && candidate.id !== e.id &&
+                      !(raw.find(item => item.id === e.id)?.dependsOn ?? []).some(dep => dep.eventId === candidate.id)
+                    ).map(candidate => (
+                      <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                    ))}
+                  </select>
+                </div>
                 </>
               )}
             </div>
