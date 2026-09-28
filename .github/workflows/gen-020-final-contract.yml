@@ -35,4 +35,8 @@ jobs:
           git add Тили-тили/backend/src/contract/paths.generated.ts Тили-тили/backend/src/contract/schemas.generated.ts Тили-тили/backend/src/contract/api.generated.ts Тили-тили/app/src/lib/api/schema.ts
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(020): regenerate final contract artifacts"
+          # The 020 test branch is intentionally active while generation runs.
+          # Rebase the generated commit onto the newest head instead of losing
+          # a correct generation to a non-fast-forward push race.
+          git pull --rebase origin test/020-finalize-20260928
           git push origin HEAD:test/020-finalize-20260928
