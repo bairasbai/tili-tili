@@ -18,7 +18,19 @@ describe('готовность к выпуску: файлы сборки', () =
   it('apple-touch-icon указывает на PNG', () => {
     const html = projectFile('index.html')
     const m = /<link rel="apple-touch-icon" href="([^"]+)"/.exec(html)
-    expect(m?.[1]).toMatch(/\.png$/)
+      ?? /<link rel="apple-touch-icon"[^>]+href="([^"]+)"/.exec(html)
+    expect(m?.[1]).toBe('./apple-touch-icon.png')
+  })
+
+  it('манифест разделяет обычные и maskable PNG-иконки нового бренда', () => {
+    const manifest = JSON.parse(projectFile('public/manifest.webmanifest')) as {
+      icons: Array<{ src: string; sizes: string; type: string; purpose: string }>
+    }
+    expect(manifest.icons).toEqual([
+      { src: './icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: './icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: './icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ])
   })
 
   it('app/.env не попадёт в репозиторий', () => {
