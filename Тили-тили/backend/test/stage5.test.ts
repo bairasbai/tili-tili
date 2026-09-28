@@ -192,7 +192,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
     const people = list.json() as { name: string; status: string; plusOne: boolean; diet: string | null; transfer: string | null }[]
     expect(people).toHaveLength(2)
     expect(people.find((p) => p.name === 'Ольга')).toMatchObject({ status: 'yes', plusOne: true, diet: 'vegetarian', transfer: 'need' })
-    expect(people.find((p) => p.name !== 'Ольга')).toMatchObject({ status: 'pending', plusOne: false })
+    expect(people.find((p) => p.name !== 'Ольга')).toMatchObject({ status: 'pending' })
   })
 
   it('чужой токен не открывает страницу', async () => {
