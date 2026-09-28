@@ -84,7 +84,7 @@ const VendorLead = lazy(() => load.vendorExtras().then(m => ({ default: m.Vendor
 const VendorDealCard = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorDealCard })))
 const VendorReviews = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorReviews })))
 const VendorAnalytics = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorAnalytics })))
-const VendorOfferRequests = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorOfferRequests })))
+const VendorOfferRequests = lazy(() => import('@/pages/VendorOffers').then(m => ({ default: m.VendorOfferRequests })))
 
 const Offer = lazy(() => load.legal().then(m => ({ default: m.Offer })))
 const Privacy = lazy(() => load.legal().then(m => ({ default: m.Privacy })))
