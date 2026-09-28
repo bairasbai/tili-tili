@@ -1444,7 +1444,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
         if (body.capacity !== undefined) {
           const { rows: seated } = await client.query<{ persons: string }>(
-            'select coalesce(sum(1 + plus_one::int), 0)::text as persons from guests where table_id = $1',
+            'select count(*)::text as persons from guests where table_id = $1',
             [tableId],
           )
           const persons = Number(seated[0]!.persons)

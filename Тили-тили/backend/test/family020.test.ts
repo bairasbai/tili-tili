@@ -393,6 +393,48 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(page.json().members).toHaveLength(2)
   })
 
+
+  it('table capacity counts materialized family people once even if deprecated plus_one is stale', async () => {
+    const f = await family()
+    const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()
+    const members = page.members as { guestId: string }[]
+
+    const table = await app.inject({
+      method: 'POST',
+      url: `/weddings/${f.weddingId}/tables`,
+      headers: auth(f.token),
+      payload: { name: 'Семейный стол', capacity: 4 },
+    })
+    expect(table.statusCode, table.body).toBe(201)
+    const tableId = table.json().id as string
+
+    const seated = await app.inject({
+      method: 'PATCH',
+      url: `/weddings/${f.weddingId}/guests/${f.primaryId}`,
+      headers: auth(f.token),
+      payload: { tableId },
+    })
+    expect(seated.statusCode, seated.body).toBe(200)
+
+    const { rows: assigned } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from guests where party_id = $1 and table_id = $2',
+      [f.partyId, tableId],
+    )
+    expect(assigned[0]!.n).toBe('2')
+
+    // Compatibility flag must never re-enter capacity arithmetic after 020.
+    await app.db!.query('update guests set plus_one = true where id = $1', [members[0]!.guestId])
+
+    const shrink = await app.inject({
+      method: 'PATCH',
+      url: `/weddings/${f.weddingId}/tables/${tableId}`,
+      headers: auth(f.token),
+      payload: { capacity: 2 },
+    })
+    expect(shrink.statusCode, shrink.body).toBe(200)
+    expect(shrink.json().capacity).toBe(2)
+  })
+
   it('two families racing for the last hotel room create exactly one family booking', async () => {
     const a = await family()
     const hotel = await app.inject({
