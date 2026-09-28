@@ -6,7 +6,7 @@ import type { PaymentScheduleData } from './api/paymentSchedule'
 import { setI18nLang } from './i18n'
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
-const stage = { id: 'i1', dealId: 'd1', title: 'Аванс', amount: money(400000), paid: money(0), allocated: money(0), remaining: money(400000), due: '2027-05-01', version: 3, status: 'pending' as const, overdue: false, cancelReason: null, cancelledAt: null }
+const stage = { id: 'i1', dealId: 'd1', title: 'Аванс', amount: money(400000), paid: money(0), allocated: money(0), remaining: money(400000), due: '2027-05-01', version: 3, status: 'pending' as const, overdue: false, cancelReason: null, cancelledAt: null, unknownAmountPayments: 0 }
 let state: PaymentScheduleData
 let status = 200, failSave = false, stale = false
 let writes: { path: string; body: Record<string, unknown>; key: string | null }[]
@@ -58,11 +58,11 @@ async function newForm() {
 beforeEach(() => {
   setI18nLang('ru'); localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
   state = { range: { from: '2027-01-01', to: '2027-12-31', today: '2027-01-01', timeZone: 'Asia/Yekaterinburg', includeOverdue: true, includeCancelled: false }, readOnly: false,
-    summary: { committed: money(1000000), recorded: money(100000), remaining: money(900000), unallocated: money(100000), inactiveDealRecorded: money(0), unknownPrices: 0 },
+    summary: { committed: money(1000000), recorded: money(100000), remaining: money(900000), unallocated: money(100000), inactiveDealRecorded: money(0), unknownPrices: 0, unknownAmountPayments: 0, amountIncomplete: false },
     dueInWindow: money(400000), overdueRemaining: money(0), items: [{ ...stage }],
-    deals: [{ id: 'd1', slotId: 's1', name: 'Фотограф', state: 'booked', price: money(1000000), recorded: money(100000), remaining: money(900000), planned: money(400000), unallocated: money(100000), needsReview: false, active: true, canPlan: true }],
-    allInstallments: [{ id: 'i1', dealId: 'd1', title: 'Аванс', status: 'pending', remaining: money(400000) }],
-    payments: [{ id: 'p1', dealId: 'd1', kind: 'deposit', amount: money(100000), status: 'recorded', createdAt: '2027-01-01T12:00:00.000Z', installmentId: null, version: 2 }] }
+    deals: [{ id: 'd1', slotId: 's1', name: 'Фотограф', state: 'booked', price: money(1000000), recorded: money(100000), remaining: money(900000), planned: money(400000), unallocated: money(100000), needsReview: false, active: true, canPlan: true, unknownAmountPayments: 0 }],
+    allInstallments: [{ id: 'i1', dealId: 'd1', title: 'Аванс', status: 'pending', remaining: money(400000), unknownAmountPayments: 0 }],
+    payments: [{ id: 'p1', dealId: 'd1', kind: 'deposit', amount: money(100000), amountKnown: true, paymentMethod: 'other', visibility: 'private', paidOn: '2027-01-01', status: 'recorded', createdAt: '2027-01-01T12:00:00.000Z', installmentId: null, version: 2 }] }
   status = 200; failSave = false; stale = false; writes = []; reads = []; receipts = [{ id: 'r1', filename: 'аванс.pdf', mimeType: 'application/pdf', sizeBytes: 1200, createdAt: '2027-01-01T12:00:00.000Z' }]; delayWrite = false; release = null
   uploadEnabled = true; receiptPost = 'ok'; receiptDelete = 204; serve()
 })
@@ -81,7 +81,7 @@ describe('018-A: график платежей в интерфейсе', () => {
     const form = screen.getByRole('form', { name: 'Редактор платежа' })
     fireEvent.change(within(form).getByLabelText('Сумма, ₽'), { target: { value: '100' } }); fireEvent.submit(form)
     await waitFor(() => expect(writes).toHaveLength(1))
-    expect(writes[0]).toMatchObject({ path: '/weddings/w1/payment-schedule/i1/pay', body: { version: 3, amount: money(10000) } })
+    expect(writes[0]).toMatchObject({ path: '/weddings/w1/payment-schedule/i1/pay', body: { version: 3, amount: money(10000), amountKnown: true, paymentMethod: 'other', visibility: 'private', paidOn: '2027-01-01' } })
   })
   it('ошибка сохраняет черновик и повтор использует тот же ключ', async () => {
     failSave = true; open(); const form = await newForm(); fireEvent.submit(form)
@@ -176,11 +176,49 @@ describe('018-A: график платежей в интерфейсе', () => {
     expect(card.textContent).toContain('Покрыто отметками без привязки')
     expect(within(card).getByRole('button', { name: 'Отметить оплату: Аванс' }).hasAttribute('disabled')).toBe(true)
   })
-  it('дата отметки — в поясе свадьбы, а не срезом UTC (ревью 018, F-09)', async () => {
-    // 21:30 UTC 1 января — это 2 января в Екатеринбурге (UTC+5).
-    state.payments = [{ ...state.payments[0]!, createdAt: '2027-01-01T21:30:00.000Z' }]
+  it('история показывает фактическую calendar-date оплаты, а не createdAt', async () => {
+    state.payments = [{ ...state.payments[0]!, paidOn: '2027-01-02', createdAt: '2027-01-01T21:30:00.000Z' }]
     open(); fireEvent.click(await screen.findByText(/История оплат/))
     expect(await screen.findByText(/2 января 2027/)).toBeTruthy()
+  })
+
+  it('cash/private использует общий endpoint и передаёт метод, видимость и дату', async () => {
+    open(); const card = await screen.findByRole('region', { name: 'Аванс' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Отметить оплату: Аванс' }))
+    const form = screen.getByRole('form', { name: 'Редактор платежа' })
+    fireEvent.change(within(form).getByLabelText('Сумма, ₽'), { target: { value: '300' } })
+    fireEvent.change(within(form).getByLabelText('Способ оплаты'), { target: { value: 'cash' } })
+    fireEvent.change(within(form).getByLabelText('Дата фактической оплаты'), { target: { value: '2027-06-18' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0]).toMatchObject({ path:'/weddings/w1/payment-schedule/i1/pay', body:{
+      version:3,amount:money(30000),amountKnown:true,paymentMethod:'cash',visibility:'private',paidOn:'2027-06-18',
+    }})
+  })
+
+  it('неизвестная сумма не отправляется как 0 и показывает предупреждение', async () => {
+    open(); const card = await screen.findByRole('region', { name: 'Аванс' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Отметить оплату: Аванс' }))
+    const form = screen.getByRole('form', { name: 'Редактор платежа' })
+    fireEvent.click(within(form).getByLabelText('Сумма не сохранена'))
+    expect(within(form).queryByLabelText('Сумма, ₽')).toBeNull()
+    expect(within(form).getByRole('status').textContent).toContain('могут быть неполными')
+    fireEvent.change(within(form).getByLabelText('Способ оплаты'), { target: { value: 'cash' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].body).toMatchObject({version:3,amountKnown:false,paymentMethod:'cash',visibility:'private',paidOn:'2027-01-01'})
+    expect(writes[0].body).not.toHaveProperty('amount')
+  })
+
+  it('vendor visibility выбирается отдельным radio, не toggle', async () => {
+    open(); const card = await screen.findByRole('region', { name: 'Аванс' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Отметить оплату: Аванс' }))
+    const form = screen.getByRole('form', { name: 'Редактор платежа' })
+    fireEvent.change(within(form).getByLabelText('Сумма, ₽'), { target: { value: '100' } })
+    fireEvent.click(within(form).getByLabelText('Подрядчик этой сделки'))
+    fireEvent.submit(form)
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0].body).toMatchObject({visibility:'vendor',amountKnown:true})
   })
   it('период и просрочки фильтруются сервером', async () => {
     open(); const form = await screen.findByRole('form', { name: 'Период платежей' })
