@@ -821,7 +821,17 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "Название пакета, по которому бронировали (`packageId` в\n`POST …/book`). null — бронь без пакета или пакет снят с витрины.\n"
+                  "description": "Снимок принятого названия, только couple: текст может содержать цену.\nУдаление живого пакета/предложения не меняет его. null — название неизвестно.\n"
+              },
+              "packageIncludes": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "items": {
+                      "type": "string"
+                  },
+                  "description": "Снимок состава, только couple; null — состав неизвестен, [] — известный пустой состав."
               },
               "price": {
                   "$ref": "contract#/definitions/Money"
@@ -2870,25 +2880,9 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "packages": {
                           "type": "array",
+                          "description": "В порядке, заданном подрядчиком.",
                           "items": {
-                              "type": "object",
-                              "properties": {
-                                  "id": {
-                                      "type": "string"
-                                  },
-                                  "name": {
-                                      "type": "string"
-                                  },
-                                  "price": {
-                                      "$ref": "contract#/definitions/Money"
-                                  },
-                                  "includes": {
-                                      "type": "array",
-                                      "items": {
-                                          "type": "string"
-                                      }
-                                  }
-                              }
+                              "$ref": "contract#/definitions/VendorPackage"
                           }
                       },
                       "reviews": {
@@ -2990,7 +2984,7 @@ export const CONTRACT_SCHEMAS = {
       },
       "VendorUpsert": {
           "type": "object",
-          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**.\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
+          "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
           "required": [
               "name",
               "categoryId",
@@ -3032,22 +3026,9 @@ export const CONTRACT_SCHEMAS = {
               },
               "packages": {
                   "type": "array",
+                  "maxItems": 20,
                   "items": {
-                      "type": "object",
-                      "properties": {
-                          "name": {
-                              "type": "string"
-                          },
-                          "price": {
-                              "$ref": "contract#/definitions/Money"
-                          },
-                          "includes": {
-                              "type": "array",
-                              "items": {
-                                  "type": "string"
-                              }
-                          }
-                      }
+                      "$ref": "contract#/definitions/VendorPackageInput"
                   }
               },
               "portfolioUrls": {
