@@ -1,4 +1,5 @@
-name: Apply 019 finalization cleanly
+name: Repair 019 generated schema sync
+
 on:
   push:
     branches:
@@ -8,19 +9,40 @@ permissions:
   contents: write
 
 jobs:
-  cherry-pick-finalization:
-    if: github.event.head_commit.message == 'chore(019): bootstrap clean finalization'
+  regenerate:
+    if: github.event.head_commit.message == 'chore(019): repair schema sync'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Cherry-pick verified T039-T042 commit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Тили-тили/backend/pnpm-lock.yaml
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+      - name: Install backend dependencies
+        working-directory: Тили-тили/backend
+        run: |
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Regenerate JSON schema from canonical OpenAPI
+        working-directory: Тили-тили/backend
+        run: pnpm run gen:schemas
+      - name: Commit generated schema
         shell: bash
         run: |
           set -euo pipefail
+          if git diff --quiet -- Тили-тили/backend/src/contract/schemas.generated.ts; then
+            echo "schemas.generated.ts is already synchronized"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --no-tags origin feature/019-finalized-20260928
-          git cherry-pick e33e4403f93441061fcc144e49ee9161a96ea1ee
+          git add Тили-тили/backend/src/contract/schemas.generated.ts
+          git commit -m "gen(019): regenerate schemas from clean OpenAPI"
           git push origin HEAD:integration/019-complete-clean-20260928
