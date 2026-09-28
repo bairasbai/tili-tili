@@ -48,20 +48,14 @@ type TextDraftKey = 'title'|'amount'|'due'|'dealId'|'installmentId'|'reason'|'pa
 `,
     'draft fields')
   s=replaceOne(s,
-    `    else setDraft({ ...empty, title: next.item.title, due: next.item.due, dealId: next.item.dealId,
-      amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount) })
-  }
-
-  const change = (key: keyof Draft, value: string) => setDraft(current => ({ ...current, [key]: value }))
-`,
-    `    else setDraft({ ...empty, title: next.item.title, due: next.item.due, dealId: next.item.dealId,
-      amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount),
-      paidOn: next.mode === 'pay' ? (data?.range.today ?? '') : '' })
-  }
-
-  const change = (key: TextDraftKey, value: string) => setDraft(current => ({ ...current, [key]: value }))
-`,
-    'open pay draft')
+    `      amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount) })`,
+    `      amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount),
+      paidOn: next.mode === 'pay' ? (data?.range.today ?? '') : '' })`,
+    'pay draft date')
+  s=replaceOne(s,
+    `  const change = (key: keyof Draft, value: string) => setDraft(current => ({ ...current, [key]: value }))`,
+    `  const change = (key: TextDraftKey, value: string) => setDraft(current => ({ ...current, [key]: value }))`,
+    'typed draft change')
   const oldSubmit=`    if (editor.mode === 'new' || editor.mode === 'edit' || editor.mode === 'pay') {
       const amount = parsePaymentRubles(draft.amount)
       if (amount === null) { setError(t('Введите сумму больше нуля, не более двух знаков после запятой')); return }
