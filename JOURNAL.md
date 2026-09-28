@@ -2902,4 +2902,4 @@ SHA-256 5debaeaae6e0b25f7f397af6787ad4537dfb26a56629f4932db0553a8d58ffa5.
 
 **Проверка.** CI `36386064858` — SUCCESS; Verify 020 family browser `36386064786` — SUCCESS. Тем самым документационный commit прошёл повторный полный gate после всех исправлений и не сломал frontend/backend проверки, миграции или live Chromium acceptance.
 
-**Статус.** T001–T033 закрыты, roadmap 020 отмечен ✅. Main/production не менялись. 021 в рамках этой работы не начинался.
+**Статус.** T001–T033 закрыты, roadmap 020 отмечен ✅. Этой T033-финализацией main/production не менялись; feature 020 уже была ранее слита в main через Merge PR #12 (`3b2dbabd26701b33da372126fa33b2e4caad4b82`). 021 в рамках этой работы не начинался.

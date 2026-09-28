@@ -82,4 +82,4 @@ T001–T032 повторно подтверждены по коду и зелё�
 - Artifact `family020-browser-evidence` id `10954420756`, digest `sha256:1c9bc62a2a63235819c3ecbb8d03c268016946914f78a6071c1d0564abb8f7ae`.
 - Финальный аудит после прежнего handoff закрыл stale `plusOne` в `personCount`/кейтеринге и вместимости столов; частичный family-RSVP закреплён отдельной регрессией.
 
-Документационный commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be` прошёл повторный final gate: CI `36386064858` — success; Verify 020 family browser `36386064786` — success. T033 закрыт, этап **020 завершён ✅**. Main/production не менялись; 021 в этой работе не начинался.
+Документационный commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be` прошёл повторный final gate: CI `36386064858` — success; Verify 020 family browser `36386064786` — success. T033 закрыт, этап **020 завершён ✅**. Этой T033-финализацией main/production не менялись; 021 в этой работе не начинался. Feature 020 уже была ранее слита в main отдельным Merge PR #12 (`3b2dbabd26701b33da372126fa33b2e4caad4b82`).
