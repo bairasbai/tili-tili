@@ -273,6 +273,42 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(left).toHaveLength(0)
   })
 
+  it('family import creates explicit named people instead of a hidden plus-one', async () => {
+    const w = await newWedding()
+    const imported = await app.inject({
+      method: 'POST',
+      url: `/weddings/${w.weddingId}/guests/import`,
+      headers: auth(w.token),
+      payload: {
+        guests: [{
+          name: 'Семья Сафины',
+          members: [{ name: 'Илья Сафин' }, { name: 'Анна Сафина' }],
+          phone: nextPhone(),
+        }],
+      },
+    })
+    expect(imported.statusCode, imported.body).toBe(201)
+    expect(imported.json().created).toHaveLength(1)
+    expect(imported.json().skipped).toEqual([])
+
+    const partyId = imported.json().created[0].partyId as string
+    const { rows } = await app.db!.query<{
+      name: string
+      party_position: number
+      plus_one: boolean
+      is_placeholder: boolean
+    }>(
+      `select name, party_position, plus_one, is_placeholder
+         from guests where party_id = $1 order by party_position`,
+      [partyId],
+    )
+    expect(rows).toEqual([
+      { name: 'Семья Сафины', party_position: 1, plus_one: false, is_placeholder: false },
+      { name: 'Илья Сафин', party_position: 2, plus_one: false, is_placeholder: false },
+      { name: 'Анна Сафина', party_position: 3, plus_one: false, is_placeholder: false },
+    ])
+  })
+
   it('legacy direct INSERT is auto-wrapped into a one-person party', async () => {
     const w = await newWedding()
     const guestId = uuidv7()
