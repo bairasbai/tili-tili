@@ -58,6 +58,18 @@ export interface RsvpExtra {
   transfer?: 'need' | 'own'
 }
 
+export interface FamilyRsvpMember {
+  guestId: string
+  status: 'yes' | 'no'
+  diet?: string | null
+  dietNote?: string | null
+  transfer?: 'need' | 'own' | null
+}
+
+/** 020: отдельный ответ каждой персоны одной семейной ссылки. */
+export const sendFamilyRsvp = (token: string, members: FamilyRsvpMember[]) =>
+  api.post(url('/rsvp/{guestToken}', { guestToken: token }), { members })
+
 /** Ответ гостя. `plusOne` — приедет ли он с парой; `extra` — еда и трансфер. */
 export const sendRsvp = (token: string, status: 'yes' | 'no', plusOne?: boolean, comment?: string, extra: RsvpExtra = {}) =>
   api.post(url('/rsvp/{guestToken}', { guestToken: token }), {
@@ -78,15 +90,22 @@ export const getGuestHotels = (token: string) =>
  * сервер отвечает 409. Ключ идемпотентности обязателен — без него повторное
  * нажатие на плохой связи занимает два места одному человеку.
  */
-export const joinShuttle = (token: string, busId: string) =>
-  api.post(url('/join/{guestToken}/shuttle', { guestToken: token }), { busId }, { idempotencyKey: newIdempotencyKey() })
+export const joinShuttle = (token: string, busId: string, guestId?: string) =>
+  api.post(
+    url('/join/{guestToken}/shuttle', { guestToken: token }),
+    { busId, ...(guestId ? { guestId } : {}) },
+    { idempotencyKey: newIdempotencyKey() },
+  )
 
 export const bookHotelRoom = (token: string, hotelId: string) =>
   api.post(url('/join/{guestToken}/hotels', { guestToken: token }), { hotelId }, { idempotencyKey: newIdempotencyKey() })
 
 /** Выбор горячего в опросе меню. */
-export const voteMenu = (token: string, optionId: string) =>
-  api.post(url('/join/{guestToken}/menu-vote', { guestToken: token }), { optionId })
+export const voteMenu = (token: string, optionId: string, guestId?: string) =>
+  api.post(
+    url('/join/{guestToken}/menu-vote', { guestToken: token }),
+    { optionId, ...(guestId ? { guestId } : {}) },
+  )
 
 /** Маршруты трансфера и место, которое гость уже занял. */
 export const getGuestShuttle = (token: string) =>

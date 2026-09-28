@@ -1,78 +1,48 @@
-# Передача сессии — 019 слита в main
+# Передача сессии — 020 готова к merge
 
 Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`.
 
 ## Текущее состояние
 
-- 017-A/B слиты через PR #1. Merge commit: `e2cb4e6ecd0ec3157ac0e6fc9eb285aba750e821`.
-- 018 «ответы квиза влияют на свадьбу» слита через PR #2. Merge commit: `e413afd1cc164da1e1e40563275fce79ccee425b`.
-- 019 «кандидаты и предложения» слита через **PR #5**. Merge commit и текущая база этой передачи: `027d6c3eb76e6a31c4ecd8b73c0376a910bd488d`.
-- PR #5 собирался как clean integration непосредственно поверх актуального main; промежуточные 018-A/B payment changes и отдельный branding commit в него не переносились.
+- 017-A/B и 018 quiz уже в main.
+- 019 слита через PR #5; последующие 019 hardening/docs находятся в актуальном main.
+- 020 «семейные приглашения и отдельные персоны» завершена T001–T033 в clean integration `integration/020-clean-main-20260928`.
+- Исходную `test/020-finalize-20260928` целиком не сливать: она построена на старой линии. Полезная дельта 020 перенесена и проверена отдельно.
 
-## Что закрыто в 019
+## Что входит в 020
 
-T001–T042:
-- shortlist до трёх кандидатов на слот;
-- batch offer requests только кандидатам и приватные ответы подрядчика;
-- квоты, idempotency и lock ordering;
-- сравнение кандидатов и предложений;
-- принятие предложения через единое booking-core;
-- immutable snapshot согласованной цены, названия и состава пакета;
-- закрытие остальных запросов при брони и обезличенные уведомления;
-- stale/expired/superseded offers, перенос даты и отмена свадьбы;
-- hard erase / tombstone;
-- privacy export с изоляцией ролей;
-- стабильные vendor package IDs (FR-006);
-- реальный browser E2E.
+- `guest_party` отделена от конкретной персоны: одна семейная ссылка содержит 1–10 `guests`.
+- Legacy `plusOne=true` мигрирует в отдельную companion-person; скрытый +1 больше не участвует в арифметике новых путей.
+- RSVP, diet/menu, table и bus booking — по `guestId` конкретной персоны.
+- Hotel booking и gift/fund identity — по family party/token: один номер и одна анонимная gift identity на приглашение.
+- Создание/импорт поддерживают `members[]`; добавление, переименование и удаление человека не меняет family token, пока семья не пуста.
+- Guest API отдаёт `partyId/partyPosition/partySize/isPrimary/isPlaceholder`; inviteUrl только одна на семью и только паре.
+- Export/31-day erasure включают family structure без утечки invite token.
+- UI пары и гостевой UI работают с именованными персонами; рассадка/кейтеринг считают person rows ровно один раз.
 
-Спека, план, задачи и доказательства: `tasks/фичи/019-кандидаты-и-предложения/`.
+## Контракт и миграция
 
-## Дополнительный аудит
+- OpenAPI: **0.50.0**.
+- Generated backend/frontend contract artifacts синхронизированы штатными генераторами.
+- Миграция: `1761600000000_family_guest_parties.cjs`.
+- Rehearsal проверяет legacy round-trip: откат 020 → старый `plusOne` + menu/bus/hotel/invite/gift → повторное применение 020 → 2 person rows / 2 bus seats / 1 hotel room / тот же family token и gift identity.
 
-После завершения 019 повторно проверены concurrency, idempotency, privacy/data-erasure и атомарность бронирования.
+## Финальные gates clean integration
 
-В `backend/test/accept019.test.ts` добавлен regression guard: если выбранный подрядчик становится недоступен внутри `bookVendor()` уже после `closeSlotRequests()`, вся транзакция обязана откатить:
-- закрытие offer requests;
-- уведомления остальным подрядчикам;
-- создание deal;
-- `accepted_at/deal_id` у offer.
+Проверочный кодовый HEAD: `661d2ae98c2a6feb03da7553dcb2f1ad294ce73b`.
 
-Этот guard уже находится в слитом main.
+- Full CI: **success**, run `36365055384`.
+  - frontend: **78 файлов / 1023 теста**;
+  - backend: **106 файлов / 1178 тестов**;
+  - PostgreSQL migrations, TypeScript, ESLint, frontend/backend production build — success.
+- Family browser E2E: **success**, run `36365055383`.
+  - artifact `10947465988`;
+  - SHA-256 `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`;
+  - 2 персоны, 1 family invite link, 2 menu votes, 2 bus seats, 1 hotel room, 1 family gift reserve, page errors = 0.
+- Независимая source-проверка после тех же test-harness fixes: CI `36364877609` success, browser `36364877628` success.
 
-## Контракт и миграции
+## Следующий обязательный шаг
 
-Clean main после 019:
-- OpenAPI: **0.45.0**;
-- **138 путей / 183 операции / 78 схем**;
-- миграция 019: `1761500000000_shortlist_offers.cjs`.
+Открыть PR `integration/020-clean-main-20260928 → main`. Актуальный main после clean-ветки получил только hardening 019 workflow/test/docs, поэтому обязательна PR-проверка merge-кандидата. После зелёного PR CI — merge, затем post-merge CI на main. Только после этого переходить к этапу 021.
 
-Порядок продуктовых миграций сохранён:
-`176100` → `176110` → `176120` → `176130_quiz_answers_matter` → `176150_shortlist_offers`.
-
-Payment-schedule / receipts / budget-controls из отдельной старой 018-A/B линии в clean 019 не входят.
-
-## Принятые gates PR #5
-
-На head `38a34e10f839bda9a9c5289287f5925b3b3a087f`:
-- CI — success: frontend **77 файлов / 1020 тестов**, backend **105 файлов / 1164 теста**;
-- миграции на чистой PostgreSQL — success;
-- TypeScript, ESLint, frontend/backend production build — success;
-- Offers 019 browser E2E — success;
-- Task planning browser E2E (регрессия 017) — success.
-
-Runs:
-- CI: `36363006056`;
-- Offers 019 browser E2E: `36363005956`;
-- Task planning browser E2E: `36363005964`.
-
-Дополнительный audit report: `tasks/фичи/019-кандидаты-и-предложения/verification-acceptance.md`.
-
-## Не сливать повторно
-
-PR #6 / `integration/019-audited-20260928` — дублирующая параллельная integration-ветка, появившаяся до того, как стало видно, что PR #5 уже слит. Её нельзя сливать поверх main; полезный audit regression и verification document уже присутствуют в PR #5/main.
-
-## Следующий этап
-
-Следующий roadmap stage — **020**. Перед началом/слиянием 020 использовать `027d6c3e` или более новый main как базу и не переносить старые ветки 019 целиком.
-
-Production deployment не выполнен и не следует из успешного merge. Внешние release blockers (юридические тексты, SMS/S3, реальная репетиция восстановления, тестовый домен и др.) остаются отдельным треком.
+Production deployment этим не подтверждается. Юридические тексты, реальные SMS/S3/VAPID, эксплуатационный backup/restore, тестовый домен и пилот на физических устройствах остаются отдельными release gates.

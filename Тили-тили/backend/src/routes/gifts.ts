@@ -341,7 +341,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * «Банкет на гостя» — деликатный ориентир из §10.10: расходы по строке
-   * «Площадка и кейтеринг», делённые на число гостей.
+   * «Площадка и кейтеринг», делённые на число отдельных персон.
    *
    * Считается тем же способом, что и бюджет пары (мягкая бронь входит в
    * обязательства): два экрана про одни деньги не должны показывать разные
@@ -368,6 +368,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     )
     const venue = fromSlots + Number(rows[0]!.items)
     const guests = Number(rows[0]!.guests)
+    // 020: guests are real persons; a family invitation is never added again.
     // Нет расходов или некому делить — подсказки нет. Ноль на экране гостя
     // читался бы как «дарить нечего», а выдуманное число — хуже молчания.
     if (venue <= 0 || guests <= 0) return null
@@ -384,12 +385,10 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
     const guest = await guestByToken(db(), guestToken)
 
     const body = await db().tx(async (client) => {
-      /* Строка гостя под замком — ПЕРВОЙ: предел резервов на гостя ниже
-       * считается «прочитали — сравнили — записали», и два одновременных
-       * резерва РАЗНЫХ подарков одним гостем оба видели «два из трёх» и оба
-       * проходили (R-49; ревью 015, D10). Порядок «гость → подарок» — как у
-       * автобуса и отеля: гость, потом строки, за которые он садится. */
-      await client.query('select 1 from guests where id = $1 for update', [guest.guestId])
+      /* Gift identity belongs to the family invitation. Lock the party
+       * before counting its reservations so two tabs (or two family members)
+       * cannot spend separate quotas under one shared invite token. */
+      await client.query('select 1 from guest_parties where id = $1 for update', [guest.partyId])
       const { rows } = await client.query<{ funded: string; price: string }>(
         'select funded::text as funded, price::text as price from gifts where id = $1 and wedding_id = $2 for update',
         [giftId, guest.weddingId],
@@ -412,8 +411,8 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
         throw conflict('gift_reserved', 'Этот подарок уже выбрал другой гость')
       }
 
-      /* Предел резервов на гостя — по образцу взносов и альбома (R-55/R-61).
-       * Без него один гость забирал весь список: пара видела «Зарезервирован»
+      /* Предел резервов на семейное приглашение — по образцу взносов.
+       * Без него одна семья забирала весь список: пара видела «Зарезервирован»
        * у всего, снять чужой резерв не могла (§9) и не знала, кто это. */
       const { rows: mine } = await client.query<{ n: string }>(
         `select count(*)::text as n from gift_reservations r join gifts g on g.id = r.gift_id
@@ -425,7 +424,7 @@ export async function giftRoutes(app: FastifyInstance): Promise<void> {
       if (Number(mine[0]!.n) >= maxReservations) {
         throw quotaExceeded(
           'reservation_limit',
-          `Больше ${maxReservations} подарков один гость не резервирует — снимите лишний резерв`,
+          `Больше ${maxReservations} подарков одно приглашение не резервирует — снимите лишний резерв`,
         )
       }
 

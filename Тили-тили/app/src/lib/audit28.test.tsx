@@ -572,7 +572,7 @@ describe('D3-21 CSV гостей переводится целиком', () => {
     fireEvent.click(screen.getByText('CSV list'))
     await waitFor(() => expect(captured).not.toBeNull())
     const csv = await readBlob(captured!)
-    expect(csv).toContain('Name;Status;+1')
+    expect(csv).toContain('Name;Status;Family')
     expect(csv).toContain('Olga;Coming;yes')
     expect(csv).not.toContain('Имя')
     expect(csv).not.toContain(';да')

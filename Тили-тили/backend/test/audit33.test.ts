@@ -285,7 +285,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect(await takenOf(w, busId)).toBe(39)
   })
 
-  it('T011: гость без «+1» сел, поставил «+1» в полном автобусе — 409 bus_full, taken не изменился', async () => {
+  it('T011/020: legacy +1 создаёт отдельную персону и не меняет занятую автобусную бронь', async () => {
     const w = await newWedding()
     const busId = await newBus(w, 2)
     const anna = await newGuest(w, 'Анна')
@@ -294,41 +294,27 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect((await board(boris.token, busId)).statusCode).toBe(200)
     expect(await takenOf(w, busId)).toBe(2)
 
-    // Ответ гостя: «приду, и со мной ещё один» — а места для второго нет.
     const own = await rsvp(anna.token, { status: 'yes', plusOne: true })
     expect(errorOf(own)).toEqual({ status: 409, code: 'bus_full' })
-    expect(own.json().error.message).toContain('нет места для +1')
-
-    // Рука пары — тот же отказ, а не 500 от базы.
-    expect(errorOf(await patchGuest(w, anna.guestId, { plusOne: true }))).toEqual({ status: 409, code: 'bus_full' })
-
     expect(await takenOf(w, busId)).toBe(2)
     const { rows } = await app.db!.query<{ plus_one: boolean }>('select plus_one from guests where id = $1', [anna.guestId])
     expect(rows[0]!.plus_one).toBe(false)
   })
 
-  it('T011: прямой SQL «plus_one = true» у гостя в полном автобусе — 23514 bus_taken_bounded', async () => {
+  it('T011/020: прямой SQL plus_one больше не является счётчиком автобусных мест', async () => {
     const w = await newWedding()
     const busId = await newBus(w, 1)
     const anna = await newGuest(w, 'Анна')
     expect((await board(anna.token, busId)).statusCode).toBe(200)
-
-    // Правило держит база: обработчик тут ни при чём.
-    expect(await pgFail(app.db!.query('update guests set plus_one = true where id = $1', [anna.guestId]))).toEqual({
-      code: '23514',
-      constraint: 'bus_taken_bounded',
-    })
+    await app.db!.query('update guests set plus_one = true where id = $1', [anna.guestId])
     expect(await takenOf(w, busId)).toBe(1)
   })
 
-  it('T011: «не приду» вместе с «+1» у гостя из полного автобуса проходит — место освобождается', async () => {
+  it('T011/020: отказ освобождает место, legacy +1 не оставляет скрытого множителя', async () => {
     const w = await newWedding()
     const busId = await newBus(w, 1)
     const anna = await newGuest(w, 'Анна')
     expect((await board(anna.token, busId)).statusCode).toBe(200)
-
-    /* Отказ гостя не может упереться в автобус: сиденье освобождается ДО
-     * записи ответа, и «+1» в том же теле переполнения не даёт. */
     const res = await rsvp(anna.token, { status: 'no', plusOne: true })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
     expect(await takenOf(w, busId)).toBe(0)
@@ -336,7 +322,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       'select rsvp, plus_one from guests where id = $1',
       [anna.guestId],
     )
-    expect(rows[0]).toEqual({ rsvp: 'no', plus_one: true })
+    expect(rows[0]).toEqual({ rsvp: 'no', plus_one: false })
   })
 
   it('T011: гость «с +1» на одно свободное место — ранняя 409 без отката, taken прежний', async () => {
@@ -558,19 +544,25 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     expect((await tablesOf(w)).find((t) => t.id === tableId)).toMatchObject({ name: 'Родня невесты', capacity: 6 })
   })
 
-  it('столы: вместимость ниже уже сидящих — 409 table_full, персоны считаются с «+1»', async () => {
+  it('столы: вместимость считается по отдельным персонам после миграции +1', async () => {
     const w = await newWedding()
     const tableId = await newTable(w, 8)
     const pair = await newGuest(w, 'Ольга и Денис', true)
     const one = await newGuest(w, 'Марат')
+    const { rows: companions } = await app.db!.query<{ id: string }>(
+      `select x.id from guests x
+        where x.party_id = (select party_id from guests where id = $1) and x.id <> $1`,
+      [pair.guestId],
+    )
     expect((await patchGuest(w, pair.guestId, { tableId })).statusCode).toBe(200)
+    expect((await patchGuest(w, companions[0]!.id, { tableId })).statusCode).toBe(200)
     expect((await patchGuest(w, one.guestId, { tableId })).statusCode).toBe(200)
 
-    // Сидят трое (двое + один): двух мест мало, трёх — ровно.
+    // 020: три отдельные персоны сидят за столом; двух мест мало, трёх — ровно.
     expect(errorOf(await patchTable(w, tableId, { capacity: 2 }))).toEqual({ status: 409, code: 'table_full' })
     expect((await patchTable(w, tableId, { capacity: 3 })).statusCode).toBe(200)
     const table = (await tablesOf(w)).find((t) => t.id === tableId)!
-    expect({ capacity: table.capacity, seated: table.guestIds.length }).toEqual({ capacity: 3, seated: 2 })
+    expect({ capacity: table.capacity, seated: table.guestIds.length }).toEqual({ capacity: 3, seated: 3 })
   })
 
   it('столы: чужой стол и мусорный идентификатор — 404, схема тела — 422', async () => {
