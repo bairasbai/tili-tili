@@ -1,4 +1,4 @@
-name: Apply 020 clean integration
+name: Regenerate 020 clean contract
 
 on:
   push:
@@ -9,90 +9,43 @@ permissions:
   contents: write
 
 jobs:
-  integrate-020:
-    if: "github.event.head_commit.message == 'integrate-020-resolved-v3'"
+  generate:
+    if: "github.event.head_commit.message == 'regen-020-clean-contract'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply stage 020 delta on current main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generate contract artifacts
         shell: bash
         run: |
           set -euo pipefail
-          BASE=da87f1fe9aab19342f68e4a58453a4b35decb943
-          SOURCE=3663ec8af617d39e7b763db009adad57672b0fc5
-          OURS=$(git rev-parse HEAD)
-          git config core.quotepath false
-          git fetch --no-tags origin test/020-finalize-20260928
-
-          conflicts=0
-          while IFS=$'\t' read -r status path extra; do
-            case "$path" in
-              .github/workflows/gen-020-contract.yml|.github/workflows/gen-020-final-contract.yml|.github/workflows/verify-020-family-browser.yml)
-                echo "skip source-only workflow: $path"
-                continue
-                ;;
-              Тили-тили/backend/src/contract/api.generated.ts|Тили-тили/backend/src/contract/paths.generated.ts|Тили-тили/backend/src/contract/schemas.generated.ts|Тили-тили/app/src/lib/api/schema.ts)
-                echo "skip generated artifact: $path"
-                continue
-                ;;
-            esac
-
-            case "$status" in
-              A)
-                mkdir -p "$(dirname "$path")"
-                git show "$SOURCE:$path" > "$path"
-                ;;
-              M)
-                mkdir -p "$(dirname "$path")"
-                ours_file=$(mktemp)
-                base_file=$(mktemp)
-                theirs_file=$(mktemp)
-                out_file=$(mktemp)
-                git show "$OURS:$path" > "$ours_file"
-                git show "$BASE:$path" > "$base_file"
-                git show "$SOURCE:$path" > "$theirs_file"
-                if ! git merge-file -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"; then
-                  case "$path" in
-                    "Тили-тили/app/src/pages/Wedding.tsx")
-                      python3 -c 'import re,sys; p=sys.argv[1]; s=open(p,encoding="utf-8").read(); pat=re.compile(r"<<<<<<<[^\n]*\n(.*?)=======\n(.*?)>>>>>>>[^\n]*\n",re.S); s,n=pat.subn(lambda m:m.group(1).replace("addGuest, addTask as addTaskApi","addGuest, addGuestMember, addTask as addTaskApi"),s,count=1); assert n==1,n; open(p,"w",encoding="utf-8").write(s)' "$out_file"
-                      ;;
-                    "Тили-тили/backend/test/audit55.test.ts"|"Тили-тили/Тили-тили_API_openapi.yaml")
-                      python3 -c 'import re,sys; p=sys.argv[1]; s=open(p,encoding="utf-8").read(); pat=re.compile(r"<<<<<<<[^\n]*\n(.*?)=======\n(.*?)>>>>>>>[^\n]*\n",re.S); s,n=pat.subn(lambda m:m.group(2),s,count=1); assert n==1,n; open(p,"w",encoding="utf-8").write(s)' "$out_file"
-                      ;;
-                    *)
-                      echo "::error file=$path::unresolved three-way conflict"
-                      grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
-                      conflicts=$((conflicts + 1))
-                      ;;
-                  esac
-                fi
-                if grep -q -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file"; then
-                  echo "::error file=$path::conflict markers remain"
-                  conflicts=$((conflicts + 1))
-                fi
-                cat "$out_file" > "$path"
-                rm -f "$ours_file" "$base_file" "$theirs_file" "$out_file"
-                ;;
-              D)
-                rm -f "$path"
-                ;;
-              *)
-                echo "::error::unsupported diff status $status for $path"
-                conflicts=$((conflicts + 1))
-                ;;
-            esac
-          done < <(git diff --name-status "$BASE" "$SOURCE")
-
-          if [ "$conflicts" -ne 0 ]; then
-            echo "::error::$conflicts merge conflict(s)"
-            exit 1
-          fi
-
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          cd Тили-тили/backend
+          printf 'minimum-release-age=0\n' > .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          rm .npmrc
+          pnpm run gen
+          node node_modules/openapi-typescript/bin/cli.js ../Тили-тили_API_openapi.yaml -o ../app/src/lib/api/schema.ts
+          cd ../..
           git diff --check
+      - name: Commit generated artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "feat(020): integrate family invitations on current main"
+          git add Тили-тили/backend/src/contract/paths.generated.ts
+          git add Тили-тили/backend/src/contract/schemas.generated.ts
+          git add Тили-тили/backend/src/contract/api.generated.ts
+          git add Тили-тили/app/src/lib/api/schema.ts
+          if git diff --cached --quiet; then
+            echo "Generated contract is already synchronized"
+            exit 0
+          fi
+          git commit -m "chore(020): regenerate clean contract artifacts"
           git push origin HEAD:integration/020-clean-main-20260928
