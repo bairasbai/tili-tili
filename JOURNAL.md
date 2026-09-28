@@ -2854,3 +2854,34 @@ TypeScript, ESLint и production builds — success. Реальный Chromium T
 Артефакт `offer019-finalization-evidence` id 10943425246, SHA-256
 `40ec4f0889c41d28f6e39d5b4c3993e3d03b726cf0b623e78d1775753ed63d00`.
 Этап 019 закрыт; 020 не начинался в этой поставке.
+
+## 2026-09-28 — 020 в финальном gate: семейные приглашения и отдельные персоны
+
+**Что реализовано.** Старый `plusOne` материализован в отдельную person row внутри общей `guest_party`. Одна семья имеет один invite token, один hotel booking и одну gift identity; RSVP, menu, table и bus — на конкретную персону. Создание и импорт принимают именованных `members[]`; UI пары показывает размер семьи, позволяет добавить человека до лимита 10 и удалить отдельную персону без смены family token. Гостевой экран сохраняет ответы, меню и автобус по `guestId`; отель и подарки остаются общими.
+
+**Аудит продолжения.** После восстановления ветки 020 найдены и закрыты пять расхождений с планом: primary-delete удалял всю семью (ERR-0331), import не принимал explicit members (ERR-0332), рассчитанный `partySize` не сериализовался (ERR-0333), сводка кейтеринга повторно прибавляла +1 (ERR-0334), два privacy/cleanup-теста были вне suite и lint останавливался на stale helper (ERR-0335). Добавлены регрессии и UI guards.
+
+**Миграции.** Добавлен отдельный rehearsal для legacy-данных: текущая база откатывает только 020, создаёт старого гостя с `plusOne=true`, RSVP, menu vote, bus, hotel, invite code и gift reserve, затем снова применяет 020 и проверяет две person rows, две bus bookings по одному месту, один room booking, общий party token/code и прежнюю gift identity. Rehearsal встроен в browser workflow перед реальным E2E.
+
+**Приёмка пока не закрыта.** T001–T022 и T024–T030 отмечены по факту. T023/T031/T032/T033 остаются открыты: на последнем HEAD должны пройти final contract generation/sync, real browser flow, полный PostgreSQL/Redis CI types/tests/lint/build и только затем verification/handoff/roadmap получат ✅. Main/production не менялись.
+
+## 2026-09-28 — 020 завершён ✅: семейные приглашения и отдельные персоны
+
+**Финал.** T001–T033 закрыты. Contract 0.50.0 и generated artifacts синхронизированы.
+Финальный проверенный SHA `a5a40f30f2fb19a4e5ebadc9e6d6b6e72ee256a8`.
+
+**Полный gate.** GitHub Actions CI 36364877609: frontend 79 файлов / 1059 тестов,
+backend 107 файлов / 1231 тест; TypeScript, ESLint, frontend production build,
+backend build, PostgreSQL/Redis migrations и contract-sync — success.
+
+**Migration + Chromium.** Run 36364877628: откат 020 → legacy seed → повторный up → verify
+дал people=2, menuVotes=2, busBookings=2, hotelBookings=1, inviteCodes=1,
+giftReservations=1. Реальный Chromium прошёл пять шагов: семья из двух персон,
+одна ссылка, независимый RSVP, два меню/два места автобуса/один номер и один общий
+gift reserve; pageErrors=[].
+
+**Артефакт.** family020-browser-evidence id 10946996800,
+SHA-256 5debaeaae6e0b25f7f397af6787ad4537dfb26a56629f4932db0553a8d58ffa5.
+
+**Следом.** 020 закрыт; следующий roadmap-этап — 021. Main/production этой поставкой не менялись.
+

@@ -507,8 +507,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.49.0 (019: принятие предложения и снимок брони; F5-14 сохранён)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.49.0')
+  it('версия контракта — 0.50.0 (020: семейное приглашение и отдельные персоны; F5-14 сохранён)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.50.0')
   })
 
   it('019: PUT принимает атомарную замену, shortlist_full — три записи, DELETE — entryId', () => {

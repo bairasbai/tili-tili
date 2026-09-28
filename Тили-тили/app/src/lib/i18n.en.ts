@@ -2,6 +2,14 @@ import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  // 020: family invitations and explicit guest people.
+  'Семейное приглашение': 'Family invitation',
+  'Один человек в приглашении': 'One person in this invitation',
+  'Человек семьи': 'Family member',
+  'Добавить человека в семью': 'Add family member',
+  'Имя человека': 'Person name',
+  'Имя;Статус;Семья': 'Name;Status;Family',
+  'чел.': 'people',
   // 019: acceptance, explicit conflicts and retry feedback.
   'Принять предложение': 'Accept offer',
   'Принимаем…': 'Accepting…',
@@ -2275,6 +2283,23 @@ Object.assign(EN, {
   'Это место больше нельзя заменить из этой анкеты': 'This slot can no longer be replaced from this profile',
   'Этот кандидат больше не доступен для замены': 'This candidate is no longer available for replacement',
   'Выберите кандидата для замены, затем подтвердите новую бронь в его анкете': 'Choose a replacement candidate, then confirm the new booking in their profile',
+})
+
+/* 020: создание семьи на экране пары. */
+Object.assign(EN, {
+  'Второй человек семьи (необязательно)': 'Second family member (optional)',
+  'Второй человек семьи': 'Second family member',
+  'У каждого человека будет отдельный RSVP, меню, место и трансфер; ссылка у семьи одна.': 'Each person has their own RSVP, meal, seat and transport; the family shares one invitation link.',
+  'отдельная персона': 'individual person',
+})
+
+/* 020: семейное приглашение — отдельный ответ каждой персоны. */
+Object.assign(EN, {
+  'Ответьте за каждого человека в приглашении отдельно': 'Reply for each person in the invitation separately',
+  'имя можно уточнить у пары': 'you can confirm the name with the couple',
+  'Приду': 'Attending',
+  'Сохранить ответы семьи': 'Save family responses',
+  'Выберите ответ для каждого человека': 'Choose a response for each person',
 })
 
 /* 019, US2: запрос предложения пары, ответ подрядчика и постоянные уведомления. */

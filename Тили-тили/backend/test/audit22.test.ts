@@ -188,7 +188,7 @@ describe.skipIf(!live)('блок 10: сквозной сценарий трёх 
     const guestRow = (await app.db!.query<{ rsvp: string; plus_one: boolean; diet: string; transfer: string; phone: string; menu_option_id: string }>(
       'select rsvp, plus_one, diet, transfer, phone, menu_option_id from guests where id = $1', [guestId],
     )).rows[0]!
-    expect(guestRow).toMatchObject({ rsvp: 'yes', plus_one: true, diet: 'vegan', transfer: 'need', phone: '+79170002200', menu_option_id: optionId })
+    expect(guestRow).toMatchObject({ rsvp: 'yes', plus_one: false, diet: 'vegan', transfer: 'need', phone: '+79170002200', menu_option_id: optionId })
 
     const deal = (await app.db!.query<{ state: string; done_at: Date | null; vendor_id: string }>('select state, done_at, vendor_id from deals where id = $1', [dealId])).rows[0]!
     expect(deal.state).toBe('done')
