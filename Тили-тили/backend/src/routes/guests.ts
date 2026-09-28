@@ -186,7 +186,7 @@ export function guestNameKey(name: string): string {
 /** 020: после materialization каждая строка guests — одна реальная персона.
  * Deprecated plusOne остаётся только compatibility-сигналом и не участвует
  * в счётчиках, вместимости или деньгах. */
-export function personCount(guests: { status: string; plusOne: boolean }[]): number {
+export function personCount(guests: { status: string; plusOne?: boolean }[]): number {
   return guests.filter((g) => g.status === 'yes').length
 }
 
