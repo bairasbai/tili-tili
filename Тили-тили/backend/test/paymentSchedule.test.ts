@@ -19,7 +19,7 @@ interface Stage {
   id: string; dealId: string; title: string; due: string; version: number; status: string; overdue: boolean
   amount: Money; paid: Money; allocated: Money; remaining: Money; cancelReason: string | null
 }
-interface PaymentView { id: string; installmentId: string | null; version: number; amount: Money; kind: string }
+interface PaymentView { id: string; installmentId: string | null; version: number; amount: Money | null; kind: string }
 
 /** Отказ — это статус и код: 409 здесь дают десять разных причин, и статус один их не различает (ревью 018, C-04). */
 function expectError(res: { statusCode: number; body: string }, status: number, code: string) {
@@ -677,15 +677,15 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const slotPayment = await paymentId(w)
     const journal = async (id: string) => (await app.db!.query('select action,entity,actor_id,diff from audit_log where entity_id=$1 order by id', [id])).rows
     expect(await journal(slotPayment)).toEqual([{ action: 'payment.recorded', entity: 'payment', actor_id: w.owner.id,
-      diff: { dealId: w.dealId, installmentId: null, amount: 250000 } }])
+      diff: { dealId: w.dealId, installmentId: null, paymentMethod:'other', visibility:'private', amountKnown:true, paidOn:null, version:1, amount:250000 } }])
     // Новая дверь и привязка — та же сущность payment (P-07).
     expect((await pay(w, stage.id, 100000)).statusCode).toBe(200)
     const stagePayment = (await app.db!.query<{ id: string }>('select id from payments where installment_id=$1', [stage.id])).rows[0]!.id
     expect(await journal(stagePayment)).toEqual([{ action: 'payment.recorded', entity: 'payment', actor_id: w.owner.id,
-      diff: { dealId: w.dealId, installmentId: stage.id, amount: 100000 } }])
+      diff: { dealId: w.dealId, installmentId: stage.id, paymentMethod:'other', visibility:'private', amountKnown:true, paidOn:null, version:1, amount:100000 } }])
     expect((await link(w, slotPayment, stage.id)).statusCode).toBe(200)
     expect((await journal(slotPayment)).map(r => [r.action, r.entity, r.diff])).toEqual([
-      ['payment.recorded', 'payment', { dealId: w.dealId, installmentId: null, amount: 250000 }],
+      ['payment.recorded', 'payment', { dealId: w.dealId, installmentId: null, paymentMethod:'other', visibility:'private', amountKnown:true, paidOn:null, version:1, amount:250000 }],
       ['payment.plan_linked', 'payment', { from: null, to: stage.id }],
     ])
   })
@@ -832,7 +832,7 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     const couple = await exportOf(w.owner.token)
     expect(couple.paymentInstallments).toEqual([expect.objectContaining({
       id: stage.id, deal_id: w.dealId, wedding_id: w.id, title, amount: '400000', due: '2027-05-01', cancelled_at: null, cancel_reason: null })])
-    expect(couple.payments).toEqual([expect.objectContaining({ id: pid, deal_id: w.dealId, installment_id: stage.id, amount: '100000' })])
+    expect(couple.payments).toEqual([expect.objectContaining({ id: pid, deal_id: w.dealId, installment_id: stage.id, amount: '100000', payment_method:'other', visibility:'private', amount_known:true })])
     const assistant = await exportOf(helper.token)
     expect(assistant.paymentInstallments).toEqual([])
     expect(assistant.payments).toEqual([])
