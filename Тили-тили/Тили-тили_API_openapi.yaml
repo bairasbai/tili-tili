@@ -3830,6 +3830,8 @@ paths:
       description: |
         Бронь ключуется partyId. Две персоны одного приглашения не расходуют
         два номера. Повтор того же блока безопасен; переезд освобождает старый.
+        409 `deadline_passed` — срок бронирования блока истёк; 409 `hotel_full` —
+        свободных номеров больше нет.
       parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       requestBody:
         required: true
