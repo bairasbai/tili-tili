@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -130,15 +131,15 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
         "xpath=ancestor::div[contains(@class,'rounded-[24px]')][1]"
     )
     first_bus = member_resource(shuttle_block, PRIMARY, "Автобус семьи E2E")
-    first_bus.get_by_role("button", name=lambda name: name and "Автобус семьи E2E" in name).click()
+    first_bus.get_by_role("button", name=re.compile("Автобус семьи E2E")).click()
     expect(shuttle_block.get_by_text(PRIMARY, exact=True)).to_be_visible(timeout=10_000)
     second_bus = member_resource(shuttle_block, SECOND, "Автобус семьи E2E")
-    second_bus.get_by_role("button", name=lambda name: name and "Автобус семьи E2E" in name).click()
+    second_bus.get_by_role("button", name=re.compile("Автобус семьи E2E")).click()
 
     hotel_block = guest_page.get_by_text("Где остановиться", exact=True).locator(
         "xpath=ancestor::div[contains(@class,'rounded-[24px]')][1]"
     )
-    hotel_block.get_by_role("button", name=lambda name: name and "Отель семьи E2E" in name).click()
+    hotel_block.get_by_role("button", name=re.compile("Отель семьи E2E")).click()
     expect(hotel_block.get_by_text("Вы здесь", exact=True)).to_be_visible(timeout=10_000)
     guest_page.screenshot(path=str(OUT / "03-family-resources.png"), full_page=True)
     result["steps"].append("two-menu-votes-two-bus-seats-one-family-room")
