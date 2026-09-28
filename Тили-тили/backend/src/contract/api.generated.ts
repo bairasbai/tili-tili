@@ -2425,9 +2425,18 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @description primary person */
                         name: string;
-                        /** @default false */
+                        /**
+                         * @deprecated
+                         * @description legacy shortcut: создать системного второго человека
+                         * @default false
+                         */
                         plusOne?: boolean;
+                        /** @description дополнительные реальные персоны в том же семейном приглашении */
+                        members?: {
+                            name: string;
+                        }[];
                         /** @example Родня невесты */
                         group?: string;
                         /** @description для напоминаний по SMS (POST …/guests/remind) */
@@ -2453,6 +2462,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/guests/{guestId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Добавить человека в семейное приглашение
+         * @description guestId — primary person (partyPosition=1). Добавляется отдельная
+         *     персона с собственными RSVP/меню/столом/автобусом; семейный token,
+         *     ссылка, номер и gift identity не меняются. Максимум 10 персон.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    guestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Персона добавлена */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Guest"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description `family_full` — в одном семейном приглашении уже 10 персон */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/guests/{guestId}": {
         parameters: {
             query?: never;
@@ -2463,7 +2532,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить гостя */
+        /**
+         * Удалить отдельную персону семейного приглашения
+         * @description Пока в семье остаётся хотя бы один человек, удаляется только выбранная
+         *     персона: следующие позиции уплотняются, новый первый человек становится
+         *     primary, а party token, одноразовая ссылка, hotel/gift identity и сама
+         *     семья не меняются. Если удалён последний человек, удаляется и guest_party.
+         */
         delete: {
             parameters: {
                 query?: never;
@@ -2487,7 +2562,12 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Обновить гостя (статус RSVP циклом yes→no→pending) */
+        /**
+         * Обновить отдельную персону приглашения
+         * @description Поля RSVP/стола/питания относятся к этой персоне. Переходное plusOne
+         *     разрешено только у primary и материализует/удаляет системную вторую
+         *     персону; у secondary возвращается 409 `family_member_not_primary`.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -2527,7 +2607,15 @@ export interface paths {
                         "application/json": components["schemas"]["Guest"];
                     };
                 };
-                409: components["responses"]["Conflict"];
+                /** @description `family_member_not_primary`, `table_full` или `bus_full` */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         trace?: never;
@@ -2688,13 +2776,35 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Публичная страница гостя (из ссылки в приглашении) */
+        /** Публичная страница семейного приглашения */
         get: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    guestToken: string;
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
                 };
                 cookie?: never;
             };
@@ -2707,16 +2817,27 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            guestName?: string;
-                            wedding?: components["schemas"]["WeddingPublic"];
-                            /** @enum {string} */
-                            status?: "yes" | "no" | "pending";
+                            /** Format: uuid */
+                            partyId: string;
+                            /** @description primary person; переходное поле */
+                            guestName: string;
+                            wedding: components["schemas"]["WeddingPublic"];
+                            /**
+                             * @description primary person; переходное поле
+                             * @enum {string}
+                             */
+                            status: "yes" | "no" | "pending";
+                            /**
+                             * @deprecated
+                             * @description true, если в приглашении больше одной персоны
+                             */
                             plusOne?: boolean;
                             /** @enum {string|null} */
                             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
                             dietNote?: string | null;
                             /** @enum {string|null} */
                             transfer?: null | "need" | "own";
+                            members: components["schemas"]["GuestPersonRsvp"][];
                         };
                     };
                 };
@@ -2725,32 +2846,72 @@ export interface paths {
         };
         put?: never;
         /**
-         * Ответ гостя (RSVP)
-         * @description `plusOne: true` при уже забронированном автобусе может не поместиться
-         *     в его границу мест — тогда 409 `bus_full`, ответ RSVP не сохраняется.
+         * RSVP одной или нескольких персон семейного приглашения
+         * @description Новый клиент передаёт members[] и меняет только перечисленных людей.
+         *     Старый payload status/plusOne остаётся переходно совместимым:
+         *     plusOne материализуется как реальная placeholder-персона, а не
+         *     увеличивает скрытый счётчик. Отказ одной персоны освобождает только
+         *     её автобус; семейный номер снимается лишь когда в party не осталось yes.
          */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    guestToken: string;
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
                 };
                 cookie?: never;
             };
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @enum {string} */
-                        status: "yes" | "no";
+                        /**
+                         * @deprecated
+                         * @enum {string}
+                         */
+                        status?: "yes" | "no";
+                        /** @deprecated */
                         plusOne?: boolean;
                         comment?: string;
                         /** @enum {string|null} */
                         diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
-                        dietNote?: string;
-                        /** @enum {string} */
-                        transfer?: "need" | "own";
-                    };
+                        dietNote?: string | null;
+                        /** @enum {string|null} */
+                        transfer?: null | "need" | "own";
+                        members?: {
+                            /** Format: uuid */
+                            guestId: string;
+                            /** @enum {string} */
+                            status: "yes" | "no";
+                            /** @enum {string|null} */
+                            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                            dietNote?: string | null;
+                            /** @enum {string|null} */
+                            transfer?: null | "need" | "own";
+                        }[];
+                    } | unknown | unknown;
                 };
             };
             responses: {
@@ -2762,15 +2923,9 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
-                /** @description `bus_full` — мест в автобусе не осталось */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
             };
         };
         delete?: never;
@@ -2790,9 +2945,11 @@ export interface paths {
         put?: never;
         /**
          * Завести гостей списком
-         * @description Пара вставляет список из заметок или таблицы; экран разбирает строки
-         *     (имя, телефон, «+1») и показывает предпросмотр, сервер принимает уже
-         *     разобранные строки и заводит их одной транзакцией (фича 008, План
+         * @description Пара вставляет список из заметок или таблицы; экран разбирает строки.
+         *     Сервер принимает primary person плюс необязательные `members[]`;
+         *     legacy `plusOne=true` остаётся совместимым, но материализуется как
+         *     отдельная placeholder-персона, а не скрытый множитель. Всё заводится
+         *     одной транзакцией (фича 008 + этап 020, План
          *     §20.1 экран 29). Дубликаты пропускаются, а не обновляются: совпадение
          *     имени (без учёта регистра и лишних пробелов) или телефона с уже
          *     существующим гостем свадьбы или с другой строкой того же запроса —
@@ -2816,8 +2973,14 @@ export interface paths {
                         guests: {
                             name: string;
                             phone?: string;
-                            /** @default false */
+                            /**
+                             * @deprecated
+                             * @default false
+                             */
                             plusOne?: boolean;
+                            members?: {
+                                name: string;
+                            }[];
                             group?: string;
                         }[];
                     };
@@ -5736,13 +5899,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Маршруты трансфера, доступные гостю
-         * @description Записаться гость мог, а увидеть, куда именно, — нет: путь был только на
-         *     запись, и `busId` брать было неоткуда. `myBusId` говорит, куда он уже
-         *     записан: без этого гость, вернувшийся по ссылке, видит пустой выбор и
-         *     занимает второе место.
-         */
+        /** Маршруты и места всех персон семейного приглашения */
         get: {
             parameters: {
                 query?: never;
@@ -5783,7 +5940,14 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description primary person; переходное поле */
                             myBusId?: string | null;
+                            members?: {
+                                /** Format: uuid */
+                                guestId: string;
+                                name: string;
+                                myBusId?: string | null;
+                            }[];
                             routes?: components["schemas"]["BusRoute"][];
                         };
                     };
@@ -5793,10 +5957,8 @@ export interface paths {
         };
         put?: never;
         /**
-         * Гость записывается в автобус
-         * @description Место занимается атомарно; при переполнении — 409. Повтор безопасен по
-         *     построению (`on conflict do nothing` + признак «уже записан») —
-         *     `Idempotency-Key` не читается и не объявляется.
+         * Записать конкретную персону семьи в автобус
+         * @description Одна guest row = одна персона = одно место; guestId должен входить в party токена.
          */
         post: {
             parameters: {
@@ -5832,7 +5994,13 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
                         busId: string;
+                        /**
+                         * Format: uuid
+                         * @description пропуск = primary для старого клиента
+                         */
+                        guestId?: string;
                     };
                 };
             };
@@ -5845,6 +6013,7 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
             };
         };
@@ -6207,7 +6376,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Отельные блоки для гостя */
+        /**
+         * Отельные блоки для семейного приглашения
+         * @description mine относится ко всей семье: одно приглашение занимает не больше одного номера.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -6255,13 +6427,11 @@ export interface paths {
         };
         put?: never;
         /**
-         * Гость занимает номер в блоке
-         * @description Место занимается атомарно, при переполнении — 409 `hotel_full`. Пути
-         *     записи не было вовсе: блоки показывались, а занять номер было нечем,
-         *     хотя план требует «атомарные места в автобусе И НОМЕРЕ». После
-         *     `deadline_passed` (дедлайн заселения прошёл) — тоже 409. Повтор
-         *     безопасен по построению (`on conflict do nothing` + признак «уже
-         *     занято») — `Idempotency-Key` не читается и не объявляется.
+         * Семья занимает один номер в блоке
+         * @description Бронь ключуется partyId. Две персоны одного приглашения не расходуют
+         *     два номера. Повтор того же блока безопасен; переезд освобождает старый.
+         *     409 `deadline_passed` — срок бронирования блока истёк; 409 `hotel_full` —
+         *     свободных номеров больше нет.
          */
         post: {
             parameters: {
@@ -6297,6 +6467,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
                         hotelId: string;
                     };
                 };
@@ -6310,15 +6481,7 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
-                /** @description `hotel_full` — мест не осталось; `deadline_passed` — дедлайн заселения прошёл */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -6456,11 +6619,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Опрос по горячему глазами гостя
-         * @description Варианты блюд задаёт пара, а голосовать гость мог вслепую: путь был
-         *     только на отправку выбора. `chosenOptionId` — что он уже выбрал.
-         */
+        /** Меню всех персон семейного приглашения */
         get: {
             parameters: {
                 query?: never;
@@ -6502,7 +6661,14 @@ export interface paths {
                     content: {
                         "application/json": {
                             question?: string;
+                            /** @description primary; переходное поле */
                             chosenOptionId?: string | null;
+                            members?: {
+                                /** Format: uuid */
+                                guestId?: string;
+                                name?: string;
+                                chosenOptionId?: string | null;
+                            }[];
                             options?: {
                                 id?: string;
                                 name?: string;
@@ -6515,8 +6681,8 @@ export interface paths {
         };
         put?: never;
         /**
-         * Гость выбирает блюдо
-         * @description Один голос на гостя; повторный вызов меняет выбор, а не добавляет второй.
+         * Выбрать блюдо конкретной персоне семьи
+         * @description Один голос на одну персону; guestId должен входить в party токена.
          */
         post: {
             parameters: {
@@ -6552,7 +6718,13 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
                         optionId: string;
+                        /**
+                         * Format: uuid
+                         * @description пропуск = primary для старого клиента
+                         */
+                        guestId?: string;
                     };
                 };
             };
@@ -6565,6 +6737,7 @@ export interface paths {
                     content?: never;
                 };
                 401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
             };
         };
         delete?: never;
@@ -9928,6 +10101,22 @@ export interface components {
         Guest: {
             id?: string;
             name?: string;
+            /**
+             * Format: uuid
+             * @description одно семейное приглашение для 1–10 персон
+             */
+            readonly partyId?: string;
+            readonly partyPosition?: number;
+            /** @description текущее число персон в семейном приглашении */
+            readonly partySize?: number;
+            /** @description только у primary показывается inviteUrl */
+            readonly isPrimary?: boolean;
+            /** @description системное имя, созданное из старого +1; пара может переименовать */
+            readonly isPlaceholder?: boolean;
+            /**
+             * @deprecated
+             * @description переходное поле: true у primary, если в party больше одной персоны; новые клиенты используют partyId/отдельные строки
+             */
             plusOne?: boolean;
             group?: string | null;
             /**
@@ -9967,6 +10156,19 @@ export interface components {
             inviteUrl?: string | null;
             /** @description true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link */
             readonly inviteUrlUsed?: boolean;
+        };
+        GuestPersonRsvp: {
+            /** Format: uuid */
+            guestId: string;
+            name: string;
+            /** @enum {string} */
+            status: "yes" | "no" | "pending";
+            /** @enum {string|null} */
+            diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+            dietNote?: string | null;
+            /** @enum {string|null} */
+            transfer?: null | "need" | "own";
+            readonly isPlaceholder?: boolean;
         };
         Table: {
             id?: string;

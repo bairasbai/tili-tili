@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 78. */
+ * Схем: 79. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1048,8 +1048,38 @@ export const CONTRACT_SCHEMAS = {
               "name": {
                   "type": "string"
               },
+              "partyId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "readOnly": true,
+                  "description": "одно семейное приглашение для 1–10 персон"
+              },
+              "partyPosition": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10,
+                  "readOnly": true
+              },
+              "partySize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10,
+                  "readOnly": true,
+                  "description": "текущее число персон в семейном приглашении"
+              },
+              "isPrimary": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "только у primary показывается inviteUrl"
+              },
+              "isPlaceholder": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "системное имя, созданное из старого +1; пара может переименовать"
+              },
               "plusOne": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "переходное поле: true у primary, если в party больше одной персоны; новые клиенты используют partyId/отдельные строки"
               },
               "group": {
                   "type": [
@@ -1155,6 +1185,67 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "readOnly": true,
                   "description": "true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link"
+              }
+          }
+      },
+      "GuestPersonRsvp": {
+          "type": "object",
+          "required": [
+              "guestId",
+              "name",
+              "status"
+          ],
+          "properties": {
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "yes",
+                      "no",
+                      "pending"
+                  ]
+              },
+              "diet": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      null,
+                      "vegetarian",
+                      "vegan",
+                      "halal",
+                      "kosher",
+                      "gluten_free",
+                      "other"
+                  ]
+              },
+              "dietNote": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "transfer": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      null,
+                      "need",
+                      "own"
+                  ]
+              },
+              "isPlaceholder": {
+                  "type": "boolean",
+                  "readOnly": true
               }
           }
       },
@@ -3515,6 +3606,7 @@ export type ContractSchemaName =
   | "Fund"
   | "Gift"
   | "Guest"
+  | "GuestPersonRsvp"
   | "HotelBlock"
   | "InviteLink"
   | "Lead"
