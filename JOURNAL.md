@@ -2624,3 +2624,12 @@ Git распознал перенос как 117 переименований, �
 PR #12 (`integration/020-clean-main-20260928 → main`) прошёл merge-candidate CI `36365523795`, Offers 019 browser regression `36365523816` и Task Planning browser regression `36365523769`. Merge commit — `3b2dbabd26701b33da372126fa33b2e4caad4b82`. После merge обычный CI на exact main SHA прошёл: `36365783985` success.
 
 Этап 020 закрыт T001–T033. Следующий этап roadmap — 021; старые source/test ветки 020 повторно в main не сливать.
+
+
+## 2026-09-28 — 020 post-merge hardening поверх актуального main
+
+**Причина.** Основная 020 была слита через PR #12, но последующий T033-аудит нашёл оставшийся legacy double-count: `personCount`, проверка capacity стола и catering всё ещё могли учитывать deprecated `plusOne`. На финальной feature-ветке эти расхождения были исправлены и прошли полный CI/browser gate.
+
+**Clean follow-up.** Поверх текущего main переносится только недостающий delta 020: materialized person rows считаются один раз; table capacity использует `count(*)`; catering не читает `plus_one`; добавлены regressions partial family refusal и stale-plusOne capacity. 018/019 и 021 этим переносом не затрагиваются.
+
+**Источник проверки до интеграции.** Финальный closure SHA feature-ветки `2bb431dff47f605f0c29b186c9d51b12bee6e760`: CI `36386487813` — success (frontend 1059/1059, backend 1233/1233); browser/migration `36386487780` — success, `pageErrors=[]`.
