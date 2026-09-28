@@ -1,0 +1,52 @@
+name: Apply 021 payment privacy UI
+
+on:
+  push:
+    branches:
+      - feature/payment-methods-privacy-20260928
+    paths:
+      - .github/workflows/apply-021-payment-ui.yml
+      - Тили-тили/app/scripts/apply-021-payment-ui.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/payment-methods-privacy-20260928
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply deterministic UI patch
+        working-directory: Тили-тили
+        run: node app/scripts/apply-021-payment-ui.mjs
+      - name: Install frontend
+        working-directory: Тили-тили/app
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.34.5 --activate
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Typecheck UI source
+        working-directory: Тили-тили/app
+        run: pnpm exec tsc -b --pretty false
+      - name: Lint changed UI
+        working-directory: Тили-тили/app
+        run: pnpm exec eslint src/pages/PaymentSchedule.tsx src/pages/Wedding.tsx src/lib/i18n.en.ts
+      - name: Commit UI
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Тили-тили/app/src/pages/PaymentSchedule.tsx" \
+                  "Тили-тили/app/src/pages/Wedding.tsx" \
+                  "Тили-тили/app/src/lib/i18n.en.ts"
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(021): add payment method and privacy UI"
+          git push origin HEAD:feature/payment-methods-privacy-20260928
