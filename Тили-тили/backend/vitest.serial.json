@@ -1,4 +1,5 @@
 [
+  "test/accept019.test.ts",
   "test/audit14.test.ts",
   "test/audit15.test.ts",
   "test/audit16.test.ts",
