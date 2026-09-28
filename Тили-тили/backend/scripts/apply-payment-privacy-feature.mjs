@@ -67,10 +67,10 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
   )
   s = replaceOne(
     s,
-    `              ${VENDOR_PAID_SUM}::text as paid,
+    `              \${VENDOR_PAID_SUM}::text as paid,
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
 `,
-    `              ${VENDOR_PAID_SUM}::text as paid,
+    `              \${VENDOR_PAID_SUM}::text as paid,
               (select count(*)::int from payments vp
                 where vp.deal_id=d.id and vp.status<>'cancelled'
                   and vp.visibility='vendor' and not vp.amount_known) as unknown_payments,
