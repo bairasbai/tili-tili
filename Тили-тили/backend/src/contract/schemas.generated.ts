@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 92. */
+ * Схем: 95. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2050,7 +2050,8 @@ export const CONTRACT_SCHEMAS = {
               "unallocated",
               "needsReview",
               "active",
-              "canPlan"
+              "canPlan",
+              "unknownAmountPayments"
           ],
           "properties": {
               "id": {
@@ -2113,6 +2114,10 @@ export const CONTRACT_SCHEMAS = {
               },
               "canPlan": {
                   "type": "boolean"
+              },
+              "unknownAmountPayments": {
+                  "type": "integer",
+                  "minimum": 0
               }
           }
       },
@@ -2151,7 +2156,8 @@ export const CONTRACT_SCHEMAS = {
               "overdue",
               "cancelReason",
               "cancelledAt",
-              "allocated"
+              "allocated",
+              "unknownAmountPayments"
           ],
           "properties": {
               "cancelledAt": {
@@ -2184,7 +2190,7 @@ export const CONTRACT_SCHEMAS = {
                           "$ref": "contract#/definitions/Money"
                       }
                   ],
-                  "description": "Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на\nотменённом этапе), распределённых по этапам в порядке срока. Только для показа —\nпривязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной\nотметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной\nсделке (ревью 018, M-01).\n"
+                  "description": "Сколько на этап легло неразнесённых известных денег сделки. Только для показа —\nпривязки не меняются.\n"
               },
               "remaining": {
                   "allOf": [
@@ -2192,7 +2198,7 @@ export const CONTRACT_SCHEMAS = {
                           "$ref": "contract#/definitions/Money"
                       }
                   ],
-                  "description": "Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки."
+                  "description": "Сколько осталось по этапу с учётом известных оплат; неизвестная сумма его не уменьшает."
               },
               "due": {
                   "type": "string",
@@ -2208,14 +2214,18 @@ export const CONTRACT_SCHEMAS = {
                   "$ref": "contract#/definitions/PaymentInstallmentStatus"
               },
               "overdue": {
-                  "type": "boolean",
-                  "description": "Срок прошёл, а `remaining` больше нуля."
+                  "type": "boolean"
               },
               "cancelReason": {
                   "type": [
                       "string",
                       "null"
                   ]
+              },
+              "unknownAmountPayments": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Факты оплаты этого этапа без сохранённой суммы."
               }
           }
       },
@@ -2290,8 +2300,7 @@ export const CONTRACT_SCHEMAS = {
       "PaymentInstallmentPay": {
           "type": "object",
           "required": [
-              "version",
-              "amount"
+              "version"
           ],
           "properties": {
               "version": {
@@ -2301,9 +2310,36 @@ export const CONTRACT_SCHEMAS = {
               },
               "amount": {
                   "$ref": "contract#/definitions/PositivePaymentMoney"
+              },
+              "amountKnown": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "false фиксирует факт расчёта без суммы; amount при этом не передаётся."
+              },
+              "paymentMethod": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/PaymentMethod"
+                      }
+                  ],
+                  "default": "other"
+              },
+              "visibility": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/PaymentVisibility"
+                      }
+                  ],
+                  "default": "private"
+              },
+              "paidOn": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
               }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.\nПри amountKnown=false числовой долг не уменьшается и итог помечается неполным.\n"
       },
       "PaymentInstallmentStatus": {
           "type": "string",
@@ -2315,6 +2351,15 @@ export const CONTRACT_SCHEMAS = {
               "cancelled"
           ],
           "description": "paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами\nсделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —\nничего; cancelled — этап отменён. Одна схема на этап и на его строку в\n`PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).\n"
+      },
+      "PaymentMethod": {
+          "type": "string",
+          "enum": [
+              "cash",
+              "bank_transfer",
+              "card",
+              "other"
+          ]
       },
       "PaymentPlanLink": {
           "type": "object",
@@ -2346,6 +2391,10 @@ export const CONTRACT_SCHEMAS = {
               "dealId",
               "kind",
               "amount",
+              "amountKnown",
+              "paymentMethod",
+              "visibility",
+              "paidOn",
               "status",
               "createdAt",
               "installmentId",
@@ -2369,7 +2418,34 @@ export const CONTRACT_SCHEMAS = {
                   ]
               },
               "amount": {
-                  "$ref": "contract#/definitions/Money"
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ],
+                  "description": "null только когда amountKnown=false; неизвестная сумма никогда не кодируется нулём.",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "amountKnown": {
+                  "type": "boolean"
+              },
+              "paymentMethod": {
+                  "$ref": "contract#/definitions/PaymentMethod"
+              },
+              "visibility": {
+                  "$ref": "contract#/definitions/PaymentVisibility"
+              },
+              "paidOn": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
               },
               "status": {
                   "type": "string",
@@ -2425,17 +2501,17 @@ export const CONTRACT_SCHEMAS = {
                       "from": {
                           "type": "string",
                           "format": "date",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"
                       },
                       "to": {
                           "type": "string",
                           "format": "date",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"
                       },
                       "today": {
                           "type": "string",
                           "format": "date",
-                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"
                       },
                       "timeZone": {
                           "type": "string"
@@ -2459,8 +2535,14 @@ export const CONTRACT_SCHEMAS = {
                       {
                           "$ref": "contract#/definitions/Money"
                       }
-                  ],
-                  "description": "Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`."
+                  ]
+              },
+              "overdueRemaining": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/Money"
+                      }
+                  ]
               },
               "items": {
                   "type": "array",
@@ -2480,14 +2562,6 @@ export const CONTRACT_SCHEMAS = {
                       "$ref": "contract#/definitions/PaymentRecord"
                   }
               },
-              "overdueRemaining": {
-                  "allOf": [
-                      {
-                          "$ref": "contract#/definitions/Money"
-                      }
-                  ],
-                  "description": "Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09)."
-              },
               "allInstallments": {
                   "type": "array",
                   "items": {
@@ -2497,7 +2571,8 @@ export const CONTRACT_SCHEMAS = {
                           "dealId",
                           "title",
                           "status",
-                          "remaining"
+                          "remaining",
+                          "unknownAmountPayments"
                       ],
                       "properties": {
                           "id": {
@@ -2516,6 +2591,10 @@ export const CONTRACT_SCHEMAS = {
                           },
                           "remaining": {
                               "$ref": "contract#/definitions/Money"
+                          },
+                          "unknownAmountPayments": {
+                              "type": "integer",
+                              "minimum": 0
                           }
                       }
                   }
@@ -2530,7 +2609,9 @@ export const CONTRACT_SCHEMAS = {
               "remaining",
               "unallocated",
               "inactiveDealRecorded",
-              "unknownPrices"
+              "unknownPrices",
+              "unknownAmountPayments",
+              "amountIncomplete"
           ],
           "properties": {
               "committed": {
@@ -2551,9 +2632,26 @@ export const CONTRACT_SCHEMAS = {
               "unknownPrices": {
                   "type": "integer",
                   "minimum": 0
+              },
+              "unknownAmountPayments": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "amountIncomplete": {
+                  "type": "boolean",
+                  "description": "true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница."
               }
           },
-          "description": "Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке."
+          "description": "Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма\nизвестных отметок минус возвраты; remaining — положительный числовой остаток по каждой\nактивной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.\n"
+      },
+      "PaymentVisibility": {
+          "type": "string",
+          "enum": [
+              "private",
+              "finance_members",
+              "vendor"
+          ],
+          "description": "private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы\nпо-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.\n"
       },
       "PositiveMoney": {
           "type": "object",
@@ -3670,6 +3768,54 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VendorPaymentRecord": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/PaymentRecord"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "receipts"
+                  ],
+                  "properties": {
+                      "receipts": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "required": [
+                                  "id",
+                                  "filename",
+                                  "mimeType",
+                                  "sizeBytes",
+                                  "createdAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "filename": {
+                                      "type": "string"
+                                  },
+                                  "mimeType": {
+                                      "type": "string"
+                                  },
+                                  "sizeBytes": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                  },
+                                  "createdAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          ]
+      },
       "VendorUpsert": {
           "type": "object",
           "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
@@ -4227,10 +4373,12 @@ export type ContractSchemaName =
   | "PaymentInstallmentPatch"
   | "PaymentInstallmentPay"
   | "PaymentInstallmentStatus"
+  | "PaymentMethod"
   | "PaymentPlanLink"
   | "PaymentRecord"
   | "PaymentSchedule"
   | "PaymentSummary"
+  | "PaymentVisibility"
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"
@@ -4254,6 +4402,7 @@ export type ContractSchemaName =
   | "VendorPackage"
   | "VendorPackageInput"
   | "VendorPage"
+  | "VendorPaymentRecord"
   | "VendorUpsert"
   | "VerificationDecision"
   | "VerificationItem"

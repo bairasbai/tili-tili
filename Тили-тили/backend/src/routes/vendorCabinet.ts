@@ -3,10 +3,13 @@ import { ref } from '../contract/schemas.generated.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { AppError, TooManyRequests, conflict, forbidden, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
-import { PAID_SUM } from '../deals/repo.js'
 import { sendChatMessage } from '../chats/post.js'
 import { notifyCoupleOfferEvent } from '../offers/notify.js'
 import { isUniqueViolation } from '../plugins/db.js'
+
+const VENDOR_PAID_SUM = `(select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
+  from payments p
+  where p.deal_id=d.id and p.status<>'cancelled' and p.visibility='vendor' and p.amount_known)`
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
@@ -552,6 +555,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       state: string
       negotiating_until: Date | null
       paid: string
+      unknown_payments: number
       hold_alive: boolean
       package_name: string | null
       package_includes: string[] | null
@@ -561,7 +565,10 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     }>(
       `select d.id, w.title as couple_name, w.date::text as wedding_date,
               d.price::text as price, d.currency, d.state, d.negotiating_until,
-              ${PAID_SUM}::text as paid,
+              ${VENDOR_PAID_SUM}::text as paid,
+              (select count(*)::int from payments vp
+                where vp.deal_id=d.id and vp.status<>'cancelled'
+                  and vp.visibility='vendor' and not vp.amount_known) as unknown_payments,
               (d.negotiating_until is not null and d.negotiating_until > now()) as hold_alive,
               coalesce(d.package_title_snapshot, pkg.name) as package_name,
               coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
@@ -602,6 +609,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     return {
       expected: { amount: expected, currency: 'RUB' },
       shortfall: { amount: shortfall, currency: 'RUB' },
+      amountIncomplete: rows.some((r) => r.unknown_payments > 0),
       items: rows.map((r) => ({
         id: r.id,
         coupleName: r.couple_name,
@@ -615,6 +623,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
            пары; чат с парой и заголовок договора — чтобы с карточки было куда
            идти. До сверки планов 2026-09-18 строка списка не открывалась вовсе. */
         paid: { amount: Number(r.paid), currency: r.currency },
+        unknownAmountPayments: r.unknown_payments,
         chatId: r.chat_id,
         contract: r.contract,
         /* Срок брони показывается, только пока он не вышел: истёкший снимает
@@ -631,6 +640,57 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         busRoutes: r.bus_routes,
       })),
     }
+  })
+
+  /* ── видимые подрядчику оплаты его собственной сделки (021) ───── */
+  app.get('/vendor/deals/:dealId/payments', {
+    preHandler: app.requireConsent,
+    schema: { params: { type: 'object', required: ['dealId'], properties: { dealId: UUID_ID } } },
+  }, async (request) => {
+    const vendorId = await myVendorId(request.caller!.userId)
+    const { dealId } = request.params as { dealId: string }
+    const own = await db().query('select 1 from deals where id=$1 and vendor_id=$2', [dealId, vendorId])
+    if (!own.rows[0]) throw notFound('Сделка не найдена')
+    const { rows } = await db().query<{
+      id:string; kind:string; amount:string|null; status:string; installment_id:string|null; plan_version:number
+      payment_method:string; amount_known:boolean; paid_on:string; created_at:Date
+      receipts:Array<{id:string;filename:string;mimeType:string;sizeBytes:number;createdAt:string}>
+    }>(`select p.id,p.kind,p.amount::text as amount,p.status,p.installment_id,p.plan_version,
+          p.payment_method,p.amount_known,p.paid_on::text as paid_on,p.created_at,
+          coalesce((select json_agg(json_build_object(
+            'id',r.id,'filename',r.filename,'mimeType',r.mime_type,'sizeBytes',r.size_bytes,'createdAt',r.created_at)
+            order by r.created_at,r.id) from payment_receipts r where r.payment_id=p.id),'[]'::json) as receipts
+        from payments p
+        where p.deal_id=$1 and p.visibility='vendor'
+        order by p.paid_on desc,p.created_at desc,p.id desc`, [dealId])
+    return rows.map(p => ({
+      id:p.id,dealId,kind:p.kind,amountKnown:p.amount_known,
+      amount:p.amount_known && p.amount!==null ? {amount:Number(p.amount),currency:'RUB'} : null,
+      paymentMethod:p.payment_method,visibility:'vendor' as const,paidOn:p.paid_on,status:p.status,
+      createdAt:p.created_at.toISOString(),installmentId:p.installment_id,version:p.plan_version,
+      receipts:p.receipts,
+    }))
+  })
+
+  app.get('/vendor/deals/:dealId/payments/:paymentId/receipts/:receiptId/content', {
+    preHandler: app.requireConsent,
+    schema: { params: { type:'object', required:['dealId','paymentId','receiptId'], properties: {
+      dealId:UUID_ID,paymentId:UUID_ID,receiptId:UUID_ID,
+    } } },
+  }, async (request) => {
+    const vendorId = await myVendorId(request.caller!.userId)
+    const {dealId,paymentId,receiptId}=request.params as {dealId:string;paymentId:string;receiptId:string}
+    const {rows}=await db().query<{filename:string;mime_type:string;content:Buffer}>(`
+      select r.filename,r.mime_type,r.content
+        from payment_receipts r
+        join payments p on p.id=r.payment_id
+        join deals d on d.id=p.deal_id
+       where d.id=$1 and d.vendor_id=$2 and p.id=$3 and p.visibility='vendor'
+         and r.id=$4 and r.payment_id=p.id and r.wedding_id=d.wedding_id`,
+      [dealId,vendorId,paymentId,receiptId])
+    const found=rows[0]
+    if(!found)throw notFound('Файл не найден')
+    return {filename:found.filename,mimeType:found.mime_type,contentBase64:found.content.toString('base64')}
   })
 
   /* ── отзывы на меня ───────────────────────────────────────────────── */
@@ -718,7 +778,8 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
        * «доход», и «+38 %» сравнивал такие же суммы (D5-08, R-178). */
       const PAYMENTS_SUM = `select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
              from payments p join deals d on d.id = p.deal_id
-            where d.vendor_id = $1 and p.status <> 'cancelled'`
+            where d.vendor_id = $1 and p.status <> 'cancelled'
+              and p.visibility = 'vendor' and p.amount_known`
       const { rows } = await db().query<{
         views: string
         contacts: string
@@ -726,6 +787,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         deals: string
         revenue: string
         prev_revenue: string
+        unknown_payments: string
       }>(
         `select
            (select views from vendors where id = $1)::text as views,
@@ -733,10 +795,13 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
            (select count(*) from leads where vendor_id = $1 and created_at > now() - make_interval(days => $2))::text as leads,
            (select count(*) from deals where vendor_id = $1 and state in ('booked','paid_deposit','done')
              and created_at > now() - make_interval(days => $2))::text as deals,
-           (${PAYMENTS_SUM} and p.created_at > now() - make_interval(days => $2))::text as revenue,
+           (${PAYMENTS_SUM} and p.paid_on > (now() - make_interval(days => $2))::date)::text as revenue,
            (${PAYMENTS_SUM}
-             and p.created_at between now() - make_interval(days => $2 * 2) and now() - make_interval(days => $2))::text
-             as prev_revenue`,
+             and p.paid_on between (now() - make_interval(days => $2 * 2))::date and (now() - make_interval(days => $2))::date)::text
+             as prev_revenue,
+           (select count(*) from payments p join deals d on d.id=p.deal_id
+             where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
+               and p.paid_on > (now() - make_interval(days => $2))::date)::text as unknown_payments`,
         [vendorId, days],
       )
       const row = rows[0]!
@@ -745,6 +810,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       return {
         period,
         revenue: { amount: revenue, currency: 'RUB' },
+        revenueIncomplete: Number(row.unknown_payments) > 0,
         // Прирост считается от прошлого такого же периода. Делить на ноль
         // нечем: если раньше не было ничего, процент не определён.
         revenueDeltaPct: previous === 0 ? null : Math.round(((revenue - previous) / previous) * 100),

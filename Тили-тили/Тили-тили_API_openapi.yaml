@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.51.0
+  version: 0.52.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -2647,6 +2647,48 @@ paths:
                               time: {type: string, nullable: true}
                               seats: {type: integer}
                               taken: {type: integer, description: 'занято персон'}
+  /vendor/deals/{dealId}/payments:
+    get:
+      tags: [vendor]
+      summary: Оплаты своей сделки, раскрытые парой подрядчику
+      description: |
+        Возвращает только записи той сделки, которая принадлежит текущему vendor,
+        и только с visibility=vendor. private/finance_members не участвуют даже в агрегатах.
+      security: [bearerAuth: []]
+      parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/VendorPaymentRecord'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /vendor/deals/{dealId}/payments/{paymentId}/receipts/{receiptId}/content:
+    get:
+      tags: [vendor]
+      summary: Подтверждение раскрытой оплаты своей сделки
+      security: [bearerAuth: []]
+      parameters:
+      - {name: dealId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: paymentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: receiptId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [filename, mimeType, contentBase64]
+                properties:
+                  filename: {type: string}
+                  mimeType: {type: string}
+                  contentBase64: {type: string}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /vendor/updates:
     get:
       tags: [vendor]
@@ -7665,6 +7707,15 @@ components:
           enum:
           - RUB
       description: Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются нулём.
+    PaymentMethod:
+      type: string
+      enum: [cash, bank_transfer, card, other]
+    PaymentVisibility:
+      type: string
+      enum: [private, finance_members, vendor]
+      description: |
+        private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы
+        по-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.
     PaymentSummary:
       type: object
       required:
@@ -7674,6 +7725,8 @@ components:
       - unallocated
       - inactiveDealRecorded
       - unknownPrices
+      - unknownAmountPayments
+      - amountIncomplete
       properties:
         committed:
           $ref: '#/components/schemas/FinancialBalance'
@@ -7688,10 +7741,16 @@ components:
         unknownPrices:
           type: integer
           minimum: 0
-      description: Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining —
-        положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по 
-        неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном 
-        нулевом остатке.
+        unknownAmountPayments:
+          type: integer
+          minimum: 0
+        amountIncomplete:
+          type: boolean
+          description: true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница.
+      description: |
+        Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма
+        известных отметок минус возвраты; remaining — положительный числовой остаток по каждой
+        активной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.
     PaymentInstallment:
       type: object
       required:
@@ -7708,6 +7767,7 @@ components:
       - cancelReason
       - cancelledAt
       - allocated
+      - unknownAmountPayments
       properties:
         cancelledAt: {type: string, format: date-time, nullable: true}
         id:
@@ -7725,14 +7785,11 @@ components:
         allocated:
           allOf: [$ref: '#/components/schemas/Money']
           description: |
-            Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на
-            отменённом этапе), распределённых по этапам в порядке срока. Только для показа —
-            привязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной
-            отметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной
-            сделке (ревью 018, M-01).
+            Сколько на этап легло неразнесённых известных денег сделки. Только для показа —
+            привязки не меняются.
         remaining:
           allOf: [$ref: '#/components/schemas/Money']
-          description: 'Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки.'
+          description: Сколько осталось по этапу с учётом известных оплат; неизвестная сумма его не уменьшает.
         due:
           type: string
           format: date
@@ -7744,10 +7801,13 @@ components:
         status: {$ref: '#/components/schemas/PaymentInstallmentStatus'}
         overdue:
           type: boolean
-          description: 'Срок прошёл, а `remaining` больше нуля.'
         cancelReason:
           type: string
           nullable: true
+        unknownAmountPayments:
+          type: integer
+          minimum: 0
+          description: Факты оплаты этого этапа без сохранённой суммы.
     PaymentInstallmentStatus:
       type: string
       enum:
@@ -7768,6 +7828,10 @@ components:
       - dealId
       - kind
       - amount
+      - amountKnown
+      - paymentMethod
+      - visibility
+      - paidOn
       - status
       - createdAt
       - installmentId
@@ -7781,18 +7845,24 @@ components:
           format: uuid
         kind:
           type: string
-          enum:
-          - deposit
-          - balance
-          - refund
+          enum: [deposit, balance, refund]
         amount:
-          $ref: '#/components/schemas/Money'
+          allOf: [{$ref: '#/components/schemas/Money'}]
+          nullable: true
+          description: null только когда amountKnown=false; неизвестная сумма никогда не кодируется нулём.
+        amountKnown:
+          type: boolean
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        visibility:
+          $ref: '#/components/schemas/PaymentVisibility'
+        paidOn:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
         status:
           type: string
-          enum:
-          - recorded
-          - confirmed
-          - cancelled
+          enum: [recorded, confirmed, cancelled]
         createdAt:
           type: string
           format: date-time
@@ -7804,6 +7874,23 @@ components:
           type: integer
           minimum: 1
           maximum: 2147483647
+    VendorPaymentRecord:
+      allOf:
+      - $ref: '#/components/schemas/PaymentRecord'
+      - type: object
+        required: [receipts]
+        properties:
+          receipts:
+            type: array
+            items:
+              type: object
+              required: [id, filename, mimeType, sizeBytes, createdAt]
+              properties:
+                id: {type: string, format: uuid}
+                filename: {type: string}
+                mimeType: {type: string}
+                sizeBytes: {type: integer, minimum: 0}
+                createdAt: {type: string, format: date-time}
     PaymentDeal:
       type: object
       required:
@@ -7819,25 +7906,14 @@ components:
       - needsReview
       - active
       - canPlan
+      - unknownAmountPayments
       properties:
-        id:
-          type: string
-          format: uuid
-        slotId:
-          type: string
-          format: uuid
-        name:
-          type: string
+        id: {type: string, format: uuid}
+        slotId: {type: string, format: uuid}
+        name: {type: string}
         state:
           type: string
-          enum:
-          - candidate
-          - contacted
-          - negotiating
-          - booked
-          - paid_deposit
-          - done
-          - cancelled
+          enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled]
         price:
           $ref: '#/components/schemas/Money'
           nullable: true
@@ -7850,97 +7926,54 @@ components:
           $ref: '#/components/schemas/Money'
         unallocated:
           $ref: '#/components/schemas/FinancialBalance'
-        needsReview:
-          type: boolean
-        active:
-          type: boolean
-        canPlan:
-          type: boolean
+        needsReview: {type: boolean}
+        active: {type: boolean}
+        canPlan: {type: boolean}
+        unknownAmountPayments:
+          type: integer
+          minimum: 0
     PaymentSchedule:
       type: object
-      required:
-      - range
-      - readOnly
-      - summary
-      - dueInWindow
-      - overdueRemaining
-      - items
-      - deals
-      - payments
-      - allInstallments
+      required: [range, readOnly, summary, dueInWindow, overdueRemaining, items, deals, payments, allInstallments]
       properties:
         range:
           type: object
-          required:
-          - from
-          - to
-          - today
-          - timeZone
-          - includeOverdue
-          - includeCancelled
+          required: [from, to, today, timeZone, includeOverdue, includeCancelled]
           properties:
-            from:
-              type: string
-              format: date
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            to:
-              type: string
-              format: date
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            today:
-              type: string
-              format: date
-              pattern: ^\d{4}-\d{2}-\d{2}$
-            timeZone:
-              type: string
-            includeOverdue:
-              type: boolean
-            includeCancelled:
-              type: boolean
-        readOnly:
-          type: boolean
+            from: {type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$'}
+            to: {type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$'}
+            today: {type: string, format: date, pattern: '^\\d{4}-\\d{2}-\\d{2}$'}
+            timeZone: {type: string}
+            includeOverdue: {type: boolean}
+            includeCancelled: {type: boolean}
+        readOnly: {type: boolean}
         summary:
           $ref: '#/components/schemas/PaymentSummary'
         dueInWindow:
           allOf: [$ref: '#/components/schemas/Money']
-          description: 'Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`.'
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/PaymentInstallment'
-        deals:
-          type: array
-          items:
-            $ref: '#/components/schemas/PaymentDeal'
-        payments:
-          type: array
-          items:
-            $ref: '#/components/schemas/PaymentRecord'
         overdueRemaining:
           allOf: [$ref: '#/components/schemas/Money']
-          description: 'Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09).'
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentInstallment'}
+        deals:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentDeal'}
+        payments:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentRecord'}
         allInstallments:
           type: array
           items:
             type: object
-            required:
-            - id
-            - dealId
-            - title
-            - status
-            - remaining
+            required: [id, dealId, title, status, remaining, unknownAmountPayments]
             properties:
-              id:
-                type: string
-                format: uuid
-              dealId:
-                type: string
-                format: uuid
-              title:
-                type: string
+              id: {type: string, format: uuid}
+              dealId: {type: string, format: uuid}
+              title: {type: string}
               status: {$ref: '#/components/schemas/PaymentInstallmentStatus'}
-              remaining:
-                $ref: '#/components/schemas/Money'
+              remaining: {$ref: '#/components/schemas/Money'}
+              unknownAmountPayments: {type: integer, minimum: 0}
     PaymentHistoryExport:
       type: object
       required:
@@ -8024,9 +8057,7 @@ components:
       minProperties: 2
     PaymentInstallmentPay:
       type: object
-      required:
-      - version
-      - amount
+      required: [version]
       properties:
         version:
           type: integer
@@ -8034,7 +8065,24 @@ components:
           maximum: 2147483647
         amount:
           $ref: '#/components/schemas/PositivePaymentMoney'
+        amountKnown:
+          type: boolean
+          default: true
+          description: false фиксирует факт расчёта без суммы; amount при этом не передаётся.
+        paymentMethod:
+          allOf: [{$ref: '#/components/schemas/PaymentMethod'}]
+          default: other
+        visibility:
+          allOf: [{$ref: '#/components/schemas/PaymentVisibility'}]
+          default: private
+        paidOn:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
       additionalProperties: false
+      description: |
+        Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.
+        При amountKnown=false числовой долг не уменьшается и итог помечается неполным.
     PaymentPlanLink:
       type: object
       required:
