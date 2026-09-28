@@ -2501,17 +2501,17 @@ export const CONTRACT_SCHEMAS = {
                       "from": {
                           "type": "string",
                           "format": "date",
-                          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                       },
                       "to": {
                           "type": "string",
                           "format": "date",
-                          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                       },
                       "today": {
                           "type": "string",
                           "format": "date",
-                          "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                       },
                       "timeZone": {
                           "type": "string"
