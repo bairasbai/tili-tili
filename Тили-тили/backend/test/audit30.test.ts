@@ -721,13 +721,25 @@ describe.skipIf(!live)('ревью старого кода: чаты, гости
 
   it('D2-12: PUT /timeline с не-датой отвечает 422, а не 500', async () => {
     const w = await newWedding()
-    const put = (startsAt: string) =>
-      app.inject({
+    const snapshot = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/timeline`, headers: auth(w.token) })
+    let etag = snapshot.headers.etag!
+    const put = async (startsAt: string) => {
+      const response = await app.inject({
         method: 'PUT',
         url: `/weddings/${w.weddingId}/timeline`,
-        headers: auth(w.token),
-        payload: [{ name: 'Сборы', startsAt }],
+        headers: { ...auth(w.token), 'if-match': etag },
+        payload: [{
+          name: 'Сборы',
+          startsAt,
+          timingMode: 'flexible',
+          assigneeUserIds: [],
+          dealIds: [],
+          dependsOn: [],
+        }],
       })
+      if (response.statusCode === 200) etag = response.headers.etag!
+      return response
+    }
     const bad = await put('вчера')
     expect({ status: bad.statusCode, code: bad.json().error?.code }).toEqual({ status: 422, code: 'validation_failed' })
     // 30 февраля V8 читает как 2 марта — календарь проверяется отдельно.
