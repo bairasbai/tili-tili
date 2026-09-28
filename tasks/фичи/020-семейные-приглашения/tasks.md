@@ -71,20 +71,20 @@ Main не менять. Рабочая ветка — `test/020-finalize-2026092
 T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 021 не начинать до полного закрытия 020.
 
+## Финал T033 · 2026-09-28 ✅
 
-## Текущее состояние · 2026-09-28
+T001–T032 повторно подтверждены по коду и зелёным gate на code/test SHA `28ed3859293fc83fb5d50705b92cad9812ad4210`.
 
-Фактически реализованы T001–T022 и T024–T030. После аудита дополнительно закрыты: сохранение family token при удалении primary, explicit-family import, partySize в Guest API, управление составом семьи на экране пары и повторный double-count кейтеринга.
+- CI `36385058391` — success: frontend 79 файлов / 1059 тестов; backend 107 файлов / 1233 теста; `family020.test.ts` 16/16; TypeScript, ESLint, production build, PostgreSQL/Redis migrations — success.
+- В том же CI `schemas.test.ts` 8/8 и `contract-sync.test.ts` 4/4 — generated artifacts соответствуют OpenAPI 0.50.0.
+- Последний отдельный generator run `36382068390` — success на `03e9b7b2c80ef92ebf38218bbe3bf4867021c0ee`. После него OpenAPI не менялся; четыре последующих коммита затронули только person-counting/regressions, а текущий contract-sync остаётся зелёным.
+- Verify 020 family browser `36385058399` — success на `28ed3859…`: legacy rehearsal `down → seed → up → verify` и реальный Chromium без route mocks.
+- Artifact `family020-browser-evidence` id `10954420756`, digest `sha256:1c9bc62a2a63235819c3ecbb8d03c268016946914f78a6071c1d0564abb8f7ae`.
+- Финальный аудит после прежнего handoff закрыл stale `plusOne` в `personCount`/кейтеринге и вместимости столов; частичный family-RSVP закреплён отдельной регрессией.
 
-Финальные ворота закрыты на clean integration `integration/020-clean-main-20260928`:
-- T023 — OpenAPI 0.50.0 и generated backend/frontend artifacts синхронизированы штатной генерацией.
-- T031 — real Chromium E2E: run `36365055383`, artifact `10947465988`, SHA-256 `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`; 2 персоны, 1 invite link, 2 menu votes, 2 bus seats, 1 hotel room, 1 family gift reserve, page errors = 0.
-- T032 — clean CI run `36365055384`: frontend 78 файлов / 1023 теста, backend 106 файлов / 1178 тестов; PostgreSQL migrations, TypeScript, ESLint и production builds — success.
-- T033 — verification/handoff/roadmap/JOURNAL обновлены; временный clean-browser workflow удаляется финализационным коммитом.
-
-Этап 020 завершён как merge-кандидат. 021 начинать только после слияния 020 в актуальный `main` и зелёного post-merge CI.
+Документационный commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be` прошёл повторный final gate: CI `36386064858` — success; Verify 020 family browser `36386064786` — success. T033 закрыт, этап **020 завершён ✅**. Этой T033-финализацией main/production не менялись; 021 в этой работе не начинался. Feature 020 уже была ранее слита в main отдельным Merge PR #12 (`3b2dbabd26701b33da372126fa33b2e4caad4b82`).
 
 
-## Merge в main · 2026-09-28 ✅
+## Clean follow-up в main · 2026-09-28
 
-PR #12 слит merge-коммитом `3b2dbabd26701b33da372126fa33b2e4caad4b82`. PR CI `36365523795`, Offers 019 browser regression `36365523816`, Task Planning browser regression `36365523769` и post-merge CI `36365783985` — success. Этап 020 закрыт полностью; следующий — 021.
+PR #12 содержал основную 020, но финальный T033-аудит после него нашёл дополнительные hardening-исправления: materialized person counting, table capacity без deprecated `plusOne`, catering без чтения `plus_one` и regression частичного family-RSVP. Они переносятся отдельной clean follow-up веткой поверх актуального main; 018/019 повторно не сливаются, 021 не входит в этот перенос.

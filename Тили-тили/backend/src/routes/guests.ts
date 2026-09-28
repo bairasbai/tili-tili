@@ -183,9 +183,11 @@ export function guestNameKey(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
-/** Персон, а не записей: «Ольга и Денис» с плюс-одним — двое за столом. */
-export function personCount(guests: { status: string; plusOne: boolean }[]): number {
-  return guests.filter((g) => g.status === 'yes').reduce((a, g) => a + (g.plusOne ? 2 : 1), 0)
+/** 020: после materialization каждая строка guests — одна реальная персона.
+ * Deprecated plusOne остаётся только compatibility-сигналом и не участвует
+ * в счётчиках, вместимости или деньгах. */
+export function personCount(guests: { status: string; plusOne?: boolean }[]): number {
+  return guests.filter((g) => g.status === 'yes').length
 }
 
 export async function guestRoutes(app: FastifyInstance): Promise<void> {
@@ -1442,7 +1444,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
         if (body.capacity !== undefined) {
           const { rows: seated } = await client.query<{ persons: string }>(
-            'select coalesce(sum(1 + plus_one::int), 0)::text as persons from guests where table_id = $1',
+            'select count(*)::text as persons from guests where table_id = $1',
             [tableId],
           )
           const persons = Number(seated[0]!.persons)

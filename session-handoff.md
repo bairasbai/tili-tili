@@ -55,3 +55,18 @@ Merge commit: `aee5e164f49b29552fb4e0c8141fcc423f582f49`. Его tree SHA сов
 1. Post-merge CI запущен на точном SHA `aee5e164f49b29552fb4e0c8141fcc423f582f49` (run `36384481686`).
 2. Старый draft PR #3 закрыт как **superseded by PR #14**.
 3. Не считать production deployment выполненным: SMS/S3/VAPID, юридические тексты, backup/restore и physical-device pilot остаются release gates.
+
+
+## 020 post-merge hardening
+
+Основная Feature 020 уже была в main через PR #12. Финальный T033-аудит после merge выявил недостающий legacy hardening, поэтому он переносится отдельной clean follow-up веткой поверх актуального main, без повторного слияния старой divergent feature-ветки.
+
+Перенос включает:
+- `personCount` считает materialized guest rows ровно один раз;
+- table capacity использует `count(*)`, а не `sum(1 + plus_one)`;
+- catering больше не читает deprecated `plus_one`;
+- regression: отказ одного члена семьи освобождает только его автобусное место, hotel остаётся до отказа последнего attending member;
+- regression stale `plus_one` для table capacity;
+- ERR-0336 и финальную acceptance T033.
+
+021 этим follow-up не начинается.
