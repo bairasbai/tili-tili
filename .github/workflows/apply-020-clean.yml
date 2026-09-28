@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   integrate-020:
-    if: "github.event.head_commit.message == 'chore(020): resolve clean integration conflicts'"
+    if: "github.event.head_commit.message == 'chore(020): resolve clean integration conflicts v2'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +23,6 @@ jobs:
           BASE=da87f1fe9aab19342f68e4a58453a4b35decb943
           SOURCE=4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc
           OURS=$(git rev-parse HEAD)
-          git config core.quotepath false
           git fetch --no-tags origin test/020-finalize-20260928
           git config core.quotepath false
 
@@ -57,39 +56,16 @@ jobs:
                 if ! git merge-file -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"; then
                   case "$path" in
                     Тили-тили/app/src/pages/Wedding.tsx)
-                      python - "$out_file" <<'PY'
-import re,sys
-p=sys.argv[1]
-s=open(p,encoding='utf-8').read()
-replacement="import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'\n"
-s,n=re.subn(r"<<<<<<<[^\n]*\n.*?=======\n.*?>>>>>>>[^\n]*\n",replacement,s,count=1,flags=re.S)
-assert n==1
-open(p,'w',encoding='utf-8').write(s)
-PY
+                      sed -i "/^<<<<<<< /,/^>>>>>>> /c\\import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@\/lib\/api\/weddingWrite'" "$out_file"
                       ;;
                     Тили-тили/backend/test/audit55.test.ts)
-                      python - "$out_file" <<'PY'
-import re,sys
-p=sys.argv[1]
-s=open(p,encoding='utf-8').read()
-replacement="  it('версия контракта — 0.50.0 (020: семейное приглашение и отдельные персоны; F5-14 сохранён)', () => {\n    expect((doc.info as { version: string }).version).toBe('0.50.0')\n"
-s,n=re.subn(r"<<<<<<<[^\n]*\n.*?=======\n.*?>>>>>>>[^\n]*\n",replacement,s,count=1,flags=re.S)
-assert n==1
-open(p,'w',encoding='utf-8').write(s)
-PY
+                      sed -i "/^<<<<<<< /,/^>>>>>>> /c\\  it('версия контракта — 0.50.0 (020: семейное приглашение и отдельные персоны; F5-14 сохранён)', () => {\\n    expect((doc.info as { version: string }).version).toBe('0.50.0')" "$out_file"
                       ;;
                     Тили-тили/Тили-тили_API_openapi.yaml)
-                      python - "$out_file" <<'PY'
-import re,sys
-p=sys.argv[1]
-s=open(p,encoding='utf-8').read()
-s,n=re.subn(r"<<<<<<<[^\n]*\n\s*version:\s*0\.45\.0\n=======\n\s*version:\s*0\.50\.0\n>>>>>>>[^\n]*\n","  version: 0.50.0\n",s,count=1)
-assert n==1
-open(p,'w',encoding='utf-8').write(s)
-PY
+                      sed -i "/^<<<<<<< /,/^>>>>>>> /c\\  version: 0.50.0" "$out_file"
                       ;;
                   esac
-                  if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$out_file"; then
+                  if grep -q -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file"; then
                     echo "::error file=$path::unresolved three-way conflict"
                     grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
                     conflicts=$((conflicts + 1))
@@ -118,7 +94,6 @@ PY
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config core.quotepath false
           git add -A
           git commit -m "feat(020): integrate family invitations on current main"
           git push origin HEAD:integration/020-clean-main-20260928
