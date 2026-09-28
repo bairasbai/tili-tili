@@ -22,6 +22,7 @@ interface GuestRow {
   id: string
   invitation_id: string
   invitation_label: string | null
+  invitation_phone: string | null
   family_size: number
   name: string
   plus_one: boolean
@@ -43,6 +44,7 @@ interface GuestRow {
 const GUEST_COLUMNS = `
   g.id, g.invitation_id,
   (select i.label from guest_invitations i where i.id = g.invitation_id) as invitation_label,
+  (select i.phone from guest_invitations i where i.id = g.invitation_id) as invitation_phone,
   (select count(*)::int from guests fam where fam.invitation_id = g.invitation_id) as family_size,
   g.name, g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
   g.menu_option_id, g.transfer,
@@ -86,8 +88,8 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
      * (`/rsvp`, `/gifts`) этот объект не отдают. */
-    ...(asCouple ? { phone: r.phone, comment: r.comment } : {}),
-    hasPhone: Boolean(r.phone),
+    ...(asCouple ? { phone: r.invitation_phone ?? r.phone, comment: r.comment } : {}),
+    hasPhone: Boolean(r.invitation_phone ?? r.phone),
     status: r.rsvp,
     tableId: r.table_id,
     diet: r.diet,
@@ -547,6 +549,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           ],
         )
         if (res.rowCount === 0) throw notFound('Гость не найден')
+        if (has('phone')) {
+          await client.query(
+            'update guest_invitations i set phone = $2 from guests g where g.id = $1 and i.id = g.invitation_id',
+            [guestId, phone],
+          )
+        }
 
         if (body.plusOne === true) {
           const { rows: invitation } = await client.query<{ invitation_id: string; n: string }>(
@@ -592,11 +600,22 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/weddings/:weddingId/guests/:guestId', async (request, reply) => {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
-    const res = await db().query('delete from guests where id = $1 and wedding_id = $2', [
-      guestId,
-      request.member!.weddingId,
-    ])
-    if (res.rowCount === 0) throw notFound('Гость не найден')
+    await db().tx(async (client) => {
+      const { rows } = await client.query<{ invitation_id: string }>(
+        'select invitation_id from guests where id = $1 and wedding_id = $2 for update',
+        [guestId, request.member!.weddingId],
+      )
+      if (!rows[0]) throw notFound('Гость не найден')
+      const invitationId = rows[0].invitation_id
+      await client.query('delete from guests where id = $1', [guestId])
+      const { rows: left } = await client.query<{ n: string }>(
+        'select count(*)::text as n from guests where invitation_id = $1',
+        [invitationId],
+      )
+      if (Number(left[0]!.n) === 0) {
+        await client.query('delete from guest_invitations where id = $1', [invitationId])
+      }
+    })
     return reply.code(204).send()
   })
 
@@ -644,12 +663,15 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const { rows: pending } = await db().query<{ id: string; name: string; phone: string | null; code: string | null }>(
-      `select g.id, g.name, g.phone,
+      `select i.id, coalesce(nullif(btrim(i.label), ''), min(g.name)) as name, i.phone,
               (select c.code from guest_invite_codes c
-                where c.guest_id = g.id and c.used_at is null and c.expires_at > now()
+                where c.invitation_id = i.id and c.used_at is null and c.expires_at > now()
                 order by c.expires_at desc limit 1) as code
-         from guests g
-        where g.wedding_id = $1 and g.rsvp = 'pending'`,
+         from guest_invitations i
+         join guests g on g.invitation_id = i.id
+        where i.wedding_id = $1
+        group by i.id
+        having bool_or(g.rsvp = 'pending')`,
       [weddingId],
     )
 
