@@ -804,6 +804,7 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
       expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
     }
     await pay(w, slotId, 6_000_000)
+    await app.db!.query(`update payments set visibility='vendor' where deal_id=$1`,[dealId])
 
     const money = async () =>
       (await app.inject({ method: 'GET', url: '/vendor/deals', headers: auth(vendor.token) })).json() as {
