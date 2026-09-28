@@ -171,7 +171,7 @@ type TextDraftKey = 'title'|'amount'|'due'|'dealId'|'installmentId'|'reason'|'pa
   let s=read(rel)
   s=replaceOne(s,
     `{server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}{/* Сделка без цены в остаток не входит: без оговорки «0 ₽» читался как «всё оплачено» (ревью 018, F-04; R-178). */}{server.paymentSummary.unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {server.paymentSummary.unknownPrices})</>}. {t('Плановые этапы не увеличивают смету.')}</p>}`,
-    `{server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{server.paymentSummary.amountIncomplete ? t('Известно оплачено, от') : t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}{/* Сделка без цены в остаток не входит: без оговорки «0 ₽» читался как «всё оплачено» (ревью 018, F-04; R-178). */}{server.paymentSummary.unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {server.paymentSummary.unknownPrices})</>}. {server.paymentSummary.amountIncomplete && <>{t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')} </>}{t('Плановые этапы не увеличивают смету.')}</p>}`,
+    `{server?.paymentSummary && <p className="text-xs text-[var(--soft)] mt-2">{server.paymentSummary.amountIncomplete ? t('Известно оплачено, от') : t('Отмечено оплат')}: {fmt(server.paymentSummary.recorded.amount)} · {t('Осталось по сделкам')}: {fmt(server.paymentSummary.remaining.amount)}{/* Сделка без цены в остаток не входит: без оговорки «0 ₽» читался как «всё оплачено» (ревью 018, F-04; R-178). */}{server.paymentSummary.unknownPrices > 0 && <> ({t('без сделок, где цена не задана')}: {server.paymentSummary.unknownPrices})</>}. {server.paymentSummary.amountIncomplete && <>{t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')} </>} {t('Плановые этапы не увеличивают смету.')}</p>}`,
     'budget incomplete summary')
   write(rel,s)
   console.log('patched '+rel)
@@ -191,7 +191,6 @@ type TextDraftKey = 'title'|'amount'|'due'|'dealId'|'installmentId'|'reason'|'pa
   'Наличные': 'Cash',
   'Банковский перевод': 'Bank transfer',
   'Карта': 'Card',
-  'Другое': 'Other',
   'Дата фактической оплаты': 'Actual payment date',
   'Кто видит детали оплаты?': 'Who can see payment details?',
   'Только мы': 'Only us',
