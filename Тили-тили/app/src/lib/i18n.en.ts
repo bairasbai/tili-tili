@@ -2370,3 +2370,24 @@ Object.assign(EN, {
   'Загрузка подтверждений оплаты не включена на сервере': 'Uploading payment evidence is not enabled on the server',
   'Место под подтверждения оплат у свадьбы закончилось — удалите ненужные файлы': 'The wedding has used up its space for payment evidence; delete files you no longer need',
 })
+
+
+/* Feature 021: timeline identity, optimistic concurrency and dependency editor. */
+Object.assign(EN, {
+  'Участник команды': 'Team member',
+  'Версия тайминга не загрузилась — обновите расписание перед сохранением': 'The timeline version did not load. Refresh the schedule before saving.',
+  'Тайминг изменился в другой вкладке или на другом устройстве. Показана свежая версия — повторите правку.': 'The timeline changed in another tab or on another device. The latest version is shown; apply your change again.',
+  'Фиксированное время — не сдвигать автоматически': 'Fixed time — do not shift automatically',
+  'фиксированное время': 'fixed time',
+  'подвижный блок': 'flexible block',
+  'Сделать подвижным': 'Make flexible',
+  'Зафиксировать время': 'Fix the time',
+  'Ответственные': 'Assignees',
+  '+ человек': '+ person',
+  '+ подрядчик': '+ vendor',
+  'Зависит от': 'Depends on',
+  'Событие': 'Event',
+  'Дорога, мин': 'Travel, min',
+  'Запас, мин': 'Buffer, min',
+  '+ добавить предыдущий блок': '+ add prerequisite',
+})

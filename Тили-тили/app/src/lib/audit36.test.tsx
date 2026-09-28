@@ -72,8 +72,9 @@ function serve(routes: Routes): Call[] {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
       })
     }
-    if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status, reply.headers))
-    return Promise.resolve(json(reply))
+    const resourceHeaders = path === '/weddings/w1/timeline' ? { ETag: '"timeline-1"' } : {}
+    if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status, { ...resourceHeaders, ...reply.headers }))
+    return Promise.resolve(json(reply, 200, resourceHeaders))
   }))
   return calls
 }
