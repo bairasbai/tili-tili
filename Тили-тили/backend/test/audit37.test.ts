@@ -109,7 +109,8 @@ describe.skipIf(!live)('фича 008: импорт гостей списком',
     expect(first.statusCode, first.body.slice(0, 300)).toBe(201)
     const body = first.json() as ImportResult
     expect(body.created.map((g) => g.name)).toEqual(['Анна Петрова', 'Марк', 'Ольга и Сергей'])
-    expect(body.created.every((g) => g.plusOne === false)).toBe(true)
+    expect(body.created[0]!.plusOne).toBe(true)
+    expect(body.created.slice(1).every((g) => g.plusOne === false)).toBe(true)
     expect(body.created[0]!.phone, 'телефон не приведён к +7XXXXXXXXXX').toBe('+79170001122')
     expect(body.created[2]!.phone).toBe('+79170003344')
     expect(body.skipped).toEqual([])
