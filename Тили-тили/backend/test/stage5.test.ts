@@ -189,7 +189,11 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       url: `/weddings/${w.weddingId}/guests`,
       headers: auth(w.token),
     })
-    expect(list.json()[0]).toMatchObject({ status: 'yes', plusOne: true, diet: 'vegetarian', transfer: 'need' })
+    const people = list.json() as { id: string; status: string; plusOne: boolean; diet: string | null; transfer: string | null; invitationId: string }[]
+    const primary = people.find((person) => person.id === guest.guestId)!
+    const companion = people.find((person) => person.id !== guest.guestId && person.invitationId === primary.invitationId)!
+    expect(primary).toMatchObject({ status: 'yes', plusOne: false, diet: 'vegetarian', transfer: 'need' })
+    expect(companion).toMatchObject({ status: 'pending', plusOne: false, diet: null, transfer: null })
   })
 
   it('чужой токен не открывает страницу', async () => {
@@ -609,7 +613,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
 
 /* ── чистая функция ───────────────────────────────────────────────── */
 describe('счётчик персон', () => {
-  it('запись с «+1» считается за двоих', () => {
+  it('020: одна строка гостя считается одной персоной независимо от legacy plusOne', () => {
     expect(
       personCount([
         { status: 'yes', plusOne: true },
@@ -617,7 +621,7 @@ describe('счётчик персон', () => {
         { status: 'no', plusOne: true },
         { status: 'pending', plusOne: false },
       ]),
-    ).toBe(3)
+    ).toBe(2)
   })
 
   it('пустой список — ноль персон', () => {
