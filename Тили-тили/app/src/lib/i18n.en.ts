@@ -2377,7 +2377,6 @@ Object.assign(EN, {
   'Наличные': 'Cash',
   'Банковский перевод': 'Bank transfer',
   'Карта': 'Card',
-  'Другое': 'Other',
   'Дата фактической оплаты': 'Actual payment date',
   'Кто видит детали оплаты?': 'Who can see payment details?',
   'Только мы': 'Only us',
