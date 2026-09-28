@@ -18,12 +18,11 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
   app.addHook('preValidation', weddingAccessHook(app))
   const db=()=>{if(!app.db)throw new AppError(503,'db_unavailable','База недоступна');return app.db}
   /* Этап в ответе считается так же, как в графике: вместе с остальными этапами сделки,
-     на которые ложатся её неразнесённые деньги (ревью 018, M-01). */
+     на которые ложатся её неразнесённые известные деньги. */
   const output=async(tx:Queryable,weddingId:string,id:string)=>{
     const found=await installment(tx,weddingId,id),{today}=await financialToday(tx,weddingId)
     return stageViews(await dealStageRows(tx,weddingId,found.deal_id),today).find(v=>v.id===id)!
   }
-  // A single consistent snapshot for the calendar, totals and existing payment history.
   app.get('/weddings/:weddingId/payment-schedule',{schema:{querystring:{type:'object',additionalProperties:false,properties:{
     from:DATE,to:DATE,includeOverdue:{type:'boolean',default:true},includeCancelled:{type:'boolean',default:false}}}}},async request=>db().tx(async tx=>{
       await tx.query('set transaction isolation level repeatable read read only')
@@ -39,7 +38,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     return withIdempotency(db(),request,reply,'payment-schedule.create',tx=>tx(async client=>{
       await lockFinanceAccess(client,wid,uid)
       const deal=await lockDeal(client,wid,body.dealId);assertPayable(deal)
-      // В пределе 500 — только активные этапы: отменённые запирали сделку навсегда (ревью 018, M-11).
       const {rows}=await client.query<{amount:string;n:number}>(`select coalesce(sum(amount) filter(where cancelled_at is null),0)::text as amount,
         (count(*) filter(where cancelled_at is null))::int as n from payment_installments where deal_id=$1`,[deal.id])
       if(rows[0]!.n>=500)throw conflict('payment_plan_limit','В одной сделке допускается до 500 этапов')
@@ -50,6 +48,7 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       return {status:201,body:await output(client,wid,id)}
     }))
   })
+
   app.patch('/weddings/:weddingId/payment-schedule/:installmentId', { schema: { body: ref('PaymentInstallmentPatch') } }, async(request,reply)=>{
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {installmentId:string}).installmentId
     const body=request.body as Schemas['PaymentInstallmentPatch']
@@ -70,13 +69,11 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
         if(amount<BigInt(current.paid))throw conflict('plan_below_paid','Сумма этапа меньше уже отмеченных оплат')
         const {rows}=await client.query<{amount:string}>('select coalesce(sum(amount),0)::text as amount from payment_installments where deal_id=$1 and cancelled_at is null',[deal.id])
         const before=BigInt(rows[0]!.amount),after=before-BigInt(current.amount)+amount
-        // An already inconsistent schedule may be reduced step-by-step, never silently repriced.
         if(after>BigInt(deal.price!)&&after>=before)throw conflict('plan_over_price','Сумма активных этапов превысила цену сделки')
       }
       const updated=await client.query(`update payment_installments set title=coalesce($2,title),amount=coalesce($3,amount),due=coalesce($4::date,due),
         cancelled_at=case when $5 then now() else cancelled_at end,cancel_reason=case when $5 then $6 else cancel_reason end,
         version=version+1,updated_at=now() where id=$1 and version=$7`,[id,body.title?.trim()??null,body.amount?.amount??null,body.due??null,!!body.cancelled,body.reason?.trim()||null,current.version])
-      // Версия сверяется и в самом UPDATE, а не только чтением выше (ревью 018, M-02).
       if(updated.rowCount!==1)throw stalePlan()
       await financeAudit(client,uid,'payment_installment',id,body.cancelled?'payment_plan.cancelled':'payment_plan.updated',{
         previousVersion:current.version,
@@ -85,6 +82,7 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       return {status:200,body:await output(client,wid,id)}
     }))
   })
+
   app.post('/weddings/:weddingId/payment-schedule/:installmentId/pay', { schema: { body: ref('PaymentInstallmentPay') } }, async(request,reply)=>{
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {installmentId:string}).installmentId
     const body=request.body as Schemas['PaymentInstallmentPay']
@@ -92,10 +90,15 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       await lockFinanceAccess(client,wid,uid)
       const found=await installment(client,wid,id),deal=await lockDeal(client,wid,found.deal_id)
       const current=await installment(client,wid,id);assertVersion(current.version,body.version)
-      await recordPayment(client,deal,uid,body.amount.amount,current)
+      const amountKnown=body.amountKnown ?? true
+      if(amountKnown && body.amount===undefined)throw validationFailed({amount:'Укажите сумму или выберите «Сумма не сохранена»'})
+      if(!amountKnown && body.amount!==undefined)throw validationFailed({amount:'Не передавайте сумму, если она не сохраняется'})
+      await recordPayment(client,deal,uid,body.amount?.amount,current,{
+        amountKnown,paymentMethod:body.paymentMethod ?? 'other',visibility:body.visibility ?? 'private',paidOn:body.paidOn})
       return {status:200,body:await output(client,wid,id)}
     }))
   })
+
   app.patch('/weddings/:weddingId/payments/:paymentId/plan', { schema: { body: ref('PaymentPlanLink') } }, async(request,reply)=>{
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {paymentId:string}).paymentId
     const body=request.body as Schemas['PaymentPlanLink']
@@ -105,12 +108,13 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       const found=await client.query<{deal_id:string}>(`select p.deal_id from payments p join deals d on d.id=p.deal_id where p.id=$1 and d.wedding_id=$2`,[id,wid])
       if(!found.rows[0])throw notFound('Оплата не найдена')
       const deal=await lockDeal(client,wid,found.rows[0].deal_id)
-      const {rows}=await client.query<{plan_version:number;installment_id:string|null;amount:string;kind:string;status:string;created_at:Date}>(
-        'select plan_version,installment_id,amount::text as amount,kind,status,created_at from payments where id=$1 for update',[id])
+      const {rows}=await client.query<{plan_version:number;installment_id:string|null;amount:string|null;kind:string;status:string;created_at:Date;
+        payment_method:string;visibility:string;amount_known:boolean;paid_on:string}>(
+        'select plan_version,installment_id,amount::text as amount,kind,status,created_at,payment_method,visibility,amount_known,paid_on::text as paid_on from payments where id=$1 for update',[id])
       const p=rows[0]!
       assertVersion(p.plan_version,body.version)
       if(p.status==='cancelled')throw conflict('payment_cancelled','Отметка оплаты отменена')
-      const signed=BigInt(p.amount)*(p.kind==='refund'?-1n:1n)
+      const signed=p.amount_known && p.amount!==null ? BigInt(p.amount)*(p.kind==='refund'?-1n:1n) : 0n
       if(body.installmentId!==null){
         const target=await installment(client,wid,body.installmentId)
         if(target.deal_id!==deal.id)throw validationFailed({installmentId:'Этап относится к другой сделке'})
@@ -122,16 +126,17 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
         const old=await installment(client,wid,p.installment_id)
         const rest=BigInt(old.paid)-signed
         if(rest<0n)throw conflict('payment_refund_link','Сначала перенесите связанные возвраты, чтобы не получить отрицательный итог этапа')
-        // Снятие возврата поднимает итог этапа — он не должен выйти за сумму этапа (ревью 018, M-04).
         if(rest>BigInt(old.amount))throw conflict('installment_overpay','Без этого возврата оплаты этапа превысят его сумму')
       }
       await client.query('update payments set installment_id=$2 where id=$1',[id,body.installmentId])
       await financeAudit(client,uid,'payment',id,'payment.plan_linked',{from:p.installment_id,to:body.installmentId})
       return {status:200,body:{id,dealId:deal.id,installmentId:body.installmentId,
-        version:p.plan_version+(p.installment_id===body.installmentId?0:1),kind:p.kind,amount:asMoney(p.amount),status:p.status,createdAt:p.created_at.toISOString()}}
+        version:p.plan_version+(p.installment_id===body.installmentId?0:1),kind:p.kind,amountKnown:p.amount_known,
+        amount:p.amount_known && p.amount!==null?asMoney(p.amount):null,paymentMethod:p.payment_method,visibility:p.visibility,
+        paidOn:p.paid_on,status:p.status,createdAt:p.created_at.toISOString()}}
     }))
   })
-  /* ── приватные подтверждения оплат (018-B) ─────────────────────────── */
+
   const receiptsEnabled=()=>app.appConfig.receiptsStorage!==null
   app.get('/weddings/:weddingId/payments/:paymentId/receipts', async request => {
     const wid=request.member!.weddingId,id=(request.params as {paymentId:string}).paymentId
@@ -140,7 +145,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     if(!payment[0])throw notFound('Оплата не найдена')
     const {rows}=await db().query<{id:string;filename:string;mime_type:string;size_bytes:number;created_at:Date}>(
       'select id,filename,mime_type,size_bytes,created_at from payment_receipts where wedding_id=$1 and payment_id=$2 order by created_at,id',[wid,id])
-    // `uploadEnabled` — чтобы экран не предлагал загрузку, которую сервер отклонит (R-176).
     return {items:rows.map(r=>({id:r.id,filename:r.filename,mimeType:r.mime_type,sizeBytes:r.size_bytes,createdAt:r.created_at.toISOString()})),
       uploadEnabled:receiptsEnabled()}
   })
@@ -152,7 +156,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       contentBase64:{type:'string',minLength:4,maxLength:720000,pattern:'^[A-Za-z0-9+/]+={0,2}$'},
     }}},
   }, async(request,reply)=>{
-    // Хранилище не включено владельцем — честный 501 до ключа и разбора файла (ревью 018, BB-01).
     if(!receiptsEnabled())throw new AppError(501,'storage_not_configured','Загрузка подтверждений оплаты не включена на сервере')
     const wid=request.member!.weddingId,uid=request.caller!.userId,id=(request.params as {paymentId:string}).paymentId
     if(!isUuid(id))throw notFound('Оплата не найдена')
@@ -165,9 +168,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     if(!matchesMime(content,body.mimeType))throw validationFailed({mimeType:'Содержимое файла не соответствует указанному типу'})
     const sha256=createHash('sha256').update(content).digest('hex')
     return withIdempotency(db(),request,reply,'payment-receipt.add',tx=>tx(async client=>{
-      /* Свадьба — первой и эксклюзивно: квота свадьбы считается без гонки двух загрузок в
-         разные оплаты. Права — после, под блокировками (ревью 018, BB-05): наоборот две
-         загрузки с общей FOR SHARE на свадьбе ждали бы друг друга. */
       await client.query('select id from weddings where id=$1 for update',[wid])
       await lockFinanceAccess(client,wid,uid)
       const {rows: payment}=await client.query(`select 1 from payments p join deals d on d.id=p.deal_id where p.id=$1 and d.wedding_id=$2 for update of p`,[id,wid])
@@ -182,7 +182,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       const receiptId=uuidv7()
       const {rows:[saved]}=await client.query<{created_at:Date}>(`insert into payment_receipts(id,wedding_id,payment_id,filename,mime_type,size_bytes,content,uploaded_by)
         values($1,$2,$3,$4,$5,$6,$7,$8) returning created_at`,[receiptId,wid,id,filename,body.mimeType,content.length,content,uid])
-      // В журнале — что за файл, но не его имя: журнал переживает стирание аккаунта (ревью 018, BB-14).
       await financeAudit(client,uid,'payment_receipt',receiptId,'payment.receipt_added',{paymentId:id,mimeType:body.mimeType,sizeBytes:content.length,sha256})
       return {status:201,body:{id:receiptId,filename,mimeType:body.mimeType,sizeBytes:content.length,createdAt:saved!.created_at.toISOString()}}
     }))
@@ -195,7 +194,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       `select r.filename,r.mime_type,r.content from payment_receipts r join payments p on p.id=r.payment_id join deals d on d.id=p.deal_id
         where r.id=$1 and r.payment_id=$2 and r.wedding_id=$3 and d.wedding_id=$3`,[receiptId,paymentId,wid])
     const file=rows[0];if(!file)throw notFound('Файл не найден')
-    // Cache-Control: no-store, nosniff и CSP ставит общий хук onSend (app.ts) — всем ответам.
     return {filename:file.filename,mimeType:file.mime_type,contentBase64:file.content.toString('base64')}
   })
 
@@ -211,7 +209,6 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       await financeAudit(tx,uid,'payment_receipt',receiptId,'payment.receipt_deleted',
         {paymentId,mimeType:gone.mime_type,sizeBytes:gone.size_bytes,sha256:gone.sha256})
     })
-    // 204 — после коммита, а не изнутри транзакции (ревью 018, BB-03).
     return reply.code(204).send()
   })
 }
@@ -221,17 +218,6 @@ const RECEIPTS_PER_PAYMENT=5
 const RECEIPT_EXTENSIONS:Record<string,readonly string[]>={
   'application/pdf':['pdf'],'image/jpeg':['jpg','jpeg'],'image/png':['png'],'image/webp':['webp']}
 
-/**
- * Имя подтверждения — то, под которым файл сохранится у пары (ревью 018, BB-10).
- *
- * Разделители пути и управляющие символы (C0, DEL, C1) — в «_»; невидимые символы
- * формата Unicode (Cf: U+202E «справа налево», нулевой ширины, мягкий перенос) —
- * прочь: с ними «чек[U+202E]gnp.exe» выглядит как «чекexe.png». Расширение — по типу,
- * проверенному по содержимому: файл сохранится с тем расширением, каким он
- * является, а не каким назван. Длина — в пределах 180 символов после правки.
- * Пустое имя — пустая строка: отказ словами делает обработчик.
- * Посимвольно, без регулярки с управляющими символами (линт no-control-regex).
- */
 export function receiptFilename(raw:string,mime:string):string {
   const name=Array.from(raw.normalize('NFC'))
     .filter(ch=>!/\p{Cf}/u.test(ch))
