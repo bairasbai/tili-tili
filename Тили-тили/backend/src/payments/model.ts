@@ -19,6 +19,8 @@ export interface PaymentRecordOptions {
   visibility?: PaymentVisibility
   amountKnown?: boolean
   paidOn?: string
+  /** Compatibility for the pre-021 slot/pay endpoint only. New 021 writes never set this. */
+  legacyVendorVisible?: boolean
 }
 export function assertPaidOn(value: string) {
   assertRealDate(value, 'paidOn')
@@ -168,6 +170,7 @@ export async function recordPayment(tx: Queryable,deal: FinancialDeal,userId: st
   }
   const paymentMethod=options.paymentMethod ?? 'other'
   const visibility=options.visibility ?? 'private'
+  const legacyVendorVisible=options.legacyVendorVisible ?? false
   if (options.paidOn !== undefined) assertPaidOn(options.paidOn)
   const price=BigInt(deal.price!)
   const {rows}=await tx.query<{total:string}>(`select ${PAID_SUM}::text as total from deals d where d.id=$1`,[deal.id])
@@ -181,11 +184,11 @@ export async function recordPayment(tx: Queryable,deal: FinancialDeal,userId: st
   if (amount !== null && stage && BigInt(stage.paid)+amount>BigInt(stage.amount)) throw conflict('installment_overpay','Сумма превысила остаток этапа')
   const id=uuidv7()
   const kind=amount !== null && already+amount>=price ? 'balance' : 'deposit'
-  await tx.query(`insert into payments(id,deal_id,kind,amount,currency,status,installment_id,payment_method,visibility,amount_known,paid_on)
+  await tx.query(`insert into payments(id,deal_id,kind,amount,currency,status,installment_id,payment_method,visibility,amount_known,paid_on,legacy_vendor_visible)
     values($1,$2,$3,$4,'RUB','recorded',$5,$6,$7,$8,
       coalesce($9::date,(select (now() at time zone coalesce(w.tz,'Europe/Moscow'))::date
-        from deals d join weddings w on w.id=d.wedding_id where d.id=$2)))`,
-    [id,deal.id,kind,amount?.toString() ?? null,stage?.id ?? null,paymentMethod,visibility,amountKnown,options.paidOn ?? null])
+        from deals d join weddings w on w.id=d.wedding_id where d.id=$2)),$10)`,
+    [id,deal.id,kind,amount?.toString() ?? null,stage?.id ?? null,paymentMethod,visibility,amountKnown,options.paidOn ?? null,legacyVendorVisible])
   await financeAudit(tx,userId,'payment',id,'payment.recorded',{
     dealId:deal.id,installmentId:stage?.id ?? null,paymentMethod,visibility,amountKnown,
     paidOn:options.paidOn ?? null,version:1,...(amount===null?{}:{amount:Number(amount)})})
