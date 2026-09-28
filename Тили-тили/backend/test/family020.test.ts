@@ -345,6 +345,126 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(rows[0]).toEqual({ booked: 1, n: '1' })
   })
 
+  it('two family members racing for the last bus seat book exactly one person', async () => {
+    const f = await family()
+    const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()
+    const members = page.members as { guestId: string }[]
+    expect(members).toHaveLength(2)
+
+    const bus = await app.inject({
+      method: 'POST',
+      url: `/weddings/${f.weddingId}/logistics/buses`,
+      headers: auth(f.token),
+      payload: { name: 'Последнее семейное место', seats: 1 },
+    })
+    expect(bus.statusCode, bus.body).toBe(201)
+    const busId = bus.json().id as string
+
+    const results = await Promise.all(members.map((member) => app.inject({
+      method: 'POST',
+      url: `/join/${encodeURIComponent(f.guestToken)}/shuttle`,
+      headers: { 'idempotency-key': randomUUID() },
+      payload: { busId, guestId: member.guestId },
+    })))
+    expect(results.map((response) => response.statusCode).sort()).toEqual([200, 409])
+    expect(results.find((response) => response.statusCode === 409)!.json().error.code).toBe('bus_full')
+
+    const { rows } = await app.db!.query<{ taken: number; n: string }>(
+      `select r.taken, count(b.*)::text as n
+         from bus_routes r left join bus_bookings b on b.bus_id = r.id
+        where r.id = $1 group by r.id`,
+      [busId],
+    )
+    expect(rows[0]).toEqual({ taken: 1, n: '1' })
+  })
+
+  it('two tabs moving one family hotel serialize to one final room', async () => {
+    const f = await family()
+    const hotelIds: string[] = []
+    for (const name of ['Исходный номер', 'Вариант Б', 'Вариант В']) {
+      const hotel = await app.inject({
+        method: 'POST',
+        url: `/weddings/${f.weddingId}/logistics/hotels`,
+        headers: auth(f.token),
+        payload: { name, rooms: 1 },
+      })
+      expect(hotel.statusCode, hotel.body).toBe(201)
+      hotelIds.push(hotel.json().id as string)
+    }
+
+    const initial = await app.inject({
+      method: 'POST',
+      url: `/join/${encodeURIComponent(f.guestToken)}/hotels`,
+      headers: { 'idempotency-key': randomUUID() },
+      payload: { hotelId: hotelIds[0] },
+    })
+    expect(initial.statusCode, initial.body).toBe(200)
+
+    const moves = await Promise.all(hotelIds.slice(1).map((hotelId) => app.inject({
+      method: 'POST',
+      url: `/join/${encodeURIComponent(f.guestToken)}/hotels`,
+      headers: { 'idempotency-key': randomUUID() },
+      payload: { hotelId },
+    })))
+    expect(moves.map((response) => response.statusCode)).toEqual([200, 200])
+
+    const { rows: bookings } = await app.db!.query<{ hotel_id: string }>(
+      'select hotel_id from hotel_bookings where party_id = $1',
+      [f.partyId],
+    )
+    expect(bookings).toHaveLength(1)
+    expect(hotelIds.slice(1)).toContain(bookings[0]!.hotel_id)
+
+    const { rows: counters } = await app.db!.query<{ booked: string }>(
+      'select sum(booked)::text as booked from hotel_blocks where id = any($1::uuid[])',
+      [hotelIds],
+    )
+    expect(counters[0]!.booked).toBe('1')
+  })
+
+  it('parallel family gift reservations cannot exceed the shared invitation quota', async () => {
+    const f = await family()
+    const max = app.appConfig.reservationsMaxPerGuest
+    expect(max).toBeGreaterThan(0)
+    const giftIds: string[] = []
+
+    for (let i = 0; i < max + 1; i++) {
+      const gift = await app.inject({
+        method: 'POST',
+        url: `/weddings/${f.weddingId}/wishlist`,
+        headers: auth(f.token),
+        payload: { name: `Семейный подарок ${i + 1}`, price: { amount: 100_000 + i, currency: 'RUB' } },
+      })
+      expect(gift.statusCode, gift.body).toBe(201)
+      giftIds.push(gift.json().id as string)
+    }
+
+    for (const giftId of giftIds.slice(0, Math.max(0, max - 1))) {
+      const reserved = await app.inject({
+        method: 'POST',
+        url: `/gifts/${encodeURIComponent(f.guestToken)}/${giftId}/reserve`,
+        headers: { 'idempotency-key': randomUUID() },
+      })
+      expect(reserved.statusCode, reserved.body).toBe(200)
+    }
+
+    const edge = await Promise.all(giftIds.slice(max - 1, max + 1).map((giftId) => app.inject({
+      method: 'POST',
+      url: `/gifts/${encodeURIComponent(f.guestToken)}/${giftId}/reserve`,
+      headers: { 'idempotency-key': randomUUID() },
+    })))
+    expect(edge.map((response) => response.statusCode).sort()).toEqual([200, 429])
+    expect(edge.find((response) => response.statusCode === 429)!.json().error.code).toBe('reservation_limit')
+
+    const { rows } = await app.db!.query<{ n: string }>(
+      `select count(*)::text as n
+         from gift_reservations r join gifts g on g.id = r.gift_id
+        where g.wedding_id = $1 and r.guest_token = $2`,
+      [f.weddingId, f.guestToken],
+    )
+    expect(Number(rows[0]!.n)).toBe(max)
+  })
+
   it('export keeps family structure but never exposes the shared invite token', async () => {
     const f = await family()
     const dump = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.token) })
