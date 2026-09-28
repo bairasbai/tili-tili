@@ -17,7 +17,8 @@ exports.up = (pgm) => {
     from deals d join weddings w on w.id=d.wedding_id
     where d.id=p.deal_id and p.paid_on is null`)
 
-  pgm.alterColumn('payments', 'paid_on', { notNull: true })
+  // Legacy/internal inserts that predate 021 still remain valid; feature code supplies wedding-local paid_on explicitly.
+  pgm.alterColumn('payments', 'paid_on', { notNull: true, default: pgm.func('CURRENT_DATE') })
   // Unknown amount is NULL. It is never 0, and SUM therefore ignores it.
   pgm.alterColumn('payments', 'amount', { notNull: false })
 
