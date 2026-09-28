@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   integrate-020:
-    if: "github.event.head_commit.message == 'chore(020): merge clean delta snapshot utf8'"
+    if: "github.event.head_commit.message == 'chore(020): resolve clean integration conflicts'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +55,47 @@ jobs:
                 git show "$BASE:$path" > "$base_file"
                 git show "$SOURCE:$path" > "$theirs_file"
                 if ! git merge-file -p "$ours_file" "$base_file" "$theirs_file" > "$out_file"; then
-                  echo "::error file=$path::three-way conflict"
-                  grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
-                  conflicts=$((conflicts + 1))
+                  case "$path" in
+                    Тили-тили/app/src/pages/Wedding.tsx)
+                      python - "$out_file" <<'PY'
+import re,sys
+p=sys.argv[1]
+s=open(p,encoding='utf-8').read()
+replacement="import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'\n"
+s,n=re.subn(r"<<<<<<<[^\n]*\n.*?=======\n.*?>>>>>>>[^\n]*\n",replacement,s,count=1,flags=re.S)
+assert n==1
+open(p,'w',encoding='utf-8').write(s)
+PY
+                      ;;
+                    Тили-тили/backend/test/audit55.test.ts)
+                      python - "$out_file" <<'PY'
+import re,sys
+p=sys.argv[1]
+s=open(p,encoding='utf-8').read()
+replacement="  it('версия контракта — 0.50.0 (020: семейное приглашение и отдельные персоны; F5-14 сохранён)', () => {\n    expect((doc.info as { version: string }).version).toBe('0.50.0')\n"
+s,n=re.subn(r"<<<<<<<[^\n]*\n.*?=======\n.*?>>>>>>>[^\n]*\n",replacement,s,count=1,flags=re.S)
+assert n==1
+open(p,'w',encoding='utf-8').write(s)
+PY
+                      ;;
+                    Тили-тили/Тили-тили_API_openapi.yaml)
+                      python - "$out_file" <<'PY'
+import re,sys
+p=sys.argv[1]
+s=open(p,encoding='utf-8').read()
+s,n=re.subn(r"<<<<<<<[^\n]*\n\s*version:\s*0\.45\.0\n=======\n\s*version:\s*0\.50\.0\n>>>>>>>[^\n]*\n","  version: 0.50.0\n",s,count=1)
+assert n==1
+open(p,'w',encoding='utf-8').write(s)
+PY
+                      ;;
+                  esac
+                  if grep -q '^<<<<<<<\|^=======\|^>>>>>>>' "$out_file"; then
+                    echo "::error file=$path::unresolved three-way conflict"
+                    grep -n -C 6 -E '^(<<<<<<<|=======|>>>>>>>)' "$out_file" || true
+                    conflicts=$((conflicts + 1))
+                  else
+                    echo "resolved known 020/main overlap: $path"
+                  fi
                 fi
                 cat "$out_file" > "$path"
                 rm -f "$ours_file" "$base_file" "$theirs_file" "$out_file"
