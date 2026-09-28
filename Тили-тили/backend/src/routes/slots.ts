@@ -14,14 +14,13 @@ import { CREATED_AT_US } from './chats.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
-  PAID_SUM,
   SLOT_COLUMNS,
   loadSlot,
   loadSlots,
   toSlot,
   type SlotRow,
 } from '../deals/repo.js'
-import { COMMITTED, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
+import { HOLD_HOURS } from '../deals/state.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const MONEY_SCHEMA = {
