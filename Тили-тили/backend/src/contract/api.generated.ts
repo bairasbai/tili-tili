@@ -7649,7 +7649,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Тайминг дня */
+        /**
+         * Тайминг дня
+         * @description Возвращает полный тайминг. ID события постоянен между сохранениями и
+         *     перестановками. Текущая aggregate-версия расписания приходит в ETag.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -7664,6 +7668,8 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Версия расписания для следующего If-Match, например "timeline-7". */
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -7672,11 +7678,20 @@ export interface paths {
                 };
             };
         };
-        /** Заменить тайминг целиком */
+        /**
+         * Заменить тайминг целиком
+         * @description Полная замена/reorder текущего тайминга. Существующие события сохраняют
+         *     свои ID; новый блок без id получает новый ID. If-Match обязан содержать
+         *     ETag последнего GET/успешного PUT. Устаревшая версия отвечает 409
+         *     timeline_version_conflict и ничего не меняет.
+         */
         put: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    /** @description ETag версии, которую клиент редактировал, например "timeline-7". */
+                    "If-Match": string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                 };
@@ -7691,13 +7706,34 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Новая версия расписания после принятой замены. */
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["TimelineEvent"][];
                     };
                 };
+                400: components["responses"]["BadRequest"];
+                /** @description timeline_version_conflict — расписание изменилось после версии из If-Match; timeline_event_stale — передан уже удалённый/чужой ID без раскрытия его происхождения. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 422: components["responses"]["Validation"];
+                /** @description timeline_version_required — If-Match отсутствует. */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         post?: never;
