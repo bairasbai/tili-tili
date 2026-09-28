@@ -340,7 +340,10 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
             } else {
               title = body.title.trim()
               if (!title) throw validationFailed({ title: 'Введите название предложения' })
-              includes = body.includes
+              includes = body.includes.map((item) => item.trim()).filter(Boolean)
+              if (includes.length === 0) {
+                throw validationFailed({ includes: 'Добавьте хотя бы один пункт в состав предложения' })
+              }
             }
           }
 

@@ -899,6 +899,45 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     expect(addedNotice).toMatchObject({ kind: 'deal', link: '/vendor/offer-requests' })
   }, 60_000)
 
+  it('своё предложение требует содержательный состав и нормализует пункты на сервере', async () => {
+    const wedding = await newWedding()
+    const vendor = await newVendor()
+    const added = await addCandidate(wedding, vendor)
+    expect(added.statusCode, added.body).toBe(200)
+    const slotId = added.json().slotId as string
+    const entryId = added.json().id as string
+    const requested = await requestOffers(wedding, slotId, [entryId])
+    expect(requested.statusCode, requested.body).toBe(201)
+    const requestId = await requestIdFor(slotId, vendor.vendorId)
+    const noticesBefore = (await notifications(wedding.id)).length
+
+    for (const includes of [[], ['   ']]) {
+      const refused = await answer(vendor, requestId, {
+        kind: 'offer',
+        title: 'Пустой состав',
+        price: { amount: 12_000_000, currency: 'RUB' },
+        includes,
+        validUntil: `${TEST_YEAR}-06-01`,
+      })
+      expect(refused.statusCode, refused.body).toBe(422)
+      expect((refused.json() as { error: { code: string } }).error.code).toBe('validation_failed')
+    }
+    expect(await offerRows(requestId)).toEqual([])
+    expect(await notifications(wedding.id)).toHaveLength(noticesBefore)
+
+    const accepted = await answer(vendor, requestId, {
+      kind: 'offer',
+      title: 'Полный день',
+      price: { amount: 12_000_000, currency: 'RUB' },
+      includes: ['  8 часов  ', '  Ретушь '],
+      validUntil: `${TEST_YEAR}-06-01`,
+    })
+    expect(accepted.statusCode, accepted.body).toBe(201)
+    expect(createdOfferOf(accepted, requestId, 'offer').includes).toEqual(['8 часов', 'Ретушь'])
+    expect((await offerRows(requestId))[0]?.includes).toEqual(['8 часов', 'Ретушь'])
+    expect(await notifications(wedding.id)).toHaveLength(noticesBefore + 1)
+  }, 60_000)
+
   it('подрядчики отвечают пакетом и отказом; снимок и поля отказа честные', async () => {
     const wedding = await newWedding()
     const [offering, declining] = await Promise.all([newVendor(), newVendor()])

@@ -1751,10 +1751,13 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "includes": {
                           "type": "array",
+                          "minItems": 1,
                           "maxItems": 40,
                           "items": {
                               "type": "string",
-                              "maxLength": 200
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "pattern": ".*\\S.*"
                           }
                       },
                       "message": {
