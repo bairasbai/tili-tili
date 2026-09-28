@@ -4,7 +4,7 @@ import { CalendarDays, Download, Plus, RefreshCw } from 'lucide-react'
 import { TopBar } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { useStore } from '@/lib/store'
-import { getI18nLang, t } from '@/lib/i18n'
+import { t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { noWedding, useApi, explainError } from '@/lib/api/useApi'
@@ -17,13 +17,19 @@ const field = 'mt-1 w-full min-w-0 rounded-xl bg-[var(--bg)] px-3 py-3 text-sm o
 const button = 'press min-h-11 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50'
 /* covered — этап закрыт отметками сделки без привязки (ревью 018, M-01): деньги отмечены, но не к этому этапу. */
 const statusText = { pending: 'Ожидается', partial: 'Частично отмечено', paid: 'Отмечено полностью', covered: 'Покрыто оплатами сделки', cancelled: 'Отменён' }
+const methodText = { cash: 'Наличные', bank_transfer: 'Банковский перевод', card: 'Карта', other: 'Другое' } as const
+const visibilityText = { private: 'Только мы', finance_members: 'Участники с доступом к финансам', vendor: 'Подрядчик этой сделки' } as const
 type Editor = { mode: 'new' } | { mode: 'edit' | 'pay' | 'cancel'; item: PaymentInstallment } | { mode: 'link'; payment: PaymentRecord }
-type Draft = { title: string; amount: string; due: string; dealId: string; installmentId: string; reason: string }
-const empty: Draft = { title: '', amount: '', due: '', dealId: '', installmentId: '', reason: '' }
-/* Дата отметки — в поясе свадьбы, а не срезом UTC: отметка в 02:00 по Москве
-   датировалась вчерашним днём (ревью 018, F-09; тот же класс, что ERR-0122). */
-const paymentDate = (iso: string, timeZone: string) => new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU',
-  { day: 'numeric', month: 'long', year: 'numeric', timeZone }).format(new Date(iso))
+type Draft = {
+  title: string; amount: string; due: string; dealId: string; installmentId: string; reason: string
+  amountKnown: boolean; paymentMethod: 'cash'|'bank_transfer'|'card'|'other'
+  visibility: 'private'|'finance_members'|'vendor'; paidOn: string
+}
+const empty: Draft = {
+  title:'',amount:'',due:'',dealId:'',installmentId:'',reason:'',
+  amountKnown:true,paymentMethod:'other',visibility:'private',paidOn:'',
+}
+type TextDraftKey = 'title'|'amount'|'due'|'dealId'|'installmentId'|'reason'|'paidOn'
 const DAY = 86_400_000
 /* Скачивание — ссылкой в документе, адрес отзывается позже: без вставки в DOM Firefox
    ссылку не нажимает, а отзыв сразу после click() обрывает скачивание (ревью 018, BF-07). */
@@ -70,9 +76,10 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     if (next.mode === 'new') setDraft({ ...empty, dealId: data?.deals.find(d => d.canPlan)?.id ?? '', due: data?.range.from ?? '' })
     else if (next.mode === 'link') setDraft({ ...empty, installmentId: next.payment.installmentId ?? '' })
     else setDraft({ ...empty, title: next.item.title, due: next.item.due, dealId: next.item.dealId,
-      amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount) })
+      amount: paymentRubles(next.mode === 'pay' ? next.item.remaining.amount : next.item.amount.amount),
+      paidOn: next.mode === 'pay' ? (data?.range.today ?? '') : '' })
   }
-  const change = (key: keyof Draft, value: string) => setDraft(current => ({ ...current, [key]: value }))
+  const change = (key: TextDraftKey, value: string) => setDraft(current => ({ ...current, [key]: value }))
   /* «Сохранить» без изменений писал в журнал, поднимал версию и сообщал «сохранено»
      (ревью 018, F-11). */
   const unchanged = !!editor && (
@@ -110,13 +117,26 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     const stageVersion = (item: PaymentInstallment, tag: string) =>
       staleSeen.current.has(tag) ? (data?.items.find(i => i.id === item.id)?.version ?? item.version) : item.version
     if (editor.mode === 'new' || editor.mode === 'edit' || editor.mode === 'pay') {
-      const amount = parsePaymentRubles(draft.amount)
-      if (amount === null) { setError(t('Введите сумму больше нуля, не более двух знаков после запятой')); return }
-      const money = { amount, currency: 'RUB' as const }
       if (editor.mode === 'pay') {
-        const body = { version: stageVersion(editor.item, 'pay:' + editor.item.id), amount: money }
+        let amount: number | null = null
+        if (draft.amountKnown) {
+          amount = parsePaymentRubles(draft.amount)
+          if (amount === null) { setError(t('Введите сумму больше нуля, не более двух знаков после запятой')); return }
+        }
+        const paidOn = draft.paidOn || data!.range.today
+        const body = {
+          version: stageVersion(editor.item, 'pay:' + editor.item.id),
+          amountKnown: draft.amountKnown,
+          paymentMethod: draft.paymentMethod,
+          visibility: draft.visibility,
+          paidOn,
+          ...(draft.amountKnown ? { amount: { amount: amount!, currency: 'RUB' as const } } : {}),
+        }
         void write('pay:' + editor.item.id, body, key => payInstallment(weddingId, editor.item.id, body, key))
       } else {
+        const amount = parsePaymentRubles(draft.amount)
+        if (amount === null) { setError(t('Введите сумму больше нуля, не более двух знаков после запятой')); return }
+        const money = { amount, currency: 'RUB' as const }
         if (!draft.title.trim() || !draft.due || !draft.dealId) { setError(t('Заполните название, сумму, дату и сделку')); return }
         if (editor.mode === 'new') {
           const body = { title: draft.title.trim(), due: draft.due, dealId: draft.dealId, amount: money }
@@ -175,8 +195,26 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
             <label className="block text-xs">{t('Дата платежа')}<input type="date" className={field} value={draft.due} disabled={busy} onChange={e => change('due', e.target.value)} required /></label>
             <p className="text-xs text-[var(--soft)]">{t('Согласованная дата платежа не меняется при переносе свадьбы.')}</p>
           </>}
-          {(editor.mode === 'new' || editor.mode === 'edit' || editor.mode === 'pay') && <label className="block text-xs">{t('Сумма, ₽')}<input className={field} inputMode="decimal" value={draft.amount} maxLength={24} disabled={busy} onChange={e => change('amount', e.target.value)} required /></label>}
-          {editor.mode === 'pay' && <p className="text-xs leading-relaxed">{t('Отметьте только новый перевод. Прежние оплаты привязываются через историю. Можно внести часть суммы.')}</p>}
+          {(editor.mode === 'new' || editor.mode === 'edit' || (editor.mode === 'pay' && draft.amountKnown)) && <label className="block text-xs">{t('Сумма, ₽')}<input className={field} inputMode="decimal" value={draft.amount} maxLength={24} disabled={busy} onChange={e => change('amount', e.target.value)} required /></label>}
+          {editor.mode === 'pay' && <>
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold">{t('Сохранять сумму?')}</legend>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="amount-known" checked={draft.amountKnown} disabled={busy} onChange={() => setDraft(v => ({...v,amountKnown:true}))} />{t('Сумма известна')}</label>
+              <label className="flex items-center gap-2 text-sm"><input type="radio" name="amount-known" checked={!draft.amountKnown} disabled={busy} onChange={() => setDraft(v => ({...v,amountKnown:false,amount:''}))} />{t('Сумма не сохранена')}</label>
+            </fieldset>
+            {!draft.amountKnown && <p role="status" className="rounded-xl bg-[var(--honey)] p-3 text-xs leading-relaxed">{t('Сумма не сохранена. Фактические расходы и остаток бюджета могут быть неполными.')}</p>}
+            <label className="block text-xs">{t('Способ оплаты')}<select className={field} value={draft.paymentMethod} disabled={busy} onChange={e => setDraft(v => ({...v,paymentMethod:e.target.value as Draft['paymentMethod']}))}>
+              <option value="cash">{t('Наличные')}</option><option value="bank_transfer">{t('Банковский перевод')}</option><option value="card">{t('Карта')}</option><option value="other">{t('Другое')}</option>
+            </select></label>
+            <label className="block text-xs">{t('Дата фактической оплаты')}<input type="date" className={field} value={draft.paidOn} disabled={busy} onChange={e => change('paidOn',e.target.value)} required /></label>
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-semibold">{t('Кто видит детали оплаты?')}</legend>
+              {([['private','Только мы'],['finance_members','Участники с доступом к финансам'],['vendor','Подрядчик этой сделки']] as const).map(([value,label]) =>
+                <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name="payment-visibility" checked={draft.visibility===value} disabled={busy} onChange={() => setDraft(v => ({...v,visibility:value}))} />{t(label)}</label>)}
+            </fieldset>
+            <p className="text-xs leading-relaxed text-[var(--soft)]">{t('Оплачено вне приложения. Tili-tili фиксирует факт оплаты и не переводит деньги подрядчику.')}</p>
+            <p className="text-xs leading-relaxed">{t('Отметьте только новый платёж. Прежние оплаты привязываются через историю. Можно внести часть суммы.')}</p>
+          </>}
           {editor.mode === 'cancel' && <><p className="text-sm">{t('Отмена этапа убирает срок из графика, но не возвращает деньги и не удаляет оплаты.')}</p><label className="block text-xs">{t('Причина отмены')}<textarea className={field} value={draft.reason} maxLength={500} disabled={busy} onChange={e => change('reason', e.target.value)} /></label></>}
           {editor.mode === 'link' && <><p className="text-xs">{t('Одна отметка привязывается целиком к одному этапу своей сделки. Новая оплата не создаётся.')}</p><label className="block text-xs">{t('Этап платежа')}<select className={field} value={draft.installmentId} disabled={busy} onChange={e => change('installmentId', e.target.value)}>
             <option value="">{t('Без привязки')}</option>{data.allInstallments.filter(i => i.dealId === editor.payment.dealId && (i.status !== 'cancelled' || i.id === editor.payment.installmentId)).map(i => <option key={i.id} value={i.id} disabled={i.status === 'cancelled'}>{i.title}{i.status === 'cancelled' ? ` · ${t('Отменён')}` : ` · ${t('остаток')} ${fmt(i.remaining.amount)}`}</option>)}
@@ -197,6 +235,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           <p className="text-xs font-semibold text-[var(--rose-deep)]">{t(statusText[item.status])}{item.overdue ? ` · ${t('Просрочено')}` : ''}</p>
           <dl className="grid grid-cols-3 gap-2 text-xs"><div><dt>{t('План этапа')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.amount.amount)}</dd></div><div><dt>{t('Отмечено')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.paid.amount)}</dd></div><div><dt>{t('Остаток')}</dt><dd className="font-semibold mt-1 tabular break-words">{fmt(item.remaining.amount)}</dd></div></dl>
           {item.allocated.amount > 0 && <p className="text-xs text-[var(--soft)]">{t('Покрыто отметками без привязки')}: <span className="tabular">{fmt(item.allocated.amount)}</span></p>}
+          {item.unknownAmountPayments > 0 && <p role="status" className="text-xs text-[var(--soft)]">{t('Есть оплаты с неизвестной суммой')}: {item.unknownAmountPayments}. {t('Числовой остаток их не учитывает.')}</p>}
           {/* Системная причина («Сделка отменена» из триггера) — ключ словаря; своя — текст пары: t() вернёт его как есть. */}
           {item.cancelReason && <p className="text-xs break-words">{t(item.cancelReason)}</p>}
           {item.status !== 'cancelled' && <div className="flex flex-wrap gap-1 pt-1">
@@ -209,8 +248,9 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
           <p className="text-xs text-[var(--soft)] my-3">{t('Все отметки по сделкам, в том числе отменённым. Возвраты вычитаются, отменённые отметки не входят в итог.')}</p>
           {!data.payments.length && <p className="text-sm">{t('Отметок оплат пока нет')}</p>}
           {data.payments.map(p => <div key={p.id} className="border-t border-[var(--line)] py-3 space-y-1">
-            <p className="text-sm font-semibold">{data.deals.find(d => d.id === p.dealId)?.name} · {p.kind === 'refund' ? '−' : ''}{fmt(p.amount.amount)}</p>
-            <p className="text-xs text-[var(--soft)]">{paymentDate(p.createdAt, data.range.timeZone)} · {t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Отмечено')}</p>
+            <p className="text-sm font-semibold">{data.deals.find(d => d.id === p.dealId)?.name} · {p.amountKnown && p.amount ? <>{p.kind === 'refund' ? '−' : ''}{fmt(p.amount.amount)}</> : t('Сумма не сохранена')}</p>
+            <p className="text-xs text-[var(--soft)]">{formatWeddingDate(p.paidOn)} · {t(methodText[p.paymentMethod])} · {t(visibilityText[p.visibility])}</p>
+            <p className="text-xs text-[var(--soft)]">{t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Оплачено вне приложения')}</p>
             <p className="text-xs">{data.allInstallments.find(i => i.id === p.installmentId)?.title ?? t('Без привязки')}</p>
             {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={() => open({ mode: 'link', payment: p })}>{t('Привязать оплату')}</button>}
             <ReceiptPanel weddingId={weddingId!} paymentId={p.id} disabled={disabled} />
@@ -229,6 +269,7 @@ function FinancialSummary({ data }: { data: PaymentScheduleData }) {
       {[['Цены активных сделок', data.summary.committed], ['Отмечено оплат', data.summary.recorded], ['Осталось по сделкам', data.summary.remaining]].map(([label, value]) => typeof value !== 'string' && <div key={String(label)}><dt className="text-[var(--soft)]">{t(String(label))}</dt><dd className="text-base font-bold mt-1 tabular break-words">{fmt(value.amount)}</dd></div>)}
     </dl>
     {data.summary.unknownPrices > 0 && <p className="text-xs mt-3">{t('Не все цены заданы — итог неполный:')} {data.summary.unknownPrices}</p>}
+    {data.summary.amountIncomplete && <p role="status" className="text-xs mt-3">{t('Фактические расходы: от')} {fmt(data.summary.recorded.amount)}. {t('Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.')}</p>}
     {data.summary.inactiveDealRecorded.amount !== 0 && <p className="text-xs mt-3">{t('Нетто оплат по неактивным сделкам:')} {fmt(data.summary.inactiveDealRecorded.amount)}</p>}
   </section>
 }
