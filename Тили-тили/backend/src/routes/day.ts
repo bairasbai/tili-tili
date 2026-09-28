@@ -834,21 +834,6 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     })
   })
 
-  /** A family token may mutate only people inside its invitation. */
-  const familyMemberId = async (
-    client: Queryable,
-    guest: GuestCaller,
-    requestedId?: string,
-  ): Promise<string> => {
-    const id = requestedId ?? guest.guestId
-    const { rows } = await client.query<{ id: string }>(
-      'select id from guests where id = $1 and party_id = $2',
-      [id, guest.partyId],
-    )
-    if (!rows[0]) throw notFound('Человек не входит в это приглашение')
-    return rows[0].id
-  }
-
   /* ── гостевые пути ────────────────────────────────────────────────── */
   app.post(
     '/join/:guestToken/shuttle',
