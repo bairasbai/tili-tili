@@ -59,3 +59,19 @@ Stage 021 не считается завершённым до зелёных mig
 ## Progress · identity foundation
 
 Commit foundation добавляет `timeline_version`, стабильное обновление существующих строк `timeline_events` и единый aggregate-lock между full PUT, Day-X shift и reschedule. GET/PUT уже отдают ETag версии, но обязательный `If-Match` включается только в T005 вместе с regression двух клиентов и frontend conflict UX.
+
+
+## Implementation checkpoint · 2026-09-29
+
+Код T005–T011 находится в draft PR #18 и проходит gate:
+
+- optimistic concurrency: ETag / If-Match, 409 stale-write barrier;
+- stable event IDs без delete/reinsert;
+- fixed/flexible blocks;
+- DAG dependencies с travelMinutes + bufferMinutes;
+- structured assignees через wedding_members и активные deals;
+- DB-level wedding isolation для event/member/deal relations;
+- Day-X shift двигает только flexible и откатывается при нарушении dependency graph;
+- frontend editor сохраняет полный rich snapshot и не повторяет stale PUT автоматически.
+
+Эти пункты не считаются accepted до зелёных generated-contract, full CI, migration up/down/up и browser E2E.
