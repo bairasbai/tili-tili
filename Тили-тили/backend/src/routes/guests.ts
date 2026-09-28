@@ -86,6 +86,7 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     name: r.name,
     partyId: r.party_id ?? r.id,
     partyPosition,
+    partySize,
     isPrimary: partyPosition === 1,
     isPlaceholder: r.is_placeholder ?? false,
     /* Transitional field for old clients: derived from real family members. */
