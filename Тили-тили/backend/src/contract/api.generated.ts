@@ -10901,6 +10901,8 @@ export interface components {
              */
             readonly partyId?: string;
             readonly partyPosition?: number;
+            /** @description текущее число персон в семейном приглашении */
+            readonly partySize?: number;
             /** @description только у primary показывается inviteUrl */
             readonly isPrimary?: boolean;
             /** @description системное имя, созданное из старого +1; пара может переименовать */

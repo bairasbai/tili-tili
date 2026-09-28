@@ -1117,6 +1117,13 @@ export const CONTRACT_SCHEMAS = {
                   "maximum": 10,
                   "readOnly": true
               },
+              "partySize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10,
+                  "readOnly": true,
+                  "description": "текущее число персон в семейном приглашении"
+              },
               "isPrimary": {
                   "type": "boolean",
                   "readOnly": true,
