@@ -4244,7 +4244,60 @@ paths:
           headers:
             ETag:
               description: 'Версия расписания для следующего If-Match, например "timeline-7".'
-              schema: {type: string, pattern: '^"timeline-[1-9][0-9]*"
+              schema: {type: string, example: '"timeline-7"'}
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/TimelineEvent'}
+    put:
+      tags: [timeline]
+      summary: Заменить тайминг целиком
+      description: |
+        Полная замена/reorder текущего тайминга. Существующие события сохраняют
+        свои ID; новый блок без id получает новый ID. If-Match обязан содержать
+        ETag последнего GET/успешного PUT. Устаревшая версия отвечает 409
+        timeline_version_conflict и ничего не меняет. Некорректный If-Match —
+        400 timeline_version_invalid; отсутствующий — 428 timeline_version_required.
+      security: [bearerAuth: []]
+      parameters:
+      - {$ref: '#/components/parameters/WeddingId'}
+      - name: If-Match
+        in: header
+        required: true
+        description: 'ETag версии, которую клиент редактировал, например "timeline-7".'
+        schema: {type: string, example: '"timeline-7"'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: {$ref: '#/components/schemas/TimelineEvent'}
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              description: 'Новая версия расписания после принятой замены.'
+              schema: {type: string, example: '"timeline-8"'}
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/TimelineEvent'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409':
+          description: 'timeline_version_conflict — расписание изменилось после версии из If-Match; timeline_event_stale — передан уже удалённый/чужой ID без раскрытия его происхождения.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '428':
+          description: 'timeline_version_required — If-Match отсутствует.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /weddings/{weddingId}/timeline/autogen:
     post:
       tags: [timeline]
