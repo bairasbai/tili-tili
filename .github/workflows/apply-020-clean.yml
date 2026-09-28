@@ -23,6 +23,7 @@ jobs:
           BASE=da87f1fe9aab19342f68e4a58453a4b35decb943
           SOURCE=4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc
           OURS=$(git rev-parse HEAD)
+          git config core.quotepath false
           git fetch --no-tags origin test/020-finalize-20260928
           git config core.quotepath false
 
