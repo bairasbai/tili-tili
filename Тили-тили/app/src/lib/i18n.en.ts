@@ -2277,6 +2277,14 @@ Object.assign(EN, {
   'Выберите кандидата для замены, затем подтвердите новую бронь в его анкете': 'Choose a replacement candidate, then confirm the new booking in their profile',
 })
 
+/* 020: создание семьи на экране пары. */
+Object.assign(EN, {
+  'Второй человек семьи (необязательно)': 'Second family member (optional)',
+  'Второй человек семьи': 'Second family member',
+  'У каждого человека будет отдельный RSVP, меню, место и трансфер; ссылка у семьи одна.': 'Each person has their own RSVP, meal, seat and transport; the family shares one invitation link.',
+  'отдельная персона': 'individual person',
+})
+
 /* 020: семейное приглашение — отдельный ответ каждой персоны. */
 Object.assign(EN, {
   'Ответьте за каждого человека в приглашении отдельно': 'Reply for each person in the invitation separately',
