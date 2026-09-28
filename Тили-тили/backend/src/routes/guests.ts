@@ -317,6 +317,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                   name: { type: 'string', minLength: 2, maxLength: 120 },
                   phone: { type: 'string', maxLength: 32 },
                   plusOne: { type: 'boolean', default: false },
+                  members: {
+                    type: 'array',
+                    maxItems: 9,
+                    items: {
+                      type: 'object',
+                      required: ['name'],
+                      additionalProperties: false,
+                      properties: { name: { type: 'string', minLength: 2, maxLength: 120 } },
+                    },
+                  },
                   group: { type: 'string', maxLength: 60 },
                 },
               },
@@ -328,7 +338,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const weddingId = request.member!.weddingId
       const { guests } = request.body as {
-        guests: { name: string; phone?: string; plusOne?: boolean; group?: string }[]
+        guests: {
+          name: string
+          phone?: string
+          plusOne?: boolean
+          members?: { name: string }[]
+          group?: string
+        }[]
       }
       assertPhoneByCouple(request.member!.role, guests.some((g) => g.phone !== undefined))
       const skipped: { index: number; name: string; reason: 'duplicate' | 'invalid' }[] = []
@@ -353,16 +369,30 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           const phone = normalizeRuPhone(row.phone)
           if (phone === null) { skipped.push({ index, name: row.name, reason: 'invalid' }); continue }
           const nameKey = guestNameKey(row.name)
-          if (nameKey.length < 2 || names.has(nameKey) || (phone && phones.has(phone))) {
-            skipped.push({ index, name: row.name, reason: nameKey.length < 2 ? 'invalid' : 'duplicate' })
+          const cleanName = row.name.trim().replace(/\s+/g, ' ')
+          const extraMembers = row.members ?? (row.plusOne ? [{ name: `Спутник ${cleanName}`, placeholder: true }] : [])
+          const memberNames = extraMembers.map((member) => ({
+            ...member,
+            cleanName: member.name.trim().replace(/\s+/g, ' '),
+            key: guestNameKey(member.name),
+          }))
+          const familyKeys = [nameKey, ...memberNames.map((member) => member.key)]
+          const duplicateInFamily = new Set(familyKeys).size !== familyKeys.length
+          const invalidFamilyName = familyKeys.some((key) => key.length < 2)
+          const duplicateExisting = familyKeys.some((key) => names.has(key))
+          if (invalidFamilyName || duplicateInFamily || duplicateExisting || (phone && phones.has(phone))) {
+            skipped.push({
+              index,
+              name: row.name,
+              reason: invalidFamilyName ? 'invalid' : 'duplicate',
+            })
             continue
           }
-          names.add(nameKey)
+          for (const key of familyKeys) names.add(key)
           if (phone) phones.add(phone)
           const id = uuidv7()
           const partyId = uuidv7()
           const token = newGuestToken()
-          const cleanName = row.name.trim().replace(/\s+/g, ' ')
           await client.query(
             `insert into guest_parties (id, wedding_id, invite_token, label, contact_phone)
              values ($1,$2,$3,$4,$5)`,
@@ -374,12 +404,22 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
              values ($1, $2, $3, $4, $5, $6, $7, $8, 1)`,
             [id, weddingId, cleanName, false, row.group ?? null, phone ?? null, token, partyId],
           )
-          if (row.plusOne) {
+          for (const [memberIndex, member] of memberNames.entries()) {
+            const placeholder = 'placeholder' in member && member.placeholder === true
             await client.query(
               `insert into guests
                  (id, wedding_id, name, plus_one, group_name, rsvp_token, party_id, party_position, is_placeholder)
-               values ($1,$2,$3,false,$4,$5,$6,2,true)`,
-              [uuidv7(), weddingId, `Спутник ${cleanName}`, row.group ?? null, newGuestToken(), partyId],
+               values ($1,$2,$3,false,$4,$5,$6,$7,$8)`,
+              [
+                uuidv7(),
+                weddingId,
+                member.cleanName,
+                row.group ?? null,
+                newGuestToken(),
+                partyId,
+                memberIndex + 2,
+                placeholder,
+              ],
             )
           }
           createdIds.push(id)
