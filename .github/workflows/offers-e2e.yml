@@ -1,5 +1,21 @@
 # Stage 019 browser acceptance. Remote execution is required before acceptance.
 name: Offers 019 browser E2E
+
+# Keep triggers next to the workflow header; guarded by backend/test/workflowTriggers.test.ts.
+'on':
+  push:
+    branches:
+    - feature/product-improvements-stage1-tasks
+    - claude/review-018a-018b-roadmap-kqhovt
+    - codex/finish-019-20260928
+    - integration/019-audited-main-20260928
+  pull_request:
+    branches:
+    - main
+    - feature/product-improvements-stage1-tasks
+    - claude/review-018a-018b-roadmap-kqhovt
+  workflow_dispatch: {}
+
 permissions:
   contents: read
 concurrency:
@@ -71,16 +87,3 @@ jobs:
           ${{ env.E2E_RESULT_DIR }}/*.png
         retention-days: 7
         if-no-files-found: warn
-'on':
-  push:
-    branches:
-    - feature/product-improvements-stage1-tasks
-    - claude/review-018a-018b-roadmap-kqhovt
-    - codex/finish-019-20260928
-    - integration/019-audited-main-20260928
-  pull_request:
-    branches:
-    - main
-    - feature/product-improvements-stage1-tasks
-    - claude/review-018a-018b-roadmap-kqhovt
-  workflow_dispatch: {}
