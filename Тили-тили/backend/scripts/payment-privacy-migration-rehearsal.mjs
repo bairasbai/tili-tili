@@ -38,7 +38,7 @@ try {
   // Build the exact pre-021 schema. node-pg-migrate --to on a fresh database can
   // skip prerequisite migrations, so apply the normal chain then step 021 back while empty.
   migrate(['up'])
-  migrate(['down','1'])
+  migrate(['down'])
   const before021=await client.query('select name from pgmigrations order by id desc limit 1')
   assert.equal(before021.rows[0].name,PREV)
   const owner=randomUUID(), wedding=randomUUID(), slot=randomUUID(), deal=randomUUID(), payment=randomUUID()
