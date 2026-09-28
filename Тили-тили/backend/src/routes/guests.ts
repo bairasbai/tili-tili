@@ -1163,12 +1163,19 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                on conflict (guest_id) do nothing`,
               [primary.id, companionId],
             )
-            await client.query(
-              `insert into bus_bookings (bus_id, guest_id)
-               select bus_id, $2 from bus_bookings where guest_id = $1
-               on conflict do nothing`,
-              [primary.id, companionId],
-            )
+            if (body.status !== 'no') {
+              try {
+                await client.query(
+                  `insert into bus_bookings (bus_id, guest_id)
+                   select bus_id, $2 from bus_bookings where guest_id = $1
+                   on conflict do nothing`,
+                  [primary.id, companionId],
+                )
+              } catch (error) {
+                if (isCheckViolation(error, 'bus_taken_bounded')) throw busFullForPlusOne()
+                throw error
+              }
+            }
           } else if (!body.plusOne && placeholder) {
             await client.query('delete from guests where id = $1', [placeholder.id])
           }
