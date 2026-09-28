@@ -67,3 +67,27 @@ T039, T040, T041 и T042 закрыты. Этап 019 завершён; след
 
 Подтверждённых новых production-дефектов уровня security/data-loss/concurrency в завершённом 019 этим проходом не найдено. Вопрос о разрешении подрядчику отправлять уже истёкший `validUntil` не классифицирован как дефект: текущая спека требует запрещать принятие истёкшего предложения, но явно не запрещает его создание.
 
+## Clean integration в main · PR #5 · 2026-09-28 ✅
+
+019 была интегрирована не merge старой feature-истории, а отдельной clean-веткой непосредственно поверх актуального main после 017/018. Промежуточные 018-A/B payment-schedule/receipts/budget-controls и отдельный branding commit в поставку не вошли.
+
+- PR: **#5 · feat(019): clean integration on current main**
+- head перед merge: `38a34e10f839bda9a9c5289287f5925b3b3a087f`
+- merge commit main: `027d6c3eb76e6a31c4ecd8b73c0376a910bd488d`
+- OpenAPI main: **0.45.0**
+- generated contract: **138 путей / 183 операции / 78 схем**
+- миграция: `1761500000000_shortlist_offers.cjs`
+
+### Gates clean integration
+
+- CI run `36363006056`: **success**
+  - frontend: **77/77 test files, 1020/1020 tests**
+  - backend: **105/105 test files, 1164/1164 tests**
+  - миграции на чистой PostgreSQL, TypeScript, ESLint и production builds — success
+- Offers 019 browser E2E `36363005956`: **success**
+- Task planning browser E2E `36363005964`: **success**, то есть интеграция 019 не сломала завершённую 017.
+
+Дополнительный rollback guard из независимого аудита присутствует в слитом `backend/test/accept019.test.ts`: ошибка `vendor_unavailable` внутри booking-core после закрытия запросов обязана откатить закрытия, уведомления, deal и accepted state.
+
+Параллельный PR #6 / `integration/019-audited-20260928` после merge PR #5 считается superseded и не должен сливаться повторно.
+

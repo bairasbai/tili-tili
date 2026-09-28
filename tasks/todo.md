@@ -3,6 +3,21 @@
 Одна активная задача за раз. Пункты отмечать по ходу, не в конце.
 Готово = типы + тесты + линт + сборка прогнаны, вывод показан.
 
+## Текущее состояние · 2026-09-28 — 019 слита
+
+- [x] 017-A/B слиты в main (PR #1).
+- [x] 018 «ответы квиза влияют на свадьбу» слита в main (PR #2).
+- [x] 019 T001–T042 слита в main через PR #5; merge commit `027d6c3eb76e6a31c4ecd8b73c0376a910bd488d`.
+- [x] 019 clean integration не содержит промежуточные 018-A/B payment-schedule/receipts/budget-controls и отдельный branding commit.
+- [x] Дополнительный audit regression guard атомарного rollback при `vendor_unavailable` находится в main.
+- [x] PR #5 gates: CI success (frontend 1020, backend 1164), Offers 019 browser E2E success, Task planning browser E2E success.
+- [x] Контракт main после 019: v0.45.0, 138 путей / 183 операции / 78 схем; миграция `1761500000000_shortlist_offers.cjs`.
+- [ ] Закрыть дублирующий PR #6 как superseded; не сливать его повторно.
+- [ ] Следующий roadmap stage — 020.
+- [ ] Production deployment и внешние release blockers — отдельный трек.
+
+Нижележащие исторические секции 017/018/019 сохраняются как журнал решений; старые пункты про порядок их слияния больше не являются текущей задачей.
+
 ---
 
 ## Фича 018 · 2026-09-26 — ответы квиза влияют на свадьбу
