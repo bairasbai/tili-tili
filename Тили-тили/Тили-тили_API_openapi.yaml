@@ -2011,9 +2011,11 @@ paths:
       tags: [guests]
       summary: Завести гостей списком
       description: |
-        Пара вставляет список из заметок или таблицы; экран разбирает строки
-        (имя, телефон, «+1») и показывает предпросмотр, сервер принимает уже
-        разобранные строки и заводит их одной транзакцией (фича 008, План
+        Пара вставляет список из заметок или таблицы; экран разбирает строки.
+        Сервер принимает primary person плюс необязательные `members[]`;
+        legacy `plusOne=true` остаётся совместимым, но материализуется как
+        отдельная placeholder-персона, а не скрытый множитель. Всё заводится
+        одной транзакцией (фича 008 + этап 020, План
         §20.1 экран 29). Дубликаты пропускаются, а не обновляются: совпадение
         имени (без учёта регистра и лишних пробелов) или телефона с уже
         существующим гостем свадьбы или с другой строкой того же запроса —
@@ -2041,7 +2043,16 @@ paths:
                     properties:
                       name: { type: string, minLength: 2, maxLength: 120 }
                       phone: { type: string, maxLength: 32 }
-                      plusOne: { type: boolean, default: false }
+                      plusOne: { type: boolean, default: false, deprecated: true }
+                      members:
+                        type: array
+                        maxItems: 9
+                        items:
+                          type: object
+                          required: [name]
+                          additionalProperties: false
+                          properties:
+                            name: { type: string, minLength: 2, maxLength: 120 }
                       group: { type: string, maxLength: 60 }
       responses:
         '201':
