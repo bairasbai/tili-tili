@@ -53,6 +53,14 @@ jobs:
       - name: Migrate disposable database
         working-directory: Тили-тили/backend
         run: DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Rehearse legacy family migration down → seed → up
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js down 1 -m migrations
+          DATABASE_URL="$TEST_DATABASE_URL" node scripts/family020-migration-rehearsal.mjs seed
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js up 1 -m migrations
+          DATABASE_URL="$TEST_DATABASE_URL" node scripts/family020-migration-rehearsal.mjs verify
       - name: Run real family browser acceptance
         run: |
           set -euo pipefail
