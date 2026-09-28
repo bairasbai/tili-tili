@@ -84,6 +84,7 @@ const VendorLead = lazy(() => load.vendorExtras().then(m => ({ default: m.Vendor
 const VendorDealCard = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorDealCard })))
 const VendorReviews = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorReviews })))
 const VendorAnalytics = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorAnalytics })))
+const VendorOfferRequests = lazy(() => load.vendorExtras().then(m => ({ default: m.VendorOfferRequests })))
 
 const Offer = lazy(() => load.legal().then(m => ({ default: m.Offer })))
 const Privacy = lazy(() => load.legal().then(m => ({ default: m.Privacy })))
@@ -260,6 +261,7 @@ function Shell() {
           <Route path="/vendor-app/leads/:id" element={<VendorLead />} />
           <Route path="/vendor-app/reviews" element={<VendorReviews />} />
           <Route path="/vendor-app/analytics" element={<VendorAnalytics />} />
+          <Route path="/vendor-app/offer-requests" element={<VendorOfferRequests />} />
           {/* Чаты и настройки кабинета — те же экраны, что у пары, в режиме
               кабинета (фича 007): данные и права у них общие, разные только
               слова и адреса возврата. */}
