@@ -10,18 +10,73 @@ permissions:
 
 jobs:
   cherry-pick-020:
-    if: "github.event.head_commit.message == 'chore(020): bootstrap clean integration'"
+    if: "github.event.head_commit.message == 'retry-020-clean-code'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply stage 020 commits on current main
+      - name: Apply stage 020 code without stale contract artifacts
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin test/020-finalize-20260928
-          git cherry-pick 050b826c5b1edc9ff5abd96ff705508796c88c0e^..351d17174bf7c537a0b3b927b8da377a7469662c
+
+          protected=(
+            "Тили-тили/Тили-тили_API_openapi.yaml"
+            "Тили-тили/app/src/lib/api/schema.ts"
+            "Тили-тили/backend/src/contract/api.generated.ts"
+            "Тили-тили/backend/src/contract/paths.generated.ts"
+            "Тили-тили/backend/src/contract/schemas.generated.ts"
+            "Тили-тили/backend/test/audit55.test.ts"
+            ".github/workflows/gen-020-contract.yml"
+            ".github/workflows/gen-020-final-contract.yml"
+            ".github/workflows/verify-020-family-browser.yml"
+          )
+
+          for sha in $(git rev-list --reverse 050b826c5b1edc9ff5abd96ff705508796c88c0e^..4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc); do
+            echo "Applying $sha $(git log -1 --format=%s "$sha")"
+            if ! git cherry-pick -n "$sha"; then
+              conflicts="$(git diff --name-only --diff-filter=U || true)"
+              bad=0
+              while IFS= read -r file; do
+                test -z "$file" && continue
+                allowed=0
+                for p in "${protected[@]}"; do
+                  if test "$file" = "$p"; then allowed=1; break; fi
+                done
+                if test "$allowed" = 1; then
+                  git checkout --ours -- "$file"
+                  git add "$file"
+                else
+                  echo "UNRESOLVED_NON_CONTRACT_CONFLICT=$file"
+                  bad=1
+                fi
+              done <<< "$conflicts"
+              if test "$bad" = 1; then
+                git status --short
+                exit 2
+              fi
+            fi
+
+            for p in "${protected[@]}"; do
+              if git ls-files --error-unmatch "$p" >/dev/null 2>&1; then
+                git restore --source=HEAD --staged --worktree -- "$p" || true
+              else
+                git rm --cached --ignore-unmatch "$p" >/dev/null 2>&1 || true
+                rm -f "$p"
+              fi
+            done
+
+            git add -A
+            if git diff --cached --quiet; then
+              git reset --hard HEAD
+              git cherry-pick --abort >/dev/null 2>&1 || true
+              continue
+            fi
+            git commit -C "$sha"
+          done
+
           git push origin HEAD:integration/020-clean-main-20260928
