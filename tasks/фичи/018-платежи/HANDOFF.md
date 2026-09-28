@@ -4,7 +4,7 @@
 
 ## Статус
 
-Платёжная 018-A/B больше не должна сливаться из старого draft PR #3 напрямую. Проверенная дельта перенесена на актуальный `main` в clean-ветку `integration/018-payments-clean-main-20260928` и оформлена PR #14.
+Платёжная 018-A/B больше не должна сливаться из старого draft PR #3 напрямую. Проверенная дельта перенесена на актуальный `main` через clean PR #14 и слита merge-коммитом `aee5e164f49b29552fb4e0c8141fcc423f582f49`. Старый PR #3 закрыт как superseded.
 
 Исторически номер **018** использовался ещё и для отдельной фичи «ответы квиза влияют на свадьбу», уже слитой через PR #2. В roadmap она обозначена как **018-Q**, а платежи — **018-A/B**.
 
@@ -34,16 +34,16 @@ OpenAPI не откатывался со старой ветки: текущий
 - `app/src/lib/i18n.en.ts`: добавлены только отсутствовавшие payment EN-строки;
 - `audit52/audit55`: guards синхронизированы с 17 денежными таблицами и API 0.51.0.
 
-**Финальная база clean-кандидата:** `main` @ `744ebd80471f4e7004d6c43abd124221d47fe01c` (PR #13 docs 020 уже включён); ветка не отстаёт от main.
-Временные integration-helper workflows удалены из итогового дерева; в PR остаются только постоянные CI/E2E workflows.
+**Финальная база clean-кандидата:** `main` @ `744ebd80471f4e7004d6c43abd124221d47fe01c` (PR #13 docs 020 уже включён). PR #14 слит без изменения проверенного дерева: tree SHA head и merge-коммита одинаковый `75bc9b93260fdfe524a6dc89d88a1ff412f35a1e`.
+Временные integration-helper workflows удалены из итогового дерева; в `main` остался только постоянный Payment browser E2E.
 
 ## Проверка
 
-Источник правды по окончательным run IDs — PR #14. До merge обязательны одновременно:
-1. полный frontend/backend CI;
-2. Payment schedule browser E2E — 14 сценариев;
-3. Task planning browser E2E (017 regression);
-4. Offers 019 browser E2E;
-5. миграции, TypeScript, ESLint и production builds.
+Финальная приёмка PR #14 на SHA `03f3024975c419e00465996dfbf7c3ff3d642f38`:
+1. CI `36384154690` — success; frontend 81 файлов / 1086 тестов, backend 109 файлов / 1271 тест;
+2. Payment schedule browser E2E `36384154654` — success, 14/14, `page_errors: []`;
+3. Task planning browser E2E `36384154650` — success;
+4. Offers 019 browser E2E `36384154662` — success;
+5. миграции, TypeScript, ESLint и production builds — success.
 
-Старый PR #3 после успешного merge PR #14 должен быть закрыт как superseded. Production deployment этой интеграцией не подтверждается.
+Старый PR #3 закрыт как superseded. Production deployment этой интеграцией не подтверждается.

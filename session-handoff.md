@@ -8,7 +8,7 @@
 - **018-Q** — ответы квиза влияют на свадьбу: исторически называлась «018», слита через PR #2 (`e413afd1`).
 - **019** — shortlist / предложения / accept: clean PR #5 (`027d6c3e`) + hardening PR #11.
 - **020** — семейные приглашения и отдельные персоны: слита через PR #12 (`3b2dbabd`).
-- **018-A/B payments** — старая реализация находилась в divergent draft PR #3 и не была в main. Полезная дельта перенесена на текущий main в `integration/018-payments-clean-main-20260928`, PR #14.
+- **018-A/B payments** — clean PR #14 слит в `main`, merge `aee5e164`; старый divergent PR #3 закрыт как superseded.
 
 Номер 018 больше нельзя трактовать без суффикса: **018-Q = quiz**, **018-A/B = payments**.
 
@@ -39,24 +39,19 @@
 - i18n — payment-only additions;
 - audit guards — актуальные currency/version expectations.
 
-## Приёмка PR #14
+## Приёмка PR #14 — завершена
 
-Перед merge обязательны:
-- full CI frontend/backend;
-- Payment schedule browser E2E: 14 сценариев;
-- Task planning browser E2E (017 regression);
-- Offers 019 browser E2E;
-- migrations, TypeScript, ESLint, frontend/backend production builds.
+Финальный SHA PR: `03f3024975c419e00465996dfbf7c3ff3d642f38`.
+- CI `36384154690`: success — frontend 81/81 файлов, 1086/1086 тестов; backend 109/109 файлов, 1271/1271 тест;
+- Payment schedule browser E2E `36384154654`: success — 14/14, `page_errors: []`;
+- Task planning browser E2E `36384154650`: success;
+- Offers 019 browser E2E `36384154662`: success;
+- migrations, TypeScript, ESLint и production builds: success.
 
-Уже во время clean-переноса были подтверждены:
-- backend payment suites: `paymentSchedule.test.ts` 52/52, `budgetControlsReceipts.test.ts` 40/40;
-- frontend payment suites: `paymentSchedule.test.tsx` 26/26, `budgetControls.test.tsx` 23/23;
-- 017 Task planning browser и 019 Offers browser проходили на clean payment branch до финальных docs-only commits.
-
-Окончательные run IDs брать из последнего HEAD PR #14, а не из промежуточных прогонов.
+Merge commit: `aee5e164f49b29552fb4e0c8141fcc423f582f49`. Его tree SHA совпадает с проверенным head: `75bc9b93260fdfe524a6dc89d88a1ff412f35a1e`.
 
 ## После merge
 
-1. Проверить post-merge CI на точном SHA main.
-2. Закрыть старый draft PR #3 как **superseded by PR #14**.
+1. Post-merge CI запущен на точном SHA `aee5e164f49b29552fb4e0c8141fcc423f582f49` (run `36384481686`).
+2. Старый draft PR #3 закрыт как **superseded by PR #14**.
 3. Не считать production deployment выполненным: SMS/S3/VAPID, юридические тексты, backup/restore и physical-device pilot остаются release gates.

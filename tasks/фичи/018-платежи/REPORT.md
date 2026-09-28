@@ -77,6 +77,8 @@
 
 Платёжная 018-A/B перенесена из старого divergent PR #3 в PR #14 на актуальный main без слияния старой ветки целиком. Текущий контракт после структурного merge — **0.51.0**. Две payment-миграции накладываются поверх 017/018-Q/019/020.
 
-На clean-кандидате подтверждены все функциональные backend payment suites: `paymentSchedule.test.ts` 52/52 и `budgetControlsReceipts.test.ts` 40/40. Frontend payment suites: `paymentSchedule.test.tsx` 26/26 и `budgetControls.test.tsx` 23/23. Итоговые CI/E2E run IDs фиксируются в PR #14 после последнего clean HEAD.
+На принятом clean-кандидате подтверждены все функциональные payment suites: backend `paymentSchedule.test.ts` 52/52 и `budgetControlsReceipts.test.ts` 40/40; frontend `paymentSchedule.test.tsx` 26/26 и `budgetControls.test.tsx` 23/23.
+
+Финальная приёмка PR #14 на head `03f30249`: CI `36384154690` — frontend **81/81 файлов, 1086/1086 тестов**, backend **109/109 файлов, 1271/1271 тестов**, TypeScript, миграции, ESLint и production-сборки зелёные. Payment browser `36384154654` — **14/14**, `page_errors=[]`; Task planning regression `36384154650` — success; Offers 019 regression `36384154662` — success, `errors=[]`. Merge `aee5e164` имеет тот же Git tree, что и принятый head PR #14.
 
 Старый PR #3 не является кандидатом на merge: он содержит устаревшую базу и последующие несвязанные изменения.
