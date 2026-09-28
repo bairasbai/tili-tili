@@ -1,68 +1,62 @@
-# Передача сессии — 020 слита в main
+# Передача сессии — 018-A/B payments clean integration
 
 Обновлено 2026-09-28. Репозиторий `bairasbai/tili-tili`.
 
-## Текущее состояние
+## Актуальный порядок интеграции
 
-- 017-A/B слиты через PR #1.
-- 018 quiz слита через PR #2.
-- 019 shortlist/offers слита через PR #5 и дополнительно усилена 019 workflow/test/docs в main.
-- 020 «семейные приглашения и отдельные персоны» слита через **PR #12**.
-- Merge commit 020: `3b2dbabd26701b33da372126fa33b2e4caad4b82`.
-- Post-merge CI на этом exact SHA: run `36365783985` — success.
+- **017-A/B** — задачи и напоминания: слиты в `main` через PR #1 (`e2cb4e6e`).
+- **018-Q** — ответы квиза влияют на свадьбу: исторически называлась «018», слита через PR #2 (`e413afd1`).
+- **019** — shortlist / предложения / accept: clean PR #5 (`027d6c3e`) + hardening PR #11.
+- **020** — семейные приглашения и отдельные персоны: слита через PR #12 (`3b2dbabd`).
+- **018-A/B payments** — старая реализация находилась в divergent draft PR #3 и не была в main. Полезная дельта перенесена на текущий main в `integration/018-payments-clean-main-20260928`, PR #14.
 
-## Что закрыто в 020
+Номер 018 больше нельзя трактовать без суффикса: **018-Q = quiz**, **018-A/B = payments**.
 
-T001–T033:
-- одна семейная ссылка / `guest_party` на 1–10 отдельных персон;
-- legacy `plusOne` материализуется в отдельную companion-person без двойного счёта;
-- RSVP, diet/menu, table и bus — на конкретного `guestId`;
-- hotel booking и gift/fund identity — на family party/token;
-- один invite link на семью, без выдачи party token паре/helper/coordinator;
-- создание/импорт `members[]`, добавление/переименование/удаление отдельной персоны;
-- family token сохраняется при удалении primary, пока семья не пуста;
-- person-based рассадка, кейтеринг, меню и автобус;
-- один room booking и одна gift identity на приглашение;
-- export/31-day erasure family structure без invite secret;
-- RU/EN, карты экранов/кнопок, OpenAPI 0.50.0 и generated artifacts.
+## 018-A/B payments — clean integration
 
-## Миграция
+Включено:
+- payment schedule поверх существующих deals/payments;
+- частичные отметки оплаты, link/unlink факта к этапу и CSV;
+- reserve и category limits;
+- private payment receipts;
+- RBAC / privacy / idempotency / optimistic versions;
+- UI `/wedding/payments` и controls на `/wedding/budget`.
 
-`1761600000000_family_guest_parties.cjs`.
+Миграции:
+- `1761310000000_payment_schedule.cjs`;
+- `1761400000000_budget_controls_receipts.cjs`.
 
-Rehearsal проверен в реальном GitHub Actions: применить все миграции → откатить только 020 → создать legacy guest с `plusOne=true`, menu/bus/hotel/invite/gift состоянием → снова применить 020 → получить 2 person rows, 2 bus seats, 1 hotel room, общий family token/code и ту же gift identity.
+Контракт: **OpenAPI 0.51.0**. Он получен структурным merge payment-delta в текущий 0.50.0, а не заменой на старый контракт PR #3. Generated backend/frontend artifacts пересобраны штатными генераторами.
 
-## Принятые gates
+## Как интегрировано
 
-Clean code head: `661d2ae98c2a6feb03da7553dcb2f1ad294ce73b`.
+Не сливать PR #3 и не переносить его branch целиком. Из него использована проверенная payment-цепочка `e7a27e4…6a106fd`, перенесённая через настоящий `git cherry-pick` на актуальный main.
 
-- Clean CI `36365055384` — success:
-  - frontend 78 файлов / 1023 теста;
-  - backend 106 файлов / 1178 тестов;
-  - PostgreSQL migrations, TypeScript, ESLint, frontend/backend production builds — success.
-- Family browser E2E `36365055383` — success:
-  - 2 family members;
-  - 1 invite link;
-  - 2 menu votes;
-  - 2 bus seats;
-  - 1 hotel room;
-  - 1 family gift reservation;
-  - page errors = 0.
-- Evidence artifact `10947465988`, SHA-256 `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`.
-- PR #12 merge-candidate gates:
-  - CI `36365523795` — success;
-  - Offers 019 browser `36365523816` — success;
-  - Task planning browser `36365523769` — success.
-- Post-merge CI on main `3b2dbabd…`: `36365783985` — success.
+При конфликтах сохранялась актуальная версия 019/020; платежная дельта затем объединялась вручную:
+- `routes/slots.ts` — только payment-core, без отката booking-core 019;
+- `Wedding.tsx` — только reserve/category-limit UI 018-B;
+- OpenAPI/generated — clean 0.51.0;
+- i18n — payment-only additions;
+- audit guards — актуальные currency/version expectations.
 
-## Важная история интеграции
+## Приёмка PR #14
 
-Старую `test/020-finalize-20260928` не сливали целиком: она была построена на прежней 019-линии. В `integration/020-clean-main-20260928` переносилась только дельта 020, затем контракт пересобирался на clean-базе. Это не вернуло старые 018-A/B payment changes или другие посторонние изменения.
+Перед merge обязательны:
+- full CI frontend/backend;
+- Payment schedule browser E2E: 14 сценариев;
+- Task planning browser E2E (017 regression);
+- Offers 019 browser E2E;
+- migrations, TypeScript, ESLint, frontend/backend production builds.
 
-Два финальных исправления были только test-harness corrections: Cyrillic locator в Playwright и ожидание CSV `Family` вместо legacy `+1`. Product behavior ими не менялся.
+Уже во время clean-переноса были подтверждены:
+- backend payment suites: `paymentSchedule.test.ts` 52/52, `budgetControlsReceipts.test.ts` 40/40;
+- frontend payment suites: `paymentSchedule.test.tsx` 26/26, `budgetControls.test.tsx` 23/23;
+- 017 Task planning browser и 019 Offers browser проходили на clean payment branch до финальных docs-only commits.
 
-## Следующий этап
+Окончательные run IDs брать из последнего HEAD PR #14, а не из промежуточных прогонов.
 
-Следующий roadmap stage — **021**: постоянные ID событий и контроль версии расписания, затем зависимости/фиксированные блоки/исполнители/переезды.
+## После merge
 
-Production deployment не выполнен. Юридические тексты, реальные SMS/S3/VAPID, эксплуатационный backup/restore, тестовый домен и пилот на физических устройствах остаются отдельными release gates.
+1. Проверить post-merge CI на точном SHA main.
+2. Закрыть старый draft PR #3 как **superseded by PR #14**.
+3. Не считать production deployment выполненным: SMS/S3/VAPID, юридические тексты, backup/restore и physical-device pilot остаются release gates.

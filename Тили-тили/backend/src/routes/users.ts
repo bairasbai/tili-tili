@@ -527,14 +527,43 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     ]
     const payments = await byWeddings(
       coupleIds,
-      `select p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.created_at
+      `select p.id, p.deal_id, p.kind, p.amount::text as amount, p.currency, p.status, p.installment_id, p.created_at
          from payments p join deals d on d.id = p.deal_id
         where d.wedding_id = any($1) order by p.created_at`,
+    )
+    /* График платежей (018-A) — такие же деньги пары, как оплаты: только по свадьбам,
+     * где человек «пара». Без него выгрузка по 152-ФЗ теряла названия, суммы, сроки и
+     * причины отмены этапов (ревью 018, P-02). */
+    const paymentInstallments = await byWeddings(
+      coupleIds,
+      `select d.wedding_id, i.id, i.deal_id, i.title, i.amount::text as amount, i.currency, i.due::text as due,
+              i.cancelled_at, i.cancel_reason, i.created_at
+         from payment_installments i join deals d on d.id = i.deal_id
+        where d.wedding_id = any($1) order by i.created_at, i.id`,
     )
     const budget = await byWeddings(
       coupleIds,
       `select wedding_id, title, category_id, amount::text as amount, currency, created_at
          from budget_items where wedding_id = any($1) order by created_at`,
+    )
+    /* Резерв, лимиты категорий и подтверждения оплат (018-B) — деньги пары, как бюджет:
+     * только по свадьбам, где человек «пара». Подтверждения — без содержимого и без
+     * автора (чужой идентификатор): файлы скачиваются в приложении по одному, а выгрузка
+     * не превращается в десятки мегабайт base64 (ревью 018, BB-06). */
+    const budgetSettings = await byWeddings(
+      coupleIds,
+      `select wedding_id, reserve_bps, version, updated_at
+         from wedding_budget_settings where wedding_id = any($1) order by wedding_id`,
+    )
+    const budgetLimits = await byWeddings(
+      coupleIds,
+      `select wedding_id, category_id, amount::text as amount, currency, is_custom, version, updated_at
+         from budget_category_limits where wedding_id = any($1) order by wedding_id, category_id`,
+    )
+    const paymentReceipts = await byWeddings(
+      coupleIds,
+      `select wedding_id, id, payment_id, filename, mime_type, size_bytes, created_at
+         from payment_receipts where wedding_id = any($1) order by created_at, id`,
     )
     // Вишлист закрыт для помощника и координатора матрицей (ONLY_COUPLE) — и в выгрузке его нет (ревью 015).
     const gifts = await byWeddings(
@@ -689,7 +718,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       offers,
       deals,
       payments,
+      paymentInstallments,
+      paymentReceipts,
       budget,
+      budgetSettings,
+      budgetLimits,
       gifts,
       tasks,
       invites,

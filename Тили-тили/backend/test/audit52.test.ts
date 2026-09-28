@@ -171,7 +171,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
   }
 
   describe("T1 · сторож схемы: каждая таблица с currency несёт проверенную CHECK currency = 'RUB'", () => {
-    it('информационная схема: ровно 15 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
+    it('информационная схема: ровно 17 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
       const { rows: tables } = await app.db!.query<{ table_name: string }>(
         `select table_name
            from information_schema.columns
@@ -181,8 +181,8 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
       // Список выводится из схемы, а не зашит явно — сам подхватит будущую
       // таблицу. Но количество — часть проверки: молчаливое появление новой
       // денежной таблицы обязано остановить тест, а не проскочить незамеченным.
-      // 14-я и 15-я — offer_requests и offers из 019.
-      expect(tables.map((r) => r.table_name)).toHaveLength(15)
+      // 14-я и 15-я — offer_requests и offers из 019; 16-я и 17-я — payment_installments и budget_category_limits из 018-A/B.
+      expect(tables.map((r) => r.table_name)).toHaveLength(17)
 
       const EXACT_DEF = "CHECK ((currency = 'RUB'::bpchar))"
       const { rows: allChecks } = await app.db!.query<{

@@ -9,18 +9,18 @@ import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
 import { bookVendor, lockBookingContext } from '../deals/book.js'
+import { lockFinanceAccess, lockDeal, recordPayment } from '../payments/model.js'
 import { CREATED_AT_US } from './chats.js'
 import {
   DEAL_COLUMNS,
   DEAL_JOINS,
-  PAID_SUM,
   SLOT_COLUMNS,
   loadSlot,
   loadSlots,
   toSlot,
   type SlotRow,
 } from '../deals/repo.js'
-import { COMMITTED, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
+import { HOLD_HOURS } from '../deals/state.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const MONEY_SCHEMA = {
@@ -236,70 +236,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           const slot = await slotOf(client, weddingId, slotId)
           if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нет сделки')
 
-          /* `for update`: два одновременных «Оплатить» с разными ключами
-           * иначе оба читали одну и ту же сумму «уже оплачено», оба проходили
-           * проверку переплаты и оба записывались — деньги сверх цены
-           * (R-49: «прочитали, убедились, записали» — не защита). Блокировка
-           * строки сделки ставит второго в очередь за первым. */
-          const { rows } = await client.query<{ state: DealState; price: string | null }>(
-            'select state, price::text as price from deals where id = $1 for update',
-            [slot.deal_id],
-          )
-          const deal = rows[0]!
-          if (!COMMITTED.includes(deal.state)) {
-            throw conflict('not_booked', 'Оплатить можно только забронированную сделку')
-          }
-          /* Без цены платить нечего: сумма без договорённости — просто число,
-           * и проверить переплату не по чему. Ноль — та же пустота: цена 0
-           * назначается через `PATCH /deals`, и оплата «в счёт нуля» была бы
-           * оплатой без предела (ERR-0039 с нулём вместо `null`, D2-05). */
-          const price = deal.price === null ? null : Number(deal.price)
-          if (price === null || price <= 0) {
-            throw conflict('no_price', 'У сделки не указана цена — сначала договоритесь о сумме')
-          }
-
-          /* «Оплачено» — та же формула, что видят пара и подрядчик (`PAID_SUM`):
-           * возврат с минусом, отменённая запись не считается. До ревью 015
-           * возвраты здесь не вычитались, и после возврата аванса доплатить
-           * остаток было нельзя — «переплата» при пустом счёте (D9). */
-          const { rows: paid } = await client.query<{ total: string }>(
-            `select ${PAID_SUM}::text as total from deals d where d.id = $1`,
-            [slot.deal_id],
-          )
-          const already = Number(paid[0]!.total)
-
-          /* Без суммы — остаток, а не цена целиком: «пусто = полная сумма» в
-           * контракте значит «закрыть сделку», а после аванса цена целиком
-           * упиралась в переплату, и кнопка «Оплатить полностью» не работала
-           * ровно там, где нужна (ревью 015, D7). Остатка нет — 409 `overpay`
-           * ниже, как и раньше. */
-          const amount = body.amount?.amount ?? Math.max(price - already, 0)
-          if (amount <= 0) {
-            if (body.amount === undefined) throw conflict('overpay', `Сделка уже оплачена целиком: ${already} из ${price}`)
-            throw new AppError(422, 'bad_amount', 'Сумма оплаты должна быть больше нуля')
-          }
-          if (already + amount > price) {
-            throw conflict('overpay', `Сумма оплат превысила цену сделки: уже ${already}, цена ${price}`)
-          }
-
-          await client.query(
-            `insert into payments (id, deal_id, kind, amount, currency, status)
-             values ($1, $2, $3, $4, 'RUB', 'recorded')`,
-            [uuidv7(), slot.deal_id, already + amount >= price ? 'balance' : 'deposit', amount],
-          )
-
-          // Эквайринга в MVP нет: запись фиксирует факт, деньги ходят между
-          // парой и подрядчиком напрямую (План §3.2). Состояние сделки
-          // двигается вперёд только на первой оплате.
-          if (deal.state === 'booked') {
-            assertTransition(deal.state, 'paid_deposit')
-            await client.query(`update deals set state = 'paid_deposit' where id = $1`, [slot.deal_id])
-            await client.query(
-              `insert into deal_events (id, deal_id, from_state, to_state, actor_id)
-               values ($1, $2, $3, 'paid_deposit', $4)`,
-              [uuidv7(), slot.deal_id, deal.state, request.caller!.userId],
-            )
-          }
+          await lockFinanceAccess(client, weddingId, request.caller!.userId)
+          const deal = await lockDeal(client, weddingId, slot.deal_id)
+          await recordPayment(client, deal, request.caller!.userId, body.amount?.amount)
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
       )

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.50.0).
- * Операций: 184. Путей: 139. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.51.0).
+ * Операций: 197. Путей: 149. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -130,8 +130,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/weddings/{weddingId}/album/{photoId}","url":"/weddings/:weddingId/album/:photoId","operationId":null,"summary":"Одобрить или скрыть кадр","tag":"album"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/anti-gifts","url":"/weddings/:weddingId/anti-gifts","operationId":null,"summary":"Список «просим не дарить»","tag":"wishlist"},
   {"method":"GET","openapi":"/weddings/{weddingId}/budget","url":"/weddings/:weddingId/budget","operationId":null,"summary":"Бюджет (статьи + автосуммы из слотов)","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Вернуть автоматический лимит категории с проверкой версии","tag":"budget"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Задать пользовательский лимит категории","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/budget/items","url":"/weddings/:weddingId/budget/items","operationId":null,"summary":"Своя статья расхода","tag":"budget"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/budget/items/{itemId}","url":"/weddings/:weddingId/budget/items/:itemId","operationId":null,"summary":"Удалить свою статью (×-кнопка)","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/cancel","url":"/weddings/:weddingId/cancel","operationId":null,"summary":"Отменить свадьбу","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/documents","url":"/weddings/:weddingId/documents","operationId":null,"summary":"Договоры свадьбы","tag":"documents"},
   {"method":"POST","openapi":"/weddings/{weddingId}/funds","url":"/weddings/:weddingId/funds","operationId":null,"summary":"Завести денежный фонд","tag":"wishlist"},
@@ -166,6 +169,16 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/notes","url":"/weddings/:weddingId/notes","operationId":null,"summary":"Добавить заметку","tag":"wedding"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/notes/{noteId}","url":"/weddings/:weddingId/notes/:noteId","operationId":null,"summary":"Удалить заметку","tag":"wedding"},
   {"method":"POST","openapi":"/weddings/{weddingId}/offers/{offerId}/accept","url":"/weddings/:weddingId/offers/:offerId/accept","operationId":null,"summary":"Принять предложение и забронировать подрядчика","tag":"bookings"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"График платежей, актуальные итоги и отметки оплат","tag":"budget"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"Создать этап платежа","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}","url":"/weddings/:weddingId/payment-schedule/:installmentId","operationId":null,"summary":"Изменить или отменить плановый этап","tag":"budget"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}/pay","url":"/weddings/:weddingId/payment-schedule/:installmentId/pay","operationId":null,"summary":"Отметить полную или частичную оплату этапа","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule/export","url":"/weddings/:weddingId/payment-schedule/export","operationId":null,"summary":"Выгрузить историю планов и оплат в CSV","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/payments/{paymentId}/plan","url":"/weddings/:weddingId/payments/:paymentId/plan","operationId":null,"summary":"Привязать существующую оплату к этапу без новой записи","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts","url":"/weddings/:weddingId/payments/:paymentId/receipts","operationId":null,"summary":"Приватные подтверждения оплаты","tag":"payments"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts","url":"/weddings/:weddingId/payments/:paymentId/receipts","operationId":null,"summary":"Прикрепить приватное подтверждение оплаты","tag":"payments"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}","url":"/weddings/:weddingId/payments/:paymentId/receipts/:receiptId","operationId":null,"summary":"Удалить приватное подтверждение оплаты","tag":"payments"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content","url":"/weddings/:weddingId/payments/:paymentId/receipts/:receiptId/content","operationId":null,"summary":"Скачать приватное подтверждение оплаты","tag":"payments"},
   {"method":"GET","openapi":"/weddings/{weddingId}/planb","url":"/weddings/:weddingId/planb","operationId":null,"summary":"План Б: сценарий и чек-лист накануне","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/planb/activate","url":"/weddings/:weddingId/planb/activate","operationId":null,"summary":"Активировать план Б","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/reschedule","url":"/weddings/:weddingId/reschedule","operationId":null,"summary":"Перенести дату свадьбы","tag":"weddings"},

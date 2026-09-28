@@ -1,5 +1,5 @@
 import { createElement, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, Copy, FileText, Plus, Armchair, Bus } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { dressPalettes } from '@/lib/dressPalettes'
@@ -209,9 +209,10 @@ function DealView({ s }: { s: Slot }) {
         </div>
 
         {/* Сумма — та, что записана в сделке, и та, что по ней уже внесена.
-            Графика платежей контракт не отдаёт, и выдумывать его здесь нельзя:
-            раньше на экране стояли «аванс 10 фев» и «доплата 14 июн» с суммами,
-            не связанными ни с какой сделкой. */}
+            Этапы и сроки живут на экране «График платежей» (018-A) — отсюда
+            ссылка на него, а не своя копия графика: раньше здесь стояли «аванс
+            10 фев» и «доплата 14 июн» с суммами, не связанными ни с какой
+            сделкой. */}
         <div className="card p-5">
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Оплаты')}</span>
           {money ? (
@@ -239,6 +240,9 @@ function DealView({ s }: { s: Slot }) {
                 <b className="text-[13px]">{t('Итого по договору')}</b>
                 <b className="font-serif-d text-[17px] text-[var(--rose-deep)] tabular">{s.price != null ? fmt(s.price) : '—'}</b>
               </div>
+              {/* Оплата отсюда пишет весь остаток без этапа; разнести деньги по этапам и
+                  отметить часть суммы — на графике (ревью 018, F-03). */}
+              <Link to="/wedding/payments" className="block text-[12px] underline mt-3">{t('График платежей')} →</Link>
             </>
           ) : (
             /* Сервер не отдал денег — их не показываем и не выдумываем нулём:
