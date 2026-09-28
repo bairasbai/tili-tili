@@ -92,7 +92,7 @@ describe.skipIf(!live)('блок 5: RSVP гостя целиком и телеф
     return { guestId: guest.json().id as string, token }
   }
 
-  it('страница гостя отдаёт его ответ целиком: +1, еда, трансфер', async () => {
+  it('020: страница приглашения отдаёт явных персон и ответ первой персоны', async () => {
     const couple = await newUser()
     const weddingId = await newWedding(couple.token)
     const { token } = await guestWithToken(couple, weddingId, { name: 'Марина' })
@@ -106,9 +106,13 @@ describe.skipIf(!live)('блок 5: RSVP гостя целиком и телеф
 
     const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(token)}` })).json() as Record<string, unknown>
     expect(page.status).toBe('yes')
-    expect(page.plusOne).toBe(true)
+    expect(page.plusOne).toBe(false)
     expect(page.diet).toBe('vegan')
     expect(page.transfer).toBe('need')
+    const people = page.people as { id: string; status: string; diet: string | null }[]
+    expect(people).toHaveLength(2)
+    expect(people[0]).toMatchObject({ status: 'yes', diet: 'vegan' })
+    expect(people[1]).toMatchObject({ status: 'pending', diet: null })
   })
 
   it('«без ограничений» после «веган» снимает ограничение, а не оставляет старое', async () => {
