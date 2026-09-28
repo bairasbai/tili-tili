@@ -2602,3 +2602,16 @@ Git распознал перенос как 117 переименований, �
 **Миграции.** Добавлен отдельный rehearsal для legacy-данных: текущая база откатывает только 020, создаёт старого гостя с `plusOne=true`, RSVP, menu vote, bus, hotel, invite code и gift reserve, затем снова применяет 020 и проверяет две person rows, две bus bookings по одному месту, один room booking, общий party token/code и прежнюю gift identity. Rehearsal встроен в browser workflow перед реальным E2E.
 
 **Приёмка пока не закрыта.** T001–T022 и T024–T030 отмечены по факту. T023/T031/T032/T033 остаются открыты: на последнем HEAD должны пройти final contract generation/sync, real browser flow, полный PostgreSQL/Redis CI types/tests/lint/build и только затем verification/handoff/roadmap получат ✅. Main/production не менялись.
+
+
+---
+
+## 2026-09-28 — 020 clean integration: финальная приёмка
+
+**Сделано.** Этап 020 перенесён не старой веткой целиком, а чистой дельтой семейных приглашений поверх слитого 019. Сохранена текущая main-линия; generated OpenAPI artifacts пересобраны уже после интеграции. Финальные тестовые расхождения были только в harness: кириллица в XPath browser-локатора превращалась в буквальные \\uXXXX, а CSV regression ожидал старый заголовок `+1` вместо новой колонки `Family`. Production-логика для этих двух исправлений не менялась.
+
+**Clean browser gate.** Run `36365055383` на `661d2ae98c2a6feb03da7553dcb2f1ad294ce73b` — success. Migration rehearsal `down 020 → legacy seed → up 020 → verify` прошёл до браузера. Artifact `10947465988`, digest `sha256:a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`: 2 family members, 1 invite link, 2 menu votes, 2 bus seats, 1 hotel room, 1 family gift reservation; JavaScript page errors — 0.
+
+**Clean full CI.** Run `36365055384` — success: frontend 78 файлов / 1023 теста; backend 106 файлов / 1178 тестов; все миграции на PostgreSQL, TypeScript, ESLint и обе production-сборки зелёные.
+
+**Почему не merge старой 020-ветки.** Исходная линия строилась на прежнем 019 и расходилась с текущим main. Clean integration переносит только 020 и не возвращает старые 018-A/B/payment или иные чужие изменения. Перед merge остаётся PR-gate на актуальном main; 021 до него не начинается.

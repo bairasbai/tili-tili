@@ -62,9 +62,9 @@ Main не менять. Рабочая ветка — `test/020-finalize-2026092
 - [x] T028 DB regressions: old +1 migration, family invite, independent RSVP/menu/table/bus, one hotel room, one gift identity.
 - [x] T029 Concurrency: два члена семьи на последнее место автобуса; две вкладки меняют family hotel; gift quota общая.
 - [x] T030 Export/erasure: party/token/people корректно входят в выгрузку и 31-day cleanup.
-- [ ] T031 Browser E2E: пара создаёт семью из двух персон → одна ссылка → разный RSVP/menu → два места/один номер → один family gift reserve.
-- [ ] T032 Полный PostgreSQL/Redis gate, frontend/backend tests/types/lint/build.
-- [ ] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
+- [x] T031 Browser E2E: пара создаёт семью из двух персон → одна ссылка → разный RSVP/menu → два места/один номер → один family gift reserve.
+- [x] T032 Полный PostgreSQL/Redis gate, frontend/backend tests/types/lint/build.
+- [x] T033 JOURNAL, ERRORS, business logic, handoff, roadmap; отметить 020 ✅ только после всех gate.
 
 ## Порядок
 
@@ -76,8 +76,10 @@ T001–T007 → T008–T016 → T017–T022 → T023–T027 → T028–T033.
 
 Фактически реализованы T001–T022 и T024–T030. После аудита дополнительно закрыты: сохранение family token при удалении primary, explicit-family import, partySize в Guest API, управление составом семьи на экране пары и повторный double-count кейтеринга.
 
-Открытые финальные ворота:
-- T023 — закрыт автогенерацией `5b4432db`: OpenAPI 0.50.0 и generated backend/frontend artifacts синхронизированы; финальный contract-sync подтверждается общим CI.
-- T031 — real browser flow существует, но нужен зелёный запуск именно на финальном HEAD.
-- T032 — полный PostgreSQL/Redis frontend/backend types/tests/lint/build + migration rehearsal.
-- T033 — финальная запись verification/handoff/roadmap и отметка 020 ✅ только после предыдущих трёх.
+Финальные ворота закрыты на clean integration `integration/020-clean-main-20260928`:
+- T023 — OpenAPI 0.50.0 и generated backend/frontend artifacts синхронизированы штатной генерацией.
+- T031 — real Chromium E2E: run `36365055383`, artifact `10947465988`, SHA-256 `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`; 2 персоны, 1 invite link, 2 menu votes, 2 bus seats, 1 hotel room, 1 family gift reserve, page errors = 0.
+- T032 — clean CI run `36365055384`: frontend 78 файлов / 1023 теста, backend 106 файлов / 1178 тестов; PostgreSQL migrations, TypeScript, ESLint и production builds — success.
+- T033 — verification/handoff/roadmap/JOURNAL обновлены; временный clean-browser workflow удаляется финализационным коммитом.
+
+Этап 020 завершён как merge-кандидат. 021 начинать только после слияния 020 в актуальный `main` и зелёного post-merge CI.
