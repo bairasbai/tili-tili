@@ -171,7 +171,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
   }
 
   describe("T1 · сторож схемы: каждая таблица с currency несёт проверенную CHECK currency = 'RUB'", () => {
-    it('информационная схема: ровно 13 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
+    it('информационная схема: ровно 15 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
       const { rows: tables } = await app.db!.query<{ table_name: string }>(
         `select table_name
            from information_schema.columns
@@ -179,9 +179,10 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
           order by table_name`,
       )
       // Список выводится из схемы, а не зашит явно — сам подхватит будущую
-      // таблицу. Но количество — часть проверки: молчаливое появление 14-й
+      // таблицу. Но количество — часть проверки: молчаливое появление новой таблицы
       // обязано остановить тест, а не проскочить незамеченным.
-      expect(tables.map((r) => r.table_name)).toHaveLength(13)
+      // 14-я и 15-я — ориентир запроса и цена предложения (019).
+      expect(tables.map((r) => r.table_name)).toHaveLength(15)
 
       const EXACT_DEF = "CHECK ((currency = 'RUB'::bpchar))"
       const { rows: allChecks } = await app.db!.query<{
@@ -389,12 +390,22 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
           sql: `insert into vendor_packages (id, vendor_id, name, currency) values ($1, $2, 'F2 probe', 'USD')`,
           params: [id(), id()],
         },
+        {
+          table: 'offer_requests',
+          sql: `insert into offer_requests (id, slot_id, status, budget_hint, currency) values ($1, $2, 'open', 100, 'USD')`,
+          params: [id(), id()],
+        },
+        {
+          table: 'offers',
+          sql: `insert into offers (id, request_id, kind, title, price, currency, valid_until) values ($1, $2, 'offer', 'F2 probe', 100, 'USD', '2027-01-01')`,
+          params: [id(), id()],
+        },
       ]
     }
 
-    it('на каждой из 13 таблиц — 23514 и своя CHECK, вся транзакция откатывается', async () => {
+    it('на каждой из 15 таблиц — 23514 и своя CHECK, вся транзакция откатывается', async () => {
       const list = probes()
-      expect(list).toHaveLength(13)
+      expect(list).toHaveLength(15)
       const rollbackSentinel = new Error('audit52: intentional rollback (T3)')
       const results: Array<{ table: string; result: PgError }> = []
       try {
