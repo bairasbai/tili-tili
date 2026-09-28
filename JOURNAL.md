@@ -2615,3 +2615,12 @@ Git распознал перенос как 117 переименований, �
 **Clean full CI.** Run `36365055384` — success: frontend 78 файлов / 1023 теста; backend 106 файлов / 1178 тестов; все миграции на PostgreSQL, TypeScript, ESLint и обе production-сборки зелёные.
 
 **Почему не merge старой 020-ветки.** Исходная линия строилась на прежнем 019 и расходилась с текущим main. Clean integration переносит только 020 и не возвращает старые 018-A/B/payment или иные чужие изменения. Перед merge остаётся PR-gate на актуальном main; 021 до него не начинается.
+
+
+---
+
+## 2026-09-28 — 020 слита в main
+
+PR #12 (`integration/020-clean-main-20260928 → main`) прошёл merge-candidate CI `36365523795`, Offers 019 browser regression `36365523816` и Task Planning browser regression `36365523769`. Merge commit — `3b2dbabd26701b33da372126fa33b2e4caad4b82`. После merge обычный CI на exact main SHA прошёл: `36365783985` success.
+
+Этап 020 закрыт T001–T033. Следующий этап roadmap — 021; старые source/test ветки 020 повторно в main не сливать.
