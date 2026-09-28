@@ -158,6 +158,88 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     ])
   })
 
+
+  it('one family refusal frees only that bus seat and keeps the room while another member attends', async () => {
+    const f = await family()
+    const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()
+    const [first, second] = page.members as { guestId: string }[]
+
+    const bus = await app.inject({
+      method: 'POST',
+      url: `/weddings/${f.weddingId}/logistics/buses`,
+      headers: auth(f.token),
+      payload: { name: 'Семейный автобус', seats: 2 },
+    })
+    expect(bus.statusCode, bus.body).toBe(201)
+    const busId = bus.json().id as string
+
+    for (const member of [first!, second!]) {
+      const booked = await app.inject({
+        method: 'POST',
+        url: `/join/${encodeURIComponent(f.guestToken)}/shuttle`,
+        payload: { busId, guestId: member.guestId },
+      })
+      expect(booked.statusCode, booked.body).toBe(200)
+    }
+
+    const hotel = await app.inject({
+      method: 'POST',
+      url: `/weddings/${f.weddingId}/logistics/hotels`,
+      headers: auth(f.token),
+      payload: { name: 'Семейный номер', rooms: 1 },
+    })
+    expect(hotel.statusCode, hotel.body).toBe(201)
+    const hotelId = hotel.json().id as string
+    const room = await app.inject({
+      method: 'POST',
+      url: `/join/${encodeURIComponent(f.guestToken)}/hotels`,
+      payload: { hotelId },
+    })
+    expect(room.statusCode, room.body).toBe(200)
+
+    const bothYes = await app.inject({
+      method: 'POST',
+      url: `/rsvp/${encodeURIComponent(f.guestToken)}`,
+      payload: { members: [
+        { guestId: first!.guestId, status: 'yes' },
+        { guestId: second!.guestId, status: 'yes' },
+      ] },
+    })
+    expect(bothYes.statusCode, bothYes.body).toBe(200)
+
+    const oneNo = await app.inject({
+      method: 'POST',
+      url: `/rsvp/${encodeURIComponent(f.guestToken)}`,
+      payload: { members: [{ guestId: second!.guestId, status: 'no' }] },
+    })
+    expect(oneNo.statusCode, oneNo.body).toBe(200)
+
+    const { rows: busRows } = await app.db!.query<{ guest_id: string }>(
+      'select guest_id from bus_bookings where bus_id = $1 order by guest_id',
+      [busId],
+    )
+    expect(busRows.map((row) => row.guest_id)).toEqual([first!.guestId])
+
+    const { rows: roomRows } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from hotel_bookings where party_id = $1 and hotel_id = $2',
+      [f.partyId, hotelId],
+    )
+    expect(roomRows[0]!.n).toBe('1')
+
+    const lastNo = await app.inject({
+      method: 'POST',
+      url: `/rsvp/${encodeURIComponent(f.guestToken)}`,
+      payload: { members: [{ guestId: first!.guestId, status: 'no' }] },
+    })
+    expect(lastNo.statusCode, lastNo.body).toBe(200)
+
+    const { rows: roomAfterLastNo } = await app.db!.query<{ n: string }>(
+      'select count(*)::text as n from hotel_bookings where party_id = $1 and hotel_id = $2',
+      [f.partyId, hotelId],
+    )
+    expect(roomAfterLastNo[0]!.n).toBe('0')
+  })
+
   it('bus and menu are per person, hotel is one room per family', async () => {
     const f = await family()
     const rsvp = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()
