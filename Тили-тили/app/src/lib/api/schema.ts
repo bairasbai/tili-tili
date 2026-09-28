@@ -2250,171 +2250,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/weddings/{weddingId}/budget/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Изменить резерв бюджета
-         * @description Резерв — доля общего бюджета в базисных пунктах (0–5000, то есть 0–50 %), по
-         *     умолчанию 1000 (10 %). Резерв не расход и не часть категорий: он уменьшает
-         *     «свободно», а не увеличивает «потрачено» (018-B). Правит только пара.
-         *     `version` — из `Budget.settingsVersion` (0, пока резерв не меняли): чужая
-         *     правка между чтением и записью — 409 `stale_budget_settings`, ничего не
-         *     записано.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        reserveBps: number;
-                        version: number;
-                    };
-                };
-            };
-            responses: {
-                /** @description Сохранено */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            reserveBps: number;
-                            version: number;
-                        };
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-                422: components["responses"]["Validation"];
-            };
-        };
-        trace?: never;
-    };
-    "/weddings/{weddingId}/budget/categories/{categoryId}/limit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Задать пользовательский лимит категории
-         * @description Лимит вместо автоматической доли общего бюджета (018-B). Категория — из
-         *     справочника бюджета: неизвестная — 422 `validation_failed` с полем
-         *     `categoryId`. `version` — из `Budget.categories[].limitVersion` (0 — лимит
-         *     ни разу не задавали); устаревшая — 409 `stale_budget_limit`. Правит только
-         *     пара.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                    categoryId: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        amount: components["schemas"]["Money"];
-                        version: number;
-                    };
-                };
-            };
-            responses: {
-                /** @description Сохранено */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            categoryId: string;
-                            amount: components["schemas"]["Money"];
-                            custom: boolean;
-                            version: number;
-                        };
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-                422: components["responses"]["Validation"];
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Вернуть автоматический лимит категории с проверкой версии
-         * @description Снимает пользовательский лимит: категория снова получает долю общего
-         *     бюджета. Строка остаётся с `custom: false` и новой версией, поэтому клиент
-         *     со старой версией не «воскресит» снятый лимит — 409 `stale_budget_limit`.
-         *     Неизвестная категория — 422 `validation_failed` с полем `categoryId`, как у
-         *     PUT. Правит только пара.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                    categoryId: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        reset: true;
-                        version: number;
-                    };
-                };
-            };
-            responses: {
-                /** @description Автоматический лимит восстановлен */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-                422: components["responses"]["Validation"];
-            };
-        };
-        trace?: never;
-    };
     "/weddings/{weddingId}/tips": {
         parameters: {
             query?: never;
@@ -2464,226 +2299,6 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/weddings/{weddingId}/payments/{paymentId}/receipts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Приватные подтверждения оплаты
-         * @description Список файлов к ручной отметке оплаты — без содержимого. Только пара.
-         *     Подтверждение — файл пары, а не проверка банка: приложение не сверяет его
-         *     с движением денег. `uploadEnabled` — включена ли загрузка новых на сервере
-         *     (`RECEIPTS_STORAGE`); выключена — экран не предлагает загрузку, а уже
-         *     загруженные файлы читаются и удаляются.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                    paymentId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            uploadEnabled: boolean;
-                            items: {
-                                /** Format: uuid */
-                                id: string;
-                                filename: string;
-                                mimeType: string;
-                                sizeBytes: number;
-                                /** Format: date-time */
-                                createdAt: string;
-                            }[];
-                        };
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-            };
-        };
-        put?: never;
-        /**
-         * Прикрепить приватное подтверждение оплаты
-         * @description Файл PDF, JPEG, PNG или WebP до 512 КиБ в base64; тип проверяется по
-         *     содержимому, а не по `mimeType` браузера — несовпадение 422. Загрузка не
-         *     включена на сервере (`RECEIPTS_STORAGE` пуст) — 501 `storage_not_configured`.
-         *     К одной оплате — не больше 5 файлов: шестой — 409 `receipt_limit`; у свадьбы
-         *     кончилась квота (по умолчанию 50 файлов и 25 МиБ) — 409 `receipt_quota`.
-         *     Имя файла чистится: разделители пути и управляющие символы — в «_»,
-         *     невидимые символы формата Unicode убираются, расширение приводится к
-         *     проверенному типу; в ответе — имя, под которым файл сохранён. Без
-         *     `Idempotency-Key` — 400 `idempotency_key_required`; тот же ключ с другим
-         *     телом — 409 `idempotency_key_reused`, первый запрос ещё идёт — 409
-         *     `idempotency_in_progress`. Ключ — на одну попытку загрузки: другой файл
-         *     с тем же ключом — 409 `idempotency_key_reused`. Только пара.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header: {
-                    "Idempotency-Key": string;
-                };
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                    paymentId: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        filename: string;
-                        /** @enum {string} */
-                        mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
-                        contentBase64: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Создано */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /** Format: uuid */
-                            id: string;
-                            filename: string;
-                            mimeType: string;
-                            sizeBytes: number;
-                            /** Format: date-time */
-                            createdAt: string;
-                        };
-                    };
-                };
-                400: components["responses"]["BadRequest"];
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
-                422: components["responses"]["Validation"];
-                501: components["responses"]["NotConfigured"];
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Скачать приватное подтверждение оплаты
-         * @description Содержимое файла в base64 внутри JSON, с `Cache-Control: no-store` (как все ответы API).
-         *     Публичной ссылки на файл нет. Только пара.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                    paymentId: string;
-                    receiptId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Base64-содержимое файла */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            filename: string;
-                            mimeType: string;
-                            contentBase64: string;
-                        };
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Удалить приватное подтверждение оплаты
-         * @description Файл удаляется из базы сразу. В журнале действий остаются оплата, тип,
-         *     размер и SHA-256 содержимого — без имени файла: журнал переживает стирание
-         *     аккаунта. Повтор удаления — 404: файла уже нет. Только пара.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    weddingId: components["parameters"]["WeddingId"];
-                    paymentId: string;
-                    receiptId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Удалено */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                404: components["responses"]["NotFound"];
-            };
-        };
         options?: never;
         head?: never;
         patch?: never;
@@ -9871,6 +9486,391 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/budget/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить резерв бюджета
+         * @description Резерв — доля общего бюджета в базисных пунктах (0–5000, то есть 0–50 %), по
+         *     умолчанию 1000 (10 %). Резерв не расход и не часть категорий: он уменьшает
+         *     «свободно», а не увеличивает «потрачено» (018-B). Правит только пара.
+         *     `version` — из `Budget.settingsVersion` (0, пока резерв не меняли): чужая
+         *     правка между чтением и записью — 409 `stale_budget_settings`, ничего не
+         *     записано.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reserveBps: number;
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            reserveBps: number;
+                            version: number;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/budget/categories/{categoryId}/limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Задать пользовательский лимит категории
+         * @description Лимит вместо автоматической доли общего бюджета (018-B). Категория — из
+         *     справочника бюджета: неизвестная — 422 `validation_failed` с полем
+         *     `categoryId`. `version` — из `Budget.categories[].limitVersion` (0 — лимит
+         *     ни разу не задавали); устаревшая — 409 `stale_budget_limit`. Правит только
+         *     пара.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    categoryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        amount: components["schemas"]["Money"];
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Сохранено */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            categoryId: string;
+                            amount: components["schemas"]["Money"];
+                            custom: boolean;
+                            version: number;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Вернуть автоматический лимит категории с проверкой версии
+         * @description Снимает пользовательский лимит: категория снова получает долю общего
+         *     бюджета. Строка остаётся с `custom: false` и новой версией, поэтому клиент
+         *     со старой версией не «воскресит» снятый лимит — 409 `stale_budget_limit`.
+         *     Неизвестная категория — 422 `validation_failed` с полем `categoryId`, как у
+         *     PUT. Правит только пара.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    categoryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        reset: true;
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Автоматический лимит восстановлен */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Приватные подтверждения оплаты
+         * @description Список файлов к ручной отметке оплаты — без содержимого. Только пара.
+         *     Подтверждение — файл пары, а не проверка банка: приложение не сверяет его
+         *     с движением денег. `uploadEnabled` — включена ли загрузка новых на сервере
+         *     (`RECEIPTS_STORAGE`); выключена — экран не предлагает загрузку, а уже
+         *     загруженные файлы читаются и удаляются.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            uploadEnabled: boolean;
+                            items: {
+                                /** Format: uuid */
+                                id: string;
+                                filename: string;
+                                mimeType: string;
+                                sizeBytes: number;
+                                /** Format: date-time */
+                                createdAt: string;
+                            }[];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Прикрепить приватное подтверждение оплаты
+         * @description Файл PDF, JPEG, PNG или WebP до 512 КиБ в base64; тип проверяется по
+         *     содержимому, а не по `mimeType` браузера — несовпадение 422. Загрузка не
+         *     включена на сервере (`RECEIPTS_STORAGE` пуст) — 501 `storage_not_configured`.
+         *     К одной оплате — не больше 5 файлов: шестой — 409 `receipt_limit`; у свадьбы
+         *     кончилась квота (по умолчанию 50 файлов и 25 МиБ) — 409 `receipt_quota`.
+         *     Имя файла чистится: разделители пути и управляющие символы — в «_»,
+         *     невидимые символы формата Unicode убираются, расширение приводится к
+         *     проверенному типу; в ответе — имя, под которым файл сохранён. Без
+         *     `Idempotency-Key` — 400 `idempotency_key_required`; тот же ключ с другим
+         *     телом — 409 `idempotency_key_reused`, первый запрос ещё идёт — 409
+         *     `idempotency_in_progress`. Ключ — на одну попытку загрузки: другой файл
+         *     с тем же ключом — 409 `idempotency_key_reused`. Только пара.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        filename: string;
+                        /** @enum {string} */
+                        mimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
+                        contentBase64: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Создано */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            filename: string;
+                            mimeType: string;
+                            sizeBytes: number;
+                            /** Format: date-time */
+                            createdAt: string;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                501: components["responses"]["NotConfigured"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Скачать приватное подтверждение оплаты
+         * @description Содержимое файла в base64 внутри JSON, с `Cache-Control: no-store` (как все ответы API).
+         *     Публичной ссылки на файл нет. Только пара.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Base64-содержимое файла */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            filename: string;
+                            mimeType: string;
+                            contentBase64: string;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/receipts/{receiptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить приватное подтверждение оплаты
+         * @description Файл удаляется из базы сразу. В журнале действий остаются оплата, тип,
+         *     размер и SHA-256 содержимого — без имени файла: журнал переживает стирание
+         *     аккаунта. Повтор удаления — 404: файла уже нет. Только пара.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Удалено */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/payment-schedule": {
         parameters: {
             query?: never;
@@ -10225,160 +10225,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются нулём. */
-        FinancialBalance: {
-            amount: number;
-            /** @enum {string} */
-            currency: "RUB";
-        };
-        /** @description Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке. */
-        PaymentSummary: {
-            committed: components["schemas"]["FinancialBalance"];
-            recorded: components["schemas"]["FinancialBalance"];
-            remaining: components["schemas"]["FinancialBalance"];
-            unallocated: components["schemas"]["FinancialBalance"];
-            inactiveDealRecorded: components["schemas"]["FinancialBalance"];
-            unknownPrices: number;
-        };
-        PaymentInstallment: {
-            /** Format: date-time */
-            cancelledAt: string | null;
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            dealId: string;
-            title: string;
-            amount: components["schemas"]["Money"];
-            paid: components["schemas"]["FinancialBalance"];
-            /**
-             * @description Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на
-             *     отменённом этапе), распределённых по этапам в порядке срока. Только для показа —
-             *     привязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной
-             *     отметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной
-             *     сделке (ревью 018, M-01).
-             */
-            allocated: components["schemas"]["Money"];
-            /** @description Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки. */
-            remaining: components["schemas"]["Money"];
-            /** Format: date */
-            due: string;
-            version: number;
-            status: components["schemas"]["PaymentInstallmentStatus"];
-            /** @description Срок прошёл, а `remaining` больше нуля. */
-            overdue: boolean;
-            cancelReason: string | null;
-        };
-        /**
-         * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
-         *     сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
-         *     ничего; cancelled — этап отменён. Одна схема на этап и на его строку в
-         *     `PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).
-         * @enum {string}
-         */
-        PaymentInstallmentStatus: "pending" | "partial" | "paid" | "covered" | "cancelled";
-        PaymentRecord: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            dealId: string;
-            /** @enum {string} */
-            kind: "deposit" | "balance" | "refund";
-            amount: components["schemas"]["Money"];
-            /** @enum {string} */
-            status: "recorded" | "confirmed" | "cancelled";
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: uuid */
-            installmentId: string | null;
-            version: number;
-        };
-        PaymentDeal: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            slotId: string;
-            name: string;
-            /** @enum {string} */
-            state: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
-            price: components["schemas"]["Money"];
-            recorded: components["schemas"]["FinancialBalance"];
-            remaining: components["schemas"]["Money"];
-            planned: components["schemas"]["Money"];
-            unallocated: components["schemas"]["FinancialBalance"];
-            needsReview: boolean;
-            active: boolean;
-            canPlan: boolean;
-        };
-        PaymentSchedule: {
-            range: {
-                /** Format: date */
-                from: string;
-                /** Format: date */
-                to: string;
-                /** Format: date */
-                today: string;
-                timeZone: string;
-                includeOverdue: boolean;
-                includeCancelled: boolean;
-            };
-            readOnly: boolean;
-            summary: components["schemas"]["PaymentSummary"];
-            /** @description Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`. */
-            dueInWindow: components["schemas"]["Money"];
-            items: components["schemas"]["PaymentInstallment"][];
-            deals: components["schemas"]["PaymentDeal"][];
-            payments: components["schemas"]["PaymentRecord"][];
-            /** @description Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09). */
-            overdueRemaining: components["schemas"]["Money"];
-            allInstallments: {
-                /** Format: uuid */
-                id: string;
-                /** Format: uuid */
-                dealId: string;
-                title: string;
-                status: components["schemas"]["PaymentInstallmentStatus"];
-                remaining: components["schemas"]["Money"];
-            }[];
-        };
-        PaymentHistoryExport: {
-            filename: string;
-            csv: string;
-            records: number;
-        };
-        PositivePaymentMoney: {
-            amount: number;
-            /** @enum {string} */
-            currency: "RUB";
-        };
-        PaymentInstallmentCreate: {
-            /** Format: uuid */
-            dealId: string;
-            title: string;
-            amount: components["schemas"]["PositivePaymentMoney"];
-            /** Format: date */
-            due: string;
-        };
-        /** @description Оптимистическая версия обязательна. Отмена допускает только version/cancelled/reason: она не меняет суммы и не создаёт возврат. После снижения цены несогласованный план исправляется явно; старый черновик получает 409. */
-        PaymentInstallmentPatch: {
-            version: number;
-            title?: string;
-            amount?: components["schemas"]["PositivePaymentMoney"];
-            /** Format: date */
-            due?: string;
-            /** @enum {boolean} */
-            cancelled?: true;
-            reason?: string;
-        };
-        PaymentInstallmentPay: {
-            version: number;
-            amount: components["schemas"]["PositivePaymentMoney"];
-        };
-        /** @description Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным. */
-        PaymentPlanLink: {
-            version: number;
-            /** Format: uuid */
-            installmentId: string | null;
-        };
         Readiness: {
             /** @enum {string} */
             status?: "ok" | "not_ready";
@@ -11957,6 +11803,160 @@ export interface components {
             guestsPlanned?: number | null;
             /** Format: date-time */
             createdAt?: string;
+        };
+        /** @description Знаковый итог в копейках; при несогласованной истории возвратов отрицательные деньги не скрываются нулём. */
+        FinancialBalance: {
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+        };
+        /** @description Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке. */
+        PaymentSummary: {
+            committed: components["schemas"]["FinancialBalance"];
+            recorded: components["schemas"]["FinancialBalance"];
+            remaining: components["schemas"]["FinancialBalance"];
+            unallocated: components["schemas"]["FinancialBalance"];
+            inactiveDealRecorded: components["schemas"]["FinancialBalance"];
+            unknownPrices: number;
+        };
+        PaymentInstallment: {
+            /** Format: date-time */
+            cancelledAt: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dealId: string;
+            title: string;
+            amount: components["schemas"]["Money"];
+            paid: components["schemas"]["FinancialBalance"];
+            /**
+             * @description Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на
+             *     отменённом этапе), распределённых по этапам в порядке срока. Только для показа —
+             *     привязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной
+             *     отметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной
+             *     сделке (ревью 018, M-01).
+             */
+            allocated: components["schemas"]["Money"];
+            /** @description Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки. */
+            remaining: components["schemas"]["Money"];
+            /** Format: date */
+            due: string;
+            version: number;
+            status: components["schemas"]["PaymentInstallmentStatus"];
+            /** @description Срок прошёл, а `remaining` больше нуля. */
+            overdue: boolean;
+            cancelReason: string | null;
+        };
+        /**
+         * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
+         *     сделки (`allocated`), привязанных может не быть; partial — внесена часть; pending —
+         *     ничего; cancelled — этап отменён. Одна схема на этап и на его строку в
+         *     `PaymentSchedule.allInstallments`: копия перечисления уже разошлась однажды (ревью 018, ERR-0314).
+         * @enum {string}
+         */
+        PaymentInstallmentStatus: "pending" | "partial" | "paid" | "covered" | "cancelled";
+        PaymentRecord: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dealId: string;
+            /** @enum {string} */
+            kind: "deposit" | "balance" | "refund";
+            amount: components["schemas"]["Money"];
+            /** @enum {string} */
+            status: "recorded" | "confirmed" | "cancelled";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            installmentId: string | null;
+            version: number;
+        };
+        PaymentDeal: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            slotId: string;
+            name: string;
+            /** @enum {string} */
+            state: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
+            price: components["schemas"]["Money"];
+            recorded: components["schemas"]["FinancialBalance"];
+            remaining: components["schemas"]["Money"];
+            planned: components["schemas"]["Money"];
+            unallocated: components["schemas"]["FinancialBalance"];
+            needsReview: boolean;
+            active: boolean;
+            canPlan: boolean;
+        };
+        PaymentSchedule: {
+            range: {
+                /** Format: date */
+                from: string;
+                /** Format: date */
+                to: string;
+                /** Format: date */
+                today: string;
+                timeZone: string;
+                includeOverdue: boolean;
+                includeCancelled: boolean;
+            };
+            readOnly: boolean;
+            summary: components["schemas"]["PaymentSummary"];
+            /** @description Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`. */
+            dueInWindow: components["schemas"]["Money"];
+            items: components["schemas"]["PaymentInstallment"][];
+            deals: components["schemas"]["PaymentDeal"][];
+            payments: components["schemas"]["PaymentRecord"][];
+            /** @description Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09). */
+            overdueRemaining: components["schemas"]["Money"];
+            allInstallments: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                dealId: string;
+                title: string;
+                status: components["schemas"]["PaymentInstallmentStatus"];
+                remaining: components["schemas"]["Money"];
+            }[];
+        };
+        PaymentHistoryExport: {
+            filename: string;
+            csv: string;
+            records: number;
+        };
+        PositivePaymentMoney: {
+            amount: number;
+            /** @enum {string} */
+            currency: "RUB";
+        };
+        PaymentInstallmentCreate: {
+            /** Format: uuid */
+            dealId: string;
+            title: string;
+            amount: components["schemas"]["PositivePaymentMoney"];
+            /** Format: date */
+            due: string;
+        };
+        /** @description Оптимистическая версия обязательна. Отмена допускает только version/cancelled/reason: она не меняет суммы и не создаёт возврат. После снижения цены несогласованный план исправляется явно; старый черновик получает 409. */
+        PaymentInstallmentPatch: {
+            version: number;
+            title?: string;
+            amount?: components["schemas"]["PositivePaymentMoney"];
+            /** Format: date */
+            due?: string;
+            /** @enum {boolean} */
+            cancelled?: true;
+            reason?: string;
+        };
+        PaymentInstallmentPay: {
+            version: number;
+            amount: components["schemas"]["PositivePaymentMoney"];
+        };
+        /** @description Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным. */
+        PaymentPlanLink: {
+            version: number;
+            /** Format: uuid */
+            installmentId: string | null;
         };
     };
     responses: {
