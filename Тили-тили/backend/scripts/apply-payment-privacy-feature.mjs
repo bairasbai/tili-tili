@@ -102,11 +102,11 @@ const VENDOR_PAID_SUM = \`(select coalesce(sum(case when p.kind='refund' then -p
   )
   s = replaceOne(
     s,
-    `       const PAYMENTS_SUM = \`select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
+    `      const PAYMENTS_SUM = \`select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
              from payments p join deals d on d.id = p.deal_id
             where d.vendor_id = $1 and p.status <> 'cancelled'\`
 `,
-    `       const PAYMENTS_SUM = \`select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
+    `      const PAYMENTS_SUM = \`select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
              from payments p join deals d on d.id = p.deal_id
             where d.vendor_id = $1 and p.status <> 'cancelled'
               and p.visibility = 'vendor' and p.amount_known\`
