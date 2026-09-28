@@ -333,7 +333,7 @@ describe.skipIf(!live)('хвосты планов: бэкенд', () => {
     expect(await cateringSummary(app)).toBeGreaterThanOrEqual(1)
     const mine = (await notes(w)).filter((n) => n.title === 'Сводка для кейтеринга')
     expect(mine).toHaveLength(1)
-    expect(mine[0]!.body).toContain('Порций: 3')
+    expect(mine[0]!.body).toContain('Порций: 2')
     expect(mine[0]!.body).toContain('Рыба — 2')
     expect(mine[0]!.body).toContain('особое питание: 1')
     expect(mine[0]!.body).toContain('трансфер нужен: 1')

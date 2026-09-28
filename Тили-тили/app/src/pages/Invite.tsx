@@ -6,7 +6,7 @@ import { useApi, explainError } from '@/lib/api/useApi'
 import { ApiError } from '@/lib/api/client'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
-  joinShuttle, postGuestDayMessage, saveGuestToken, sendRsvp, voteMenu,
+  joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
 import { dressPalettes } from '@/lib/dressPalettes'
 import { formatTime, formatWeddingDate, todayIn } from '@/lib/weddingDate'
@@ -199,7 +199,18 @@ const DIETS: [string | null, string][] = [
   ['kosher', 'Кошер'], ['gluten_free', 'Без глютена'], ['other', 'Другое'],
 ]
 
+interface RsvpMemberView {
+  guestId: string
+  name: string
+  status: 'yes' | 'no' | 'pending'
+  diet?: string | null
+  dietNote?: string | null
+  transfer?: 'need' | 'own' | null
+  isPlaceholder?: boolean
+}
+
 interface RsvpPage {
+  partyId?: string
   guestName?: string
   status?: string
   /* Свой ответ целиком (контракт v0.25): без него после «приду» гость не
@@ -208,6 +219,7 @@ interface RsvpPage {
   diet?: string | null
   dietNote?: string | null
   transfer?: string | null
+  members?: RsvpMemberView[]
   wedding?: {
     title?: string
     date?: string | null
@@ -240,6 +252,11 @@ function InviteView({
   refreshing: boolean
 }) {
   const nav = useNavigate()
+  const familyMembers = page.members ?? []
+  const familyMode = familyMembers.length > 1
+  const familyAttending = familyMembers.length
+    ? familyMembers.some((member) => member.status === 'yes')
+    : page.status === 'yes'
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
   const disp = T.serif ? 'font-serif-d' : ''
@@ -402,7 +419,15 @@ function InviteView({
             <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
             <h2 className={cn('text-[24px] text-center', disp)}>{t('Вы придёте?')}</h2>
 
-            {!answered ? (
+            {familyMode ? (
+              <FamilyRsvpForm
+                token={token}
+                members={familyMembers}
+                busy={busy}
+                T={T}
+                onSaved={onAnswered}
+              />
+            ) : !answered ? (
               <>
                 <div className="mt-5">
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Heart size={12} style={{ color: T.accent }} />{t('Придёте с парой?')}</p>
@@ -494,10 +519,20 @@ function InviteView({
         })()}
 
         {/* Дальше — только тем, кто придёт: меню, трансфер, отель */}
-        {page.status === 'yes' && (
+        {familyAttending && (
           <>
-            <GuestMenu token={token} T={T} shadow={shadow} />
-            <GuestShuttle token={token} T={T} shadow={shadow} />
+            <GuestMenu
+              token={token}
+              memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
+              T={T}
+              shadow={shadow}
+            />
+            <GuestShuttle
+              token={token}
+              memberIds={familyMode ? familyMembers.filter((m) => m.status === 'yes').map((m) => m.guestId) : undefined}
+              T={T}
+              shadow={shadow}
+            />
             <GuestHotels token={token} T={T} shadow={shadow} />
           </>
         )}
@@ -527,6 +562,129 @@ function InviteView({
   )
 }
 
+function FamilyRsvpForm({
+  token, members, busy, T, onSaved,
+}: {
+  token: string
+  members: RsvpMemberView[]
+  busy: boolean
+  T: Theme
+  onSaved: () => void
+}) {
+  const [draft, setDraft] = useState(() => members.map((member) => ({ ...member })))
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!sending) setDraft(members.map((member) => ({ ...member })))
+  }, [members, sending])
+
+  const patch = (guestId: string, change: Partial<RsvpMemberView>) =>
+    setDraft((current) => current.map((member) => member.guestId === guestId ? { ...member, ...change } : member))
+
+  const save = () => void (async () => {
+    setSending(true)
+    setError(null)
+    try {
+      await sendFamilyRsvp(token, draft.map((member) => ({
+        guestId: member.guestId,
+        status: member.status === 'yes' ? 'yes' : 'no',
+        ...(member.status === 'yes'
+          ? {
+              diet: member.diet ?? null,
+              dietNote: member.diet === 'other' ? member.dietNote ?? null : null,
+              transfer: member.transfer ?? null,
+            }
+          : {}),
+      })))
+      onSaved()
+    } catch (e) {
+      setError(explainError(e))
+    } finally {
+      setSending(false)
+    }
+  })()
+
+  return (
+    <div className="mt-5 space-y-4">
+      <p className="text-[11.5px] text-center" style={{ color: T.soft }}>
+        {t('Ответьте за каждого человека в приглашении отдельно')}
+      </p>
+      {draft.map((member) => (
+        <div key={member.guestId} className="rounded-[18px] p-4" style={{ background: T.bg }}>
+          <div className="flex items-center justify-between gap-3">
+            <b className="text-[13px]">{member.name}</b>
+            {member.isPlaceholder && <span className="text-[9px]" style={{ color: T.soft }}>{t('имя можно уточнить у пары')}</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <button
+              disabled={busy || sending}
+              onClick={() => patch(member.guestId, { status: 'yes' })}
+              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              style={member.status === 'yes' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+            >{t('Приду')}</button>
+            <button
+              disabled={busy || sending}
+              onClick={() => patch(member.guestId, { status: 'no' })}
+              className="press h-[40px] rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+              style={member.status === 'no' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+            >{t('Не смогу')}</button>
+          </div>
+          {member.status === 'yes' && (
+            <>
+              <p className="text-[10.5px] font-semibold mt-4">{t('Ограничения по еде')}</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {DIETS.map(([id, label]) => (
+                  <button
+                    key={id ?? 'none'}
+                    disabled={busy || sending}
+                    onClick={() => patch(member.guestId, { diet: id })}
+                    className="press px-3 h-[32px] rounded-full text-[10.5px] disabled:opacity-50"
+                    style={(member.diet ?? null) === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+                  >{t(label)}</button>
+                ))}
+              </div>
+              {member.diet === 'other' && (
+                <input
+                  value={member.dietNote ?? ''}
+                  onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
+                  placeholder={t('Например: аллергия на орехи')}
+                  className="w-full mt-2 h-[38px] px-4 rounded-full text-[11px] outline-none"
+                  style={{ background: T.card, color: T.ink }}
+                />
+              )}
+              <p className="text-[10.5px] font-semibold mt-4">{t('Как доберётесь?')}</p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {([['need', t('Нужен трансфер')], ['own', t('Доберусь сам(а)')]] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    disabled={busy || sending}
+                    onClick={() => patch(member.guestId, { transfer: id })}
+                    className="press h-[36px] rounded-full text-[10.5px] disabled:opacity-50"
+                    style={member.transfer === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.card, color: T.ink }}
+                  >{label}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      <button
+        disabled={busy || sending || draft.some((member) => member.status === 'pending')}
+        onClick={save}
+        className="press w-full h-[48px] rounded-full text-[12.5px] font-semibold disabled:opacity-50"
+        style={{ background: T.accentGrad, color: '#FFF7F0' }}
+      >
+        {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
+      </button>
+      {draft.some((member) => member.status === 'pending') && (
+        <p className="text-[10.5px] text-center" style={{ color: T.soft }}>{t('Выберите ответ для каждого человека')}</p>
+      )}
+      {error && <p role="alert" className="text-[11.5px] text-center" style={{ color: T.accent }}>{error}</p>}
+    </div>
+  )
+}
+
 type Theme = (typeof inviteThemes)[number]
 
 /*
@@ -549,30 +707,79 @@ function GuestBlockError({ title, error, onRetry, T, shadow }: { title: string; 
 }
 
 /** Опрос по горячему. Варианты задаёт пара — гость их видит, а не угадывает. */
-function GuestMenu({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+function GuestMenu({
+  token, memberIds, T, shadow,
+}: {
+  token: string
+  memberIds?: string[]
+  T: Theme
+  shadow: string
+}) {
   const q = useApi(() => getGuestMenu(token), [token])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const options = q.data?.options ?? []
+  const allMembers = q.data?.members ?? []
+  const members = memberIds ? allMembers.filter((member) => memberIds.includes(member.guestId ?? '')) : allMembers
   if (q.error) return <GuestBlockError title={t('Что на горячее?')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!options.length) return null
 
-  const pick = (optionId: string) => void (async () => {
+  const pick = (optionId: string, guestId?: string) => void (async () => {
     setBusy(true)
     setErr(null)
-    try { await voteMenu(token, optionId); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try {
+      await voteMenu(token, optionId, guestId)
+      q.reload()
+    } catch (e) {
+      setErr(explainError(e))
+    } finally {
+      setBusy(false)
+    }
   })()
 
   return (
     <div className="px-6 mt-6 relative z-10 rv">
       <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
-        <p className="text-[11px] font-semibold flex items-center gap-1.5"><UtensilsCrossed size={12} style={{ color: T.accent }} />{q.data?.question || t('Что на горячее?')}</p>
-        <div className="flex flex-wrap gap-2 mt-3">
-          {options.map(o => (
-            <button key={o.id} disabled={busy} onClick={() => pick(o.id ?? '')} className="press px-4 h-[38px] rounded-full text-[11.5px] font-medium disabled:opacity-50"
-              style={q.data?.chosenOptionId === o.id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{o.name}</button>
-          ))}
-        </div>
+        <p className="text-[11px] font-semibold flex items-center gap-1.5">
+          <UtensilsCrossed size={12} style={{ color: T.accent }} />
+          {q.data?.question || t('Что на горячее?')}
+        </p>
+        {members.length > 1 ? (
+          <div className="space-y-4 mt-3">
+            {members.map((member) => (
+              <div key={member.guestId}>
+                <b className="text-[11.5px]">{member.name}</b>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {options.map((option) => (
+                    <button
+                      key={option.id}
+                      disabled={busy}
+                      onClick={() => pick(option.id ?? '', member.guestId ?? undefined)}
+                      className="press px-4 h-[36px] rounded-full text-[11px] font-medium disabled:opacity-50"
+                      style={member.chosenOptionId === option.id
+                        ? { background: T.accentGrad, color: '#FFF7F0' }
+                        : { background: T.bg, color: T.ink }}
+                    >{option.name}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {options.map((option) => (
+              <button
+                key={option.id}
+                disabled={busy}
+                onClick={() => pick(option.id ?? '', members[0]?.guestId ?? undefined)}
+                className="press px-4 h-[38px] rounded-full text-[11.5px] font-medium disabled:opacity-50"
+                style={(members[0]?.chosenOptionId ?? q.data?.chosenOptionId) === option.id
+                  ? { background: T.accentGrad, color: '#FFF7F0' }
+                  : { background: T.bg, color: T.ink }}
+              >{option.name}</button>
+            ))}
+          </div>
+        )}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
       </div>
     </div>
@@ -586,46 +793,83 @@ function GuestMenu({ token, T, shadow }: { token: string; T: Theme; shadow: stri
  * узнаёт автобус на точке сбора. Только имя — ни телефона, ни цены сервер
  * гостю не отдаёт; без перевозчика маршрут подписан как раньше, без приписок.
  */
-function GuestShuttle({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+function GuestShuttle({
+  token, memberIds, T, shadow,
+}: {
+  token: string
+  memberIds?: string[]
+  T: Theme
+  shadow: string
+}) {
   const q = useApi(() => getGuestShuttle(token), [token])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const routes = q.data?.routes ?? []
+  const allMembers = q.data?.members ?? []
+  const members = memberIds ? allMembers.filter((member) => memberIds.includes(member.guestId ?? '')) : allMembers
   if (q.error) return <GuestBlockError title={t('Трансфер')} error={q.error} onRetry={q.reload} T={T} shadow={shadow} />
   if (!routes.length) return null
 
-  const join = (busId: string) => void (async () => {
+  const join = (busId: string, guestId?: string) => void (async () => {
     setBusy(true)
     setErr(null)
-    try { await joinShuttle(token, busId); q.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try {
+      await joinShuttle(token, busId, guestId)
+      q.reload()
+    } catch (e) {
+      setErr(explainError(e))
+    } finally {
+      setBusy(false)
+    }
   })()
 
+  const routeButtons = (guestId?: string, myBusId?: string | null) => routes.map((route) => {
+    const mine = myBusId === route.id
+    const full = (route.taken ?? 0) >= (route.seats ?? 0)
+    return (
+      <button
+        key={route.id}
+        disabled={busy || mine || (full && !mine)}
+        aria-pressed={mine}
+        onClick={() => join(route.id ?? '', guestId)}
+        className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
+        style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}
+      >
+        <div className="flex-1 min-w-0">
+          <b className="text-[12.5px] block truncate">{route.carrier ? `${route.name} · ${route.carrier}` : route.name}</b>
+          <span className="text-[10.5px] opacity-80">{[route.from, route.time].filter(Boolean).join(' · ')}</span>
+        </div>
+        <span className="text-[10px] font-bold shrink-0">
+          {mine
+            ? t('вы записаны')
+            : full
+              ? t('мест нет')
+              : `${(route.seats ?? 0) - (route.taken ?? 0)} ${plural((route.seats ?? 0) - (route.taken ?? 0), t('место'), t('места'), t('мест'))}`}
+        </span>
+      </button>
+    )
+  })
+
   return (
-    /* `id` — якорь для «автобус не выбран» из раздела дня: гость записывается здесь. */
     <div id="transfer" className="px-6 mt-6 relative z-10 rv">
       <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
-        <p className="text-[11px] font-semibold flex items-center gap-1.5"><Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}</p>
-        <div className="space-y-2 mt-3">
-          {routes.map(r => {
-            const mine = q.data?.myBusId === r.id
-            const full = (r.taken ?? 0) >= (r.seats ?? 0)
-            return (
-              /* Свой автобус — состояние, а не действие: повторный тап слал тот же
-                 POST в никуда (R-176; ревью 015). Снять запись гость не может —
-                 контракт такого пути не даёт (вопрос владельцу). */
-              <button key={r.id} disabled={busy || mine || (full && !mine)} aria-pressed={mine} onClick={() => join(r.id ?? '')} className={cn('press w-full rounded-[16px] px-4 py-3 flex items-center gap-3 text-left', !mine && 'disabled:opacity-50')}
-                style={mine ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
-                <div className="flex-1 min-w-0">
-                  <b className="text-[12.5px] block truncate">{r.carrier ? `${r.name} · ${r.carrier}` : r.name}</b>
-                  <span className="text-[10.5px] opacity-80">{[r.from, r.time].filter(Boolean).join(' · ')}</span>
-                </div>
-                <span className="text-[10px] font-bold shrink-0">
-                  {mine ? t('вы записаны') : full ? t('мест нет') : `${(r.seats ?? 0) - (r.taken ?? 0)} ${plural((r.seats ?? 0) - (r.taken ?? 0), t('место'), t('места'), t('мест'))}`}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+        <p className="text-[11px] font-semibold flex items-center gap-1.5">
+          <Bus size={12} style={{ color: T.accent }} />{t('Трансфер')}
+        </p>
+        {members.length > 1 ? (
+          <div className="space-y-4 mt-3">
+            {members.map((member) => (
+              <div key={member.guestId}>
+                <b className="text-[11.5px]">{member.name}</b>
+                <div className="space-y-2 mt-2">{routeButtons(member.guestId ?? undefined, member.myBusId)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2 mt-3">
+            {routeButtons(members[0]?.guestId ?? undefined, members[0]?.myBusId ?? q.data?.myBusId)}
+          </div>
+        )}
         {err && <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{err}</p>}
       </div>
     </div>

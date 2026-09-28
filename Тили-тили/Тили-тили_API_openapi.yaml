@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.45.0
+  version: 0.50.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -13,11 +13,12 @@ info:
     - У слота нет собственного статуса. Слот либо пуст, либо несёт сделку;
       состояние живёт в `Deal.state` — шесть значений. `Slot.tileState` —
       производная подпись для мозаики, только для чтения.
-    - Гость опознаётся ОДНИМ персональным токеном во всех гостевых путях
-      (`/rsvp/{guestToken}`, `/gifts/{guestToken}`, `/join/{guestToken}/…`).
-      Общий код свадьбы не годится: по нему нельзя подставить имя в приглашение
-      и нельзя дать гостю снять СВОЙ резерв подарка. Анонимность сохраняется —
-      система знает гостя, а API пары этот токен не отдаёт никогда (§9).
+    - Гостевая ссылка опознаёт одно приглашение/семью (`guest_party`), а не
+      одну строку человека. Внутри ссылки 1–10 отдельных персон со своими
+      RSVP, меню, столом и автобусом; отель и подарки принадлежат приглашению.
+      Токен семьи используется во всех гостевых путях (`/rsvp/{guestToken}`,
+      `/gifts/{guestToken}`, `/join/{guestToken}/…`) и API пары его никогда
+      не отдаёт напрямую (§9).
     - Переноса данных с localStorage-моков не будет: реальных пользователей не
       было, эндпоинт импорта не заводится.
 
@@ -1532,8 +1533,17 @@ paths:
               type: object
               required: [name]
               properties:
-                name: { type: string }
-                plusOne: { type: boolean, default: false }
+                name: { type: string, description: 'primary person' }
+                plusOne: { type: boolean, default: false, deprecated: true, description: 'legacy shortcut: создать системного второго человека' }
+                members:
+                  type: array
+                  maxItems: 9
+                  description: 'дополнительные реальные персоны в том же семейном приглашении'
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string, minLength: 1, maxLength: 120 }
                 group: { type: string, example: 'Родня невесты' }
                 phone: { type: string, maxLength: 32, description: 'для напоминаний по SMS (POST …/guests/remind)' }
       responses:
@@ -1542,10 +1552,48 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Guest' }
+  /weddings/{weddingId}/guests/{guestId}/members:
+    post:
+      tags: [guests]
+      summary: Добавить человека в семейное приглашение
+      description: |
+        guestId — primary person (partyPosition=1). Добавляется отдельная
+        персона с собственными RSVP/меню/столом/автобусом; семейный token,
+        ссылка, номер и gift identity не меняются. Максимум 10 персон.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WeddingId' }
+        - { name: guestId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 120 }
+      responses:
+        '201':
+          description: Персона добавлена
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Guest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`family_full` — в одном семейном приглашении уже 10 персон'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /weddings/{weddingId}/guests/{guestId}:
     patch:
       tags: [guests]
-      summary: Обновить гостя (статус RSVP циклом yes→no→pending)
+      summary: Обновить отдельную персону приглашения
+      description: |
+        Поля RSVP/стола/питания относятся к этой персоне. Переходное plusOne
+        разрешено только у primary и материализует/удаляет системную вторую
+        персону; у secondary возвращается 409 `family_member_not_primary`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1574,10 +1622,19 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Guest' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: '`family_member_not_primary`, `table_full` или `bus_full`'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
     delete:
       tags: [guests]
-      summary: Удалить гостя
+      summary: Удалить отдельную персону семейного приглашения
+      description: |
+        Пока в семье остаётся хотя бы один человек, удаляется только выбранная
+        персона: следующие позиции уплотняются, новый первый человек становится
+        primary, а party token, одноразовая ссылка, hotel/gift identity и сама
+        семья не меняются. Если удалён последний человек, удаляется и guest_party.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WeddingId' }
@@ -1668,12 +1725,8 @@ paths:
   /rsvp/{guestToken}:
     get:
       tags: [guests]
-      summary: Публичная страница гостя (из ссылки в приглашении)
-      parameters:
-        - name: guestToken
-          in: path
-          required: true
-          schema: { type: string }
+      summary: Публичная страница семейного приглашения
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       security: []
       responses:
         '200':
@@ -1682,61 +1735,80 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [partyId, guestName, status, members, wedding]
                 properties:
-                  guestName: { type: string }
+                  partyId: { type: string, format: uuid }
+                  guestName: { type: string, description: 'primary person; переходное поле' }
                   wedding: { $ref: '#/components/schemas/WeddingPublic' }
-                  status: { type: string, enum: [yes, no, pending] }
-                  # Свой ответ целиком: гость видит, что уже сказал (v0.25 —
-                  # аудит, блок 5). Без этого форма после «приду» не могла
-                  # показать ни +1, ни еду, ни трансфер, которые он выбрал.
-                  plusOne: { type: boolean }
+                  status: { type: string, enum: [yes, no, pending], description: 'primary person; переходное поле' }
+                  plusOne: { type: boolean, deprecated: true, description: 'true, если в приглашении больше одной персоны' }
                   diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other] }
                   dietNote: { type: string, nullable: true }
                   transfer: { type: string, nullable: true, enum: [null, need, own] }
+                  members:
+                    type: array
+                    minItems: 1
+                    maxItems: 10
+                    items:
+                      $ref: '#/components/schemas/GuestPersonRsvp'
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [guests]
-      summary: Ответ гостя (RSVP)
+      summary: RSVP одной или нескольких персон семейного приглашения
       description: |
-        `plusOne: true` при уже забронированном автобусе может не поместиться
-        в его границу мест — тогда 409 `bus_full`, ответ RSVP не сохраняется.
-      parameters:
-        - name: guestToken
-          in: path
-          required: true
-          schema: { type: string }
+        Новый клиент передаёт members[] и меняет только перечисленных людей.
+        Старый payload status/plusOne остаётся переходно совместимым:
+        plusOne материализуется как реальная placeholder-персона, а не
+        увеличивает скрытый счётчик. Отказ одной персоны освобождает только
+        её автобус; семейный номер снимается лишь когда в party не осталось yes.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [status]
+              anyOf:
+                - required: [status]
+                - required: [members]
               properties:
-                status: { type: string, enum: [yes, no] }
-                plusOne: { type: boolean }
-                comment: { type: string }
+                status: { type: string, enum: [yes, no], deprecated: true }
+                plusOne: { type: boolean, deprecated: true }
+                comment: { type: string, maxLength: 1000 }
                 diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other] }
-                dietNote: { type: string, maxLength: 300 }
-                transfer: { type: string, enum: [need, own] }
+                dietNote: { type: string, nullable: true, maxLength: 300 }
+                transfer: { type: string, nullable: true, enum: [null, need, own] }
+                members:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [guestId, status]
+                    properties:
+                      guestId: { type: string, format: uuid }
+                      status: { type: string, enum: [yes, no] }
+                      diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other] }
+                      dietNote: { type: string, nullable: true, maxLength: 300 }
+                      transfer: { type: string, nullable: true, enum: [null, need, own] }
       security: []
       responses:
         '200': { description: Принято }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409':
-          description: '`bus_full` — мест в автобусе не осталось'
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   /weddings/{weddingId}/guests/import:
     post:
       tags: [guests]
       summary: Завести гостей списком
       description: |
-        Пара вставляет список из заметок или таблицы; экран разбирает строки
-        (имя, телефон, «+1») и показывает предпросмотр, сервер принимает уже
-        разобранные строки и заводит их одной транзакцией (фича 008, План
+        Пара вставляет список из заметок или таблицы; экран разбирает строки.
+        Сервер принимает primary person плюс необязательные `members[]`;
+        legacy `plusOne=true` остаётся совместимым, но материализуется как
+        отдельная placeholder-персона, а не скрытый множитель. Всё заводится
+        одной транзакцией (фича 008 + этап 020, План
         §20.1 экран 29). Дубликаты пропускаются, а не обновляются: совпадение
         имени (без учёта регистра и лишних пробелов) или телефона с уже
         существующим гостем свадьбы или с другой строкой того же запроса —
@@ -1764,7 +1836,16 @@ paths:
                     properties:
                       name: { type: string, minLength: 2, maxLength: 120 }
                       phone: { type: string, maxLength: 32 }
-                      plusOne: { type: boolean, default: false }
+                      plusOne: { type: boolean, default: false, deprecated: true }
+                      members:
+                        type: array
+                        maxItems: 9
+                        items:
+                          type: object
+                          required: [name]
+                          additionalProperties: false
+                          properties:
+                            name: { type: string, minLength: 2, maxLength: 120 }
                       group: { type: string, maxLength: 60 }
       responses:
         '201':
@@ -3315,12 +3396,7 @@ paths:
   /join/{guestToken}/shuttle:
     get:
       tags: [logistics-guest]
-      summary: Маршруты трансфера, доступные гостю
-      description: |
-        Записаться гость мог, а увидеть, куда именно, — нет: путь был только на
-        запись, и `busId` брать было неоткуда. `myBusId` говорит, куда он уже
-        записан: без этого гость, вернувшийся по ссылке, видит пустой выбор и
-        занимает второе место.
+      summary: Маршруты и места всех персон семейного приглашения
       parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       security: []
       responses:
@@ -3331,20 +3407,25 @@ paths:
               schema:
                 type: object
                 properties:
-                  myBusId: { type: string, nullable: true }
+                  myBusId: { type: string, nullable: true, description: 'primary person; переходное поле' }
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      required: [guestId, name]
+                      properties:
+                        guestId: { type: string, format: uuid }
+                        name: { type: string }
+                        myBusId: { type: string, nullable: true }
                   routes:
                     type: array
                     items: { $ref: '#/components/schemas/BusRoute' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [logistics-guest]
-      summary: Гость записывается в автобус
-      description: |
-        Место занимается атомарно; при переполнении — 409. Повтор безопасен по
-        построению (`on conflict do nothing` + признак «уже записан») —
-        `Idempotency-Key` не читается и не объявляется.
-      parameters:
-        - { $ref: '#/components/parameters/GuestToken' }
+      summary: Записать конкретную персону семьи в автобус
+      description: Одна guest row = одна персона = одно место; guestId должен входить в party токена.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       requestBody:
         required: true
         content:
@@ -3353,12 +3434,15 @@ paths:
               type: object
               required: [busId]
               properties:
-                busId: { type: string }
+                busId: { type: string, format: uuid }
+                guestId: { type: string, format: uuid, description: 'пропуск = primary для старого клиента' }
       security: []
       responses:
         '200': { description: Записан }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
   /join/{guestToken}/day:
     get:
       tags: [logistics-guest]
@@ -3532,7 +3616,8 @@ paths:
   /join/{guestToken}/hotels:
     get:
       tags: [logistics-guest]
-      summary: Отельные блоки для гостя
+      summary: Отельные блоки для семейного приглашения
+      description: 'mine относится ко всей семье: одно приглашение занимает не больше одного номера.'
       parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       security: []
       responses:
@@ -3546,16 +3631,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [logistics-guest]
-      summary: Гость занимает номер в блоке
+      summary: Семья занимает один номер в блоке
       description: |
-        Место занимается атомарно, при переполнении — 409 `hotel_full`. Пути
-        записи не было вовсе: блоки показывались, а занять номер было нечем,
-        хотя план требует «атомарные места в автобусе И НОМЕРЕ». После
-        `deadline_passed` (дедлайн заселения прошёл) — тоже 409. Повтор
-        безопасен по построению (`on conflict do nothing` + признак «уже
-        занято») — `Idempotency-Key` не читается и не объявляется.
-      parameters:
-        - { $ref: '#/components/parameters/GuestToken' }
+        Бронь ключуется partyId. Две персоны одного приглашения не расходуют
+        два номера. Повтор того же блока безопасен; переезд освобождает старый.
+        409 `deadline_passed` — срок бронирования блока истёк; 409 `hotel_full` —
+        свободных номеров больше нет.
+      parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       requestBody:
         required: true
         content:
@@ -3564,16 +3646,12 @@ paths:
               type: object
               required: [hotelId]
               properties:
-                hotelId: { type: string }
+                hotelId: { type: string, format: uuid }
       security: []
       responses:
         '200': { description: Номер занят }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409':
-          description: '`hotel_full` — мест не осталось; `deadline_passed` — дедлайн заселения прошёл'
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────── ОПРОС ПО МЕНЮ (§12.2) ─────────────────────────
   /weddings/{weddingId}/menu-poll:
@@ -3634,10 +3712,7 @@ paths:
   /join/{guestToken}/menu-vote:
     get:
       tags: [logistics-guest]
-      summary: Опрос по горячему глазами гостя
-      description: |
-        Варианты блюд задаёт пара, а голосовать гость мог вслепую: путь был
-        только на отправку выбора. `chosenOptionId` — что он уже выбрал.
+      summary: Меню всех персон семейного приглашения
       parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       security: []
       responses:
@@ -3649,7 +3724,15 @@ paths:
                 type: object
                 properties:
                   question: { type: string }
-                  chosenOptionId: { type: string, nullable: true }
+                  chosenOptionId: { type: string, nullable: true, description: 'primary; переходное поле' }
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        guestId: { type: string, format: uuid }
+                        name: { type: string }
+                        chosenOptionId: { type: string, nullable: true }
                   options:
                     type: array
                     items:
@@ -3660,8 +3743,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [catering]
-      summary: Гость выбирает блюдо
-      description: Один голос на гостя; повторный вызов меняет выбор, а не добавляет второй.
+      summary: Выбрать блюдо конкретной персоне семьи
+      description: Один голос на одну персону; guestId должен входить в party токена.
       parameters: [{ $ref: '#/components/parameters/GuestToken' }]
       requestBody:
         required: true
@@ -3671,11 +3754,13 @@ paths:
               type: object
               required: [optionId]
               properties:
-                optionId: { type: string }
+                optionId: { type: string, format: uuid }
+                guestId: { type: string, format: uuid, description: 'пропуск = primary для старого клиента' }
       security: []
       responses:
         '200': { description: OK }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ───────────────────────── ОТЗЫВЫ ГОСТЕЙ (§15) ─────────────────────────
   /weddings/{weddingId}/guest-reviews:
@@ -5999,7 +6084,12 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
-        plusOne: { type: boolean }
+        partyId: { type: string, format: uuid, readOnly: true, description: 'одно семейное приглашение для 1–10 персон' }
+        partyPosition: { type: integer, minimum: 1, maximum: 10, readOnly: true }
+        partySize: { type: integer, minimum: 1, maximum: 10, readOnly: true, description: 'текущее число персон в семейном приглашении' }
+        isPrimary: { type: boolean, readOnly: true, description: 'только у primary показывается inviteUrl' }
+        isPlaceholder: { type: boolean, readOnly: true, description: 'системное имя, созданное из старого +1; пара может переименовать' }
+        plusOne: { type: boolean, deprecated: true, description: 'переходное поле: true у primary, если в party больше одной персоны; новые клиенты используют partyId/отдельные строки' }
         group: { type: string, nullable: true }
         phone:
           type: string
@@ -6025,6 +6115,17 @@ components:
         hotelId: { type: string, nullable: true }
         inviteUrl: { type: string, nullable: true, description: 'ОДНОРАЗОВАЯ ссылка-приглашение для этого гостя. Пара её пересылает; при первом открытии код обменивается на персональный guestToken и гаснет. Сырой guestToken паре не отдаётся НИКОГДА — иначе пара может открыть гостевую страницу и увидеть его резерв подарка, что ломает анонимность (§9 бизнес-логики)' }
         inviteUrlUsed: { type: boolean, readOnly: true, description: 'true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link' }
+    GuestPersonRsvp:
+      type: object
+      required: [guestId, name, status]
+      properties:
+        guestId: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [yes, no, pending] }
+        diet: { type: string, nullable: true, enum: [null, vegetarian, vegan, halal, kosher, gluten_free, other] }
+        dietNote: { type: string, nullable: true }
+        transfer: { type: string, nullable: true, enum: [null, need, own] }
+        isPlaceholder: { type: boolean, readOnly: true }
     Table:
       type: object
       properties:
