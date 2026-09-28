@@ -11,3 +11,9 @@ export function paymentRubles(minor: number): string {
   const whole = Math.floor(minor / 100)
   return `${whole}.${String(minor % 100).padStart(2, '0')}`
 }
+
+/** Целые рубли для бюджетного ориентира запроса предложения; дробь и знак не принимаются. */
+export function parseWholeRubles(input: string): number | null {
+  const text = input.trim().replace(/[ \u00a0\u202f]/g, '')
+  return /^\d{1,13}$/.test(text) ? Number(text) : null
+}
