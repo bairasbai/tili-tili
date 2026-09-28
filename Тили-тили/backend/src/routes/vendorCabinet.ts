@@ -10,7 +10,7 @@ import { isUniqueViolation } from '../plugins/db.js'
 const VENDOR_PAID_SUM = `(select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
   from payments p
   where p.deal_id=d.id and p.status<>'cancelled' and p.amount_known
-    and (p.visibility='vendor' or p.created_at < (select min(run_on) from pgmigrations where name='1761700000000_payment_methods_privacy')))`
+    and (p.visibility='vendor' or p.legacy_vendor_visible))`
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
@@ -784,8 +784,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const PAYMENTS_SUM = `select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
              from payments p join deals d on d.id = p.deal_id
             where d.vendor_id = $1 and p.status <> 'cancelled'
-              and p.amount_known
-              and (p.visibility = 'vendor' or p.created_at < (select min(run_on) from pgmigrations where name='1761700000000_payment_methods_privacy'))`
+              and p.amount_known and (p.visibility = 'vendor' or p.legacy_vendor_visible)`
       const { rows } = await db().query<{
         views: string
         contacts: string
