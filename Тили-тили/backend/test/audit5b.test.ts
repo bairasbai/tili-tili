@@ -233,7 +233,15 @@ describe.skipIf(!live)('перепроверка этапа 5, второй пр
     const yesAlone = await newGuest(w, 'Денис')
     const declined = await newGuest(w, 'Катя')
 
-    await app.inject({ method: 'POST', url: `/rsvp/${yesPlusOne.token}`, payload: { status: 'yes', plusOne: true } })
+    await app.inject({ method: 'POST', url: `/rsvp/${yesPlusOne.token}`, payload: { status: 'yes' } })
+    const familyPage = await app.inject({ method: 'GET', url: `/rsvp/${yesPlusOne.token}` })
+    const familyPeople = familyPage.json().people as { id: string; status: string }[]
+    expect(familyPeople).toHaveLength(2)
+    await app.inject({
+      method: 'POST',
+      url: `/rsvp/${yesPlusOne.token}`,
+      payload: { personId: familyPeople[1]!.id, status: 'yes' },
+    })
     await app.inject({ method: 'POST', url: `/rsvp/${yesAlone.token}`, payload: { status: 'yes' } })
     await app.inject({ method: 'POST', url: `/rsvp/${declined.token}`, payload: { status: 'no' } })
 
@@ -242,9 +250,8 @@ describe.skipIf(!live)('перепроверка этапа 5, второй пр
       url: `/weddings/${w.weddingId}/menu-poll`,
       headers: auth(w.token),
     })
-    // Кейтерингу нужны порции, а не записи: «Ольга +1» это два человека
-    // за столом и две порции. Правило было в описании этапа, но нигде
-    // не отдавалось наружу.
+    // Кейтеринг считает три реальные строки-person: две персоны семейного
+    // приглашения и одного отдельного гостя.
     expect(poll.json().expectedPortions).toBe(3)
   })
 
