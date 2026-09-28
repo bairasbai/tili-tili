@@ -1,72 +1,133 @@
-# Проверка 020 — семейные приглашения / clean integration
+# 020 — verification / acceptance ✅
 
-Дата: 2026-09-28.
+Дата: 2026-09-28  
+Репозиторий: `bairasbai/tili-tili`  
+Ветка: `test/020-finalize-20260928`  
+Актуальный подтверждённый code/test SHA до документационного коммита: `28ed3859293fc83fb5d50705b92cad9812ad4210`  
+Контракт: OpenAPI `0.50.0`
 
-## Merge-кандидат
+> T033 закрыт после повторного полного gate документационного commit `fd2680018badc5ac2aadd2b80d2c21d1d4a120be`: CI `36386064858` и browser/migration `36386064786` завершились SUCCESS.
 
-Ветка: `integration/020-clean-main-20260928`.
-Проверочный кодовый HEAD: `661d2ae98c2a6feb03da7553dcb2f1ad294ce73b`.
+## 1. Почему прежняя acceptance была устаревшей
 
-Старая source-линия 020 не используется как merge-кандидат целиком: она выросла из прежней 019-базы. В clean-ветку перенесена только дельта этапа 020, конфликтные общие файлы сведены с текущим main, а generated contract пересобран из итогового OpenAPI.
+Предыдущий файл ссылался на `a5a40f30…`, но рабочая ветка после handoff получила ещё изменения. Перед финализацией текущий tip был заново прочитан из GitHub и проверен по Actions. Между переданным владельцем `03e9b7b2…` и текущим code/test base появились:
 
-## T031 — real browser E2E ✅
+- `d66b2f4546f9a6674c1eeac428e60dad3e86e81f` — materialized people считаются один раз;
+- `06cca3f692e10dcbea7e67d8ee7fe3952a87046a` — table capacity считает person rows, не `plus_one`;
+- `014e7a10326366a7f4e9ac49826f3554d5114721` — regression частичного family refusal;
+- `28ed3859293fc83fb5d50705b92cad9812ad4210` — catering полностью отвязан от deprecated `plus_one`.
 
-GitHub Actions run: `36365055383`.
-Artifact: `family020-clean-evidence`, id `10947465988`.
-Artifact SHA-256: `a914dcd8854aa2a9645ce3f0a562df5f3feaf6a7371aef0fb9dbc044f8514a13`.
+## 2. T001–T032 — повторная фактическая сверка
 
-Перед browser flow на одноразовой PostgreSQL выполняется migration rehearsal:
-1. применить все миграции;
-2. откатить только 020;
-3. создать legacy guest с `plusOne=true`, menu/bus/hotel/invite/gift состоянием;
-4. снова применить 020;
-5. проверить сохранение family identity и ресурсов.
+| Диапазон | Подтверждение |
+|---|---|
+| T001–T007 | Миграция `1761600000000_family_guest_parties.cjs` + live rehearsal: legacy `plusOne=true` → 2 person rows; menu=2, bus=2, hotel=1, inviteCode=1, gift reservation=1 |
+| T008–T012 | Family API, единый token, create/add/remove/rename/import `members[]`; regressions `family020.test.ts` |
+| T013–T016 | GET/POST family RSVP по `guestId`, независимые status/diet/transfer, legacy payload compatibility; отдельный regression partial refusal |
+| T017–T022 | person-only table/menu/bus/catering/fairPrice; party-only hotel/gift identity/quota. Stale `plusOne` отдельно проверен для personCount и table capacity |
+| T023 | OpenAPI 0.50.0. Последний отдельный generator run `36382068390` — success на `03e9b7b2…`; после него OpenAPI не менялся. Текущий CI: schemas 8/8, contract-sync 4/4 |
+| T024–T027 | Frontend family UI + RU/EN; `family020Ui.test.ts` 3/3; карты экранов/кнопок актуализируются этим T033 commit |
+| T028–T030 | DB regressions, concurrency last bus seat / hotel tabs / gift quota, export without token, 31-day cleanup; `family020.test.ts` 16/16 |
+| T031 | Real Chromium flow на PostgreSQL + Fastify + Vite, без route mocks — run `36385058399` |
+| T032 | Полный CI с PostgreSQL 16 + Redis 7, migrations, frontend/backend tests/types/lint/build — run `36385058391` |
 
-Реальный Chromium/Vite/Fastify flow прошёл целиком:
-- семья создана через UI пары;
-- членов семьи: **2**;
-- семейных invite links: **1**;
-- независимых menu votes: **2**;
-- занятых bus seats: **2**;
-- hotel rooms: **1**;
-- family gift reservations: **1**;
-- JavaScript page errors: **0**.
+## 3. Полный CI на текущем code/test base
 
-## T032 — полный CI ✅
+GitHub Actions: **CI run `36385058391` — success**, head SHA `28ed3859293fc83fb5d50705b92cad9812ad4210`.
 
-GitHub Actions run: `36365055384` — success.
+Frontend:
+- 79/79 test files;
+- **1059/1059 tests passed**;
+- `family020Ui.test.ts` — 3/3;
+- TypeScript, ESLint, Vite production build — success.
 
-- Frontend: **78 passed files / 1023 passed tests**.
-- Backend: **106 passed files / 1178 passed tests**.
-- PostgreSQL migrations: success, включая `1761600000000_family_guest_parties`.
-- TypeScript: success.
-- ESLint: success.
-- Frontend Vite production build: success.
-- Backend TypeScript production build: success.
+Backend:
+- PostgreSQL 16 + Redis 7 live services;
+- migrations — success;
+- 107/107 test files;
+- **1233/1233 tests passed**;
+- `family020.test.ts` — **16/16**;
+- `schemas.test.ts` — 8/8;
+- `contract-sync.test.ts` — 4/4;
+- TypeScript noEmit, ESLint, TypeScript build — success.
 
-## Дополнительная проверка
+## 4. Generated contract
 
-Source-ветка после тех же финальных test-harness corrections также зелёная:
-- CI `36364877609` — success;
-- Family browser `36364877628` — success.
+Отдельный workflow **Generate 020 final contract**: run `36382068390` — success, head SHA `03e9b7b2c80ef92ebf38218bbe3bf4867021c0ee`.
 
-Два последних исправления не меняли product behavior:
-- Playwright locator перестал вставлять Cyrillic через JSON `\\uXXXX` в XPath;
-- CSV regression ожидает новую колонку `Family` вместо legacy `+1`.
+Он запускается только при изменении OpenAPI или самого generator workflow. Последующие четыре коммита не меняли OpenAPI/generated artifacts. Их актуальность подтверждена уже на `28ed3859…` тестами `schemas.test.ts` 8/8 и `contract-sync.test.ts` 4/4 в полном CI.
+
+## 5. Legacy migration rehearsal + real browser
+
+GitHub Actions: **Verify 020 family browser run `36385058399` — success**, head SHA `28ed3859293fc83fb5d50705b92cad9812ad4210`.
+
+Migration rehearsal:
+```json
+{"ok":true,"people":2,"menuVotes":2,"busBookings":2,"hotelBookings":1,"inviteCodes":1,"giftReservations":1}
+```
+
+Real Chromium:
+```json
+{
+  "steps": [
+    "pair-created-two-person-family-through-ui",
+    "one-family-invite-link-issued",
+    "per-person-rsvp-saved",
+    "two-menu-votes-two-bus-seats-one-family-room",
+    "one-shared-family-gift-reservation"
+  ],
+  "pageErrors": [],
+  "verified": {
+    "familyMembers": 2,
+    "inviteLinks": 1,
+    "menuVotes": 2,
+    "busSeats": 2,
+    "hotelRooms": 1,
+    "familyGiftReservations": 1
+  }
+}
+```
+
+Artifact:
+- name: `family020-browser-evidence`;
+- id: `10954420756`;
+- size: 401683 bytes;
+- digest: `sha256:1c9bc62a2a63235819c3ecbb8d03c268016946914f78a6071c1d0564abb8f7ae`.
+
+## 6. Дополнительный финальный аудит
+
+Подтверждено regression-тестами:
+- family token не может изменить person другой party;
+- удаление primary повышает следующего member без ротации token;
+- stale `plus_one` не увеличивает personCount и table capacity;
+- отказ одного member снимает только его bus booking;
+- family hotel остаётся, пока есть хотя бы один RSVP=yes;
+- две семьи на последний hotel room дают ровно 200/409;
+- два members на последнее bus seat дают ровно 200/409;
+- две вкладки перемещают family hotel к одному финальному room;
+- parallel gift reserve не превышает общую party quota;
+- export сохраняет party structure и не отдаёт invite token;
+- 31-day cleanup удаляет party, people и family-owned rows.
+
+Новый реальный дефект этого аудита: **ERR-0336** — capacity стола всё ещё использовала `sum(1 + plus_one)`; исправлено в `06cca3f…`.
+
+## 7. Final documentation gate
+
+Документационный SHA: `fd2680018badc5ac2aadd2b80d2c21d1d4a120be`.
+
+GitHub Actions после обновления всех T033-документов:
+- **CI `36386064858` — SUCCESS**, head SHA `fd2680018badc5ac2aadd2b80d2c21d1d4a120be`;
+- **Verify 020 family browser `36386064786` — SUCCESS**, head SHA `fd2680018badc5ac2aadd2b80d2c21d1d4a120be`.
+
+Тем самым проверено, что документационные изменения не сломали полный frontend/backend gate, миграции и реальный browser acceptance.
 
 ## Итог
 
-T001–T033 этапа 020 закрыты как clean merge-candidate. Временный workflow clean-browser удаляется финализационным коммитом. Следующий gate — PR на актуальный `main`, затем post-merge CI. Этап 021 до этого не начинается.
+T001–T033 закрыты. Этап **020 завершён ✅**.
+
+Этой T033-финализацией main/production не изменялись. Feature 020 уже была ранее слита в main отдельным Merge PR #12 (`3b2dbabd26701b33da372126fa33b2e4caad4b82`); текущая работа main не трогала. 021 в этой работе не начинался.
 
 
-## PR / main acceptance · 2026-09-28 ✅
+## Clean follow-up verification
 
-- PR: **#12** `integration/020-clean-main-20260928 → main`.
-- PR head: `d865ef45557314b54dc01ff017dfadfd99055d37`.
-- PR CI: `36365523795` — success.
-- Offers 019 browser regression: `36365523816` — success.
-- Task planning browser regression: `36365523769` — success.
-- Merge commit: `3b2dbabd26701b33da372126fa33b2e4caad4b82`.
-- Post-merge main CI: `36365783985` — success.
-
-Этап 020 слит и проверен на итоговом main. Следующий product stage — 021. Production deployment этими gates не подтверждается.
+Для переноса post-merge hardening используется отдельная integration-ветка от актуального main. В неё входят только финальные исправления 020 и regressions; более старые ветки 018/019 повторно не сливаются. Финальный gate этой integration-ветки фиксируется в GitHub Actions перед merge.
