@@ -4249,7 +4249,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: {$ref: '#/components/schemas/TimelineEvent'}
+                items: {$ref: '#/components/schemas/TimelinePlanEvent'}
     put:
       tags: [timeline]
       summary: Заменить тайминг целиком
@@ -4273,7 +4273,7 @@ paths:
           application/json:
             schema:
               type: array
-              items: {$ref: '#/components/schemas/TimelineEvent'}
+              items: {$ref: '#/components/schemas/TimelinePlanEvent'}
       responses:
         '200':
           description: OK
@@ -4285,7 +4285,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: {$ref: '#/components/schemas/TimelineEvent'}
+                items: {$ref: '#/components/schemas/TimelinePlanEvent'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409':
           description: 'timeline_version_conflict — расписание изменилось после версии из If-Match; timeline_event_stale — передан уже удалённый/чужой ID без раскрытия его происхождения.'
@@ -4313,7 +4313,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  events: {type: array, items: {$ref: '#/components/schemas/TimelineEvent'}}
+                  events: {type: array, items: {$ref: '#/components/schemas/TimelinePlanEvent'}}
                   conflicts: {type: array, items: {type: string}}
   /weddings/{weddingId}/timeline/shift:
     post:
@@ -4348,7 +4348,7 @@ paths:
               schema: {$ref: '#/components/schemas/DayXBroadcast'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '409':
-          description: '`idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется'
+          description: '`idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется; `timeline_dependency_conflict` — сдвиг нарушает зависимость fixed/flexible графа'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -7327,6 +7327,53 @@ components:
             Видят ли блок гости в день X (`GET /join/{guestToken}/day`). По
             умолчанию да — программа праздника; «Сборы невесты» и «Монтаж
             арки» пара снимает галочкой (План §8.8, фича 009).
+    TimelineDependency:
+      type: object
+      required: [eventId, travelMinutes, bufferMinutes]
+      additionalProperties: false
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: 'ID обязательного предыдущего блока этой же свадьбы.'
+        travelMinutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+          description: 'Переезд после предыдущего блока.'
+        bufferMinutes:
+          type: integer
+          minimum: 0
+          maximum: 1440
+          description: 'Явный запас сверх переезда.'
+    TimelinePlanEvent:
+      allOf:
+      - $ref: '#/components/schemas/TimelineEvent'
+      - type: object
+        required: [timingMode, assigneeUserIds, dealIds, dependsOn]
+        properties:
+          timingMode:
+            type: string
+            enum: [fixed, flexible]
+            description: 'fixed не двигается Day-X shift; flexible можно сдвигать автоматически.'
+          assigneeUserIds:
+            type: array
+            uniqueItems: true
+            maxItems: 20
+            items: {type: string, format: uuid}
+            description: 'Структурированные ответственные — только живые участники этой свадьбы.'
+          dealIds:
+            type: array
+            uniqueItems: true
+            maxItems: 20
+            items: {type: string, format: uuid}
+            description: 'Активные сделки-исполнители этой свадьбы.'
+          dependsOn:
+            type: array
+            maxItems: 60
+            items: {$ref: '#/components/schemas/TimelineDependency'}
+            description: 'DAG-зависимости; цикл и нарушение времени дают 422.'
+
     AlbumPhoto:
       type: object
       properties:
