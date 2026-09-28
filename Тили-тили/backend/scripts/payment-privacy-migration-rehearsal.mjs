@@ -88,7 +88,7 @@ try {
   migrate(['down','1'])
   const cols=await client.query(`select column_name from information_schema.columns
     where table_schema='public' and table_name='payments' and column_name in
-      ('payment_method','visibility','amount_known','paid_on')`)
+      ('payment_method','visibility','amount_known','legacy_vendor_visible','paid_on')`)
   assert.equal(cols.rowCount,0)
   migrate(['up',STAGE])
 
