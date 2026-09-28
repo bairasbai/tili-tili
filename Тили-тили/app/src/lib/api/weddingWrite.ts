@@ -156,6 +156,14 @@ export interface TimelineDraft {
    * галочка у «Сборов невесты» воскресала бы при следующей правке соседа.
    */
   forGuests: boolean
+  /** fixed — Day X shift/автопересчёт не двигает этот блок. */
+  timingMode: 'fixed' | 'flexible'
+  /** Структурированные ответственные из команды свадьбы. */
+  assigneeUserIds: string[]
+  /** Забронированные/активные сделки-исполнители. */
+  dealIds: string[]
+  /** Предыдущие блоки + дорога и явный временной запас. */
+  dependsOn: { eventId: string; travelMinutes: number; bufferMinutes: number }[]
 }
 
 /**

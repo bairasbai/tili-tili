@@ -209,7 +209,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
           maxItems: 60,
           items: {
             type: 'object',
-            required: ['name'],
+            required: ['name', 'timingMode', 'assigneeUserIds', 'dealIds', 'dependsOn'],
             additionalProperties: false,
             properties: {
               id: UUID_ID,

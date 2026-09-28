@@ -1117,6 +1117,7 @@ export function Timeline() {
      умолчание контракта: программа праздника гостям видна, снимают её у
      «Сборов невесты» и «Монтажа арки» (План §8.8, фича 009). */
   const [forGuestsNew, setForGuestsNew] = useState(true)
+  const [timingModeNew, setTimingModeNew] = useState<'fixed' | 'flexible'>('flexible')
   /* Черновик автоплана: показан, но ещё не применён. */
   const [draft, setDraft] = useState<TimelineDraft[] | null>(null)
 
@@ -1149,6 +1150,7 @@ export function Timeline() {
     who: e.who ?? '',
     /* Без поля в ответе — умолчание контракта «виден»: так же читает базу сервер. */
     forGuests: e.forGuests ?? true,
+    timingMode: e.timingMode ?? 'flexible',
   }))
 
   /*
@@ -1214,6 +1216,14 @@ export function Timeline() {
       ...(e.location ? { location: e.location } : {}),
       ...(e.icon ? { icon: e.icon } : {}),
       forGuests: e.forGuests ?? true,
+      timingMode: e.timingMode ?? 'flexible',
+      assigneeUserIds: e.assigneeUserIds ?? [],
+      dealIds: e.dealIds ?? [],
+      dependsOn: (e.dependsOn ?? []).map(dependency => ({
+        eventId: dependency.eventId,
+        travelMinutes: dependency.travelMinutes ?? 0,
+        bufferMinutes: dependency.bufferMinutes ?? 0,
+      })),
     }))
   }
   /* Крестики и «Добавить» закрыты, пока список перечитывается: правка по
@@ -1229,9 +1239,21 @@ export function Timeline() {
     const startsAt = isoAtWeddingTime(weddingDate, from, tz)
     if (!startsAt) { setErr(t('Укажите время в формате 19:00')); return }
     const endsAt = till ? isoAtWeddingTime(weddingDate, till, tz) : null
-    const ok = await save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}), forGuests: forGuestsNew }])
+    const ok = await save([
+      ...asDraft(),
+      {
+        name: name.trim(),
+        startsAt,
+        ...(endsAt ? { endsAt } : {}),
+        forGuests: forGuestsNew,
+        timingMode: timingModeNew,
+        assigneeUserIds: [],
+        dealIds: [],
+        dependsOn: [],
+      },
+    ])
     if (!ok) return
-    setName(''); setFrom(''); setTill(''); setForGuestsNew(true); setEditing(false)
+    setName(''); setFrom(''); setTill(''); setForGuestsNew(true); setTimingModeNew('flexible'); setEditing(false)
   })()
 
   const removeEvent = (id: string) => void save(asDraft().filter(e => e.id !== id))
@@ -1239,6 +1261,9 @@ export function Timeline() {
      гостям» контракт не знает. Список — из принятого сервером (`asDraft`), а
      не с экрана: иначе галочка сразу после крестика вернула бы убранный блок. */
   const toggleForGuests = (id: string) => void save(asDraft().map(e => (e.id === id ? { ...e, forGuests: !e.forGuests } : e)))
+  const toggleTimingMode = (id: string) => void save(
+    asDraft().map(e => (e.id === id ? { ...e, timingMode: e.timingMode === 'fixed' ? 'flexible' : 'fixed' } : e)),
+  )
 
   /*
    * Автоплан сервер отдаёт предпросмотром и сам ничего не меняет — так же
@@ -1264,6 +1289,14 @@ export function Timeline() {
         ...(e.location ? { location: e.location } : {}),
         ...(e.icon ? { icon: e.icon } : {}),
         forGuests: e.forGuests ?? true,
+        timingMode: e.timingMode ?? 'flexible',
+        assigneeUserIds: e.assigneeUserIds ?? [],
+        dealIds: e.dealIds ?? [],
+        dependsOn: (e.dependsOn ?? []).map(dependency => ({
+          eventId: dependency.eventId,
+          travelMinutes: dependency.travelMinutes ?? 0,
+          bufferMinutes: dependency.bufferMinutes ?? 0,
+        })),
       })))
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
@@ -1304,6 +1337,15 @@ export function Timeline() {
               <input type="checkbox" checked={forGuestsNew} onChange={e => setForGuestsNew(e.target.checked)} className="accent-[var(--rose)]" />
               {t('Показывать гостям')}
             </label>
+            <label className="flex items-center gap-2 mt-2.5 text-[12px] font-medium">
+              <input
+                type="checkbox"
+                checked={timingModeNew === 'fixed'}
+                onChange={e => setTimingModeNew(e.target.checked ? 'fixed' : 'flexible')}
+                className="accent-[var(--rose)]"
+              />
+              {t('Фиксированное время — не сдвигать автоматически')}
+            </label>
             {!weddingDate && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Сначала выберите дату свадьбы — без неё у события нет дня.')}</p>}
             {weddingDate && !ready(wq) && <p className="text-[11px] text-[var(--soft)] mt-2">{wq.loading ? t('Загружаем часовой пояс площадки…') : t('Часовой пояс площадки не загрузился — время блока считать не в чем')}</p>}
             <button disabled={locked || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
@@ -1326,11 +1368,24 @@ export function Timeline() {
               {/* Пометка — по ответу сервера, а не по галочке на экране: гость
                   этого блока в своей программе не увидит. */}
               {!e.forGuests && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('скрыт от гостей')}</p>}
+              <p className="text-[10px] text-[var(--soft)] mt-0.5">
+                {e.timingMode === 'fixed' ? t('фиксированное время') : t('подвижный блок')}
+              </p>
               {editing && (
+                <>
                 <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[var(--soft)]">
                   <input type="checkbox" checked={e.forGuests} disabled={locked} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
                   {t('Показывать гостям')}
                 </label>
+                <button
+                  type="button"
+                  disabled={locked}
+                  onClick={() => toggleTimingMode(e.id)}
+                  className="press mt-1.5 text-[11px] font-semibold text-[var(--sage-deep)] disabled:opacity-50"
+                >
+                  {e.timingMode === 'fixed' ? t('Сделать подвижным') : t('Зафиксировать время')}
+                </button>
+                </>
               )}
             </div>
             {editing && (
