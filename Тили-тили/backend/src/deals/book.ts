@@ -206,7 +206,7 @@ export async function bookVendor(
     )
   }
 
-  const taken = await client.query('update slots set deal_id = $2 where id = $1 and deal_id is null', [
+  const taken = await client.query('update slots set deal_id = $2, prebooked_at = null where id = $1 and deal_id is null', [
     context.slotId,
     dealId,
   ])
