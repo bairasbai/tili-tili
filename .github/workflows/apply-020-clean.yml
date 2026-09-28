@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   integrate-020:
-    if: "github.event.head_commit.message == 'chore(020): merge clean delta snapshot'"
+    if: "github.event.head_commit.message == 'chore(020): merge clean delta snapshot utf8'"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +24,7 @@ jobs:
           SOURCE=4a6fa187c87cda39fbd33ff6cc673e1bc5c836fc
           OURS=$(git rev-parse HEAD)
           git fetch --no-tags origin test/020-finalize-20260928
+          git config core.quotepath false
 
           conflicts=0
           while IFS=$'\t' read -r status path extra; do
