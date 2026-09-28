@@ -4344,6 +4344,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/deals/{dealId}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Оплаты своей сделки, раскрытые парой подрядчику
+         * @description Возвращает только записи той сделки, которая принадлежит текущему vendor,
+         *     и только с visibility=vendor. private/finance_members не участвуют даже в агрегатах.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VendorPaymentRecord"][];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/deals/{dealId}/payments/{paymentId}/receipts/{receiptId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Подтверждение раскрытой оплаты своей сделки */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                    paymentId: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            filename: string;
+                            mimeType: string;
+                            contentBase64: string;
+                        };
+                    };
+                };
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/updates": {
         parameters: {
             query?: never;
@@ -11810,7 +11898,19 @@ export interface components {
             /** @enum {string} */
             currency: "RUB";
         };
-        /** @description Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма отметок минус возвраты; remaining — положительный остаток по каждой активной сделке; unallocated — отметки без активного этапа; inactiveDealRecorded — нетто по неактивным сделкам. Плановые этапы не прибавляются к committed или recorded. unknownPrices исключает ложное утверждение о полном нулевом остатке. */
+        /** @enum {string} */
+        PaymentMethod: "cash" | "bank_transfer" | "card" | "other";
+        /**
+         * @description private и finance_members не расширяют текущую RBAC-модель: финансовые endpoints свадьбы
+         *     по-прежнему доступны только роли couple. vendor раскрывает запись только vendor этой сделки.
+         * @enum {string}
+         */
+        PaymentVisibility: "private" | "finance_members" | "vendor";
+        /**
+         * @description Только сделки, не ручные статьи. committed — активные обязательства; recorded — сумма
+         *     известных отметок минус возвраты; remaining — положительный числовой остаток по каждой
+         *     активной сделке. Неизвестная сумма не считается нулём и не уменьшает remaining.
+         */
         PaymentSummary: {
             committed: components["schemas"]["FinancialBalance"];
             recorded: components["schemas"]["FinancialBalance"];
@@ -11818,6 +11918,9 @@ export interface components {
             unallocated: components["schemas"]["FinancialBalance"];
             inactiveDealRecorded: components["schemas"]["FinancialBalance"];
             unknownPrices: number;
+            unknownAmountPayments: number;
+            /** @description true, если есть факты оплаты без сохранённой суммы; recorded — только известная нижняя граница. */
+            amountIncomplete: boolean;
         };
         PaymentInstallment: {
             /** Format: date-time */
@@ -11830,22 +11933,20 @@ export interface components {
             amount: components["schemas"]["Money"];
             paid: components["schemas"]["FinancialBalance"];
             /**
-             * @description Сколько на этап легло неразнесённых денег сделки: отметок без этапа (или на
-             *     отменённом этапе), распределённых по этапам в порядке срока. Только для показа —
-             *     привязки не меняются. Старая кнопка «Оплатить» пишет весь остаток одной
-             *     отметкой без этапа, и без этого этапы оставались бы «просрочены» при оплаченной
-             *     сделке (ревью 018, M-01).
+             * @description Сколько на этап легло неразнесённых известных денег сделки. Только для показа —
+             *     привязки не меняются.
              */
             allocated: components["schemas"]["Money"];
-            /** @description Сколько осталось по этапу с учётом `allocated`; не больше остатка сделки. */
+            /** @description Сколько осталось по этапу с учётом известных оплат; неизвестная сумма его не уменьшает. */
             remaining: components["schemas"]["Money"];
             /** Format: date */
             due: string;
             version: number;
             status: components["schemas"]["PaymentInstallmentStatus"];
-            /** @description Срок прошёл, а `remaining` больше нуля. */
             overdue: boolean;
             cancelReason: string | null;
+            /** @description Факты оплаты этого этапа без сохранённой суммы. */
+            unknownAmountPayments: number;
         };
         /**
          * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
@@ -11862,7 +11963,13 @@ export interface components {
             dealId: string;
             /** @enum {string} */
             kind: "deposit" | "balance" | "refund";
-            amount: components["schemas"]["Money"];
+            /** @description null только когда amountKnown=false; неизвестная сумма никогда не кодируется нулём. */
+            amount: components["schemas"]["Money"] | null;
+            amountKnown: boolean;
+            paymentMethod: components["schemas"]["PaymentMethod"];
+            visibility: components["schemas"]["PaymentVisibility"];
+            /** Format: date */
+            paidOn: string;
             /** @enum {string} */
             status: "recorded" | "confirmed" | "cancelled";
             /** Format: date-time */
@@ -11870,6 +11977,17 @@ export interface components {
             /** Format: uuid */
             installmentId: string | null;
             version: number;
+        };
+        VendorPaymentRecord: components["schemas"]["PaymentRecord"] & {
+            receipts: {
+                /** Format: uuid */
+                id: string;
+                filename: string;
+                mimeType: string;
+                sizeBytes: number;
+                /** Format: date-time */
+                createdAt: string;
+            }[];
         };
         PaymentDeal: {
             /** Format: uuid */
@@ -11887,6 +12005,7 @@ export interface components {
             needsReview: boolean;
             active: boolean;
             canPlan: boolean;
+            unknownAmountPayments: number;
         };
         PaymentSchedule: {
             range: {
@@ -11902,13 +12021,11 @@ export interface components {
             };
             readOnly: boolean;
             summary: components["schemas"]["PaymentSummary"];
-            /** @description Остаток этапов со сроком внутри окна from–to; просрочка вне окна — в `overdueRemaining`. */
             dueInWindow: components["schemas"]["Money"];
+            overdueRemaining: components["schemas"]["Money"];
             items: components["schemas"]["PaymentInstallment"][];
             deals: components["schemas"]["PaymentDeal"][];
             payments: components["schemas"]["PaymentRecord"][];
-            /** @description Остаток всех просроченных этапов — отдельно от окна: окно «май» не несёт долг с марта (ревью 018, M-09). */
-            overdueRemaining: components["schemas"]["Money"];
             allInstallments: {
                 /** Format: uuid */
                 id: string;
@@ -11917,6 +12034,7 @@ export interface components {
                 title: string;
                 status: components["schemas"]["PaymentInstallmentStatus"];
                 remaining: components["schemas"]["Money"];
+                unknownAmountPayments: number;
             }[];
         };
         PaymentHistoryExport: {
@@ -11948,9 +12066,24 @@ export interface components {
             cancelled?: true;
             reason?: string;
         };
+        /**
+         * @description Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.
+         *     При amountKnown=false числовой долг не уменьшается и итог помечается неполным.
+         */
         PaymentInstallmentPay: {
             version: number;
-            amount: components["schemas"]["PositivePaymentMoney"];
+            amount?: components["schemas"]["PositivePaymentMoney"];
+            /**
+             * @description false фиксирует факт расчёта без суммы; amount при этом не передаётся.
+             * @default true
+             */
+            amountKnown: boolean;
+            /** @default other */
+            paymentMethod: components["schemas"]["PaymentMethod"];
+            /** @default private */
+            visibility: components["schemas"]["PaymentVisibility"];
+            /** Format: date */
+            paidOn?: string;
         };
         /** @description Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным. */
         PaymentPlanLink: {

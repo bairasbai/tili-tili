@@ -238,7 +238,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
 
           await lockFinanceAccess(client, weddingId, request.caller!.userId)
           const deal = await lockDeal(client, weddingId, slot.deal_id)
-          await recordPayment(client, deal, request.caller!.userId, body.amount?.amount)
+          await recordPayment(client, deal, request.caller!.userId, body.amount?.amount, undefined, {legacyVendorVisible:true})
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
       )

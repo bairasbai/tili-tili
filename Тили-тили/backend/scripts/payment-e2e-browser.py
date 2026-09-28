@@ -91,10 +91,15 @@ with sync_playwright() as pw:
         card.get_by_role('button', name='Отметить оплату: Аванс фотографу', exact=True).click()
         form = page.get_by_role('form', name='Редактор платежа')
         form.get_by_label('Сумма, ₽', exact=True).fill('1000')
+        form.locator('select').select_option('cash')
+        form.get_by_label('Только мы', exact=True).check()
         save(page)
-        assert len(data()['payments']) == 2
-        assert data()['summary']['recorded'] == money(200000)
-        passed.append('partial-payment-via-ui')
+        state = data()
+        assert len(state['payments']) == 2
+        assert state['summary']['recorded'] == money(200000)
+        latest = next(p for p in state['payments'] if p['installmentId'] == stage_id)
+        assert latest['paymentMethod'] == 'cash' and latest['visibility'] == 'private' and latest['amountKnown'] is True
+        passed.append('partial-cash-private-payment-via-ui')
         page.reload(wait_until='networkidle')
         expect(page.get_by_role('region', name='Аванс фотографу')).to_contain_text('Частично отмечено')
         passed.append('payment-persists-after-reload')
@@ -152,6 +157,8 @@ with sync_playwright() as pw:
         download.value.save_as(str(out / 'payment-history.csv'))
         csv = (out / 'payment-history.csv').read_text(encoding='utf-8-sig')
         assert '"plan"' in csv and csv.count('"payment"') == 2
+        assert 'payment_method' in csv and 'visibility' in csv and 'amount_known' in csv
+        assert '"cash"' in csv and '"private"' in csv
         assert 'accessToken' not in csv and 'eyJ' not in csv
         passed.append('csv-download-with-distinct-plan-and-payment-records')
         page.locator('summary').filter(has_text='История оплат').click()

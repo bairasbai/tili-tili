@@ -71,6 +71,13 @@ jobs:
         run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
         env:
           DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+      - name: Feature 021 migration rehearsal
+        run: |
+          PGPASSWORD=tili createdb -h localhost -U tili tili_privacy_test
+          node scripts/payment-privacy-migration-rehearsal.mjs
+        env:
+          TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili_privacy_test
+          ALLOW_PAYMENT_PRIVACY_MIGRATION_DRILL: 'yes'
       # Контрактный тест: каждый путь openapi.yaml узнан сервером.
       # Падает, если контракт правили, а генерацию не перезапускали.
       # Интеграционные тесты здесь не пропускаются — службы подняты выше.
