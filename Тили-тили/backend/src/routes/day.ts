@@ -205,6 +205,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         forGuests?: boolean
       }[]
 
+      const ifMatch = request.headers['if-match']
+      if (typeof ifMatch !== 'string') {
+        throw new AppError(428, 'timeline_version_required', 'Тайминг нужно перечитать перед сохранением')
+      }
+      const match = /^"timeline-(\d+)"$/.exec(ifMatch)
+      const expectedVersion = match ? Number(match[1]) : Number.NaN
+      if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+        throw new AppError(400, 'timeline_version_invalid', 'Некорректная версия тайминга')
+      }
+
       // Время проверяется ДО базы: иначе «вчера» и 30 февраля доходят до
       // `::timestamptz`, и человек получает 500 вместо отказа (D2-12).
       const moments = events.map((e, i) => ({
@@ -219,8 +229,21 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
 
       const result = await db().tx(async (client) => {
         // Aggregate-lock сериализует full replace, Day-X shift и перенос даты.
-        // На T005 эта же строка станет CAS-точкой для If-Match.
-        await client.query('select id from weddings where id = $1 for update', [weddingId])
+        // Версия проверяется ПОСЛЕ захвата замка: проверка до него оставила бы
+        // окно между compare и write и снова допустила lost update.
+        const { rows: state } = await client.query<{ timeline_version: number }>(
+          'select timeline_version from weddings where id = $1 for update',
+          [weddingId],
+        )
+        const currentVersion = state[0]!.timeline_version
+        if (currentVersion !== expectedVersion) {
+          reply.header('ETag', timelineEtag(currentVersion))
+          throw conflict(
+            'timeline_version_conflict',
+            'Тайминг уже изменился в другой вкладке или на другом устройстве — перечитайте его перед сохранением',
+          )
+        }
+
         const { rows: current } = await client.query<{ id: string }>(
           'select id from timeline_events where wedding_id = $1',
           [weddingId],

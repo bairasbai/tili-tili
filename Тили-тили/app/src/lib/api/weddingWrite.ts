@@ -165,8 +165,13 @@ export interface TimelineDraft {
  * нет, есть общий сдвиг (`/timeline/shift`). Поэтому экран отправляет весь
  * список — и обязан отправлять его полным, иначе пропущенные блоки исчезнут.
  */
-export const putTimeline = (weddingId: string, events: TimelineDraft[]) =>
-  api.put(url('/weddings/{weddingId}/timeline', { weddingId }), events)
+export const putTimeline = (
+  weddingId: string,
+  events: TimelineDraft[],
+  ifMatch: string,
+  onEtag?: (etag: string | null) => void,
+) =>
+  api.put(url('/weddings/{weddingId}/timeline', { weddingId }), events, { ifMatch, onEtag })
 
 /**
  * Автоплан дня по забронированной команде.

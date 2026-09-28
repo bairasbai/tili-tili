@@ -366,6 +366,10 @@ export const newIdempotencyKey = (): string =>
 interface Options {
   /** Значение заголовка `Idempotency-Key` для необратимых действий. */
   idempotencyKey?: string
+  /** Optimistic concurrency: версия ресурса, которую клиент действительно редактировал. */
+  ifMatch?: string
+  /** Считать новый ETag успешного ответа, не меняя тип его JSON body. */
+  onEtag?: (etag: string | null) => void
   /** Свой срок ожидания ответа — для больших тел (файл подтверждения оплаты, ревью 018 BF-13). */
   timeoutMs?: number
 }
@@ -381,6 +385,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...(opts?.idempotencyKey ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
+        ...(opts?.ifMatch ? { 'If-Match': opts.ifMatch } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
@@ -436,6 +441,8 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
     throw err
   }
 
+  opts?.onEtag?.(res.headers.get('etag'))
+
   /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
      у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет
      запрос, который на самом деле прошёл. */
@@ -461,8 +468,8 @@ type Ok<T> = T extends { responses: infer R }
   : void
 
 export const api = {
-  get: <P extends PathsWith<'get'>>(path: P) =>
-    request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string),
+  get: <P extends PathsWith<'get'>>(path: P, opts?: Options) =>
+    request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string, undefined, opts),
   post: <P extends PathsWith<'post'>>(path: P, body?: unknown, opts?: Options) =>
     request<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, body ?? {}, opts),
   /* PUT и PATCH тоже принимают ключ идемпотентности: контракт требует его,

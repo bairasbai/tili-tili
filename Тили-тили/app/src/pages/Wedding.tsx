@@ -1120,10 +1120,17 @@ export function Timeline() {
   /* Черновик автоплана: показан, но ещё не применён. */
   const [draft, setDraft] = useState<TimelineDraft[] | null>(null)
 
-  /* Тайминг с сервера. Раньше он жил в `useState` и терялся при перезагрузке:
-     добавленное событие исчезало вместе с вкладкой (единственный экран, где
-     это было так). */
-  const q = useApi(() => weddingId ? getTimeline(weddingId) : noWedding(), [weddingId])
+  /* Тайминг с сервера. ETag хранится рядом с weddingId: версия от предыдущей
+     свадьбы никогда не должна попасть в If-Match новой. Ref достаточен —
+     приход данных useApi всё равно вызывает render после того, как callback
+     уже записал заголовок. */
+  const timelineVersion = useRef<{ weddingId: string; etag: string } | null>(null)
+  const q = useApi(
+    () => weddingId
+      ? getTimeline(weddingId, etag => { timelineVersion.current = etag ? { weddingId, etag } : null })
+      : noWedding(),
+    [weddingId],
+  )
   /* Часовой пояс места свадьбы, а не зрителя: по нему живёт день X. Пара может
      смотреть тайминг из другого города, и «13:00» должно означать 13:00 на
      площадке. */
@@ -1166,14 +1173,33 @@ export function Timeline() {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return false }
+    const version = timelineVersion.current
+    if (!version || version.weddingId !== weddingId) {
+      setErr(t('Версия тайминга не загрузилась — обновите расписание перед сохранением'))
+      q.reload()
+      return false
+    }
     setBusy(true)
     setErr(null)
     try {
-      await putTimeline(weddingId, next)
+      await putTimeline(weddingId, next, version.etag, etag => {
+        timelineVersion.current = etag ? { weddingId, etag } : null
+      })
       setSent({ weddingId, list: next, shown: q.data })
       q.reload()
       return true
-    } catch (e) { setErr(explainError(e)); return false } finally { setBusy(false) }
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'timeline_version_conflict') {
+        // Не повторяем stale PUT автоматически: повтор тем же списком как раз
+        // и затёр бы чужую правку. Перечитываем, а намерение в форме остаётся.
+        setSent(null)
+        setErr(t('Тайминг изменился в другой вкладке или на другом устройстве. Показана свежая версия — повторите правку.'))
+        q.reload()
+        return false
+      }
+      setErr(explainError(e))
+      return false
+    } finally { setBusy(false) }
   }
 
   const accepted = sent && sent.weddingId === weddingId && (sent.shown === q.data || q.data === null) ? sent.list : null
@@ -1242,12 +1268,12 @@ export function Timeline() {
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
 
-  const applyDraft = () => {
+  const applyDraft = () => void (async () => {
     if (!draft) return
-    void save(draft)
+    if (!(await save(draft))) return
     setDraft(null)
     setConflicts(null)
-  }
+  })()
 
   return (
     <div className="pb-28">
