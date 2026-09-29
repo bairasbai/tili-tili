@@ -29,11 +29,17 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 2
-      - name: Require the reviewed parent and apply exact content hashes
+      - name: Require the reviewed checkout and apply exact content hashes
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = '3a0cf718595b2cf25a9d06aeb948f9e8f3c89f7a'
-          test "$(git ls-remote origin refs/heads/feature/021-timeline-concurrency | cut -f1)" = "$GITHUB_SHA"
+          actual_head=$(git rev-parse HEAD)
+          actual_parent=$(git rev-parse HEAD^)
+          git fetch --no-tags origin refs/heads/feature/021-timeline-concurrency
+          remote_head=$(git rev-parse FETCH_HEAD)
+          printf 'Checkout=%s\nParent=%s\nRemote=%s\nEvent=%s\n' "$actual_head" "$actual_parent" "$remote_head" "$GITHUB_SHA"
+          test "$actual_parent" = '2f0ce8883ae2f6edfc04a337e50ae46b71d52774'
+          test "$actual_head" = "$GITHUB_SHA"
+          test "$remote_head" = "$GITHUB_SHA"
           python - <<'PY'
           import hashlib,json,pathlib
           root=pathlib.Path.cwd()
@@ -86,8 +92,8 @@ jobs:
       - name: Commit only the tested application files to the feature branch
         run: |
           set -euo pipefail
-          test "$(git ls-remote origin refs/heads/feature/021-timeline-concurrency | cut -f1)" = "$GITHUB_SHA"
-          # Installation changes .npmrc only for this runner, not the repository.
+          git fetch --no-tags origin refs/heads/feature/021-timeline-concurrency
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
           git restore -- 'Тили-тили/backend/.npmrc' 'Тили-тили/app/.npmrc'
           git diff --check
           git add -- 'Тили-тили'
