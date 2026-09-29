@@ -1,0 +1,31 @@
+name: Timeline PostgreSQL verification runtime
+
+on:
+  push:
+    branches: [feature/021-timeline-concurrency]
+    paths: [.github/workflows/021-postgres-runtime.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Export binaries from the same PostgreSQL major as CI
+        run: |
+          set -euo pipefail
+          docker pull postgres:16
+          docker image inspect postgres:16 --format '{{json .RepoDigests}}' > "$RUNNER_TEMP/postgres-image.txt"
+          docker run --rm --entrypoint bash postgres:16 -c 'postgres --version; pg_config --configure' >> "$RUNNER_TEMP/postgres-image.txt"
+          docker run --rm --entrypoint bash postgres:16 -c 'tar -czf - /usr/lib/postgresql/16 /usr/share/postgresql/16 /usr/lib/x86_64-linux-gnu' > "$RUNNER_TEMP/postgres-runtime.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timeline-postgres-runtime
+          path: |
+            ${{ runner.temp }}/postgres-runtime.tar.gz
+            ${{ runner.temp }}/postgres-image.txt
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
