@@ -818,6 +818,8 @@ export function VendorDeals() {
               <span className="text-[9.5px] text-[var(--soft2)] block mt-0.5">{t('работа сдана, а цена не закрыта платежами — в «ожидается» не входит')}</span>
             </div>
           )}
+          <p className="col-span-2 text-[10.5px] text-[var(--soft)]">{t('Показаны только платежи, которыми пара поделилась с вами.')}</p>
+          {q.data?.amountIncomplete && <p role="status" className="col-span-2 text-[11px] text-[var(--honey-deep)]">{t('Есть оплаты с неизвестной суммой. Итоги рассчитаны только по известным суммам.')}</p>}
         </div>
       )}
       {!items.length && ready(q) && (
@@ -836,6 +838,7 @@ export function VendorDeals() {
               </p>
               {/* Что именно продано — пакет с витрины; без пакета строки нет. */}
               {d.packageName && <p className="text-[10.5px] text-[var(--soft)]">{t('Пакет:')} {d.packageName}</p>}
+              {!!d.unknownAmountPayments && <p className="text-[10.5px] text-[var(--honey-deep)]">{t('Есть оплаты с неизвестной суммой')}</p>}
               {/* Маршруты для гостей у транспортной сделки (контракт v0.30.0,
                   фича 006): сколько машин и мест готовить. Только счётчики —
                   имён и телефонов гостей перевозчику не отдают (152-ФЗ). Строка

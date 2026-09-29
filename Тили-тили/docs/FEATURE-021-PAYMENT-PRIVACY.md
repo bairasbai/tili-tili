@@ -16,13 +16,17 @@ visibility=vendor раскрывает запись только vendor собс
 
 Новые private и finance_members записи не входят в vendor payment list, receipts, analytics и totals. Старые строки мигрируются в private, поэтому после 021 они также не раскрываются vendor автоматически; это намеренно безопаснее, чем угадывать историческое согласие.
 
+Исправление аудита 2026-09-30: slot/pay использует тот же private default, что и payment schedule. Колонка legacy_vendor_visible сохранена для совместимости схемы, но больше не читается как право доступа и не выставляется новым кодом. Уже созданные private/finance_members строки с этим флагом также исключены из всех vendor sums; переносить их в vendor без явного согласия нельзя.
+
+Кабинет подрядчика показывает только раскрытые суммы. unknownAmountPayments / amountIncomplete / revenueIncomplete сопровождаются предупреждением в карточке, списке и аналитике. Процент изменения дохода отсутствует, если суммы неизвестны хотя бы в одном сравниваемом периоде. В карточке доступны дата, способ, статус платежа и скачивание его подтверждений через vendor-scoped endpoints.
+
 ## Подтверждения
 
 Существующая payment_receipts не дублируется. Cash не требует receipt, но может использовать тот же upload/download/delete flow. Ограничения MIME/signature/quota/hard erase 018-B сохраняются.
 
 ## API и миграция
 
-OpenAPI: 0.52.0. Generated backend/frontend artifacts создаются штатными generators.
+OpenAPI: 0.52.1. Поля неполноты vendor responses включены в контракт. Generated backend/frontend artifacts создаются штатными generators.
 
 Forward migration: 1761700000000_payment_methods_privacy. Production migrations 018 не изменяются. Populated rollback 021 запрещён: pre-021 код не знает visibility и мог бы расширить доступ.
 

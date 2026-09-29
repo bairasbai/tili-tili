@@ -753,6 +753,40 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(analytics.json().revenueDeltaPct).toBeNull()
   })
 
+  it.each([true, false])('021: slot/pay (partial=%s) остаётся private, включая старые legacy-флаги', async partial => {
+    const w = await setup(), v = await catalogVendor('Slot privacy')
+    await attachVendor(w, v.vendorId)
+    const amount = partial ? 250000 : 1000000, key = randomUUID()
+    const request = { method: 'POST' as const, url: `/weddings/${w.id}/slots/${w.slotId}/pay`,
+      headers: headers(w, key), payload: partial ? { amount: money(amount) } : {} }
+    expect((await app.inject(request)).statusCode).toBe(200)
+    expect((await app.inject(request)).statusCode).toBe(200)
+    const payments = await app.db!.query('select id,visibility,legacy_vendor_visible from payments where deal_id=$1', [w.dealId])
+    expect(payments.rows).toEqual([expect.objectContaining({ visibility: 'private', legacy_vendor_visible: false })])
+    expect((await read(w)).json().summary.recorded).toEqual(money(amount))
+
+    const assertHidden = async () => {
+      const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: bearer(v.account.token) })
+      expect(deals.statusCode, deals.body).toBe(200)
+      expect(deals.json()).toMatchObject({ expected: money(1000000), amountIncomplete: false,
+        items: [expect.objectContaining({ id: w.dealId, paid: money(0), unknownAmountPayments: 0 })] })
+      const list = await app.inject({ method: 'GET', url: `/vendor/deals/${w.dealId}/payments`, headers: bearer(v.account.token) })
+      expect(list.statusCode).toBe(200); expect(list.json()).toEqual([])
+      const analytics = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: bearer(v.account.token) })
+      expect(analytics.statusCode).toBe(200)
+      expect(analytics.json()).toMatchObject({ revenue: money(0), revenueIncomplete: false })
+    }
+    await assertHidden()
+    // Строки, записанные старой версией 021, тоже не являются согласием на раскрытие.
+    await app.db!.query('update payments set legacy_vendor_visible=true where deal_id=$1', [w.dealId])
+    await assertHidden()
+    await app.db!.query("update payments set visibility='finance_members' where deal_id=$1", [w.dealId])
+    await assertHidden()
+    await app.db!.query("update deals set state='done',done_at=now() where id=$1", [w.dealId])
+    const done = await app.inject({ method: 'GET', url: '/vendor/deals', headers: bearer(v.account.token) })
+    expect(done.json()).toMatchObject({ expected: money(0), shortfall: money(1000000) })
+  })
+
   it.each(['cash','bank_transfer','card','other'])('021: %s сохраняется на конкретной оплате и не меняет математику', async paymentMethod => {
     const w=await setup(), stage=(await create(w)).json()
     const res=await pay021(w,stage.id,{version:1,amount:money(150000),paymentMethod,visibility:'private',paidOn:'2027-06-18'})
@@ -760,6 +794,31 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     expect(res.json()).toMatchObject({paid:money(150000),remaining:money(250000),status:'partial'})
     const row=(await app.db!.query('select amount::text as amount,payment_method,visibility,amount_known,paid_on::text as paid_on from payments where deal_id=$1',[w.dealId])).rows[0]
     expect(row).toEqual({amount:'150000',payment_method:paymentMethod,visibility:'private',amount_known:true,paid_on:'2027-06-18'})
+  })
+
+  it.each(['current', 'previous'])('021: unknown vendor amount (%s period) предупреждает и не даёт выдуманный процент', async period => {
+    const w = await setup(), v = await catalogVendor('Unknown vendor sums')
+    await attachVendor(w, v.vendorId)
+    const stage = (await create(w)).json()
+    const today = (await app.db!.query<{ today: string }>('select current_date::text as today')).rows[0]!.today
+    let version = 1
+    for (const body of [
+      { amount: money(10000), paymentMethod: 'card', visibility: 'vendor', paidOn: today },
+      { amount: money(20000), paymentMethod: 'cash', visibility: 'vendor', paidOn: today },
+      { amountKnown: false, paymentMethod: 'cash', visibility: 'vendor', paidOn: today },
+    ]) {
+      const res = await pay021(w, stage.id, { version, ...body })
+      expect(res.statusCode, res.body).toBe(200); version = res.json().version
+    }
+    // Одна известная сумма в прошлом периоде задаёт ненулевую базу сравнения.
+    await app.db!.query("update payments set paid_on=(current_date-40) where deal_id=$1 and amount=20000", [w.dealId])
+    if (period === 'previous') await app.db!.query('update payments set paid_on=(current_date-40) where deal_id=$1 and not amount_known', [w.dealId])
+    const analytics = await app.inject({ method: 'GET', url: '/vendor/analytics?period=month', headers: bearer(v.account.token) })
+    expect(analytics.statusCode, analytics.body).toBe(200)
+    expect(analytics.json()).toMatchObject({ revenue: money(10000), revenueIncomplete: period === 'current', revenueDeltaPct: null })
+    const deals = await app.inject({ method: 'GET', url: '/vendor/deals', headers: bearer(v.account.token) })
+    expect(deals.json()).toMatchObject({ amountIncomplete: true,
+      items: [expect.objectContaining({ paid: money(30000), unknownAmountPayments: 1 })] })
   })
 
   it('021: неизвестная сумма — NULL, не 0, не гасит долг и помечает агрегаты неполными', async () => {

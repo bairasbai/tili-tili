@@ -32,7 +32,21 @@ const w=await app.inject({method:'POST',url:'/weddings',headers:owner.headers,pa
 if(w.statusCode!==201)throw new Error(w.body)
 const weddingId=w.json().id
 await app.db!.query('insert into wedding_members(wedding_id,user_id,role) values ($1,$2,$3)',[weddingId,helper.id,'helper'])
-await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,weddingId,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
+const vendors = []
+if (process.env.E2E_PAYMENT_VENDOR === 'yes') {
+  for (const name of ['Видео E2E 021', 'Чужой E2E 021']) {
+    const person = await user(name)
+    const profile = await app.inject({ method: 'PUT', url: '/vendor/profile', headers: person.headers, payload: {
+      name, categoryId: 'video', city: { name: 'Уфа', region: 'Башкортостан' },
+      portfolioUrls: ['https://example.com/portfolio.jpg'], priceFrom: { amount: 1000000, currency: 'RUB' },
+    } })
+    if (profile.statusCode !== 200) throw new Error('Payment vendor fixture profile failed')
+    const published = await app.inject({ method: 'POST', url: '/vendor/profile/publish', headers: person.headers })
+    if (published.statusCode !== 200) throw new Error('Payment vendor fixture publication failed')
+    vendors.push({ ...person, vendorId: profile.json().id })
+  }
+}
+await writeFile(process.env.E2E_FIXTURE_FILE,JSON.stringify({owner,helper,vendors,weddingId,today:new Date().toISOString().slice(0,10)}), {mode: 0o600})
 await app.listen({host:'127.0.0.1',port:3001})
 process.stdout.write('BROWSER_FIXTURE_READY\n')
 // The production worker runs every minute. The disposable fixture exercises the

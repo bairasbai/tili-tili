@@ -137,6 +137,13 @@ export const replyToReview = (reviewId: string, text: string) =>
 
 export const getVendorDeals = () => api.get('/vendor/deals')
 
+/** Только явно раскрытые подрядчику платежи собственной сделки. */
+export const getVendorPayments = (dealId: string) =>
+  api.get(url('/vendor/deals/{dealId}/payments', { dealId }))
+
+export const getVendorPaymentReceipt = (dealId: string, paymentId: string, receiptId: string) =>
+  api.get(url('/vendor/deals/{dealId}/payments/{paymentId}/receipts/{receiptId}/content', { dealId, paymentId, receiptId }))
+
 /** Что поменяли пары по забронированным свадьбам: рассадка, меню, тайминг, гости. */
 export const getVendorUpdates = () => api.get('/vendor/updates')
 
