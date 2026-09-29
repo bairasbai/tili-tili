@@ -1,70 +1,58 @@
-# Передача сессии: синхронизация и приватность оплат
+# Передача: полный master plan WP00–WP16
 
-Обновлено 2026-09-30. Репозиторий `bairasbai/tili-tili`.
-Корень Git: `C:/Тили-тили/Тили-тили_код_и_документация`.
+Обновлено 2026-09-30. Цель активна: весь исходный scope, тесты/сценарии/документация каждого пакета, отдельный feature-коммит/push/main. Ни один новый WP пока не объявлен принятым. Этот checkpoint не заменяет полный объём.
 
-## Состояние и изменения
+## Решения владельца
 
-По поручению владельца локальная main обновлена fast-forward с `36a0199` до
-`cdd2f2f6bed9dec02472b566fc12f27ddcaf97f8`: до обновления
-`git rev-list --left-right --count HEAD...origin/main` дал `0 189`.
-Рабочее дерево до обновления было чистым. Старый HEAD сохранён в локальной ветке
-`backup/local-main-before-sync-20260930`.
+- Полный объём WP00–WP16 подтверждён опросом.
+- Провайдеры ещё не выбраны; цены, тарифные права, возвраты и политика хранения ещё не переданы. Владелец предоставит правила.
+- Production не трогать. Публикация кода не означает deployment.
+- Реальные интеграции, устройства и пилот не подменять моками/headless.
 
-На этой базе исправлен ERR-0337: private суммы старого slot/pay раскрывались подрядчику
-через compatibility-флаг в totals и analytics. Новый slot/pay сохраняет private default;
-агрегаты читают только `visibility=vendor`, включая строки со старым флагом.
-Добавлены три regression-теста; фикстура audit33 явно раскрывает вторую тестовую оплату,
-как уже делала с первой. Исторические миграции и схема не изменялись.
+## Git и документы
 
-Документация этой задачи: `ERRORS.md` (ERR-0337), `JOURNAL.md` (2026-09-30),
-`tasks/todo.md`. Новые generated artifacts и lockfile не требуются.
+Корень: C:/Тили-тили/Тили-тили_код_и_документация.
+На старте чистая main совпадала с origin/main на ccd68fdcaa5a433c5892469ab5c4c552999901d7: guard без паузы, fetch origin main, divergence 0 0.
+Рабочая ветка: feature/master-plan-delivery-20260930.
 
-## Проверки текущих правок
+Пять документов скопированы из c2dea5a4a4e60152c5329ad9a161fc92ef274fd7 без старого кода ветки. README дополнен текущим разрешением; spec/plan/tasks/baseline сверены с источником.
+Реестр: tasks/wedding-platform-master-plan/delivery.md.
+WP03: tasks/фичи/021-тайминг/; это roadmap-тайминг, не платёжная privacy-021.
 
-Источник: `C:/Тили-тили/.unlazy/sync-audit-20260930/`.
+Подготовительные документы публикуются отдельным docs-коммитом рабочей ветки. Не путать публикацию плана с выпуском фичи. Commit/push проверять через git, не выводить из текста этого файла.
 
-- `init-final.log`: полный `bash init.sh` с TEST_DATABASE_URL и TEST_REDIS_URL, exit 0.
-  Frontend: 81 файла, 1089 тестов прошли.
-  Backend: 109 файлов, 1286 тестов прошли, пропусков нет.
-  TypeScript, ESLint всего дерева и production builds обоих проектов прошли.
-- `privacy-before-fix.log`: три новых теста падают до исправления.
-  `privacy-targeted.log`: те же три теста проходят после исправления.
-- `privacy-migration-drill.log`: migration rehearsal 021 прошёл; legacy mapping,
-  unknown amount=NULL, отказ populated rollback и empty down/up подтверждены.
-- `browser-evidence/payment-browser-result.json`: payment browser E2E,
-  14 сценариев, `page_errors=[]`; Chromium 139.0.7258.5, ширины 320/390.
-- `pnpm audit --prod --json` в app и backend: все счётчики vulnerabilities равны 0.
-- `git diff --check`: exit 0.
+## Локальная реализация WP03, ещё не feature-коммит
 
-Первый live-прогон выявил неподходящее окружение: PostgreSQL locale C мешала
-поиску кириллицы, PowerShell PATH не содержал sh. После настройки отдельной базы
-с `Russian_Russia.1251`, как у рабочей базы, и запуска через Git Bash повтор
-четырёх наборов дал 92/92, затем полный init.sh прошёл. Эти падения не скрывались skip.
+- backend/src/routes/day.ts: постоянные ID, проверка tenant-scoped списка до изменений, нормализация UUID/отказ дублей, lock свадьбы, upsert прежних строк и удаление отсутствующих.
+- backend/test/timeline021.test.ts: семь регрессий.
+- Миграции, версии и изменения OpenAPI ещё НЕ реализованы.
+- Старый snapshot всё ещё перезаписывает новый. Probe показал 200/200 для двух сессий с одним исходным снимком. T003 не выполнена; неполный WP03 не выпускать.
 
-Проверки выполнялись на отдельном временном PostgreSQL 16 на 127.0.0.1:55432,
-в базах с суффиксом _test; Redis использовал отдельную пустую DB 14.
-Существующая база приложения не мигрировалась и не наполнялась тестовыми данными.
-Временный PostgreSQL после проверок останавливается; данные и логи остаются в .unlazy.
+## Проверки
 
-## Публикация и сверка
+Логи: C:/Тили-тили/.unlazy/master-plan-20260930/.
 
-Публикация проверенных правок выполняется обычным `git push origin main`.
-Финальная сверка: `git ls-remote origin refs/heads/main` против `git rev-parse HEAD`,
-`git rev-list --left-right --count HEAD...origin/main` должен дать `0 0`,
-`git status --porcelain=v1` должен быть пустым.
+- baseline.log: полный bash init.sh, 1089 frontend / 1286 backend, без skipped, типы/линт/сборки прошли; исходный main до WP03.
+- negative.log: семь новых тестов упали до изменения ID.
+- targeted.log: эти семь прошли после.
+- final.log: полный gate после изменения ID, 1089 frontend / 1293 backend, без skipped, типы/линт/сборки прошли.
+- wp00.log: offers019/shortlist019/accept019 — 50/50; расширенный FR-018 не доказан целиком.
+- stale-save-probe.log: оставшийся дефект версии воспроизведён.
+- Browser/device/offline приёмка нового WP03 НЕ выполнена.
 
-Перед публикацией повторный `git fetch origin main` не выявил новых коммитов.
-GitHub-страж проверен: паузы нет. Последний подтверждённый baseline CI:
-https://github.com/bairasbai/tili-tili/actions/runs/36497241980
-на точном SHA cdd2f2f, success. Этот CI не является проверкой нового исправления;
-результат нового CI нельзя утверждать без отдельного чтения его статуса.
+## Окружение
 
-## Следующий шаг и ограничения
+Отдельный PostgreSQL 16 на 127.0.0.1:55432: C:/Тили-тили/.unlazy/sync-audit-20260930/pgdata.
+База tili_codex_master_20260930_test, locale Russian_Russia.1251. Redis DB 13.
+Основная база приложения не изменялась.
+Временный PostgreSQL останавливается после checkpoint; проверить pg_ctl status.
+verify.mjs setup повторно не выполнять: он отказывает при существующей базе. После запуска pg_ctl использовать targeted/final режимы.
 
-Следующий шаг проекта: эксплуатационные пункты `RELEASE-BLOCKERS.md`
-и открытые задачи текущего roadmap по решению владельца.
-Синхронизация исходников не подтверждает production deployment, настройку
-SMS/S3/VAPID, юридические тексты или production backup/restore.
-Этот проход подтвердил и исправил конкретную утечку; отсутствие всех возможных
-уязвимостей по результатам одного прохода подтвердить нельзя.
+## Следующий шаг
+
+T003: версия, автор/время всех способов изменения, конфликт двух сессий и устаревшего PUT. Пути: day.ts PUT, wedding/reschedule.ts, dayx.ts shift, шаблон weddings.ts. Проверить единый порядок замков, FK/уведомления и отзыв доступа.
+Затем dependencies/fixed/duration/participants/travel/buffer, scoped shift, ознакомление подрядчика, UI RU/EN/offline, миграции, полный gate и browser flow.
+После полной приёмки WP03 — feature-коммит/push/main; затем остальные WP, внешние gates и WP16.
+Goal complete не ставить до requirement-by-requirement audit.
+
+Предыдущая синхронизация/privacy: JOURNAL, ERRORS ERR-0337 и C:/Тили-тили/.unlazy/sync-audit-20260930/. Backup прежнего main сохранён.
