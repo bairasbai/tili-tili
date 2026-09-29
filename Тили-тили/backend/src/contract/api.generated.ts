@@ -6601,7 +6601,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется; `timeline_dependency_conflict` — сдвиг нарушает зависимость fixed/flexible графа */
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -7837,7 +7837,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется; `timeline_dependency_conflict` — сдвиг нарушает зависимость fixed/flexible графа */
                 409: {
                     headers: {
                         [name: string]: unknown;
