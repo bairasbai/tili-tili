@@ -15,28 +15,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
-      - name: Install locked dependencies
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Package Git objects and refs, never credentials or working-tree secrets
         run: |
-          for dir in 'Тили-тили/backend' 'Тили-тили/app'; do
-            (cd "$dir" && printf 'minimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
-          done
-      - name: Package tracked source and dependencies without credentials
-        run: |
-          git archive --format=tar HEAD | gzip -1 > "$RUNNER_TEMP/timeline-source.tar.gz"
-          tar --format=posix --hard-dereference -cf "$RUNNER_TEMP/timeline-deps.tar" 'Тили-тили/backend/node_modules' 'Тили-тили/app/node_modules'
-          gzip -1 "$RUNNER_TEMP/timeline-deps.tar"
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/timeline-history.bundle" --all
+          git bundle verify "$RUNNER_TEMP/timeline-history.bundle"
           git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
+          git rev-parse refs/remotes/origin/main > "$RUNNER_TEMP/main-sha.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: timeline-workspace-${{ github.sha }}
+          name: timeline-history-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/timeline-source.tar.gz
-            ${{ runner.temp }}/timeline-deps.tar.gz
+            ${{ runner.temp }}/timeline-history.bundle
             ${{ runner.temp }}/source-sha.txt
+            ${{ runner.temp }}/main-sha.txt
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
