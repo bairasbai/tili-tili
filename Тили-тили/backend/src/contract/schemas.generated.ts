@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 92. */
+ * Схем: 94. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -3215,6 +3215,34 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TimelineDependency": {
+          "type": "object",
+          "required": [
+              "eventId",
+              "travelMinutes",
+              "bufferMinutes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "eventId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "ID обязательного предыдущего блока этой же свадьбы."
+              },
+              "travelMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440,
+                  "description": "Переезд после предыдущего блока."
+              },
+              "bufferMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440,
+                  "description": "Явный запас сверх переезда."
+              }
+          }
+      },
       "TimelineEvent": {
           "type": "object",
           "properties": {
@@ -3253,6 +3281,60 @@ export const CONTRACT_SCHEMAS = {
                   "description": "Видят ли блок гости в день X (`GET /join/{guestToken}/day`). По\nумолчанию да — программа праздника; «Сборы невесты» и «Монтаж\nарки» пара снимает галочкой (План §8.8, фича 009).\n"
               }
           }
+      },
+      "TimelinePlanEvent": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/TimelineEvent"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "timingMode",
+                      "assigneeUserIds",
+                      "dealIds",
+                      "dependsOn"
+                  ],
+                  "properties": {
+                      "timingMode": {
+                          "type": "string",
+                          "enum": [
+                              "fixed",
+                              "flexible"
+                          ],
+                          "description": "fixed не двигается Day-X shift; flexible можно сдвигать автоматически."
+                      },
+                      "assigneeUserIds": {
+                          "type": "array",
+                          "uniqueItems": true,
+                          "maxItems": 20,
+                          "items": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "description": "Структурированные ответственные — только живые участники этой свадьбы."
+                      },
+                      "dealIds": {
+                          "type": "array",
+                          "uniqueItems": true,
+                          "maxItems": 20,
+                          "items": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "description": "Активные сделки-исполнители этой свадьбы."
+                      },
+                      "dependsOn": {
+                          "type": "array",
+                          "maxItems": 60,
+                          "items": {
+                              "$ref": "contract#/definitions/TimelineDependency"
+                          },
+                          "description": "DAG-зависимости; цикл и нарушение времени дают 422."
+                      }
+                  }
+              }
+          ]
       },
       "Tip": {
           "type": "object",
@@ -4244,7 +4326,9 @@ export type ContractSchemaName =
   | "Task"
   | "TaskCreate"
   | "TaskPatch"
+  | "TimelineDependency"
   | "TimelineEvent"
+  | "TimelinePlanEvent"
   | "Tip"
   | "User"
   | "UserProfile"

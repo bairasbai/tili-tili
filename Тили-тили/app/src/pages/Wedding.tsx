@@ -1139,8 +1139,8 @@ export function Timeline() {
   const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
   const tz = wq.data?.tz
   const raw = q.data ?? []
-  const members = membersQ.data ?? []
-  const memberName = new Map(members.map(member => [member.user.id, member.user.name || t('Участник команды')]))
+  const members = (membersQ.data ?? []).filter(member => !!member.user)
+  const memberName = new Map(members.map(member => [member.user!.id, member.user!.name || t('Участник команды')]))
   const dealSlots = slots.filter(slot =>
     !!slot.dealId && (slot.dealState === 'booked' || slot.dealState === 'paid_deposit' || slot.dealState === 'done'),
   )

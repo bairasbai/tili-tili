@@ -5457,7 +5457,7 @@ export interface paths {
                             /** @description срок мягкой брони в часах (§18.3) — справочно, как у сделки */
                             holdHours?: number;
                             /** @description Тайминг дня целиком (§11): подрядчику нужно знать, когда начинается церемония и когда его выход. Ни гостей, ни бюджета, ни остальной команды здесь нет. */
-                            timeline?: components["schemas"]["TimelineEvent"][];
+                            timeline?: components["schemas"]["TimelinePlanEvent"][];
                         };
                     };
                 };
@@ -5881,7 +5881,7 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется; `timeline_dependency_conflict` — сдвиг нарушает зависимость fixed/flexible графа */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -6091,7 +6091,7 @@ export interface paths {
                             venue?: string | null;
                             dressCode?: string | null;
                             dressNote?: string | null;
-                            timeline: components["schemas"]["TimelineEvent"][];
+                            timeline: components["schemas"]["TimelinePlanEvent"][];
                             table: {
                                 name?: string;
                             } | null;
@@ -7673,7 +7673,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["TimelineEvent"][];
+                        "application/json": components["schemas"]["TimelinePlanEvent"][];
                     };
                 };
             };
@@ -7700,7 +7700,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["TimelineEvent"][];
+                    "application/json": components["schemas"]["TimelinePlanEvent"][];
                 };
             };
             responses: {
@@ -7712,7 +7712,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["TimelineEvent"][];
+                        "application/json": components["schemas"]["TimelinePlanEvent"][];
                     };
                 };
                 400: components["responses"]["BadRequest"];
@@ -7775,7 +7775,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            events?: components["schemas"]["TimelineEvent"][];
+                            events?: components["schemas"]["TimelinePlanEvent"][];
                             conflicts?: string[];
                         };
                     };
@@ -11452,6 +11452,17 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
         };
+        TimelineDependency: {
+            /**
+             * Format: uuid
+             * @description ID обязательного предыдущего блока этой же свадьбы.
+             */
+            eventId: string;
+            /** @description Переезд после предыдущего блока. */
+            travelMinutes: number;
+            /** @description Явный запас сверх переезда. */
+            bufferMinutes: number;
+        };
         TimelineEvent: {
             id?: string;
             /** @example Выездная церемония */
@@ -11480,6 +11491,19 @@ export interface components {
              * @default true
              */
             forGuests: boolean;
+        };
+        TimelinePlanEvent: components["schemas"]["TimelineEvent"] & {
+            /**
+             * @description fixed не двигается Day-X shift; flexible можно сдвигать автоматически.
+             * @enum {string}
+             */
+            timingMode: "fixed" | "flexible";
+            /** @description Структурированные ответственные — только живые участники этой свадьбы. */
+            assigneeUserIds: string[];
+            /** @description Активные сделки-исполнители этой свадьбы. */
+            dealIds: string[];
+            /** @description DAG-зависимости; цикл и нарушение времени дают 422. */
+            dependsOn: components["schemas"]["TimelineDependency"][];
         };
         AlbumPhoto: {
             id?: string;
