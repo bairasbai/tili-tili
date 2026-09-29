@@ -1,0 +1,68 @@
+name: Timeline 021 migration roundtrip
+
+on:
+  push:
+    branches: [feature/021-timeline-concurrency]
+    paths: [.github/workflows/021-migration-roundtrip.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: timeline_roundtrip
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d timeline_roundtrip"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/timeline_roundtrip
+    defaults:
+      run:
+        working-directory: Тили-тили/backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - run: printf 'minimum-release-age=0\n' >> .npmrc
+      - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Up — all migrations including 021
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Down — graph migration
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations down
+      - name: Down — timeline version migration
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations down
+      - name: Up again — restore both 021 migrations
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Verify 021 schema after roundtrip
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='weddings' AND column_name='timeline_version'
+            ) THEN RAISE EXCEPTION 'timeline_version missing after roundtrip'; END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema='public' AND table_name='timeline_events' AND column_name='timing_mode'
+            ) THEN RAISE EXCEPTION 'timing_mode missing after roundtrip'; END IF;
+            IF to_regclass('public.timeline_event_dependencies') IS NULL
+              OR to_regclass('public.timeline_event_members') IS NULL
+              OR to_regclass('public.timeline_event_deals') IS NULL
+            THEN RAISE EXCEPTION '021 relation table missing after roundtrip'; END IF;
+          END $$;
+          SQL
