@@ -26,15 +26,16 @@ jobs:
           done
       - name: Package tracked source and dependencies without credentials
         run: |
-          git archive --format=tar HEAD > "$RUNNER_TEMP/timeline-workspace.tar"
-          tar -rf "$RUNNER_TEMP/timeline-workspace.tar" 'Тили-тили/backend/node_modules' 'Тили-тили/app/node_modules'
-          gzip -1 "$RUNNER_TEMP/timeline-workspace.tar"
+          git archive --format=tar HEAD | gzip -1 > "$RUNNER_TEMP/timeline-source.tar.gz"
+          tar --format=posix --hard-dereference -cf "$RUNNER_TEMP/timeline-deps.tar" 'Тили-тили/backend/node_modules' 'Тили-тили/app/node_modules'
+          gzip -1 "$RUNNER_TEMP/timeline-deps.tar"
           git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: timeline-workspace-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/timeline-workspace.tar.gz
+            ${{ runner.temp }}/timeline-source.tar.gz
+            ${{ runner.temp }}/timeline-deps.tar.gz
             ${{ runner.temp }}/source-sha.txt
           retention-days: 3
           compression-level: 0
