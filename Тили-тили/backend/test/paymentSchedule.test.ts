@@ -708,6 +708,51 @@ describe.skipIf(!DB)('018-A: график платежей — деньги, п�
     await app.db!.query('update deals set vendor_id=$2,external_name=null where id=$1',[w.dealId,vendorId])
   }
 
+  it('private legacy: slot pay defaults to private without revealing vendor totals', async () => {
+    const w=await setup(), vendor=await catalogVendor('Private slot payment')
+    await attachVendor(w,vendor.vendorId)
+    const paid=await app.inject({method:'POST',url:`/weddings/${w.id}/slots/${w.slotId}/pay`,
+      headers:headers(w),payload:{amount:money(30000)}})
+    expect(paid.statusCode,paid.body).toBe(200)
+    const payment=(await app.db!.query('select visibility,legacy_vendor_visible from payments where deal_id=$1',[w.dealId])).rows[0]
+    expect(payment).toEqual({visibility:'private',legacy_vendor_visible:false})
+    expect((await read(w)).json().summary.recorded).toEqual(money(30000))
+    const deals=await app.inject({method:'GET',url:'/vendor/deals',headers:bearer(vendor.account.token)})
+    expect(deals.statusCode,deals.body).toBe(200)
+    expect(deals.json().items.find((d:{id:string})=>d.id===w.dealId).paid).toEqual(money(0))
+    expect(deals.json().expected).toEqual(money(1000000))
+    const analytics=await app.inject({method:'GET',url:'/vendor/analytics',headers:bearer(vendor.account.token)})
+    expect(analytics.statusCode,analytics.body).toBe(200)
+    expect(analytics.json().revenue).toEqual(money(0))
+  })
+
+  it.each(['private','finance_members'])('private legacy: %s overrides persisted compatibility flags in every vendor aggregate', async visibility => {
+    const w=await setup(), vendor=await catalogVendor('Persisted private payment')
+    await attachVendor(w,vendor.vendorId)
+    await app.db!.query(`insert into payments(id,deal_id,kind,amount,status,visibility,legacy_vendor_visible,paid_on)
+      values($1,$2,'deposit',30000,'recorded',$3,true,current_date),
+            ($4,$2,'deposit',20000,'recorded',$3,true,current_date-100),
+            ($5,$2,'deposit',10000,'recorded','vendor',false,current_date)`,
+      [randomUUID(),w.dealId,visibility,randomUUID(),randomUUID()])
+    const auth=bearer(vendor.account.token)
+    const list=await app.inject({method:'GET',url:`/vendor/deals/${w.dealId}/payments`,headers:auth})
+    expect(list.statusCode,list.body).toBe(200)
+    expect(list.json()).toHaveLength(1)
+    expect(list.json()[0].amount).toEqual(money(10000))
+    const deals=await app.inject({method:'GET',url:'/vendor/deals',headers:auth})
+    expect(deals.statusCode,deals.body).toBe(200)
+    expect(deals.json().items.find((d:{id:string})=>d.id===w.dealId).paid).toEqual(money(10000))
+    expect(deals.json().expected).toEqual(money(990000))
+    await app.db!.query("update deals set state='done' where id=$1",[w.dealId])
+    const done=await app.inject({method:'GET',url:'/vendor/deals',headers:auth})
+    expect(done.statusCode,done.body).toBe(200)
+    expect(done.json().shortfall).toEqual(money(990000))
+    const analytics=await app.inject({method:'GET',url:'/vendor/analytics',headers:auth})
+    expect(analytics.statusCode,analytics.body).toBe(200)
+    expect(analytics.json().revenue).toEqual(money(10000))
+    expect(analytics.json().revenueDeltaPct).toBeNull()
+  })
+
   it.each(['cash','bank_transfer','card','other'])('021: %s сохраняется на конкретной оплате и не меняет математику', async paymentMethod => {
     const w=await setup(), stage=(await create(w)).json()
     const res=await pay021(w,stage.id,{version:1,amount:money(150000),paymentMethod,visibility:'private',paidOn:'2027-06-18'})

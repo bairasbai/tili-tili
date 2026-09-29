@@ -10,7 +10,7 @@ import { isUniqueViolation } from '../plugins/db.js'
 const VENDOR_PAID_SUM = `(select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
   from payments p
   where p.deal_id=d.id and p.status<>'cancelled' and p.amount_known
-    and (p.visibility='vendor' or p.legacy_vendor_visible))`
+    and p.visibility='vendor')`
 
 /** Мягкая бронь подрядчика по лиду — те же 72 часа, что и у сделки (§18.3). */
 const HOLD_HOURS = 72
@@ -621,9 +621,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         packageName: r.package_name,
         packageIncludes: r.package_includes,
         state: r.state,
-        /* Карточка сделки: новые private/finance_members оплаты не участвуют.
-           Для строк до 021 сохраняется прежняя совместимость агрегатов: их
-           ретроспективную видимость достоверно восстановить нельзя. */
+        // Private payments never enter vendor totals, including legacy slot payments.
         paid: { amount: Number(r.paid), currency: r.currency },
         unknownAmountPayments: r.unknown_payments,
         chatId: r.chat_id,
@@ -784,7 +782,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       const PAYMENTS_SUM = `select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
              from payments p join deals d on d.id = p.deal_id
             where d.vendor_id = $1 and p.status <> 'cancelled'
-              and p.amount_known and (p.visibility = 'vendor' or p.legacy_vendor_visible)`
+              and p.amount_known and p.visibility = 'vendor'`
       const { rows } = await db().query<{
         views: string
         contacts: string
