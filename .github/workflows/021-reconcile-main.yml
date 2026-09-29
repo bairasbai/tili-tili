@@ -2,7 +2,11 @@ name: Verify combined timeline 021 and shipped main
 on:
   push:
     branches: [feature/021-timeline-concurrency]
-    paths: [.github/workflows/021-reconcile-main.yml]
+    paths:
+      - .github/workflows/021-reconcile-main.yml
+      - .github/scripts/reconcile-timeline-021.py
+      - Тили-тили/backend/scripts/timeline-e2e-browser.py
+      - Тили-тили/backend/scripts/timeline-migration-rehearsal.mjs
 permissions:
   contents: read
 concurrency:
@@ -63,6 +67,15 @@ jobs:
           pnpm run gen
           cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
           git diff --check
+          python - <<'PY'
+          import os,pathlib,subprocess,tarfile
+          root=pathlib.Path(subprocess.check_output(['git','rev-parse','--show-toplevel']).decode().strip())
+          names=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split('\0')
+          with tarfile.open(pathlib.Path(os.environ['RUNNER_TEMP'])/'021-combined-prepared.tar.gz','w:gz') as archive:
+              for name in names:
+                  if name and pathlib.PurePosixPath(name).name != '.npmrc':
+                      archive.add(root/name,arcname=name,recursive=False)
+          PY
       - name: Full backend gate with PostgreSQL and Redis
         working-directory: Тили-тили/backend
         run: |
@@ -144,6 +157,7 @@ jobs:
             ${{ runner.temp }}/021-combined-*.log
             ${{ runner.temp }}/021-combined-source-sha.txt
             ${{ runner.temp }}/021-combined-source.tar.gz
+            ${{ runner.temp }}/021-combined-prepared.tar.gz
             ${{ runner.temp }}/021-combined-candidate.bundle
             ${{ runner.temp }}/021-*-drill.json
             ${{ env.E2E_RESULT_DIR }}/*.png
