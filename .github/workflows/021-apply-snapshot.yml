@@ -37,7 +37,7 @@ jobs:
           git fetch --no-tags origin refs/heads/feature/021-timeline-concurrency
           remote_head=$(git rev-parse FETCH_HEAD)
           printf 'Checkout=%s\nParent=%s\nRemote=%s\nEvent=%s\n' "$actual_head" "$actual_parent" "$remote_head" "$GITHUB_SHA"
-          test "$actual_parent" = '2f0ce8883ae2f6edfc04a337e50ae46b71d52774'
+          test "$actual_parent" = '11dab9dc1732903e2f48ba1fe1fb28dbfa3bd102'
           test "$actual_head" = "$GITHUB_SHA"
           test "$remote_head" = "$GITHUB_SHA"
           python - <<'PY'
@@ -72,33 +72,67 @@ jobs:
           for dir in 'Тили-тили/backend' 'Тили-тили/app'; do
             (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
           done
-      - name: Generate contract from YAML and check backend
+      - name: Generate contract and run full backend gate
         working-directory: Тили-тили/backend
         run: |
           set -euo pipefail
           pnpm run gen
           cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
           node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
-          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
-          node node_modules/vitest/vitest.mjs run test/timelineConcurrency.test.ts test/stage5.test.ts test/stage7.test.ts test/audit55.test.ts
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/021-migrations.log" 2>&1 || { tail -100 "$RUNNER_TEMP/021-migrations.log"; exit 1; }
+          node node_modules/vitest/vitest.mjs run > "$RUNNER_TEMP/021-backend-tests.log" 2>&1 || { tail -200 "$RUNNER_TEMP/021-backend-tests.log"; exit 1; }
+          tail -12 "$RUNNER_TEMP/021-backend-tests.log"
           node node_modules/eslint/bin/eslint.js .
-      - name: Check frontend regression scenarios
+          node node_modules/typescript/bin/tsc -p tsconfig.json
+      - name: Run full frontend gate
         working-directory: Тили-тили/app
         run: |
           set -euo pipefail
           node node_modules/typescript/bin/tsc -b
-          node node_modules/vitest/vitest.mjs run src/lib/timelineConcurrency.test.tsx src/lib/audit31.test.tsx src/lib/audit36.test.tsx src/lib/dictionary.test.ts
+          node node_modules/vitest/vitest.mjs run > "$RUNNER_TEMP/021-frontend-tests.log" 2>&1 || { tail -200 "$RUNNER_TEMP/021-frontend-tests.log"; exit 1; }
+          tail -12 "$RUNNER_TEMP/021-frontend-tests.log"
           node node_modules/eslint/bin/eslint.js .
+          node node_modules/vite/bin/vite.js build
       - name: Commit only the tested application files to the feature branch
         run: |
           set -euo pipefail
           git fetch --no-tags origin refs/heads/feature/021-timeline-concurrency
           test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git restore -- 'Тили-тили/backend/.npmrc' 'Тили-тили/app/.npmrc'
+          for config in 'Тили-тили/backend/.npmrc' 'Тили-тили/app/.npmrc'; do
+            if git ls-files --error-unmatch -- "$config" > /dev/null 2>&1; then
+              git restore -- "$config"
+            else
+              rm -f -- "$config"
+            fi
+          done
           git diff --check
-          git add -- 'Тили-тили'
+          python - <<'PY'
+          import json, pathlib, subprocess
+          changes=json.loads(pathlib.Path('.github/patches/021-snapshot-edits.json').read_text())
+          paths=[c['path'] for c in changes]+[
+            'Тили-тили/backend/src/contract/api.generated.ts',
+            'Тили-тили/backend/src/contract/paths.generated.ts',
+            'Тили-тили/backend/src/contract/schemas.generated.ts',
+            'Тили-тили/app/src/lib/api/schema.ts',
+          ]
+          subprocess.run(['git','add','--',*paths],check=True)
+          PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'fix(021): bind timeline snapshots to their versions'
           git push origin HEAD:refs/heads/feature/021-timeline-concurrency
+          git rev-parse HEAD | tee "$RUNNER_TEMP/021-tested-source-sha.txt"
+          git archive --format=tar.gz -o "$RUNNER_TEMP/021-reviewed-source.tar.gz" HEAD
           echo "TESTED_SOURCE_COMMIT=$(git rev-parse HEAD)"
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timeline-021-snapshot-evidence-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/021-*-tests.log
+            ${{ runner.temp }}/021-migrations.log
+            ${{ runner.temp }}/021-tested-source-sha.txt
+            ${{ runner.temp }}/021-reviewed-source.tar.gz
