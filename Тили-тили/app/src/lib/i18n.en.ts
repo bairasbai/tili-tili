@@ -2390,4 +2390,13 @@ Object.assign(EN, {
   'Фактические расходы: от': 'Actual spending: at least',
   'Есть платежи с неизвестной суммой. Фактические расходы и остаток бюджета могут быть неполными.': 'There are payments with an unknown amount. Actual spending and the remaining budget may be incomplete.',
   'Известно оплачено, от': 'Known paid, at least',
+  'Показаны только платежи, которыми пара поделилась с вами.': 'Only payments the couple shared with you are shown.',
+  'Доход по известным суммам': 'Revenue from known amounts',
+  'Известные оплаты': 'Known payments',
+  'Есть оплаты с неизвестной суммой. Итоги рассчитаны только по известным суммам.': 'There are payments with an unknown amount. Totals use only known amounts.',
+  'История платежей': 'Payment history',
+  'Пара пока не поделилась платежами': 'The couple has not shared any payments yet',
+  'Оплата отмечена': 'Payment recorded',
+  'Оплата подтверждена': 'Payment confirmed',
+  'Оплата отменена': 'Payment cancelled',
 })

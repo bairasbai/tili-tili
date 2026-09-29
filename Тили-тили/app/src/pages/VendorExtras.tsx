@@ -13,6 +13,7 @@ import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { newIdempotencyKey } from '@/lib/api/client'
 import { OfferSummary } from '@/components/OfferSummary'
+import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
 import type { components } from '@/lib/api/schema'
 
 /** Локаль дат — по языку интерфейса, а не «ru-RU» навсегда (R-07). */
@@ -252,15 +253,18 @@ export function VendorDealCard() {
               {d.packageName && <p className="text-[12px] mt-2">{t('Пакет:')} <b>{d.packageName}</b></p>}
               {d.packageIncludes && d.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{d.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
-              {/* Отметки оплат — те же платежи, что видит пара; без ответа — прочерк (R-178). */}
+              {/* Только раскрытые подрядчику известные суммы; без ответа — прочерк. */}
               <div className="grid grid-cols-3 gap-2 mt-4">
                 <div><span className="text-[9.5px] text-[var(--soft)] block">{t('Сумма')}</span><b className="tabular text-[13px]">{price === null ? '—' : fmt(price)}</b></div>
-                <div><span className="text-[9.5px] text-[var(--soft)] block">{t('Оплачено')}</span><b className="tabular text-[13px]">{paid === null ? '—' : fmt(paid)}</b></div>
+                <div><span className="text-[9.5px] text-[var(--soft)] block">{t(d.unknownAmountPayments ? 'Известные оплаты' : 'Оплачено')}</span><b className="tabular text-[13px]">{paid === null ? '—' : fmt(paid)}</b></div>
                 <div><span className="text-[9.5px] text-[var(--soft)] block">{t('Остаток')}</span><b className="tabular text-[13px]">{price === null || paid === null ? '—' : fmt(Math.max(0, price - paid))}</b></div>
               </div>
-              {price !== null && paid !== null && price > 0 && <div className="mt-2.5"><Bar pct={pct(Math.min(paid, price), price)} /></div>}
-              <p className="text-[10.5px] text-[var(--soft)] mt-2 leading-relaxed">{t('Оплаты отмечает пара в своей карточке сделки; приложение денег не держит.')}</p>
+              {!d.unknownAmountPayments && price !== null && paid !== null && price > 0 && <div className="mt-2.5"><Bar pct={pct(Math.min(paid, price), price)} /></div>}
+              {!!d.unknownAmountPayments && <p role="status" className="text-[11px] text-[var(--honey-deep)] mt-2"><span>{t('Есть оплаты с неизвестной суммой')}</span> · {d.unknownAmountPayments}<br /><span>{t('Числовой остаток их не учитывает.')}</span></p>}
+              <p className="text-[10.5px] text-[var(--soft)] mt-2 leading-relaxed">{t('Показаны только платежи, которыми пара поделилась с вами.')}</p>
             </div>
+
+            <VendorPaymentHistory key={id} dealId={id} />
 
             {/* Договор: заголовок последней редакции. Полей сторон здесь нет —
                 их видит пара на экране документов. */}
@@ -575,10 +579,10 @@ export function VendorAnalytics() {
         {ready(q) && (
         <div className="card p-5 grad text-[var(--on-grad)] mt-3">
           <div className="flex justify-between items-baseline">
-            <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t('Доход')}</span>
+            <span className="text-[10px] tracking-[.18em] uppercase opacity-80 font-semibold">{t(a?.revenueIncomplete ? 'Доход по известным суммам' : 'Доход')}</span>
             {/* Прирост приходит пустым, когда прошлого периода не было:
                 «+100%» от нуля — это выдумка, и сервер её не делает. */}
-            {a?.revenueDeltaPct != null && (
+            {!a?.revenueIncomplete && a?.revenueDeltaPct != null && (
               <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-[var(--card)]/25 flex items-center gap-1">
                 <TrendingUp size={10} /> {a.revenueDeltaPct > 0 ? '+' : ''}{Math.round(a.revenueDeltaPct)}%
               </span>
@@ -590,6 +594,8 @@ export function VendorAnalytics() {
               Раньше «доходом» была цена брони без единого рубля (ревью
               D5-08, R-178). */}
           <p className="text-[10px] opacity-80 mt-1">{t('поступившие платежи за период')}</p>
+          {a?.revenueIncomplete && <p role="status" className="text-[11px] mt-2">{t('Есть оплаты с неизвестной суммой')}</p>}
+          <p className="text-[10px] opacity-80 mt-1">{t('Показаны только платежи, которыми пара поделилась с вами.')}</p>
         </div>
 
         )}

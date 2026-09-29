@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.52.0
+  version: 0.52.1
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -2582,20 +2582,26 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [amountIncomplete]
                 properties:
                   expected:
                     allOf: [$ref: '#/components/schemas/Money']
-                    description: 'остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус платежи'
+                    description: 'остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус известные платежи с visibility=vendor'
                   shortfall:
                     allOf: [$ref: '#/components/schemas/Money']
                     description: |
                       Недоплата по ЗАВЕРШЁННЫМ (done) сделкам: работа сдана, а
                       цена не закрыта платежами. В «ожидается» не входит — это
                       предмет спора, а не ожидания (решение владельца, В7).
+                      Учитывает только известные платежи с visibility=vendor.
+                  amountIncomplete:
+                    type: boolean
+                    description: Есть неотменённые vendor-visible платежи с неизвестной суммой; числовые итоги их не учитывают.
                   items:
                     type: array
                     items:
                       type: object
+                      required: [unknownAmountPayments]
                       properties:
                         id: {type: string}
                         coupleName: {type: string}
@@ -2615,7 +2621,11 @@ paths:
                         state: {type: string, enum: [candidate, contacted, negotiating, booked, paid_deposit, done, cancelled]}
                         paid:
                           allOf: [$ref: '#/components/schemas/Money']
-                          description: 'внесено платежами (те же `payments`, что видит пара; возвраты с минусом) — карточка сделки, План §8.2'
+                          description: 'известные суммы неотменённых платежей с visibility=vendor; возвраты с минусом, private/finance_members исключены'
+                        unknownAmountPayments:
+                          type: integer
+                          minimum: 0
+                          description: Число неотменённых vendor-visible платежей с неизвестной суммой этой сделки.
                         chatId:
                           type: string
                           nullable: true
@@ -2746,9 +2756,13 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [revenueIncomplete]
                 properties:
                   period: {type: string, enum: [month, season, year]}
                   revenue: {$ref: '#/components/schemas/Money'}
+                  revenueIncomplete:
+                    type: boolean
+                    description: Есть неотменённые vendor-visible платежи с неизвестной суммой за выбранный период; доход содержит только известные суммы.
                   revenueDeltaPct:
                     type: number
                     nullable: true
@@ -2756,7 +2770,8 @@ paths:
                     description: |
                       Прирост к прошлому такому же периоду. `null`, если
                       прошлого периода не было: делить на ноль нечем, а «+100 %»
-                      от нуля — это выдумка.
+                      от нуля — это выдумка. Также `null`, если в текущем или
+                      предыдущем периоде есть vendor-visible платежи с неизвестной суммой.
                   funnel:
                     type: object
                     properties:

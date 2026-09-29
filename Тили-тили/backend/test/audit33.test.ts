@@ -828,8 +828,10 @@ describe.skipIf(!live)('фича 005, BE-A2: автобус, отзыв гост
     const other = await newWedding({ date: '2027-06-15' })
     const second = await bookVendor(other, vendor.vendorId, 2_000_000)
     await pay(other, second.slotId, 2_000_000)
-    await app.db!.query("update payments set visibility='vendor' where deal_id=$1", [second.dealId])
     await app.db!.query("update deals set state = 'done', done_at = now() where id = $1", [second.dealId])
+    // Приватная полная оплата не должна раскрывать сумму через уменьшение shortfall.
+    expect(await money()).toMatchObject({ expected: { amount: 0 }, shortfall: { amount: 6_000_000, currency: 'RUB' } })
+    await app.db!.query("update payments set visibility='vendor' where deal_id=$1", [second.dealId])
     expect(await money()).toMatchObject({ expected: { amount: 0 }, shortfall: { amount: 4_000_000, currency: 'RUB' } })
   })
 })
