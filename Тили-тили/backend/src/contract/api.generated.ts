@@ -5457,7 +5457,7 @@ export interface paths {
                             /** @description срок мягкой брони в часах (§18.3) — справочно, как у сделки */
                             holdHours?: number;
                             /** @description Тайминг дня целиком (§11): подрядчику нужно знать, когда начинается церемония и когда его выход. Ни гостей, ни бюджета, ни остальной команды здесь нет. */
-                            timeline?: components["schemas"]["TimelinePlanEvent"][];
+                            timeline?: components["schemas"]["TimelineEvent"][];
                         };
                     };
                 };
@@ -6091,7 +6091,7 @@ export interface paths {
                             venue?: string | null;
                             dressCode?: string | null;
                             dressNote?: string | null;
-                            timeline: components["schemas"]["TimelinePlanEvent"][];
+                            timeline: components["schemas"]["TimelineEvent"][];
                             table: {
                                 name?: string;
                             } | null;
