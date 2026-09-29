@@ -1,0 +1,150 @@
+name: Verify combined timeline 021 and shipped main
+on:
+  push:
+    branches: [feature/021-timeline-concurrency]
+    paths: [.github/workflows/021-reconcile-main.yml]
+permissions:
+  contents: read
+concurrency:
+  group: verify-combined-timeline-021
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.repository == 'bairasbai/tili-tili'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: timeline_full_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U tili -d timeline_full_test" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/timeline_full_test
+      TEST_REDIS_URL: redis://127.0.0.1:6379
+      E2E_FIXTURE_FILE: /tmp/timeline-021-fixture.private.json
+      E2E_RESULT_DIR: /tmp/timeline-021-browser-evidence
+      RECEIPTS_STORAGE: db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Stage the reviewed combined source locally
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python .github/scripts/reconcile-timeline-021.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked dependencies
+        run: |
+          set -euo pipefail
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          for dir in 'Тили-тили/backend' 'Тили-тили/app'; do
+            (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+          done
+      - name: Generate the combined contract
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          pnpm run gen
+          cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
+          git diff --check
+      - name: Full backend gate with PostgreSQL and Redis
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up > "$RUNNER_TEMP/021-combined-migrations.log" 2>&1 || { tail -100 "$RUNNER_TEMP/021-combined-migrations.log"; exit 1; }
+          node node_modules/vitest/vitest.mjs run > "$RUNNER_TEMP/021-combined-backend-tests.log" 2>&1 || { tail -200 "$RUNNER_TEMP/021-combined-backend-tests.log"; exit 1; }
+          tail -12 "$RUNNER_TEMP/021-combined-backend-tests.log"
+          node node_modules/eslint/bin/eslint.js .
+          node node_modules/typescript/bin/tsc -p tsconfig.json
+      - name: Full frontend gate
+        working-directory: Тили-тили/app
+        run: |
+          set -euo pipefail
+          node node_modules/typescript/bin/tsc -b
+          node node_modules/vitest/vitest.mjs run > "$RUNNER_TEMP/021-combined-frontend-tests.log" 2>&1 || { tail -200 "$RUNNER_TEMP/021-combined-frontend-tests.log"; exit 1; }
+          tail -12 "$RUNNER_TEMP/021-combined-frontend-tests.log"
+          node node_modules/eslint/bin/eslint.js .
+          node node_modules/vite/bin/vite.js build
+      - name: Timeline and payment migration drills
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE timeline_021_drill_test'
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE payment_021_drill_test'
+          TEST_DATABASE_URL=postgres://tili:tili@127.0.0.1:5432/timeline_021_drill_test ALLOW_TIMELINE_MIGRATION_DRILL=yes node scripts/timeline-migration-rehearsal.mjs > "$RUNNER_TEMP/021-timeline-drill.json"
+          TEST_DATABASE_URL=postgres://tili:tili@127.0.0.1:5432/payment_021_drill_test ALLOW_PAYMENT_PRIVACY_MIGRATION_DRILL=yes node scripts/payment-privacy-migration-rehearsal.mjs > "$RUNNER_TEMP/021-payment-drill.json"
+          cat "$RUNNER_TEMP/021-timeline-drill.json" "$RUNNER_TEMP/021-payment-drill.json"
+      - name: Install browser tooling
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Two-session browser scenarios against the real API
+        run: |
+          set -euo pipefail
+          mkdir -p "$E2E_RESULT_DIR"
+          (cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/021-browser-api.log" 2>&1 & api=$!
+          (cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort) > "$RUNNER_TEMP/021-browser-ui.log" 2>&1 & ui=$!
+          trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
+          ready=0
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$api" 2>/dev/null || ! kill -0 "$ui" 2>/dev/null; then break; fi
+            if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = 1
+          python 'Тили-тили/backend/scripts/timeline-e2e-browser.py'
+          python 'Тили-тили/backend/scripts/payment-e2e-browser.py'
+          python - <<'PY'
+          import json,os,pathlib
+          root=pathlib.Path(os.environ['E2E_RESULT_DIR'])
+          timeline=json.loads((root/'timeline-browser-result.json').read_text())
+          assert timeline['status']=='passed' and len(timeline['passed'])==13 and not timeline['page_errors']
+          payment=json.loads((root/'payment-browser-result.json').read_text())
+          assert len(payment['passed'])>=14 and not payment['page_errors'] and 'error' not in payment
+          print('Timeline:',len(timeline['passed']),'Payment:',len(payment['passed']))
+          PY
+      - name: Export the tested candidate without any remote write
+        run: |
+          set -euo pipefail
+          for config in 'Тили-тили/backend/.npmrc' 'Тили-тили/app/.npmrc'; do
+            if git ls-files --error-unmatch -- "$config" >/dev/null 2>&1; then git restore -- "$config"; else rm -f -- "$config"; fi
+          done
+          git diff --check
+          git add -- 'Тили-тили'
+          git commit -m 'test(021): verified combined timeline and payment candidate'
+          git rev-parse HEAD > "$RUNNER_TEMP/021-combined-source-sha.txt"
+          git archive --format=tar.gz -o "$RUNNER_TEMP/021-combined-source.tar.gz" HEAD
+          git bundle create "$RUNNER_TEMP/021-combined-candidate.bundle" HEAD
+          echo "Verified candidate: $(git rev-parse HEAD); no branch pushed"
+      - name: Preserve evidence, never fixture credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timeline-021-combined-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/021-combined-*.log
+            ${{ runner.temp }}/021-combined-source-sha.txt
+            ${{ runner.temp }}/021-combined-source.tar.gz
+            ${{ runner.temp }}/021-combined-candidate.bundle
+            ${{ runner.temp }}/021-*-drill.json
+            ${{ env.E2E_RESULT_DIR }}/*.png
+            ${{ env.E2E_RESULT_DIR }}/*-result.json
