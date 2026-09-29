@@ -1457,8 +1457,11 @@ export function Timeline() {
                     <select disabled={locked || !ready(membersQ)} value="" onChange={event => addMemberAssignee(e.id, event.target.value)}
                       className="h-9 rounded-lg bg-[var(--bg)] px-2 text-[10.5px] outline-none disabled:opacity-50">
                       <option value="">{t('+ человек')}</option>
-                      {members.filter(member => !(raw.find(item => item.id === e.id)?.assigneeUserIds ?? []).includes(member.user!.id)).map(member => (
-                        <option key={member.user!.id} value={member.user!.id}>{member.user!.name || t('Участник')}</option>
+                      {members.filter(member => {
+                        const userId = member.user?.id
+                        return !!userId && !(raw.find(item => item.id === e.id)?.assigneeUserIds ?? []).includes(userId)
+                      }).map(member => (
+                        <option key={member.user!.id!} value={member.user!.id!}>{member.user!.name || t('Участник')}</option>
                       ))}
                     </select>
                     <select disabled={locked} value="" onChange={event => addDealAssignee(e.id, event.target.value)}
