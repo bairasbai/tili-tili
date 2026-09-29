@@ -4308,6 +4308,10 @@ paths:
       responses:
         '200':
           description: OK
+          headers:
+            ETag:
+              description: 'Версия исходного тайминга этого preview; повтор после 409 требует нового автоплана.'
+              schema: {type: string, example: '"timeline-7"'}
           content:
             application/json:
               schema:

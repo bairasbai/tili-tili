@@ -24,6 +24,9 @@ export function assertTimelineGraph(events: TimelineGraphEvent[]): void {
   const byId = new Map(events.map((event) => [event.id, event]))
 
   for (const event of events) {
+    if (event.startsAt && event.endsAt && Date.parse(event.endsAt) < Date.parse(event.startsAt)) {
+      throw validationFailed({ endsAt: 'Конец события не может быть раньше начала' })
+    }
     const seen = new Set<string>()
     for (const dependency of event.dependsOn) {
       if (seen.has(dependency.eventId)) {

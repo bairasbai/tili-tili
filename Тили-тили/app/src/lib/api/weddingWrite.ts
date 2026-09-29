@@ -142,6 +142,7 @@ export const deleteTable = (weddingId: string, tableId: string) =>
 /* ── Тайминг ── */
 
 export interface TimelineDraft {
+  outdoor?: boolean
   id?: string
   name: string
   startsAt: string
@@ -187,8 +188,8 @@ export const putTimeline = (
  * Возвращает предпросмотр и список конфликтов, но ничего не применяет —
  * применение это отдельный `putTimeline`.
  */
-export const autogenTimeline = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/timeline/autogen', { weddingId }))
+export const autogenTimeline = (weddingId: string, onEtag?: (etag: string | null) => void) =>
+  api.post(url('/weddings/{weddingId}/timeline/autogen', { weddingId }), undefined, { onEtag })
 
 /* ── Логистика ── */
 

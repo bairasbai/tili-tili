@@ -2391,3 +2391,8 @@ Object.assign(EN, {
   'Запас, мин': 'Buffer, min',
   '+ добавить предыдущий блок': '+ add prerequisite',
 })
+
+Object.assign(EN, {
+  'Тайминг изменился. Обновляем расписание; автоплан нужно собрать заново.': 'The timeline changed. Reloading the schedule; generate a new preview before applying it.',
+  'Конец события не может быть раньше начала': 'An event cannot end before it starts',
+})

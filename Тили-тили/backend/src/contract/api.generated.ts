@@ -7771,6 +7771,8 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Версия исходного тайминга этого preview; повтор после 409 требует нового автоплана. */
+                        ETag?: string;
                         [name: string]: unknown;
                     };
                     content: {

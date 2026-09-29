@@ -144,6 +144,9 @@ export async function buildApp(
   await app.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
     credentials: true,
+    // If-Match is useful only when an allowed browser origin can read ETag.
+    exposedHeaders: ['ETag'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 
   /* Заголовки безопасности — своим хуком, а не пакетом.

@@ -7,9 +7,9 @@ import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -31,6 +31,7 @@ import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
 import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { OfferSummary } from '@/components/OfferSummary'
+import { getTimelineSnapshot, putTimelineSnapshot, previewTimelineSnapshot, type TimelineSnapshot } from '@/lib/api/timelineSnapshot'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
@@ -1105,6 +1106,12 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
 
 /* Тайминг дня */
 export function Timeline() {
+  const { weddingId } = useStore()
+  // A different wedding must never inherit another wedding's draft or requests.
+  return <TimelineEditor key={weddingId ?? 'no-wedding'} />
+}
+
+function TimelineEditor() {
   const { weddingId, weddingDate, slots } = useStore()
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
@@ -1118,20 +1125,15 @@ export function Timeline() {
      «Сборов невесты» и «Монтажа арки» (План §8.8, фича 009). */
   const [forGuestsNew, setForGuestsNew] = useState(true)
   const [timingModeNew, setTimingModeNew] = useState<'fixed' | 'flexible'>('flexible')
-  /* Черновик автоплана: показан, но ещё не применён. */
-  const [draft, setDraft] = useState<TimelineDraft[] | null>(null)
-
-  /* Тайминг с сервера. ETag хранится рядом с weddingId: версия от предыдущей
-     свадьбы никогда не должна попасть в If-Match новой. Ref достаточен —
-     приход данных useApi всё равно вызывает render после того, как callback
-     уже записал заголовок. */
-  const timelineVersion = useRef<{ weddingId: string; etag: string } | null>(null)
-  const q = useApi(
-    () => weddingId
-      ? getTimeline(weddingId, etag => { timelineVersion.current = etag ? { weddingId, etag } : null })
-      : noWedding(),
-    [weddingId],
-  )
+  // Every draft retains the version it was created from, including after 409.
+  const [draft, setDraft] = useState<TimelineSnapshot | null>(null)
+  const writing = useRef(false)
+  const query = useApi(() => weddingId ? getTimelineSnapshot(weddingId) : noWedding(), [weddingId])
+  const q = { ...query, data: query.data?.events ?? null }
+  const [sent, setSent] = useState<{ snapshot: TimelineSnapshot; shown: typeof query.data } | null>(null)
+  const accepted = sent && sent.snapshot.weddingId === weddingId &&
+    (sent.shown === query.data || query.data === null) ? sent.snapshot : null
+  const current = accepted ?? query.data
   /* Часовой пояс места свадьбы, а не зрителя: по нему живёт день X. Пара может
      смотреть тайминг из другого города, и «13:00» должно означать 13:00 на
      площадке. */
@@ -1161,79 +1163,35 @@ export function Timeline() {
     timingMode: e.timingMode ?? 'flexible',
   }))
 
-  /*
-   * Последний список, который сервер принял, и ответ, который был на экране
-   * в тот момент. Пока свежий ответ не заменил его — или пропал вовсе, если
-   * перечитывание сорвалось, — следующий PUT строится отсюда, а не из
-   * показанного: список на экране в это окно прежний, и собранный из него
-   * PUT возвращал только что убранный блок или, при пустом экране, стирал
-   * весь тайминг (ревью R3-02).
-   */
-  const [sent, setSent] = useState<{ weddingId: string; list: TimelineDraft[]; shown: typeof q.data } | null>(null)
-
-  /*
-   * Тайминг сохраняется списком целиком: отдельного пути «добавить блок»
-   * контракт не знает. Значит, отправлять надо всё, что пришло, — пропущенный
-   * блок сервер понял бы как удалённый.
-   */
-  /* Возвращает, принял ли сервер список: форма нового блока очищается только
-     по «да» — иначе отказ (сеть, 422) стирал набранное название и время
-     (ревью 015). */
-  const save = async (next: TimelineDraft[]): Promise<boolean> => {
-    /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
-       поломка: кнопка нажимается и ничего не происходит. */
+  const save = async (next: TimelineDraft[], base = current): Promise<boolean> => {
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return false }
-    const version = timelineVersion.current
-    if (!version || version.weddingId !== weddingId) {
+    if (writing.current || q.refreshing) return false
+    if (!base?.etag || base.weddingId !== weddingId) {
       setErr(t('Версия тайминга не загрузилась — обновите расписание перед сохранением'))
       q.reload()
       return false
     }
+    writing.current = true
     setBusy(true)
     setErr(null)
     try {
-      await putTimeline(weddingId, next, version.etag, etag => {
-        timelineVersion.current = etag ? { weddingId, etag } : null
-      })
-      setSent({ weddingId, list: next, shown: q.data })
+      const saved = await putTimelineSnapshot(weddingId, next, base.etag)
+      setSent({ snapshot: saved, shown: query.data })
       q.reload()
       return true
     } catch (e) {
       if (e instanceof ApiError && e.code === 'timeline_version_conflict') {
-        // Не повторяем stale PUT автоматически: повтор тем же списком как раз
-        // и затёр бы чужую правку. Перечитываем, а намерение в форме остаётся.
         setSent(null)
-        setErr(t('Тайминг изменился в другой вкладке или на другом устройстве. Показана свежая версия — повторите правку.'))
+        setErr(t('Тайминг изменился. Обновляем расписание; автоплан нужно собрать заново.'))
         q.reload()
         return false
       }
       setErr(explainError(e))
       return false
-    } finally { setBusy(false) }
+    } finally { writing.current = false; setBusy(false) }
   }
 
-  const accepted = sent && sent.weddingId === weddingId && (sent.shown === q.data || q.data === null) ? sent.list : null
-  const asDraft = (): TimelineDraft[] => {
-    if (accepted) return accepted
-    return raw.map(e => ({
-      id: e.id,
-      name: e.name ?? '',
-      startsAt: e.startsAt ?? '',
-      ...(e.endsAt ? { endsAt: e.endsAt } : {}),
-      ...(e.who ? { who: e.who } : {}),
-      ...(e.location ? { location: e.location } : {}),
-      ...(e.icon ? { icon: e.icon } : {}),
-      forGuests: e.forGuests ?? true,
-      timingMode: e.timingMode ?? 'flexible',
-      assigneeUserIds: e.assigneeUserIds ?? [],
-      dealIds: e.dealIds ?? [],
-      dependsOn: (e.dependsOn ?? []).map(dependency => ({
-        eventId: dependency.eventId,
-        travelMinutes: dependency.travelMinutes ?? 0,
-        bufferMinutes: dependency.bufferMinutes ?? 0,
-      })),
-    }))
-  }
+  const asDraft = (): TimelineDraft[] => current?.events ?? []
   /* Крестики и «Добавить» закрыты, пока список перечитывается: правка по
      прежнему списку откатила бы предыдущую. Закрыты и когда списка нет
      вовсе — первый GET упал и принятой копии нет: пустой экран здесь значит
@@ -1329,32 +1287,15 @@ export function Timeline() {
     setBusy(true)
     setErr(null)
     try {
-      const res = await autogenTimeline(weddingId)
-      setConflicts(res?.conflicts ?? [])
-      setDraft((res?.events ?? []).map(e => ({
-        id: e.id,
-        name: e.name ?? '',
-        startsAt: e.startsAt ?? '',
-        ...(e.endsAt ? { endsAt: e.endsAt } : {}),
-        ...(e.who ? { who: e.who } : {}),
-        ...(e.location ? { location: e.location } : {}),
-        ...(e.icon ? { icon: e.icon } : {}),
-        forGuests: e.forGuests ?? true,
-        timingMode: e.timingMode ?? 'flexible',
-        assigneeUserIds: e.assigneeUserIds ?? [],
-        dealIds: e.dealIds ?? [],
-        dependsOn: (e.dependsOn ?? []).map(dependency => ({
-          eventId: dependency.eventId,
-          travelMinutes: dependency.travelMinutes ?? 0,
-          bufferMinutes: dependency.bufferMinutes ?? 0,
-        })),
-      })))
+      const res = await previewTimelineSnapshot(weddingId)
+      setConflicts(res.conflicts)
+      setDraft(res)
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
 
   const applyDraft = () => void (async () => {
     if (!draft) return
-    if (!(await save(draft))) return
+    if (!(await save(draft.events, draft))) return
     setDraft(null)
     setConflicts(null)
   })()
@@ -1526,10 +1467,10 @@ export function Timeline() {
             {conflicts.length
               ? <ul className="mt-2 space-y-1.5">{conflicts.map(c => <li key={c} className="text-[11.5px] text-[var(--rose-ink)]">• {c}</li>)}</ul>
               : <p className="text-[11.5px] text-[var(--sage-deep)] mt-2">{t('Конфликтов не нашлось')}</p>}
-            {draft?.length ? (
+            {draft?.events.length ? (
               <>
                 <div className="mt-3 space-y-1 border-t border-[var(--track)] pt-3">
-                  {draft.map(e => (
+                  {draft.events.map(e => (
                     <div key={`${e.name}-${e.startsAt}`} className="flex justify-between text-[11.5px]">
                       <span className="truncate">{e.name}</span>
                       <b className="tabular shrink-0 ml-2">{e.startsAt ? formatTime(e.startsAt, tz) : '—'}</b>
@@ -1540,7 +1481,7 @@ export function Timeline() {
                     стоять свои блоки, и молча стирать их нельзя. */}
                 <div className="flex gap-2.5 mt-3">
                   <button onClick={() => { setDraft(null); setConflicts(null) }} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-                  <button disabled={busy} onClick={applyDraft} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Заменить тайминг')}</button>
+                  <button disabled={busy || q.refreshing} onClick={applyDraft} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Заменить тайминг')}</button>
                 </div>
               </>
             ) : null}

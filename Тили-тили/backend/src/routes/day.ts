@@ -187,17 +187,26 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
   })
   const timelineEtag = (version: number) => `"timeline-${version}"`
 
+  // One SQL statement binds the body and version to the same MVCC snapshot.
+  // LEFT JOIN keeps the wedding/version even when the schedule has no events.
+  const timelineSnapshot = async (client: Queryable, weddingId: string) => {
+    const { rows } = await client.query<Omit<EventRow, 'id'> & { id: string | null; timeline_version: number }>(
+      `select ${EVENT_COLUMNS}, w.timeline_version
+         from weddings w left join timeline_events e on e.wedding_id = w.id
+        where w.id = $1 order by e.sort, e.starts_at`,
+      [weddingId],
+    )
+    if (!rows[0]) throw notFound('Свадьба не найдена')
+    return {
+      version: rows[0].timeline_version,
+      events: rows.flatMap(row => row.id === null ? [] : [toEvent({ ...row, id: row.id })]),
+    }
+  }
+
   app.get('/weddings/:weddingId/timeline', async (request, reply) => {
-    const weddingId = request.member!.weddingId
-    const [{ rows }, { rows: state }] = await Promise.all([
-      db().query<EventRow>(
-        `select ${EVENT_COLUMNS} from timeline_events e where e.wedding_id = $1 order by e.sort, e.starts_at`,
-        [weddingId],
-      ),
-      db().query<{ timeline_version: number }>('select timeline_version from weddings where id = $1', [weddingId]),
-    ])
-    reply.header('ETag', timelineEtag(state[0]!.timeline_version))
-    return rows.map(toEvent)
+    const snapshot = await timelineSnapshot(db(), request.member!.weddingId)
+    reply.header('ETag', timelineEtag(snapshot.version))
+    return snapshot.events
   })
 
   app.put(
@@ -470,12 +479,11 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     },
   )
 
-  app.post('/weddings/:weddingId/timeline/autogen', async (request) => {
+  app.post('/weddings/:weddingId/timeline/autogen', async (request, reply) => {
     const weddingId = request.member!.weddingId
-    const { rows: current } = await db().query<EventRow>(
-      `select ${EVENT_COLUMNS} from timeline_events e where e.wedding_id = $1 order by e.sort`,
-      [weddingId],
-    )
+    const snapshot = await timelineSnapshot(db(), weddingId)
+    // Applying this preview must compare with its own version, not a later GET.
+    reply.header('ETag', timelineEtag(snapshot.version))
     const { rows: team } = await db().query<{ label: string; performer: string | null }>(
       `select s.label, coalesce(ven.name, d.external_name) as performer
          from deals d join slots s on s.id = d.slot_id
@@ -487,8 +495,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     // Кто за что отвечает — из забронированной команды. Черновик, а не
     // применение: контракт обещает предпросмотр, и переписывать тайминг
     // без спроса нельзя.
-    const events = current.map((e) => ({
-      ...toEvent(e),
+    const events = snapshot.events.map((e) => ({
+      ...e,
       who: e.who ?? (team.map((t) => `${t.label}: ${t.performer ?? ''}`).join(' · ') || null),
     }))
 
