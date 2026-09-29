@@ -532,8 +532,9 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
       url: `/weddings/${w.weddingId}/timeline/autogen`,
       headers: auth(w.token),
     })
-    // Пересечение времени обязано попасть в отчёт.
-    expect(auto.json().conflicts).toEqual([])
+    // Временного конфликта нет; штатное предупреждение о незабронированной
+    // команде остаётся частью autogen и не является конфликтом графа.
+    expect(auto.json().conflicts).toEqual(['Команда ещё не забронирована — план собран без исполнителей'])
 
     // И автоплан ничего не переписал: контракт обещает предпросмотр.
     const still = await app.inject({
