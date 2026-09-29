@@ -1,0 +1,98 @@
+name: Apply verified 021 snapshot fixes
+on:
+  push:
+    branches: [feature/021-timeline-concurrency]
+    paths: [.github/workflows/021-apply-snapshot.yml, .github/patches/021-snapshot-edits.json]
+permissions:
+  contents: write
+concurrency:
+  group: apply-021-snapshot
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'bairasbai/tili-tili' && github.ref == 'refs/heads/feature/021-timeline-concurrency'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U tili -d tili" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@localhost:5432/tili
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Require the reviewed parent and apply exact content hashes
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = '3a0cf718595b2cf25a9d06aeb948f9e8f3c89f7a'
+          test "$(git ls-remote origin refs/heads/feature/021-timeline-concurrency | cut -f1)" = "$GITHUB_SHA"
+          python - <<'PY'
+          import hashlib,json,pathlib
+          root=pathlib.Path.cwd()
+          changes=json.loads((root/'.github/patches/021-snapshot-edits.json').read_text())
+          prepared=[]
+          for change in changes:
+              name=pathlib.PurePosixPath(change['path'])
+              assert name.parts[0]=='Тили-тили' and '..' not in name.parts and not name.is_absolute()
+              path=root/name
+              old=path.read_bytes()
+              assert hashlib.sha256(old).hexdigest()==change['before'], 'Source changed: '+str(name)
+              lines=old.decode().splitlines(keepends=True)
+              for start,end,text in reversed(change['edits']):
+                  assert 0 <= start <= end <= len(lines)
+                  lines[start:end]=text.splitlines(keepends=True)
+              new=''.join(lines).encode()
+              assert hashlib.sha256(new).hexdigest()==change['after'], 'Result hash mismatch: '+str(name)
+              prepared.append((path,new))
+          for path,data in prepared:
+              path.write_bytes(data)
+          print('Applied',len(prepared),'hash-verified source changes; no main write')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked dependencies
+        run: |
+          set -euo pipefail
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          for dir in 'Тили-тили/backend' 'Тили-тили/app'; do
+            (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+          done
+      - name: Generate contract from YAML and check backend
+        working-directory: Тили-тили/backend
+        run: |
+          set -euo pipefail
+          pnpm run gen
+          cp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+          node node_modules/vitest/vitest.mjs run test/timelineConcurrency.test.ts test/stage5.test.ts test/stage7.test.ts test/audit55.test.ts
+          node node_modules/eslint/bin/eslint.js .
+      - name: Check frontend regression scenarios
+        working-directory: Тили-тили/app
+        run: |
+          set -euo pipefail
+          node node_modules/typescript/bin/tsc -b
+          node node_modules/vitest/vitest.mjs run src/lib/timelineConcurrency.test.tsx src/lib/audit31.test.tsx src/lib/audit36.test.tsx src/lib/dictionary.test.ts
+          node node_modules/eslint/bin/eslint.js .
+      - name: Commit only the tested application files to the feature branch
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/feature/021-timeline-concurrency | cut -f1)" = "$GITHUB_SHA"
+          # Installation changes .npmrc only for this runner, not the repository.
+          git restore -- 'Тили-тили/backend/.npmrc' 'Тили-тили/app/.npmrc'
+          git diff --check
+          git add -- 'Тили-тили'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(021): bind timeline snapshots to their versions'
+          git push origin HEAD:refs/heads/feature/021-timeline-concurrency
+          echo "TESTED_SOURCE_COMMIT=$(git rev-parse HEAD)"
