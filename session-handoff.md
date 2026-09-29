@@ -25,6 +25,11 @@
 
 Первый full local run выявил настройки стенда (C locale PostgreSQL и Australia/Melbourne TZ) и прежнее предположение audit33 о раскрытии private оплаты. Стенд приведён к условиям CI, privacy assertion усилен; итоговые прогоны зелёные.
 
-## Следующий шаг
+## Проверка после rebase и публикация
 
-Изменения публикуются отдельным PR в main. Проверить GitHub CI с PostgreSQL + Redis (все 1290 backend tests после rebase без локальных skips), Payment schedule browser E2E (14+5), Task Planning и Offers 019. После success PR готов к ревью/слиянию. Production deployment этим исправлением не подтверждён.
+- После rebase локально: backend TypeScript, 109 файлов / 1275 тестов + 15 skips без Redis, ESLint и production build — success.
+- Исправления опубликованы в [PR #20](https://github.com/bairasbai/tili-tili/pull/20), code commit `9e053811e227ae840e653c9fd279a134e2a658cd`.
+- [GitHub CI](https://github.com/bairasbai/tili-tili/actions/runs/36638051912) этого кода: frontend 82 файла / 1097 тестов; backend 109 файлов / 1290 тестов с PostgreSQL + Redis, без пропусков; типы, линт и production builds — success. Миграции и rehearsal 021 тоже success.
+- [Payment schedule browser E2E](https://github.com/bairasbai/tili-tili/actions/runs/36638051890): 14 сценариев 018 и 5 сценариев 021, page_errors=[]. [Task planning](https://github.com/bairasbai/tili-tili/actions/runs/36638051905) и [Offers 019](https://github.com/bairasbai/tili-tili/actions/runs/36638052031) — success.
+
+Следующий шаг: ревью и слияние PR #20 в main. Production deployment этим исправлением не подтверждён.
