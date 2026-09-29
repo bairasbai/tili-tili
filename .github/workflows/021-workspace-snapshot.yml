@@ -1,0 +1,41 @@
+name: Timeline verification workspace
+
+on:
+  push:
+    branches: [feature/021-timeline-concurrency]
+    paths: [.github/workflows/021-workspace-snapshot.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: github.repository == 'bairasbai/tili-tili'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - name: Install locked dependencies
+        run: |
+          for dir in 'Тили-тили/backend' 'Тили-тили/app'; do
+            (cd "$dir" && printf 'minimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+          done
+      - name: Package tracked source and dependencies without credentials
+        run: |
+          git archive --format=tar HEAD > "$RUNNER_TEMP/timeline-workspace.tar"
+          tar -rf "$RUNNER_TEMP/timeline-workspace.tar" 'Тили-тили/backend/node_modules' 'Тили-тили/app/node_modules'
+          gzip -1 "$RUNNER_TEMP/timeline-workspace.tar"
+          git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timeline-workspace-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/timeline-workspace.tar.gz
+            ${{ runner.temp }}/source-sha.txt
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
