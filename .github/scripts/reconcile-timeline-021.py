@@ -4,7 +4,7 @@ import re
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-MAIN = 'cdd2f2f6bed9dec02472b566fc12f27ddcaf97f8'
+MAIN = 'ccd68fdcaa5a433c5892469ab5c4c552999901d7'
 GENERATED = [
     'Тили-тили/backend/src/contract/paths.generated.ts',
     'Тили-тили/backend/src/contract/schemas.generated.ts',
@@ -22,7 +22,8 @@ def replace_once(text, old, new):
 
 
 git('fetch', '--no-tags', 'origin', 'refs/heads/main')
-assert git('rev-parse', 'FETCH_HEAD').stdout.strip() == MAIN, 'Main changed; review the new head before merging'
+actual = git('rev-parse', 'FETCH_HEAD').stdout.strip()
+assert actual == MAIN, 'Main changed; review before merging: ' + actual
 git('config', 'user.name', 'Timeline integration verifier')
 git('config', 'user.email', 'verification@localhost')
 merged = git('merge', '--no-commit', '--no-ff', MAIN, check=False)
@@ -52,4 +53,9 @@ text = replace_once(text,
 drill.write_text(text)
 git('add', '--', AUDIT, str(contract.relative_to(ROOT)), str(drill.relative_to(ROOT)))
 assert not git('ls-files', '-u').stdout, 'An unresolved merge remains'
+# These files are disjoint from the timeline feature and must stay byte-identical
+# to the reviewed main, including ERR-0337 private-payment regression tests.
+for name in ('Тили-тили/backend/src/payments/model.ts', 'Тили-тили/backend/src/routes/vendorCabinet.ts',
+             'Тили-тили/backend/src/routes/slots.ts', 'Тили-тили/backend/test/paymentSchedule.test.ts'):
+    assert (ROOT / name).read_text() == git('show', MAIN + ':' + name).stdout, 'Main privacy delta changed: ' + name
 print('Combined source staged locally. Regenerate contracts and run all gates before any publication.')
