@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify'
-import { bookVendor, lockBookingContext } from '../deals/book.js'
+import { assertLegacyBookingSlotReady, bookVendor, lockBookingActor, lockBookingContext, lockBookingReplay } from '../deals/book.js'
 import { loadSlot } from '../deals/repo.js'
 import { withIdempotency } from '../deals/idempotency.js'
-import { AppError, conflict, notFound, quotaExceeded, unauthorized, validationFailed } from '../errors.js'
+import { AppError, conflict, notFound, quotaExceeded, validationFailed } from '../errors.js'
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
 import type { Queryable } from '../plugins/db.js'
@@ -62,14 +62,6 @@ async function lockWedding(client: Queryable, weddingId: string): Promise<Weddin
     throw conflict('wedding_cancelled', 'Свадьба отменена — запросы предложений отправлять нельзя')
   }
   return wedding
-}
-
-async function lockActor(client: Queryable, userId: string): Promise<void> {
-  const { rows } = await client.query<{ deleted_at: Date | null }>(
-    'select deleted_at from users where id = $1 for share',
-    [userId],
-  )
-  if (!rows[0] || rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
 }
 
 async function lockSlot(
@@ -157,8 +149,10 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
            * первый. Два запроса после девяти увидят 9 и 10 последовательно,
            * а не оба создадут «десятую» строку. */
           const wedding = await lockWedding(client, weddingId)
-          await lockActor(client, actorId)
+          await lockBookingActor(client, { weddingId, actorId, sessionId: request.caller!.sessionId,
+            policyVersion: app.appConfig.policyVersion })
           const slot = await lockSlot(client, weddingId, slotId)
+          await assertLegacyBookingSlotReady(client, { weddingId, slotId })
 
           const recent = await recentRequestCount(client, weddingId)
           // Replay уже вернулся из withIdempotency; новый ключ при полном
@@ -286,6 +280,8 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           }
           return { status: 201, body: { results } }
         }),
+        true, client => lockBookingReplay(client, { weddingId, slotId, actorId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
       )
     },
   )
@@ -315,6 +311,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
         if (!location) throw notFound('Предложение не найдено')
         const context = await lockBookingContext(client, {
           weddingId, slotId: location.slot_id, actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion,
         })
         const { rows: requests } = await client.query<{
           vendor_id: string | null; status: string; close_reason: string | null; wedding_date: string | null
@@ -355,7 +352,14 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
         // Snapshot is already in the deal; the offer link is not its source of truth.
         await client.query('update offers set accepted_at = now(), deal_id = $2 where id = $1', [offerId, dealId])
         return { status: 200, body: (await loadSlot(client, context.slotId, true))! }
-      }))
+      }), true, async client => {
+        await lockBookingReplay(client, { weddingId, actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+        const scoped = await client.query(
+          `select o.id from offers o join offer_requests r on r.id=o.request_id
+             join slots s on s.id=r.slot_id where o.id=$1 and s.wedding_id=$2`, [offerId, weddingId])
+        if (!scoped.rowCount) throw notFound('Предложение не найдено')
+      })
     },
   )
 }

@@ -9,7 +9,7 @@
  * в порядке. Теперь он сначала смотрит, не сменилась ли пара под ним.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { api, ApiError, url } from './client'
+import { api, ApiError, onSessionChanged, saveTokens, url } from './client'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -19,6 +19,31 @@ beforeEach(() => {
   localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a0', refreshToken: 'r0' }))
 })
 afterEach(() => vi.unstubAllGlobals())
+
+describe('local private-reader session boundaries', () => {
+  const tokens = (sub: string, sid: string, expiry: number) => ({ accessToken: 'header.' + btoa(JSON.stringify({ sub, sid, exp: expiry })) + '.signature', refreshToken: 'refresh-' + expiry })
+  it('clears on logout and a different session, but preserves the same session during access renewal', () => {
+    saveTokens(tokens('user-a', 'session-a', 1))
+    const changed = vi.fn(), stop = onSessionChanged(changed)
+    try {
+      saveTokens(tokens('user-a', 'session-a', 2)); expect(changed).not.toHaveBeenCalled()
+      saveTokens(tokens('user-a', 'session-b', 3)); expect(changed).toHaveBeenCalledTimes(1)
+      saveTokens(null); expect(changed).toHaveBeenCalledTimes(2)
+    } finally { stop() }
+    saveTokens(tokens('user-b', 'session-c', 4)); expect(changed).toHaveBeenCalledTimes(2)
+  })
+  it('observes another tab clearing credentials and catches a changed account when focus returns', () => {
+    saveTokens(tokens('user-a', 'session-a', 1))
+    const changed = vi.fn(), stop = onSessionChanged(changed)
+    try {
+      localStorage.removeItem('tt_auth'); window.dispatchEvent(new StorageEvent('storage', { key: 'tt_auth' }))
+      expect(changed).toHaveBeenCalledTimes(1)
+      localStorage.setItem('tt_auth', JSON.stringify(tokens('user-b', 'session-b', 2))); window.dispatchEvent(new Event('focus'))
+      expect(changed).toHaveBeenCalledTimes(2)
+      window.dispatchEvent(new Event('focus')); expect(changed).toHaveBeenCalledTimes(2)
+    } finally { stop() }
+  })
+})
 
 describe('version-bound snapshots', () => {
   it('sends the captured If-Match on DELETE and accepts its empty 204 response', async () => {

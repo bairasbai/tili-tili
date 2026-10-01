@@ -1,7 +1,11 @@
 import { EN_DATA, EN_DATA_GIFTS, EN_DATA_GIFTS2 } from './i18n.en.data'
+import { EN_ORDERS } from './i18n.en.orders'
+import { EN_RESOURCES } from './i18n.en.resources'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  ...EN_ORDERS,
+  ...EN_RESOURCES,
   'Мероприятия': 'Events',
   'Свадьба больше недоступна': 'The wedding is no longer available',
   'Обновить мероприятия': 'Refresh events',
@@ -2583,4 +2587,31 @@ Object.assign(EN, {
   'Оплата отмечена': 'Payment recorded',
   'Оплата подтверждена': 'Payment confirmed',
   'Оплата отменена': 'Payment cancelled',
+  'Только важное': 'Essentials only',
+  'Через координатора': 'Through the coordinator',
+  'Подробный обзор': 'Detailed overview',
+  'Решения и существенные проблемы; остальные обновления доступны в приложении.': 'Decisions and significant problems; other updates remain in the app.',
+  'Оперативные вопросы получает выбранный координатор в пределах своих прав.': 'The selected coordinator receives operational questions within their permissions.',
+  'Дополнительные обновления для пары без дополнительных отчётов подрядчиков.': 'More updates for the couple without extra reports from vendors.',
+  'Уведомления свадьбы': 'Wedding updates',
+  'Выбор необязателен. Режим можно изменить позднее; права участников сохраняются.': 'This choice is optional. Change the mode later; member permissions stay the same.',
+  'Настройки не подтверждены сервером — обновите их': 'Settings were not confirmed by the server; refresh them',
+  'Настройки изменились. Ваш выбор сохранён в форме — проверьте его и сохраните снова.': 'Settings changed. Your entered choices remain in the form; review them and save again.',
+  'Выберите действующего координатора или снимите выбор': 'Choose an active coordinator or clear the selection',
+  'Настройки сохранены': 'Settings saved',
+  'Сейчас действует:': 'Current mode:',
+  'Координатор не выбран или недоступен. Сейчас действует «Только важное».': 'The coordinator is not selected or unavailable. Essentials only is currently active.',
+  'Как получать обновления': 'How to receive updates',
+  'Режим уведомлений — необязательно': 'Notification mode — optional',
+  'По умолчанию — только важное. Изменить режим и выбрать принятого координатора можно позднее в настройках.': 'Essentials only is the default. Change the mode and select an accepted coordinator later in settings.',
+  'Координатор для оперативных вопросов': 'Coordinator for operational questions',
+  'Координатор не выбран': 'No coordinator selected',
+  'Выбранный координатор недоступен': 'Selected coordinator unavailable',
+  'Здесь выбираются уже принятые координаторы. Дополнительные права не выдаются.': 'Choose coordinators who already accepted their role. No additional permissions are granted.',
+  'Обновить настройки': 'Refresh settings',
+  'Сохранить настройки': 'Save settings',
+  'тихие часы действуют и в день свадьбы.': 'quiet hours also apply on the wedding day.',
+  'Срочные проблемы моего события вне тихих часов': 'Urgent problems affecting my event outside quiet hours',
+  'Только подтверждённые проблемы. Отключённые каналы остаются выключенными.': 'Only verified problems. Disabled channels stay disabled.',
+  'Эти переключатели управляют push. Новости остаются во входящих; отправка на устройство требует включённой подписки.': 'These switches control push. Updates stay in the inbox; delivery to this device requires an enabled subscription.',
 })

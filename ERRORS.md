@@ -3199,3 +3199,163 @@ fractional scroll geometry, not a clipped row;1CSS px tolerance then fresh
 final3 passed. Earlier evidence retained; no repo source changed for this.
 Rule: visible DOM and successful HTTP assertions do not prove a screenshot
 represents the settled screen; inspect pixels and await actual animation state.
+
+## LOCAL-030-01 · 2026-09-30 · Соседние FK мешали каскадному удалению свадьбы
+
+- Область: отдельная ветка `feature/ecosystem-audit-local-20260930`; номера LOCAL не занимают последовательность другой сессии.
+- Доказательство: первоначальная проверка `orderAssignments.test.ts` прошла assertions, но очистка свадьбы получила FK-ошибку новых связей slot/event/assignment. Индивидуальная предварительная очистка зависимостей скрывала бы дефект реального удаления.
+- Исправление: новая миграция `1763310000000_order_erase_deferred.cjs` откладывает четыре NO ACTION FK до commit. Используемые отдельные объекты по-прежнему удалять нельзя; удаление всей свадьбы завершает каскады в одной транзакции.
+- Проверка: root отдельно повторил `orderAssignments.test.ts` (49 passed) и `eventParticipation.test.ts` (28 passed), включая прямой DELETE свадьбы без предварительной очистки и отказ индивидуального удаления при commit. Логи: `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/server-orders.log`, `server-participation.log`.
+- Правило: проверять полный erase сценарий, а не только создание новой структуры. Не менять старые применённые миграции; фиксировать корректирующую миграцию отдельно.
+
+## LOCAL-030-02 · 2026-09-30 · Старый RSVP оставлял новую копию участия устаревшей
+
+- Доказательство по коду: backfill создавал участие основного мероприятия, а старые команды `routes/guests.ts` меняли только `guests.rsvp`. Это две расходящиеся записи одного ответа.
+- Исправление: внутренний `syncMainParticipationFromLegacy` вызывается в той же авторизованной транзакции старой RSVP-команды. Синхронизируются только затронутые персоны и основное событие; фиксируются настоящий источник и автор. После ожидания wedding lock повторно проверяются токен/party либо текущие session/consent/membership.
+- Проверка: `family020.test.ts` 18 passed на отдельной базе, включая мигрированную main запись, сохранение ответа второго дня, повтор без новой версии, реального автора team observation и отсутствие выдуманного ответа при правке имени.
+- Правило: backfill не заменяет проверку всех последующих legacy writes. Ответ человека по гостевой ссылке и отметка команды имеют разные источники.
+
+## LOCAL-030-03 · 2026-09-30 · External cancellation отзывала доступ при откате самой отмены
+
+- Факт: real HTTP/PG test orderCancellationAccess.test.ts получил500 при отказе audit и обнаружил две external_invites.revoked_at null→timestamp; finance/order snapshots откатились. Свидетельство: C:/Тили-тили/.unlazy/ecosystem-audit-20260930/cancellation-external-rollback-before-fix.log.
+- Причина: slots.ts DELETE external сначала commits blanket revocation, затем отдельно пытается cancelDeal.
+- Исправление: актуальные wedding/principal/slot/deal checks и ordinary cancel/revoke в одной TX. Только actual done access withdrawal commits отдельно перед409 и не отменяет выполненную сделку. Все4canceldoors получают trusted session/policy после lock, replay выдаёт saved data только после current authority.
+- Проверка: root rerun60passed,49actual lock witnesses; server-cancellation_access.log. Ни pre-fix replay exploit, ни права других финансовых маршрутов этим свидетельством не объявляются доказанными.
+- Правило LOCAL-R030-03: частичный отказ финансовой операции не должен оставлять побочные изменения доступа; исключение done withdrawal должно быть явно обусловлено актуальным состоянием под замком.
+
+## LOCAL-030-04 · 2026-09-30 · Ключ повтора не является полномочием пользователя
+
+- Источник: src/deals/idempotency.ts возвращал saved reply до входа в действие; последующая проверка cancelDeal не проверяла этот путь. Это статический finding; pre-fix cached exploit root не воспроизводил.
+- Исправление: optional authorizeReplay исполняется в TX перед saved reply; slots.cancel/pay и deals.patch используют active wedding/current principal/exact position or deal scope. Повтор не исполняет отмену заново и не удаляет ранее сохранённый успех.
+- Проверка:14 actual cached waits × current eligibility, valid exact replay и неизменность claim/audit в orderCancellationAccess.test.ts, root60passed. Остальные финансовые/booking replay paths остаются обязательной интеграцией.
+- Правило LOCAL-R030-04: body/route/user key binding не заменяет актуальное право доступа после ожидания; private saved data требуют своего текущего ACL proof.
+
+## LOCAL-030-05 · 2026-10-01 · Подтип заменяет применимый набор полей
+
+- Источник: OrderDraft объединял category.fields и subtype.fields; actual floristshop/installation и nanny subtypes имеют общие ключи и разный состав. Исправлен выбор subtype.fields ?? category.fields. Regression использует настоящий backend catalog вместо пустого базового fixture; root58 draft/client tests passed.
+- Правило LOCAL-R030-05: UI и сервер используют один и тот же применимый набор полей; не добавлять монтаж к продаже только из общей категории.
+
+## LOCAL-030-06 · 2026-10-01 · Назначение сотрудника обязано совпадать с событием
+
+- Источник: root actual containedSQLprobe дал SET CONSTRAINTS ALL IMMEDIATE success для day2 duty/main-event assignment одного заказа. Probe полностью rolledback. Старый345 FK проверял лишь wedding/deal/assignment.
+- Исправление: отдельная preserving351, compositeFK добавляет event. Parent fresh13drill7 требует23503 при настоящем COMMIT mismatched assignment/event; положительный same-event и целая свадьба DELETE+immediate checks проверены (delete probe rolledback).
+- Правило LOCAL-R030-06: same wedding/deal не заменяет проверку конкретного program_event_id.
+
+## LOCAL-030-07 · 2026-10-01 · Удаление адресата не расширяет приглашение
+
+- Источник: staff agent pass4 нашёл deleted targeted invitation becoming open при nullable user_id и чужой replay удалённого active/declined. Это corrected before leaf acceptance; source/test vendorStaff.
+- Исправление: preserving355 immutable invite_target_user_id безFK +invite_binding_known, неизвестное старое pending приглашение failclosed; active/declined retry требует actualnonnull sameuser. Audit — свидетельство, не ACL. Parent62 PGchecks passed; preserving355 migrationdrill ещё pending.
+- Правило LOCAL-R030-07: historical SET NULL не разрешает другой стороне использовать исходное приглашение.
+
+## LOCAL-030-08 · 2026-10-01 · Browser preflight обязан разрешать реальные методы API
+
+- Источник: настоящий браузер на разрешённом loopbackorigin не сохранил PATCH; actualOPTIONS204 возвращал GET,HEAD,POST. node_modules/@fastify/cors/index.js:11 подтверждает defaultmethods. Не причина backendterms acceptance или role failure.
+- Исправление: app.ts methodsGETHEADPOSTPUTPATCHDELETE, origin allowlist прежний; orderCors.test.ts5passed, forbiddenorigin/noauth401 controls. После restart тот же browser retry сохранил draft.
+- Правило LOCAL-R030-08: API inject tests не заменяют хотя бы один настоящий cross-origin browser write.
+
+## LOCAL-030-09 · 2026-10-01 · Узкий экран проверяется измерением и снимком
+
+- Источник: actual320 viewport, document clientWidth305 из-заscrollbar, scrollWidth378; DOMboundingrect виновником показал старую неразрывную полосу шести статусов в Tools.Deal.
+- Исправление: grid6/min-w0/wrapping. Actualsamebrowser scrollWidth305=clientWidth305; сохранён и просмотрен order-couple-320.jpg. На других размерах это ещё не подтверждено.
+
+## LOCAL-030-10 · 2026-10-01 · Сохранённый ответ ресурса требует актуальной проверки личности
+
+- Факт: реальный HTTP повтор отключения person-ресурса после отзыва сотрудника возвращал старые personUserId/staffMemberId, хотя GET уже скрывал их. Отрицательный прогон сохранён в `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/resource-person-retire-replay-before-fix.log`.
+- Исправление: до company lock собирается фактическая scoped identity для упорядоченной блокировки аккаунтов; cached reply с прежней личностью требует текущего аккаунта и принятого членства. Отзыв/удаление после настоящего ожидания даёт422 без прежних идентификаторов.
+- Второй факт: первоначальное исправление запрещало безопасный повтор fresh retirement, уже сохранивший оба идентификатора null; два actual случая получили422. Лог `resource-safe-retirement-retry-before-fix.log`. Такой точный повтор теперь200 при действующих правах actor/resource, без повторной записи операции.
+- Проверка: parent independently rerun `vendorResourceApi.test.ts`:119 passed,82 наблюдаемых PG lock waits; `server-resources_api.log`. Domain53, source TypeScript и scoped ESLint также прошли. Это не проверка бронирования ресурсов или всей экосистемы.
+- Правило LOCAL-R030-10: current ACL проверяется до сохранённого ответа; безопасный скрытый historical DTO должен оставаться повторяемым после потери ответа.
+
+## LOCAL-030-11 · 2026-10-01 · Отзыв согласия и доступ к ресурсам используют согласованный порядок
+
+- Факт: actual resource GET действующего resource_manager без wedding membership держал аккаунт и ждал компанию. Одновременный DELETE `/users/me/consent` держал consent и ждал аккаунт; после освобождения компании GET ждал consent. Два сценария с/без actual refresh показали настоящий двусторонний PG graph и SQLSTATE40P01; GET200, withdrawal500. Источник: `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/resource-consent-before-fix.log`, исходные SHA и запросы/PID в строках4–6. Из четырёх проверок две failed, withdrawal-first/atomic audit rollback passed.
+- Исправление root: после прежних sorted wedding locks добавлен users FOR UPDATE до consent mutation. Свадьба остаётся первой; никаких новых разрешений или отключённых guards. Последующий тестовый результат ещё ожидается на момент этой записи.
+- Последующий результат: agent4/4 и независимый parent gate rerun4/4 passed;6 реальных PG waits,0 cycles/40P01. Resource-first GET200/withdraw204; withdrawal-first GET401/withdraw204. Actual refresh200 до отзыва, оба access после отзыва401. Scoped actual23514 auditfailure откатывает account/session/consent, повтор204; финансовый и ресурсный snapshots не меняются. `server-resource_consent.log`, root gate leaf1.6.5. Синтетические actors не заменяют юридические/человеческие доказательства.
+- Правило LOCAL-R030-11: повторная проверка principal после ожидания требует согласованного порядка блокировок с реальным revoke route; предварительная авторизация и отдельные SQL-моки не доказывают отсутствие deadlock.
+
+## LOCAL-030-12 · 2026-10-01 · Закрытый ответ плана проверяется до транспортного повтора
+
+- Факт: зарегистрированный PATCH плана возвращал200 с прежними editorLines после синтетической смены владельца компании, если прежний владелец сохранял роль couple в свадьбе. Обычный GET уже возвращал canEdit=false/editorLines=null. Источник: отдельный отрицательный лог `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/resource-plan-api-before-owner-replay-fix.log` и `backend/test/orderResourcePlanApi.test.ts`. Синтетическая смена не подтверждает существование продуктового процесса передачи компании.
+- Исправление: `backend/src/routes/orders.ts` вызывает текущую scoped проверку владельца перед lookup сохранённого ответа только для PATCH плана; общий свадебный доступ сам по себе не разрешает закрытую проекцию компании.
+- Проверка: после исправления14 actual HTTP тестов passed, `server-resource-plan-api-passed14.log`; независимый повтор node-1.7:G2 также прошёл. Бывший владелец получает403 без прежних resource/window IDs. Повторы действующего владельца, no-op, разные стороны согласования и сохранность финансов/программы остаются положительными контролями.
+- Правило LOCAL-R030-12: право читать карточку свадьбы и право получать закрытые сведения компании проверяются отдельно до cached response.
+
+## LOCAL-030-13 · 2026-10-01 · Общий триггер не читает поля чужого типа записи
+
+- Факт: две положительные записи с настоящим COMMIT получили SQLSTATE42703: пустой commitment head — `record new has no field id`; окно мощности — `record new has no field capacity_window_id`. Источник: `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/commitment-ddl-records-before-forward367.json`. Предшествующая ошибка проверки адреса `127.0.0.1/32` была ошибкой диагностического скрипта, а не приложения; используется `host(inet_server_addr())`.
+- Исправление: preserving367 выбирает отдельную ветвь `IF` для фактической таблицы перед обращением к полю записи. Применённые365/366 не изменены. Два положительных SQL-контроля после367 прошли, команда exit0; `commitment-ddl-records-result.json`. Это не приёмка бронирования.
+
+## LOCAL-030-14 · 2026-10-01 · Исторические связи допускают целый каскад свадьбы
+
+- Факт: первый реальный прогон `resourceCommitments.test.ts` дал83 passed/4 failed из87 и19 наблюдаемых PG waits; afterAll также failed. Каскад свадьбы и actual eraseUser её владельца получили23503 на scoped FK commitment_versions→terms; первый actual purge вернул0, следующий safety precheck правильно отказался трогать оставшийся архив. Источник: `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/commitments-before-cascade-fix-83of87.log`.
+- Исправление: preserving368 делает четыре scoped исторические NO ACTION ссылки deferrable initially deferred; resource/window RESTRICT и все immutable guards сохранены. После применения по проверенному конечному UUID-манифесту удалены только собственные оставшиеся синтетические fixtures; actual COMMIT exit0. Манифест: `commitments-failed-run-recovery-manifest.json`. Восемь orphan ресурсов с vendor_idNULL сохранены, их владельцы не выводились из названия. Полная повторная проверка87 случаев на момент записи ещё не завершена.
+
+## LOCAL-030-15 · 2026-10-01 · Причина освобождения привязана к следующей версии
+
+- Факт: два независимых отрицательных SQL-контроля с настоящими планом и двухсторонним согласованием подменили только причину освобождения при допустимой замене на `vendor_erased` и `deal_cancelled`. До369 оба COMMIT разрешились revision2 вместо ожидаемого23514. Источник: `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/commitments-false-release-before369.log`. Эксплуатация через публичный API не подтверждена; kernel сам использовал `replaced`.
+- Исправление: preserving369 требует исходный current membership и точную следующую scoped версию: replace/replaced либо release/совпадающая причина. Фактическое основание release проверяется366 при вставке этой версии; deferred ancestry/completeness не разрешают оставить её неопубликованной или сохранить освобождённую строку текущей. Миграция и static checks exit0; полный повтор89 тестов ещё выполняется.
+
+Последующая проверка LOCAL-030-14/15: parent current `resourceCommitments.test.ts` SHA9e5c530c5928de5b3aec5ba99292b8ee828a69114466f7a00a703358df3764df —89/89 passed,20 observed PG waits, subprocess0 на15432; leaf1.8.1:G1 и1.8.2:G1 reverified, оба manualG2 independently reviewed. Источник `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/commitments-current-sequential-passed89.log` и gate receipts. Последовательные snapshot reads убрали фактическое pg deprecation warning без удаления SQL/assertions. Публичные двери/legacy/drill/full/browser остаются открытыми.
+
+## LOCAL-030-16 · 2026-10-01 · Удаление пакета согласовано с блокировками заказа
+
+В нашей изолированной ветке воспроизведён PostgreSQL deadlock40P01: реальный PUT /vendor/profile сначала блокировал company, затем DELETE vendor_packages через FK SET NULL ожидал selected deal; повтор реальной prepareCatalogResourceOrder уже держал wedding/slot/deal/order и ожидал company. HTTP анкеты отвечал500. Фактический query/pg_blocking_pids/raw onError40P01 сохранён в C:/Тили-тили/.unlazy/ecosystem-audit-20260930/profile-package-cycle-before.json; это контролируемые синтетические строки, не production.
+
+Общий writer теперь сначала определяет ссылки всех удаляемых пакетов, включая исторические/закрытые/cross-company offers и deals, затем блокирует sorted weddings→request mutexes→deals→текущую личность→company. После ожидания перечитывает область; расширение требует409 повтор, а не позднюю обратную блокировку wedding. Первая анкета без company сериализуется UPDATE строки её владельца до principal SHARE; это исправление дополнительно найдено независимым чтением исходника, реальный creation-race тест ещё ожидается. Реальные source-доказательства последнего устранённого цикла: profile-package-cycle-after.json, оба действия завершились, прежняя цена15500 и снимок Five arrangements сохранились, один moneyroot и package_idNULL. Текущие независимые постоянные тесты writer/preparation/API и полный init ещё ожидаются; не заявлено отсутствие всех возможных циклов.
+
+## LOCAL-030-17 · 2026-10-01 · Устаревшее чтение StrictMode не показывает ложную ошибку
+
+В actual local browser первая активация блока брони показывала общую ошибку, хотя повторное ручное чтение работало. Независимая controlled DOM регрессия удержала второй StrictMode запрос и воспроизвела ошибку:76passed/1failed из77, `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/resource-commitment-ui-strict-before-76of77.log`. Устаревший effect обновлял error/busy после нового setup. Root добавил currentEffect/собственную generation в catch/finally;77/77 после исправления, `resource-commitment-ui-strict-after77.log`. Первое actual browser раскрытие после исправления дало актуальную карточку без ручного обхода ошибки. Source: app/src/components/OrderResourceCommitments.tsx:122; независимый тест в одноимённом test.tsx. Это не доказательство поведения всех readers приложения.
+
+## LOCAL-030-18 · 2026-10-01 · Запоздавший отказ не закрывает новое подтверждённое чтение
+
+Независимое чтение исходника выявило другую ветвь: obsolete first403/404 вызывал общий invalidate после успешного active second StrictMode чтения. Два независимых controlled DOM свидетеля действительно упали:77passed/2failed из79, `C:/Тили-тили/.unlazy/ecosystem-audit-20260930/ui-stale_privacy_before.log`. Root передаёт в load generation-scoped invalidator, сохраняя fail-closed актуального отказа. Current79/79, `ui-stale_privacy_after.log` и parent automatic `resource-commitment-ui-parent79.log`; действующие current403/404/session negative сохранены. Браузерная replacement после исправления проверена отдельно. До исправления утечка приватных данных не наблюдалась и здесь не утверждается.
+
+## LOCAL-030-19 · 2026-10-01 · Город анкеты не подменяется городом поиска
+
+Independent controlled DOM: до исправления nullable/empty/actual-city display+WebShare+clipboard50passed/8failed из58 (49 прежних+9 новых), ui-location_before.log. Root сначала удалил переменную города из контекста слишком широко: ui-location_current.log4passed/54failed58 и три TypeScript ошибки611/612/814. Этот промежуточный дефект исправлен; searchCity используется только как фильтр похожих/загрузочный контекст, видимый vendor.city и Share независимы. Fixed58/58 ui-location_fixed.log, parent58/58 ui-location_parent.log; whole-app tsc/scopedlint0. Неизвестный город показывается прямо и не попадает в Share как выдуманная Уфа. Это synthetic native-capability calls, не физическая отправка сообщения.
+
+## LOCAL-030-20 · 2026-10-01 · Сохранение плана не объявляет ложное отсутствие брони
+
+Источник: resource-plan.ts263–268 проецирует reserved/released только для совпадающей текущей редакции; легитимный no-op или бронь до свежего GET может сохранить reserved. Независимые frozen97 controlled tests: before78passed/19failed (ui-plan_status_before.log):6new missing/empty/zero-head shape,1 фактически противоположная подпись после fresh reserved,12 обновляемых прежних текстовых ожиданий. Устаревший malformed reserved пример отдельно заменён unknown available; приватные идентификаторы/malformed reserved-only PATCH не разрешены. Root добавил cross-field проверку и нейтральный План сохранён.; after/parent97/97 ui-plan_reservation.log. История старой брони не превращает новый draft в reserved, editor только по server canEdit. Source/provider/human согласование этими DOM tests не доказано.
+
+## LOCAL-030-21 · 2026-10-01 · Обычная карточка открывает ресурсное согласование
+
+Actual synthetic local browser с API8091/DB commitment_browser15432: явная кнопка Согласовать бронирование раскрыла существующий reader и дала ему focus; actual SQL before/after JSON идентичен для финансового root/event/payment/receipt/allocation/commitment. Prepared root остался negotiating, новых брони/согласия/оплаты нет. Source Tools.tsx, optional openRequest в OrderResourceCommitments и store DEAL_LABEL. Browser дополнительно показал ложную универсальную72hбронь из store; заменена нейтральными Переговорами. Controlled47 financial journey +79 old reservation=126 tests passed; full frontend integration initial1760/1772 with12 failures в пяти прежних fixtures, где не были заданы новые policy/membership/projection responses. Независимые scoped compatibility28+12+18 прошли с сохранением assertions; raw full failure сохранён checkpoint-booking-ui-first-front-failed12.log. Whole current повтор пока ожидается. Screenshot commitment-browser-ordinary-cta.jpg и commitment-browser-journey-before/current.json внешние, synthetic. Это не атомарная замена разных подрядчиков: старый cancel+book остаётся открытым до отдельного stage1.9.2.
+## LOCAL-030-22 — неверная DB в full harness и отставшие проверки контракта
+
+Before: checkpoint-booking-ui-second-wrong-db-and-contract-failed.log; frontend1772passed, backend5failed/1941passed/734skipped. Exact namespace fences отвергли booking_ui2 вместо dedicated full DB; это harness failure, не доказательство ошибки ресурса. Full mode исправлен без изменения fences/очистки DB. Audit53 serial manifest и source scanner не учитывали новые wait witnesses/finite loop registrations; audit55 version0.66 отставала от0.67;24 фактических resource/profile codes отсутствовали в YAML. Root добавил actual source descriptions, bounded AST loop parsing с lexical negative controls и conservative wait-suite serialization. После добавления atomic route актуальная версия0.68, генерация239ops/184paths/144schemas. Focused wrong-tag atomic_contract + stale generated header failed log сохранён. Current actualDB contract39/39 no skips, previous resource310/310 no skips. Общий fresh full пока не выполнен; это не whole-goal acceptance.
+
+## LOCAL-030-23 — разные услуги принимались старым bookVendor без сравнения категории
+
+Источник: backend/src/deals/book.ts liveCatalogTerms136–157/bookVendor199–283: live vendor/package есть, сравнения current vendor.category_id и scoped slot.category_id нет. Это source-confirmed missing check; actual crafted public-door witness ещё pending. Новый backend/src/deals/replace.ts уже проверяет соответствие под locked slot/company доcancel и возвращает422validation_failed/vendorId. ActualPG/HTTP подтверждение и common old-door fix ещё открыты; source lint/type success не выдан за доказательство поведения.
+
+Follow-up: actual registered old public book before2failed (atomic-public-book-category-before-failed2.log): florist действительно принят в photo slot; category changed after observed wait также принят. Общий bookVendor теперь проверяет current pinned category доDML. Current independent atomic suite73/73/24realwaits, no skips, включая оба отрицательных контроля; atomic-legacy-passed73-waits24.log. Broad existing booking/offer regression пока отдельный pending прогон.
+
+## LOCAL-030-24 — ожидание очереди ошибочно считалось одним запросом
+
+Actual suite72/73/22waits отказал в тесте двух замен на этапе observe(holder,2). Diagnostic-only source сохранил strict assertion; actual graph atomic-concurrent-direct-wait-diagnostic-failed.log: holder29640, waiter20532→29640, waiter33596→20532, оба exact weddings FORUPDATE и HTTP pending. Исправлен только observer этой concurrency: ровно2 distinct actualLockwaiters, полный bounded путь к проверенному idle-TXholder, реальные directBlockers/path в evidence. Existing authority waits/final200+409/onecancel+newroot+money assertions не удалены. Whole actual suite73/73/24waits прошёл; это не обнаруженный дефект application transaction.
+
+## LOCAL-030-25 — неполный успешный ответ выдавался за подтверждённую замену
+
+Два независимых controlled cases — missing new deal.id и returned old deal.id — failed до изменения Search (ui-atomic_id_before.log). Source теперь требует nonempty new root, отличающийся от expected old, прежде чем показывать success. After focused2pass и parent full78/78 no skips; unknown result сохраняет immutable key/body для deliberate manual recheck, автоматического повтора нет. ui-atomic_replace_ui.log. Это controlled HTTP; не доказательство actual network/provider сбоя.
+
+## LOCAL-030-26 — прежний тест замены ожидал два неатомарных запроса
+
+Правильный full target booking_ui3 остановился на frontend4failed/1828passed из1832 (checkpoint-booking-ui3-front-contract-failed4.log). Three assertions ожидали старую неподтверждённую фразу Прежняя бронь сохранена., fourth positive ожидал cancel+book и malformed success DTO без actualnewroot. Root обновил только эти expectations/positive response под neutral refusal и exact one replace body/currentkey; остальные54 tests/location/preparation assertions сохранены. Combined threefiles136/136 no skips ui-resource_atomic_compat.log. Full current whole init ещё pending; прежний failed log сохраняется.
+
+### LOCAL-030-27 — категория компании не ограничивала старое многосервисное бронирование
+
+Прежний вывод LOCAL-030-23 о безусловной дыре ошибочен: действующие audit29/audit44/audit35/audit4b/audit51/prod4/prod6/quizAnswers намеренно используют одну компанию в разных категориях. Добавленный guard bookVendor привёл к20 регрессиям (полный серверный прогон2733passed/21failed; ещё1failure имел другую причину). Общий guard удалён; strictcategory нового replace сохранён. Две новые PG-проверки исправлены на полноценные положительные200 совместимости, а не удалены. Текущие atomic73 и затронутые395 passed; checkpoint-category-regression-full-before.log сохраняет неуспех. Нельзя повторно вводить ограничение без отдельного изменения модели capabilities и её приёмки.
+
+### LOCAL-030-28 — тест исходил из пустой общей очереди fullDB
+
+Один тест resourceOrderPreparation ошибочно ожидал нулевую очередь после предыдущих настоящих тестов: в retained fullDB имелось304 непросмотренных события. Тест до своего нового fixture запускает настоящий announceDealEvents на предшествующей ограниченной очереди и проверяет её обработку, затем отдельно проверяет suppression собственного draft/contacted/replay. Нет SQL-подделки delivered/notified_at, очистки базы или mock worker; внешний провайдер не настроен и доставка не утверждается. Изменён только тест;395 затронутых проверок прошли. Новые whole/CI результаты проверять отдельно.
+
+### LOCAL-030-29 — malformed успешный ответ с некорректным/старым UUID
+
+После прежних missing-ID/old-ID добавлены invalid UUID, whitespace UUID и old-ID upper-case. Прежний UI мог объявить успех; теперь требуется новый canonical UUID, отличный от прежнего без учёта регистра. Сохранён ручной same-key повтор при неопределённом результате. T16 положительный fixture использовал невалидный deal-v2; заменён на настоящий новый UUID без удаления проверок. UI139/139=63+18+58, leaf81/81; до исправления архивы ui-atomic_uuid_before/after.log сохранены.
+
+### LOCAL-030-30 — bounded push pass не означал обработку конкретной записи
+
+Whole stage_final: front1835/98passed; backend2753passed/1failed (taskReminders inbox planned вместо inbox_only), exit1. Источник stage-final-full-before-queue-failure.log. Работник выбирает порции общей очереди; тест неверно считал свою запись обработанной за один проход. Исправлен только тест: count<=10000, максимум ceil(count/200)+2 настоящих worker проходов до own inbox_only; exact own data.notificationId, обязательный delivery cancelled/attempts0/providerAcceptedNULL. Исправлена также неверная проверка payload.notificationId вместо data.notificationId. Оба affected suites73/73passed, task-push-queue-current-passed73.log. Не менялась production worker логика, не подделялись статусы и не чистилась очередь. Следующая whole/integration проверка ещё обязательна.

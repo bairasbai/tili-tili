@@ -44,6 +44,9 @@ import { inspirationRoutes } from './routes/inspiration.js'
 import { inviteRoutes } from './routes/invites.js'
 import { vendorRoutes } from './routes/vendor.js'
 import { weddingRoutes } from './routes/weddings.js'
+import { attentionRoutes } from './routes/attention.js'
+import { orderRoutes } from './routes/orders.js'
+import { resourceRoutes } from './routes/resources.js'
 import { weddingAccessHook } from './wedding/access.js'
 import { userRoutes } from './routes/users.js'
 import { makeNotImplementedRoutes, routeKey } from './routes/not-implemented.js'
@@ -147,6 +150,9 @@ export async function buildApp(
 
   await app.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
+    // The browser must preflight the same write methods as the public API.
+    // CORS defaults permit only GET/HEAD/POST and would block draft PATCH,
+    // existing PUT and DELETE even for an explicitly allowed app origin.
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
     exposedHeaders: ['ETag', 'X-Timeline-Updated-At', 'X-Timeline-Updated-By'],
@@ -320,6 +326,9 @@ export async function buildApp(
   await app.register(userRoutes)
   await app.register(geoRoutes)
   await app.register(weddingRoutes)
+  await app.register(attentionRoutes)
+  await app.register(orderRoutes)
+  await app.register(resourceRoutes)
   await app.register(inviteRoutes)
   await app.register(inspirationRoutes)
   await app.register(catalogRoutes)

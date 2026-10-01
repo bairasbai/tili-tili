@@ -11,18 +11,21 @@ import { AsyncState, ErrorState, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { getVendorReviews } from '@/lib/api/reviews'
 import { getVendorProfile } from '@/lib/api/vendor'
-import { getWedding } from '@/lib/api/weddingData'
-import { bookSlot, cancelSlot, ensureSlotForCategory, removeExternal } from '@/lib/api/slots'
+import { getVendorBookingPolicy, getOrderResourceCommitments, prepareResourceOrder, type ResourceOrderPreparationWrite } from '@/lib/api/orders'
+import { getSlots, getWedding } from '@/lib/api/weddingData'
+import { ensureSlotForCategory, replaceSlot, type ReplaceSlotWrite } from '@/lib/api/slots'
 import { addShortlistCandidate, getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
 import type { components } from '@/lib/api/schema'
 import { useStore } from '@/lib/store'
 import { cn, copyText, currentMonth, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized } from '@/lib/api/client'
+import { ApiError, isAuthorized, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { t } from '@/lib/i18n'
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
 import { OfferSummary } from '@/components/OfferSummary'
+
+class BookingReviewRequired extends Error {}
 
 function shortlistFromError(error: unknown): ShortlistEntry[] | null {
   if (!(error instanceof ApiError) || error.code !== 'shortlist_full') return null
@@ -505,19 +508,28 @@ export function VendorList() {
  */
 export function VendorDetail() {
   const { id } = useParams()
-  return <VendorDetailView key={id ?? ''} id={id} />
+  const { weddingId } = useStore()
+  const [sessionRevision, setSessionRevision] = useState(0)
+  useEffect(() => {
+    const reset = () => setSessionRevision(value => value + 1), changed = onSessionChanged(reset), expired = onSessionExpired(reset)
+    return () => { changed(); expired() }
+  }, [])
+  return <VendorDetailView key={`${id ?? ''}:${weddingId ?? ''}:${sessionRevision}`} id={id} />
 }
 
 function VendorDetailView({ id }: { id: string | undefined }) {
   const nav = useNavigate()
   const location = useLocation()
-  const { slots, slotsState, bookVendor, city, weddingDate, weddingId, refreshSlots } = useStore()
+  const { slots, slotsState, bookVendor, weddingDate, weddingId, refreshSlots, city: searchCity } = useStore()
   const [pkg, setPkg] = useState(0)
   const [added, setAdded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [replaceBusy, setReplaceBusy] = useState(false)
   const [replaceError, setReplaceError] = useState<string | null>(null)
   const [replaced, setReplaced] = useState(false)
+  const [replaceUncertain, setReplaceUncertain] = useState(false)
+  const replacing = useRef(false)
+  const replacement = useRef<{ scope: string; weddingId: string; slotId: string; body: ReplaceSlotWrite; key: string } | null>(null)
   const [chatBusy, setChatBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /* Жалоба на анкету (§18.2) — своя шторка, `POST /complaints`. */
@@ -525,8 +537,20 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   /* «Поделиться» без Web Share (десктоп) копирует текст молча — как и в
      других местах, подтверждаем словом (живой обход ролей). */
   const [shared, setShared] = useState(false)
+  const preparation = useRef<{ scope: string; slotId: string; body: ResourceOrderPreparationWrite; key: string } | null>(null)
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  useEffect(() => {
+    const invalidate = () => { alive.current = false; replacement.current = null }
+    const changed = onSessionChanged(invalidate), expired = onSessionExpired(invalidate)
+    return () => { changed(); expired() }
+  }, [])
 
   const detail = useApi(() => id ? getVendor(id) : Promise.resolve(null), [id])
+  const bookingPolicy = useApi(() => id ? getVendorBookingPolicy(id) : Promise.resolve(null), [id])
+  const policyKnown = ready(bookingPolicy) && !!bookingPolicy.data && ['legacy_day', 'resources'].includes(bookingPolicy.data.mode)
+    && /^(0|[1-9]\d{0,18})$/.test(bookingPolicy.data.revision)
+  const resourceMode = policyKnown && bookingPolicy.data?.mode === 'resources'
   const cats = useApi(() => getCategories(), [])
   const v = detail.data
   const cat = (cats.data ?? []).find(c => c.id === v?.categoryId)
@@ -555,7 +579,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      свободна» — по нему бронируют. */
   const availKnown = ready(avail)
   const heldOnDate = availKnown && !!weddingDate && holdDates.includes(weddingDate)
-  const freeOnDate = availKnown && !!weddingDate && !busyDates.includes(weddingDate) && !heldOnDate
+  const freeOnDate = availKnown && policyKnown && !resourceMode && !!weddingDate && !busyDates.includes(weddingDate) && !heldOnDate
   /* Отзывы — публичная лента этого подрядчика, а не общая заготовка. */
   const reviews = useApi(() => id ? getVendorReviews(id) : Promise.resolve(null), [id])
   /*
@@ -592,8 +616,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
   /* Похожие — свободные на дату свадьбы: подпись под календарём обещает
      «похожих свободных ниже», а список без даты показывал и занятых (ревью 015). */
   const similar = useApi(
-    () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city, date: weddingDate, limit: 6 }) : Promise.resolve({ items: [] }),
-    [v?.categoryId, city, weddingDate],
+    () => v?.categoryId ? getVendors({ categoryId: v.categoryId, city: searchCity, date: weddingDate, limit: 6 }) : Promise.resolve({ items: [] }),
+    [v?.categoryId, searchCity, weddingDate],
   )
   /*
    * Своя анкета глазами пары (фича 007). Владельца сервер пускает и к
@@ -641,15 +665,20 @@ function VendorDetailView({ id }: { id: string | undefined }) {
     && !!replaceSlotId
     && !!requestedReplaceSlot
     && requestedReplaceSlot.categoryId === v?.categoryId
-    && requestedReplaceSlot.state === 'booked'
+    && ['booked', 'paid'].includes(requestedReplaceSlot.state)
     && !!requestedReplaceSlot.dealId
-    && requestedReplaceSlot.dealState !== 'done'
+    && ['candidate', 'contacted', 'negotiating', 'booked', 'paid_deposit'].includes(requestedReplaceSlot.dealState ?? '')
     && requestedReplaceSlot.vendorId !== v?.id
     && !!replaceEntry
+  const replacementScope = JSON.stringify([weddingId, slotsState, role, replaceSlotId,
+    requestedReplaceSlot?.dealId, requestedReplaceSlot?.dealState, requestedReplaceSlot?.vendorId,
+    requestedReplaceSlot?.external, v?.id, v?.packages?.[pkg]?.id, v?.packages?.[pkg]?.price?.amount])
+  const currentReplacementScope = useRef(replacementScope)
+  currentReplacementScope.current = replacementScope
   const replaceIntentError = !replaceIntent || replaceError || replaced || !replaceReady ? null
     : role !== 'couple' ? t('Замену брони может подтвердить только пара')
     : !requestedReplaceSlot || requestedReplaceSlot.categoryId !== v?.categoryId
-      || requestedReplaceSlot.state !== 'booked' || !requestedReplaceSlot.dealId
+      || !['booked', 'paid'].includes(requestedReplaceSlot.state) || !requestedReplaceSlot.dealId
       || requestedReplaceSlot.dealState === 'done' || requestedReplaceSlot.vendorId === v?.id
       ? t('Это место больше нельзя заменить из этой анкеты')
       : !replaceEntry ? t('Этот кандидат больше не доступен для замены')
@@ -681,48 +710,121 @@ function VendorDetailView({ id }: { id: string | undefined }) {
    */
   const add = async () => {
     const price = v?.packages?.[pkg]?.price?.amount
-    if (!v?.id || price == null) { setErr(t('У этого подрядчика не указана цена пакета')); return }
+    if (!v?.id || busy) return
+    if (!candidateAccessReady || role !== 'couple') { setErr(t('Заказ выбирает пара — обновите сведения о свадьбе')); return }
     if (!v.categoryId || !weddingId) { setErr(t('Сначала заведите свадьбу')); return }
     setErr(null)
     setBusy(true)
     try {
+      const policy = await getVendorBookingPolicy(v.id)
+      if (!alive.current) return
+      if (!policy || !['legacy_day', 'resources'].includes(policy.mode) || !/^(0|[1-9]\d{0,18})$/.test(policy.revision)) {
+        throw new BookingReviewRequired(t('Способ бронирования не подтверждён — обновите анкету'))
+      }
+      if (policy.mode === 'legacy_day' && price == null) { setErr(t('У этого подрядчика не указана цена пакета')); return }
       const slotId = slot?.id ?? (await ensureSlotForCategory(weddingId, v.categoryId))
+      if (!alive.current) return
+      if (policy.mode === 'resources') {
+        const scope = `${weddingId}:${slotId}:${slot?.dealId ?? ''}:${v.id}:${v.packages?.[pkg]?.id ?? ''}`
+        if (preparation.current && preparation.current.scope !== scope) preparation.current = null
+        const command = preparation.current ?? { scope, slotId, key: newIdempotencyKey(), body: {
+          vendorId: v.id, packageId: v.packages?.[pkg]?.id ?? null,
+          expectedSelectedDealId: slot?.dealId ?? null, expectedPolicyRevision: policy.revision,
+        } }
+        preparation.current = command
+        const prepared = await prepareResourceOrder(weddingId, command.slotId, command.body, command.key)
+        if (!alive.current) return
+        if (!prepared?.dealId || !['candidate', 'contacted', 'negotiating'].includes(prepared.state)) {
+          throw new BookingReviewRequired(t('Подготовка заказа пока не подтверждена — обновите сведения'))
+        }
+        preparation.current = null
+        refreshSlots()
+        nav(`/deal/${prepared.dealId}`)
+        return
+      }
       /* Выбранный пакет уходит в бронь: сделка помнит, что именно продано
          (`Deal.packageName`, фича 005). До ревью 015 цена бралась из пакета,
          а сам пакет — нет, и в кабинете подрядчика стояло «без пакета» (FB1). */
-      await bookVendor(slotId, v.id, price, v.packages?.[pkg]?.id)
-      setAdded(true)
+      await bookVendor(slotId, v.id, price!, v.packages?.[pkg]?.id)
+      if (alive.current) setAdded(true)
     } catch (e) {
-      setErr(explainError(e))
+      if (e instanceof ApiError && e.kind === 'http') preparation.current = null
+      if (alive.current) setErr(e instanceof BookingReviewRequired ? e.message : explainError(e))
     } finally {
-      setBusy(false)
+      if (alive.current) setBusy(false)
     }
   }
 
   const replaceBooking = async () => {
     const price = v?.packages?.[pkg]?.price?.amount
     const replaceWeddingId = weddingId
-    if (!canReplace || !replaceWeddingId || !requestedReplaceSlot || !v?.id || price == null || replaceBusy) return
+    if (!canReplace || !replaceWeddingId || !requestedReplaceSlot || !v?.id || price == null || price <= 0 || replacing.current) return
+    const scope = replacementScope
+    const current = () => alive.current && currentReplacementScope.current === scope
+    replacing.current = true
     setReplaceError(null)
     setReplaceBusy(true)
-    let oldBookingCancelled = false
+    let sent = false
     try {
-      await (requestedReplaceSlot.external
-        ? removeExternal(replaceWeddingId, requestedReplaceSlot.id)
-        : cancelSlot(replaceWeddingId, requestedReplaceSlot.id))
-      oldBookingCancelled = true
-      await bookSlot(replaceWeddingId, requestedReplaceSlot.id, v.id, price, v.packages?.[pkg]?.id)
+      const weddings = await listMyWeddings()
+      if (!current()) return
+      if (weddings.find(w => w.id === replaceWeddingId)?.role !== 'couple') {
+        throw new BookingReviewRequired(t('Замену брони может подтвердить только пара'))
+      }
+      const latest = (await getSlots(replaceWeddingId))?.find(item => item.id === requestedReplaceSlot.id)
+      if (!current()) return
+      if (!latest?.deal || latest.deal.id !== requestedReplaceSlot.dealId || latest.deal.state !== requestedReplaceSlot.dealState) {
+        throw new BookingReviewRequired(t('Выбранный заказ изменился — обновите позицию'))
+      }
+      // The old promise remains until the replacement route is known to be
+      // compatible. Resource replacement needs its separate agreed-plan flow.
+      const policy = await getVendorBookingPolicy(v.id)
+      if (!current()) return
+      if (!policy || !['legacy_day', 'resources'].includes(policy.mode) || !/^(0|[1-9]\d{0,18})$/.test(policy.revision)
+        || BigInt(policy.revision) > 9223372036854775807n) {
+        throw new BookingReviewRequired(t('Способ бронирования не подтверждён — обновите анкету'))
+      }
+      const previous = requestedReplaceSlot.external ? null : await getOrderResourceCommitments(requestedReplaceSlot.dealId!)
+      if (!current()) return
+      if (!requestedReplaceSlot.external && (!previous || !['not_reserved', 'reserved', 'released'].includes(previous.state))) {
+        throw new BookingReviewRequired(t('Прежняя бронь не подтверждена — обновите заказ'))
+      }
+      if (policy.mode === 'resources' || previous?.state === 'reserved') {
+        throw new BookingReviewRequired(t('Для замены нужно согласовать ресурсы.'))
+      }
+      if (replacement.current && replacement.current.scope !== scope) replacement.current = null
+      const command = replacement.current ?? { scope, weddingId: replaceWeddingId, slotId: requestedReplaceSlot.id,
+        body: { expectedSelectedDealId: requestedReplaceSlot.dealId!,
+          expectedSelectedDealState: requestedReplaceSlot.dealState as ReplaceSlotWrite['expectedSelectedDealState'],
+          vendorId: v.id, ...(v.packages?.[pkg]?.id ? { packageId: v.packages[pkg]!.id } : {}),
+          price: { amount: price, currency: 'RUB' }, expectedPolicyRevision: policy.revision }, key: newIdempotencyKey() }
+      if (command.body.expectedPolicyRevision !== policy.revision) {
+        replacement.current = null
+        throw new BookingReviewRequired(t('Способ бронирования изменился — обновите анкету'))
+      }
+      replacement.current = command
+      sent = true
+      const result = await replaceSlot(command.weddingId, command.slotId, command.body, command.key)
+      if (!current()) return
+      if (result?.id !== command.slotId || result.deal?.vendor?.id !== command.body.vendorId || result.deal.state !== 'booked'
+        || typeof result.deal.id !== 'string' || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(result.deal.id)
+        || result.deal.id.toLowerCase() === command.body.expectedSelectedDealId.toLowerCase()) {
+        throw new Error(t('Результат замены пока не подтверждён'))
+      }
+      replacement.current = null
+      setReplaceUncertain(false)
       setReplaced(true)
     } catch (error) {
-      const detail = explainError(error)
-      setReplaceError(oldBookingCancelled
-        ? `${t('Старая бронь уже отменена, но новую подтвердить не удалось')}: ${detail}`
-        : detail)
+      if (!current()) return
+      const uncertain = sent && (!(error instanceof ApiError) || error.kind !== 'http' || error.status >= 500 || error.code === 'idempotency_in_progress')
+      if (!uncertain) replacement.current = null
+      setReplaceUncertain(uncertain)
+      setReplaceError(uncertain ? t('Результат замены пока не подтверждён. Обновите позицию и повторите проверку.')
+        : error instanceof BookingReviewRequired ? error.message : `${t('Замена не выполнена — обновите позицию.')} ${explainError(error)}`)
     } finally {
-      setReplaceBusy(false)
-      /* Сначала завершены обе операции, поэтому только один перечитанный
-         снимок состояния может обновить форму после замены. */
-      refreshSlots()
+      replacing.current = false
+      if (alive.current) setReplaceBusy(false)
+      if (current()) refreshSlots()
     }
   }
 
@@ -753,7 +855,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
      человек видел чью-то чужую анкету вместо «не нашлось». */
   if (!v) return (
     <div className="pb-44">
-      <TopBar back title={t('Анкета подрядчика')} sub={city} />
+      <TopBar back title={t('Анкета подрядчика')} sub={searchCity} />
       <div className="px-5 mt-8 text-center fade-up">
         {detail.loading && <p className="text-[12.5px] text-[var(--soft)]">{t('Загружаем анкету…')}</p>}
         {detail.error && <ErrorState error={detail.error} retry={() => { detail.reload(); cats.reload() }} />}
@@ -772,7 +874,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
     <div className="pb-32">
       <TopBar back title={cat?.title ?? t('Анкета подрядчика')} sub={t('Анкета подрядчика')} right={
         <button onClick={() => {
-          const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${cat?.title ?? ''} · ${t(city)}${v.priceFrom?.amount != null ? `${t(' · от ')}${fmt(v.priceFrom.amount)}` : ''}`, url: window.location.href }
+          const data = { title: `${v.name}${t(' — Тили-тили')}`, text: `${[cat?.title, v.city?.trim()].filter(Boolean).join(' · ')}${v.priceFrom?.amount != null ? `${t(' · от ')}${fmt(v.priceFrom.amount)}` : ''}`, url: window.location.href }
           if (navigator.share) navigator.share(data).catch(() => {})
           else { copyText(`${data.title}\n${data.text}\n${data.url}`); setShared(true); setTimeout(() => setShared(false), 1500) }
         }} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[11.5px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{shared ? t('Скопировано') : t('Поделиться')}</button>
@@ -816,7 +918,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             <p className="text-[12px] text-[var(--soft)] mt-1 flex items-center gap-1.5">
               {/* Город — из анкеты; «+ 100 км» стояло константой у всех: радиуса
                   выезда сервер не знает, а каталог ищет по точному городу. */}
-              <MapPin size={12} /> {v.city ?? t(city)}
+              <MapPin size={12} /> {v.city?.trim() || t('город не указан')}
               {/* Ветка — по самой оценке: сервер прячет её до третьего отзыва,
                   и у анкеты с двумя отзывами здесь стояла пустая звезда и
                   «2 отзывов» (ревью D5-02). */}
@@ -923,7 +1025,7 @@ function VendorDetailView({ id }: { id: string | undefined }) {
               <p role="status" className="text-[11px] font-semibold text-[var(--sage-ink)]">{t('Подрядчик заменён в свадьбе')}</p>
             ) : canReplace ? (
               <button type="button" disabled={replaceBusy || v.packages?.[pkg]?.price?.amount == null} onClick={() => void replaceBooking()} className="press px-4 h-10 rounded-full grad text-[var(--on-grad)] text-[11px] font-semibold disabled:opacity-50">
-                {replaceBusy ? t('Заменяем подрядчика…') : t('Заменить в свадьбе')}
+                {replaceBusy ? t('Заменяем подрядчика…') : replaceUncertain ? t('Проверить и повторить замену') : t('Заменить в свадьбе')}
               </button>
             ) : null}
           </div>
@@ -991,7 +1093,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
             })}
           </div>
           )}
-          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{!availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : !weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни текущего месяца') : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
+          <p className="text-[10px] text-[var(--soft)] mt-3 flex items-center gap-1.5"><Calendar size={11} />{resourceMode ? t('Для этой компании согласуются отдельные ресурсы и время. Календарь дней не подтверждает их доступность.') : !policyKnown ? t('Способ бронирования пока неизвестен — свободная дата не подтверждена') : !availKnown ? (avail.loading ? t('Загружаем занятость…') : t('Занятость не загрузилась — свободна ли дата, пока неизвестно')) : !weddingDate ? t('Дата свадьбы не выбрана — показаны занятые дни текущего месяца') : freeOnDate ? t('Ваша дата свободна · зачёркнуты занятые') : heldOnDate ? t('На вашу дату идут переговоры с другой парой — напишите, чтобы узнать, свободен ли он') : t('Ваша дата занята — посмотрите похожих свободных ниже')}</p>
+          {!policyKnown && <button type="button" className="press min-h-11 text-xs underline" onClick={bookingPolicy.reload}>{t('Обновить способ бронирования')}</button>}
         </div>
       </div>
 
@@ -1091,8 +1194,8 @@ function VendorDetailView({ id }: { id: string | undefined }) {
         {!replaceIntent && (dealHere && !added ? (
           <button onClick={() => nav(`/deal/${dealHere}`)} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px]" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>{t('✓ В моей свадьбе · открыть сделку')}</button>
         ) : (
-        <button onClick={add} disabled={busy || added} className="press flex-[1.4] h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
-          {added ? t('✓ В моей свадьбе!') : busy ? t('Бронируем…') : t('Добавить в свадьбу')}
+        <button onClick={add} disabled={busy || added || !candidateAccessReady || role !== 'couple'} className="press flex-[1.4] min-w-0 min-h-[52px] rounded-full grad text-[var(--on-grad)] px-2 font-semibold text-[13.5px] disabled:opacity-60" style={{ boxShadow: '0 16px 36px -12px rgba(201,138,138,.65)' }}>
+          {added ? t('✓ В моей свадьбе!') : busy ? t('Подготавливаем заказ…') : resourceMode ? t('Подготовить заказ') : t('Добавить в свадьбу')}
         </button>
         ))}
       </div>

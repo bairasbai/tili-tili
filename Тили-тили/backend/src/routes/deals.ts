@@ -4,8 +4,10 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
+import { lockBookingActor, lockBookingReplay } from '../deals/book.js'
 import { DEAL_COLUMNS, DEAL_JOINS, expireHolds, holdVendorDate, toDeal, type DealRow } from '../deals/repo.js'
 import { COMMITTED, DEAL_STATES, HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
+import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 
 /**
  * После аванса сумма фиксируется: деньги уже перешли, и молчаливая правка
@@ -188,9 +190,12 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * Порядок «свадьба → сделка» — тот же, что у переноса: обратный
            * давал бы взаимную блокировку. */
           const { rows: w } = await client.query<{ date: string | null }>(
-            'select date::text as date from weddings where id = $1 for update',
+            'select date::text as date from weddings where id = $1 and archived_at is null and cancelled_at is null for update',
             [deal.wedding_id],
           )
+          if (!w[0]) throw notFound('Свадьба не найдена')
+          await lockBookingActor(client, { weddingId: deal.wedding_id, actorId: userId,
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
           await expireHolds(client, deal.wedding_id)
 
           /* `for update`: два одновременных перехода читали одно состояние и
@@ -205,6 +210,9 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
             [dealId],
           )
           const from = fresh[0]!.state
+          if (body.state && COMMITTED.includes(body.state) && !COMMITTED.includes(from) && deal.vendor_id) {
+            await assertLegacyDateBookingAllowed(client, deal.vendor_id)
+          }
 
           /* Смена цены без смены состояния — отдельный случай, и журнал
            * это различает: рассылка берёт заголовок из `to_state` и на
@@ -256,7 +264,8 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * маршруты, лид, ссылки слота) идут одним и тем же кодом у всех
            * четырёх HTTP-дверей. */
           if (body.state === 'cancelled') {
-            await cancelDeal(client, dealId, { actorId: userId, note: body.note ?? null })
+            await cancelDeal(client, dealId, { actorId: userId, sessionId: request.caller!.sessionId,
+              policyVersion: app.appConfig.policyVersion, note: body.note ?? null })
             const { rows: out } = await client.query<DealRow>(
               `select ${DEAL_COLUMNS} from deals d ${DEAL_JOINS} where d.id = $1`,
               [dealId],
@@ -305,6 +314,11 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
           )
           return { status: 200, body: toDeal(out[0]!, true) }
         }),
+        true, async client => {
+          const deal = await dealForCouple(client, dealId, userId)
+          await lockBookingReplay(client, { weddingId: deal.wedding_id, dealId, actorId: userId,
+            sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+        },
       )
     },
   )

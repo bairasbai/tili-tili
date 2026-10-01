@@ -98,11 +98,16 @@ function touchesSharedState(rawText: string): boolean {
   if (/from\s*['"]\.\.\/src\/notify\/push\.(?:js|ts)['"]/.test(code) && /\bsendDuePushes\b/.test(code)) return true
   if (/from\s*['"]\.\.\/src\/notify\/task-notifications\.(?:js|ts)['"]/.test(code) && /\b(sendTaskReminders|pruneTaskNotifications)\b/.test(code)) return true
   if (code.includes('/admin/categories')) return true
+  // Lock witnesses inspect the database-wide wait graph. Keep their schedules
+  // serial so another suite cannot become an extra waiter in that witness.
+  if (/\bpg_stat_activity\b/.test(code) && /\bpg_blocking_pids\s*\(/.test(code)) return true
   /* Временный триггер сбоя — DDL на общей таблице: пока он висит, через него
    * проходит каждая запись соседей в эту таблицу, а создание и снятие берут
    * блокировку всей таблицы (ревью 018, 018-B BB-03). */
   if (/\bcreate\s+(?:constraint\s+)?trigger\b/i.test(code)) return true
   if (/\block\s+table\b/i.test(code)) return true
+  // Constraints also alter a shared table and take relation-wide locks.
+  if (/\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:"?public"?\s*\.\s*)?(?:"[^"]+"|[a-z_][a-z0-9_]*)\s+(?:add|drop)\s+constraint\b/i.test(code)) return true
   if (/\b(insert\s+into|update|delete\s+from)\s+(categories|category_synonyms)\b/i.test(code)) return true
   return false
 }
@@ -168,6 +173,16 @@ describe('audit53: устройство серийной группы держи
     expect(touchesSharedState("await client.query('lock table guests in access exclusive mode')")).toBe(true)
     expect(touchesSharedState('await client.query(`lock table ${door} in access exclusive mode`)')).toBe(true)
     expect(touchesSharedState("// lock table guests\nawait client.query('select id from guests where id=$1 for update')")).toBe(false)
+  })
+
+  it('распознаёт shared constraint DDL, сохраняя scoped DML и комментарии отдельно', () => {
+    expect(touchesSharedState('db.query(`ALTER TABLE public.audit_log ADD CONSTRAINT ${name} CHECK (true)` )')).toBe(true)
+    expect(touchesSharedState('db.query(`alter table if exists "public"."audit_log" drop constraint ${name}`)')).toBe(true)
+    expect(touchesSharedState('db.query("update notifications set cancelled_at=now() where id=$1", [id])')).toBe(false)
+    expect(touchesSharedState('// alter table audit_log add constraint test check (true)')).toBe(false)
+    expect(touchesSharedState('db.query(`select pid from pg_stat_activity where $1=any(pg_blocking_pids(pid))`, [holder])')).toBe(true)
+    expect(touchesSharedState('db.query(`select pg_backend_pid()` )')).toBe(false)
+    expect(touchesSharedState('// pg_stat_activity pg_blocking_pids(pid)')).toBe(false)
   })
 
   it('(1) каждый файл, трогающий общее состояние, — в vitest.serial.json', () => {

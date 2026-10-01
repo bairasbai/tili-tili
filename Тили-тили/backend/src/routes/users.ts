@@ -17,6 +17,7 @@ interface ProfileRow {
   chats: boolean
   deals: boolean
   tips: boolean
+  urgent_incidents: boolean
   quiet_from: string
   quiet_to: string
 }
@@ -51,6 +52,7 @@ function toProfile(r: ProfileRow) {
     tz: r.tz ?? '',
     push: { tasks: r.tasks, chats: r.chats, deals: r.deals, tips: r.tips },
     quietHours: { from: hhmm(r.quiet_from), to: hhmm(r.quiet_to) },
+    urgentIncidents: r.urgent_incidents,
   }
 }
 
@@ -65,6 +67,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       `select u.id, u.name, u.phone, u.email, u.is_staff, u.lang, u.tz,
               coalesce(p.tasks, true) as tasks, coalesce(p.chats, true) as chats,
               coalesce(p.deals, true) as deals, coalesce(p.tips, true) as tips,
+              coalesce(p.urgent_incidents, false) as urgent_incidents,
               coalesce(p.quiet_from, '22:00')::text as quiet_from,
               coalesce(p.quiet_to, '09:00')::text as quiet_to
          from users u left join notification_prefs p on p.user_id = u.id
@@ -135,6 +138,10 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       await client.query(`select id from weddings where id in
         (select wedding_id from wedding_members where user_id=$1) order by id for update`, [userId])
       await client.query("select set_config('tili.timeline_actor',$1,true)", [userId])
+      // Keep wedding locks first, then pin the account before its consent rows.
+      // Resource access holds the account before checking session/consent;
+      // consent-first withdrawal could otherwise deadlock with that reader.
+      await client.query('select id from users where id=$1 for update', [userId])
       await client.query('update consents set withdrawn_at = now() where user_id = $1 and withdrawn_at is null', [
         userId,
       ])
@@ -163,6 +170,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
             name: { type: 'string', maxLength: 120 },
             lang: { type: 'string', enum: ['ru', 'en'] },
             tz: { type: 'string', maxLength: 64 },
+            urgentIncidents: { type: 'boolean' },
             push: {
               type: 'object',
               additionalProperties: false,
@@ -194,6 +202,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         name?: string
         lang?: string
         tz?: string
+        urgentIncidents?: boolean
         push?: Partial<Record<'tasks' | 'chats' | 'deals' | 'tips', boolean>>
         quietHours?: { from?: string; to?: string }
       }
@@ -215,7 +224,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         [userId, body.name ?? null, body.lang ?? null, body.tz ?? null],
       )
 
-      if (body.push || body.quietHours) {
+      if (body.push || body.quietHours || body.urgentIncidents !== undefined) {
         await db().query(
           `insert into notification_prefs (user_id) values ($1) on conflict (user_id) do nothing`,
           [userId],
@@ -224,7 +233,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
           `update notification_prefs
               set tasks = coalesce($2, tasks), chats = coalesce($3, chats),
                   deals = coalesce($4, deals), tips = coalesce($5, tips),
-                  quiet_from = coalesce($6::time, quiet_from), quiet_to = coalesce($7::time, quiet_to)
+                  quiet_from = coalesce($6::time, quiet_from), quiet_to = coalesce($7::time, quiet_to),
+                  urgent_incidents = coalesce($8, urgent_incidents)
             where user_id = $1`,
           [
             userId,
@@ -234,6 +244,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
             body.push?.tips ?? null,
             body.quietHours?.from ?? null,
             body.quietHours?.to ?? null,
+            body.urgentIncidents ?? null,
           ],
         )
       }

@@ -166,6 +166,7 @@ describe('ревью 015: анкета подрядчика (FB1, FB2) и экр
     ],
   }
   const vendorRoutes = (over: Routes = {}): Routes => base({
+    '/vendors/v1/booking-policy': { mode: 'legacy_day', revision: '0' },
     '/catalog/vendors/v1': VENDOR,
     '/catalog/vendors': { items: [], nextCursor: null },
     '/catalog/vendors/v1/availability': { busyDates: [], holdDates: [] },

@@ -435,7 +435,7 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     expect(log[0]!.entity).toBe('vendor')
   })
 
-  it('снятие с публикации с причиной: анкета вне каталога, новость срочная, причина в журнале', async () => {
+  it('снятие с публикации с причиной: анкета вне каталога, новость во входящих, push соблюдает лимит', async () => {
     const staff = await newStaff()
     const vendor = await newVendor('Снимаемая')
     await fillPushQuota(vendor.userId)
@@ -451,8 +451,8 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     const notes = (await notesOf(vendor.userId)).filter((n) => n.title === 'Анкета снята с публикации')
     expect(notes).toHaveLength(1)
     expect(notes[0]).toMatchObject({ kind: 'system', link: '/vendor-app', body: reason })
-    // Потеря дохода не ждёт утра: дневная норма забита, а новость всё равно сейчас.
-    expect(soon(notes[0]!.deliver_after)).toBe(true)
+    // Moderation is immediately visible in-app; it does not invent incident urgency.
+    expect(soon(notes[0]!.deliver_after)).toBe(false)
 
     const log = (await logOf(vendor.vendorId)).filter((r) => r.action === 'vendor.reject')
     expect(log).toHaveLength(1)
@@ -534,7 +534,7 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     expect(notes[0]!.body).toContain('недопустимое содержание')
   })
 
-  it('блокировка по жалобе: анкета вне каталога, а новость срочная', async () => {
+  it('блокировка по жалобе: анкета вне каталога, новость сохранена без обхода лимита', async () => {
     const staff = await newStaff()
     const vendor = await newVendor('Блокируемая')
     await fillPushQuota(vendor.userId)
@@ -547,8 +547,7 @@ describe.skipIf(!live)('админка: основа панели сотрудн
     const notes = (await notesOf(vendor.userId)).filter((n) => n.title === 'Анкета заблокирована')
     expect(notes).toHaveLength(1)
     expect(notes[0]!.body).toContain('неявка')
-    // Дневная норма забита, а новость всё равно сейчас: это потеря дохода.
-    expect(soon(notes[0]!.deliver_after)).toBe(true)
+    expect(soon(notes[0]!.deliver_after)).toBe(false)
 
     const log = (await logOf(vendor.vendorId)).filter((r) => r.action === 'complaint.block')
     expect(log).toHaveLength(1)

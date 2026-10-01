@@ -170,6 +170,9 @@ export async function withIdempotency<T>(
    * по контракту, не должен получать 400 за то, чего мы не обещали.
    */
   required = true,
+  /** Access only, under current locks: returning saved data must not execute
+   * the original operation or bypass a revocation during a lock wait. */
+  authorizeReplay?: (client: Queryable) => Promise<void>,
 ): Promise<unknown> {
   const userId = request.caller!.userId
   const clientKey = readKeyHeader(request, required)
@@ -179,6 +182,7 @@ export async function withIdempotency<T>(
   }
   const replayed = await replayOrClaim(db, userId, route, clientKey, request.url, request.body)
   if (replayed) {
+    if (authorizeReplay) await db.tx(authorizeReplay)
     reply.header('idempotent-replay', 'true')
     return reply.code(replayed.status).send(replayed.body)
   }

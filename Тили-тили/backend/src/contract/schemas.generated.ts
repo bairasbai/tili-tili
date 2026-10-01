@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 111. */
+ * Схем: 146. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2128,6 +2128,939 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "OrderAssignmentCancel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "expectedAssignmentVersion"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedAssignmentVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "OrderAssignmentCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "slotId",
+              "programEventId",
+              "label"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "slotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              }
+          }
+      },
+      "OrderBriefField": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "key",
+              "label",
+              "type",
+              "group"
+          ],
+          "properties": {
+              "key": {
+                  "type": "string"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "type": {
+                  "type": "string",
+                  "enum": [
+                      "string",
+                      "string_array",
+                      "integer",
+                      "boolean",
+                      "date"
+                  ]
+              },
+              "group": {
+                  "type": "string",
+                  "enum": [
+                      "core",
+                      "optional"
+                  ]
+              },
+              "maxLength": {
+                  "type": "integer"
+              },
+              "maxItems": {
+                  "type": "integer"
+              },
+              "min": {
+                  "type": "integer"
+              },
+              "max": {
+                  "type": "integer"
+              },
+              "options": {
+                  "type": "array",
+                  "items": {
+                      "type": "string"
+                  }
+              }
+          }
+      },
+      "OrderBriefSubtype": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "label",
+              "suggestedKinds",
+              "fields"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "suggestedKinds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "enum": [
+                          "timed_service",
+                          "supply",
+                          "rental",
+                          "deliverable",
+                          "appointment"
+                      ]
+                  }
+              },
+              "fields": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OrderBriefField"
+                  }
+              }
+          }
+      },
+      "OrderBriefWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "brief"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "brief": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "values"
+                  ],
+                  "properties": {
+                      "subtypeId": {
+                          "type": "string",
+                          "maxLength": 100
+                      },
+                      "values": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": true
+                      }
+                  }
+              }
+          }
+      },
+      "OrderCatalog": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "weddingId",
+              "primarySlotId",
+              "actorRole",
+              "timeZone",
+              "assignmentTimeZones",
+              "eligiblePositions",
+              "draftEditable",
+              "category",
+              "executionKinds"
+          ],
+          "properties": {
+              "dealState": {
+                  "type": "string",
+                  "enum": [
+                      "candidate",
+                      "contacted",
+                      "negotiating",
+                      "booked",
+                      "paid_deposit",
+                      "done",
+                      "cancelled"
+                  ],
+                  "description": "Текущее состояние финансового заказа; проверяется сервером, отдельно от согласования условий."
+              },
+              "vendorId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "primarySlotId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "actorRole": {
+                  "type": "string",
+                  "enum": [
+                      "couple",
+                      "vendor"
+                  ]
+              },
+              "draftEditable": {
+                  "type": "boolean",
+                  "description": "Отменённый финансовый корень сохраняет историю, но его черновик больше не исполняется"
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Реальный часовой пояс свадьбы; отсутствие не заменяется поясом зрителя"
+              },
+              "assignmentTimeZones": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "assignmentId",
+                          "programEventId",
+                          "timeZone"
+                      ],
+                      "properties": {
+                          "assignmentId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "programEventId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "timeZone": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          }
+                      }
+                  }
+              },
+              "eligiblePositions": {
+                  "type": "array",
+                  "description": "Только паре — реальные подходящие позиции; это возможность назначения черновика, а не подтверждение брони",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "slotId",
+                          "programEventId",
+                          "isPrimary",
+                          "label"
+                      ],
+                      "properties": {
+                          "slotId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "programEventId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "isPrimary": {
+                              "type": "boolean"
+                          },
+                          "label": {
+                              "type": "string"
+                          }
+                      }
+                  }
+              },
+              "category": {
+                  "$ref": "contract#/definitions/OrderCategoryBrief"
+              },
+              "executionKinds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "enum": [
+                          "timed_service",
+                          "supply",
+                          "rental",
+                          "deliverable",
+                          "appointment"
+                      ]
+                  }
+              }
+          }
+      },
+      "OrderCategoryBrief": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "categoryId",
+              "label",
+              "suggestedKinds",
+              "fields",
+              "autoAssign"
+          ],
+          "properties": {
+              "categoryId": {
+                  "type": "string"
+              },
+              "label": {
+                  "type": "string"
+              },
+              "suggestedKinds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "enum": [
+                          "timed_service",
+                          "supply",
+                          "rental",
+                          "deliverable",
+                          "appointment"
+                      ]
+                  }
+              },
+              "fields": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OrderBriefField"
+                  }
+              },
+              "subtypes": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/OrderBriefSubtype"
+                  }
+              },
+              "autoAssign": {
+                  "type": "boolean",
+                  "enum": [
+                      false
+                  ]
+              }
+          }
+      },
+      "OrderPartCancel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "expectedPartVersion"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedPartVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "OrderPartCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "kind",
+              "title",
+              "details"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "timed_service",
+                      "supply",
+                      "rental",
+                      "deliverable",
+                      "appointment"
+                  ]
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "details": {
+                  "type": "object",
+                  "maxProperties": 64,
+                  "additionalProperties": true
+              }
+          }
+      },
+      "OrderPartPatch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "expectedPartVersion"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedPartVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "details": {
+                  "type": "object",
+                  "maxProperties": 64,
+                  "additionalProperties": true
+              }
+          },
+          "minProperties": 3
+      },
+      "OrderResourceCommitmentView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "revision",
+              "state",
+              "termsId",
+              "planRevisionId",
+              "reservation"
+          ],
+          "properties": {
+              "revision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "not_reserved",
+                      "reserved",
+                      "released"
+                  ]
+              },
+              "termsId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "planRevisionId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "reservation": {
+                  "type": "string",
+                  "enum": [
+                      "not_reserved",
+                      "reserved",
+                      "released"
+                  ]
+              }
+          }
+      },
+      "OrderResourceCommitmentWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedOrderVersion",
+              "expectedCommitmentRevision",
+              "termsId",
+              "expectedTermsVersion",
+              "termsDigest",
+              "planRevisionId",
+              "expectedPolicyRevision"
+          ],
+          "properties": {
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedCommitmentRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "termsId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedTermsVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "termsDigest": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+              },
+              "planRevisionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "expectedPolicyRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              }
+          }
+      },
+      "OrderResourcePlanLineInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "partId",
+              "resourceId",
+              "capacityWindowId",
+              "quantity",
+              "startsAt",
+              "endsAt",
+              "timeZone",
+              "setupMinutes",
+              "teardownMinutes",
+              "travelBeforeMinutes",
+              "travelAfterMinutes"
+          ],
+          "properties": {
+              "partId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "resourceId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "capacityWindowId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "timeZone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+              },
+              "setupMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "teardownMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "travelBeforeMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "travelAfterMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              }
+          }
+      },
+      "OrderResourcePlanView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "orderVersion",
+              "revision",
+              "canEdit",
+              "reservation",
+              "current",
+              "editorLines",
+              "source",
+              "history"
+          ],
+          "properties": {
+              "orderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "revision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "canEdit": {
+                  "type": "boolean"
+              },
+              "reservation": {
+                  "type": "string",
+                  "enum": [
+                      "not_reserved",
+                      "reserved",
+                      "released"
+                  ]
+              },
+              "current": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/PublicOrderResourcePlan"
+                      }
+                  ],
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "editorLines": {
+                  "type": [
+                      "array",
+                      "null"
+                  ],
+                  "maxItems": 100,
+                  "items": {
+                      "$ref": "contract#/definitions/OrderResourcePlanLineInput"
+                  }
+              },
+              "source": {
+                  "type": "string",
+                  "enum": [
+                      "current",
+                      "invalid",
+                      "unavailable"
+                  ]
+              },
+              "history": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PublicOrderResourcePlan"
+                  }
+              }
+          }
+      },
+      "OrderResourcePlanWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "expectedPlanRevision",
+              "lines"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedPlanRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "lines": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                      "$ref": "contract#/definitions/OrderResourcePlanLineInput"
+                  }
+              }
+          }
+      },
+      "OrderTermsAccept": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedTermsVersion",
+              "digest",
+              "readToken"
+          ],
+          "properties": {
+              "expectedTermsVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "readToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8192
+              }
+          }
+      },
+      "OrderTermsPublish": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedOrderVersion",
+              "expectedTermsRevision"
+          ],
+          "properties": {
+              "expectedOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "expectedTermsRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              }
+          }
+      },
+      "OrderTermsView": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "revision",
+              "proposedTermsId",
+              "agreedTermsId",
+              "history",
+              "selected",
+              "readToken",
+              "acceptedByCaller"
+          ],
+          "properties": {
+              "revision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "proposedTermsId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "agreedTermsId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "history": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PublishedOrderTerms"
+                  }
+              },
+              "selected": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "version",
+                      "sourceOrderVersion",
+                      "sourceFingerprint",
+                      "digest",
+                      "snapshot",
+                      "publishedBy",
+                      "publishedSide",
+                      "publishedAt",
+                      "freshness",
+                      "receipts",
+                      "acceptedByCaller"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "version": {
+                          "type": "string",
+                          "pattern": "^[1-9][0-9]{0,18}$"
+                      },
+                      "sourceOrderVersion": {
+                          "type": "string",
+                          "pattern": "^[1-9][0-9]{0,18}$"
+                      },
+                      "sourceFingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "digest": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "snapshot": {
+                          "type": "object",
+                          "additionalProperties": true
+                      },
+                      "publishedBy": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid"
+                      },
+                      "publishedSide": {
+                          "type": "string",
+                          "enum": [
+                              "customer",
+                              "performer"
+                          ]
+                      },
+                      "publishedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "freshness": {
+                          "type": "string",
+                          "enum": [
+                              "current",
+                              "stale",
+                              "unavailable",
+                              "invalid"
+                          ]
+                      },
+                      "receipts": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "id",
+                                  "party",
+                                  "userId",
+                                  "sessionId",
+                                  "digest",
+                                  "acceptedAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "party": {
+                                      "type": "string",
+                                      "enum": [
+                                          "customer",
+                                          "performer"
+                                      ]
+                                  },
+                                  "userId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "sessionId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "digest": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{64}$"
+                                  },
+                                  "acceptedAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                  }
+                              }
+                          }
+                      },
+                      "acceptedByCaller": {
+                          "type": "boolean"
+                      }
+                  }
+              },
+              "readToken": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 8192,
+                  "description": "Временное доказательство выдачи конкретной редакции данной сессии; не доказательство чтения человеком и не юридическая подпись"
+              },
+              "acceptedByCaller": {
+                  "type": "boolean"
+              }
+          }
+      },
       "PaymentDeal": {
           "type": "object",
           "required": [
@@ -2798,6 +3731,286 @@ export const CONTRACT_SCHEMAS = {
           ],
           "description": "Категория слота шаблона, подрядчик которой уже найден вне приложения (фича 018): площадка, фотограф, видеограф, ведущий."
       },
+      "PublicOrderResourcePlan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "planRevisionId",
+              "revision",
+              "lines"
+          ],
+          "properties": {
+              "planRevisionId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "revision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "lines": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                      "$ref": "contract#/definitions/PublicOrderResourcePlanLine"
+                  }
+              }
+          }
+      },
+      "PublicOrderResourcePlanLine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "partId",
+              "assignmentId",
+              "programEventId",
+              "label",
+              "kind",
+              "quantity",
+              "unit",
+              "startsAt",
+              "endsAt",
+              "timeZone",
+              "setupMinutes",
+              "teardownMinutes",
+              "travelBeforeMinutes",
+              "travelAfterMinutes",
+              "occupiedStartsAt",
+              "occupiedEndsAt",
+              "window"
+          ],
+          "properties": {
+              "partId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "assignmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "programEventId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "person",
+                      "equipment",
+                      "capacity"
+                  ]
+              },
+              "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "unit": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 80
+              },
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "timeZone": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+              },
+              "setupMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "teardownMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "travelBeforeMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "travelAfterMinutes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440
+              },
+              "occupiedStartsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "occupiedEndsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "window": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "startsAt",
+                      "endsAt"
+                  ],
+                  "properties": {
+                      "startsAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "endsAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      }
+                  }
+              }
+          }
+      },
+      "PublishedOrderTerms": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "version",
+              "sourceOrderVersion",
+              "sourceFingerprint",
+              "digest",
+              "snapshot",
+              "publishedBy",
+              "publishedSide",
+              "publishedAt",
+              "freshness",
+              "receipts",
+              "acceptedByCaller"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "sourceOrderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "sourceFingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+              },
+              "snapshot": {
+                  "type": "object",
+                  "additionalProperties": true
+              },
+              "publishedBy": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "publishedSide": {
+                  "type": "string",
+                  "enum": [
+                      "customer",
+                      "performer"
+                  ]
+              },
+              "publishedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "freshness": {
+                  "type": "string",
+                  "enum": [
+                      "current",
+                      "stale",
+                      "unavailable",
+                      "invalid"
+                  ]
+              },
+              "receipts": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "party",
+                          "userId",
+                          "sessionId",
+                          "digest",
+                          "acceptedAt"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "party": {
+                              "type": "string",
+                              "enum": [
+                                  "customer",
+                                  "performer"
+                              ]
+                          },
+                          "userId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "sessionId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          },
+                          "digest": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "acceptedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              },
+              "acceptedByCaller": {
+                  "type": "boolean"
+              }
+          }
+      },
       "Readiness": {
           "type": "object",
           "properties": {
@@ -2821,6 +4034,168 @@ export const CONTRACT_SCHEMAS = {
                       "up",
                       "down"
                   ]
+              }
+          }
+      },
+      "ResourceCapacityWindow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "startsAt",
+              "endsAt",
+              "capacity",
+              "used",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "used": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          },
+          "description": "Явное конечное окно мощности в объявленных единицах. Окна одного ресурса не пересекаются; used не превышает capacity. Этот API не резервирует мощность."
+      },
+      "ResourceCapacityWindowCreate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "startsAt",
+              "endsAt",
+              "capacity"
+          ],
+          "properties": {
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              }
+          }
+      },
+      "ResourceCapacityWindowPatch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "capacity"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "capacity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              }
+          }
+      },
+      "ResourceOrderPreparationResult": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "dealId",
+              "orderVersion",
+              "state",
+              "created"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "orderVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "candidate",
+                      "contacted",
+                      "negotiating"
+                  ]
+              },
+              "created": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "ResourceOrderPreparationWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "vendorId",
+              "packageId",
+              "expectedSelectedDealId",
+              "expectedPolicyRevision"
+          ],
+          "properties": {
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "packageId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "expectedSelectedDealId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "expectedPolicyRevision": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "ResourceVersionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
               }
           }
       },
@@ -2937,7 +4312,7 @@ export const CONTRACT_SCHEMAS = {
                       "busy",
                       null
                   ],
-                  "description": "Занятость на дату свадьбы. `null` — дата не выбрана или анкета стёрта;\nсвоя бронь этой свадьбы считается `free`.\n"
+                  "description": "Занятость на дату свадьбы. `null` — дата не выбрана, анкета стёрта или компания использует план ресурсов;\nсвоя бронь этой свадьбы считается `free`.\n"
               },
               "request": {
                   "description": "Паре — полный запрос с действующим ответом, если он уже есть;\nпомощнику и координатору — только обезличенный статус. Поля нет,\nпока пара не отправила запрос этому кандидату.\n",
@@ -3023,6 +4398,14 @@ export const CONTRACT_SCHEMAS = {
                       },
                       "hasVideo": {
                           "type": "boolean"
+                      },
+                      "bookingMode": {
+                          "type": "string",
+                          "enum": [
+                              "legacy_day",
+                              "resources"
+                          ],
+                          "description": "Способ бронирования действующей публичной компании; доступность ресурсов не подтверждает."
                       },
                       "packages": {
                           "type": "array",
@@ -4236,7 +5619,7 @@ export const CONTRACT_SCHEMAS = {
               },
               "quietHours": {
                   "type": "object",
-                  "description": "по умолчанию 22:00–09:00; в день X отключаются автоматически",
+                  "description": "по умолчанию 22:00–09:00; день свадьбы не отключает тишину",
                   "properties": {
                       "from": {
                           "type": "string"
@@ -4245,6 +5628,11 @@ export const CONTRACT_SCHEMAS = {
                           "type": "string"
                       }
                   }
+              },
+              "urgentIncidents": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Личное разрешение срочных push о подтверждённой проблеме своего события вне тихих часов; не включает отключённые каналы."
               }
           }
       },
@@ -4300,12 +5688,159 @@ export const CONTRACT_SCHEMAS = {
               "hasVideo": {
                   "type": "boolean"
               },
+              "bookingMode": {
+                  "type": "string",
+                  "enum": [
+                      "legacy_day",
+                      "resources"
+                  ],
+                  "description": "Способ бронирования компании. Доступность конкретных ресурсов и времени этим полем не подтверждается."
+              },
               "distanceKm": {
                   "type": [
                       "integer",
                       "null"
                   ],
                   "description": "Расстояние от города поиска (`city`) до города анкеты в\nкилометрах, округлённое (фича 011): 0 — тот же город; null — запрос\nбез `city`, у одного из городов нет координат или это анкета вне\nвыдачи (`GET /catalog/vendors/{vendorId}`). Считается между\nцентрами городов справочника, не до площадки — адресов у анкет нет.\n"
+              }
+          }
+      },
+      "VendorAvailabilityPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "vendorId",
+              "mode",
+              "revision",
+              "changedBy",
+              "changedAt",
+              "legacyObligations"
+          ],
+          "properties": {
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "mode": {
+                  "type": "string",
+                  "enum": [
+                      "legacy_day",
+                      "resources"
+                  ]
+              },
+              "revision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              },
+              "changedBy": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "changedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "legacyObligations": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "unresolved",
+                      "manualDays",
+                      "dealDays",
+                      "unknownDays",
+                      "committedDeals",
+                      "negotiatingDeals",
+                      "reason"
+                  ],
+                  "properties": {
+                      "unresolved": {
+                          "type": "boolean"
+                      },
+                      "manualDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                      },
+                      "dealDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                      },
+                      "unknownDays": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                      },
+                      "committedDeals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                      },
+                      "negotiatingDeals": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483647
+                      },
+                      "reason": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "enum": [
+                              "unresolved_legacy_obligations",
+                              null
+                          ]
+                      }
+                  }
+              }
+          },
+          "description": "Выбранная стратегия новых обязательств. Изменение режима не освобождает старые занятые дни, сделки или деньги. unresolved — диагностика старых обязательств, не запрет любых будущих дат."
+      },
+      "VendorAvailabilityPolicyWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "mode",
+              "expectedRevision"
+          ],
+          "properties": {
+              "mode": {
+                  "type": "string",
+                  "enum": [
+                      "legacy_day",
+                      "resources"
+                  ]
+              },
+              "expectedRevision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
+              }
+          }
+      },
+      "VendorBookingPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "mode",
+              "revision"
+          ],
+          "properties": {
+              "mode": {
+                  "type": "string",
+                  "enum": [
+                      "legacy_day",
+                      "resources"
+                  ]
+              },
+              "revision": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$"
               }
           }
       },
@@ -4832,6 +6367,235 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "VendorResource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "kind",
+              "label",
+              "version",
+              "personUserId",
+              "staffMemberId",
+              "capacityUnit",
+              "retiredAt",
+              "source",
+              "unavailableReason",
+              "windows"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "person",
+                      "equipment",
+                      "capacity"
+                  ]
+              },
+              "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "personUserId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "staffMemberId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "capacityUnit": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 80
+              },
+              "retiredAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "source": {
+                  "type": "string",
+                  "enum": [
+                      "current",
+                      "unavailable"
+                  ]
+              },
+              "unavailableReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      "retired",
+                      "identity_unknown",
+                      "person_unavailable",
+                      null
+                  ]
+              },
+              "windows": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/ResourceCapacityWindow"
+                  }
+              }
+          },
+          "description": "Реально заявленный ресурс. current означает действующий источник идентичности, не свободный интервал, бронь или готовность. Внутренний conflict_identity не выдаётся."
+      },
+      "VendorResourceCreate": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "label",
+                      "personUserId"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "person"
+                          ]
+                      },
+                      "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "personUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "staffMemberId": {
+                          "type": "string",
+                          "format": "uuid"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "label"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "equipment"
+                          ]
+                      },
+                      "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "kind",
+                      "label",
+                      "capacityUnit"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "capacity"
+                          ]
+                      },
+                      "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                      },
+                      "capacityUnit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                      }
+                  }
+              }
+          ]
+      },
+      "VendorResourceOptions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "vendorId",
+              "actorRole",
+              "persons"
+          ],
+          "properties": {
+              "vendorId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "actorRole": {
+                  "type": "string",
+                  "enum": [
+                      "owner",
+                      "resource_manager"
+                  ]
+              },
+              "persons": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "userId",
+                          "name",
+                          "staffMemberId"
+                      ],
+                      "properties": {
+                          "userId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "staffMemberId": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "uuid"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "VendorUpsert": {
           "type": "object",
           "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
@@ -5222,6 +6986,73 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingAttention": {
+          "type": "object",
+          "required": [
+              "version",
+              "mode",
+              "coordinatorUserId",
+              "effectiveMode",
+              "coordinatorState",
+              "coordinator"
+          ],
+          "properties": {
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+              },
+              "mode": {
+                  "type": "string",
+                  "enum": [
+                      "essential",
+                      "coordinator",
+                      "detailed"
+                  ]
+              },
+              "coordinatorUserId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid"
+              },
+              "effectiveMode": {
+                  "type": "string",
+                  "enum": [
+                      "essential",
+                      "coordinator",
+                      "detailed"
+                  ]
+              },
+              "coordinatorState": {
+                  "type": "string",
+                  "enum": [
+                      "not_selected",
+                      "active",
+                      "unavailable"
+                  ]
+              },
+              "coordinator": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "id",
+                      "name"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      }
+                  }
+              }
+          }
+      },
       "WeddingEvent": {
           "type": "object",
           "required": [
@@ -5288,6 +7119,694 @@ export const CONTRACT_SCHEMAS = {
               "two_day"
           ],
           "description": "Формат свадьбы из квиза (фича 018). Код, а не подпись варианта: подпись\nпереводится на экране, и «Классика» на другом языке стала бы другим\nответом.\n- `classic` — «Классика: ЗАГС + банкет»: 12 слотов шаблона; в тайминге\n  «Регистрация в ЗАГСе» 14:00–15:00 вместо «Выездной церемонии» 16:00–17:00.\n- `outdoor` — «Выездная церемония»: плюс слоты «Площадка выездной\n  церемонии» (`ceremony`) и «Церемониймейстер» (`registrar`); тайминг\n  шаблона.\n- `intimate` — «Камерная свадьба»: 12 слотов; «Ужин» 18:00–22:00 вместо\n  «Банкета», без «Салюта и финала».\n- `two_day` — «Банкет+ на 2 дня»: плюс слот «Отель для гостей» (`hotel`);\n  тайминг выездной и два блока на следующее число — «День 2: бранч»\n  12:00–14:00 и «День 2: продолжение праздника» 14:00–20:00. Перенос даты\n  двигает их вместе с первым днём.\n"
+      },
+      "WeddingOrder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "dealId",
+              "version",
+              "schemaVersion",
+              "source",
+              "brief",
+              "assignments",
+              "parts"
+          ],
+          "properties": {
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "schemaVersion": {
+                  "type": "integer",
+                  "enum": [
+                      1
+                  ]
+              },
+              "source": {
+                  "type": "string",
+                  "enum": [
+                      "legacy",
+                      "structured"
+                  ]
+              },
+              "brief": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "categoryId",
+                      "values"
+                  ],
+                  "properties": {
+                      "categoryId": {
+                          "type": "string"
+                      },
+                      "subtypeId": {
+                          "type": "string"
+                      },
+                      "values": {
+                          "type": "object",
+                          "additionalProperties": true
+                      }
+                  }
+              },
+              "assignments": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "slotId",
+                          "programEventId",
+                          "version",
+                          "source",
+                          "label",
+                          "cancelledAt"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "slotId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "programEventId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "version": {
+                              "type": "string",
+                              "pattern": "^[1-9][0-9]{0,18}$"
+                          },
+                          "source": {
+                              "type": "string",
+                              "enum": [
+                                  "legacy",
+                                  "structured"
+                              ]
+                          },
+                          "label": {
+                              "type": "string"
+                          },
+                          "cancelledAt": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time"
+                          }
+                      }
+                  }
+              },
+              "parts": {
+                  "type": "array",
+                  "items": {
+                      "oneOf": [
+                          {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "id",
+                                  "kind",
+                                  "version",
+                                  "assignmentId",
+                                  "source",
+                                  "title",
+                                  "details",
+                                  "cancelledAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                          "timed_service"
+                                      ]
+                                  },
+                                  "version": {
+                                      "type": "string",
+                                      "pattern": "^[1-9][0-9]{0,18}$"
+                                  },
+                                  "assignmentId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "source": {
+                                      "type": "string",
+                                      "enum": [
+                                          "legacy",
+                                          "structured"
+                                      ]
+                                  },
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "details": {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                          "startsAt",
+                                          "endsAt",
+                                          "location",
+                                          "setupMinutes",
+                                          "teardownMinutes",
+                                          "travelMinutes"
+                                      ],
+                                      "properties": {
+                                          "startsAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "endsAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "location": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "setupMinutes": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 0,
+                                              "maximum": 10080
+                                          },
+                                          "teardownMinutes": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 0,
+                                              "maximum": 10080
+                                          },
+                                          "travelMinutes": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 0,
+                                              "maximum": 10080
+                                          }
+                                      }
+                                  },
+                                  "cancelledAt": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "date-time"
+                                  }
+                              }
+                          },
+                          {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "id",
+                                  "kind",
+                                  "version",
+                                  "assignmentId",
+                                  "source",
+                                  "title",
+                                  "details",
+                                  "cancelledAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                          "supply"
+                                      ]
+                                  },
+                                  "version": {
+                                      "type": "string",
+                                      "pattern": "^[1-9][0-9]{0,18}$"
+                                  },
+                                  "assignmentId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "source": {
+                                      "type": "string",
+                                      "enum": [
+                                          "legacy",
+                                          "structured"
+                                      ]
+                                  },
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "details": {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                          "quantity",
+                                          "unit",
+                                          "windowStartsAt",
+                                          "windowEndsAt",
+                                          "location",
+                                          "recipient",
+                                          "substitutions"
+                                      ],
+                                      "properties": {
+                                          "quantity": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 1,
+                                              "maximum": 1000000
+                                          },
+                                          "unit": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 80
+                                          },
+                                          "windowStartsAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "windowEndsAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "location": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "recipient": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "substitutions": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          }
+                                      }
+                                  },
+                                  "cancelledAt": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "date-time"
+                                  }
+                              }
+                          },
+                          {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "id",
+                                  "kind",
+                                  "version",
+                                  "assignmentId",
+                                  "source",
+                                  "title",
+                                  "details",
+                                  "cancelledAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                          "rental"
+                                      ]
+                                  },
+                                  "version": {
+                                      "type": "string",
+                                      "pattern": "^[1-9][0-9]{0,18}$"
+                                  },
+                                  "assignmentId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "source": {
+                                      "type": "string",
+                                      "enum": [
+                                          "legacy",
+                                          "structured"
+                                      ]
+                                  },
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "details": {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                          "quantity",
+                                          "unit",
+                                          "handoverAt",
+                                          "returnAt",
+                                          "location",
+                                          "recipient",
+                                          "condition",
+                                          "depositTerms"
+                                      ],
+                                      "properties": {
+                                          "quantity": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 1,
+                                              "maximum": 1000000
+                                          },
+                                          "unit": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 80
+                                          },
+                                          "handoverAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "returnAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "location": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "recipient": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "condition": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "depositTerms": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          }
+                                      }
+                                  },
+                                  "cancelledAt": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "date-time"
+                                  }
+                              }
+                          },
+                          {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "id",
+                                  "kind",
+                                  "version",
+                                  "assignmentId",
+                                  "source",
+                                  "title",
+                                  "details",
+                                  "cancelledAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                          "deliverable"
+                                      ]
+                                  },
+                                  "version": {
+                                      "type": "string",
+                                      "pattern": "^[1-9][0-9]{0,18}$"
+                                  },
+                                  "assignmentId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "source": {
+                                      "type": "string",
+                                      "enum": [
+                                          "legacy",
+                                          "structured"
+                                      ]
+                                  },
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "details": {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                          "items",
+                                          "dueAt",
+                                          "recipient",
+                                          "reviewProcess"
+                                      ],
+                                      "properties": {
+                                          "items": {
+                                              "type": [
+                                                  "array",
+                                                  "null"
+                                              ],
+                                              "maxItems": 100,
+                                              "items": {
+                                                  "type": "string",
+                                                  "minLength": 1,
+                                                  "maxLength": 500
+                                              }
+                                          },
+                                          "dueAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "recipient": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "reviewProcess": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          }
+                                      }
+                                  },
+                                  "cancelledAt": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "date-time"
+                                  }
+                              }
+                          },
+                          {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                  "id",
+                                  "kind",
+                                  "version",
+                                  "assignmentId",
+                                  "source",
+                                  "title",
+                                  "details",
+                                  "cancelledAt"
+                              ],
+                              "properties": {
+                                  "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                  },
+                                  "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                          "appointment"
+                                      ]
+                                  },
+                                  "version": {
+                                      "type": "string",
+                                      "pattern": "^[1-9][0-9]{0,18}$"
+                                  },
+                                  "assignmentId": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "uuid"
+                                  },
+                                  "source": {
+                                      "type": "string",
+                                      "enum": [
+                                          "legacy",
+                                          "structured"
+                                      ]
+                                  },
+                                  "title": {
+                                      "type": "string"
+                                  },
+                                  "details": {
+                                      "type": "object",
+                                      "additionalProperties": false,
+                                      "required": [
+                                          "startsAt",
+                                          "endsAt",
+                                          "location",
+                                          "setupMinutes",
+                                          "teardownMinutes",
+                                          "travelMinutes"
+                                      ],
+                                      "properties": {
+                                          "startsAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "endsAt": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "format": "date-time"
+                                          },
+                                          "location": {
+                                              "type": [
+                                                  "string",
+                                                  "null"
+                                              ],
+                                              "maxLength": 2000
+                                          },
+                                          "setupMinutes": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 0,
+                                              "maximum": 10080
+                                          },
+                                          "teardownMinutes": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 0,
+                                              "maximum": 10080
+                                          },
+                                          "travelMinutes": {
+                                              "type": [
+                                                  "integer",
+                                                  "null"
+                                              ],
+                                              "minimum": 0,
+                                              "maximum": 10080
+                                          }
+                                      }
+                                  },
+                                  "cancelledAt": {
+                                      "type": [
+                                          "string",
+                                          "null"
+                                      ],
+                                      "format": "date-time"
+                                  }
+                              }
+                          }
+                      ]
+                  }
+              }
+          }
       },
       "WeddingPlanner": {
           "type": "string",
@@ -5441,6 +7960,24 @@ export type ContractSchemaName =
   | "OfferInput"
   | "OfferPublic"
   | "OfferRequest"
+  | "OrderAssignmentCancel"
+  | "OrderAssignmentCreate"
+  | "OrderBriefField"
+  | "OrderBriefSubtype"
+  | "OrderBriefWrite"
+  | "OrderCatalog"
+  | "OrderCategoryBrief"
+  | "OrderPartCancel"
+  | "OrderPartCreate"
+  | "OrderPartPatch"
+  | "OrderResourceCommitmentView"
+  | "OrderResourceCommitmentWrite"
+  | "OrderResourcePlanLineInput"
+  | "OrderResourcePlanView"
+  | "OrderResourcePlanWrite"
+  | "OrderTermsAccept"
+  | "OrderTermsPublish"
+  | "OrderTermsView"
   | "PaymentDeal"
   | "PaymentHistoryExport"
   | "PaymentInstallment"
@@ -5457,7 +7994,16 @@ export type ContractSchemaName =
   | "PositiveMoney"
   | "PositivePaymentMoney"
   | "PrebookedCategory"
+  | "PublicOrderResourcePlan"
+  | "PublicOrderResourcePlanLine"
+  | "PublishedOrderTerms"
   | "Readiness"
+  | "ResourceCapacityWindow"
+  | "ResourceCapacityWindowCreate"
+  | "ResourceCapacityWindowPatch"
+  | "ResourceOrderPreparationResult"
+  | "ResourceOrderPreparationWrite"
+  | "ResourceVersionWrite"
   | "Review"
   | "Session"
   | "ShortlistEntry"
@@ -5480,6 +8026,9 @@ export type ContractSchemaName =
   | "User"
   | "UserProfile"
   | "Vendor"
+  | "VendorAvailabilityPolicy"
+  | "VendorAvailabilityPolicyWrite"
+  | "VendorBookingPolicy"
   | "VendorDecision"
   | "VendorDetail"
   | "VendorPackage"
@@ -5490,6 +8039,9 @@ export type ContractSchemaName =
   | "VendorProgramBlock"
   | "VendorProgramSnapshot"
   | "VendorProgramSummary"
+  | "VendorResource"
+  | "VendorResourceCreate"
+  | "VendorResourceOptions"
   | "VendorUpsert"
   | "VerificationDecision"
   | "VerificationItem"
@@ -5498,9 +8050,11 @@ export type ContractSchemaName =
   | "VerificationStatus"
   | "VerificationSubmit"
   | "Wedding"
+  | "WeddingAttention"
   | "WeddingEvent"
   | "WeddingEventKind"
   | "WeddingFormat"
+  | "WeddingOrder"
   | "WeddingPlanner"
   | "WeddingPublic"
   | "WeddingSupportCard"

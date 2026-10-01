@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.63.0).
- * Операций: 212. Путей: 161. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.69.0).
+ * Операций: 241. Путей: 185. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -50,6 +50,22 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/deals/{dealId}","url":"/deals/:dealId","operationId":null,"summary":"Перевести сделку в следующее состояние или исправить сумму","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/contract","url":"/deals/:dealId/contract","operationId":null,"summary":"Сгенерировать договор из шаблона","tag":"documents"},
   {"method":"GET","openapi":"/deals/{dealId}/events","url":"/deals/:dealId/events","operationId":null,"summary":"Журнал сделки","tag":"deals"},
+  {"method":"GET","openapi":"/deals/{dealId}/order","url":"/deals/:dealId/order","operationId":null,"summary":"Прочитать черновик заказа","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/assignments","url":"/deals/:dealId/order/assignments","operationId":null,"summary":"Назначить заказ на мероприятие и позицию","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/assignments/{assignmentId}/cancel","url":"/deals/:dealId/order/assignments/:assignmentId/cancel","operationId":null,"summary":"Отменить одно назначение черновика","tag":"bookings"},
+  {"method":"PATCH","openapi":"/deals/{dealId}/order/brief","url":"/deals/:dealId/order/brief","operationId":null,"summary":"Изменить применимый бриф","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/order/catalog","url":"/deals/:dealId/order/catalog","operationId":null,"summary":"Применимые поля и виды работы для этого заказа","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/parts","url":"/deals/:dealId/order/parts","operationId":null,"summary":"Добавить часть заказа","tag":"bookings"},
+  {"method":"PATCH","openapi":"/deals/{dealId}/order/parts/{partId}","url":"/deals/:dealId/order/parts/:partId","operationId":null,"summary":"Изменить часть заказа","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/parts/{partId}/cancel","url":"/deals/:dealId/order/parts/:partId/cancel","operationId":null,"summary":"Отменить одну часть черновика","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/order/resource-commitments","url":"/deals/:dealId/order/resource-commitments","operationId":"getOrderResourceCommitments","summary":"Прочитать фактическое состояние брони ресурсов своего заказа","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/resource-commitments","url":"/deals/:dealId/order/resource-commitments","operationId":"commitOrderResources","summary":"Забронировать согласованный план ресурсов в выбранном заказе","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/resource-commitments/replace","url":"/deals/:dealId/order/resource-commitments/replace","operationId":"replaceOrderResources","summary":"Заменить действующую бронь после нового согласования","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/order/resource-plan","url":"/deals/:dealId/order/resource-plan","operationId":"getOrderResourcePlan","summary":"Прочитать план ресурсов своего заказа","tag":"bookings"},
+  {"method":"PATCH","openapi":"/deals/{dealId}/order/resource-plan","url":"/deals/:dealId/order/resource-plan","operationId":"saveOrderResourcePlan","summary":"Сохранить новую редакцию плана ресурсов","tag":"bookings"},
+  {"method":"GET","openapi":"/deals/{dealId}/order/terms","url":"/deals/:dealId/order/terms","operationId":null,"summary":"Прочитать редакции условий заказа","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/terms/{termsId}/accept","url":"/deals/:dealId/order/terms/:termsId/accept","operationId":null,"summary":"Принять конкретную актуальную редакцию","tag":"bookings"},
+  {"method":"POST","openapi":"/deals/{dealId}/order/terms/proposals","url":"/deals/:dealId/order/terms/proposals","operationId":null,"summary":"Предложить точную редакцию условий","tag":"bookings"},
   {"method":"GET","openapi":"/geo/cities","url":"/geo/cities","operationId":null,"summary":"Поиск городов (автокомплит CityPicker)","tag":"geo"},
   {"method":"GET","openapi":"/geo/nearest","url":"/geo/nearest","operationId":null,"summary":"Ближайший город по координатам (кнопка геолокации)","tag":"geo"},
   {"method":"GET","openapi":"/gifts/{guestToken}","url":"/gifts/:guestToken","operationId":null,"summary":"Список подарков глазами гостя","tag":"wishlist-guest"},
@@ -127,6 +143,15 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Подать документы на верификацию","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/weddings/{weddingId}/timeline","url":"/vendor/weddings/:weddingId/timeline","operationId":null,"summary":"Разрешённый снимок программы для ознакомления","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/weddings/{weddingId}/timeline/ack","url":"/vendor/weddings/:weddingId/timeline/ack","operationId":null,"summary":"Подтвердить ознакомление с точным снимком программы","tag":"vendor"},
+  {"method":"GET","openapi":"/vendors/{vendorId}/availability-policy","url":"/vendors/:vendorId/availability-policy","operationId":"getVendorAvailabilityPolicy","summary":"Прочитать стратегию занятости и старые обязательства","tag":"vendor"},
+  {"method":"PATCH","openapi":"/vendors/{vendorId}/availability-policy","url":"/vendors/:vendorId/availability-policy","operationId":"patchVendorAvailabilityPolicy","summary":"Явно выбрать стратегию новых обязательств","tag":"vendor"},
+  {"method":"GET","openapi":"/vendors/{vendorId}/booking-policy","url":"/vendors/:vendorId/booking-policy","operationId":"getVendorBookingPolicy","summary":"Прочитать способ бронирования опубликованной компании","tag":"catalog"},
+  {"method":"GET","openapi":"/vendors/{vendorId}/resource-options","url":"/vendors/:vendorId/resource-options","operationId":"getVendorResourceOptions","summary":"Люди, доступные для явного выбора ресурса","tag":"vendor"},
+  {"method":"GET","openapi":"/vendors/{vendorId}/resources","url":"/vendors/:vendorId/resources","operationId":"getVendorResources","summary":"Прочитать реальные ресурсы компании","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/resources","url":"/vendors/:vendorId/resources","operationId":"createVendorResource","summary":"Добавить явно определённый ресурс","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/resources/{resourceId}/retire","url":"/vendors/:vendorId/resources/:resourceId/retire","operationId":"retireVendorResource","summary":"Отключить ресурс с сохранением истории","tag":"vendor"},
+  {"method":"POST","openapi":"/vendors/{vendorId}/resources/{resourceId}/windows","url":"/vendors/:vendorId/resources/:resourceId/windows","operationId":"createResourceCapacityWindow","summary":"Заявить конечное окно мощности","tag":"vendor"},
+  {"method":"PATCH","openapi":"/vendors/{vendorId}/resources/{resourceId}/windows/{windowId}","url":"/vendors/:vendorId/resources/:resourceId/windows/:windowId","operationId":"patchResourceCapacityWindow","summary":"Изменить мощность точной версии окна","tag":"vendor"},
   {"method":"GET","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Мои свадьбы","tag":"weddings"},
   {"method":"POST","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Создать свадьбу (после квиза)","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Карточка свадьбы (данные для Home)","tag":"weddings"},
@@ -136,6 +161,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/album","url":"/weddings/:weddingId/album","operationId":null,"summary":"Гость добавляет фото","tag":"album"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/album/{photoId}","url":"/weddings/:weddingId/album/:photoId","operationId":null,"summary":"Одобрить или скрыть кадр","tag":"album"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/anti-gifts","url":"/weddings/:weddingId/anti-gifts","operationId":null,"summary":"Список «просим не дарить»","tag":"wishlist"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/attention","url":"/weddings/:weddingId/attention","operationId":null,"summary":"Режим внимания и действующий координатор","tag":"weddings"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/attention","url":"/weddings/:weddingId/attention","operationId":null,"summary":"Изменить режим внимания; только пара","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/budget","url":"/weddings/:weddingId/budget","operationId":null,"summary":"Бюджет (статьи + автосуммы из слотов)","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Вернуть автоматический лимит категории с проверкой версии","tag":"budget"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/budget/categories/{categoryId}/limit","url":"/weddings/:weddingId/budget/categories/:categoryId/limit","operationId":null,"summary":"Задать пользовательский лимит категории","tag":"budget"},
@@ -206,6 +233,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/offer-requests","url":"/weddings/:weddingId/slots/:slotId/offer-requests","operationId":null,"summary":"Запросить предложение у кандидатов места","tag":"bookings"},
   {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/pay","url":"/weddings/:weddingId/slots/:slotId/pay","operationId":null,"summary":"Оплата слота (доплата/полная)","tag":"bookings"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/prebooked","url":"/weddings/:weddingId/slots/:slotId/prebooked","operationId":null,"summary":"Снять отметку «уже забронировано» («Нет, ещё ищем»)","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/replace","url":"/weddings/:weddingId/slots/:slotId/replace","operationId":null,"summary":"Заменить выбранного подрядчика одной операцией","tag":"bookings"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/slots/{slotId}/resource-order","url":"/weddings/:weddingId/slots/:slotId/resource-order","operationId":"prepareResourceOrder","summary":"Подготовить выбранный финансовый заказ для согласования ресурсов","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/slots/{slotId}/shortlist","url":"/weddings/:weddingId/slots/:slotId/shortlist","operationId":null,"summary":"Кандидаты места","tag":"bookings"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/slots/{slotId}/shortlist/{entryId}","url":"/weddings/:weddingId/slots/:slotId/shortlist/:entryId","operationId":null,"summary":"Убрать кандидата из места","tag":"bookings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tables","url":"/weddings/:weddingId/tables","operationId":null,"summary":"Рассадка (столы + гости)","tag":"guests"},

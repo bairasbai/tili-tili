@@ -1,6 +1,7 @@
 import { closeWeddingOfferRequests } from '../offers/close.js'
 import type { FastifyInstance } from 'fastify'
-import { AppError } from '../errors.js'
+import { AppError, notFound } from '../errors.js'
+import { lockBookingActor } from '../deals/book.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
 import type { DealState } from '../deals/state.js'
@@ -86,6 +87,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         cancel_requested_by: string | null
         cancel_requested_at: Date | null
         cancelled_at: Date | null
+        archived_at: Date | null
         tz: string | null
         couples: string
       }>(
@@ -100,20 +102,19 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
          * удаливший аккаунт, продолжал числиться в `wedding_members`, и
          * оставшийся не мог отменить свадьбу вовсе — каждое нажатие давало
          * `confirmation_required`, а подтвердить было некому. */
-        `select w.cancel_requested_by, w.cancel_requested_at, w.cancelled_at, w.tz,
+        `select w.cancel_requested_by, w.cancel_requested_at, w.cancelled_at, w.archived_at, w.tz,
                 (select count(*)::text from wedding_members m
                    join users u on u.id = m.user_id and u.deleted_at is null
                   where m.wedding_id = w.id and m.role = 'couple') as couples
            from weddings w where w.id = $1 for update of w`,
         [weddingId],
       )
-      const w = rows[0]!
-      /* Страховка, а не рабочий путь: отменённая свадьба уходит в архив, а
-       * хук доступа (`memberRole`) архивную не отдаёт вовсе — второй вызов
-       * получает 404 раньше, чем доходит сюда. Ветка остаётся на случай
-       * изменения матрицы доступа: отмена отменённой не должна отменять
-       * сделки по второму разу. */
-      if (w.cancelled_at) return { state: 'cancelled' as const }
+      const w = rows[0]
+      if (!w || w.archived_at || w.cancelled_at) throw notFound('Свадьба не найдена')
+      await lockBookingActor(client, { weddingId, actorId: userId,
+        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+      // A concurrent cancellation/archive can finish after the access hook.
+      // The same active-wedding refusal applies after waiting for this lock.
 
       /* Запрос на отмену протухает.
        *
@@ -166,6 +167,8 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
       for (const deal of cancelled) {
         await cancelDeal(client, deal.id, {
           actorId: userId,
+          sessionId: request.caller!.sessionId,
+          policyVersion: app.appConfig.policyVersion,
           note: 'свадьба отменена',
           reason: 'cancelled_by_couple',
         })

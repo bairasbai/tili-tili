@@ -267,7 +267,7 @@ function SlotCandidates({ s }: { s: Slot }) {
             const vendor = entry.vendor
             const live = entry.available === true && vendor !== null
             const name = vendor?.name ?? t('Анкета недоступна')
-            const occupancy = entry.occupancy === 'free' ? t('Свободен на вашу дату')
+            const occupancy = vendor?.bookingMode !== 'legacy_day' ? t('Занятость неизвестна') : entry.occupancy === 'free' ? t('Свободен на вашу дату')
               : entry.occupancy === 'held' ? t('На вашу дату идут переговоры')
               : entry.occupancy === 'busy' ? t('Занят на вашу дату')
               : t('Занятость неизвестна')

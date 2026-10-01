@@ -24,6 +24,7 @@ export interface VendorRow {
   photo_url: string | null
   verified_at: Date | null
   has_video: boolean
+  booking_mode?: 'legacy_day' | 'resources'
   created_at: Date
   /** Рабочий телефон. В карточку попадает не всегда — см. `loadDetail`. */
   phone?: string | null
@@ -77,7 +78,8 @@ export function escapeLike(s: string): string {
 export const VENDOR_COLUMNS = `
   v.id, v.name, v.category_id, c.name as city, v.price_from::text as price_from, v.currency,
   v.rating::text as rating, v.reviews_count, v.couple_reviews_count, v.photo_url, v.verified_at, v.created_at, v.phone,
-  exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video') as has_video`
+  exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video') as has_video,
+  coalesce((select p.mode from vendor_availability_policy p where p.vendor_id = v.id), 'legacy_day') as booking_mode`
 
 export function toVendor(r: VendorRow) {
   return {
@@ -96,6 +98,7 @@ export function toVendor(r: VendorRow) {
     photoUrl: r.photo_url,
     verified: r.verified_at !== null,
     hasVideo: r.has_video,
+    bookingMode: r.booking_mode,
     /* Расстояние есть только у выдачи по городу (фича 011): у анкеты и у
      * выдачи без `city` сравнивать нечего — null, а не ноль (R-178). */
     distanceKm: r.distance_km === undefined || r.distance_km === null ? null : Number(r.distance_km),

@@ -6,6 +6,7 @@ import { holdVendorDate } from '../deals/repo.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import { setTimelineActor } from '../timeline/version.js'
+import { assertLegacyDateBookingAllowed, lockLegacyBookingCompanies } from '../resources/booking-boundary.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -46,6 +47,12 @@ export async function rescheduleWedding(
      превращаются в 13:00 у пары в Уфе. */
   const tz = w[0]?.tz ?? 'Europe/Moscow'
   if (oldDate === date) return { free: [], busy: [] }
+  // Resource promises retain their agreed UTC spans. Until the explicit
+  // reagreement flow is integrated, a DATE-only move cannot claim success.
+  const resources = await client.query(`select c.deal_id from deal_resource_commitments c join deals d on d.id=c.deal_id
+    where c.wedding_id=$1 and c.state='reserved' and d.state=any($2) limit 1`, [weddingId, OPEN_BOOKINGS])
+  if (resources.rowCount) throw conflict('resource_reschedule_requires_agreement',
+    'Перенос требует нового согласования действующих броней ресурсов; прежние интервалы сохранены')
   await setTimelineActor(client, actorId)
 
   // In the same transaction: a later team_busy refusal also rolls this back.
@@ -88,6 +95,9 @@ export async function rescheduleWedding(
     [weddingId, date, OPEN_BOOKINGS],
   )
 
+  const companyIds = [...new Set(team.flatMap(t => t.vendor_id ? [t.vendor_id] : []))].sort()
+  await lockLegacyBookingCompanies(client, companyIds)
+  for (const vendorId of companyIds) await assertLegacyDateBookingAllowed(client, vendorId)
   const busy = team.filter((t) => t.busy).map((t) => t.name)
   const free = team.filter((t) => !t.busy).map((t) => t.name)
   if (busy.length > 0) {

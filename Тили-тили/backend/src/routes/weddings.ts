@@ -3,6 +3,7 @@ import { setTimelineActor } from '../timeline/version.js'
 import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
+import { ATTENTION_MODES, type AttentionMode } from '../wedding/attention.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { requireRole, type Role } from '../wedding/access.js'
@@ -202,6 +203,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
                неизвестный код — 422 с полем, как любое нарушение схемы. */
             format: ref('WeddingFormat'),
             planner: ref('WeddingPlanner'),
+            attentionMode: { type: 'string', enum: ATTENTION_MODES },
             prebooked: { type: 'array', uniqueItems: true, maxItems: 4, items: ref('PrebookedCategory') },
             quizAnswers: { type: 'object', additionalProperties: true },
           },
@@ -218,6 +220,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         style?: string
         format?: WeddingFormat
         planner?: WeddingPlanner
+        attentionMode?: AttentionMode
         prebooked?: PrebookedCategory[]
       }
       const userId = request.caller!.userId
@@ -278,8 +281,8 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         await client.query("select set_config('tili.timeline_actor', $1, true)", [userId])
         await client.query(
           `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
-                                 budget_total, currency, invite_code, tz, format, planner)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                                 budget_total, currency, invite_code, tz, format, planner, attention_mode)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             weddingId,
             userId,
@@ -294,6 +297,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             cityTz,
             format,
             planner,
+            body.attentionMode ?? 'essential',
           ],
         )
         await client.query(

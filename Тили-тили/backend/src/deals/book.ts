@@ -1,9 +1,41 @@
-import { AppError, conflict, notFound, unauthorized } from '../errors.js'
+import { AppError, conflict, forbidden, notFound, unauthorized } from '../errors.js'
 import { UUID_ID, isUuid, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
 import type { Queryable } from '../plugins/db.js'
 import { openLead } from '../vendor/leads.js'
 import { holdVendorDate } from './repo.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
+
+export interface BookingActorInput { weddingId: string; actorId: string; sessionId?: string; policyVersion?: string }
+/** Access-only replay guard. A cancelled position can now be empty; check its
+ * actual scope and current principal without repeating the original action. */
+export async function lockBookingReplay(client: Queryable, input: BookingActorInput & { slotId?: string; dealId?: string }): Promise<void> {
+  const wedding = await client.query('select id from weddings where id=$1 and archived_at is null and cancelled_at is null for update', [input.weddingId])
+  if (!wedding.rows[0]) throw notFound('Свадьба не найдена')
+  await lockBookingActor(client, input)
+  if (input.slotId !== undefined) {
+    const slot = await client.query('select id from slots where id=$1 and wedding_id=$2 for share', [input.slotId, input.weddingId])
+    if (!slot.rows[0]) throw notFound('Слот не найден')
+  }
+  if (input.dealId !== undefined) {
+    const deal = await client.query('select id from deals where id=$1 and wedding_id=$2 for share', [input.dealId, input.weddingId])
+    if (!deal.rows[0]) throw notFound('Сделка не найдена')
+  }
+}
+/** Trusted HTTP callers supply both proof fields from auth/config, never a body. */
+export async function lockBookingActor(client: Queryable, input: BookingActorInput): Promise<void> {
+  if ((input.sessionId === undefined) !== (input.policyVersion === undefined)) throw forbidden('Нужно действующее удостоверение сессии и согласия')
+  if (input.sessionId !== undefined && input.policyVersion !== undefined) {
+    await lockOrderPrincipal(client, { userId: input.actorId, sessionId: input.sessionId, policyVersion: input.policyVersion })
+  } else {
+    const user = await client.query('select id from users where id=$1 and deleted_at is null for share', [input.actorId])
+    if (!user.rows[0]) throw unauthorized('Аккаунт удалён')
+  }
+  const member = await client.query<{ role: string }>('select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [input.weddingId, input.actorId])
+  if (!member.rows[0]) throw notFound('Свадьба не найдена')
+  if (member.rows[0].role !== 'couple') throw forbidden('Бронь услуг подтверждает пара')
+}
 
 export interface BookingContext {
   weddingId: string
@@ -34,7 +66,7 @@ export type BookingPerformer =
  */
 export async function lockBookingContext(
   client: Queryable,
-  input: { weddingId: string; slotId: string; actorId: string },
+  input: BookingActorInput & { slotId: string },
 ): Promise<BookingContext> {
   const { rows: weddings } = await client.query<{ date: string | null; tz: string | null; archived_at: Date | null; cancelled_at: Date | null }>(
     'select date::text as date, tz, archived_at, cancelled_at from weddings where id = $1 for share',
@@ -43,11 +75,7 @@ export async function lockBookingContext(
   // Access may have been checked before waiting for a concurrent cancellation.
   if (!weddings[0] || weddings[0].archived_at || weddings[0].cancelled_at) throw notFound('Свадьба не найдена')
 
-  const { rows: users } = await client.query<{ deleted_at: Date | null }>(
-    'select deleted_at from users where id = $1 for share',
-    [input.actorId],
-  )
-  if (!users[0] || users[0].deleted_at) throw unauthorized('Аккаунт удалён')
+  await lockBookingActor(client, input)
 
   if (!isUuid(input.slotId)) throw notFound('Слот не найден')
   const { rows: slots } = await client.query<{ deal_id: string | null }>(
@@ -56,11 +84,32 @@ export async function lockBookingContext(
   )
   if (!slots[0]) throw notFound('Слот не найден')
   if (slots[0].deal_id) throw conflict('slot_taken', 'В этом слоте уже есть сделка — сначала отмените её')
+  await assertLegacyBookingSlotReady(client, input)
 
   return {
-    ...input,
+    weddingId: input.weddingId, slotId: input.slotId, actorId: input.actorId,
     date: weddings[0].date,
     weddingTz: weddings[0].tz,
+  }
+}
+
+/** Call after wedding, actor and slot locks. A draft occupies its position
+ * without pretending to be a booking; other events await resource agreements. */
+export async function assertLegacyBookingSlotReady(client: Queryable, scope: { weddingId: string; slotId: string }): Promise<void> {
+  const assigned = await client.query(`select id from order_assignments
+    where wedding_id=$1 and slot_id=$2 and cancelled_at is null for update`, [scope.weddingId, scope.slotId])
+  if (assigned.rows[0]) throw conflict('slot_assigned', 'Позиция связана с другим заказом — сначала отмените её назначение')
+  // Until resource-aware agreements exist, the day-wide legacy hold cannot
+  // represent a different event. Reject before snapshots or financial writes.
+  const event = await client.query<{ is_main: boolean; event_date: string | null; date: string | null; event_tz: string | null; tz: string | null }>(`select e.is_main,
+    e.date::text as event_date,w.date::text as date,e.time_zone as event_tz,w.tz from slots s
+    join wedding_events e on e.id=s.program_event_id and e.wedding_id=s.wedding_id
+    join weddings w on w.id=s.wedding_id
+    where s.wedding_id=$1 and s.id=$2 for share of e`, [scope.weddingId, scope.slotId])
+  if (event.rows[0] && !event.rows[0].is_main) throw conflict('additional_event_booking_pending',
+    'Бронь отдельного мероприятия будет доступна после согласования ресурсов и условий заказа')
+  if (event.rows[0] && (event.rows[0].event_date !== event.rows[0].date || event.rows[0].event_tz !== event.rows[0].tz)) {
+    throw conflict('event_date_conflict', 'Дата или часовой пояс основного мероприятия изменились — обновите программу')
   }
 }
 
@@ -152,12 +201,10 @@ export async function bookVendor(
   context: BookingContext,
   input: { performer: BookingPerformer; price: number },
 ): Promise<string> {
+  // Defensive check for callers holding a context from before assignment creation.
+  await assertLegacyBookingSlotReady(client, context)
   // Слот уже заперт; запросы идут до подрядчика и пакета по общему порядку R-317.
-  await closeSlotRequests(
-    client,
-    context,
-    input.performer.kind === 'external' ? null : input.performer.vendorId,
-  )
+  await client.query("select id from offer_requests where slot_id=$1 and status='open' order by id for update", [context.slotId])
   const terms =
     input.performer.kind === 'catalog'
       ? await liveCatalogTerms(client, input.performer)
@@ -177,6 +224,11 @@ export async function bookVendor(
       packageId = rows[0]?.id ?? null
     }
   }
+
+  if (input.performer.kind !== 'external') {
+    await assertLegacyDateBookingAllowed(client, input.performer.vendorId)
+  }
+  await closeSlotRequests(client, context, input.performer.kind === 'external' ? null : input.performer.vendorId)
 
   const dealId = uuidv7()
 

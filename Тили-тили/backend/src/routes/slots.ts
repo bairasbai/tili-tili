@@ -8,7 +8,8 @@ import { rolesSeeing } from '../chats/access.js'
 import type { Queryable } from '../plugins/db.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { cancelDeal } from '../deals/cancel.js'
-import { bookVendor, lockBookingContext } from '../deals/book.js'
+import { replaceLegacySlotBooking, type ReplaceLegacySlotInput } from '../deals/replace.js'
+import { bookVendor, lockBookingActor, lockBookingContext, lockBookingReplay } from '../deals/book.js'
 import { lockFinanceAccess, lockDeal, recordPayment } from '../payments/model.js'
 import { CREATED_AT_US } from './chats.js'
 import {
@@ -20,7 +21,7 @@ import {
   toSlot,
   type SlotRow,
 } from '../deals/repo.js'
-import { HOLD_HOURS } from '../deals/state.js'
+import { HOLD_HOURS, assertTransition, type DealState } from '../deals/state.js'
 import { lockTimelineForRequest } from '../timeline/version.js'
 import { assertExternalLinkNotExpired, lockExternalProgramAccess } from '../vendor/external-program-access.js'
 
@@ -186,6 +187,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
             weddingId,
             slotId,
             actorId: request.caller!.userId,
+            sessionId: request.caller!.sessionId,
+            policyVersion: app.appConfig.policyVersion,
           })
           await bookVendor(client, context, {
             performer: {
@@ -197,11 +200,38 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           })
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
+        true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
       )
     },
   )
 
   /* ── отмена ───────────────────────────────────────────────────────── */
+  app.post('/weddings/:weddingId/slots/:slotId/replace', {
+    schema: { body: {
+      type: 'object', additionalProperties: false,
+      required: ['expectedSelectedDealId', 'expectedSelectedDealState', 'vendorId', 'price', 'expectedPolicyRevision'],
+      properties: {
+        expectedSelectedDealId: UUID_ID,
+        expectedSelectedDealState: { type: 'string', enum: ['candidate', 'contacted', 'negotiating', 'booked', 'paid_deposit'] },
+        vendorId: UUID_ID, packageId: { type: 'string', maxLength: 40 },
+        price: { ...MONEY_SCHEMA, properties: { ...MONEY_SCHEMA.properties,
+          amount: { ...MONEY_SCHEMA.properties.amount, minimum: 1 } } },
+        expectedPolicyRevision: { type: 'string', pattern: '^(0|[1-9][0-9]*)$', maxLength: 19 },
+      },
+    } },
+  }, async (request, reply) => {
+    const weddingId = request.member!.weddingId, { slotId } = request.params as { slotId: string }
+    const body = request.body as Pick<ReplaceLegacySlotInput, 'expectedSelectedDealId' | 'expectedSelectedDealState' |
+      'vendorId' | 'packageId' | 'expectedPolicyRevision'> & { price: { amount: number } }
+    const principal = { weddingId, slotId, actorId: request.caller!.userId,
+      sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }
+    return withIdempotency(db(), request, reply, 'slots.replace', tx => tx(async client => {
+      await replaceLegacySlotBooking(client, { ...principal, ...body, price: body.price.amount })
+      return { status: 200, body: (await loadSlot(client, slotId, true))! }
+    }), true, client => lockBookingReplay(client, principal))
+  })
+
   app.post('/weddings/:weddingId/slots/:slotId/cancel', async (request, reply) => {
     const weddingId = request.member!.weddingId
     const { slotId } = request.params as { slotId: string }
@@ -210,9 +240,12 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       tx(async (client) => {
         const slot = await slotOf(client, weddingId, slotId)
         if (!slot.deal_id) throw conflict('slot_empty', 'В этом слоте нечего отменять')
-        await cancelDeal(client, slot.deal_id, { actorId: request.caller!.userId })
+        await cancelDeal(client, slot.deal_id, { actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
         return { status: 200, body: (await loadSlot(client, slotId, true))! }
       }),
+      true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
     )
   })
 
@@ -243,6 +276,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           await recordPayment(client, deal, request.caller!.userId, body.amount?.amount)
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
         }),
+        true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
       )
     },
   )
@@ -275,6 +310,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           weddingId,
           slotId,
           actorId: request.caller!.userId,
+          sessionId: request.caller!.sessionId,
+          policyVersion: app.appConfig.policyVersion,
         })
         await bookVendor(client, context, {
           performer: {
@@ -300,18 +337,29 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     ])
     if (!rows[0]?.external_name) throw notFound('В этом слоте не свой подрядчик')
 
-    /* Токен гасится ДО перехода и вне транзакции отмены: у выполненной
-     * работы сделка остаётся (409 ниже), а доступ убранного подрядчика по
-     * ссылке всё равно должен закрыться — иначе его нечем отозвать 30 дней
-     * (ревью фиксов, RF-BE-03). */
-    await revokeSlotInvites(db(), slotId)
-
-    await db().tx(async (client) => {
-      /* Тот же путь, что у отмены брони: состояние под блокировкой и через
-       * машину переходов. Раньше состояние здесь не смотрели вовсе, и
-       * выполненная работа своего подрядчика снималась с плитки (D2-02). */
-      await cancelDeal(client, slot.deal_id!, { actorId: request.caller!.userId })
+    const completed = await db().tx(async client => {
+      const live = await client.query('select id from weddings where id=$1 and archived_at is null and cancelled_at is null for update', [weddingId])
+      if (!live.rows[0]) throw notFound('Свадьба не найдена')
+      await lockBookingActor(client, { weddingId, actorId: request.caller!.userId,
+        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+      const current = (await client.query<{ deal_id: string | null }>('select deal_id from slots where id=$1 and wedding_id=$2 for update', [slotId, weddingId])).rows[0]
+      if (!current || current.deal_id !== slot.deal_id) throw conflict('external_deal_changed', 'Заказ изменился — обновите позицию')
+      const deal = (await client.query<{ state: DealState; external_name: string | null }>(
+        'select state,external_name from deals where id=$1 and wedding_id=$2 for update', [current.deal_id, weddingId])).rows[0]
+      if (!deal?.external_name) throw notFound('В этом слоте не свой подрядчик')
+      if (deal.state === 'done') {
+        // Completed work keeps its financial/history rows. Only this explicit
+        // access withdrawal commits before returning the transition refusal.
+        await revokeSlotInvites(client, slotId)
+        return true
+      }
+      // Ordinary cancellation and access revocation share one transaction:
+      // an audit/DB failure must not leave a live deal with revoked links.
+      await cancelDeal(client, slot.deal_id!, { actorId: request.caller!.userId,
+        sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
+      return false
     })
+    if (completed) assertTransition('done', 'cancelled')
     return reply.code(204).send()
   })
 
@@ -371,6 +419,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
         expiresAt: rows[0]!.expires_at.toISOString(),
       }
     })
+    // A deferred constraint can fail at COMMIT after all callback queries.
+    // Do not expose a token until its transaction actually committed.
     return reply.code(201).send(invitation)
   })
 

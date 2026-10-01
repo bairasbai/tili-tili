@@ -7,6 +7,8 @@ import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
 import { familyEventInvitations } from '../guests/event-invitations.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
+import { lockOrderWedding } from '../orders/context.js'
+import { syncMainParticipationFromLegacy } from '../wedding/participation.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -541,6 +543,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         const role = await lockSeatingAccess(client, request)
         assertPhoneByCouple(role, has('phone'))
         const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
+        const participationIds = new Set<string>(has('status') ? [guestId] : [])
         await client.query("select set_config('tili.timeline_actor',$1,true)", [request.caller!.userId])
         /* Строка гостя — после свадьбы, до стола и до броней: тот же порядок замков,
          * что у посадки в автобус (гость → маршрут, RF-BE-06). Заодно 404
@@ -698,6 +701,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                 current.party_id,
               ],
             )
+            if (has('status') || effectiveStatus !== 'pending') participationIds.add(companionId)
             if (current.menu_option_id) {
               await client.query(
                 `insert into menu_votes (guest_id, option_id)
@@ -725,7 +729,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
          * placeholders in sync when the pair edits the primary through the
          * old single-person route. A real named member is edited separately. */
         if (current.party_position === 1) {
-          await client.query(
+          const synced = await client.query<{ id: string }>(
             `update guests set
                  rsvp = case when $2 then $3 else rsvp end,
                  table_id = case when $4 then $5::uuid else table_id end,
@@ -733,7 +737,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                  diet = case when $8 then $9 else diet end,
                  diet_note = case when $10 then $11 else diet_note end,
                  transfer = case when $12 then $13 else transfer end
-               where party_id = $1 and party_position = 2 and is_placeholder`,
+               where party_id = $1 and party_position = 2 and is_placeholder returning id`,
             [
               current.party_id,
               has('status'),
@@ -750,7 +754,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               (body.transfer as string) ?? null,
             ],
           )
+          if (has('status')) for (const person of synced.rows) participationIds.add(person.id)
         }
+
+        await syncMainParticipationFromLegacy(client, { weddingId, guestIds: [...participationIds],
+          source: 'team_observation', actorUserId: request.caller!.userId })
 
         if (has('status')) {
           const { rows: attending } = await client.query<{ n: string }>(
@@ -1234,7 +1242,14 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const has = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key)
 
       const result = await db().tx(async (client) => {
-        await client.query('select id from weddings where id=$1 for update', [guest.weddingId])
+        await lockOrderWedding(client, guest.weddingId)
+        const liveGuest = await guestByToken(client, guestToken)
+        if (liveGuest.weddingId !== guest.weddingId || liveGuest.partyId !== guest.partyId || liveGuest.guestId !== guest.guestId) {
+          throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
+        }
+        const liveParty = await client.query('select id from guest_parties where id=$1 and wedding_id=$2 and invite_token=$3 for share', [guest.partyId, guest.weddingId, guestToken])
+        if (!liveParty.rows[0]) throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
+        const participationIds = new Set<string>()
         // Guest-token actions have no authenticated user author.
         await client.query("select set_config('tili.timeline_actor','',true)")
         const { rows: locked } = await client.query<{
@@ -1275,6 +1290,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                  from guests where id = $1`,
               [primary.id, companionId, body.status ?? primary.rsvp, newGuestToken()],
             )
+            if (body.status !== undefined || primary.rsvp !== 'pending') participationIds.add(companionId)
             await client.query(
               `insert into menu_votes (guest_id, option_id, at)
                select $2, option_id, at from menu_votes where guest_id = $1
@@ -1342,7 +1358,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               item.transfer ?? null,
             ],
           )
+          participationIds.add(item.guestId)
         }
+
+        await syncMainParticipationFromLegacy(client, { weddingId: guest.weddingId, guestIds: [...participationIds],
+          source: 'guest_response', actorUserId: null })
 
         /* Room belongs to the invitation, not to every person. Keep it while
          * at least one family member still attends. */

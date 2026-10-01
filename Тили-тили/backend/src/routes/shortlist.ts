@@ -33,6 +33,7 @@ interface ShortlistRow {
   photo_url: string | null
   verified_at: Date | null
   has_video: boolean
+  booking_mode: 'legacy_day' | 'resources'
   packages: PackageJson[]
   profile_live: boolean | null
   available: boolean | null
@@ -108,6 +109,7 @@ export interface ShortlistEntry {
     photoUrl: string | null
     verified: boolean
     hasVideo: boolean
+    bookingMode?: 'legacy_day' | 'resources'
     packages: {
       id: string
       name: string
@@ -139,6 +141,7 @@ function toEntry(row: ShortlistRow, role: Role): ShortlistEntry {
           photoUrl: publicProfile ? row.photo_url : null,
           verified: row.verified_at !== null,
           hasVideo: publicProfile && row.has_video,
+          ...(publicProfile ? { bookingMode: row.booking_mode } : {}),
           packages: publicProfile
             ? row.packages.map((p) => ({
                 id: p.id,
@@ -223,6 +226,7 @@ export async function loadShortlist(
             v.rating::text as rating, v.reviews_count, v.couple_reviews_count,
             v.photo_url, v.verified_at,
             exists (select 1 from vendor_media m where m.vendor_id = v.id and m.kind = 'video') as has_video,
+            coalesce((select p.mode from vendor_availability_policy p where p.vendor_id=v.id), 'legacy_day') as booking_mode,
             coalesce((
               select jsonb_agg(jsonb_build_object(
                        'id', p.id,
@@ -246,7 +250,8 @@ export async function loadShortlist(
                   and v.category_id = s.category_id
              end as available,
             case
-              when v.id is null or w.date is null then null
+              when v.id is null or w.date is null
+                or exists(select 1 from vendor_availability_policy p where p.vendor_id=v.id and p.mode='resources') then null
               when exists (
                 select 1 from vendor_busy_dates b
                   join deals mine on mine.id = b.deal_id

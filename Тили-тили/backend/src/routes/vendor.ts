@@ -6,6 +6,9 @@ import { holdDatesOf } from '../catalog/holds.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { VENDOR_COLUMNS, loadDetail, type VendorRow } from '../catalog/vendors.js'
 import { profileCompleteness } from '../vendor/completeness.js'
+import { lockResourceScope } from '../resources/model.js'
+import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
+import { lockVendorProfileWrite } from '../vendor/profile-locks.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 export const MAX_VIDEO_SECONDS = 180
@@ -262,6 +265,8 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
        * в черновик по порядку (019, FR-006), и сохранение из второй вкладки, вставшее
        * между коммитом и чтением, раздало бы черновику чужие id. */
       return db().tx(async (client) => {
+        await lockVendorProfileWrite(client, { userId, sessionId: request.caller!.sessionId,
+          policyVersion: app.appConfig.policyVersion }, body.packages)
         // Вставка с разрешением конфликта, а не «проверить и вставить»: двойное
         // нажатие «Сохранить» на медленной связи даёт два запроса, и раздельная
         // проверка позволяет уникальному ключу сработать — человек видит
@@ -469,24 +474,28 @@ export async function vendorRoutes(app: FastifyInstance): Promise<void> {
       // Шаблон пропускает 30 февраля, а PostgreSQL на такой дате падает.
       for (const date of dates) assertRealDate(date, 'dates')
 
-      if (status === 'busy') {
-        for (const date of dates) {
-          await db().query(
-            `insert into vendor_busy_dates (vendor_id, date, source) values ($1, $2::date, 'manual')
-             on conflict (vendor_id, date) do nothing`,
-            [vendorId, date],
+      await db().tx(async client => {
+        const actor = { ...request.caller!, policyVersion: app.appConfig.policyVersion }
+        const scope = await lockResourceScope(client, { vendorId, actor })
+        if (scope.ownerId !== actor.userId.toLowerCase()) throw forbidden('Календарём распоряжается действующий владелец компании')
+        await assertLegacyDateBookingAllowed(client, vendorId)
+        if (status === 'busy') {
+          for (const date of dates) {
+            await client.query(
+              `insert into vendor_busy_dates (vendor_id, date, source) values ($1, $2::date, 'manual')
+               on conflict (vendor_id, date) do nothing`,
+              [vendorId, date],
+            )
+          }
+        } else {
+          // A manual calendar change never releases a deal or resource promise.
+          await client.query(
+            `delete from vendor_busy_dates
+              where vendor_id = $1 and source = 'manual' and date = any($2::date[])`,
+            [vendorId, dates],
           )
         }
-      } else {
-        // Освободить можно только то, что подрядчик закрыл сам. Дата под
-        // сделкой снимается отменой сделки, а не кнопкой в календаре —
-        // иначе пара приходит на свадьбу к тому, кто уже занят другим.
-        await db().query(
-          `delete from vendor_busy_dates
-            where vendor_id = $1 and source = 'manual' and date = any($2::date[])`,
-          [vendorId, dates],
-        )
-      }
+      })
       return reply.code(204).send()
     },
   )

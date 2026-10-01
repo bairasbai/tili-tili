@@ -315,6 +315,12 @@ export interface paths {
                         style?: string;
                         format?: components["schemas"]["WeddingFormat"];
                         planner?: components["schemas"]["WeddingPlanner"];
+                        /**
+                         * @description необязательный режим внимания; координатора выбирают из принятой команды позднее
+                         * @default essential
+                         * @enum {string}
+                         */
+                        attentionMode?: "essential" | "coordinator" | "detailed";
                         /** @description что уже забронировано вне приложения; пустой массив — «Пока ничего» */
                         prebooked?: components["schemas"]["PrebookedCategory"][];
                         /** @description сырые ответы квиза подписями вариантов — сервер их принимает, но не хранит и не читает: значимые ответы приходят кодами (`format`, `planner`, `prebooked`) */
@@ -1978,7 +1984,8 @@ export interface paths {
          *     длиннее 200 символов — 400 `idempotency_key_too_long`, тот же ключ на
          *     другой запрос — 409 `idempotency_key_reused`, тот же ключ ещё выполняется —
          *     409 `idempotency_in_progress`. Пакет не из справочника подрядчика —
-         *     422 `unknown_package`.
+         *     422 `unknown_package`. Сохраняет прежнюю совместимость: одна компания
+         *     может оказать услуги в нескольких категориях одной свадьбы.
          */
         post: {
             parameters: {
@@ -11202,6 +11209,1210 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Режим внимания и действующий координатор */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Настройки; ETag содержит заключённую в кавычки version */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingAttention"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить режим внимания; только пара
+         * @description Режим не меняет права команды. Координатор выбирается из принятых участников; недоступный выбор переключает effectiveMode на essential.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    /** @description ETag полученных настроек */
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        mode?: "essential" | "coordinator" | "detailed";
+                        /** Format: uuid */
+                        coordinatorUserId?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Сохранено; ETag содержит новую version */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingAttention"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description attention_version_conflict: настройки изменились */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                /** @description attention_version_required: сначала получите настройки */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/slots/{slotId}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Заменить выбранного подрядчика одной операцией
+         * @description Только действующая роль couple. Прежняя отмена и новая дневная бронь выполняются
+         *     в одной транзакции: при любом отказе прежняя бронь сохраняется. Старый финансовый
+         *     заказ и записи оплат сохраняются в истории; автоматического возврата денег нет.
+         *     Для режима ресурсов требуется отдельное согласование: `resource_booking_required`.
+         *     `booking_date_required` — нет даты; `resource_order_slot_changed` или
+         *     `resource_order_source_changed` — выбранный заказ изменился; `resource_source_changed`
+         *     — владелец компании изменился; `date_taken` — новая дата занята;
+         *     `slot_assigned`/`additional_event_booking_pending`/`event_date_conflict` — назначение
+         *     или мероприятие несовместимы с дневной бронью. `unknown_package` (422) — пакет недоступен.
+         *     Обязательный Idempotency-Key: `idempotency_key_required`/`idempotency_key_too_long` (400),
+         *     `idempotency_key_reused`/`idempotency_in_progress` (409). Повтор сохранённого ответа
+         *     проверяет текущий доступ; клиент обновляет позицию после ответа.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    slotId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        expectedSelectedDealId: string;
+                        /** @enum {string} */
+                        expectedSelectedDealState: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit";
+                        /** Format: uuid */
+                        vendorId: string;
+                        packageId?: string;
+                        price: {
+                            amount: number;
+                            /** @enum {string} */
+                            currency: "RUB";
+                        };
+                        expectedPolicyRevision: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Новая бронь сохранена вместе с отменой прежнего заказа */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Slot"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                /** @description Недостаточно текущих прав или согласия */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Позиция, свадьба или новый подрядчик недоступны */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Прежняя бронь сохраняется; причины указаны в описании операции */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать черновик заказа
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        /** @description Версия черновика в кавычках */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить применимый бриф
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderBriefWrite"];
+                };
+            };
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Отсутствует Idempotency-Key или ключ слишком длинный */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
+    };
+    "/deals/{dealId}/order/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Добавить часть заказа
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderPartCreate"];
+                };
+            };
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Отсутствует Idempotency-Key или ключ слишком длинный */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/parts/{partId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить часть заказа
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                    partId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderPartPatch"];
+                };
+            };
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Отсутствует Idempotency-Key или ключ слишком длинный */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
+    };
+    "/deals/{dealId}/order/parts/{partId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отменить одну часть черновика
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                    partId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderPartCancel"];
+                };
+            };
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Отсутствует Idempotency-Key или ключ слишком длинный */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Назначить заказ на мероприятие и позицию
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderAssignmentCreate"];
+                };
+            };
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Отсутствует Idempotency-Key или ключ слишком длинный */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/assignments/{assignmentId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отменить одно назначение черновика
+         * @description Черновик заказа. Видят и меняют текущая пара и владелец именно этого подрядчика. Назначения меняет только пара. Не изменяет цену, оплату, договор или занятость. Каждая запись проверяет актуальные права после блокировки; повтор ключа также требует живых прав.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                    assignmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderAssignmentCancel"];
+                };
+            };
+            responses: {
+                /** @description Актуальный черновик; повтор возвращает сохранённый результат того же действия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Отсутствует Idempotency-Key или ключ слишком длинный */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась версия, позиция занята или ключ использован для другого запроса */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Применимые поля и виды работы для этого заказа
+         * @description Текущая категория берётся из реальной позиции сделки. Видит текущая пара или владелец именно этого подрядчика после проверки живых прав. Все поля брифа необязательны в черновике. Подсказки не подтверждают наличие товара, готовность, согласие или свободные ресурсы; режим приложения не расширяет доступ.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Применимые метаданные */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrderCatalog"];
+                    };
+                };
+                /** @description Нужна действующая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/booking-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать способ бронирования опубликованной компании
+         * @description Только режим и версия; ответ не обещает свободные ресурсы и не раскрывает их состав.
+         */
+        get: operations["getVendorBookingPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/slots/{slotId}/resource-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подготовить выбранный финансовый заказ для согласования ресурсов
+         * @description Только текущая пара. Создаёт один выбранный черновик candidate или возвращает тот же заказ без изменения его цены и снимка пакета. Бронь, дневная занятость, платёж и уведомление подрядчику не создаются. При повторе ключа текущие права и выбранный источник проверяются вновь; оплаченный или забронированный заказ нельзя выдать за новый черновик. Мероприятие без даты не получает выдуманное время.
+         */
+        post: operations["prepareResourceOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/resource-commitments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать фактическое состояние брони ресурсов своего заказа
+         * @description Текущая пара или действующий владелец исполнителя; частные идентификаторы ресурсов не выдаются.
+         */
+        get: operations["getOrderResourceCommitments"];
+        put?: never;
+        /**
+         * Забронировать согласованный план ресурсов в выбранном заказе
+         * @description Только текущая пара после принятия точной редакции двумя разными сторонами. Резерв проверяется и создаётся атомарно, тот же финансовый заказ становится booked без нового платежа или дневной занятости. Отказ не меняет мощность или историю. Повтор ключа проверяет текущий доступ и возвращает актуальную бронь.
+         */
+        post: operations["commitOrderResources"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/resource-commitments/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Заменить действующую бронь после нового согласования
+         * @description Отдельное действие текущей пары по новой редакции, принятой обеими сторонами. До успешного завершения прежняя бронь сохраняется. Неизменённые строки используют прежние обязательства без повторного расхода мощности. Цена и платежи остаются в том же финансовом заказе; повтор ключа возвращает текущую бронь.
+         */
+        post: operations["replaceOrderResources"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/resource-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать план ресурсов своего заказа
+         * @description Текущая пара получает безопасную неизменяемую проекцию; владелец исполнителя также получает строки редактора. Управляющий ресурсами не получает доступ к частному заказу. Живые источники проверяются без изменения истории. План не является резервом или подтверждением свободного времени и мощности.
+         */
+        get: operations["getOrderResourcePlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Сохранить новую редакцию плана ресурсов
+         * @description Только текущий владелец исполнителя. Материальная замена создаёт неизменяемую редакцию и новую версию заказа, даже при одинаковых названиях ресурсов. Точный повтор не создаёт редакцию. Пустой массив явно очищает план, сохраняя историю. Производство не выводится из доставки; дорога, подготовка и демонтаж задаются явно. Сохранение не резервирует ресурсы и не меняет цену, оплаты, календарь, программу или used. Изменённый план требует нового предложения условий и новых ответов сторон.
+         */
+        patch: operations["saveOrderResourcePlan"];
+        trace?: never;
+    };
+    "/deals/{dealId}/order/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать редакции условий заказа
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять. Формат schemaVersion 1 остаётся для заказа без плана. Формат 2 добавляет безопасную проекцию и точную неизменяемую редакцию плана ресурсов; внутренние ID ресурсов и людей в неё не входят. Новая редакция не наследует прежних ответов сторон. Изменение used или общей мощности окна не меняет обещанный состав.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    termsId?: string;
+                };
+                header?: never;
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Редакции и реальные отметки сторон; запись не выдаёт новый read-token */
+                200: {
+                    headers: {
+                        /** @description no-store: приватные данные и read-token нельзя кэшировать */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrderTermsView"];
+                    };
+                };
+                /** @description Нужна текущая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция/источник, истекло подтверждение или ключ повторён с другим запросом */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                /** @description Подтверждение редакции недоступно */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/terms/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предложить точную редакцию условий
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderTermsPublish"];
+                };
+            };
+            responses: {
+                /** @description Редакции и реальные отметки сторон; запись не выдаёт новый read-token */
+                200: {
+                    headers: {
+                        /** @description no-store: приватные данные и read-token нельзя кэшировать */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrderTermsView"];
+                    };
+                };
+                /** @description Нужен допустимый Idempotency-Key */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна текущая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция/источник, истекло подтверждение или ключ повторён с другим запросом */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                /** @description Подтверждение редакции недоступно */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deals/{dealId}/order/terms/{termsId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять конкретную актуальную редакцию
+         * @description Условия фиксируют реальные бриф, назначения, части, события, цену и исполнителя. Текущая пара и владелец именно этого подрядчика проверяются после блокировки, включая повтор ключа. Новая редакция не наследует согласие. Read-token привязан к версии, сессии и стороне, выдаётся только GET свежего предложения, не сохраняется offline. Принятие не меняет цену, оплату, бронь или программу и не является юридической подписью. Внешний контакт не создаёт согласие исполнителя; отдельный путь внешнего подтверждения ещё не подключён. История сохраняется при устаревшем/повреждённом черновике, который нельзя принять.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                    termsId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderTermsAccept"];
+                };
+            };
+            responses: {
+                /** @description Редакции и реальные отметки сторон; запись не выдаёт новый read-token */
+                200: {
+                    headers: {
+                        /** @description no-store: приватные данные и read-token нельзя кэшировать */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["OrderTermsView"];
+                    };
+                };
+                /** @description Нужен допустимый Idempotency-Key */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Нужна текущая сессия */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Изменилась редакция/источник, истекло подтверждение или ключ повторён с другим запросом */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+                /** @description Подтверждение редакции недоступно */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать реальные ресурсы компании
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        get: operations["getVendorResources"];
+        put?: never;
+        /**
+         * Добавить явно определённый ресурс
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        post: operations["createVendorResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/resources/{resourceId}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Отключить ресурс с сохранением истории
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        post: operations["retireVendorResource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/resources/{resourceId}/windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Заявить конечное окно мощности
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        post: operations["createResourceCapacityWindow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendors/{vendorId}/resources/{resourceId}/windows/{windowId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Изменить мощность точной версии окна
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        patch: operations["patchResourceCapacityWindow"];
+        trace?: never;
+    };
+    "/vendors/{vendorId}/availability-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Прочитать стратегию занятости и старые обязательства
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        get: operations["getVendorAvailabilityPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Явно выбрать стратегию новых обязательств
+         * @description Только действующий владелец компании или явно принявший членство resource_manager с текущей сессией и согласием. worker, приглашение и роль в свадьбе не дают управления. Текущие права проверяются после ожидания и перед saved reply. Все изменения атомарны с audit; это не резервирование и не финансовые/программные права.
+         */
+        patch: operations["patchVendorAvailabilityPolicy"];
+        trace?: never;
+    };
+    "/vendors/{vendorId}/resource-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Люди, доступные для явного выбора ресурса
+         * @description Только текущий владелец или принявший членство управляющий ресурсами. Данные только своей компании: владелец и действующие принявшие сотрудники. Нет телефонов, чужих свадеб, договоров или programme receipts. Выбор не доказывает свободный интервал; команда создания проверяет текущую идентичность заново.
+         */
+        get: operations["getVendorResourceOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -11520,6 +12731,11 @@ export interface components {
             verified?: boolean;
             hasVideo?: boolean;
             /**
+             * @description Способ бронирования компании. Доступность конкретных ресурсов и времени этим полем не подтверждается.
+             * @enum {string}
+             */
+            bookingMode?: "legacy_day" | "resources";
+            /**
              * @description Расстояние от города поиска (`city`) до города анкеты в
              *     километрах, округлённое (фича 011): 0 — тот же город; null — запрос
              *     без `city`, у одного из городов нет координат или это анкета вне
@@ -11629,7 +12845,7 @@ export interface components {
              */
             available: boolean | null;
             /**
-             * @description Занятость на дату свадьбы. `null` — дата не выбрана или анкета стёрта;
+             * @description Занятость на дату свадьбы. `null` — дата не выбрана, анкета стёрта или компания использует план ресурсов;
              *     своя бронь этой свадьбы считается `free`.
              * @enum {string|null}
              */
@@ -11657,6 +12873,11 @@ export interface components {
                 photoUrl: string | null;
                 verified: boolean;
                 hasVideo: boolean;
+                /**
+                 * @description Способ бронирования действующей публичной компании; доступность ресурсов не подтверждает.
+                 * @enum {string}
+                 */
+                bookingMode?: "legacy_day" | "resources";
                 packages: components["schemas"]["VendorPackage"][];
             } | null;
         };
@@ -12566,13 +13787,18 @@ export interface components {
                 deals?: boolean;
                 tips?: boolean;
             };
-            /** @description по умолчанию 22:00–09:00; в день X отключаются автоматически */
+            /** @description по умолчанию 22:00–09:00; день свадьбы не отключает тишину */
             quietHours?: {
                 /** @example 22:00 */
                 from?: string;
                 /** @example 09:00 */
                 to?: string;
             };
+            /**
+             * @description Личное разрешение срочных push о подтверждённой проблеме своего события вне тихих часов; не включает отключённые каналы.
+             * @default false
+             */
+            urgentIncidents: boolean;
         };
         Session: {
             id?: string;
@@ -13256,6 +14482,585 @@ export interface components {
             /** Format: uuid */
             installmentId: string | null;
         };
+        VendorResourceOptions: {
+            /** Format: uuid */
+            vendorId: string;
+            /** @enum {string} */
+            actorRole: "owner" | "resource_manager";
+            persons: {
+                /** Format: uuid */
+                userId: string;
+                name: string | null;
+                /** Format: uuid */
+                staffMemberId: string | null;
+            }[];
+        };
+        /** @description Явное конечное окно мощности в объявленных единицах. Окна одного ресурса не пересекаются; used не превышает capacity. Этот API не резервирует мощность. */
+        ResourceCapacityWindow: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            capacity: number;
+            used: number;
+            version: string;
+        };
+        /** @description Реально заявленный ресурс. current означает действующий источник идентичности, не свободный интервал, бронь или готовность. Внутренний conflict_identity не выдаётся. */
+        VendorResource: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "person" | "equipment" | "capacity";
+            label: string;
+            version: string;
+            /** Format: uuid */
+            personUserId: string | null;
+            /** Format: uuid */
+            staffMemberId: string | null;
+            capacityUnit: string | null;
+            /** Format: date-time */
+            retiredAt: string | null;
+            /** @enum {string} */
+            source: "current" | "unavailable";
+            /** @enum {string|null} */
+            unavailableReason: "retired" | "identity_unknown" | "person_unavailable" | null;
+            windows: components["schemas"]["ResourceCapacityWindow"][];
+        };
+        VendorResourceCreate: {
+            /** @enum {string} */
+            kind: "person";
+            label: string;
+            /** Format: uuid */
+            personUserId: string;
+            /** Format: uuid */
+            staffMemberId?: string;
+        } | {
+            /** @enum {string} */
+            kind: "equipment";
+            label: string;
+        } | {
+            /** @enum {string} */
+            kind: "capacity";
+            label: string;
+            capacityUnit: string;
+        };
+        ResourceVersionWrite: {
+            expectedVersion: string;
+        };
+        ResourceCapacityWindowCreate: {
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            capacity: number;
+        };
+        ResourceCapacityWindowPatch: {
+            expectedVersion: string;
+            capacity: number;
+        };
+        /** @description Выбранная стратегия новых обязательств. Изменение режима не освобождает старые занятые дни, сделки или деньги. unresolved — диагностика старых обязательств, не запрет любых будущих дат. */
+        VendorAvailabilityPolicy: {
+            /** Format: uuid */
+            vendorId: string;
+            /** @enum {string} */
+            mode: "legacy_day" | "resources";
+            revision: string;
+            /** Format: uuid */
+            changedBy: string | null;
+            /** Format: date-time */
+            changedAt: string | null;
+            legacyObligations: {
+                unresolved: boolean;
+                manualDays: number;
+                dealDays: number;
+                unknownDays: number;
+                committedDeals: number;
+                negotiatingDeals: number;
+                /** @enum {string|null} */
+                reason: "unresolved_legacy_obligations" | null;
+            };
+        };
+        VendorAvailabilityPolicyWrite: {
+            /** @enum {string} */
+            mode: "legacy_day" | "resources";
+            expectedRevision: string;
+        };
+        WeddingAttention: {
+            version: string;
+            /** @enum {string} */
+            mode: "essential" | "coordinator" | "detailed";
+            /** Format: uuid */
+            coordinatorUserId: string | null;
+            /** @enum {string} */
+            effectiveMode: "essential" | "coordinator" | "detailed";
+            /** @enum {string} */
+            coordinatorState: "not_selected" | "active" | "unavailable";
+            coordinator: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            } | null;
+        };
+        OrderBriefField: {
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "string" | "string_array" | "integer" | "boolean" | "date";
+            /** @enum {string} */
+            group: "core" | "optional";
+            maxLength?: number;
+            maxItems?: number;
+            min?: number;
+            max?: number;
+            options?: string[];
+        };
+        OrderBriefSubtype: {
+            id: string;
+            label: string;
+            suggestedKinds: ("timed_service" | "supply" | "rental" | "deliverable" | "appointment")[];
+            fields: components["schemas"]["OrderBriefField"][];
+        };
+        OrderCategoryBrief: {
+            categoryId: string;
+            label: string;
+            suggestedKinds: ("timed_service" | "supply" | "rental" | "deliverable" | "appointment")[];
+            fields: components["schemas"]["OrderBriefField"][];
+            subtypes?: components["schemas"]["OrderBriefSubtype"][];
+            /** @enum {boolean} */
+            autoAssign: false;
+        };
+        OrderCatalog: {
+            /**
+             * @description Текущее состояние финансового заказа; проверяется сервером, отдельно от согласования условий.
+             * @enum {string}
+             */
+            dealState?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
+            /** Format: uuid */
+            vendorId?: string | null;
+            /** Format: uuid */
+            weddingId: string;
+            /** Format: uuid */
+            primarySlotId: string;
+            /** @enum {string} */
+            actorRole: "couple" | "vendor";
+            /** @description Отменённый финансовый корень сохраняет историю, но его черновик больше не исполняется */
+            draftEditable: boolean;
+            /** @description Реальный часовой пояс свадьбы; отсутствие не заменяется поясом зрителя */
+            timeZone: string | null;
+            assignmentTimeZones: {
+                /** Format: uuid */
+                assignmentId: string;
+                /** Format: uuid */
+                programEventId: string;
+                timeZone: string | null;
+            }[];
+            /** @description Только паре — реальные подходящие позиции; это возможность назначения черновика, а не подтверждение брони */
+            eligiblePositions: {
+                /** Format: uuid */
+                slotId: string;
+                /** Format: uuid */
+                programEventId: string | null;
+                isPrimary: boolean;
+                label: string;
+            }[];
+            category: components["schemas"]["OrderCategoryBrief"];
+            executionKinds: ("timed_service" | "supply" | "rental" | "deliverable" | "appointment")[];
+        };
+        OrderResourcePlanLineInput: {
+            /** Format: uuid */
+            partId: string;
+            /** Format: uuid */
+            resourceId: string;
+            /** Format: uuid */
+            capacityWindowId: string | null;
+            quantity: number;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            timeZone: string;
+            setupMinutes: number;
+            teardownMinutes: number;
+            travelBeforeMinutes: number;
+            travelAfterMinutes: number;
+        };
+        OrderResourcePlanWrite: {
+            expectedVersion: string;
+            expectedPlanRevision: string;
+            lines: components["schemas"]["OrderResourcePlanLineInput"][];
+        };
+        PublicOrderResourcePlanLine: {
+            /** Format: uuid */
+            partId: string;
+            /** Format: uuid */
+            assignmentId: string | null;
+            /** Format: uuid */
+            programEventId: string | null;
+            label: string;
+            /** @enum {string} */
+            kind: "person" | "equipment" | "capacity";
+            quantity: number;
+            unit: string | null;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            timeZone: string;
+            setupMinutes: number;
+            teardownMinutes: number;
+            travelBeforeMinutes: number;
+            travelAfterMinutes: number;
+            /** Format: date-time */
+            occupiedStartsAt: string;
+            /** Format: date-time */
+            occupiedEndsAt: string;
+            window: {
+                /** Format: date-time */
+                startsAt: string;
+                /** Format: date-time */
+                endsAt: string;
+            } | null;
+        };
+        PublicOrderResourcePlan: {
+            /** Format: uuid */
+            planRevisionId: string;
+            revision: string;
+            lines: components["schemas"]["PublicOrderResourcePlanLine"][];
+        };
+        VendorBookingPolicy: {
+            /** @enum {string} */
+            mode: "legacy_day" | "resources";
+            revision: string;
+        };
+        ResourceOrderPreparationWrite: {
+            /** Format: uuid */
+            vendorId: string;
+            /** Format: uuid */
+            packageId: string | null;
+            /** Format: uuid */
+            expectedSelectedDealId: string | null;
+            expectedPolicyRevision: string;
+        };
+        ResourceOrderPreparationResult: {
+            /** Format: uuid */
+            dealId: string;
+            orderVersion: string;
+            /** @enum {string} */
+            state: "candidate" | "contacted" | "negotiating";
+            created: boolean;
+        };
+        OrderResourceCommitmentWrite: {
+            expectedOrderVersion: string;
+            expectedCommitmentRevision: string;
+            /** Format: uuid */
+            termsId: string;
+            expectedTermsVersion: string;
+            termsDigest: string;
+            /** Format: uuid */
+            planRevisionId: string;
+            expectedPolicyRevision: string;
+        };
+        OrderResourceCommitmentView: {
+            revision: string;
+            /** @enum {string} */
+            state: "not_reserved" | "reserved" | "released";
+            /** Format: uuid */
+            termsId: string | null;
+            /** Format: uuid */
+            planRevisionId: string | null;
+            /** @enum {string} */
+            reservation: "not_reserved" | "reserved" | "released";
+        };
+        OrderResourcePlanView: {
+            orderVersion: string;
+            revision: string;
+            canEdit: boolean;
+            /** @enum {string} */
+            reservation: "not_reserved" | "reserved" | "released";
+            current: components["schemas"]["PublicOrderResourcePlan"] | null;
+            editorLines: components["schemas"]["OrderResourcePlanLineInput"][] | null;
+            /** @enum {string} */
+            source: "current" | "invalid" | "unavailable";
+            history: components["schemas"]["PublicOrderResourcePlan"][];
+        };
+        PublishedOrderTerms: {
+            /** Format: uuid */
+            id: string;
+            version: string;
+            sourceOrderVersion: string;
+            sourceFingerprint: string;
+            digest: string;
+            snapshot: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            publishedBy: string | null;
+            /** @enum {string} */
+            publishedSide: "customer" | "performer";
+            /** Format: date-time */
+            publishedAt: string;
+            /** @enum {string} */
+            freshness: "current" | "stale" | "unavailable" | "invalid";
+            receipts: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                party: "customer" | "performer";
+                /** Format: uuid */
+                userId: string | null;
+                /** Format: uuid */
+                sessionId: string | null;
+                digest: string;
+                /** Format: date-time */
+                acceptedAt: string;
+            }[];
+            acceptedByCaller: boolean;
+        };
+        OrderTermsView: {
+            revision: string;
+            /** Format: uuid */
+            proposedTermsId: string | null;
+            /** Format: uuid */
+            agreedTermsId: string | null;
+            history: components["schemas"]["PublishedOrderTerms"][];
+            selected: {
+                /** Format: uuid */
+                id: string;
+                version: string;
+                sourceOrderVersion: string;
+                sourceFingerprint: string;
+                digest: string;
+                snapshot: {
+                    [key: string]: unknown;
+                };
+                /** Format: uuid */
+                publishedBy: string | null;
+                /** @enum {string} */
+                publishedSide: "customer" | "performer";
+                /** Format: date-time */
+                publishedAt: string;
+                /** @enum {string} */
+                freshness: "current" | "stale" | "unavailable" | "invalid";
+                receipts: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    party: "customer" | "performer";
+                    /** Format: uuid */
+                    userId: string | null;
+                    /** Format: uuid */
+                    sessionId: string | null;
+                    digest: string;
+                    /** Format: date-time */
+                    acceptedAt: string;
+                }[];
+                acceptedByCaller: boolean;
+            } | null;
+            /** @description Временное доказательство выдачи конкретной редакции данной сессии; не доказательство чтения человеком и не юридическая подпись */
+            readToken: string | null;
+            acceptedByCaller: boolean;
+        };
+        OrderTermsPublish: {
+            expectedOrderVersion: string;
+            expectedTermsRevision: string;
+        };
+        OrderTermsAccept: {
+            expectedTermsVersion: string;
+            digest: string;
+            readToken: string;
+        };
+        WeddingOrder: {
+            /** Format: uuid */
+            dealId: string;
+            version: string;
+            /** @enum {integer} */
+            schemaVersion: 1;
+            /** @enum {string} */
+            source: "legacy" | "structured";
+            brief: {
+                categoryId: string;
+                subtypeId?: string;
+                values: {
+                    [key: string]: unknown;
+                };
+            } | null;
+            assignments: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                slotId: string;
+                /** Format: uuid */
+                programEventId: string;
+                version: string;
+                /** @enum {string} */
+                source: "legacy" | "structured";
+                label: string;
+                /** Format: date-time */
+                cancelledAt: string | null;
+            }[];
+            parts: ({
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "timed_service";
+                version: string;
+                /** Format: uuid */
+                assignmentId: string | null;
+                /** @enum {string} */
+                source: "legacy" | "structured";
+                title: string;
+                details: {
+                    /** Format: date-time */
+                    startsAt: string | null;
+                    /** Format: date-time */
+                    endsAt: string | null;
+                    location: string | null;
+                    setupMinutes: number | null;
+                    teardownMinutes: number | null;
+                    travelMinutes: number | null;
+                };
+                /** Format: date-time */
+                cancelledAt: string | null;
+            } | {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "supply";
+                version: string;
+                /** Format: uuid */
+                assignmentId: string | null;
+                /** @enum {string} */
+                source: "legacy" | "structured";
+                title: string;
+                details: {
+                    quantity: number | null;
+                    unit: string | null;
+                    /** Format: date-time */
+                    windowStartsAt: string | null;
+                    /** Format: date-time */
+                    windowEndsAt: string | null;
+                    location: string | null;
+                    recipient: string | null;
+                    substitutions: string | null;
+                };
+                /** Format: date-time */
+                cancelledAt: string | null;
+            } | {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "rental";
+                version: string;
+                /** Format: uuid */
+                assignmentId: string | null;
+                /** @enum {string} */
+                source: "legacy" | "structured";
+                title: string;
+                details: {
+                    quantity: number | null;
+                    unit: string | null;
+                    /** Format: date-time */
+                    handoverAt: string | null;
+                    /** Format: date-time */
+                    returnAt: string | null;
+                    location: string | null;
+                    recipient: string | null;
+                    condition: string | null;
+                    depositTerms: string | null;
+                };
+                /** Format: date-time */
+                cancelledAt: string | null;
+            } | {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "deliverable";
+                version: string;
+                /** Format: uuid */
+                assignmentId: string | null;
+                /** @enum {string} */
+                source: "legacy" | "structured";
+                title: string;
+                details: {
+                    items: string[] | null;
+                    /** Format: date-time */
+                    dueAt: string | null;
+                    recipient: string | null;
+                    reviewProcess: string | null;
+                };
+                /** Format: date-time */
+                cancelledAt: string | null;
+            } | {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                kind: "appointment";
+                version: string;
+                /** Format: uuid */
+                assignmentId: string | null;
+                /** @enum {string} */
+                source: "legacy" | "structured";
+                title: string;
+                details: {
+                    /** Format: date-time */
+                    startsAt: string | null;
+                    /** Format: date-time */
+                    endsAt: string | null;
+                    location: string | null;
+                    setupMinutes: number | null;
+                    teardownMinutes: number | null;
+                    travelMinutes: number | null;
+                };
+                /** Format: date-time */
+                cancelledAt: string | null;
+            })[];
+        };
+        OrderBriefWrite: {
+            expectedVersion: string;
+            brief: {
+                subtypeId?: string;
+                values: {
+                    [key: string]: unknown;
+                };
+            } | null;
+        };
+        OrderPartCreate: {
+            expectedVersion: string;
+            /** @enum {string} */
+            kind: "timed_service" | "supply" | "rental" | "deliverable" | "appointment";
+            /** Format: uuid */
+            assignmentId?: string | null;
+            title: string;
+            details: {
+                [key: string]: unknown;
+            };
+        };
+        OrderPartPatch: {
+            expectedVersion: string;
+            expectedPartVersion: string;
+            title?: string;
+            details?: {
+                [key: string]: unknown;
+            };
+        };
+        OrderPartCancel: {
+            expectedVersion: string;
+            expectedPartVersion: string;
+        };
+        OrderAssignmentCreate: {
+            expectedVersion: string;
+            /** Format: uuid */
+            slotId: string;
+            /** Format: uuid */
+            programEventId: string;
+            label: string;
+        };
+        OrderAssignmentCancel: {
+            expectedVersion: string;
+            expectedAssignmentVersion: string;
+        };
     };
     responses: {
         /** @description Не авторизован */
@@ -13437,4 +15242,744 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+    getVendorBookingPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущая политика доступной компании */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorBookingPolicy"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Источник компании изменился после ожидания */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    prepareResourceOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                slotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceOrderPreparationWrite"];
+            };
+        };
+        responses: {
+            /** @description Текущий выбранный черновик; created относится к первоначальному действию данного ключа */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceOrderPreparationResult"];
+                };
+            };
+            /** @description Нужен допустимый ключ повтора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Изменились выбор */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    getOrderResourceCommitments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущая бронь отдельно от изменяемого черновика */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResourceCommitmentView"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description История брони недоступна */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    commitOrderResources: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderResourceCommitmentWrite"];
+            };
+        };
+        responses: {
+            /** @description Текущее состояние брони после действия или повтора */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResourceCommitmentView"];
+                };
+            };
+            /** @description Нужен допустимый ключ повтора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Изменились условия */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    replaceOrderResources: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderResourceCommitmentWrite"];
+            };
+        };
+        responses: {
+            /** @description Текущее состояние брони после замены или повтора */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResourceCommitmentView"];
+                };
+            };
+            /** @description Нужен допустимый ключ повтора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Изменились условия */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    getOrderResourcePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Своя безопасная история и отдельное состояние источника */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResourcePlanView"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Источник изменился во время проверки */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    saveOrderResourcePlan: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                dealId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderResourcePlanWrite"];
+            };
+        };
+        responses: {
+            /** @description План сохранён; reservation относится только к его точной текущей редакции */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderResourcePlanView"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Устарела версия */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    getVendorResources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorResource"][];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createVendorResource: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorResourceCreate"];
+            };
+        };
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorResource"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    retireVendorResource: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                resourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceVersionWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorResource"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createResourceCapacityWindow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                resourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceCapacityWindowCreate"];
+            };
+        };
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceCapacityWindow"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patchResourceCapacityWindow: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+                resourceId: string;
+                windowId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceCapacityWindowPatch"];
+            };
+        };
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceCapacityWindow"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getVendorAvailabilityPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorAvailabilityPolicy"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patchVendorAvailabilityPolicy: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorAvailabilityPolicyWrite"];
+            };
+        };
+        responses: {
+            /** @description Проверенные данные без внутреннего conflict identity */
+            200: {
+                headers: {
+                    /** @description no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorAvailabilityPolicy"];
+                };
+            };
+            /** @description Нужен допустимый Idempotency-Key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Validation"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getVendorResourceOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                vendorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Текущая роль и явный список людей */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorResourceOptions"];
+                };
+            };
+            /** @description Нужна текущая сессия */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description База недоступна */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+}

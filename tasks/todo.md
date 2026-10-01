@@ -1346,3 +1346,51 @@ Playwright на 1280 и 390, dev-серверы 3001/3000 на общей баз
 - [ ] Отдельно проверить конкурентное бронирование audit4 (локально один deadlock/500, повтор зелёный).
 - [ ] Остальные этапы — `tasks/product-improvements-roadmap.md`; наличие списка не означает реализацию.
 - [ ] Main не сливать без отдельного решения владельца.
+
+## Изолированная экосистема 030 — локальное продолжение 2026-10-01
+
+Источник требований: `tasks/фичи/030-экосистема-local/{spec,plan,tasks}.md`, реестр A01–A20/U01–U16. Это отдельная работа в `feature/ecosystem-audit-local-20260930` относительно baseline9628d0b, без remote; исходный каталог другой сессии не изменяется.
+
+- [x] Проверены ограниченные основы push/режимов, 35 категорий, состав заказа/назначения, отдельные версии условий, staff domain и реальные ресурсы/API/UI. Подробности и пределы доказательств: JOURNAL.md, внешние gates leaf1.1–1.6.
+- [x] Исправлены 5 падений первого frontend full; целевой повтор dictionary/audit41/persist/orders-EN: 71 passed (`C:/Тили-тили/.unlazy/ecosystem-audit-20260930/ui-full.log`).
+- [ ] Повторный общий frontend/backend/types/lint/build/contract прогон на собственной PostgreSQL базе и Redis12. Прошедший целевой набор не означает прохождение полного.
+- [ ] Реальные resource plan/условия/атомарное обязательство, все booking/manualcalendar/cancellation двери; индивидуальные ресурсы не являются бронью.
+- [ ] Staff API/UI и адресные обязанности; incident routing/PlanB; per-event guests/diet/trips/rooms; fulfillment/settlement/last-event closure по исходному реестру.
+- [ ] Review нового стабильного WP03 checkpoint другой сессии перед интеграцией; текущие незавершённые источники не копируются.
+- [ ] Итоговая приёмка A/U, удаление временного browser fixture helper/HTML и отдельный локальный feature commit. Никаких push/merge/main/production.
+- [ ] Внешние provider/device/retention/tariff/human pilot условия подтверждаются отдельными фактическими доказательствами; сейчас не закрыты.
+
+## Local ecosystem030 — verified checkpoint 2026-10-01
+
+Third `verify.mjs full full` ended exit1: frontend93 files/1467 tests and backend130 files/2295 tests all passed, no skips. Frontend types/lint/build and backend types passed. Only stopping backend lint error was no-console in our temporary browser fixture helper; this is NOT a whole init.sh pass. Evidence: C:/Тили-тили/.unlazy/ecosystem-audit-20260930/full-full-third-lint-failure.log, lines7-8,91-101.
+
+The two temporary browser fixtures were removed from our clone after preserving them externally as browser-fixture-helper.mts and browser-fixture-page.html. Whole backend ESLint and tsc build then independently exited0. Source-manifest verify confirmed all772 captured file hashes still matched after fixture removal; preserved as checkpoint-full-third-source-manifest.json before further implementation. GATES:G2 remains pending one final whole init.sh exit0. No commit/push/main or original-checkout mutation.
+
+Next required implementation is actual optional order resource plan, immutable private revision and safe public terms projection, followed by real booking commitments/legacy compatibility. Saving a plan must not claim reservation. Staff public duties, incident routing, Plan B and remaining broad A/U outcomes remain open. Local foundations are not all17WP or complete ecosystem.
+
+## Local ecosystem030 — resource plan continuation 2026-10-01
+
+Immutable360/361 and optional order resource plan are implemented in our isolated clone. Public terms schema2 binds the exact safe immutable plan; schema1 remains valid for orders without plans. Saving a plan explicitly reserves nothing and changes no paid balance, timeline, legacy busy date or capacity used. The initially applied360 was restored unchanged when a missing-schema/deferred-head improvement was identified; integrity was added as preserving forward361. Both were applied only to our fenced resource_plan test DB. No production migration.
+
+Independent parent leaf1.7.1/2 review and reverify: static source check0 and61 actual PostgreSQL tests passed, with6 observed lock waits, actual deferred orphan COMMIT23514 and audit SQL rollback. Sources/hashes and bounded evidence are recorded in the leaf ledgers; their exact leases released. Historical-author deletion in those tests uses a synthetic transfer fixture and does not verify current-owner eraseUser.
+
+Registered API14 passed after a real cached-owner privacy defect was fixed (ERRORS LOCAL-030-12). Before-fix200 private replay is preserved in resource-plan-api-before-owner-replay-fix.log; current scoped owner verification now occurs before cache lookup. Current owner positive replay/no-op and exact distinct synthetic party schema2 acceptance passed. This is not human acceptance or a production transfer workflow.
+
+Parent optional editor64 passed; integration3 files149=83 terms+64 editor+2 dictionary passed (ui-plan_integrated.log, node-1.7:G3). Frontend full project tsc -b exited0 after source freeze. The first schema2 test run failed18 assertions because malformed projections remove the accept control rather than disable it; corrected tests assert no control/no POST, not weaker validation. Archive ui-terms_schema2-first-assertion-failure.log. An earlier in-flight UI parse error was resolved before this source freeze. Final UI still awaits actual browser RU/EN320/390/480 acceptance and leaf1.7.3 lease remains active.
+
+OpenAPI0.66.0 local generation measured179paths/233operations/139schemas. The historical772-file manifest describes the earlier355 checkpoint; it is not current stage1.7 acceptance. Migration drill extension is under reviewed agent execution on first-absent exact fresh10–12 only, retaining earlier8/9 evidence. Its success is pending at this entry. No final full init.sh exit0, final feature commit, push/main or whole17-feature/ecosystem completion claim. Booking commitments and broader staff/incidents/PlanB/logistics/settlement/lifecycle still required.
+## Local ecosystem030 — resource-plan checkpoint, 2026-10-01
+
+Current isolated clone whole init exit0: frontend94files/1555tests, backend132files/2370tests; no skipped tests; both projects types/lint/build passed. Source-manifest verify matched all780 captured local files after the run. Evidence: C:/Тили-тили/.unlazy/ecosystem-audit-20260930/checkpoint-resource-plan-full-passed.log and checkpoint-resource-plan-full-source-manifest.json. This supersedes the prior partial init failure only for this reviewed snapshot; future changes need fresh checks.
+
+Retained shared PG now loopback15432 (same data directory, no deletion/rebuild); shutdown cause unconfirmed. Exact own resource_plan/full/browser databases remain fenced, Redis12 empty. Parent domain61 and API14 rerun on15432; editor64 and integrated149 rerun after final EN recorded-in-commitments/timezone-list polish. Source hashes/actual receipt and browser limitations: C:/Тили-тили/.unlazy/ecosystem-audit-20260930/resource-plan-browser-acceptance.md.
+
+Actual synthetic browser: distinct vendor then couple accepted terms2/schema2. Manufacture June13 and delivery June14 remained distinct; buffers10/15/20/25 show occupied09:30–12:40 Moscow. Invalid qty0 retained input/showed error; restored5 saved as no-op. Independent actual SQL confirms plan1/terms2/order4/two distinct user-session receipts, capacityused0 and business snapshot unchanged. RU/EN vendor and pair320/390/480 no horizontal overflow; all12 screenshots visually inspected. Synthetic Chromium only; no physical-device, provider, human or legal acceptance claim. Own8091/8092 stopped, temporary helper/credential page removed from clone after external preservation; sharedPG remains running.
+
+Parent fresh migration drill11 actual G1 subprocess exit0:68SQL/11CLI controls and actual current-owner eraseUser/history preservation, frozen script6f6b20e3; leaf1.4.2 accepted/released. Raw migration_drill-migration_drill11.log. Historical drill10 raw numeric exit unavailable after runtime reinit; not invented. Leaf1.7.3 final browser/source reviewed and released; stage1.7 plan only verified. No final commit/push/main/production or source transfer to the other session.
+
+Next: actual allocation ledger and common booking/cancellation/erasure/capacity doors, explicit finite legacy reconciliation. A saved/agreed resource plan still reserves nothing. Staff public duties, incidents/routing, PlanB, fulfilment/logistics, settlement/lifecycle and broader A/U outcomes remain open. No claim complete ecosystem or all17WP.
+
+## Экосистема030 — граница остановки 2026-10-01
+
+Текущий этап atomic legacy replacement и принятые основы завершаются отдельно. Продолжение всей экосистемы: tasks/фичи/030-экосистема-local/CLAUDE-CONTINUE.md. Невыполненные критерии030 остаются открытыми;370+ пока только дизайн. Последняя инструкция владельца разрешила проверенную публикацию/main и требует остановиться после этого этапа; production вне поручения.

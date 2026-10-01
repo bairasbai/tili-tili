@@ -24,6 +24,7 @@ export interface WeddingDraft {
   /* Ответы квиза кодами (фича 018): по ним сервер собирает мозаику, тайминг и чек-лист. */
   format?: components['schemas']['WeddingFormat']
   planner?: components['schemas']['WeddingPlanner']
+  attentionMode?: components['schemas']['WeddingAttention']['mode']
   /** Что уже забронировано вне приложения; пустой список — «Пока ничего». */
   prebooked?: components['schemas']['PrebookedCategory'][]
   quizAnswers?: Record<string, unknown>
@@ -69,6 +70,7 @@ export async function createWedding(draft: WeddingDraft): Promise<string> {
     ...(draft.style ? { style: draft.style } : {}),
     ...(draft.format ? { format: draft.format } : {}),
     ...(draft.planner ? { planner: draft.planner } : {}),
+    ...(draft.attentionMode ? { attentionMode: draft.attentionMode } : {}),
     ...(draft.prebooked ? { prebooked: draft.prebooked } : {}),
     ...(draft.quizAnswers ? { quizAnswers: draft.quizAnswers } : {}),
   })

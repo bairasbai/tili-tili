@@ -136,6 +136,36 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(page.json().plusOne).toBe(true)
   })
 
+  it('legacy guest reply revises migrated main participation without changing a second-day answer', async () => {
+    const f = await family()
+    const main = (await app.db!.query<{ id: string }>('select id from wedding_events where wedding_id=$1 and is_main', [f.weddingId])).rows[0]!.id
+    const second = uuidv7()
+    await app.db!.query("insert into wedding_events(id,wedding_id,name,kind,date,time_zone) values($1,$2,'День 2','other','2027-06-15','Europe/Moscow')", [second, f.weddingId])
+    await app.db!.query(`insert into event_guest_participation(wedding_id,program_event_id,guest_id,status,source)
+      values($1,$2,$4,'attending','legacy_main_rsvp'),($1,$3,$4,'attending','team_observation')`, [f.weddingId, main, second, f.primaryId])
+    const response = await app.inject({ method: 'POST', url: `/rsvp/${f.guestToken}`, payload: { status: 'no' } })
+    expect(response.statusCode, response.body).toBe(200)
+    const read = () => app.db!.query('select program_event_id,status,source,actor_user_id,version::text from event_guest_participation where guest_id=$1 order by program_event_id', [f.primaryId])
+    const rows = (await read()).rows
+    expect(rows.find(r => r.program_event_id === main)).toMatchObject({ status: 'declined', source: 'guest_response', actor_user_id: null, version: '2' })
+    expect(rows.find(r => r.program_event_id === second)).toMatchObject({ status: 'attending', source: 'team_observation', version: '1' })
+    expect((await app.inject({ method: 'POST', url: `/rsvp/${f.guestToken}`, payload: { status: 'no' } })).statusCode).toBe(200)
+    expect((await read()).rows).toEqual(rows)
+  })
+
+  it('team RSVP records its actual author; unrelated edits do not fabricate a participation response', async () => {
+    const f = await family()
+    const path = `/weddings/${f.weddingId}/guests/${f.primaryId}`
+    const untouched = await app.inject({ method: 'PATCH', url: path, headers: auth(f.token), payload: { name: 'Марина Новая' } })
+    expect(untouched.statusCode, untouched.body).toBe(200)
+    expect((await app.db!.query('select 1 from event_guest_participation where wedding_id=$1', [f.weddingId])).rowCount).toBe(0)
+    const observed = await app.inject({ method: 'PATCH', url: path, headers: auth(f.token), payload: { status: 'yes' } })
+    expect(observed.statusCode, observed.body).toBe(200)
+    const rows = (await app.db!.query('select guest_id,status,source,actor_user_id,version::text from event_guest_participation where wedding_id=$1', [f.weddingId])).rows
+    expect(rows).toHaveLength(2)
+    expect(rows.every(r => r.status === 'attending' && r.source === 'team_observation' && r.actor_user_id === f.id && r.version === '1')).toBe(true)
+  })
+
   it('family RSVP is independent per person and one no frees only that person', async () => {
     const f = await family()
     const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()

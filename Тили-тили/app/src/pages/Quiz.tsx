@@ -120,6 +120,7 @@ export default function Quiz() {
   const [datePicker, setDatePicker] = useState(false)
   const [date, setDate] = useState<string | null>(null)
   const [partner, setPartner] = useState('')
+  const [attentionMode, setAttentionMode] = useState<components['schemas']['WeddingAttention']['mode']>('essential')
   /* Своё имя: пока его не трогали — то, что в профиле. Производная, а не эффект с
      `setState`: профиль может прийти, когда человек уже печатает, и тогда
      напечатанное важнее. */
@@ -189,6 +190,7 @@ export default function Quiz() {
       format: one(4),
       style: one(5),
       planner: one(6),
+      attentionMode,
       booked: answers[BOOKED_STEP] ?? [],
     }
     try {
@@ -207,6 +209,7 @@ export default function Quiz() {
         /* Коды, а не подписи (фича 018). Пропущенный вопрос не шлёт ничего — как старый клиент. */
         format: collected.format ? FORMAT_CODE[collected.format] : undefined,
         planner: collected.planner ? PLANNER_CODE[collected.planner] : undefined,
+        attentionMode: collected.attentionMode,
         prebooked: answers[BOOKED_STEP] ? collected.booked.flatMap(b => PREBOOKED_CODE[b] ?? []) : undefined,
         quizAnswers: { ...collected },
       })
@@ -316,6 +319,18 @@ export default function Quiz() {
           <p className="text-[10.5px] text-[var(--soft2)] mt-5 leading-relaxed">
             {t('💡 Ваше имя сохранится в профиле — его можно изменить в настройках.')}
           </p>
+          <details className="card-s mt-4 p-4">
+            <summary className="text-[12.5px] font-semibold cursor-pointer">{t('Режим уведомлений — необязательно')}</summary>
+            <label htmlFor="quiz-attention" className="block text-[12px] mt-3">{t('Как получать обновления')}</label>
+            <select id="quiz-attention" value={attentionMode} disabled={busy}
+              onChange={e => setAttentionMode(e.target.value as components['schemas']['WeddingAttention']['mode'])}
+              className="block w-full min-w-0 min-h-11 mt-2 rounded-xl border border-[var(--track)] bg-[var(--card)] px-3 text-[13px]">
+              <option value="essential">{t('Только важное')}</option>
+              <option value="coordinator">{t('Через координатора')}</option>
+              <option value="detailed">{t('Подробный обзор')}</option>
+            </select>
+            <p className="text-[11px] text-[var(--soft)] mt-2">{t('По умолчанию — только важное. Изменить режим и выбрать принятого координатора можно позднее в настройках.')}</p>
+          </details>
         </div>
       ) : i === CITY_STEP ? (
         <div key="city" className="flex-1 px-6 pt-8 fade-up">
