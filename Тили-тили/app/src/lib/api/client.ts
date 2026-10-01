@@ -526,8 +526,8 @@ export const api = {
     snapshot<Ok<paths[P] extends { put: infer O } ? O : never>>('PUT', path as string, body ?? {}, opts),
   patch: <P extends PathsWith<'patch'>>(path: P, body?: unknown, opts?: Options) =>
     request<Ok<paths[P] extends { patch: infer O } ? O : never>>('PATCH', path as string, body ?? {}, opts),
-  delete: <P extends PathsWith<'delete'>>(path: P) =>
-    request<Ok<paths[P] extends { delete: infer O } ? O : never>>('DELETE', path as string),
+  delete: <P extends PathsWith<'delete'>>(path: P, opts?: Options) =>
+    request<Ok<paths[P] extends { delete: infer O } ? O : never>>('DELETE', path as string, undefined, opts),
 }
 
 /**

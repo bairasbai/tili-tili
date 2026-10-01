@@ -482,7 +482,8 @@ describe('T3: тайминг пары — «Показывать гостям» 
     await screen.findByText('Церемония')
     fireEvent.click(screen.getByText('Править'))
     addEvent('Keep my input', '19:00')
-    await screen.findByRole('alert')
+    const conflict = await screen.findByText('Программа уже изменена — обновите её и проверьте свои правки', { exact: true })
+    expect(conflict.getAttribute('role')).toBe('alert')
     expect((screen.getByPlaceholderText('Событие (например, «Первый танец»)') as HTMLInputElement).value).toBe('Keep my input')
     const save = screen.getByRole('button', { name: 'Добавить в тайминг' }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
@@ -521,7 +522,8 @@ describe('T3: тайминг пары — «Показывать гостям» 
     await screen.findByText('Preview stays')
     const apply = screen.getByRole('button', { name: 'Заменить тайминг' }) as HTMLButtonElement
     fireEvent.click(apply)
-    await screen.findByRole('alert')
+    const conflict = await screen.findByText('Программа уже изменена — обновите её и проверьте свои правки', { exact: true })
+    expect(conflict.getAttribute('role')).toBe('alert')
     expect(screen.getByText('Preview stays')).toBeTruthy()
     expect(apply.disabled).toBe(true)
     expect(puts(calls, TIMELINE)[0]!.headers['if-match']).toBe('"7"')
