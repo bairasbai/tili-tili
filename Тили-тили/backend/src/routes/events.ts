@@ -6,6 +6,7 @@ import { knownTimeZone } from '../notify/quiet.js'
 import { assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor } from '../timeline/version.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
 
 interface EventRow {
   id: string; name: string; kind: string; date: string | null; time_zone: string | null; location: string | null; is_main: boolean
@@ -44,6 +45,51 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       throw validationFailed({ timeZone: 'часовой пояс не поддерживается базой' })
     }
   }
+  async function roster(client: Queryable, weddingId: string, eventId: string) {
+    const selected = await event(client, weddingId, eventId)
+    const people = await client.query<{ id: string; name: string; invited: boolean }>(
+      `select g.id,g.name,($3 or i.guest_id is not null) as invited from guests g
+        left join guest_event_invitations i on i.wedding_id=g.wedding_id and i.guest_id=g.id and i.event_id=$2
+        where g.wedding_id=$1 order by g.name,g.id`, [weddingId, eventId, selected.is_main])
+    return { event: project(selected), people: people.rows.map(p => ({ guestId: p.id, name: p.name, invited: p.invited })) }
+  }
+  const rosterParams = { type: 'object', required: ['weddingId', 'eventId'], properties: { weddingId: UUID_ID, eventId: UUID_ID } }
+  app.get('/weddings/:weddingId/events/:eventId/invitations', { schema: { params: rosterParams } }, async (request, reply) => db().tx(async client => {
+    await lockGuestReadAccess(client, request)
+    const weddingId = request.member!.weddingId, eventId = (request.params as { eventId: string }).eventId
+    const snapshot = await lockTimeline(client, weddingId, false)
+    const result = await roster(client, weddingId, eventId)
+    await assertSeatingToken(request)
+    sendTimelineVersion(reply, snapshot)
+    return result
+  }))
+  app.put('/weddings/:weddingId/events/:eventId/invitations', { schema: {
+    params: rosterParams,
+    body: { type: 'object', required: ['guestIds'], additionalProperties: false, properties: {
+      guestIds: { type: 'array', maxItems: 5000, uniqueItems: true, items: UUID_ID },
+    } },
+  } }, async (request, reply) => {
+    const expected = expectedTimelineVersion(request.headers['if-match'])
+    const { guestIds } = request.body as { guestIds: string[] }
+    return db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const weddingId = request.member!.weddingId, eventId = (request.params as { eventId: string }).eventId
+      const snapshot = await lockTimeline(client, weddingId, true)
+      if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — обновите её')
+      const before = await event(client, weddingId, eventId)
+      if (before.is_main) throw validationFailed({ eventId: 'состав основной программы задаётся списком гостей' })
+      const people = await client.query('select id from guests where wedding_id=$1 and id=any($2::uuid[]) for share', [weddingId, guestIds])
+      if (people.rowCount !== guestIds.length) throw notFound('Человек не найден в этой свадьбе')
+      await setTimelineActor(client, request.caller!.userId)
+      await client.query('delete from guest_event_invitations where wedding_id=$1 and event_id=$2 and not(guest_id=any($3::uuid[]))', [weddingId, eventId, guestIds])
+      await client.query(`insert into guest_event_invitations(wedding_id,event_id,guest_id)
+        select $1,$2,id from unnest($3::uuid[]) id on conflict do nothing`, [weddingId, eventId, guestIds])
+      const result = await roster(client, weddingId, eventId)
+      await assertSeatingToken(request)
+      sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
+      return result
+    })
+  })
   app.get('/weddings/:weddingId/events', async (request, reply) => db().tx(async client => {
     const snapshot = await lockTimelineForRequest(client, request, false)
     const result = await client.query<EventRow>(`select ${columns} from wedding_events where wedding_id=$1 order by is_main desc,date nulls last,id`, [request.member!.weddingId])
@@ -112,8 +158,9 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       const snapshot = await lockTimelineForRequest(client, request, true)
       if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — обновите её')
       const selected = await event(client, weddingId, id)
-      if (selected.is_main || (await client.query('select id from timeline_events where wedding_id=$1 and program_event_id=$2 limit 1', [weddingId, id])).rowCount) {
-        throw conflict('event_in_use', 'Сначала перенесите блоки в другое мероприятие; основное мероприятие не удаляется')
+      if (selected.is_main || (await client.query('select id from timeline_events where wedding_id=$1 and program_event_id=$2 limit 1', [weddingId, id])).rowCount
+        || (await client.query('select guest_id from guest_event_invitations where wedding_id=$1 and event_id=$2 limit 1', [weddingId, id])).rowCount) {
+        throw conflict('event_in_use', 'Сначала перенесите блоки и снимите дополнительные приглашения; основное мероприятие не удаляется')
       }
       await setTimelineActor(client, request.caller!.userId)
       await client.query('delete from wedding_events where wedding_id=$1 and id=$2', [weddingId, id])

@@ -27,5 +27,6 @@
   "test/taskReminders.test.ts",
   "test/family020.test.ts",
   "test/guestReadAccess.test.ts",
-  "test/guestReminderAccess.test.ts"
+  "test/guestReminderAccess.test.ts",
+  "test/eventInvitations022.test.ts"
 ]

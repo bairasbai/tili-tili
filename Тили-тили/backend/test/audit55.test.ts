@@ -465,8 +465,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.62.1 (WP03 and vendor payment privacy/UI)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.62.1')
+  it('версия контракта — 0.63.0 (022 individual event invitations)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.63.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

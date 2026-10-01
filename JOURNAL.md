@@ -3295,3 +3295,57 @@ Publication next at this commit boundary; actual later confirmation external
 .unlazy/wp04-events-ui-20261001/PUBLICATION-CONFIRMED.md/attached PR. No
 production/external provider or wholeWP04 completion claim. Personal event
 invites/RSVP/transfers/delegation/allSC/NFR/WP00-WP16 still required.
+
+## 2026-10-01 · PR25 Main And022 Personal Event Invitations
+
+Actual PR25 MERGED at12:00:51Z, head47f7cdb/main04a8355182467a93d9c10499bf4a11dbd6de3d6b;
+all7displayed CI SUCCESS, guarded sequential merge/read/fetch, local main
+clean/equal origin/main/569source match. Authoritative external confirmation:
+.unlazy/wp04-events-ui-20261001/PUBLICATION-CONFIRMED.md. No production.
+
+Human approved common RSVP deadline per event and calendar-day end in that
+event's zone; answers immediately recorded in022 spec. No guessed time zone.
+Main-date and accepted-reminder withdrawal surveys remain unanswered.
+
+New feature/event-rsvp-20261001 starts from04a8355. Chosen independently
+usable increment: explicit additional-event invitation roster per real person,
+not family boolean, preserving existing main invitations/RSVP/identity/tokens.
+Migration176250 after the actual existing chain, composite wedding FKs,
+immutable roster identity/main exclusion, wedding lock/revision, populated
+rollback refusal. Main roster is transitionally the existing guest list; no
+automatic invitation to newly created extras or to a newly added family member.
+GET/PUT invitations couple-only with fresh pinned team access/finalJWT,
+captured If-Match, atomic set replacement, exact private family GET RSVP
+projection. Existing guest response remains main-only and is labelled that way.
+No separate extra-event RSVP/deadline/transfer completion claimed.
+
+Actual migration second drill passed preserved rows/tokens/responses, empty
+down/up, populated refusal and parent cascade. Failed first targeting retained.
+New roster UI and guest event list/maps added; current shape/boolean errors
+refuse rather than invent unchecked flags. Conflict/network retains draft,
+explicit fresh opening only, double-click/lifetime/role/offline controls.
+Permanent new29server/22frontend cases, focused262backend/182frontend passed.
+Controlled token reassignment initially200→now401, retained witness; browser
+320heading defect fixed locally22px. Failed observer/button labels and full1
+missing dictionary entry retained. Source574frozen; fresh full2 and final
+browser/publication are still pending at this journal entry's boundary.
+
+## 2026-10-01 ·022 Invitation Roster Local Acceptance
+
+Fresh full3 actually completed:1452front/1762back/no skips/types/tests/whole
+lint/build/init0 on PG16:15432/Redis13/Node25.9.0. Focused backend final3:
+9files289pass with strict audit55 canonical0.63.0 invariant; UI8files182pass.
+Actual production-build preview invitationsfinal3:9checks/zero pageerrors;
+all10PNG inspected RU/EN320/390/1440, private guest events and retained main
+responses, populated DELETE409, stale409/no auto retry/fresh edit, role refusal,
+clear[] and ENsave.574normalized source hashes match after full/browser;
+original four master docs unchanged. Earlier failed full/test/browser logs kept.
+Final1 browser checks passed but screenshot review caught opening animation;
+external harness now waits actual opacity0 and checks event-list bounds/text.
+Final2 exposed fractional scroll y=-0.15625px, observer allows1CSS px; final3
+fresh passed. Source did not change after full3. REPORT-INVITATIONS/maps/tasks/
+handoff updated to distinguish local acceptance and next actual publication.
+Remote confirmation follows in external PUBLICATION-CONFIRMED/attached PR;
+no future merge is claimed by this commit. Then continue T012 separate RSVP/
+approved calendar deadline/late request/organizer provenance. Production and
+real provider integrations untouched; whole022/WP04/WP00-WP16 remain open.

@@ -40,6 +40,7 @@ interface Rule {
  * Порядок важен: берётся первое подошедшее правило.
  */
 const MATRIX: Rule[] = [
+  { url: /^\/weddings\/:weddingId\/events\/[^/]+\/invitations$/, by: { GET: ONLY_COUPLE, PUT: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/events(\/|$)/, by: { GET: ALL_TEAM, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/offers\/[^/]+\/accept$/, by: { POST: ONLY_COUPLE } },
   {

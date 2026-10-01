@@ -792,6 +792,15 @@ Object.assign(EN, {
   'Чек-лист готов. Начните с первого пункта — остальные подтянутся по срокам.': 'Your checklist is ready. Start with the first item - the rest follow by deadline.',
   'Добавьте гостей — от их числа зависят площадка, кейтеринг и рассадка.': 'Add your guests - the venue, catering and seating all depend on the count.',
   'Спросите Тиля, если не знаете, с чего продолжить.': 'Ask Til if you are not sure what to do next.',
+  'Приглашённые': 'Invitees',
+  'Гостей пока нет': 'No guests yet',
+  'Обновить приглашённых': 'Refresh invitees',
+  'Изменить состав': 'Edit invitees',
+  'Состав приглашённых ведёт пара': 'The couple manages invitees',
+  'Состав приглашённых не подтверждён сервером': 'The server did not confirm the invitees',
+  'Состав приглашённых сохранён': 'Invitees saved',
+  'Ваши мероприятия': 'Your events',
+  'Ответ на основную программу': 'Response for the main program',
 })
 
 // Фонды, анти-вишлист, RSVP+, альбом, дресс-код, SOS (EN)

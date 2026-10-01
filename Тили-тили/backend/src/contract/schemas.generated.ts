@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 109. */
+ * Схем: 111. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1007,6 +1007,41 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "EventInvitationRoster": {
+          "type": "object",
+          "required": [
+              "event",
+              "people"
+          ],
+          "properties": {
+              "event": {
+                  "$ref": "contract#/definitions/WeddingEvent"
+              },
+              "people": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "guestId",
+                          "name",
+                          "invited"
+                      ],
+                      "properties": {
+                          "guestId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": "string"
+                          },
+                          "invited": {
+                              "type": "boolean"
+                          }
+                      }
+                  }
+              }
+          }
+      },
       "FinancialBalance": {
           "type": "object",
           "required": [
@@ -1242,6 +1277,63 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "readOnly": true,
                   "description": "true — гость уже открыл ссылку. Чтобы выдать новую, нужен POST …/invite-link"
+              }
+          }
+      },
+      "GuestInvitedEvent": {
+          "type": "object",
+          "required": [
+              "id",
+              "name",
+              "kind",
+              "date",
+              "timeZone",
+              "location",
+              "isMain",
+              "guestIds"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "kind": {
+                  "$ref": "contract#/definitions/WeddingEventKind"
+              },
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "isMain": {
+                  "type": "boolean"
+              },
+              "guestIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  },
+                  "description": "Только приглашённые люди своей семьи; без чужих ответов и полного состава события."
               }
           }
       },
@@ -5327,10 +5419,12 @@ export type ContractSchemaName =
   | "DealState"
   | "Document"
   | "Error"
+  | "EventInvitationRoster"
   | "FinancialBalance"
   | "Fund"
   | "Gift"
   | "Guest"
+  | "GuestInvitedEvent"
   | "GuestPersonRsvp"
   | "HotelBlock"
   | "InviteLink"

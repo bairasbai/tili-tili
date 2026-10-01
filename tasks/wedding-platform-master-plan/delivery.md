@@ -2,18 +2,23 @@
 
 ## Текущая Работа 022 · 2026-10-01
 
-PR24 опубликован/влит, исходный main788e801 локально и fetched origin/main
-совпадают, clean. Ниже старые pending-публикации исторические.
-Продолжение: [022: интерфейс управления мероприятиями](../фичи/022-мероприятия/REPORT.md).
-Реальные create/edit/delete/версионные отказы и couple/team UI на существующем
-API; индивидуальные приглашения/RSVP и весь WP04 не приняты. Опрос основной
-даты не отвечен; дата остаётся в существующем `/us` переносе. Full/browser/
-publication итог фиксируется в отчёте022, не по старым числам ниже.
-Все WP00–WP16, FR/SC/NFR и product/provider ограничения сохраняются.
-Итог локального022: focused219pass; fresh full1429front/1733back/no skips/init0;
-actual browser9checks/zeroerrors/all11PNG inspected/RUEN320/390/1440/source569
-match. Scoped публикация ещё не утверждается этим pre-publication документом;
-проверять фактический PR и внешний PUBLICATION-CONFIRMED.md указанного отчёта.
+CRUD UI опубликован и влит PR25: head47f7cdb/main04a8355/all7CI SUCCESS,
+local/fetched main clean/source569match. Первый022 REPORT.md и внешний
+.unlazy/wp04-events-ui-20261001/PUBLICATION-CONFIRMED.md сохраняют этот этап.
+Ниже старые pending-публикации исторические, включая уже merged PR24.
+Продолжение: [022: персональный состав приглашённых](../фичи/022-мероприятия/REPORT-INVITATIONS.md).
+Дополнительные event/person invitations, приватный family projection и реальный
+выбор персон в UI; main legacy RSVP сохраняется/явно подписан. Отдельные
+RSVP/deadline/late request/organizer provenance и весь WP04 ещё не приняты.
+Владелец утвердил единый deadline события до конца календарного дня по его
+часовому поясу; неизвестный пояс не заменять умолчанием. Опрос основной даты
+не отвечен, `/us` сохраняется. Все WP00–WP16/FR/SC/NFR и provider/product
+ограничения сохраняются. Новый fresh full1452frontend/1762backend/no skips/
+init0; actual preview invitationsfinal3:9checks/zeroerrors/all10PNG inspected,
+source574match. Источник REPORT-INVITATIONS.md. На границе этого коммита
+публикация следующая, не объявлена; последующий actual push/CI/main/local sync
+подтверждает отдельный .unlazy/wp04-event-invitations-20261001/PUBLICATION-CONFIRMED.md
+и attached PR. После публикации следующий шаг T012: отдельный event RSVP.
 
 ## Current Verified Checkpoint · 2026-10-01
 

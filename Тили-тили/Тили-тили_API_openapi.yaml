@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.62.1
+  version: 0.63.0
   description: |
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
     Фронтенд (React) уже работает на моках; этот файл — единственный источник правды для бэкенда (Claude Code).
@@ -1745,9 +1745,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [partyId, guestName, status, members, wedding]
+                required: [partyId, guestName, status, members, wedding, events]
                 properties:
                   partyId: {type: string, format: uuid}
+                  events:
+                    type: array
+                    maxItems: 50
+                    description: Только основная программа и явно приглашённые мероприятия людей этой семьи. Не полный список мероприятий свадьбы; RSVP ниже относится только к основной программе.
+                    items: {$ref: '#/components/schemas/GuestInvitedEvent'}
                   guestName: {type: string, description: 'primary person; переходное поле'}
                   wedding: {$ref: '#/components/schemas/WeddingPublic'}
                   status: {type: string, enum: [yes, no, pending], description: 'primary person; переходное поле'}
@@ -1766,6 +1771,7 @@ paths:
       tags: [guests]
       summary: RSVP одной или нескольких персон семейного приглашения
       description: |
+        Ответ относится только к основной программе, не ко всем мероприятиям из events[].
         Новый клиент передаёт members[] и меняет только перечисленных людей.
         Старый payload status/plusOne остаётся переходно совместимым:
         plusOne материализуется как реальная placeholder-персона, а не
@@ -4681,7 +4687,7 @@ paths:
     delete:
       tags: [timeline]
       summary: Удалить пустое мероприятие
-      description: 'Только пара, с исходным If-Match. Основное мероприятие или мероприятие с блоками — 409 event_in_use; блоки никогда не удаляются каскадом этого действия. Сначала явно перенести их в другое мероприятие.'
+      description: 'Только пара, с исходным If-Match. Основное мероприятие или мероприятие с блоками/приглашёнными — 409 event_in_use; блоки и приглашения никогда не удаляются каскадом этого действия. Сначала явно перенести блоки и снять дополнительные приглашения.'
       security: [bearerAuth: []]
       responses:
         '204':
@@ -4694,6 +4700,68 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '428':
           description: Нужен If-Match исходного снимка
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /weddings/{weddingId}/events/{eventId}/invitations:
+    parameters:
+    - {$ref: '#/components/parameters/WeddingId'}
+    - {name: eventId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      tags: [guests]
+      summary: Состав приглашённых на мероприятие
+      description: Только пара. Единый снимок события, всех персон свадьбы и признаков приглашения; основной состав переходно равен всему списку гостей. Никаких гостевых токенов/контактов/чужих свадеб.
+      security: [bearerAuth: []]
+      responses:
+        '200':
+          description: Снимок состава приглашённых
+          headers:
+            ETag: {description: Версия снимка программы и приглашений, schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventInvitationRoster'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [guests]
+      summary: Заменить состав приглашённых дополнительного мероприятия
+      description: |
+        Только пара. Полный набор уникальных персон своей свадьбы с исходным If-Match.
+        Новое событие не приглашает автоматически; добавление персоны в семью не приглашает
+        её на дополнительные события. Пустой набор снимает все приглашения данного события.
+        Сохраняются прежние RSVP/идентичность семьи/ссылки. Основной состав не меняется этим путём.
+        409 timeline_conflict — никакой частичной записи; 428 timeline_version_required;
+        422 validation_failed — дубли или основное событие; 404 — чужая/отсутствующая персона/event.
+        Общий срок RSVP утверждён, но дедлайны и отдельные ответы этой операцией не реализуются.
+      security: [bearerAuth: []]
+      parameters:
+      - {name: If-Match, in: header, required: true, schema: {type: string, pattern: '^"[0-9]+"$'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guestIds]
+              additionalProperties: false
+              properties:
+                guestIds: {type: array, maxItems: 5000, uniqueItems: true, items: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Принятый состав приглашённых
+          headers:
+            ETag: {description: Принятая версия программы и приглашений, schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EventInvitationRoster'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Validation'}
+        '428':
+          description: Требуется исходная версия
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -8116,6 +8184,32 @@ components:
         timeZone: {type: string, nullable: true}
         location: {type: string, nullable: true}
         isMain: {type: boolean}
+    EventInvitationRoster:
+      type: object
+      required: [event, people]
+      properties:
+        event: {$ref: '#/components/schemas/WeddingEvent'}
+        people:
+          type: array
+          items:
+            type: object
+            required: [guestId, name, invited]
+            properties:
+              guestId: {type: string, format: uuid}
+              name: {type: string}
+              invited: {type: boolean}
+    GuestInvitedEvent:
+      type: object
+      required: [id, name, kind, date, timeZone, location, isMain, guestIds]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        kind: {$ref: '#/components/schemas/WeddingEventKind'}
+        date: {type: string, format: date, nullable: true}
+        timeZone: {type: string, nullable: true}
+        location: {type: string, nullable: true}
+        isMain: {type: boolean}
+        guestIds: {type: array, minItems: 1, maxItems: 10, items: {type: string, format: uuid}, description: Только приглашённые люди своей семьи; без чужих ответов и полного состава события.}
     AlbumPhoto:
       type: object
       properties:

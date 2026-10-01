@@ -2825,6 +2825,8 @@ export interface paths {
                         "application/json": {
                             /** Format: uuid */
                             partyId: string;
+                            /** @description Только основная программа и явно приглашённые мероприятия людей этой семьи. Не полный список мероприятий свадьбы; RSVP ниже относится только к основной программе. */
+                            events: components["schemas"]["GuestInvitedEvent"][];
                             /** @description primary person; переходное поле */
                             guestName: string;
                             wedding: components["schemas"]["WeddingPublic"];
@@ -2853,7 +2855,8 @@ export interface paths {
         put?: never;
         /**
          * RSVP одной или нескольких персон семейного приглашения
-         * @description Новый клиент передаёт members[] и меняет только перечисленных людей.
+         * @description Ответ относится только к основной программе, не ко всем мероприятиям из events[].
+         *     Новый клиент передаёт members[] и меняет только перечисленных людей.
          *     Старый payload status/plusOne остаётся переходно совместимым:
          *     plusOne материализуется как реальная placeholder-персона, а не
          *     увеличивает скрытый счётчик. Отказ одной персоны освобождает только
@@ -8275,7 +8278,7 @@ export interface paths {
         post?: never;
         /**
          * Удалить пустое мероприятие
-         * @description Только пара, с исходным If-Match. Основное мероприятие или мероприятие с блоками — 409 event_in_use; блоки никогда не удаляются каскадом этого действия. Сначала явно перенести их в другое мероприятие.
+         * @description Только пара, с исходным If-Match. Основное мероприятие или мероприятие с блоками/приглашёнными — 409 event_in_use; блоки и приглашения никогда не удаляются каскадом этого действия. Сначала явно перенести блоки и снять дополнительные приглашения.
          */
         delete: {
             parameters: {
@@ -8378,6 +8381,112 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Состав приглашённых на мероприятие
+         * @description Только пара. Единый снимок события, всех персон свадьбы и признаков приглашения; основной состав переходно равен всему списку гостей. Никаких гостевых токенов/контактов/чужих свадеб.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Снимок состава приглашённых */
+                200: {
+                    headers: {
+                        /** @description Версия снимка программы и приглашений */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventInvitationRoster"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        /**
+         * Заменить состав приглашённых дополнительного мероприятия
+         * @description Только пара. Полный набор уникальных персон своей свадьбы с исходным If-Match.
+         *     Новое событие не приглашает автоматически; добавление персоны в семью не приглашает
+         *     её на дополнительные события. Пустой набор снимает все приглашения данного события.
+         *     Сохраняются прежние RSVP/идентичность семьи/ссылки. Основной состав не меняется этим путём.
+         *     409 timeline_conflict — никакой частичной записи; 428 timeline_version_required;
+         *     422 validation_failed — дубли или основное событие; 404 — чужая/отсутствующая персона/event.
+         *     Общий срок RSVP утверждён, но дедлайны и отдельные ответы этой операцией не реализуются.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        guestIds: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Принятый состав приглашённых */
+                200: {
+                    headers: {
+                        /** @description Принятая версия программы и приглашений */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventInvitationRoster"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                /** @description Требуется исходная версия */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/weddings/{weddingId}/timeline": {
@@ -12565,6 +12674,28 @@ export interface components {
             timeZone: string | null;
             location: string | null;
             isMain: boolean;
+        };
+        EventInvitationRoster: {
+            event: components["schemas"]["WeddingEvent"];
+            people: {
+                /** Format: uuid */
+                guestId: string;
+                name: string;
+                invited: boolean;
+            }[];
+        };
+        GuestInvitedEvent: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            kind: components["schemas"]["WeddingEventKind"];
+            /** Format: date */
+            date: string | null;
+            timeZone: string | null;
+            location: string | null;
+            isMain: boolean;
+            /** @description Только приглашённые люди своей семьи; без чужих ответов и полного состава события. */
+            guestIds: string[];
         };
         AlbumPhoto: {
             id?: string;
