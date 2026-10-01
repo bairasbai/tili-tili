@@ -187,19 +187,19 @@ Capacity formula после373: `used = legacy_used + SUM(live resource_allocati
 
 Для GitHub: сначала локальный diff/status/history. Перед обращением проверь `node ~/.claude/hooks/github-api-guard.js --status`; при ПАУЗА GitHub не трогай. Запросы по одному, без watch/быстрого polling; 403/429/rate-limit/abuse/bad credentials — остановить запросы и сообщить владельцу. Не публикуй массовые артефакты. Успешно созданный PR прикрепляется в Codex task; эта операция выполняется root, а не документальным leaf.
 
-## 13. Финальный addendum root — пока не заполнен
+## 13. Финальный addendum root — заполнен 2026-10-02 (Claude, драйвер `.unlazy/tz-full-20261002`)
 
-Статус на подготовке: **PENDING**. Root заполняет по actual завершению; до этого не считать full/init/CI/merge подтверждёнными.
+Статус: **локальная приёмка пройдена, публикация — PR в main.** Итог CI и merge фиксируется в самом PR и в документах main следующей поставки (T012), а не предполагается этим файлом.
 
-- Последняя точная авторизация пользователя и граница завершения: PENDING.
-- Final branch / commit / source manifest SHA, clean/remaining diff: PENDING.
-- Final isolated full init/backend/frontend/contract/types/lint/build: PENDING, exact logs/results/skips.
-- Fresh13/populated migration drill и actual resulting version inventory: PENDING.
-- Final UI/browser/source-hash соответствие и unresolved blockers: PENDING.
-- GitHub guard status, фактические CI checks/PR URL/merge commit либо конкретный отказ: PENDING.
-- Соседний WP04 checkpoint принят/не принят, его сохранённые scopes: PENDING.
-- Production: этим handoff не разрешён; никакой production completion не заявлен.
-- После текущей поставки: остановка; 370+ и широкий WP00–WP16 результат остаются будущим поручением с открытыми критериями.
+- Авторизация: владелец 2026-10-01/02 поручил Claude довести оба ТЗ (022 и 030) и весь WP00–WP16; push/PR/merge в main после фактически зелёного CI разрешены; production запрещён — выкладка позже вместе с владельцем. 370+ теперь входят в поручение (не «остановка»), порядок: публикация 030 → T012 (022) → 370–374 → остальные WP.
+- Ветка `integration/ecosystem-stage-20261001`: `516c750` (код 030 поверх main `f725ce9` с PR26) + коммит с этим addendum: в `backend/vitest.serial.json` добавлены `guestWriteAccess.test.ts` и `seatingAccess.test.ts` (тесты из main трогают общее состояние — требование audit53). Других изменений исходников нет.
+- Полный изолированный `bash init.sh` 2026-10-02 на `tili_ecosystem_full_20260930_test` (PG 127.0.0.1:15432, Redis DB12, `SMS_PROVIDER` пуст): фронт 110 файлов / 2068 тестов, бэк 144 файла / 3033 теста, без пропусков и падений; типы, линт всего дерева, сборка — ok. Лог: `C:/Тили-тили/.unlazy/tz-full-20261002/logs/full-eco-final.log`. Прежний прогон 2026-10-01 с одним падением audit53 сохранён: `.unlazy/ecosystem-audit-20260930/full-stage_final.log`.
+- Фокус после фикса: audit53 + guestWriteAccess + seatingAccess — 3 файла / 138 тестов.
+- Миграции: 78 файлов, все применены к полной БД (`1762500000000_event_invitations` из main применён нативно вне порядка — аддитивно, `integration-additive250-*`). Репетиция `drill14` 2026-10-01 17:30 — `ECOSYSTEM_MIGRATION_DRILL_PASSED` (21 собственная миграция до `1763690000000`). Свежая репетиция на пустой БД — шаг CI «Preserving ecosystem migration rehearsal» этого PR.
+- UI/browser: оракулы §6 сняты до финальной интеграции с main; на финальном SHA браузерный сценарий не повторялся. Повтор на собранном main входит в браузерную проверку поставки T012. Это открытый пункт, а не подтверждение.
+- WP04: код 022 (PR25/PR26) уже в базе ветки, совместный полный прогон — выше. Отдельный «чекпойнт соседней сессии» больше не нужен: обе линии ведёт один драйвер.
+- Номера миграций переназначены драйвером: T012 — `1763700000000`; предложенные в §7 номера 370+ сдвигаются на `1763800000000` и далее.
+- GitHub: страж перед каждым обращением; CI читает монитор приложения, без опроса. Production не тронут.
 
 
 ## 14. Практическое воспроизведение текущих проверок

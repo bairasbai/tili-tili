@@ -1,6 +1,19 @@
 # Session Handoff: Full WP00-WP16 Delivery
 
-## Current Boundary · 2026-10-01
+## Current Boundary · 2026-10-02 (Claude)
+Owner handed both Codex specs (022 + 030) and the whole WP00-WP16 to Claude;
+driver ledger outside the repo: C:/Тили-тили/.unlazy/tz-full-20261002/PLAN.md.
+030 publication: branch integration/ecosystem-stage-20261001 = 516c750 + serial
+registration of guestWriteAccess/seatingAccess (audit53) + docs. Fresh isolated
+full init.sh 2026-10-02: front 110 files/2068, back 144 files/3033, no skips,
+types/lint/build ok (log in the driver ledger). Final CI/merge is recorded in
+the PR and in main docs of the next delivery, not inferred here.
+Next: T012 (022 per-person event RSVP, deadline, late request, organizer
+provenance) on merged main; then 030 stages 370-374; then remaining WPs.
+Production forbidden; deploy later together with the owner.
+Older boundaries below are historical.
+
+## Boundary · 2026-10-01
 Primary repo: C:/Тили-тили/Тили-тили_код_и_документация.
 PR25 actually merged2026-10-01T12:00:51Z, all7displayed CI SUCCESS,
 main04a8355182467a93d9c10499bf4a11dbd6de3d6b/local-fetched clean/source569.

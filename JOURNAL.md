@@ -3539,3 +3539,22 @@ Actual parent leaf1.9.3 G1 после исправления наблюдени�
 Дизайн finite-calendar-design.md подготовлен и проверен, но370+ DDL/домен/тесты не реализованы. Нужны явная инвентаризация старых DATE/всех держателей, доказанные конечные интервалы/IANA, новый schema3 proof, adoption того же оплаченного корня, ручные источники и атомарный перенос. Owner-only предложение не освобождает чужие обещания. Остальной незавершённый scope перенесён в CLAUDE-CONTINUE.md; исходный аудит сохранён рядом.
 
 На момент этой записи финальный полный прогон и интеграция в опубликованный main f725ce96f0f694c3e1db74b0fe768556230aa915 ещё проверяются. Они не считаются успешными по частным результатам выше. Более поздняя итоговая запись содержит фактически измеренный результат. Подробные локальные доказательства: C:/Тили-тили/.unlazy/ecosystem-audit-20260930; не включать токены/fixtures/runtime в Git.
+
+## 2026-10-02 · Claude Takes Over Both Specs; 030 Publication
+
+Owner moved the remaining 022 and 030 work and the whole WP00-WP16 plan from
+Codex to Claude (Codex out of quota). Driver plan and gates live outside the
+repo (.unlazy/tz-full-20261002). Restarted the retained test cluster 15432
+after an unclean shutdown (fsync recovery, 203 test databases intact).
+The integrated full run of 2026-10-01 failed only audit53: two main tests
+(guestWriteAccess, seatingAccess) touch shared state but were not serial.
+Registered both in vitest.serial.json; focused 138/138, fresh full init.sh
+2068 front / 3033 back, no skips, types/lint/build ok. No source changes.
+Fresh empty-DB migration rehearsal is the CI step of this PR; local drill14
+covered the same 21 own migrations. Browser oracles were not repeated on the
+final SHA; repeated on merged main inside the T012 browser scenario.
+Decisions for T012 (to be reflected in 022 docs): reuse 030's
+event_guest_participation as the single per-person/per-event answer source;
+add organizer_correction provenance (couple only); deadline and personal RSVP
+only for additional events, legacy main RSVP and its effects untouched.
+Migration numbers: T012 1763700000000; 370+ shift to 1763800000000+.

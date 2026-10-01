@@ -28,6 +28,8 @@
   "test/family020.test.ts",
   "test/guestReadAccess.test.ts",
   "test/guestReminderAccess.test.ts",
+  "test/guestWriteAccess.test.ts",
+  "test/seatingAccess.test.ts",
   "test/eventInvitations022.test.ts",
   "test/ecosystemDelivery.test.ts",
   "test/orderApi.test.ts",
