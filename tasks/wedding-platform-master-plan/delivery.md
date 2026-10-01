@@ -8,8 +8,14 @@ Then guest/table GET access corrected on a separate feature branch, not wholeWP:
 before39:34fail/5pass; after2 focused219pass plus audit53guard5pass. Fresh full
 1393frontend/1718backend/init0, actual production guest9/seating14/zeroerrors/
 all16PNG inspected/source564hashmatch. REPORT-GUEST-READ-ACCESS.md.
-This timestamp is before the next scoped commit/push/CI/main publication.
-Next reminders access/claim/reset/dispatch, owner withdrawal survey pending;
+Read code subsequently merged through PR22/green CI, main ce3bc97 at0/0 boundary.
+Then reminder pre-dispatch current access/atomic claim+recipient transaction and
+own-stamp reset fixed:15before13fail/2pass, focused292pass. Fresh full1393front/
+1733back/no skips/types/lint/build/init0; actual production reminderui3 eight
+checks/zeroerrors/all4PNG inspected, source565match. REPORT-REMINDER-CLAIM.md
+retains failed smooth-scroll browser witness and real-provider limitations.
+This reminder code awaits scoped commit/push/CI/main at this timestamp.
+Owner withdrawal survey and failed-counter UI correction pending;
 event/RSVP/transfers/delegation and all FR/SC/NFR/WP obligations unchanged.
 
 ## Решения владельца · 2026-09-30

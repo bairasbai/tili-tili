@@ -1,5 +1,24 @@
 # Session Handoff: Full WP00-WP16 Delivery
 
+## Active Reminder Claim Work · 2026-10-01
+
+PR22 merged after7/7GitHubSUCCESS; main ce3bc97822ce92becd74ee83340233aa317e99e9
+local/fetched0/0/source564match. Continued feature/guest-reminder-claim-20261001.
+Actual external probe8/8 stale claims confirmed with controlled sender, no realSMS.
+New15before2:13failed/2passed, actual SELECT1/0 stale mark and older failed job
+clearing newer mark. Fix current access/claim+recipient transaction/finalJWT/
+COMMIT before sender/CAS exact PGstamp reset. Accepted-batch policy unchanged.
+Focused10files292pass +guard5/type/lint0. Fresh reminderfull1:1393frontend/
+1733backend/no skips/types/wholelint/build/init0. Actual production reminderui3:
+8checks/zeroerrors/all4PNG inspected320/390/1440, actual nav/result geometry.
+Failed ui2 measured unfinished smooth scroll; retained, then corrected only
+external harness. Source565hashmatch; no own3000/3001/privatefixture residue.
+Scoped commit/push/CI/main pending; do not claim publication until confirmed.
+REPORT-REMINDER-CLAIM.md. Reminder withdrawal survey unanswered, provider-failed
+counter UI not yet corrected; all events/RSVP/transfers/delegation/SC/NFR/WP
+obligations remain. Production forbidden, providers/product policies undecided.
+Earlier pending read publication/full statements below are historical.
+
 ## Active Checkpoint · 2026-10-01 Before Guest Read Publication
 
 PR21 merged/main f9ccfa1 verified locally and remotely0/0. Continued in

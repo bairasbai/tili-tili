@@ -5,11 +5,19 @@
 
 ## Полное ТЗ WP00–WP16 · 2026-09-30
 
+Current reminder claim scope,2026-10-01:
+- [x] PR22 actual7/7GitHubSUCCESS merged, main ce3bc97 local/fetched0/0, source564hashmatch. Earlier pending-publication records below historical.
+- [x] Next external actual PG probe8/8 stale reminder claim200/controlled sender1/mark written after access withdrawal, source38feafb. No real SMS.
+- [x] Permanent15before2:13fail/2pass incl actual SELECT1/0 stale claim/old failure erasing newer mark; logs retained. Focused after10files292pass +guard5/type/lint0.
+- [x] Correct transactional claim/recipient selection/current access/finalJWT, dispatch only after commit, reset only own failed claim/exact PGprecision. Accepted-batch withdrawal policy remains separate/pending owner survey.
+- [x] reminderfull1 fresh full1393front/1733back/no skips/types/wholelint/build/init0. Actual reminderui3 Chromium8checks/zeroerrors/all4PNG inspected320/390/1440/actual nav bounds; source565hashmatch, no own listeners/privatefixtures. ui2 smooth-scroll measurement failure retained and harness corrected without product changes.
+- [ ] Scoped commit/push/CI/main; separate failed counter UI witness/correction remains. All WP obligations preserved, production forbidden.
+
 Публикация и продолжение,2026-10-01:
 - [x] PR21 влит после7/7 GitHub checks SUCCESS, main локально/remote f9ccfa1,0/0. Оба набора кода сохранены; merged full1393front/1678back, guest9/payment5 Chromium. Payment migration drill genuine CI failure исправлен и проверен, production untouched.
 - [x] GET guests/tables actual39before34fail/5pass; current transactional read access/role projection/finalJWT, cancelled wedding history preserved. Focused after2:219pass; serial/shared-table observer correction and audit53 strengthened. REPORT-GUEST-READ-ACCESS.md retains failed after1.
 - [x] Current guestreadfull1 full1393front/1718back/no skips/types/wholelint/build/init0. Actual production readguest1 nine/readseating1 fourteen checks,zeroerrors/all16PNG inspected; source564hashmatch. No listeners/privatefixtures, PG15432 retained.
-- [ ] Scoped guest read commit/push/CI/main. Then reminders access/claim/reset/dispatch; owner stop-on-withdrawal survey pending. All event/RSVP/transfers/delegation/SC/NFR/WP obligations remain; no provider delivery claimed.
+- [x] Scoped guest read published/merged PR22 with green CI, main ce3bc97 boundary recorded above. Reminder claim continued; owner stop-on-withdrawal survey pending. All event/RSVP/transfers/delegation/SC/NFR/WP obligations remain; no provider delivery claimed.
 
 Локально проверен scoped guest write access,2026-10-01:
 - [x] Actual before58cases52fail/6pass; stale access/role/privacy/expiry and premature family201 reproduced. Transactional fresh access/projection/final JWT and post-COMMIT response fixed, same ACL/family/import semantics.

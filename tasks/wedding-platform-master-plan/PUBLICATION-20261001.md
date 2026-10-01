@@ -71,3 +71,27 @@ types/lint/build/init0. Initial failed CI is retained above, not hidden.
 Continuation starts on feature/guest-read-access-20261001 from that main.
 Local main matches the fetched remote boundary; new feature edits are not
 automatically present on GitHub and must be tested before a later publication.
+
+## Guest Read Publication Boundary
+
+PR22 merged after7displayed checks for38feafb COMPLETED/SUCCESS.
+2026-10-01 09:26UTC: local main fast-forward toce3bc97822ce92becd74ee83340233aa317e99e9,
+main...origin/main0/0 and564sourcehashmatch. Read report full1393/1718 and
+actual Chromium guest9/seating14/all16PNG applies to this checked code.
+Production untouched. Continuation now feature/guest-reminder-claim-20261001.
+Real PostgreSQL pre-fix reminder probe8/8 confirmed stale access still called
+a controlled sender and wrote claim; realProviderDelivery=false. New reminder
+code is not yet implemented/published at this timestamp; accepted-batch policy
+survey pending, while pre-dispatch claim/rollback/reset work can proceed.
+
+## Reminder Local Verification
+
+Continued after PR22: atomic current-access/claim+recipient preparation,
+finalJWT/COMMIT before sender and exact-own-stamp reset. Permanent15before2:
+13fail/2pass, focused292pass; fresh reminderfull1 full1393frontend/1733backend/
+no skips/types/wholelint/build/init0. Actual production reminderui3 eight checks,
+zeroerrors/all4PNG inspected, source565hashmatch/no own listeners/privatefixture.
+REPORT-REMINDER-CLAIM.md retains initial probe, real SQL failures and failed
+smooth-scroll browser measurement before corrected actual nav bounds.
+Reminder scoped commit/push/CI/main pending at this timestamp. Accepted-batch
+withdrawal survey/failed-counter UI and real providers/allWP remain open.
