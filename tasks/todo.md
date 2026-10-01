@@ -6,12 +6,21 @@
 ## Полное ТЗ WP00–WP16 · 2026-09-30
 
 Current reminder claim scope,2026-10-01:
+Latest continuation after PR23:
+- [x] PR23 merged after7displayed GitHubSUCCESS, main9cf734f local/fetched0/0/clean/source565match. Production untouched.
+- [x] Actual HTTP200 sent1/failed1 with controlled adapter, old UI hides failure; corrected permanent8before2:3failed/5passed. Initial EN expectation typo and Windows external fixture URL error retained, not product defects.
+- [x] Display failed as Not sent/Не отправлено in RU/EN, separate from skips/HTTP refusal; role=status. Focused5files56pass/types/scopedlint0.
+- [x] Fresh resultfull1 full1401front/1733back/no skips/types/wholelint/build/init0/source566hashmatch.
+- [x] Actual production resultafter1 browser10checks/zeroerrors/all7PNG inspected RU/EN320/390/1440/nav geometry; source566hashmatch, no own listeners/privatefixtures. Maps/report updated.
+- [ ] Scoped result commit/push/CI/main; accepted-batch/real-provider/allWP acceptance unchanged.
+- [ ] Accepted-batch survey/providers/events/RSVP/transfers/delegation/SC/NFR/allWP remain; no real SMS or production.
+
 - [x] PR22 actual7/7GitHubSUCCESS merged, main ce3bc97 local/fetched0/0, source564hashmatch. Earlier pending-publication records below historical.
 - [x] Next external actual PG probe8/8 stale reminder claim200/controlled sender1/mark written after access withdrawal, source38feafb. No real SMS.
 - [x] Permanent15before2:13fail/2pass incl actual SELECT1/0 stale claim/old failure erasing newer mark; logs retained. Focused after10files292pass +guard5/type/lint0.
 - [x] Correct transactional claim/recipient selection/current access/finalJWT, dispatch only after commit, reset only own failed claim/exact PGprecision. Accepted-batch withdrawal policy remains separate/pending owner survey.
 - [x] reminderfull1 fresh full1393front/1733back/no skips/types/wholelint/build/init0. Actual reminderui3 Chromium8checks/zeroerrors/all4PNG inspected320/390/1440/actual nav bounds; source565hashmatch, no own listeners/privatefixtures. ui2 smooth-scroll measurement failure retained and harness corrected without product changes.
-- [ ] Scoped commit/push/CI/main; separate failed counter UI witness/correction remains. All WP obligations preserved, production forbidden.
+- [x] Reminder claim scoped commit0ec52f4/PR23/green CI/main9cf734f; failed-counter UI continuation above. All WP obligations preserved, production forbidden.
 
 Публикация и продолжение,2026-10-01:
 - [x] PR21 влит после7/7 GitHub checks SUCCESS, main локально/remote f9ccfa1,0/0. Оба набора кода сохранены; merged full1393front/1678back, guest9/payment5 Chromium. Payment migration drill genuine CI failure исправлен и проверен, production untouched.

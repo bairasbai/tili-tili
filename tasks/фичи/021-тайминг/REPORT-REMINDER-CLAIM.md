@@ -82,7 +82,9 @@ Owner decision: stop remaining sends after the initiator loses access/consent,
 or complete the already accepted batch. Current batch policy is unchanged.
 Do not claim full per-recipient revalidation, durable exactly-once delivery,
 provider timeout/acceptance reconciliation or real SMS readiness.
-Current guest UI does not display the returned failed counter; provider-failure
-UI needs a separate witnessed correction before delivery acceptance.
+At the claim checkpoint the guest UI did not display the returned failed
+counter. Subsequent correction is independently witnessed in
+REPORT-REMINDER-RESULT.md: full1401/1733/browser10/source566, scoped publication
+pending. It does not verify real provider failure or delivery acceptance.
 Then event invitations/RSVP/transfers/delegation and all FR/SC/NFR/WP remain.
 New code local on feature/guest-reminder-claim-20261001 until verified publication.

@@ -95,3 +95,23 @@ REPORT-REMINDER-CLAIM.md retains initial probe, real SQL failures and failed
 smooth-scroll browser measurement before corrected actual nav bounds.
 Reminder scoped commit/push/CI/main pending at this timestamp. Accepted-batch
 withdrawal survey/failed-counter UI and real providers/allWP remain open.
+
+## Reminder Claim Publication Boundary
+
+PR23 https://github.com/bairasbai/tili-tili/pull/23 merged after7displayed
+COMPLETED/SUCCESS for0ec52f4722ac6fb904be3f3357f26df0102bd7ba.
+Local main fast-forward9cf734f0f46587dc7f84c80466e8a116f6ed9490:
+main...origin/main0/0, clean,565sourcehashmatch. Production untouched.
+Continued feature/guest-reminder-result-20261001. Actual old UI did not display
+failed1 returned by real HTTP with controlled adapter. Before8tests3fail/5pass,
+after focused56passed; full resultfull1 running. Current feature edits are not
+automatically on main/GitHub. Accepted-batch policy survey still pending.
+
+## Reminder Result Local Verification
+
+Fresh resultfull1 full1401frontend/1733backend/no skips/types/wholelint/build/init0.
+Actual production-preview resultafter1:10checks/zeroerrors/all7PNG inspected
+RUEN320/390/1440/result/nav geometry. HTTP served by real app/PG with explicitly
+controlled sender, not a real provider. Source566hashmatch/no own listeners or
+privatefixture; docs/maps updated. REPORT-REMINDER-RESULT.md retains before/
+failed harness witnesses. Scoped result commit/push/CI/main pending.
