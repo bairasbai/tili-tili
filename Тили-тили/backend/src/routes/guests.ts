@@ -5,6 +5,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
+import { familyEventInvitations } from '../guests/event-invitations.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
@@ -1086,8 +1087,15 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   /* ── RSVP по токену ───────────────────────────────────────────────── */
   app.get('/rsvp/:guestToken', async (request) => {
     const { guestToken } = request.params as { guestToken: string }
-    const guest = await guestByToken(db(), guestToken)
-    const { rows: members } = await db().query<{
+    const initial = await guestByToken(db(), guestToken)
+    return db().tx(async client => {
+    await client.query('select id from weddings where id=$1 for share', [initial.weddingId])
+    await client.query('select id from guest_parties where id=$1 for share', [initial.partyId])
+    const guest = await guestByToken(client, guestToken)
+    if (guest.weddingId !== initial.weddingId || guest.partyId !== initial.partyId) {
+      throw new AppError(401, 'unauthorized', 'Ссылка недействительна')
+    }
+    const { rows: members } = await client.query<{
       id: string
       name: string
       rsvp: string
@@ -1100,10 +1108,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       `select id, name, rsvp, diet, diet_note, transfer, party_position, is_placeholder
          from guests
         where party_id = $1
-        order by party_position, created_at, id`,
+        order by party_position, created_at, id for share`,
       [guest.partyId],
     )
-    const { rows } = await db().query<{
+    const { rows } = await client.query<{
       title: string
       date: string | null
       city: string | null
@@ -1136,6 +1144,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       diet: primary.diet,
       dietNote: primary.diet_note,
       transfer: primary.transfer,
+      events: await familyEventInvitations(client, guest.weddingId, guest.partyId),
       members: members.map((m) => ({
         guestId: m.id,
         name: m.name,
@@ -1157,6 +1166,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         tz: wedding.tz,
       },
     }
+    })
   })
 
   app.post(

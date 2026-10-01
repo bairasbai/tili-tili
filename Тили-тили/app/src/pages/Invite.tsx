@@ -4,6 +4,7 @@ import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armch
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { ApiError } from '@/lib/api/client'
+import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
   joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu,
@@ -220,6 +221,7 @@ interface RsvpPage {
   dietNote?: string | null
   transfer?: string | null
   members?: RsvpMemberView[]
+  events?: GuestInvitedEvent[]
   wedding?: {
     title?: string
     date?: string | null
@@ -413,11 +415,23 @@ function InviteView({
             столом, а не за формой ответа. */}
         {dayMayHaveCome && <GuestDay token={token} city={w.city?.name} now={now} T={T} shadow={shadow} />}
 
+        {page.events && <section aria-label={t('Ваши мероприятия')} className="px-6 mt-12 relative z-10">
+          <h2 className={cn('text-[20px] font-semibold', disp)}>{t('Ваши мероприятия')}</h2>
+          <ul className="mt-3">{page.events.map(event => <li key={event.id} className="py-4 border-b space-y-2 text-[13px] break-words [overflow-wrap:anywhere]" style={{ borderColor: T.soft }}>
+            <h3 className="text-[16px] font-semibold">{event.name}</h3>
+            <p>{event.date ? formatWeddingDate(event.date) : t('Дата не задана')}</p>
+            <p>{event.location ?? t('Место не задано')}</p>
+            <p>{event.timeZone ?? t('Часовой пояс не задан')}</p>
+            <p>{familyMembers.filter(person => event.guestIds.includes(person.guestId)).map(person => person.name).join(', ')}</p>
+          </li>)}</ul>
+        </section>}
+
         {/* RSVP */}
         <div className="px-6 mt-12 relative z-10 rv rv-scale">
           <div className="rounded-[28px] p-6 relative overflow-hidden" style={{ background: T.card, boxShadow: shadow }}>
             <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
             <h2 className={cn('text-[24px] text-center', disp)}>{t('Вы придёте?')}</h2>
+            {page.events && <p className="text-[12px] text-center mt-2">{t('Ответ на основную программу')}</p>}
 
             {familyMode ? (
               <FamilyRsvpForm

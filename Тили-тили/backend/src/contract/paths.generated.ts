@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.62.1).
- * Операций: 210. Путей: 160. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.63.0).
+ * Операций: 212. Путей: 161. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -148,6 +148,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Добавить мероприятие","tag":"timeline"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/events/{eventId}","url":"/weddings/:weddingId/events/:eventId","operationId":null,"summary":"Удалить пустое мероприятие","tag":"timeline"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/events/{eventId}","url":"/weddings/:weddingId/events/:eventId","operationId":null,"summary":"Изменить мероприятие","tag":"timeline"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/invitations","url":"/weddings/:weddingId/events/:eventId/invitations","operationId":null,"summary":"Состав приглашённых на мероприятие","tag":"guests"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/events/{eventId}/invitations","url":"/weddings/:weddingId/events/:eventId/invitations","operationId":null,"summary":"Заменить состав приглашённых дополнительного мероприятия","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/funds","url":"/weddings/:weddingId/funds","operationId":null,"summary":"Завести денежный фонд","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/funds/{fundId}","url":"/weddings/:weddingId/funds/:fundId","operationId":null,"summary":"Удалить фонд","tag":"wishlist"},
   {"method":"GET","openapi":"/weddings/{weddingId}/guest-reviews","url":"/weddings/:weddingId/guest-reviews","operationId":null,"summary":"Отзывы гостей о подрядчиках (для пары)","tag":"reviews"},

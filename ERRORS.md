@@ -3137,3 +3137,65 @@ both theme checks; no scanner exceptions. Also add /wedding/events to mandatory
 server-down route sweep. Full eventsfull3:1429/1733/no skips/init0. Old audit36
 unique-alert fixture ambiguity fixed by exact conflict message +alert role,
 preserving draft/If-Match/retry assertions and the other real refusal.
+
+## ERR-0423 · 2026-10-01 · New Roster Heading Clipped At320px
+
+Actual invitations2 browser PNG/geometry: «Приглашённые» was truncated by the
+existing26px TopBar. Scope the new route's heading to22px; retain global chrome.
+Invitations3 actual conflict and RU/EN320/390/1440 form geometry passed this
+boundary; final full/browser evidence is in022 REPORT-INVITATIONS.
+Rule: absence of page overflow does not prove the heading is readable; check
+scrollWidth/clientWidth and inspect the actual narrow screenshot.
+
+## ERR-0424 · 2026-10-01 · Fresh Token Check Could Change The Pinned Family
+
+Developing022 GET RSVP projection pinned the initially resolved wedding/party
+then resolved the token again. Controlled real SQL reassigned that token to
+another family during the actual wedding-row wait: permanent before witness
+returned200 with that other family's IDs instead of401. Reject any changed
+partyId/weddingId before querying private members/events. Focused final2:
+8files262passed including29new cases, rotation/archive/cancel/reassignment.
+The reassignment is a synthetic SQL fixture, not evidence of an available
+public API exploit or stolen production token. Original before log retained:
+.unlazy/wp03-shift-20260930/invitationtokenwitness-before.log.
+Rule: revalidation must confirm the exact resource whose locks were acquired,
+not merely find some newly authorized resource with the same capability.
+
+## ERR-0425 · 2026-10-01 · New Empty-Roster String Had No English Translation
+
+Fresh full-invitationsfull1: dictionary guard1failed/1451passed frontend;
+«Гостей пока нет» introduced in new roster lacked its English entry. Added
+«No guests yet» and dictionary.test.ts to the focused invitation UI gate.
+Final focused8files182passed; full re-run uses a new migrated disposable DB.
+Rule: the general i18n test is not the exhaustive dictionary inventory.
+
+## 022 Verification Notes · 2026-10-01
+
+First migration rehearsal used a non-latest new timestamp and down1 rolled
+back external_program_current instead. No acceptance was claimed. New
+migration1762500000000 follows the existing chain; second fresh actual drill
+verified baseline176240, unchanged legacy rows/tokens/RSVP, own empty down/up,
+populated down refusal and wedding cascade. Failed first DB/logs retained.
+Initial backend fixture used the wrong family-member URL and attempted foreign
+PUT without a real ETag; corrected to canonical guest/{id}/members and captured
+version. Read403 test now expects the actual server refusal text, not a generic
+alert. Browser harness exact buttons corrected from invented names to existing
+«Сохранить ответы семьи» / «Open the invitation». These observer failures are
+not recorded as additional product defects. All earlier logs retained.
+
+Full invitationsfull2 subsequently:1452frontpassed/1761backpassed,1backend
+failure in audit55's old exact contract0.62.1 literal. Updated only the exact
+expected canonical0.63.0 boundary/name, retain strict equality, add audit55 to
+focused invitation backend gate. Fresh full3 reruns whole tree. Rule: extending
+OpenAPI also requires synchronizing its existing exact-version invariant;
+generator/route tests alone do not exercise every contract guard.
+
+Final local acceptance: full-invitationsfull3 all1452frontend/1762backend
+passed/no skips/init0; invitationsfinal3 actual browser9checks/zeroerrors,
+all10PNG inspected/source574match. Final1 screenshots caught during guest
+opening animation despite successful checks; external observer now awaits
+computed scene opacity0 and actual region bounds. Final2 y=-0.15625px was
+fractional scroll geometry, not a clipped row;1CSS px tolerance then fresh
+final3 passed. Earlier evidence retained; no repo source changed for this.
+Rule: visible DOM and successful HTTP assertions do not prove a screenshot
+represents the settled screen; inspect pixels and await actual animation state.
