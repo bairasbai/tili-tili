@@ -3071,3 +3071,31 @@ test by application_name and existing serial group; audit53 now requires serial
 execution for explicit table locks, including existing prod4 witness. Do not
 replace exact scoped waiter assertions with a loose any-waiter assertion.
 Second focused219passed; separate guard5passed. Original failure log retained.
+
+## ERR-0416 · 2026-10-01 · Reminder Claim Used Stale Access
+
+External PG8/8 and permanent actual15before2 confirmed8late-access/2expiry
+refusals failed. Cached role/consent/session/archive/cancel permitted a reminder
+after real UPDATE wait. Current existing write-access helper and finalJWT
+inside atomic claim/recipient transaction refuse before sender/mark COMMIT.
+Focused292passed; full1393/1733/init0 and actual browser8/zeroerrors passed.
+Not a real delivery/accepted-batch claim.
+Source: REPORT-REMINDER-CLAIM.md and guestReminderAccess.test.ts.
+
+## ERR-0417 · 2026-10-01 · Recipient SQL Error Consumed Daily Allowance
+
+Actual SELECT1/0 on the recipient query gave500 while old autocommit claim
+remained written. Prepare claim and recipients together; rollback publishes
+no daily mark and never invokes sender. COMMIT barrier also verifies sender
+sees a committed mark, without holding database locks during network I/O.
+Old autocommit UPDATE did commit before sender; do not describe the old failure
+as proven SMS-before-autocommit. Focused292passed; full1393/1733/init0,
+actual browser8/zeroerrors, source565hashmatch.
+
+## ERR-0418 · 2026-10-01 · Old Failed Reminder Cleared Newer Mark
+
+Controlled old sender held pending; test aged mark25hours, newer valid claim
+succeeded, then old sender failed. Old unconditional reset cleared the newer
+stamp. Reset compares own exact PostgreSQL text timestamp, not truncated JSDate.
+Actual newer stamp is preserved after fix. Aging is a synthetic eligible-state
+fixture, not a claim of an actual25hour provider wait or realSMS delivery.

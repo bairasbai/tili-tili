@@ -3217,3 +3217,34 @@ inspected; source564hashesmatch. Own fixtures removed/no3000-3001listeners;
 retainedPG15432 alive. Scope only reads, no UI/contract changes. Publication
 and fresh CI next; reminder survey remains pending. Scoped manual ledger is
 recorded after verification, not claimed as pre-implementation compliance.
+
+## 2026-10-01 · PR22 Main And Reminder Claim Continuation
+
+PR22 merged after7displayed GitHub checksSUCCESS; main ce3bc97 local/fetched
+0/0/source564hashmatch. Production untouched. Continued a separate reminder
+claim branch from that main. External actual PG8/8 stale-access claims still
+called a controlled sender/wrote mark; no realSMS. Permanent15before2:
+13failed/2passed with strengthened real SELECT1/0 witness in old/new paths.
+Atomic claim+recipient transaction absent in old path (old UPDATE itself was
+autocommitted, do not claim proven pre-autocommit SMS). Old recipient SQL error
+left a mark; old delayed failure cleared a newer successful mark.
+
+Fix existing current-access helper/central consent/unchanged couple ACL,
+claim+recipient preparation/finalJWT in one transaction; COMMIT before external
+I/O, no DBlocks over network. Own failed-claim reset compares exact PGtextstamp,
+preserving microseconds and newer claim. No accepted-batch policy change while
+owner withdrawal survey pending. Focused292pass/guard5/type/lint0;565SHAfrozen
+before pending fresh reminderfull1/full and actual production reminder browser.
+Report REMINDER-CLAIM records real-provider/wholeWP limits and remaining failed
+counter UI, per-recipient/retry/real-delivery work. Scoped GATES created before
+implementation this time; no retrospective compliance claim.
+
+Reminder final local verification: fresh reminderfull1 full1393frontend/
+1733backend/no skips/types/wholelint/build/init0. Actual production reminderui3
+eight checks/zeroerrors/all4PNG inspected320/390/1440, source565hashmatch.
+ui1 functional pass had a misleading320 full-page fixed-nav screenshot;
+ui2 strict geometry failed while smooth scrolling was unfinished. Preserve
+failures, fix only external harness with instant scroll/bottom wait/actual nav
+bounds, inspect viewport PNGs. No product layout patch or real SMS. No own
+listeners/privatefixtures. Scoped publication next, accepted-batch/failed-counter
+UI/providers/allWP still pending.

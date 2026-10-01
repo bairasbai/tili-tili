@@ -876,25 +876,31 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
      * условие по новой версии строки только для целевой таблицы, а
      * значения из подзапроса берёт из старого снимка — и второй запрос
      * проходил бы. */
-    const claimed = await db().query(
-      `update weddings set guests_reminded_at = now()
-        where id = $1
-          and (guests_reminded_at is null or guests_reminded_at <= now() - interval '24 hours')`,
-      [weddingId],
-    )
-    if (claimed.rowCount === 0) {
-      throw new AppError(429, 'too_often', 'Напоминание уходит не чаще раза в сутки — гости получают его лично')
-    }
-
-    const { rows: pending } = await db().query<{ id: string; name: string; phone: string | null; code: string | null }>(
-      `select g.id, g.name, g.phone,
-              (select c.code from guest_invite_codes c
-                where c.guest_id = g.id and c.used_at is null and c.expires_at > now()
-                order by c.expires_at desc limit 1) as code
-         from guests g
-        where g.wedding_id = $1 and g.rsvp = 'pending'`,
-      [weddingId],
-    )
+    // Commit access, daily claim and recipient selection before irreversible I/O.
+    const reservation = await db().tx(async (client) => {
+      await lockSeatingAccess(client, request)
+      const claimed = await client.query<{ stamp: string }>(
+        `update weddings set guests_reminded_at = clock_timestamp()
+          where id = $1
+            and (guests_reminded_at is null or guests_reminded_at <= clock_timestamp() - interval '24 hours')
+          returning guests_reminded_at::text as stamp`,
+        [weddingId],
+      )
+      if (claimed.rowCount === 0) {
+        throw new AppError(429, 'too_often', 'Напоминание уходит не чаще раза в сутки — гости получают его лично')
+      }
+      const { rows: pending } = await client.query<{ id: string; name: string; phone: string | null; code: string | null }>(
+        `select g.id, g.name, g.phone,
+                (select c.code from guest_invite_codes c
+                  where c.guest_id = g.id and c.used_at is null and c.expires_at > now()
+                  order by c.expires_at desc limit 1) as code
+           from guests g
+          where g.wedding_id = $1 and g.rsvp = 'pending'`,
+        [weddingId],
+      )
+      await assertSeatingToken(request)
+      return { pending, stamp: claimed.rows[0]!.stamp }
+    })
 
     let sent = 0
     let skippedNoPhone = 0
@@ -903,7 +909,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     /* Предел на одну рассылку: список гостей не ограничен, а SMS — наши
      * деньги на чужие номера (ревью 015). Сверх предела — не шлём, и в ответе
      * это видно как `failed`; на следующие сутки очередь дойдёт до остальных. */
-    for (const guest of pending) {
+    for (const guest of reservation.pending) {
       if (!guest.phone) {
         skippedNoPhone++
         continue
@@ -931,7 +937,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     if (sent === 0) {
       /* Никому не ушло — суточный запрет не заслужен: снимаем захват. Прежняя
        * отметка либо пуста, либо старше суток — для правила это одно и то же. */
-      await db().query('update weddings set guests_reminded_at = null where id = $1', [weddingId])
+      // Keep PostgreSQL precision: a JS Date would truncate the claim's microseconds.
+      await db().query(
+        'update weddings set guests_reminded_at = null where id = $1 and guests_reminded_at = $2::timestamptz',
+        [weddingId, reservation.stamp],
+      )
     }
     return { sent, skippedNoPhone, skippedLinkUsed, failed }
   })
