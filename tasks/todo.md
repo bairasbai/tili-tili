@@ -6,6 +6,7 @@
 ## Полное ТЗ WP00–WP16 · 2026-09-30
 
 Текущая задача: [022: персональный состав приглашённых](фичи/022-мероприятия/REPORT-INVITATIONS.md), не весь WP04. CRUD UI опубликован/влит PR25 (main04a8355/all7CI SUCCESS/local clean/source569match). Продолжение в feature/event-rsvp-20261001: person/event roster, private family projection, реальный выбор в UI; legacy RSVP остаётся основной программой. Дедлайн утверждён: общий для события, до конца выбранного дня по его часовому поясу. Опрос об основной дате всё ещё без ответа. Production запрещён.
+Последнее поручение владельца: закончить эту поставку/проверить CI/влить PR26, передать полную инструкцию Claude и остановиться. Новую T012 в Codex сейчас не начинать. Инструкция: [CLAUDE-CONTINUE.md](фичи/022-мероприятия/CLAUDE-CONTINUE.md); actual merge/main/local sync подтверждается внешним PUBLICATION-CONFIRMED.md и PR26 после выполнения.
 Новый scoped full прошёл1452frontend/1762backend/no skips/init0; actual production preview invitationsfinal3:9checks/zeroerrors/all10PNG inspected/source574match. Источник: REPORT-INVITATIONS.md. На границе этого коммита следующий шаг — scoped commit/push/CI/main; actual remote статус только во внешнем `.unlazy/wp04-event-invitations-20261001/PUBLICATION-CONFIRMED.md` и attached PR после публикации. Затем отдельные RSVP по person/event, этот календарный deadline, обращение после срока и организаторский источник коррекции. Master T010/WP04 и остальные WP00–WP16/SC/NFR остаются открыты; старые pending-публикации ниже исторические.
 
 Current reminder claim scope,2026-10-01:

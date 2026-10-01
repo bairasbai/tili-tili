@@ -65,6 +65,12 @@ Browser children/private fixture cleaned; retained disposable PostgreSQL kept.
 No production environment or configuration changed.
 
 ## Next Step / Scope Still Open
+Owner's latest instruction: finish this roster increment, merge only after
+CI, prepare full Claude instructions and STOP. Do not start T012 in Codex
+now. Resume guidance: tasks/фичи/022-мероприятия/CLAUDE-CONTINUE.md.
+PR26 https://github.com/bairasbai/tili-tili/pull/26 carries sourcecc8a31b;
+at this docs commit it is still open. Final actual confirmation remains the
+external PUBLICATION-CONFIRMED.md/PR, never inferred from a planned merge.
 After scoped publication continue T012 in tasks/фичи/022-мероприятия/tasks.md:
 per-person/event RSVP, common calendar deadline, late contact and organizer
 correction provenance. Read canonical spec/plan before paths/migration changes.

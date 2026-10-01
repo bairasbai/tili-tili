@@ -3349,3 +3349,14 @@ Remote confirmation follows in external PUBLICATION-CONFIRMED/attached PR;
 no future merge is claimed by this commit. Then continue T012 separate RSVP/
 approved calendar deadline/late request/organizer provenance. Production and
 real provider integrations untouched; whole022/WP04/WP00-WP16 remain open.
+
+## 2026-10-01 · Owner Requested Roster Finish And Claude Handoff
+
+Human interrupted further continuation and requested finish current increment,
+publish/merge only if finished, full Claude continuation instructions, then stop.
+Sourcecc8a31b published in attached PR26; at this docs commit actual CI/merge
+still pending. No T012 code started. Added022 CLAUDE-CONTINUE.md with exact
+scope/code/tests/environment/evidence, fresh verification commands, approved
+deadline decisions, nextT012 acceptance and GitHub/production/data-preservation
+constraints. Handoff/todo now explicitly record stop after roster publication;
+the final actual remote result is external PUBLICATION-CONFIRMED.md/PR26.
