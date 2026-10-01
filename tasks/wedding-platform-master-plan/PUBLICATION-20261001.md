@@ -21,7 +21,24 @@ Do not publish secrets/env/private browser fixtures or independent clone work.
 
 ## Progress
 
-Pending local checkpoint commit, integration of actual current main, full merged
-verification, feature push/PR/CI/merge and local-main fast-forward. GitHub queries
+Local checkpoint bbf21ee committed160files. Integrated origin/main2b77687,
+preserving both histories and payment privacy fixes; ten conflicts resolved.
+OpenAPI0.62.1 and both generated API type files regenerated using repository tools.
+Merged source561 tracked SHA256 hashes (text EOL normalized) matched after tests.
+
+Fresh migrated disposable PostgreSQL15432/database publishmerge1 and Redis13:
+init.sh exit0,96frontend files/1393tests and114backend files/1678tests passed,
+types/lint/build passed. Full log:
+C:/Тили-тили/.unlazy/wp03-shift-20260930/full-publish-merged.log.
+Production-preview actual Chromium guest browser publishguest1:9checks passed,
+zero page errors, all5 RU320/390/1440 and EN320/390 PNG inspected.
+Actual payment browser publishpayment1:5checks passed, zero page errors;
+private/shared/analytics3PNG inspected and downloaded receipt bytes matched.
+Its9byte PNG is a synthetic fixture payload, not a verified real receipt image.
+Evidence lives under C:/Тили-тили/.unlazy/wp03-publication-20261001 and
+wp03-guest-write-access-20261001. Private fixture files removed by runner cleanup.
+These tests do not validate real provider delivery or all WP00-WP16 requirements.
+
+Pending integration commit, feature push/PR/CI/merge and local-main fast-forward. GitHub queries
 sequential, no watch loops; CI status at most once per2-3minutes, stop on auth/
 rate-limit/403/429. Next source work only after verified publication boundary.

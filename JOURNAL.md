@@ -3180,3 +3180,11 @@ bookkeeping, then event/delegation/SC/NFR/allWP. No remote/release/provider;
 manual scoped documentation/gates do not imply full feature acceptance.
 Финальный manual gate status/approve actualexit0/ALL MET4 afterdocs; firststatus
 missingEVIDENCE rejected/corrected, not app-test result. CRLFdiffcheck0.
+
+## 2026-09-30 — исправления аудита 021 поверх main cdd2f2f
+
+После обновления main до `ccd68fd` (отдельный privacy fix) по поручению владельца закрываются три подтверждённые проблемы: private суммы через legacy slot/pay, неполные суммы без предупреждений в vendor UI, отсутствие истории и подтверждений в карточке подрядчика. Отдельная ветка `fix/021-payment-privacy-vendor-ui`.
+
+Доступ определяется только visibility=vendor и владением сделкой. Legacy-флаг игнорируется для всех строк, поэтому ранее созданные private записи снова скрыты; изменять их видимость и угадывать согласие нельзя. Колонка оставлена для совместимости схемы; применённая миграция 021 не переписывается.
+
+Контракт 0.52.1 описывает уже возвращаемые сервером признаки неполноты, generated artifacts пересобраны штатно. Процент дохода не определяется при неизвестных суммах любого периода. Vendor UI читает существующие защищённые endpoints и скачивает подтверждения; money model 018 и booking/family flows не переписываются. Добавлены реальные браузерные сцены 021 в payment workflow и регрессии, которые падали на исходном main. Итоговые числа проверок и статус PR фиксируются в session-handoff.md.

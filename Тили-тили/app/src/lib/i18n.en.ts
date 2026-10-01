@@ -2543,4 +2543,13 @@ Object.assign(EN, {
   'Подтверждено в сохранённом снимке': 'Acknowledged in the saved snapshot',
   'Данные программы не совпадают с запросом': 'The program does not match the request',
   'Доступ и данные требуют нового чтения': 'Access and data need a fresh read',
+  'Показаны только платежи, которыми пара поделилась с вами.': 'Only payments the couple shared with you are shown.',
+  'Доход по известным суммам': 'Revenue from known amounts',
+  'Известные оплаты': 'Known payments',
+  'Есть оплаты с неизвестной суммой. Итоги рассчитаны только по известным суммам.': 'There are payments with an unknown amount. Totals use only known amounts.',
+  'История платежей': 'Payment history',
+  'Пара пока не поделилась платежами': 'The couple has not shared any payments yet',
+  'Оплата отмечена': 'Payment recorded',
+  'Оплата подтверждена': 'Payment confirmed',
+  'Оплата отменена': 'Payment cancelled',
 })

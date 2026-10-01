@@ -26,6 +26,7 @@ jobs:
       E2E_RESULT_DIR: /tmp/payment-browser-evidence
       # 018-B: загрузка подтверждений выключена по умолчанию (ревью 018, BB-01); сценарий чеков её включает.
       RECEIPTS_STORAGE: db
+      E2E_PAYMENT_VENDOR: 'yes'
     steps:
     - uses: actions/checkout@v4
       with:
@@ -49,22 +50,47 @@ jobs:
       working-directory: Тили-тили/backend
       run: DATABASE_URL="$TEST_DATABASE_URL" node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
     - name: Exercise payments with two real browser sessions
-      run: "set -euo pipefail\nmkdir -p \"$E2E_RESULT_DIR\"\nrm -f \"$E2E_FIXTURE_FILE\"\n(cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs\
-        \ scripts/task-e2e-server.mts) > \"$RUNNER_TEMP/task-api.log\" 2>&1 & api=$!\n(cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js\
-        \ --host 127.0.0.1 --port 3000 --strictPort) > \"$RUNNER_TEMP/task-vite.log\" 2>&1 & ui=$!\ntrap 'kill \"$api\" \"$ui\" 2>/dev/null\
-        \ || true; rm -f \"$E2E_FIXTURE_FILE\"' EXIT\n# This fixture runs the real reminder function directly, without Redis.\n# Bootstrap\
-        \ SQL must finish (private fixture file), then HTTP must be live.\n# Production /health/ready semantics are intentionally unchanged.\n\
-        ready=0\nfor attempt in $(seq 1 60); do\n  if ! kill -0 \"$api\" 2>/dev/null || ! kill -0 \"$ui\" 2>/dev/null; then break; fi\n\
-        \  if test -s \"$E2E_FIXTURE_FILE\" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent\
-        \ http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi\n  sleep 1\n done\nif test \"$ready\" != 1; then\n  python - <<'PYCODE'\n\
-        import json,os,pathlib,re\nresult={'error':'Fixture services did not become ready','logs':{}}\nfor name in ('task-api','task-vite'):\n\
-        \    p=pathlib.Path(os.environ['RUNNER_TEMP'])/(name+'.log')\n    text=p.read_text(errors='replace')[-12000:] if p.exists()\
-        \ else 'No log created'\n    text=re.sub(r'eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+','[redacted-token]',text)\n \
-        \   text=re.sub(r'postgres(?:ql)?://[^\\s\"\\x27]+','[redacted-db]',text)\n    text=re.sub(r'\\+7\\d{10}','[redacted-phone]',text)\n\
-        \    result['logs'][name]=text\n(pathlib.Path(os.environ['E2E_RESULT_DIR'])/'startup-error.json').write_text(json.dumps(result,indent=2))\n\
-        print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')\nPYCODE\n  exit 1\nfi\npython 'Тили-тили/backend/scripts/payment-e2e-browser.py'\n\
-        python - <<'PYCODE'\nimport json,os,pathlib\nr=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'payment-browser-result.json').read_text())\n\
-        assert len(r['passed'])>=14 and not r['page_errors'] and 'error' not in r\nPYCODE\n"
+      run: |
+        set -euo pipefail
+        mkdir -p "$E2E_RESULT_DIR"
+        rm -f "$E2E_FIXTURE_FILE"
+        (cd 'Тили-тили/backend' && exec node node_modules/tsx/dist/cli.mjs scripts/task-e2e-server.mts) > "$RUNNER_TEMP/task-api.log" 2>&1 & api=$!
+        (cd 'Тили-тили/app' && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3000 --strictPort) > "$RUNNER_TEMP/task-vite.log" 2>&1 & ui=$!
+        trap 'kill "$api" "$ui" 2>/dev/null || true; rm -f "$E2E_FIXTURE_FILE"' EXIT
+        # This fixture runs the real reminder function directly, without Redis.
+        # Bootstrap SQL must finish (private fixture file), then HTTP must be live.
+        # Production /health/ready semantics are intentionally unchanged.
+        ready=0
+        for attempt in $(seq 1 60); do
+          if ! kill -0 "$api" 2>/dev/null || ! kill -0 "$ui" 2>/dev/null; then break; fi
+          if test -s "$E2E_FIXTURE_FILE" && curl --fail --silent http://127.0.0.1:3001/health >/dev/null && curl --fail --silent http://127.0.0.1:3000 >/dev/null; then ready=1; break; fi
+          sleep 1
+         done
+        if test "$ready" != 1; then
+          python - <<'PYCODE'
+        import json,os,pathlib,re
+        result={'error':'Fixture services did not become ready','logs':{}}
+        for name in ('task-api','task-vite'):
+            p=pathlib.Path(os.environ['RUNNER_TEMP'])/(name+'.log')
+            text=p.read_text(errors='replace')[-12000:] if p.exists() else 'No log created'
+            text=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]',text)
+            text=re.sub(r'postgres(?:ql)?://[^\s"\x27]+','[redacted-db]',text)
+            text=re.sub(r'\+7\d{10}','[redacted-phone]',text)
+            result['logs'][name]=text
+        (pathlib.Path(os.environ['E2E_RESULT_DIR'])/'startup-error.json').write_text(json.dumps(result,indent=2))
+        print('Fixture startup failed; see redacted startup-error.json, not fixture credentials')
+        PYCODE
+          exit 1
+        fi
+        python 'Тили-тили/backend/scripts/payment-e2e-browser.py'
+        python 'Тили-тили/backend/scripts/payment021-e2e-browser.py'
+        python - <<'PYCODE'
+        import json,os,pathlib
+        r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'payment-browser-result.json').read_text())
+        assert len(r['passed'])>=14 and not r['page_errors'] and 'error' not in r
+        r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'payment-privacy-browser-result.json').read_text())
+        assert len(r['passed'])>=5 and not r['page_errors'] and 'error' not in r
+        PYCODE
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -72,6 +98,8 @@ jobs:
         path: '${{ env.E2E_RESULT_DIR }}/*.png
 
           ${{ env.E2E_RESULT_DIR }}/payment-browser-result.json
+
+          ${{ env.E2E_RESULT_DIR }}/payment-privacy-browser-result.json
 
           ${{ env.E2E_RESULT_DIR }}/payment-history.csv
 

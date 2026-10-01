@@ -3027,3 +3027,18 @@ Production Chromium guestfinal1:9checks/zeroerrors/all5PNG inspected RU320/390/
 1440 EN320/390, titlegeometry and actualInvite navigation.126hashmatch after
 full/browser, old126beforelayout manifest retained. REPORT-GUEST-WRITE-ACCESS,
 no publication/provider/prod/wholeWP acceptance; other reads/remind still open.
+## PR20 / ERR-0338 · 2026-09-30 · vendor UI игнорировал неизвестные суммы и контракт их терял
+
+Исторический ID из PR20; отдельная запись от WP03 ERR-0338 выше.
+
+- **Ошибка.** API возвращал amountIncomplete, unknownAmountPayments, revenueIncomplete, но inline vendor schemas их не описывали. UI выдавал известные суммы за полный доход и остаток; процент дохода считался даже при неполноте периода.
+- **Исправление.** OpenAPI 0.52.1 и generated types включают флаги. Карточка, список и аналитика показывают предупреждение; процент null при неизвестной сумме любого сравниваемого периода.
+- **Правило (R-338).** Неизвестная сумма — факт платежа, а не ноль. Флаги неполноты должны одновременно существовать в SQL, контракте и каждом денежном представлении UI.
+
+## PR20 / ERR-0339 · 2026-09-30 · vendor payment/receipt endpoints не были подключены к UI
+
+Исторический ID из PR20; отдельная запись от WP03 ERR-0339 выше.
+
+- **Ошибка.** API истории и подтверждений был защищён и работал, но клиент загружал только сделки и события. Подрядчик не мог увидеть раскрытый способ оплаты или скачать чек.
+- **Исправление.** VendorPaymentHistory читает vendor-scoped API, показывает дату/способ/сумму/статус и скачивает файл с именем и MIME сервера. Пустая история отличается от отказа; доступен повтор.
+- **Правило (R-339).** Доступный endpoint не доказывает готовность сценария: проверить реальный экран, сетевой запрос и результат скачивания.

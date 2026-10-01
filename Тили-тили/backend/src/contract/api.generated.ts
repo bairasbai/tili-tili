@@ -4279,14 +4279,17 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            /** @description остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус платежи */
+                            /** @description остаток по ОТКРЫТЫМ броням (booked, paid_deposit): цена минус известные платежи с visibility=vendor */
                             expected?: components["schemas"]["Money"];
                             /**
                              * @description Недоплата по ЗАВЕРШЁННЫМ (done) сделкам: работа сдана, а
                              *     цена не закрыта платежами. В «ожидается» не входит — это
                              *     предмет спора, а не ожидания (решение владельца, В7).
+                             *     Учитывает только известные платежи с visibility=vendor.
                              */
                             shortfall?: components["schemas"]["Money"];
+                            /** @description Есть неотменённые vendor-visible платежи с неизвестной суммой; числовые итоги их не учитывают. */
+                            amountIncomplete: boolean;
                             items?: {
                                 id?: string;
                                 coupleName?: string;
@@ -4299,8 +4302,10 @@ export interface paths {
                                 packageIncludes?: string[] | null;
                                 /** @enum {string} */
                                 state?: "candidate" | "contacted" | "negotiating" | "booked" | "paid_deposit" | "done" | "cancelled";
-                                /** @description внесено платежами (те же `payments`, что видит пара; возвраты с минусом) — карточка сделки, План §8.2 */
+                                /** @description известные суммы неотменённых платежей с visibility=vendor; возвраты с минусом, private/finance_members исключены */
                                 paid?: components["schemas"]["Money"];
+                                /** @description Число неотменённых vendor-visible платежей с неизвестной суммой этой сделки. */
+                                unknownAmountPayments: number;
                                 /** @description чат с парой этой свадьбы (`kind: vendor`); null — пара ещё не писала */
                                 chatId?: string | null;
                                 /** @description последняя редакция договора по сделке — только заголовок, без полей сторон */
@@ -4783,10 +4788,13 @@ export interface paths {
                             /** @enum {string} */
                             period?: "month" | "season" | "year";
                             revenue?: components["schemas"]["Money"];
+                            /** @description Есть неотменённые vendor-visible платежи с неизвестной суммой за выбранный период; доход содержит только известные суммы. */
+                            revenueIncomplete: boolean;
                             /**
                              * @description Прирост к прошлому такому же периоду. `null`, если
                              *     прошлого периода не было: делить на ноль нечем, а «+100 %»
-                             *     от нуля — это выдумка.
+                             *     от нуля — это выдумка. Также `null`, если в текущем или
+                             *     предыдущем периоде есть vendor-visible платежи с неизвестной суммой.
                              * @example 38
                              */
                             revenueDeltaPct?: number | null;

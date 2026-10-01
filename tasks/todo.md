@@ -75,6 +75,16 @@
 - [x] Документы/maps/report/handoff и scoped UI gates status/approve ALL MET4; CRLF diff check exit0. Затем current external receipt/history в сводке команды.
 
 - [ ] Реализовать и принять весь объём: [программа и решения](wedding-platform-master-plan/delivery.md). WP03 версии/planning/events foundation/shift/DayX/effects, registered/external acknowledgment/team, legacy server live rights, DayX и contractor offline checkpoints проверены локально. Последний full1328frontend/1526backend no skipped/types/lint/build/contracts; actual Chromium offlineprogram3:15checks — [REPORT-OFFLINE-PROGRAM](фичи/021-тайминг/REPORT-OFFLINE-PROGRAM.md). Далее critical/cold offline/рассадка, delegated actors и event invitees/RSVP/transfers/management. T006/T007/T008/T009/WP03 и весь WP00–WP16 не завершены. Прикладной код не опубликован этой сессией; production не трогать.
+## Исправления аудита 021 · 2026-09-30
+
+- [x] Убрать раскрытие private/finance_members сумм через slot/pay и legacy-флаг в vendor aggregates; закрепить обе двери и старые строки регрессией.
+- [x] Показать неполноту известных сумм в аналитике, списке и карточке сделки подрядчика; синхронизировать OpenAPI 0.52.1 и generated types.
+- [x] Подключить vendor-visible историю оплат и скачивание подтверждений; проверить отказ, повтор и пустую историю.
+- [x] Прогнать типы, тесты с PostgreSQL, линт, сборки и browser E2E; обновить карты и передачу сессии. После rebase локально: frontend 1097; backend 1275 + 15 Redis-skips. GitHub CI кода `9e05381`: frontend 1097, backend 1290 без пропусков; browser 018 14/14 и 021 5/5, page_errors=[]; Task Planning и Offers 019 — success.
+- [x] Подготовить отдельный [PR #20](https://github.com/bairasbai/tili-tili/pull/20) в main с результатами проверок.
+
+Исторический следующий шаг был review/merge PR20. Fetch2026-10-01 подтвердил
+merge2b77687; обе функциональности объединяются с текущим WP03 checkpoint.
 
 ## Синхронизация и проверка приватности · 2026-09-30
 

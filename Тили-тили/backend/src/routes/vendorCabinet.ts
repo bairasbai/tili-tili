@@ -810,6 +810,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         revenue: string
         prev_revenue: string
         unknown_payments: string
+        prev_unknown_payments: string
       }>(
         `select
            (select views from vendors where id = $1)::text as views,
@@ -823,7 +824,11 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
              as prev_revenue,
            (select count(*) from payments p join deals d on d.id=p.deal_id
              where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
-               and p.paid_on > (now() - make_interval(days => $2))::date)::text as unknown_payments`,
+               and p.paid_on > (now() - make_interval(days => $2))::date)::text as unknown_payments,
+           (select count(*) from payments p join deals d on d.id=p.deal_id
+             where d.vendor_id=$1 and p.status<>'cancelled' and p.visibility='vendor' and not p.amount_known
+               and p.paid_on between (now() - make_interval(days => $2 * 2))::date
+                 and (now() - make_interval(days => $2))::date)::text as prev_unknown_payments`,
         [vendorId, days],
       )
       const row = rows[0]!
@@ -833,9 +838,9 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
         period,
         revenue: { amount: revenue, currency: 'RUB' },
         revenueIncomplete: Number(row.unknown_payments) > 0,
-        // Прирост считается от прошлого такого же периода. Делить на ноль
-        // нечем: если раньше не было ничего, процент не определён.
-        revenueDeltaPct: previous === 0 ? null : Math.round(((revenue - previous) / previous) * 100),
+        // Процент определён только при известных суммах обоих периодов и ненулевой базе.
+        revenueDeltaPct: previous === 0 || Number(row.unknown_payments) > 0 || Number(row.prev_unknown_payments) > 0
+          ? null : Math.round(((revenue - previous) / previous) * 100),
         funnel: {
           views: Number(row.views),
           contacts: Number(row.contacts),
