@@ -454,8 +454,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.69.0 (022 invitations +030 atomic/resource foundations)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.69.0')
+  it('версия контракта — 0.70.0 (022 invitations +030 atomic/resource foundations +T012 rsvp deadlines)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.70.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
@@ -556,7 +556,12 @@ describe('audit55 — контракт v0.41.0, единственный вла�
         const param = findParam(doc, op, 'Idempotency-Key', 'header')
         if (!param) continue
         const slice = findHandlerSlice(op.fastifyPath, op.method)
-        const reads = slice ? idempotencyUsage(slice).reads : false
+        // Путь без обработчика (T012 и дальше) — заглушка 501 catch-all, а не
+        // реализация, которая забыла прочитать заголовок. Этот сторож проверяет
+        // РЕАЛЬНЫЕ обработчики, как и первая проверка G-a выше (`if (!slice) continue`);
+        // свой обработчик появится — проверка начнёт действовать и на нём.
+        if (!slice) continue
+        const reads = idempotencyUsage(slice).reads
         if (!reads) violations.push(`${opKey(op.method, op.openapiPath)}: заголовок объявлен, обработчик не читает`)
       }
       expect(violations).toEqual([])
@@ -646,7 +651,7 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     })
   })
 
-  describe('G-f: PQ-3 — гостевой токен: 410 gone у трёх путей дня X, 401 у остальных семнадцати', () => {
+  describe('G-f: PQ-3 — гостевой токен: 410 gone у трёх путей дня X, 401 у остальных двадцати (+3 T012)', () => {
     const DAY_X: [string, string][] = [
       ['GET', '/join/{guestToken}/day'],
       ['GET', '/join/{guestToken}/day-chat/messages'],
@@ -654,8 +659,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     ]
     const guestOps = ops.filter((op) => Boolean(findParam(doc, op, 'guestToken')))
 
-    it('найдены все двадцать гостевых операций', () => {
-      expect(guestOps.length).toBe(20)
+    it('найдены все двадцать три гостевые операции', () => {
+      expect(guestOps.length).toBe(23)
     })
 
     it('дни X отвечают 410 с кодом gone и без 401; остальные — 401 и без 410', () => {

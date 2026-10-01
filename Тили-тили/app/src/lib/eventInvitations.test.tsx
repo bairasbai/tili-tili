@@ -10,7 +10,7 @@ import type { EventInvitationRoster } from './api/weddingEvents'
 const store = vi.hoisted(() => ({ weddingId: 'w1' as string | null }))
 vi.mock('./store', () => ({ useStore: () => store }))
 const initial: EventInvitationRoster = {
-  event: { id: 'e1', name: 'Second day', kind: 'second_day', date: null, location: null, timeZone: null, isMain: false },
+  event: { id: 'e1', name: 'Second day', kind: 'second_day', date: null, location: null, timeZone: null, isMain: false, rsvpDeadline: null },
   people: [{ guestId: 'g1', name: 'Марина', invited: true }, { guestId: 'g2', name: 'Спутник', invited: false }],
 }
 const json = (body: unknown, status = 200, etag: string | null = '"1"') => new Response(JSON.stringify(body), {

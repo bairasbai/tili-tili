@@ -70,6 +70,19 @@ describe('заглушки и реализованные маршруты', () =
     const app = await buildApp(TEST_CONFIG)
     await app.ready()
 
+    /* T012 (контракт v0.70.0, драйвер до fan-out) добавил шесть операций,
+     * чьи обработчики пишет отдельный лейн backend (1.2.1) — до его PR
+     * заглушка здесь ДЕЙСТВИТЕЛЬНО единственный обработчик, как у OAuth ниже.
+     * Снять из списка по мере реализации, а не всё сразу. */
+    const PENDING_T012 = new Set([
+      'GET /rsvp/{guestToken}/events',
+      'PUT /rsvp/{guestToken}/events/{eventId}/answers',
+      'POST /rsvp/{guestToken}/events/{eventId}/requests',
+      'GET /weddings/{weddingId}/events/{eventId}/rsvp',
+      'PUT /weddings/{weddingId}/events/{eventId}/rsvp/{guestId}',
+      'POST /weddings/{weddingId}/events/{eventId}/rsvp-requests/{requestId}/decision',
+    ])
+
     const shadowed: string[] = []
     for (const op of CONTRACT_OPERATIONS) {
       const res = await app.inject({ method: op.method as 'GET', url: fill(op.url) })
@@ -78,9 +91,9 @@ describe('заглушки и реализованные маршруты', () =
       }
     }
     /* Заглушка допустима только там, где обработчика ДЕЙСТВИТЕЛЬНО нет.
-     * Сейчас таких путей не осталось: последний — вход через OAuth —
-     * отвечает своим кодом `oauth_not_configured`, а не общей заглушкой. */
-    expect(shadowed).toEqual([])
+     * Кроме PENDING_T012 выше (вход через OAuth отвечает своим кодом
+     * `oauth_not_configured`, а не общей заглушкой) таких путей не осталось. */
+    expect(shadowed.filter((k) => !PENDING_T012.has(k))).toEqual([])
 
     await app.close()
   })

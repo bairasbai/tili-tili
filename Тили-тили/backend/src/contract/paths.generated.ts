@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.69.0).
- * Операций: 241. Путей: 185. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.70.0).
+ * Операций: 247. Путей: 191. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -108,6 +108,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/referral/{code}/apply","url":"/referral/:code/apply","operationId":null,"summary":"Применить чужой реферальный код","tag":"auth"},
   {"method":"GET","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"Публичная страница семейного приглашения","tag":"guests"},
   {"method":"POST","openapi":"/rsvp/{guestToken}","url":"/rsvp/:guestToken","operationId":null,"summary":"RSVP одной или нескольких персон семейного приглашения","tag":"guests"},
+  {"method":"GET","openapi":"/rsvp/{guestToken}/events","url":"/rsvp/:guestToken/events","operationId":null,"summary":"Дополнительные мероприятия семьи — срок ответа и текущие ответы (T012)","tag":"guests"},
+  {"method":"PUT","openapi":"/rsvp/{guestToken}/events/{eventId}/answers","url":"/rsvp/:guestToken/events/:eventId/answers","operationId":null,"summary":"Ответить за персон семьи на дополнительное мероприятие (T012)","tag":"guests"},
+  {"method":"POST","openapi":"/rsvp/{guestToken}/events/{eventId}/requests","url":"/rsvp/:guestToken/events/:eventId/requests","operationId":null,"summary":"Попросить организатора изменить ответ после срока (T012)","tag":"guests"},
   {"method":"DELETE","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Удалить аккаунт","tag":"auth"},
   {"method":"GET","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Мой профиль","tag":"auth"},
   {"method":"PATCH","openapi":"/users/me","url":"/users/me","operationId":null,"summary":"Изменить профиль и настройки уведомлений","tag":"auth"},
@@ -177,6 +180,9 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/weddings/{weddingId}/events/{eventId}","url":"/weddings/:weddingId/events/:eventId","operationId":null,"summary":"Изменить мероприятие","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/invitations","url":"/weddings/:weddingId/events/:eventId/invitations","operationId":null,"summary":"Состав приглашённых на мероприятие","tag":"guests"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/events/{eventId}/invitations","url":"/weddings/:weddingId/events/:eventId/invitations","operationId":null,"summary":"Заменить состав приглашённых дополнительного мероприятия","tag":"guests"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/events/{eventId}/rsvp","url":"/weddings/:weddingId/events/:eventId/rsvp","operationId":null,"summary":"Ответы на дополнительное мероприятие — срок, состав, просьбы (T012)","tag":"guests"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/events/{eventId}/rsvp-requests/{requestId}/decision","url":"/weddings/:weddingId/events/:eventId/rsvp-requests/:requestId/decision","operationId":null,"summary":"Принять или отклонить просьбу гостя изменить ответ (T012)","tag":"guests"},
+  {"method":"PUT","openapi":"/weddings/{weddingId}/events/{eventId}/rsvp/{guestId}","url":"/weddings/:weddingId/events/:eventId/rsvp/:guestId","operationId":null,"summary":"Внести или исправить ответ персоны («внесено организатором», T012)","tag":"guests"},
   {"method":"POST","openapi":"/weddings/{weddingId}/funds","url":"/weddings/:weddingId/funds","operationId":null,"summary":"Завести денежный фонд","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/funds/{fundId}","url":"/weddings/:weddingId/funds/:fundId","operationId":null,"summary":"Удалить фонд","tag":"wishlist"},
   {"method":"GET","openapi":"/weddings/{weddingId}/guest-reviews","url":"/weddings/:weddingId/guest-reviews","operationId":null,"summary":"Отзывы гостей о подрядчиках (для пары)","tag":"reviews"},
