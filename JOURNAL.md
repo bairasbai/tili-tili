@@ -3188,3 +3188,32 @@ missingEVIDENCE rejected/corrected, not app-test result. CRLFdiffcheck0.
 Доступ определяется только visibility=vendor и владением сделкой. Legacy-флаг игнорируется для всех строк, поэтому ранее созданные private записи снова скрыты; изменять их видимость и угадывать согласие нельзя. Колонка оставлена для совместимости схемы; применённая миграция 021 не переписывается.
 
 Контракт 0.52.1 описывает уже возвращаемые сервером признаки неполноты, generated artifacts пересобраны штатно. Процент дохода не определяется при неизвестных суммах любого периода. Vendor UI читает существующие защищённые endpoints и скачивает подтверждения; money model 018 и booking/family flows не переписываются. Добавлены реальные браузерные сцены 021 в payment workflow и регрессии, которые падали на исходном main. Итоговые числа проверок и статус PR фиксируются в session-handoff.md.
+
+## 2026-10-01 · PR21 Published And Guest Reads Continued
+
+Human authorized publish/merge then continuation, production forbidden.
+PR21 merged after7displayed checksSUCCESS; main f9ccfa1 local/fetched0/0,
+source561hashmatch. Preserve remote PR20 and local WP03, contract0.62.1.
+Merged/repeated local full1393frontend/1678backend/init0; Chromium guest9/
+payment5 checks passed/zeroerrors,8UI PNG inspected. GitHub initial backend
+failure isolated payment drill's latest-migration assumption; targeted timestamp
+retains down/up/guarded rollback and now verifies latest full chain. Actual
+disposable drill passed, CI then green. No production/provider/wholeWP claim.
+
+Continuation feature/guest-read-access-20261001: real guest/table read before
+39cases34fail/5pass. Shared current access uses wedding read FOR SHARE,
+fresh principal/member/central consent, unchanged ACL and locked-role DTO;
+cancelled history reads allowed, archived denied, finalJWT checked after data.
+39new+180prior=219focusedpassed after serial/application_name fixture correction;
+initial focused11fail retained. audit53 strengthened LOCK TABLE detection and
+serial list includes guestReadAccess plus existing prod4 table-lock witness.
+564sourceSHA frozen for pending full/production browser. Reminder survey sent;
+irreversible dispatch/claim-reset work remains. No new-code main equality claim.
+
+Guest read final local checkpoint: full guestreadfull1 actual1393frontend/
+1718backend/no skips/types/wholelint/build/init0. Actual production Chromium
+readguest1 nine/readseating1 fourteen checks passed, zero page errors/all16PNG
+inspected; source564hashesmatch. Own fixtures removed/no3000-3001listeners;
+retainedPG15432 alive. Scope only reads, no UI/contract changes. Publication
+and fresh CI next; reminder survey remains pending. Scoped manual ledger is
+recorded after verification, not claimed as pre-implementation compliance.

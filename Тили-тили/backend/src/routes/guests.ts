@@ -5,7 +5,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
-import { assertSeatingToken, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -203,11 +203,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
   /* ── список и добавление ──────────────────────────────────────────── */
   app.get('/weddings/:weddingId/guests', async (request) => {
-    const { rows } = await db().query<GuestRow>(
-      `select ${GUEST_COLUMNS} from guests g where g.wedding_id = $1 order by g.created_at`,
-      [request.member!.weddingId],
-    )
-    return rows.map((r) => toGuest(r, seesInviteUrl(request.member!.role)))
+    return db().tx(async (client) => {
+      const role = await lockGuestReadAccess(client, request)
+      const { rows } = await client.query<GuestRow>(
+        `select ${GUEST_COLUMNS} from guests g where g.wedding_id = $1 order by g.created_at`,
+        [request.member!.weddingId],
+      )
+      const guests = rows.map((r) => toGuest(r, seesInviteUrl(role)))
+      await assertSeatingToken(request)
+      return guests
+    })
   })
 
   app.post(
@@ -1369,23 +1374,28 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
   /* ── рассадка ─────────────────────────────────────────────────────── */
   app.get('/weddings/:weddingId/tables', async (request) => {
     const weddingId = request.member!.weddingId
-    const { rows: tables } = await db().query<{ id: string; name: string; capacity: number }>(
-      'select id, name, capacity from tables where wedding_id = $1 order by sort, name',
-      [weddingId],
-    )
-    const { rows: guests } = await db().query<{ id: string; table_id: string | null; name: string }>(
-      'select id, table_id, name from guests where wedding_id = $1 order by created_at',
-      [weddingId],
-    )
-    return tables.map((t) => ({
-      id: t.id,
-      name: t.name,
-      capacity: t.capacity,
-      // Состав стола вычисляется из назначений, а не хранится вторым списком:
-      // хранимый список расходится с назначениями, и человек оказывается
-      // за двумя столами сразу (ERR-0016, R-30).
-      guestIds: guests.filter((g) => g.table_id === t.id).map((g) => g.id),
-    }))
+    return db().tx(async (client) => {
+      await lockGuestReadAccess(client, request)
+      const { rows: tables } = await client.query<{ id: string; name: string; capacity: number }>(
+        'select id, name, capacity from tables where wedding_id = $1 order by sort, name',
+        [weddingId],
+      )
+      const { rows: guests } = await client.query<{ id: string; table_id: string | null; name: string }>(
+        'select id, table_id, name from guests where wedding_id = $1 order by created_at',
+        [weddingId],
+      )
+      const result = tables.map((t) => ({
+        id: t.id,
+        name: t.name,
+        capacity: t.capacity,
+        // Состав стола вычисляется из назначений, а не хранится вторым списком:
+        // хранимый список расходится с назначениями, и человек оказывается
+        // за двумя столами сразу (ERR-0016, R-30).
+        guestIds: guests.filter((g) => g.table_id === t.id).map((g) => g.id),
+      }))
+      await assertSeatingToken(request)
+      return result
+    })
   })
 
   app.post(

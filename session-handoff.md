@@ -1,6 +1,40 @@
 # Session Handoff: Full WP00-WP16 Delivery
 
+## Active Checkpoint · 2026-10-01 Before Guest Read Publication
+
+PR21 merged/main f9ccfa1 verified locally and remotely0/0. Continued in
+feature/guest-read-access-20261001. Guest/table GET before39:34fail/5pass;
+after2 focused219pass, audit53guard5pass. Fresh full guestreadfull1:
+1393frontend/1718backend/no skips/types/wholelint/build/init0. Actual production
+Chromium readguest1 nine/readseating1 fourteen checks, zero page errors,
+all16PNG inspected. Source564 hashes match afterfull/browser, no own3000/3001
+listeners/privatefixtures. PG15432 retained; no production/provider claim.
+Local new changes await scoped commit/push/CI/main; recheck actual Git state
+on resume because publication can supersede this timestamped checkpoint.
+Next: guest reminders access/claim/reset/dispatch; owner stop-on-withdrawal
+survey pending. Then event invitations/RSVP/transfers/delegation/SC/NFR/allWP.
+REPORT-GUEST-READ-ACCESS.md retains before failure and failed first harness run.
+Older states below are historical, not current pending-full results.
+
 ## Publication Requested · 2026-10-01
+
+Publication completed: PR21 merged after7/7 displayed GitHub checks SUCCESS.
+Current local main and fetched origin/main both f9ccfa184c5c12e2727b5e4f94fe2e4f600967cb,
+rev-list0/0, clean tree/source561 hashes matched before continuation.
+Repeat fresh full1393frontend/1678backend/types/lint/build/init0; separate
+payment migration rehearsal fixed after genuine CI failure and passed locally.
+Now branch feature/guest-read-access-20261001; actual guest/table read witnesses
+are next. Reminders survey pending: stop remaining sends on access withdrawal
+or finish accepted batch. No production/provider delivery acceptance.
+All previous pending-publication statements below are historical.
+
+Guest/table reads continued:39 actual before34fail/5pass; transactional current
+read access, locked role projection/finalJWT, cancelled wedding read preserved.
+Focused after1 failed11/219 due shared-table observer seeing other suites;
+after2 serial/application_name observer219/219pass. audit53 now detects
+explicit LOCK TABLE, adding guestReadAccess/prod4 to serial;5guardtests passed.
+Current source564 hashes frozen, guestreadfull1 full running. Do not claim full
+or browser success before actual completion. REPORT-GUEST-READ-ACCESS.md.
 
 Newest human request: publish verified local checkpoint to GitHub and merge main,
 then continue guestGET/privacy/reminders. Production still forbidden. Guard no

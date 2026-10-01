@@ -5,6 +5,12 @@
 
 ## Полное ТЗ WP00–WP16 · 2026-09-30
 
+Публикация и продолжение,2026-10-01:
+- [x] PR21 влит после7/7 GitHub checks SUCCESS, main локально/remote f9ccfa1,0/0. Оба набора кода сохранены; merged full1393front/1678back, guest9/payment5 Chromium. Payment migration drill genuine CI failure исправлен и проверен, production untouched.
+- [x] GET guests/tables actual39before34fail/5pass; current transactional read access/role projection/finalJWT, cancelled wedding history preserved. Focused after2:219pass; serial/shared-table observer correction and audit53 strengthened. REPORT-GUEST-READ-ACCESS.md retains failed after1.
+- [x] Current guestreadfull1 full1393front/1718back/no skips/types/wholelint/build/init0. Actual production readguest1 nine/readseating1 fourteen checks,zeroerrors/all16PNG inspected; source564hashmatch. No listeners/privatefixtures, PG15432 retained.
+- [ ] Scoped guest read commit/push/CI/main. Then reminders access/claim/reset/dispatch; owner stop-on-withdrawal survey pending. All event/RSVP/transfers/delegation/SC/NFR/WP obligations remain; no provider delivery claimed.
+
 Локально проверен scoped guest write access,2026-10-01:
 - [x] Actual before58cases52fail/6pass; stale access/role/privacy/expiry and premature family201 reproduced. Transactional fresh access/projection/final JWT and post-COMMIT response fixed, same ACL/family/import semantics.
 - [x] Expanded actual PG after3:180passed=72new+60seating+22family+26consent. Real interrupted after2 retained as failure; same retained PG recovered15432, no data deletion/production env changes.

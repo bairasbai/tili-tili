@@ -209,12 +209,21 @@ export function requireRole(request: FastifyRequest, ...roles: Role[]): void {
 
 /** Guest and seating writes pin current access before taking guest/party/table locks. */
 export async function lockSeatingAccess(client: Queryable, request: FastifyRequest): Promise<Role> {
+  return lockGuestTeamAccess(client, request, true)
+}
+
+/** Reads share the access lock, but cancellation does not erase team history. */
+export async function lockGuestReadAccess(client: Queryable, request: FastifyRequest): Promise<Role> {
+  return lockGuestTeamAccess(client, request, false)
+}
+
+async function lockGuestTeamAccess(client: Queryable, request: FastifyRequest, write: boolean): Promise<Role> {
   const weddingId = request.member!.weddingId
   const caller = request.caller!
   const wedding = await client.query<{ archived_at: Date | null; cancelled_at: Date | null }>(
-    'select archived_at,cancelled_at from weddings where id=$1 for update', [weddingId],
+    `select archived_at,cancelled_at from weddings where id=$1 for ${write ? 'update' : 'share'}`, [weddingId],
   )
-  if (!wedding.rows[0] || wedding.rows[0].archived_at || wedding.rows[0].cancelled_at) throw notFound('Свадьба не найдена')
+  if (!wedding.rows[0] || wedding.rows[0].archived_at || (write && wedding.rows[0].cancelled_at)) throw notFound('Свадьба не найдена')
   const user = await client.query<{ deleted_at: Date | null }>('select deleted_at from users where id=$1 for share', [caller.userId])
   if (!user.rows[0] || user.rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
   const session = await client.query('select id from sessions where id=$1 and user_id=$2 and revoked_at is null for share', [caller.sessionId, caller.userId])
