@@ -689,7 +689,8 @@ describe.skipIf(!live)('фича 018: ответы квиза влияют на 
       const w = await wedding({ format: 'intimate' })
       /* Пара убрала церемонию из тайминга — экран шлёт список целиком, как редактор тайминга. */
       const rest = timelineTemplate('intimate').filter((e) => e.name !== 'Выездная церемония').map((e) => ({ name: e.name }))
-      const put = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/timeline`, headers: auth(w.token), payload: rest })
+      const snapshot = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}/timeline`, headers: auth(w.token) })
+      const put = await app.inject({ method: 'PUT', url: `/weddings/${w.weddingId}/timeline`, headers: { ...auth(w.token), 'if-match': snapshot.headers.etag! }, payload: rest })
       expect(put.statusCode, put.body.slice(0, 200)).toBe(200)
       const tips = await tipsOf(w.token, w.weddingId)
       expect(blocking(tips, 'venue')).toBe('«Ужин» держится на слоте «Площадка» — он пуст')

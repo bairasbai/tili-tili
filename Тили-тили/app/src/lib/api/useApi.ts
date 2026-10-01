@@ -25,6 +25,8 @@ export interface AsyncData<T> {
   refreshing: boolean
   /** Текст для человека, не код ошибки. Null — всё в порядке. */
   error: string | null
+  /** Machine-readable failure for offline/refusal decisions; never infer from translated text. */
+  failure?: ApiError | null
   /** Отказ по правам: раздел закрыт роли. Повторять бессмысленно. */
   forbidden: boolean
   /** Слова сервера при отказе по правам (403) — чем именно закрыт раздел (R-284). Нет отказа — `undefined`. */
@@ -71,6 +73,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [failure, setFailure] = useState<ApiError | null>(null)
   const [forbidden, setForbidden] = useState(false)
   const [forbiddenText, setForbiddenText] = useState<string | undefined>(undefined)
   const [tick, setTick] = useState(0)
@@ -112,6 +115,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
     }
     if (!settled.current) setLoading(true)
     setError(null)
+    setFailure(null)
     setForbidden(false)
     setForbiddenText(undefined)
     run()
@@ -121,6 +125,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
         /* И при отказе тоже: показывать данные рядом с сообщением об ошибке
            значит утверждать, что они актуальны. */
         settled.current = false
+        setFailure(e instanceof ApiError ? e : null)
         setData(null)
         setShown(null)
         /* Слова сервера, не только флаг: «Нужно согласие…» и «Кабинет доступен
@@ -136,5 +141,5 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: readonly unknown[]): 
   const reload = useCallback(() => setTick(n => n + 1), [])
   /* Показан ответ, но не на этот запрос: свежий ещё в пути. */
   const refreshing = shown !== null && (shown.run !== run || shown.tick !== tick)
-  return { data, loading, refreshing, error, forbidden, forbiddenText, reload }
+  return { data, loading, refreshing, error, failure, forbidden, forbiddenText, reload }
 }

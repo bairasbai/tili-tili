@@ -129,7 +129,7 @@ const SECOND_DAY: readonly TimelineTemplate[] = [
 /**
  * Тайминг по формату. Один выбор на двоих — создание свадьбы и первая дата
  * при переносе (`reschedule.ts`): свадьба без даты заводит блоки без времени,
- * и время им потом ставится по `sort` этого же списка. Формат не указан —
+ * но с исходными местными часами/смещением дня у постоянного ID. Формат не указан —
  * шаблон выше, как до фичи 018.
  */
 export function timelineTemplate(format: WeddingFormat | null): readonly TimelineTemplate[] {

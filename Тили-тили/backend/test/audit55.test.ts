@@ -300,6 +300,8 @@ const OPERATION_CODES: [code: string, ops: [string, string][]][] = [
       ['GET', '/guest-vendor/{token}'],
       ['GET', '/guest-vendor/{token}/messages'],
       ['POST', '/guest-vendor/{token}/messages'],
+      ['GET', '/guest-vendor/{token}/timeline'],
+      ['POST', '/guest-vendor/{token}/timeline/ack'],
     ],
   ],
   ['hotel_full', [['POST', '/join/{guestToken}/hotels']]],
@@ -463,8 +465,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.52.0 (021 payment privacy поверх 018-A/B и 020)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.52.0')
+  it('версия контракта — 0.62.0 (WP03 legacy external live access)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.62.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

@@ -43,6 +43,7 @@ const ROUTES = [
   '/vendor-app', '/vendor-app/profile', '/vendor-app/deals', '/vendor-app/verification',
   '/vendor-app/leads/l1', '/vendor-app/deals/d1', '/vendor-app/reviews', '/vendor-app/analytics',
   '/vendor-app/offer-requests',
+  '/vendor-app/programs', '/vendor-app/programs/w1',
   /* Фича 007: чаты и настройки кабинета — те же экраны пары в режиме кабинета. */
   '/vendor-app/chats', '/vendor-app/chats/c1', '/vendor-app/settings', '/vendor-app/notifications',
   '/admin', '/admin/moderation', '/admin/moderation/v1',
@@ -105,6 +106,8 @@ const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
   '/vendor-app/deals': ['ожидается по сделкам', 'активных сделок'],
   '/vendor-app/analytics': ['Доход', 'Воронка анкеты'],
   '/vendor-app/verification': ['Загрузка документов пока не подключена', 'Кто вы'],
+  '/vendor-app/programs': ['Программ пока нет', 'Требуется ознакомление', 'Версия подтверждена'],
+  '/vendor-app/programs/w1': ['Назначенных блоков нет', 'Версия подтверждена', 'Подтвердить ознакомление'],
   /* Панель сотрудника: показатели платформы и оборот. «0 жалоб» рядом с
      «Сервер недоступен» читается как «жалоб нет» — и очередь стоит
      незамеченной. Число и подпись в плитке стоят вплотную, как в «/after».

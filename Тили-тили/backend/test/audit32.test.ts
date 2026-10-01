@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { prepareShift } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
 import { PAYOUT_WARNING } from '../src/chats/guard.js'
@@ -502,8 +503,7 @@ describe.skipIf(!live)('фича 005: чат по сделке, пакет сд�
       const shift = await app.inject({
         method: 'POST',
         url: `/weddings/${w.weddingId}/timeline/shift`,
-        headers: idem(w.token),
-        payload: { minutes: 15 },
+        ...await prepareShift(app, w.weddingId, idem(w.token), 15),
       })
       expect(shift.statusCode, shift.body.slice(0, 200)).toBe(200)
       const planb = await app.inject({

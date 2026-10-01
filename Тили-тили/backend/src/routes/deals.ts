@@ -178,7 +178,9 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
         tx(async (client) => {
           const deal = await dealForCouple(client, dealId, userId)
 
-          /* Строка свадьбы — `for share` и ПЕРВОЙ: дата читается ниже, чтобы
+          /* Строка свадьбы — `for update` и ПЕРВОЙ: отмена также меняет
+           * назначения программы и её ревизию, без повышения share-замка.
+           * Дата читается ниже, чтобы
            * занять её у подрядчика, а перенос (`rescheduleWedding`) держит
            * свадьбу `for update` и двигает занятость по открытым броням. Без
            * замка переход в бронь между чтением даты и записью занимал у
@@ -186,7 +188,7 @@ export async function dealRoutes(app: FastifyInstance): Promise<void> {
            * Порядок «свадьба → сделка» — тот же, что у переноса: обратный
            * давал бы взаимную блокировку. */
           const { rows: w } = await client.query<{ date: string | null }>(
-            'select date::text as date from weddings where id = $1 for share',
+            'select date::text as date from weddings where id = $1 for update',
             [deal.wedding_id],
           )
           await expireHolds(client, deal.wedding_id)

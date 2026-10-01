@@ -1,21 +1,25 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ChevronLeft, CloudRain, Zap, Heart } from 'lucide-react'
+import { ChevronLeft, CloudRain, Zap, Heart, RefreshCw } from 'lucide-react'
 
 import { useStore } from '@/lib/store'
 import { TopBar, AiTip, Bar } from '@/components/chrome'
 import { explainError, noWedding, useApi } from '@/lib/api/useApi'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getGuests, getPlanB, getSlots, getTimeline, getWedding } from '@/lib/api/weddingData'
+import { getGuests, getPlanB, getSlots, getTimelineSnapshot, getWedding, getWeddingEventsSnapshot } from '@/lib/api/weddingData'
+import { instant, programTime, programZone, timelineNow } from '@/lib/timelineClock'
 import { getAlbum } from '@/lib/api/gifts'
 import { getGuestReviews, sendCoupleReview } from '@/lib/api/reviews'
-import { activatePlanB, setTaskDone, shiftTimeline, type DayXBroadcast } from '@/lib/api/weddingWrite'
+import { activatePlanB, setTaskDone, type DayXBroadcast } from '@/lib/api/weddingWrite'
+import { TimelineShiftControl } from '@/components/TimelineShift'
 import { recallDay, rememberDay } from '@/lib/offlineDay'
+import { AUTH_CHANGED_EVENT, forgetOfflineDay, offlineGeneration, offlineScope, subscribeOfflineChanges, type OfflineScope } from '@/lib/offlineAccess'
+import { safeGet } from '@/lib/usePersist'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { getCategories, getFavorites, getVendor } from '@/lib/api/catalog'
 import { getShortlist, type ShortlistEntry } from '@/lib/api/shortlist'
 import type { components } from '@/lib/api/schema'
-import { isAuthorized } from '@/lib/api/client'
+import { accessTokenForWs, isAuthorized } from '@/lib/api/client'
 import { cn, goBack, plural } from '@/lib/utils'
 import { chatRouteForVendor, dayChatRoute, teamChatRoute, tillyChatRoute } from '@/lib/api/chats'
 import { getI18nLang, t, key } from '@/lib/i18n'
@@ -23,6 +27,7 @@ import { fmt } from '@/lib/money'
 import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { OfferSummary } from '@/components/OfferSummary'
+import { readSeating } from '@/lib/useSeating'
 
 /*
  * ИИ-координатор «Тиль».
@@ -250,9 +255,9 @@ export function Compare() {
  * браузера, а «План Б» переключал там же тумблер: у пары всё менялось, а
  * команда об этом не узнавала.
  *
- * Теперь тайминг приходит с сервера, сдвиг уходит в `POST …/timeline/shift`
- * и рассылается команде и подрядчикам (гостям канала нет — SMS не
- * подключены), план Б — в `POST …/planb/activate`.
+ * Тайминг приходит с сервера; сдвиг выбранной области требует preview и
+ * versioned confirm. Уведомления записываются руководителям и затронутым
+ * участникам/подрядчикам; гостям доставки нет. План Б — в `POST …/planb/activate`.
  * Статусов подрядчиков («едет», «на месте») в контракте нет вовсе, и
  * рисовать их нельзя: пара приняла бы выдумку за факт в день, когда цена
  * ошибки максимальна.
@@ -263,9 +268,32 @@ export function Compare() {
  * переменные темы, что и у всего приложения в тёмном режиме. Раньше десяток
  * цветов стоял в JSX буквами (ревью D4-22, R-01).
  */
+const daySessionKey = () => JSON.stringify(offlineScope(accessTokenForWs()))
+function subscribeDaySession(listener: () => void) {
+  const storage = (event: StorageEvent) => { if (event.key === null || event.key === 'tt_auth') listener() }
+  window.addEventListener(AUTH_CHANGED_EVENT, listener)
+  window.addEventListener('storage', storage)
+  return () => { window.removeEventListener(AUTH_CHANGED_EVENT, listener); window.removeEventListener('storage', storage) }
+}
+
 export function DayX() {
+  const { weddingId } = useStore()
+  const sessionKey = useSyncExternalStore(subscribeDaySession, daySessionKey)
+  const scope = useMemo(() => JSON.parse(sessionKey) as OfflineScope | null, [sessionKey])
+  useLayoutEffect(() => {
+    if (safeGet('tt_dayx_offline') && !recallDay(weddingId, scope)) forgetOfflineDay()
+  }, [weddingId, scope])
+  return <DayXContent key={`${sessionKey}:${weddingId}`} scope={scope} />
+}
+
+async function readDaySnapshot<T>(fetcher: () => Promise<T>): Promise<{ snapshot: T; generation: number }> {
+  const generation = offlineGeneration()
+  return { snapshot: await fetcher(), generation }
+}
+
+function DayXContent({ scope }: { scope: OfflineScope | null }) {
   const nav = useNavigate()
-  const { weddingId, slots, slotsState } = useStore()
+  const { weddingId } = useStore()
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   /* Отказ открыть чат — под той кнопкой, которую нажали: экран длинный, и
@@ -277,27 +305,71 @@ export function DayX() {
   const [confirmPlanB, setConfirmPlanB] = useState(false)
   // Время снимаем один раз за отрисовку: в теле компонента его брать нельзя (R-04).
   const [now, setNow] = useState(() => new Date())
+  const [online, setOnline] = useState(() => navigator.onLine)
+  const [connectionLost, setConnectionLost] = useState(() => !navigator.onLine)
+  const generation = useSyncExternalStore(subscribeOfflineChanges, offlineGeneration)
 
   const w = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
-  const q = useApi(() => weddingId ? getTimeline(weddingId) : noWedding(), [weddingId])
+  const timelineRead = useApi(() => weddingId ? readDaySnapshot(() => getTimelineSnapshot(weddingId)) : noWedding(), [weddingId])
+  const contextRead = useApi(() => weddingId ? readDaySnapshot(() => getWeddingEventsSnapshot(weddingId)) : noWedding(), [weddingId])
+  const crewRead = useApi(() => weddingId ? readDaySnapshot(() => getSlots(weddingId)) : noWedding(), [weddingId])
+  const q = { ...timelineRead, data: timelineRead.data?.snapshot ?? null }
+  const contexts = { ...contextRead, data: contextRead.data?.snapshot ?? null }
   /* План Б спрашиваем и здесь. Без этого день X предлагал «Активировать» уже
      включённый сценарий, а экран «План Б» рядом писал «активирован»: два
      экрана отвечали на один вопрос по-разному, и второе нажатие разослало бы
      команде и гостям повторную рассылку. */
   const pb = useApi(() => weddingId ? getPlanB(weddingId) : noWedding(), [weddingId])
-  /*
-   * Офлайн-копия (План §3.1, §12): на площадке сеть пропадает, а тайминг и
-   * телефоны команды нужны именно там. Воркер API не кэширует — копия одна,
-   * явная, только для этого экрана (`lib/offlineDay.ts`). Показывается лишь
-   * когда сервер НЕ ОТВЕТИЛ (ошибка без данных), и всегда с меткой «на HH:MM»:
-   * человек видит, чему верит. Пока ответ есть — копия молча обновляется.
-   */
-  const snapshot = useMemo(() => recallDay(weddingId), [weddingId])
-  const offline = !q.data && !!q.error && snapshot ? snapshot : null
-  const events = q.data ?? offline?.timeline ?? []
-  const planBOn = !!pb.data?.activatedAt || (!pb.data && !!pb.error && !!offline?.planBActivatedAt)
+  const sameContextVersion = !!q.data?.etag && q.data.etag === contexts.data?.etag
+  const states = [w, q, contexts, pb, crewRead]
+  const cacheDenied = states.some(state => state.failure && !state.failure.isDown)
+  const accessDenied = [w, q].some(state => state.failure && !state.failure.isDown)
+  const unavailable = states.some(state => state.failure?.isDown)
+  const offlineMode = !online || connectionLost || unavailable
+  const role = w.data?.members?.find(member => member.user?.id === scope?.userId)?.role
+  const canPrepareSeating = ready(w) && !w.refreshing && !!role && role !== 'vendor'
+  useEffect(() => {
+    if (!weddingId || !scope || !online || !canPrepareSeating) return
+    // Optional offline preparation; refusals clean the copy in the shared API client.
+    let active = true
+    void readSeating(weddingId, scope, () => active).catch(() => undefined)
+    return () => { active = false }
+  }, [weddingId, scope, online, canPrepareSeating])
+  const candidate = recallDay(weddingId, scope)
+  const cachedRole = candidate?.role
+  const snapshot = candidate && (!w.data || candidate.role === role) ? candidate : null
+  const offline = offlineMode && !cacheDenied ? snapshot : null
+  const events = offlineMode ? offline?.timeline ?? [] : accessDenied ? [] : q.data?.data ?? []
+  const planBOn = offlineMode ? !!offline?.planBActivatedAt : !accessDenied && !!pb.data?.activatedAt
   const reloadTimeline = q.reload
   const reloadPlanB = pb.reload
+  const reloadContexts = contexts.reload
+  const reloadWedding = w.reload
+  const reloadCrew = crewRead.reload
+
+  useEffect(() => {
+    const off = () => { setOnline(false); setConnectionLost(true); setConfirmPlanB(false) }
+    const on = () => { setOnline(true); reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() }
+    window.addEventListener('offline', off); window.addEventListener('online', on)
+    return () => { window.removeEventListener('offline', off); window.removeEventListener('online', on) }
+  }, [reloadTimeline, reloadPlanB, reloadContexts, reloadWedding, reloadCrew])
+  const revalidated = ready(w) && ready(q) && ready(contexts) && ready(pb) && ready(crewRead)
+    && !w.refreshing && !q.refreshing && !contexts.refreshing && !pb.refreshing && !crewRead.refreshing && sameContextVersion
+  useEffect(() => {
+    if (unavailable) setConnectionLost(true)
+    else if (online && revalidated) setConnectionLost(false)
+  }, [online, unavailable, revalidated])
+  useEffect(() => {
+    if (cachedRole && w.data && cachedRole !== role) {
+      forgetOfflineDay(weddingId ?? undefined)
+      reloadTimeline(); reloadContexts(); reloadCrew()
+    }
+  }, [cachedRole, w.data, role, weddingId, reloadTimeline, reloadContexts, reloadCrew])
+  useEffect(() => {
+    if (online && revalidated && !cacheDenied && timelineRead.data && timelineRead.data.generation !== generation) {
+      reloadTimeline(); reloadContexts(); reloadCrew()
+    }
+  }, [online, revalidated, cacheDenied, timelineRead.data, generation, reloadTimeline, reloadContexts, reloadCrew])
 
   /*
    * Экран живёт весь день открытым у координатора. Раньше «сейчас» снималось
@@ -312,32 +384,34 @@ export function DayX() {
    * «+15 мин» выключалась, а вместо бейджа «Включён» появлялась «Активировать».
    */
   useEffect(() => {
-    const id = setInterval(() => { setNow(new Date()); reloadTimeline(); reloadPlanB() }, 60_000)
+    const id = setInterval(() => { setNow(new Date()); if (online) { reloadTimeline(); reloadPlanB(); reloadContexts(); reloadWedding(); reloadCrew() } }, 60_000)
     return () => clearInterval(id)
-  }, [reloadTimeline, reloadPlanB])
+  }, [online, reloadTimeline, reloadPlanB, reloadContexts, reloadWedding, reloadCrew])
 
-  /* «Сейчас» — это блок, который уже начался и ещё не сменился следующим.
-     Раньше здесь стояла «Фотосессия до 16:30» независимо от времени суток. */
-  const started = events.filter(e => e.startsAt && new Date(e.startsAt) <= now)
-  const current = started[started.length - 1]
-  const next = events.find(e => e.startsAt && new Date(e.startsAt) > now)
+  const clock = timelineNow<(typeof events)[number]>(events, now)
+  const current = offlineMode ? [] : clock.active
+  const next = offlineMode ? undefined : clock.next
 
-  const liveTeam = slots.filter(s => s.vendor && (s.dealState === 'booked' || s.dealState === 'paid_deposit' || s.dealState === 'done'))
-  const team = slotsState === 'error' && offline ? offline.team : liveTeam
-  /* Копия снимается с живого ответа целиком — тайминг, план Б и команда
-     вместе, чтобы не смешивать вчерашних подрядчиков с сегодняшними часами. */
+  const liveTeam = useMemo(() => (crewRead.data?.snapshot ?? [])
+    .filter(s => s.deal && ['booked', 'paid_deposit', 'done'].includes(s.deal.state ?? ''))
+    .map(s => ({ id: s.id ?? '', label: s.label ?? '', vendor: s.deal?.vendor?.name ?? s.deal?.externalName ?? undefined,
+      vendorId: s.deal?.vendor?.id, phone: s.deal?.externalPhone ?? undefined })), [crewRead.data])
+  const team = offlineMode ? offline?.team ?? [] : accessDenied ? [] : liveTeam
+  // Timeline and event context must share a version; other fields are captured observed state.
   useEffect(() => {
-    if (!weddingId || !q.data || pb.loading || pb.error || slotsState !== 'ready') return
+    if (!weddingId || !scope || !role || role === 'vendor' || !online || connectionLost || !revalidated
+      || !q.data?.etag || !w.data || !contexts.data || !pb.data
+      || timelineRead.data?.generation !== generation || contextRead.data?.generation !== generation || crewRead.data?.generation !== generation) return
     rememberDay({
-      weddingId,
-      /* Эффект, не рендер: момент снятия копии (сторож D4-22 — про тело компонента). */
+      schema: 2, scope, role, weddingId, etag: q.data.etag,
       savedAt: new Date(Date.now()).toISOString(),
-      timeline: q.data,
-      planBActivatedAt: pb.data?.activatedAt ?? null,
+      weddingDate: w.data.date ?? null, weddingTimeZone: w.data.tz ?? null,
+      timeline: q.data.data.map(b => ({ id: b.id ?? '', name: b.name, startsAt: b.startsAt ?? null, endsAt: b.endsAt ?? null, eventId: b.eventId ?? null, location: b.location ?? null })),
+      events: contexts.data.data.map(e => ({ id: e.id, name: e.name, timeZone: e.timeZone ?? null })),
+      planBActivatedAt: pb.data.activatedAt ?? null,
       team: liveTeam.map(t => ({ id: t.id, label: t.label, vendor: t.vendor, vendorId: t.vendorId, phone: t.phone })),
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- liveTeam выводится из slots; slotsState покрывает их смену
-  }, [weddingId, q.data, pb.data, pb.loading, pb.error, slotsState])
+    }, generation)
+  }, [weddingId, scope, role, online, connectionLost, revalidated, q.data, w.data, contexts.data, pb.data, liveTeam, generation, timelineRead.data?.generation, contextRead.data?.generation, crewRead.data?.generation])
 
   /*
    * Чем кончилось действие — словами из ответа (`DayXBroadcast`, фича 005):
@@ -367,9 +441,7 @@ export function DayX() {
     } finally { setBusy(null) }
   })()
   /*
-   * Сдвиг и план Б — неповторимые действия: каждый вызов двигает все будущие
-   * блоки и шлёт команде и подрядчикам критическое уведомление мимо тихих
-   * часов. После своего POST экран перечитывает тайминг и план Б, и до ответа
+   * После принятой команды экран перечитывает тайминг и план Б, и до ответа
    * на нём прежние часы и прежнее «не включён» — человек читает это как
    * «не сработало» и жмёт снова (ревью R3-01). Пока свежий ответ в пути,
    * обе кнопки закрыты.
@@ -388,37 +460,49 @@ export function DayX() {
   const chatErrAt = (at: 'day' | 'crew' | 'team') =>
     chatErr?.at === at ? <p role="alert" className="text-[11.5px] mt-2 text-[var(--rose-ink)]">{chatErr.text}</p> : null
 
-  const time = (iso?: string | null) =>
-    iso ? new Date(iso).toLocaleTimeString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''
+  const deviceTime = (iso: string) => new Date(iso).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
+  const eventContexts = offline ? offline.events : sameContextVersion ? contexts.data?.data ?? [] : []
+  const contextMismatch = !offline && events.some(block => block.eventId) && !!q.data && !!contexts.data && !sameContextVersion
+  const programClock = (block: (typeof events)[number]) => {
+    const zone = programZone(block, eventContexts, offline ? offline.weddingTimeZone : w.data?.tz)
+    const start = programTime(block.startsAt, zone, getI18nLang())
+    const end = programTime(block.endsAt, zone, getI18nLang())
+    if (instant(block.startsAt) === null) return <span>{t('Время не задано')}</span>
+    if (!start) return <span className="break-words">{t('Часовой пояс неизвестен')} · <time dateTime={block.startsAt!}>{block.startsAt}</time></span>
+    if (instant(block.endsAt) !== null && instant(block.endsAt)! <= instant(block.startsAt)!) return <span>{start} · {t('Недопустимый интервал')} · {zone}</span>
+    return <span>{start} · {end ?? t('Окончание неизвестно')} · {zone}</span>
+  }
 
   return (
     <div data-theme="dark" className="min-h-dvh pb-10 bg-[var(--dark-bg)] text-[var(--dark-ink)]">
       <div className="px-5 pt-7 flex items-center justify-between">
         <button onClick={() => goBack(x => nav(x), (to, o) => nav(to, o))} className="press w-10 h-10 rounded-full flex items-center justify-center bg-[var(--card)]" aria-label={t('Назад')}><ChevronLeft size={18} /></button>
         <div className="text-center">
-          <b className="font-serif-d text-[19px]">{w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
+          <b className="font-serif-d text-[19px]">{offline?.weddingDate ? formatWeddingDate(offline.weddingDate) : !offlineMode && !accessDenied && w.data?.date ? formatWeddingDate(w.data.date) : t('День X')}</b>
           <p className="text-[9.5px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('РЕЖИМ ДНЯ СВАДЬБЫ')}</p>
         </div>
         <div className="w-10" />
       </div>
       {offline && (
         <p role="status" className="mx-5 mt-3 rounded-2xl px-4 py-2.5 text-[11.5px] leading-relaxed bg-[var(--card)] opacity-90">
-          {t('Сервер не отвечает — показана копия с этого телефона')}: {t('тайминг на')} {time(offline.savedAt)}. {t('Сдвиг и план Б без сети не сработают.')}
+          {t('Офлайн-копия')} · {t('Версия снимка')} {offline.etag.replaceAll('"', '')} · {deviceTime(offline.savedAt)}. {t('Актуальность и доступ не проверены.')}
         </p>
       )}
 
+      {offlineMode && !offline && <p role="status" className="mx-5 mt-3 text-[11.5px]">{cacheDenied ? t('Сохранённой программы нет') : `${t('Нет связи с сервером')} · ${t('Сохранённой программы нет')}`}</p>}
       <div className="px-5 mt-5">
         <div className="rounded-[26px] p-5 bg-[var(--card)]">
-          {current ? (
-            <div className="flex items-center justify-between">
-              <div className="min-w-0">
-                <span className="text-[9px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('СЕЙЧАС')}</span>
-                <b className="font-serif-d text-[21px] block mt-1 truncate">{current.name}</b>
-                <p className="text-[11px] opacity-60 mt-0.5">
-                  {time(current.startsAt)}{next ? ` · ${t('дальше')} ${time(next.startsAt)} · ${next.name}` : ''}
-                </p>
-              </div>
-              <span className="text-[10px] font-bold px-3 py-1.5 rounded-full shrink-0 bg-[var(--rose-deep)] text-[var(--card)]">● LIVE</span>
+          {current.length > 0 ? (
+            <div className="space-y-3">
+              {current.map(block => <div key={block.id} className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-[9px] tracking-[.2em] font-bold text-[var(--dark-gold)]">{t('СЕЙЧАС')}</span>
+                  <b className="font-serif-d text-[21px] block mt-1 break-words">{block.name}</b>
+                  <p className="text-[11px] opacity-60 mt-0.5 break-words">{programClock(block)}</p>
+                </div>
+                <span className="text-[10px] font-bold px-3 py-1.5 rounded-full shrink-0 bg-[var(--rose-deep)] text-[var(--card)]">● LIVE</span>
+              </div>)}
+              {next && <p className="text-[11px] opacity-60 break-words">{t('дальше')} · {next.name} · {programClock(next)}</p>}
             </div>
           ) : (
             <div>
@@ -427,9 +511,9 @@ export function DayX() {
                   словами, чем показывать «идёт фотосессия». */}
               {/* «Тайминг пуст» — про пришедший тайминг: при отказе сервера
                   экран дня X говорил координатору, что программы нет. */}
-              <b className="font-serif-d text-[21px] block mt-1">{next ? next.name : ready(q) || offline ? t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
+              <b className="font-serif-d text-[21px] block mt-1 break-words">{offline ? t('Офлайн-копия') : offlineMode || accessDenied ? t('Тайминг не загрузился') : next ? next.name : ready(q) ? events.length ? clock.ended ? t('Программа завершена') : t('Текущий блок не определён') : t('Тайминг пуст') : q.loading ? t('Загружаем…') : t('Тайминг не загрузился')}</b>
               <p className="text-[11px] opacity-60 mt-0.5">
-                {next ? `${t('начало в')} ${time(next.startsAt)}` : ready(q) || offline ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? '')}
+                {next ? programClock(next) : ready(q) && !events.length ? t('Соберите тайминг заранее — в день свадьбы он ведёт всю команду') : (q.error ?? q.forbiddenText ?? '')}
               </p>
             </div>
           )}
@@ -438,10 +522,10 @@ export function DayX() {
             {/* Сдвиг уходит на сервер и рассылается команде и подрядчикам.
                 Раньше он копился в браузере пары и не доходил ни до кого. */}
             {/* Из офлайн-копии сдвигать нечего: запрос не дойдёт, а кнопка обещала бы. */}
-            <button disabled={!!busy || stale || !events.length || !!offline} onClick={() => act('shift', () => shiftTimeline(weddingId!, 15))} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold disabled:opacity-50 bg-[var(--dark-gold)] text-[var(--on-grad)]">
-              {busy === 'shift' ? t('Двигаем…') : t('+15 мин всей программе')}
-            </button>
-            <button disabled={chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
+            {weddingId && <TimelineShiftControl key={weddingId} weddingId={weddingId} date={w.data?.date ?? null} timeZone={w.data?.tz ?? null}
+              blocks={events} disabled={!!busy || stale || !events.length || offlineMode || cacheDenied || !w.data || w.loading || !!w.error || w.forbidden}
+              onAccepted={() => { reloadTimeline(); reloadPlanB(); reloadContexts() }} />}
+            <button disabled={offlineMode || accessDenied || chatBusy === 'chat:day'} onClick={() => openChat('day', 'chat:day', dayChatRoute)} className="press flex-1 h-[44px] rounded-full text-[12px] font-bold border border-[var(--line)] disabled:opacity-50">{chatBusy === 'chat:day' ? t('Открываем чат…') : t('Чат дня X')}</button>
           </div>
           {chatErrAt('day')}
         </div>
@@ -450,13 +534,22 @@ export function DayX() {
         {outcome && <p role="status" className="text-[11.5px] mt-3 opacity-80">{outcome}</p>}
 
         <div className="mt-4 relative pl-6">
-          {!offline && <AsyncState q={q} />}
+          {!offline && <AsyncState q={q} forbiddenText={q.forbiddenText} />}
+          {!offline && events.some(block => block.eventId) && <AsyncState q={contexts} forbiddenText={contexts.forbiddenText} />}
+          {contextMismatch && <div className="mb-4 text-[11.5px]">
+            <p role="status">{t('Контекст программы другой версии')}</p>
+            <button disabled={q.refreshing || contexts.refreshing} onClick={() => { reloadTimeline(); reloadContexts() }}
+              className="press mt-2 h-9 px-3 inline-flex items-center gap-2 rounded-md border border-[var(--line)] disabled:opacity-50">
+              <RefreshCw size={14} />{t('Обновить контекст программы')}
+            </button>
+          </div>}
           <div className="absolute left-[7px] top-2 bottom-2 w-[1.5px] opacity-50" style={{ background: 'linear-gradient(var(--dark-gold), transparent)' }} />
           {events.map(e => (
-            <div key={e.id} className="relative mb-4">
-              <span className={cn('absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full', e.id === current?.id ? 'bg-[var(--rose-deep)]' : 'bg-[var(--dark-gold)]')} style={{ boxShadow: '0 0 12px var(--dark-gold-glow)' }} />
-              <span className="text-[9.5px] tracking-[.15em] font-bold text-[var(--dark-gold)]">{time(e.startsAt)}</span>
-              <b className="font-serif-d text-[15px] block">{e.name}</b>
+            <div key={e.id} data-timeline-block={e.id} className="relative mb-4">
+              <span className={cn('absolute -left-[19.5px] top-1.5 w-[9px] h-[9px] rounded-full', current.some(block => block.id === e.id) ? 'bg-[var(--rose-deep)]' : 'bg-[var(--dark-gold)]')} style={{ boxShadow: '0 0 12px var(--dark-gold-glow)' }} />
+              <span className="text-[9.5px] font-bold text-[var(--dark-gold)] break-words">{programClock(e)}</span>
+              {e.eventId && eventContexts.find(event => event.id === e.eventId)?.name && <p className="text-[10.5px] opacity-60 break-words">{eventContexts.find(event => event.id === e.eventId)!.name}</p>}
+              <b className="font-serif-d text-[15px] block break-words">{e.name}</b>
               {e.location && <p className="text-[10.5px] opacity-50">{e.location}</p>}
             </div>
           ))}
@@ -472,18 +565,19 @@ export function DayX() {
         <div className="mt-5">
           <b className="text-[13px]">{t('Ваша команда')}</b>
           {/* Состав команды известен только вместе с мозаикой. */}
-          {!team.length && <p className="text-[11px] opacity-60 mt-1.5">{slotsState === 'ready' ? t('Забронированных подрядчиков пока нет') : slotsState === 'error' ? t('Сервер недоступен — команда не загрузилась') : t('Загружаем…')}</p>}
-          <div className="flex gap-2 mt-2.5 overflow-x-auto no-scrollbar">
+          {!offline && <AsyncState q={crewRead} forbiddenText={crewRead.forbiddenText} />}
+          {!team.length && (offline || (!offlineMode && !accessDenied && ready(crewRead))) && <p className="text-[11px] opacity-60 mt-1.5">{t('Забронированных подрядчиков пока нет')}</p>}
+          <div className={cn('flex gap-2 mt-2.5', offline ? 'flex-col' : 'overflow-x-auto no-scrollbar')}>
             {team.map(s => (
               /* Без сети чат не открыть — из копии остаётся телефон (виден
                  паре после брони), и в день свадьбы он важнее переписки. */
-              offline && slotsState === 'error' ? (
-                <a key={s.id} href={s.phone ? `tel:${s.phone}` : undefined} aria-disabled={!s.phone} className={cn('press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)]', !s.phone && 'opacity-50')}>
-                  <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
-                  {`${s.vendor} · ${t(s.label)}`}{s.phone ? ` · ${s.phone}` : ` · ${t('телефона нет')}`}
+              offline ? (
+                <a key={s.id} href={s.phone ? `tel:${s.phone}` : undefined} aria-disabled={!s.phone} className={cn('press flex items-center gap-2 px-4 py-3 min-h-[42px] rounded-lg text-[11px] font-semibold bg-[var(--card)]', !s.phone && 'opacity-50')}>
+                  <span className="w-6 h-6 shrink-0 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
+                  <span className="min-w-0 break-words">{`${s.vendor} · ${t(s.label)}`}<span className="block mt-0.5">{s.phone ?? t('телефона нет')}</span></span>
                 </a>
               ) : (
-              <button key={s.id} disabled={chatBusy === `chat:${s.id}`} onClick={() => openChat('crew', `chat:${s.id}`, () => chatRouteForVendor(s.vendorId))} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)] disabled:opacity-50">
+              <button key={s.id} disabled={offlineMode || accessDenied || chatBusy === `chat:${s.id}`} onClick={() => openChat('crew', `chat:${s.id}`, () => chatRouteForVendor(s.vendorId))} className="press flex items-center gap-2 px-4 h-[42px] rounded-full text-[11px] font-semibold whitespace-nowrap shrink-0 bg-[var(--card)] disabled:opacity-50">
                 <span className="w-6 h-6 rounded-full grad flex items-center justify-center text-[var(--on-grad)] text-[10px]">{(s.vendor ?? '?')[0]}</span>
                 {chatBusy === `chat:${s.id}` ? t('Открываем чат…') : `${s.vendor} · ${t(s.label)}`}
               </button>
@@ -494,9 +588,9 @@ export function DayX() {
         </div>
 
         <div className="rounded-[26px] p-5 mt-4 bg-[var(--card)]">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <CloudRain size={20} className="text-[var(--dark-gold)]" />
-            <div className="flex-1">
+            <div className="flex-1 min-w-0 basis-[140px]">
               <b className="text-[13.5px]">{t('План Б: дождь')}</b>
               {/* Что активация делает на самом деле: сценарий фиксируется на
                   сервере, команде уходит уведомление. Тайминг она не
@@ -517,7 +611,7 @@ export function DayX() {
                  запроса: иначе до свежего ответа кнопка стояла бы в
                  «Подтвердить», и одно касание слало бы рассылку второй раз. */
               <button
-                disabled={!!busy || stale || !ready(pb)}
+                disabled={offlineMode || cacheDenied || !!busy || stale || !ready(pb)}
                 title={!ready(pb) ? (pb.error ?? t('Загружаем…')) : undefined}
                 onClick={() => (confirmPlanB ? act('planb', async () => { const res = await activatePlanB(weddingId!); setConfirmPlanB(false); return res }) : setConfirmPlanB(true))}
                 className={cn('press px-4 h-[38px] rounded-full text-[11px] font-bold border disabled:opacity-50', confirmPlanB ? 'bg-[var(--rose-deep)] border-[var(--rose-deep)] text-[var(--card)]' : 'border-[var(--line)]')}
@@ -531,7 +625,7 @@ export function DayX() {
         {/* SOS-координатора в контракте нет: отдельного пути «позвать
             координатора» не существует, а телефон +7 000 000-00-00 был
             выдуман. Пишем в командный чат — там координатор и сидит. */}
-        <button disabled={chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
+        <button disabled={offlineMode || accessDenied || chatBusy === 'chat:team'} onClick={() => openChat('team', 'chat:team', teamChatRoute)} className="press w-full h-[52px] rounded-full mt-4 text-[13.5px] font-bold flex items-center justify-center gap-2 bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">
           <Zap size={16} /> {chatBusy === 'chat:team' ? t('Открываем чат…') : t('Написать всей команде')}
         </button>
         {chatErrAt('team')}

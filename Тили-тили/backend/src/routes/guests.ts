@@ -5,7 +5,7 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { isCheckViolation, type Queryable } from '../plugins/db.js'
 import { guestByToken, newGuestToken, newShareCode } from '../guests/access.js'
-import { requireRole, type Role } from '../wedding/access.js'
+import { assertSeatingToken, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -245,15 +245,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         group?: string
         phone?: string
       }
-      assertPhoneByCouple(request.member!.role, body.phone !== undefined)
       /* Телефон — к виду `+7XXXXXXXXXX`, как у импорта: сырой «8 917 000-55-66»
        * не совпадал с нормализованным у дедупликации импорта и уходил
        * провайдеру SMS как есть (ревью 015). Не российский или неполный — 422. */
-      const phone = normalizedPhoneOr422(body.phone)
       const id = uuidv7()
       const partyId = uuidv7()
       const token = newGuestToken()
-      await db().tx(async (client) => {
+      const guest = await db().tx(async (client) => {
+        const role = await lockSeatingAccess(client, request)
+        assertPhoneByCouple(role, body.phone !== undefined)
+        const phone = normalizedPhoneOr422(body.phone)
         await client.query(
           `insert into guest_parties (id, wedding_id, invite_token, label, contact_phone)
            values ($1,$2,$3,$4,$5)`,
@@ -293,8 +294,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             ],
           )
         }
+        const created = await loadGuest(client, id, role)
+        await assertSeatingToken(request)
+        return created
       })
-      return reply.code(201).send(await loadGuest(db(), id, request.member!.role))
+      return reply.code(201).send(guest)
     },
   )
 
@@ -349,7 +353,6 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           group?: string
         }[]
       }
-      assertPhoneByCouple(request.member!.role, guests.some((g) => g.phone !== undefined))
       const skipped: { index: number; name: string; reason: 'duplicate' | 'invalid' }[] = []
       const createdIds: string[] = []
 
@@ -359,8 +362,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
        * или телефона: с уже заведёнными гостями и с более ранней строкой того же
        * списка. Дубликаты пропускаются, не обновляются: импорт заводит, а не
        * правит — правка у каждого гостя своя (`PATCH …/guests/{id}`). */
-      await db().tx(async (client) => {
-        await client.query('select id from weddings where id = $1 for update', [weddingId])
+      const created = await db().tx(async (client) => {
+        const role = await lockSeatingAccess(client, request)
+        assertPhoneByCouple(role, guests.some((g) => g.phone !== undefined))
         const { rows: existing } = await client.query<{ name: string; phone: string | null }>(
           'select name, phone from guests where wedding_id = $1',
           [weddingId],
@@ -427,10 +431,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           }
           createdIds.push(id)
         }
+        const created: unknown[] = []
+        for (const id of createdIds) created.push(await loadGuest(client, id, role))
+        await assertSeatingToken(request)
+        return created
       })
-
-      const created: unknown[] = []
-      for (const id of createdIds) created.push(await loadGuest(db(), id, request.member!.role))
       return reply.code(201).send({ created, skipped })
     },
   )
@@ -452,7 +457,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const { guestId } = request.params as { guestId: string }
       const { name } = request.body as { name: string }
       if (!isUuid(guestId)) throw notFound('Гость не найден')
-      return db().tx(async (client) => {
+      const guest = await db().tx(async (client) => {
+        const role = await lockSeatingAccess(client, request)
         const { rows: primary } = await client.query<{ party_id: string; group_name: string | null }>(
           `select party_id, group_name from guests
             where id = $1 and wedding_id = $2 and party_position = 1
@@ -474,8 +480,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
            values($1,$2,$3,false,$4,$5,$6,$7,false)`,
           [id, weddingId, name, primary[0].group_name, newGuestToken(), primary[0].party_id, position],
         )
-        return reply.code(201).send(await loadGuest(client, id, request.member!.role))
+        const created = await loadGuest(client, id, role)
+        await assertSeatingToken(request)
+        return created
       })
+      return reply.code(201).send(guest)
     },
   )
 
@@ -518,15 +527,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       // `undefined` — поле не прислали, оставить как есть. Явный `null` —
       // снять значение (R-17): пропуск и очистка это разные намерения.
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
-      assertPhoneByCouple(request.member!.role, has('phone'))
-      // Телефон — к одному виду (см. POST); `null` — стереть, как и было.
-      const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
 
       /* Правка гостя, посадка и освобождение мест — одна транзакция (R-122):
        * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,
        * которого не бывает в норме. */
       return db().tx(async (client) => {
-        /* Строка гостя — первой, до стола и до броней: тот же порядок замков,
+        const role = await lockSeatingAccess(client, request)
+        assertPhoneByCouple(role, has('phone'))
+        const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
+        await client.query("select set_config('tili.timeline_actor',$1,true)", [request.caller!.userId])
+        /* Строка гостя — после свадьбы, до стола и до броней: тот же порядок замков,
          * что у посадки в автобус (гость → маршрут, RF-BE-06). Заодно 404
          * до любых проверок: чужого гостя дальше не пускаем. */
         const { rows: locked } = await client.query<{
@@ -554,6 +564,13 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         if (has('plusOne') && current.party_position !== 1) {
           throw new AppError(409, 'family_member_not_primary', 'Состав семьи меняется у основного приглашённого')
         }
+        const { rows: secondRows } = current.party_position === 1 && (has('plusOne') || has('tableId'))
+          ? await client.query<{ id: string; table_id: string | null; is_placeholder: boolean }>(
+            'select id, table_id, is_placeholder from guests where party_id=$1 and party_position=2 for update',
+            [current.party_id],
+          ) : { rows: [] }
+        const secondPerson = secondRows[0]
+        const placeholder = secondPerson?.is_placeholder ? secondPerson : undefined
         const seatedAt = body.plusOne === true && !has('tableId') ? current.table_id : null
         const tableToCheck = (body.tableId as string | undefined) ?? seatedAt ?? undefined
         if (tableToCheck) {
@@ -567,26 +584,21 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           )
           if (table.length === 0) throw notFound('Стол не найден')
 
-          /* Вместимость считается в персонах, а не в записях (R-29): «Ольга
-           * и Денис» с плюс-одним — двое за столом, как их считает кейтеринг
-           * на соседнем экране. Сам гость исключается из уже сидящих (он мог
-           * пересаживаться в пределах этого же стола) и добавляется с тем
-           * `plusOne`, который придёт вместе с посадкой. */
+          // Named people move individually. Only a generated legacy companion
+          // follows the primary; count the actual projected assignment, not family size.
           const { rows: seated } = await client.query<{ persons: string }>(
             `select count(*)::text as persons
                from guests o
               where o.wedding_id = $2
                 and o.table_id = $1
-                and o.party_id <> $3`,
-            [tableToCheck, weddingId, current.party_id],
+                and o.id <> $3`,
+            [tableToCheck, weddingId, guestId],
           )
-          const { rows: family } = await client.query<{ n: string }>(
-            'select count(*)::text as n from guests where party_id = $1',
-            [current.party_id],
-          )
-          const currentFamilySize = Number(family[0]!.n)
-          const desiredFamilySize = has('plusOne') ? (body.plusOne ? Math.max(2, currentFamilySize) : 1) : currentFamilySize
-          const total = Number(seated[0]!.persons) + desiredFamilySize
+          const changesPlaceholder = !!placeholder && (has('tableId') || body.plusOne === false)
+          const removedFromTarget = changesPlaceholder && placeholder.table_id === tableToCheck ? 1 : 0
+          const movedToTarget = placeholder && has('tableId') && body.plusOne !== false ? 1 : 0
+          const addedToTarget = body.plusOne === true && !secondPerson ? 1 : 0
+          const total = Number(seated[0]!.persons) + 1 - removedFromTarget + movedToTarget + addedToTarget
           const { capacity, name } = table[0]!
           if (total > capacity) {
             throw conflict(
@@ -652,14 +664,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         if (res.rowCount === 0) throw notFound('Гость не найден')
 
         if (has('plusOne')) {
-          const { rows: placeholderRows } = await client.query<{ id: string }>(
-            `select id from guests
-              where party_id = $1 and party_position = 2 and is_placeholder
-              for update`,
-            [current.party_id],
-          )
-          const placeholder = placeholderRows[0]
-          if (body.plusOne === true && !placeholder) {
+          if (body.plusOne === true && !secondPerson) {
             const companionId = uuidv7()
             const effectiveTable = has('tableId') ? (body.tableId as string | null) : current.table_id
             const effectiveStatus = (body.status as string | undefined) ?? current.rsvp
@@ -767,7 +772,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             `Рассадка обновлена: за столами ${n} ${plural(n, 'гость', 'гостя', 'гостей')}`,
           )
         }
-        return loadGuest(client, guestId, request.member!.role)
+        const guest = await loadGuest(client, guestId, role)
+        await assertSeatingToken(request)
+        return guest
       })
     },
   )
@@ -776,6 +783,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
     await db().tx(async (client) => {
+      await lockSeatingAccess(client, request)
+      await client.query("select set_config('tili.timeline_actor',$1,true)", [request.caller!.userId])
       const { rows } = await client.query<{ party_id: string; party_position: number }>(
         'select party_id, party_position from guests where id = $1 and wedding_id = $2 for update',
         [guestId, request.member!.weddingId],
@@ -800,6 +809,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
       if (members.length <= 1) {
         await client.query('delete from guest_parties where id = $1', [guest.party_id])
+        await assertSeatingToken(request)
         return
       }
 
@@ -823,6 +833,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           [guest.party_id, nextPrimary.name, nextPrimary.phone],
         )
       }
+      await assertSeatingToken(request)
     })
     return reply.code(204).send()
   })
@@ -925,14 +936,15 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     const { guestId } = request.params as { guestId: string }
     if (!isUuid(guestId)) throw notFound('Гость не найден')
 
-    const { rows } = await db().query<{ party_id: string }>(
-      'select party_id from guests where id = $1 and wedding_id = $2',
-      [guestId, weddingId],
-    )
-    if (rows.length === 0) throw notFound('Гость не найден')
-    const partyId = rows[0]!.party_id
-
     return db().tx(async (client) => {
+      await lockSeatingAccess(client, request)
+      const { rows } = await client.query<{ party_id: string }>(
+        'select party_id from guests where id = $1 and wedding_id = $2 for update',
+        [guestId, weddingId],
+      )
+      if (rows.length === 0) throw notFound('Гость не найден')
+      const partyId = rows[0]!.party_id
+      await client.query('select id from guest_parties where id = $1 for update', [partyId])
       /* Прежний код гаснет: «выдать новую ссылку» означает, что старая
        * потеряна или ушла не туда.
        *
@@ -989,6 +1001,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         'select expires_at from guest_invite_codes where code = $1',
         [code],
       )
+      await assertSeatingToken(request)
       return { url: `https://tili-tili.ru/i/${code}`, expiresAt: saved[0]!.expires_at.toISOString() }
     })
   })
@@ -1196,6 +1209,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const has = (obj: object, key: string) => Object.prototype.hasOwnProperty.call(obj, key)
 
       const result = await db().tx(async (client) => {
+        await client.query('select id from weddings where id=$1 for update', [guest.weddingId])
+        // Guest-token actions have no authenticated user author.
+        await client.query("select set_config('tili.timeline_actor','',true)")
         const { rows: locked } = await client.query<{
           id: string
           name: string
@@ -1389,24 +1405,24 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const weddingId = request.member!.weddingId
       const body = (request.body ?? {}) as { name?: string; capacity?: number }
-      const { rows: last } = await db().query<{ n: number }>(
-        'select coalesce(max(sort), -1) + 1 as n from tables where wedding_id = $1',
-        [weddingId],
-      )
-      const sort = last[0]!.n
-      const id = uuidv7()
-      await db().query('insert into tables (id, wedding_id, name, capacity, sort) values ($1,$2,$3,$4,$5)', [
-        id,
-        weddingId,
-        body.name ?? `Стол ${sort + 1}`,
-        body.capacity ?? 8,
-        sort,
-      ])
-      const { rows } = await db().query<{ id: string; name: string; capacity: number }>(
-        'select id, name, capacity from tables where id = $1',
-        [id],
-      )
-      return reply.code(201).send({ ...rows[0]!, guestIds: [] })
+      const table = await db().tx(async (client) => {
+        await lockSeatingAccess(client, request)
+        const { rows: last } = await client.query<{ n: number }>(
+          'select coalesce(max(sort), -1) + 1 as n from tables where wedding_id = $1',
+          [weddingId],
+        )
+        const sort = last[0]!.n
+        const id = uuidv7()
+        await client.query('insert into tables (id, wedding_id, name, capacity, sort) values ($1,$2,$3,$4,$5)', [
+          id, weddingId, body.name ?? `Стол ${sort + 1}`, body.capacity ?? 8, sort,
+        ])
+        const { rows } = await client.query<{ id: string; name: string; capacity: number }>(
+          'select id, name, capacity from tables where id = $1', [id],
+        )
+        await assertSeatingToken(request)
+        return { ...rows[0]!, guestIds: [] }
+      })
+      return reply.code(201).send(table)
     },
   )
 
@@ -1436,6 +1452,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       if (!isUuid(tableId)) throw notFound('Стол не найден')
 
       return db().tx(async (client) => {
+        await lockSeatingAccess(client, request)
         const { rows: table } = await client.query<{ name: string }>(
           'select name from tables where id = $1 and wedding_id = $2 for update',
           [tableId, weddingId],
@@ -1466,6 +1483,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           'select id from guests where table_id = $1 order by created_at',
           [tableId],
         )
+        await assertSeatingToken(request)
         return { ...rows[0]!, guestIds: guests.map((g) => g.id) }
       })
     },
@@ -1480,6 +1498,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
     if (!isUuid(tableId)) throw notFound('Стол не найден')
 
     await db().tx(async (client) => {
+      await lockSeatingAccess(client, request)
       const { rows: seated } = await client.query<{ n: string }>(
         'select count(*)::text as n from guests where table_id = $1 and wedding_id = $2',
         [tableId, weddingId],
@@ -1502,6 +1521,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           `Рассадка обновлена: за столами ${n} ${plural(n, 'гость', 'гостя', 'гостей')}`,
         )
       }
+      await assertSeatingToken(request)
     })
     return reply.code(204).send()
   })

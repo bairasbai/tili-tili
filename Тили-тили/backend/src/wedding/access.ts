@@ -1,5 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { AppError, forbidden, notFound } from '../errors.js'
+import { AppError, forbidden, notFound, unauthorized } from '../errors.js'
+import { consentState } from '../auth/consent.js'
+import { verifyAccessToken } from '../auth/tokens.js'
+import type { Queryable } from '../plugins/db.js'
 import { GUEST_ACCESSIBLE_WEDDING_PATHS, guestByToken, readGuestToken } from '../guests/access.js'
 import { isUuid } from '../ids.js'
 
@@ -37,6 +40,7 @@ interface Rule {
  * Порядок важен: берётся первое подошедшее правило.
  */
 const MATRIX: Rule[] = [
+  { url: /^\/weddings\/:weddingId\/events(\/|$)/, by: { GET: ALL_TEAM, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/offers\/[^/]+\/accept$/, by: { POST: ONLY_COUPLE } },
   {
     url: /^\/weddings\/:weddingId\/slots\/[^/]+\/shortlist$/,
@@ -93,16 +97,15 @@ const MATRIX: Rule[] = [
 
   /* Сдвиг тайминга — команда днём X, а не правка расписания.
    *
-   * Он двигает ВСЕ ещё не начавшиеся блоки, пишет в журнал рассылок и шлёт
-   * КРИТИЧЕСКОЕ уведомление всем гостям и забронированным подрядчикам, то есть
-   * мимо тихих часов. Рассуждение то же, что у плана Б строкой ниже, и оно
-   * применимо дословно: командует тот, кто командует днём (решение владельца
-   * 2026-09-04). Промах помощника по этой кнопке в час ночи будит полторы
-   * сотни человек, и отменить это нечем.
+   * Preview/confirm выбирает день или мероприятие и исключает fixed/прошедшие
+   * блоки. Подтверждение пишет журнал и критические уведомления руководителям
+   * и затронутым членам команды/подрядчикам. guestsAffected не означает доставку
+   * гостям. Право командовать остаётся у пары и координатора (§2).
    *
    * Правило стоит ВЫШЕ общего по `timeline`: побеждает первое подошедшее.
    * Обычная правка расписания (`PUT /timeline`) остаётся всей команде. */
-  { url: /^\/weddings\/:weddingId\/timeline\/shift$/, by: { POST: DAY_COMMAND } },
+  { url: /^\/weddings\/:weddingId\/timeline\/shift(\/preview)?$/, by: { POST: DAY_COMMAND } },
+  { url: /^\/weddings\/:weddingId\/timeline\/acknowledgments$/, by: { GET: ALL_TEAM } },
 
   {
     url: /^\/weddings\/:weddingId\/(guests|tables|tasks|logistics|menu-poll|timeline|album)/,
@@ -202,4 +205,37 @@ export function requireRole(request: FastifyRequest, ...roles: Role[]): void {
   if (!role || !roles.includes(role)) {
     throw new AppError(403, 'forbidden', 'Недостаточно прав')
   }
+}
+
+/** Guest and seating writes pin current access before taking guest/party/table locks. */
+export async function lockSeatingAccess(client: Queryable, request: FastifyRequest): Promise<Role> {
+  const weddingId = request.member!.weddingId
+  const caller = request.caller!
+  const wedding = await client.query<{ archived_at: Date | null; cancelled_at: Date | null }>(
+    'select archived_at,cancelled_at from weddings where id=$1 for update', [weddingId],
+  )
+  if (!wedding.rows[0] || wedding.rows[0].archived_at || wedding.rows[0].cancelled_at) throw notFound('Свадьба не найдена')
+  const user = await client.query<{ deleted_at: Date | null }>('select deleted_at from users where id=$1 for share', [caller.userId])
+  if (!user.rows[0] || user.rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
+  const session = await client.query('select id from sessions where id=$1 and user_id=$2 and revoked_at is null for share', [caller.sessionId, caller.userId])
+  if (session.rowCount === 0) throw unauthorized('Сессия завершена')
+  const member = await client.query<{ role: Role }>('select role from wedding_members where wedding_id=$1 and user_id=$2 for share', [weddingId, caller.userId])
+  const role = member.rows[0]?.role
+  if (!role) throw notFound('Свадьба не найдена')
+  if (!allowedRoles(request.routeOptions.url!, request.method).includes(role)) throw forbidden('Недостаточно прав')
+  const config = request.server.appConfig
+  const state = await consentState(client, caller.userId, config.policyVersion, { lock: true })
+  if (state === 'none') throw forbidden('Нужно согласие на обработку персональных данных')
+  if (state === 'outdated') throw new AppError(403, 'consent_outdated', 'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить')
+  await assertSeatingToken(request)
+  return role
+}
+
+/** Time can advance during a later resource wait even while access rows are pinned. */
+export async function assertSeatingToken(request: FastifyRequest): Promise<void> {
+  const config = request.server.appConfig
+  const caller = request.caller!
+  if (!config.jwtAccessSecret) throw unauthorized('Сервер не настроен для проверки токенов')
+  const claims = await verifyAccessToken(config.jwtAccessSecret, request.headers.authorization!.slice('Bearer '.length).trim())
+  if (claims.sub !== caller.userId || claims.sid !== caller.sessionId) throw unauthorized('Сессия завершена')
 }

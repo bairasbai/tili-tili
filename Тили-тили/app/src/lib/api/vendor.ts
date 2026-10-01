@@ -144,6 +144,18 @@ export const getVendorUpdates = () => api.get('/vendor/updates')
 export const ackVendorUpdate = (updateId: string) =>
   api.post(url('/vendor/updates/{updateId}/ack', { updateId }), {})
 
+export type VendorProgram = components['schemas']['VendorProgramSnapshot']
+export type VendorProgramAck = components['schemas']['VendorProgramAck']
+
+export const getVendorPrograms = (cursor?: string) =>
+  api.get((cursor ? `/vendor/programs?cursor=${encodeURIComponent(cursor)}` : '/vendor/programs') as '/vendor/programs')
+
+export const getVendorProgram = (weddingId: string) =>
+  api.getSnapshot(url('/vendor/weddings/{weddingId}/timeline', { weddingId }))
+
+export const acknowledgeVendorProgram = (weddingId: string, readToken: string, etag: string) =>
+  api.post(url('/vendor/weddings/{weddingId}/timeline/ack', { weddingId }), { readToken }, { ifMatch: etag })
+
 export const getVendorAnalytics = (period: 'month' | 'season' | 'year' = 'season') =>
   api.get(`/vendor/analytics?period=${period}` as '/vendor/analytics')
 

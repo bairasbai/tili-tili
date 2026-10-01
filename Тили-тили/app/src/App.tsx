@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TabBar, VendorTabBar, OfflineBanner } from '@/components/chrome'
+import { AppUpdate } from '@/components/AppUpdate'
 import { t } from '@/lib/i18n'
 import { CONSENT_OUTDATED_KEY, consentOutdated, isAuthorized, onConsentOutdated } from '@/lib/api/client'
 import Onboarding from '@/pages/Onboarding'
@@ -78,6 +79,8 @@ const After = lazy(() => load.smart().then(m => ({ default: m.After })))
 const PlanB = lazy(() => load.smart().then(m => ({ default: m.PlanB })))
 
 const VendorDashboard = lazy(() => load.vendorApp().then(m => ({ default: m.VendorDashboard })))
+const VendorPrograms = lazy(() => import('@/pages/VendorPrograms').then(m => ({ default: m.VendorPrograms })))
+const VendorProgramReader = lazy(() => import('@/pages/VendorPrograms').then(m => ({ default: m.VendorProgramReader })))
 const VendorProfileWizard = lazy(() => load.vendorApp().then(m => ({ default: m.VendorProfileWizard })))
 const VendorDeals = lazy(() => load.vendorApp().then(m => ({ default: m.VendorDeals })))
 const VendorVerification = lazy(() => load.vendorApp().then(m => ({ default: m.VendorVerification })))
@@ -204,6 +207,7 @@ function Shell() {
   return (
     <div className={`app-shell${noTab ? ' no-tab' : ''}`} key={lang}>
       <OfflineBanner />
+      <AppUpdate />
       {gated ? <ConsentGate onDone={bump} /> : (
       <Suspense fallback={<RouteLoading />}>
         <Routes>
@@ -256,6 +260,8 @@ function Shell() {
           <Route path="/dayx" element={<DayX />} />
           <Route path="/after" element={<After />} />
           <Route path="/vendor-app" element={<VendorDashboard />} />
+          <Route path="/vendor-app/programs" element={<VendorPrograms />} />
+          <Route path="/vendor-app/programs/:weddingId" element={<VendorProgramReader />} />
           <Route path="/vendor-app/profile" element={<VendorProfileWizard />} />
           <Route path="/vendor-app/deals" element={<VendorDeals />} />
           <Route path="/vendor-app/deals/:id" element={<VendorDealCard />} />

@@ -17,6 +17,7 @@ import { MemoryRouter } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import App from '@/App'
 import { projectFile } from '@/test/projectFiles'
+import type { VendorProgram } from './api/vendor'
 
 type Routes = Record<string, unknown>
 type Call = { method: string; path: string; url: string; body: unknown }
@@ -61,6 +62,14 @@ beforeEach(() => { localStorage.clear() })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const TIMELINE = [{ id: 'e1', name: 'Церемония', startsAt: '2027-06-14T12:00:00+05:00', forGuests: true }]
+const PROGRAM: VendorProgram = {
+  weddingId: 'w1', wedding: 'Пара', sourceVersion: '1', updatedAt: null,
+  acknowledgedAt: null, requiresAcknowledgment: false, readToken: null, expiresAt: null,
+  blocks: [{ id: 'e1', name: 'Церемония', startsAt: TIMELINE[0]!.startsAt, endsAt: null,
+    location: null, durationMinutes: null, travelMinutes: 0, bufferMinutes: 0, fixed: false,
+    outdoor: false, roles: ['participant'], dependsOn: [],
+    event: { id: 'main', name: 'Свадьба', date: '2027-06-14', timeZone: 'Asia/Yekaterinburg', location: null } }],
+}
 const SLOT = { id: 's-photo', categoryId: 'photo', label: 'Фотограф', deal: null, tileState: 'empty' as const }
 const MESSAGES_INITIAL = {
   items: [{ id: 'm1', chatId: 'c1', senderId: null, text: 'Здравствуйте, ждём вас', sentAt: '2027-06-13T10:00:00.000Z', system: false, mine: false }],
@@ -72,6 +81,7 @@ describe('FL-02 · /guest-vendor/:token — кабинет гостя-подря
     const calls = serve({
       '/guest-vendor/tok1': { weddingDate: '2027-06-14', slot: SLOT, chatId: 'c1', holdHours: 72, timeline: TIMELINE },
       '/guest-vendor/tok1/messages': MESSAGES_INITIAL,
+      '/guest-vendor/tok1/timeline': PROGRAM,
     })
     const r = await open('/guest-vendor/tok1', 'Церемония')
     /* Реальные строки онбординга (Onboarding.tsx:10,35) — не заголовок вкладки
@@ -89,6 +99,7 @@ describe('FL-02 · /guest-vendor/:token — кабинет гостя-подря
     let msgGets = 0
     const calls = serve({
       '/guest-vendor/tok1': { weddingDate: '2027-06-14', slot: SLOT, chatId: 'c1', holdHours: 72, timeline: TIMELINE },
+      '/guest-vendor/tok1/timeline': PROGRAM,
       '/guest-vendor/tok1/messages': (c: Call) => {
         if (c.method === 'POST') {
           return { id: 'm2', chatId: 'c1', senderId: null, text: (c.body as { text: string }).text, sentAt: '2027-06-13T11:00:00.000Z', system: false, mine: true }
@@ -118,6 +129,7 @@ describe('FL-02 · /guest-vendor/:token — кабинет гостя-подря
     serve({
       '/guest-vendor/tok3': { weddingDate: null, slot: { id: 's-mc', categoryId: 'host', label: 'Ведущий', deal: null, tileState: 'empty' }, chatId: 'c3', holdHours: 24, timeline: [] },
       '/guest-vendor/tok3/messages': { items: [], nextCursor: null },
+      '/guest-vendor/tok3/timeline': { ...PROGRAM, blocks: [] },
     })
     const r = await open('/guest-vendor/tok3', 'Пара ещё не выбрала дату')
     expect(text(r)).not.toMatch(/\d{2}\.\d{2}\.\d{4}/)

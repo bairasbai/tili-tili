@@ -9,7 +9,7 @@
  * в порядке. Теперь он сначала смотрит, не сменилась ли пара под ним.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { api, ApiError } from './client'
+import { api, ApiError, url } from './client'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -19,6 +19,52 @@ beforeEach(() => {
   localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a0', refreshToken: 'r0' }))
 })
 afterEach(() => vi.unstubAllGlobals())
+
+describe('version-bound snapshots', () => {
+  it('binds each response version to its own data instead of a global cache', async () => {
+    let revision = 0
+    let submitted: string | undefined
+    vi.stubGlobal('fetch', vi.fn(async (_input: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') submitted = (init.headers as Record<string, string>)['If-Match']
+      else revision++
+      return new Response(JSON.stringify([{ id: `block-${revision}`, name: 'Block' }]), {
+        status: 200, headers: { 'content-type': 'application/json', etag: `"${revision}"` },
+      })
+    }))
+    const path = url('/weddings/{weddingId}/timeline', { weddingId: 'w1' })
+    const first = await api.getSnapshot(path)
+    const second = await api.getSnapshot(path)
+    expect(first.etag).toBe('"1"')
+    expect(second.etag).toBe('"2"')
+    await api.putSnapshot(path, first.data, { ifMatch: first.etag! })
+    expect(submitted).toBe('"1"')
+  })
+
+  it('does not fabricate a version when the server supplies none', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(200, [])))
+    const result = await api.getSnapshot(url('/weddings/{weddingId}/timeline', { weddingId: 'w1' }))
+    expect(result.etag).toBeNull()
+    expect(result.data).toEqual([])
+  })
+
+  it('retains metadata headers of this successful response alongside its data', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([]), {
+      headers: { 'content-type': 'application/json', etag: '"9"', 'X-Timeline-Updated-At': '2026-09-30T10:00:00.000Z', 'X-Timeline-Updated-By': 'actual-author' },
+    })))
+    const snapshot = await api.getSnapshot(url('/weddings/{weddingId}/timeline', { weddingId: 'w1' }))
+    expect(snapshot.etag).toBe('"9"')
+    expect(snapshot.headers.get('X-Timeline-Updated-At')).toBe('2026-09-30T10:00:00.000Z')
+    expect(snapshot.headers.get('X-Timeline-Updated-By')).toBe('actual-author')
+  })
+
+  it('does not retry a conflict against a newer version', async () => {
+    const fetcher = vi.fn(async () => json(409, { error: { code: 'timeline_conflict', message: 'Changed' } }))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(api.putSnapshot(url('/weddings/{weddingId}/timeline', { weddingId: 'w1' }), [], { ifMatch: '"1"' }))
+      .rejects.toMatchObject({ status: 409, code: 'timeline_conflict' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+})
 
 describe('refresh, устаревший под другой вкладкой', () => {
   it('берёт пару, которую успела положить другая вкладка, и повторяет запрос с ней', async () => {

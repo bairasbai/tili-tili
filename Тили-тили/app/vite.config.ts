@@ -1,7 +1,10 @@
 import path from "path"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { criticalAssets } from './build/criticalAssets'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -9,7 +12,19 @@ export default defineConfig(({ mode }) => ({
   /* Плагин инспектора — только в разработке: в боевой сборке его атрибуты на
      каждом элементе — лишний вес и лишние сведения о структуре кода
      (аудит 2026-09-07, блок 9). */
-  plugins: [mode === 'development' && inspectAttr(), react()].filter(Boolean),
+  plugins: [mode === 'development' && inspectAttr(), react(), {
+    name: 'critical-offline-assets',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const assets = criticalAssets(bundle)
+      const source = readFileSync(path.resolve(__dirname, 'public/sw.js'), 'utf8')
+      if (!source.includes('const CRITICAL_ASSETS = []')) throw new Error('Offline asset injection marker missing')
+      const version = createHash('sha256').update(source).update(JSON.stringify(assets)).digest('hex').slice(0, 16)
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: source
+        .replace('const CRITICAL_ASSETS = []', 'const CRITICAL_ASSETS = ' + JSON.stringify(assets))
+        .replace("const CACHE_VERSION = 'v6'", `const CACHE_VERSION = 'v6-${version}'`) })
+    },
+  } satisfies Plugin].filter(Boolean),
   build: {
     rollupOptions: {
       output: {

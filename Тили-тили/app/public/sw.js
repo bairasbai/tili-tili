@@ -7,17 +7,42 @@
  */
 /* Версия поднимается вместе с правилом кэширования (ниже): в кэше прежней
    версии лежат записи, положенные туда прежним правилом, — их вычищает `activate`.
-   v4 — «всё, кроме /api/» → белый список статики; v5 — только сборка и оболочка. */
-const CACHE = 'tilitili-v5'
+   v6 — build-derived critical chunks; no private API responses. */
+const CACHE_VERSION = 'v6'
+const CACHE_PREFIX = 'tilitili:' + new URL(self.registration.scope).pathname + ':'
+const CACHE = CACHE_PREFIX + CACHE_VERSION
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
+// Replaced from the actual Rollup output, never guessed hashed filenames.
+const CRITICAL_ASSETS = []
 const OFFLINE_PAGE = new URL('./index.html', self.registration.scope).toString()
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()))
+  e.waitUntil(caches.open(CACHE).then(async c => {
+    // Do not activate a partially populated shell or an HTML fallback posing as JS.
+    const responses = await Promise.all([...SHELL, ...CRITICAL_ASSETS].map(async path => {
+      const request = new Request(new URL(path, self.registration.scope), { cache: 'reload' })
+      const response = await fetch(request)
+      if (!response.ok || response.redirected || looksLikeHtmlSwap(request, response)) throw new Error('Offline asset unavailable: ' + path)
+      // Drain each network stream before waiting for all responses; cache writes
+      // still start only after every required asset has fully arrived.
+      const body = await response.arrayBuffer()
+      return [request, new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })]
+    }))
+    await Promise.all(responses.map(([request, response]) => c.put(request, response)))
+  }).then(() => { if (!self.registration.active) return self.skipWaiting() }).catch(async error => {
+    await caches.delete(CACHE)
+    throw error
+  }))
 })
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()))
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()))
+})
+
+self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING' && e.source?.url?.startsWith(self.registration.scope)) {
+    e.waitUntil(self.skipWaiting())
+  }
 })
 
 /*
@@ -109,7 +134,7 @@ self.addEventListener('fetch', (e) => {
   if (new URL(request.url).pathname.startsWith('/api/')) return
   // Навигация: network-first, офлайн — оболочка приложения (SPA)
   if (request.mode === 'navigate') {
-    e.respondWith(fetch(request).catch(() => caches.match(OFFLINE_PAGE)))
+    e.respondWith(fetch(request).catch(() => caches.open(CACHE).then(c => c.match(OFFLINE_PAGE))))
     return
   }
   // Не статика — сеть без кэша, и воркер в это даже не вмешивается. Сюда
@@ -117,7 +142,7 @@ self.addEventListener('fetch', (e) => {
   if (!isStaticAsset(request)) return
   // Статика: cache-first, затем сеть с докэшированием
   e.respondWith(
-    caches.match(request).then(hit => hit || fetch(request).then(res => {
+    caches.open(CACHE).then(c => c.match(request)).then(hit => hit || fetch(request).then(res => {
       if (res.ok && !looksLikeHtmlSwap(request, res)) {
         const copy = res.clone()
         caches.open(CACHE).then(c => c.put(request, copy))

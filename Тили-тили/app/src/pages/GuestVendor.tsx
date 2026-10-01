@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router'
-import { Clock3, Send } from 'lucide-react'
+import { Send } from 'lucide-react'
 import { ApiError } from '@/lib/api/client'
 import { useApi, explainError } from '@/lib/api/useApi'
 import { ErrorState } from '@/components/AsyncState'
-import { getGuestVendor, getGuestVendorMessages, postGuestVendorMessage } from '@/lib/api/guestVendor'
-import { formatTime, formatWeddingDate } from '@/lib/weddingDate'
+import { OfflineProgramView, ProgramReader } from '@/components/ProgramReader'
+import { useExternalProgramNamespace, useProgramOnline } from '@/lib/offlineProgramHooks'
+import { acknowledgeExternalProgram, getExternalProgram, getGuestVendor, getGuestVendorMessages, postGuestVendorMessage } from '@/lib/api/guestVendor'
+import { formatWeddingDate } from '@/lib/weddingDate'
 import { t } from '@/lib/i18n'
 
 /*
@@ -24,7 +26,7 @@ import { t } from '@/lib/i18n'
 
 type GuestVendorPage = Awaited<ReturnType<typeof getGuestVendor>>
 
-type PageResult = { token: string; page: GuestVendorPage | null; error: unknown }
+type PageResult = { token: string; tick: number; page: GuestVendorPage | null; error: unknown }
 
 /** Загрузка кабинета: 410 — ссылка мертва (полный экран, ничего больше), остальное — обычный отказ с «Повторить». */
 function useGuestVendorPage(token: string) {
@@ -34,8 +36,8 @@ function useGuestVendorPage(token: string) {
   useEffect(() => {
     let alive = true
     getGuestVendor(token)
-      .then(p => { if (alive) setResult({ token, page: (p ?? null) as GuestVendorPage | null, error: null }) })
-      .catch((e: unknown) => { if (alive) setResult({ token, page: null, error: e }) })
+      .then(p => { if (alive) setResult({ token, tick, page: (p ?? null) as GuestVendorPage | null, error: null }) })
+      .catch((e: unknown) => { if (alive) setResult({ token, tick, page: null, error: e }) })
     return () => { alive = false }
   }, [token, tick])
 
@@ -43,7 +45,7 @@ function useGuestVendorPage(token: string) {
   /* Ответ устаревшего токена (маршрут сменился без размонтирования — не
      бывает при `:token` в пути, но проверка дешёвая и на месте, как в
      `Invite.tsx`'s `useRsvpPage`) на экран не попадает. */
-  const current = result?.token === token ? result : null
+  const current = result?.token === token && result.tick === tick ? result : null
   const page = current?.page ?? null
   const error: unknown = current?.error ?? null
   const dead = error instanceof ApiError && error.status === 410
@@ -52,7 +54,18 @@ function useGuestVendorPage(token: string) {
 
 export default function GuestVendor() {
   const { token } = useParams<{ token: string }>()
-  const q = useGuestVendorPage(token ?? '')
+  const online = useProgramOnline()
+  const scope = useExternalProgramNamespace(token ?? '')
+  if (scope.pending) return <p className="px-5 py-8 text-sm">{t('Загружаем…')}</p>
+  if (!online) return <div className="min-h-dvh px-5 pt-8 pb-16 max-w-[640px] mx-auto"><p role="alert" className="text-sm mb-3">{t('Нет связи с сервером')}</p><OfflineProgramView namespace={scope.namespace} reload={() => {}} /></div>
+  return <GuestVendorPageRead key={token} token={token ?? ''} namespace={scope.namespace} />
+}
+
+function GuestVendorPageRead({ token, namespace }: { token: string; namespace: string | null }) {
+  const q = useGuestVendorPage(token)
+  const [refusal, setRefusal] = useState<ApiError | null>(null)
+  const onRefused = useCallback((error: ApiError) => setRefusal(error), [])
+  const retry = () => { setRefusal(null); q.reload() }
 
   if (q.loading) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
@@ -63,27 +76,29 @@ export default function GuestVendor() {
   /* 410 — ссылка отозвана или истекла: полноэкранное сообщение и ничего
      больше (ни тайминга, ни композитора чата — им нечего показывать без
      живой ссылки, R-172: заглушка не притворяется содержимым). */
-  if (q.dead) return (
+  if (q.dead || refusal?.status === 410) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
       <p role="alert" className="font-serif-d text-[20px]">{t('Ссылка истекла или отозвана')}</p>
     </div>
   )
 
-  if (q.error || !q.page) return (
+  if (!refusal && q.error instanceof ApiError && q.error.isDown) return <div className="min-h-dvh px-5 pt-8 pb-16 max-w-[640px] mx-auto"><OfflineProgramView namespace={namespace} reload={retry} reloadDisabled={false} /></div>
+
+  if (refusal || q.error || !q.page) return (
     <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
-      <ErrorState error={explainError(q.error)} retry={q.reload} />
+      <ErrorState error={explainError(refusal ?? q.error)} retry={retry} />
     </div>
   )
 
-  return <GuestVendorView page={q.page} token={token ?? ''} />
+  return <GuestVendorView page={q.page} token={token} namespace={namespace} onRefused={onRefused} />
 }
 
-function GuestVendorView({ page, token }: { page: GuestVendorPage; token: string }) {
-  const timeline = page?.timeline ?? []
+function GuestVendorView({ page, token, namespace, onRefused }: { page: GuestVendorPage; token: string; namespace: string | null; onRefused: (error: ApiError) => void }) {
   const holdHours = page?.holdHours
+  const [readOnly, setReadOnly] = useState(false)
 
   return (
-    <div className="min-h-dvh px-6 pt-12 pb-16 max-w-[430px] mx-auto">
+    <div className="min-h-dvh px-5 pt-8 pb-16 max-w-[640px] mx-auto break-words">
       <div className="text-center">
         <h1 className="font-serif-d text-[28px]">{page?.slot?.label ?? t('Свадьба')}</h1>
         {/* Дата — только словами сервера: пока пара её не выбрала, число
@@ -98,28 +113,15 @@ function GuestVendorView({ page, token }: { page: GuestVendorPage; token: string
         )}
       </div>
 
-      <div className="rounded-[24px] p-5 mt-8 card">
-        <p className="text-[11px] font-semibold flex items-center gap-1.5"><Clock3 size={12} className="text-[var(--rose-ink)]" />{t('Программа')}</p>
-        {timeline.length ? (
-          <ul className="mt-2 space-y-2">
-            {timeline.map(e => (
-              <li key={e.id} className="flex gap-3 text-[12.5px]">
-                <b className="tabular shrink-0 w-[46px]">{e.startsAt ? formatTime(e.startsAt) : '—'}</b>
-                <span className="min-w-0">
-                  <span className="font-medium">{e.name}</span>
-                  {e.location && <span className="block text-[10.5px] text-[var(--soft)]">{e.location}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[11.5px] mt-2 text-[var(--soft)]">{t('Тайминг пуст')}</p>
-        )}
-      </div>
-
-      <GuestVendorChat token={token} />
+      <div className="mt-8"><ProgramReader namespace={namespace} read={() => getExternalProgram(token)}
+        acknowledge={(proof, tag) => acknowledgeExternalProgram(token, proof, tag)} onRefused={onRefused} onOfflineChange={setReadOnly} /></div>
+      {!readOnly && <GuestVendorChat token={token} onRefused={onRefused} />}
     </div>
   )
+}
+
+function linkRefusal(error: unknown, onRefused: (error: ApiError) => void) {
+  if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) onRefused(error)
 }
 
 /*
@@ -128,8 +130,8 @@ function GuestVendorView({ page, token }: { page: GuestVendorPage; token: string
  * в списке. Живого канала нет — контракт не даёт сокета этому токену — вместо
  * опроса короткая подсказка обновить страницу.
  */
-function GuestVendorChat({ token }: { token: string }) {
-  const q = useApi(() => getGuestVendorMessages(token), [token])
+function GuestVendorChat({ token, onRefused }: { token: string; onRefused: (error: ApiError) => void }) {
+  const q = useApi(() => getGuestVendorMessages(token).catch((error: unknown) => { linkRefusal(error, onRefused); throw error }), [token, onRefused])
   const [textVal, setTextVal] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -144,11 +146,11 @@ function GuestVendorChat({ token }: { token: string }) {
       await postGuestVendorMessage(token, body)
       setTextVal('')
       q.reload()
-    } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
+    } catch (e) { linkRefusal(e, onRefused); setErr(explainError(e)) } finally { setSending(false) }
   })()
 
   return (
-    <div className="rounded-[24px] p-5 mt-6 card">
+    <section aria-label={t('Написать паре')} className="border-t border-[var(--line)] pt-5 mt-6">
       <p className="text-[11px] font-semibold">{t('Написать паре')}</p>
       {q.error ? (
         <p role="alert" className="text-[11.5px] mt-2 text-[var(--rose-ink)]">{q.error}</p>
@@ -177,6 +179,6 @@ function GuestVendorChat({ token }: { token: string }) {
         </button>
       </div>
       {err && <p role="alert" className="text-[11.5px] mt-2 text-[var(--rose-ink)]">{err}</p>}
-    </div>
+    </section>
   )
 }

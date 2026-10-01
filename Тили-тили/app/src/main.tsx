@@ -4,10 +4,12 @@ import { BrowserRouter } from 'react-router'
 import { appRoot } from '@/lib/i18n'
 import './index.css'
 import App from './App.tsx'
+import { observeController, observeRegistration } from '@/lib/serviceWorkerUpdate'
 
 // PWA: офлайн-режим и «установить на экран»
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => navigator.serviceWorker.register(appRoot() + 'sw.js').catch(() => {}))
+  observeController(navigator.serviceWorker)
+  window.addEventListener('load', () => navigator.serviceWorker.register(appRoot() + 'sw.js').then(observeRegistration).catch(() => {}))
 }
 
 /*

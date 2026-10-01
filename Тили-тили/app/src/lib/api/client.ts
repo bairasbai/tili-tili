@@ -1,4 +1,5 @@
 import type { paths } from './schema'
+import { AUTH_CHANGED_EVENT, externalProgramNamespace, forgetOfflineDay, forgetOfflinePrograms, forgetOfflineSeating, offlineScope, sameOfflineScope } from '../offlineAccess'
 
 /*
  * Слой запросов к API. Единственное место во фронте, которое ходит в сеть.
@@ -38,10 +39,19 @@ function readTokens(): Tokens | null {
 }
 
 export function saveTokens(t: Tokens | null): void {
+  const previous = readTokens()
+  const changed = !sameOfflineScope(offlineScope(previous?.accessToken ?? null), offlineScope(t?.accessToken ?? null))
+    && previous?.accessToken !== t?.accessToken
+  if (changed || !t) {
+    forgetOfflineDay()
+    forgetOfflineSeating()
+    forgetOfflinePrograms(t ? { registeredOnly: true } : undefined)
+  }
   try {
     if (t) localStorage.setItem(TOKENS_KEY, JSON.stringify(t))
     else localStorage.removeItem(TOKENS_KEY)
   } catch { /* см. readTokens */ }
+  if (changed) window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
 }
 
 export function isAuthorized(): boolean {
@@ -217,6 +227,9 @@ export function onConsentOutdated(listener: ConsentListener): () => void {
 }
 
 export function reportConsentOutdated(): void {
+  forgetOfflineDay()
+  forgetOfflineSeating()
+  forgetOfflinePrograms({ registeredOnly: true })
   try { localStorage.setItem(CONSENT_OUTDATED_KEY, '1') } catch { /* см. readTokens */ }
   for (const listener of consentListeners) {
     try { listener() } catch { /* слушатель не должен ронять запрос */ }
@@ -364,10 +377,15 @@ export const newIdempotencyKey = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${performance.now()}`
 
 interface Options {
+  /** Link-authorized routes must not send or refresh an unrelated account token. */
+  auth?: boolean
   /** Значение заголовка `Idempotency-Key` для необратимых действий. */
   idempotencyKey?: string
   /** Свой срок ожидания ответа — для больших тел (файл подтверждения оплаты, ревью 018 BF-13). */
   timeoutMs?: number
+  /** Version of the exact snapshot being edited, never a global cached ETag. */
+  ifMatch?: string
+  onResponse?: (response: Response) => void
 }
 
 async function raw(method: Method, path: string, body: unknown, token: string | null, opts?: Options): Promise<Response> {
@@ -381,6 +399,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...(opts?.idempotencyKey ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
+        ...(opts?.ifMatch ? { 'If-Match': opts.ifMatch } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
@@ -390,7 +409,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
 }
 
 async function request<T>(method: Method, path: string, body?: unknown, opts?: Options): Promise<T> {
-  const tokens = readTokens()
+  const tokens = opts?.auth === false ? null : readTokens()
   let res: Response
   try {
     res = await raw(method, path, body, tokens?.accessToken ?? null, opts)
@@ -421,24 +440,44 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
     }
   }
 
+  // Final refusals also clear copies when no account token was sent.
+  const dayPath = /^\/weddings\/([^/?]+)(?:\/(?:timeline|events|planb|slots))?\/?$/.exec(path)
+  if (opts?.auth !== false && method === 'GET' && dayPath && [401, 403, 404, 410].includes(res.status)) forgetOfflineDay(decodeURIComponent(dayPath[1]!))
+
+  const responseError = res.ok ? null : await errorFrom(res)
+  if (responseError && [401, 403, 404, 410].includes(res.status)) {
+    if (opts?.auth !== false && method === 'GET' && path === '/weddings') forgetOfflineSeating(undefined, responseError)
+    const seatingPath = /^\/weddings\/([^/?]+)(?:\/(?:guests|tables|members)(?:\/[^/?]+)?)?\/?$/.exec(path)
+    if (opts?.auth !== false && seatingPath) forgetOfflineSeating(decodeURIComponent(seatingPath[1]!), responseError)
+    const vendorProgram = /^\/vendor\/weddings\/([^/?]+)\/timeline(?:\/ack)?\/?$/.exec(path)
+    if (vendorProgram) forgetOfflinePrograms({ registeredOnly: true, weddingId: decodeURIComponent(vendorProgram[1]!) }, responseError)
+    else if (method === 'GET' && /^\/vendor\/programs(?:\?|$)/.test(path)) forgetOfflinePrograms({ registeredOnly: true }, responseError)
+    const external = /^\/guest-vendor\/([^/?]+)(?:\/(?:timeline(?:\/ack)?|messages))?\/?$/.exec(path)
+    if (external) {
+      const namespace = await externalProgramNamespace(decodeURIComponent(external[1]!))
+      forgetOfflinePrograms(namespace ? { namespace } : { externalOnly: true }, responseError)
+    }
+  }
+
   /* 401 без токена на руках: служебное «нужен заголовок» — своими словами (см. SIGN_IN_REQUIRED). */
   if (res.status === 401 && !tokens) {
-    const err = await errorFrom(res)
+    const err = responseError!
     throw err.message === NO_BEARER ? new ApiError('http', 401, 'unauthorized', SIGN_IN_REQUIRED) : err
   }
 
   if (!res.ok) {
-    const err = await errorFrom(res)
+    const err = responseError!
     /* Гейт узнаёт об устаревшем согласии здесь же, а не в каждом экране:
        иначе первый экран, успевший позвать `request()` после выката новой
        редакции, ловил бы гейт, а остальные — нет (F4, RL-1). */
-    if (res.status === 403 && err.code === 'consent_outdated') reportConsentOutdated()
+    if (opts?.auth !== false && res.status === 403 && err.code === 'consent_outdated') reportConsentOutdated()
     throw err
   }
 
   /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
      у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет
      запрос, который на самом деле прошёл. */
+  opts?.onResponse?.(res)
   if (res.status === 204 || res.status === 205) return undefined as T
   if (!res.headers.get('content-type')?.includes('json')) return undefined as T
   const text = await res.text()
@@ -460,16 +499,31 @@ type Ok<T> = T extends { responses: infer R }
   : void
   : void
 
+async function snapshot<T>(method: Method, path: string, body?: unknown, opts?: Options): Promise<{ data: T; etag: string | null; headers: Headers }> {
+  let etag: string | null = null
+  let headers = new Headers()
+  const data = await request<T>(method, path, body, {
+    ...opts, onResponse: response => { etag = response.headers.get('etag'); headers = response.headers; opts?.onResponse?.(response) },
+  })
+  return { data, etag, headers }
+}
+
 export const api = {
-  get: <P extends PathsWith<'get'>>(path: P) =>
-    request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string),
+  get: <P extends PathsWith<'get'>>(path: P, opts?: Options) =>
+    request<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string, undefined, opts),
+  getSnapshot: <P extends PathsWith<'get'>>(path: P, opts?: Options) =>
+    snapshot<Ok<paths[P] extends { get: infer O } ? O : never>>('GET', path as string, undefined, opts),
   post: <P extends PathsWith<'post'>>(path: P, body?: unknown, opts?: Options) =>
     request<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, body ?? {}, opts),
+  postSnapshot: <P extends PathsWith<'post'>>(path: P, body?: unknown, opts?: Options) =>
+    snapshot<Ok<paths[P] extends { post: infer O } ? O : never>>('POST', path as string, body ?? {}, opts),
   /* PUT и PATCH тоже принимают ключ идемпотентности: контракт требует его,
      например, на переходах сделки — без него второе нажатие на плохой связи
      двигает состояние дважды. */
   put: <P extends PathsWith<'put'>>(path: P, body?: unknown, opts?: Options) =>
     request<Ok<paths[P] extends { put: infer O } ? O : never>>('PUT', path as string, body ?? {}, opts),
+  putSnapshot: <P extends PathsWith<'put'>>(path: P, body?: unknown, opts?: Options) =>
+    snapshot<Ok<paths[P] extends { put: infer O } ? O : never>>('PUT', path as string, body ?? {}, opts),
   patch: <P extends PathsWith<'patch'>>(path: P, body?: unknown, opts?: Options) =>
     request<Ok<paths[P] extends { patch: infer O } ? O : never>>('PATCH', path as string, body ?? {}, opts),
   delete: <P extends PathsWith<'delete'>>(path: P) =>

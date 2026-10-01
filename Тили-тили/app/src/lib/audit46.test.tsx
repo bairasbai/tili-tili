@@ -24,6 +24,8 @@ import { StoreProvider } from './store'
 import { VendorProfileWizard } from '@/pages/VendorApp'
 import { notificationRoute } from '@/lib/api/notifications'
 import { OFFLINE_DAY_KEY, recallDay } from '@/lib/offlineDay'
+import { offlineScope } from '@/lib/offlineAccess'
+import { accessTokenForWs } from '@/lib/api/client'
 
 vi.mock('@/lib/api/chats', async (orig) => ({
   ...await orig<object>(),
@@ -42,7 +44,7 @@ const DOWN = withStatus(503, 'db_unavailable', 'База недоступна')
 function serve(routes: Routes): Call[] {
   const calls: Call[] = []
   const json = (body: unknown, status = 200) =>
-    new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', etag: '"1"' } })
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const full = String(input).replace(/^\/api/, '')
     const path = decodeURIComponent(full.split('?')[0] ?? '')
@@ -282,16 +284,19 @@ describe('хвосты планов: права на портфолио, выг�
 })
 
 describe('хвосты планов: офлайн день X (План §3.1)', () => {
-  beforeEach(couple)
+  beforeEach(() => {
+    couple()
+    localStorage.setItem('tt_auth', JSON.stringify({ accessToken: `e30.${btoa(JSON.stringify({ sub: 'u1', sid: 'ses1' }))}.test`, refreshToken: 'r' }))
+  })
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  const EVENT = { id: 'e1', name: 'Выездная церемония', startsAt: '2027-06-14T09:00:00.000Z', location: 'Терраса' }
-  const SNAPSHOT = { weddingId: 'w1', savedAt: '2027-06-14T04:30:00.000Z', timeline: [EVENT], planBActivatedAt: null, team: [{ id: 's-photo', label: 'Фотограф', vendor: 'Студия «Пион»', vendorId: 'v1', phone: '+79990000001' }] }
+  const EVENT = { id: 'e1', name: 'Выездная церемония', startsAt: '2027-06-14T09:00:00.000Z', endsAt: null, eventId: null, location: 'Терраса' }
+  const SNAPSHOT = { schema: 2, scope: { userId: 'u1', sessionId: 'ses1' }, role: 'couple', etag: '"1"', weddingDate: WEDDING.date, weddingTimeZone: WEDDING.tz, events: [], weddingId: 'w1', savedAt: '2027-06-14T04:30:00.000Z', timeline: [EVENT], planBActivatedAt: null, team: [{ id: 's-photo', label: 'Фотограф', vendor: 'Студия «Пион»', vendorId: 'v1', phone: '+79990000001' }] }
 
   it('О1: сервер не ответил, копия есть — тайминг и команда с телефона, с меткой времени', async () => {
     localStorage.setItem(OFFLINE_DAY_KEY, JSON.stringify(SNAPSHOT))
-    serve(base({ '/weddings/w1/timeline': DOWN, '/weddings/w1/planb': DOWN, '/weddings/w1/slots': DOWN }))
-    const r = await open('/dayx', 'показана копия')
+    serve(base({ '/weddings/w1/timeline': DOWN, '/weddings/w1/events': DOWN, '/weddings/w1/planb': DOWN, '/weddings/w1/slots': DOWN }))
+    const r = await open('/dayx', 'Версия снимка')
     expect(text(r)).toContain('Выездная церемония')
     expect(text(r)).toContain('Студия «Пион»')
     expect(text(r)).toContain('+79990000001')
@@ -305,10 +310,10 @@ describe('хвосты планов: офлайн день X (План §3.1)', 
   })
 
   it('О2: живой ответ пишет копию; чужая свадьба в копии не читается', async () => {
-    serve(base({ '/weddings/w1/timeline': [EVENT], '/weddings/w1/planb': { checklist: [], activatedAt: null } }))
+    serve(base({ '/weddings/w1/timeline': [EVENT], '/weddings/w1/events': [], '/weddings/w1/planb': { checklist: [], activatedAt: null } }))
     await open('/dayx', 'Выездная церемония')
-    await waitFor(() => expect(recallDay('w1')?.timeline[0]?.name).toBe('Выездная церемония'), { timeout: 4000 })
-    expect(recallDay('w2')).toBeNull()
+    await waitFor(() => expect(recallDay('w1', offlineScope(accessTokenForWs()))?.timeline[0]?.name).toBe('Выездная церемония'), { timeout: 4000 })
+    expect(recallDay('w2', offlineScope(accessTokenForWs()))).toBeNull()
     expect(JSON.parse(localStorage.getItem(OFFLINE_DAY_KEY)!).savedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 

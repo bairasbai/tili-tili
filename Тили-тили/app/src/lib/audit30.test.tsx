@@ -214,7 +214,7 @@ describe('RF-02: минутный опрос дня X не стирает тай
   it('через 60 с при зависшем ответе «СЕЙЧАС» и блок на месте, план Б «Включён»; «+15 мин» закрыта, пока свежий тайминг в пути', async () => {
     let timelines = 0
     let planbs = 0
-    const events = [{ id: 'e1', name: 'Церемония', startsAt: '2027-06-14T11:00:00.000Z' }]
+    const events = [{ id: 'e1', name: 'Церемония', startsAt: '2027-06-14T11:00:00.000Z', endsAt: '2027-06-14T13:00:00.000Z' }]
     serve(base({
       /* Первый ответ — тайминг, второй (опрос) висит: ровно в это окно экран решает, что показывать. */
       '/weddings/w1/timeline': () => (++timelines === 1 ? events : PENDING),
@@ -234,7 +234,7 @@ describe('RF-02: минутный опрос дня X не стирает тай
        выключалась по пустому списку. Теперь список на месте, а кнопка закрыта
        по другой причине — свежий тайминг в пути, и сдвиг по прежним часам
        ушёл бы вторым POST. Открывается она с ответом (`audit31`). */
-    expect(screen.getByText('+15 мин всей программе').closest('button')!.hasAttribute('disabled'), '«+15 мин» открыта, пока свежий тайминг не пришёл').toBe(true)
+    expect(screen.getByRole('button', { name: 'Сдвиг тайминга' }).hasAttribute('disabled'), 'сдвиг открыт, пока свежий тайминг не пришёл').toBe(true)
     expect(screen.queryByText('Двигаем…'), 'опрос выдан за нажатие').toBeNull()
     expect(screen.queryByText('Активировать'), 'включённый план Б предложен к активации').toBeNull()
     expect(screen.getByText('Включён')).toBeTruthy()

@@ -21,6 +21,8 @@ import {
   type SlotRow,
 } from '../deals/repo.js'
 import { HOLD_HOURS } from '../deals/state.js'
+import { lockTimelineForRequest } from '../timeline/version.js'
+import { assertExternalLinkNotExpired, lockExternalProgramAccess } from '../vendor/external-program-access.js'
 
 const MONEY_MAX = Number.MAX_SAFE_INTEGER
 const MONEY_SCHEMA = {
@@ -333,115 +335,106 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
   app.post('/weddings/:weddingId/slots/:slotId/external/invite', async (request, reply) => {
     const weddingId = request.member!.weddingId
     const { slotId } = request.params as { slotId: string }
+    const invitation = await db().tx(async client => {
+      await lockTimelineForRequest(client, request, true)
+      const slot = await slotOf(client, weddingId, slotId)
+      if (!slot.deal_id) throw notFound('Сначала добавьте своего подрядчика в слот')
+      /* Ссылка — только своему подрядчику: у каталожного есть кабинет и чат
+       * по анкете, а ссылка в слот с ним открывала бы постороннему слот,
+       * тайминг и переписку (ревью 015, D5). 409, а не 404: слот и сделка
+       * есть, не тот вид сделки. */
+      const { rows: kind } = await client.query<{ external: boolean; state: string }>(
+        'select (external_name is not null and vendor_id is null) as external,state from deals where id = $1 for share',
+        [slot.deal_id],
+      )
+      if (!kind[0]?.external) throw conflict('not_external', 'Ссылка выдаётся только своему подрядчику — у каталожного есть кабинет')
+      if (!['booked', 'paid_deposit', 'done'].includes(kind[0].state)) throw notFound('Подрядчика в слоте больше нет — ссылка закрыта')
 
-    const slot = await slotOf(db(), weddingId, slotId)
-    if (!slot.deal_id) throw notFound('Сначала добавьте своего подрядчика в слот')
-    /* Ссылка — только своему подрядчику: у каталожного есть кабинет и чат
-     * по анкете, а ссылка в слот с ним открывала бы постороннему слот,
-     * тайминг и переписку (ревью 015, D5). 409, а не 404: слот и сделка
-     * есть, не тот вид сделки. */
-    const { rows: kind } = await db().query<{ external: boolean }>(
-      'select (external_name is not null) as external from deals where id = $1',
-      [slot.deal_id],
-    )
-    if (!kind[0]?.external) throw conflict('not_external', 'Ссылка выдаётся только своему подрядчику — у каталожного есть кабинет')
-
-    // 128 бит случайности: токен лежит в ссылке и не читается вслух,
-    // поэтому длина здесь важнее удобства (план §6, правило 5).
-    const token = randomBytes(16).toString('base64url')
-    await db().query(
-      `insert into external_invites (token, wedding_id, slot_id, expires_at)
-       values ($1, $2, $3, now() + ($4 || ' days')::interval)`,
-      [token, weddingId, slotId, String(EXTERNAL_TTL_DAYS)],
-    )
-    const { rows } = await db().query<{ expires_at: Date }>(
-      'select expires_at from external_invites where token = $1',
-      [token],
-    )
-    return reply.code(201).send({
-      token,
-      url: `https://tili-tili.ru/guest-vendor/${token}`,
-      expiresAt: rows[0]!.expires_at.toISOString(),
+      // 128 бит случайности: токен лежит в ссылке и не читается вслух,
+      // поэтому длина здесь важнее удобства (план §6, правило 5).
+      const token = randomBytes(16).toString('base64url')
+      const issued = await client.query<{ program_identity: string }>(
+        `insert into external_invites (token, wedding_id, slot_id, program_deal_id, created_at, expires_at)
+         values ($1, $2, $3, $4, clock_timestamp(), clock_timestamp() + ($5 || ' days')::interval)
+         returning program_identity`,
+        [token, weddingId, slotId, slot.deal_id, String(EXTERNAL_TTL_DAYS)],
+      )
+      await client.query('update deals set current_program_invite_id=$3 where wedding_id=$1 and id=$2',
+        [weddingId, slot.deal_id, issued.rows[0]!.program_identity])
+      const { rows } = await client.query<{ expires_at: Date }>(
+        'select expires_at from external_invites where token = $1',
+        [token],
+      )
+      return {
+        token,
+        url: `https://tili-tili.ru/guest-vendor/${token}`,
+        expiresAt: rows[0]!.expires_at.toISOString(),
+      }
     })
+    return reply.code(201).send(invitation)
   })
 
   /* ── кабинет своего подрядчика ────────────────────────────────────── */
-  /**
-   * «Ссылка своего подрядчика жива» — одна формулировка на оба пути.
-   *
-   * Было два предиката, и они расходились: чтение (`GET /guest-vendor/{token}`)
-   * не проверяло `archived_at`, а запись (`inviteByToken`) проверяла — гость-подрядчик
-   * заархивированной свадьбы открывал живой экран, а любое действие с него
-   * получало 410. На HEAD разницы не видно — архивация обычно отзывает
-   * ссылки, но два определения одного и того же расходятся со временем
-   * всегда (F-RL-2-04, ревью 016).
-   */
-  const LIVE_INVITE = `i.revoked_at is null and i.expires_at > now()
-          and w.cancelled_at is null and w.archived_at is null`
-
-  app.get('/guest-vendor/:token', async (request) => {
+  app.get('/guest-vendor/:token', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const { rows } = await db().query<{ slot_id: string; wedding_id: string; deal_id: string | null; date: string | null }>(
-      `select i.slot_id, i.wedding_id, s.deal_id, w.date::text as date
-         from external_invites i
-         join weddings w on w.id = i.wedding_id
-         join slots s on s.id = i.slot_id
-        where i.token = $1 and ${LIVE_INVITE}`,
-      [token],
-    )
-    const invite = rows[0]
-    if (!invite) throw new AppError(410, 'gone', 'Ссылка недействительна: истекла или отозвана')
-    const dealId = dealOfInvite(invite.deal_id)
-
-    await db().query('update external_invites set accepted_at = coalesce(accepted_at, now()) where token = $1', [token])
-
-    const { rows: slotRows } = await db().query<SlotRow>(
-      `select ${SLOT_COLUMNS}, ${DEAL_COLUMNS}
-         from slots s left join deals d on d.id = s.deal_id ${DEAL_JOINS}
-        where s.id = $1`,
-      [invite.slot_id],
-    )
-    /* Тайминг целиком, а не только своя строка: подрядчику нужно знать,
-     * когда церемония и когда банкет — иначе он не поймёт, к чему привязан
-     * его выход. Гостей, бюджета и остальной команды здесь нет (§11). */
-    const { rows: timeline } = await db().query(
-      `select id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests
-         from timeline_events where wedding_id = $1 order by sort, starts_at`,
-      [invite.wedding_id],
-    )
-
-    return {
-      weddingDate: invite.date,
-      slot: toSlot(slotRows[0]!, true),
-      chatId: await externalChatId(invite.wedding_id, invite.slot_id, dealId),
-      timeline: timeline.map((r) => toTimelineEvent(r as TimelineRow)),
-      holdHours: HOLD_HOURS,
-    }
+    reply.header('cache-control', 'no-store')
+    return db().tx(async client => {
+      // The invite update lock prevents concurrent accepted_at lock upgrades.
+      const access = await lockExternalProgramAccess(client, token, false, true)
+      const { rows: slotRows } = await client.query<SlotRow>(
+        `select ${SLOT_COLUMNS}, ${DEAL_COLUMNS}
+           from slots s left join deals d on d.id = s.deal_id ${DEAL_JOINS}
+          where s.id = $1 and s.wedding_id=$2`,
+        [access.slotId, access.weddingId],
+      )
+      // Legacy reader must not bypass the assigned-only versioned program projection.
+      const { rows: timeline } = await client.query(
+        `select e.id,e.name,e.location,e.starts_at,e.ends_at,null::text as who,e.icon,e.outdoor,e.for_guests
+           from timeline_events e where e.wedding_id=$1 and exists (
+             select 1 from timeline_assignments a where a.wedding_id=e.wedding_id and a.event_id=e.id and a.deal_id=$2)
+           order by e.sort,e.starts_at`,
+        [access.weddingId, access.dealId],
+      )
+      const chatId = await externalChatId(client, access.weddingId, access.slotId, access.dealId)
+      await client.query('update external_invites set accepted_at=coalesce(accepted_at,clock_timestamp()) where token=$1 and wedding_id=$2', [token, access.weddingId])
+      await assertExternalLinkNotExpired(client, access.expiresAt)
+      return {
+        weddingDate: access.date,
+        slot: toSlot(slotRows[0]!, true),
+        chatId,
+        timeline: timeline.map((r) => toTimelineEvent(r as TimelineRow)),
+        holdHours: HOLD_HOURS,
+      }
+    })
   })
 
   /* ── переписка своего подрядчика с парой ──────────────────────────── */
-  app.get('/guest-vendor/:token/messages', async (request) => {
+  app.get('/guest-vendor/:token/messages', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const invite = await inviteByToken(token)
-    /* Чат — по сделке, история в нём своя целиком: реплики прежнего
-     * подрядчика того же слота лежат в его чате и сюда не попадают
-     * (ERR-0219). Фильтр «не старше текущей сделки», который держал это до
-     * миграции, снят — дата не ключ. */
-    const chatId = await externalChatId(invite.wedding_id, invite.slot_id, invite.deal_id)
-
     const page = parsePageQuery(request.query as { limit?: unknown; cursor?: unknown })
-    const { rows } = await db().query<MessageRow>(
-      `select m.id, m.chat_id, m.sender_id, m.text, m.attachments, m.created_at, ${CREATED_AT_US}
-         from messages m
-        where m.chat_id = $1
-          and ($2::text is null or (m.created_at, m.id) < ($2::timestamptz, $3::uuid))
-        order by m.created_at desc, m.id desc
-        limit $4`,
-      [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
-    )
-    // Курсор — по микросекундам строки, как в `GET /chats/{id}/messages` (D4-23).
-    const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.created_at_us, r.id))
-    return { items: paged.items.map(toMessage), nextCursor: paged.nextCursor }
+    reply.header('cache-control', 'no-store')
+    return db().tx(async client => {
+      const access = await lockExternalProgramAccess(client, token, false)
+      /* Чат — по сделке, история в нём своя целиком: реплики прежнего
+       * подрядчика того же слота лежат в его чате и сюда не попадают
+       * (ERR-0219). Фильтр «не старше текущей сделки», который держал это до
+       * миграции, снят — дата не ключ. */
+      const chatId = await externalChatId(client, access.weddingId, access.slotId, access.dealId)
+
+      const { rows } = await client.query<MessageRow>(
+        `select m.id, m.chat_id, m.sender_id, m.text, m.attachments, m.created_at, ${CREATED_AT_US}
+           from messages m
+          where m.chat_id = $1
+            and ($2::text is null or (m.created_at, m.id) < ($2::timestamptz, $3::uuid))
+          order by m.created_at desc, m.id desc
+          limit $4`,
+        [chatId, page.cursor?.sort ?? null, page.cursor?.id ?? null, page.limit + 1],
+      )
+      // Курсор — по микросекундам строки, как в `GET /chats/{id}/messages` (D4-23).
+      const paged = buildPage(rows, page.limit, (r) => encodeCursor(r.created_at_us, r.id))
+      await assertExternalLinkNotExpired(client, access.expiresAt)
+      return { items: paged.items.map(toMessage), nextCursor: paged.nextCursor }
+    })
   })
 
   app.post(
@@ -459,50 +452,47 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { token } = request.params as { token: string }
       const { text } = request.body as { text: string }
-      const invite = await inviteByToken(token)
-      const chatId = await externalChatId(invite.wedding_id, invite.slot_id, invite.deal_id)
+      const committed = await db().tx(async client => {
+        const access = await lockExternalProgramAccess(client, token, false)
+        const chatId = await externalChatId(client, access.weddingId, access.slotId, access.dealId)
 
-      /* Отправитель пустой: аккаунта у своего подрядчика нет, а выдумывать
-       * ему пользователя значило бы завести половину учётной записи —
-       * с правами, входом и восстановлением, которых у него не будет.
-       * В этом виде чата системных записей не бывает, поэтому пустой
-       * отправитель читается однозначно (контракт, Message.senderId). */
-      const id = uuidv7()
-      const { rows } = await db().query<{ created_at: Date }>(
-        'insert into messages (id, chat_id, sender_id, text) values ($1,$2,null,$3) returning created_at',
-        [id, chatId, text],
-      )
-      const message = {
-        id,
-        chatId,
-        senderId: null,
-        text,
-        attachmentUrl: null,
-        sentAt: rows[0]!.created_at.toISOString(),
-        system: false,
-        // Гостей в чате со своим подрядчиком не бывает — имя гостя всегда пустое (фича 009).
-        guestName: null,
-        // Всем по живому каналу — без признака; автору в ответе — своя (фича 014).
-        mine: null as boolean | null,
-      }
+        /* Отправитель пустой: аккаунта у своего подрядчика нет, а выдумывать
+         * ему пользователя значило бы завести половину учётной записи —
+         * с правами, входом и восстановлением, которых у него не будет.
+         * В этом виде чата системных записей не бывает, поэтому пустой
+         * отправитель читается однозначно (контракт, Message.senderId). */
+        const id = uuidv7()
+        const { rows } = await client.query<{ created_at: Date }>(
+          'insert into messages (id, chat_id, sender_id, text, created_at) values ($1,$2,null,$3,clock_timestamp()) returning created_at',
+          [id, chatId, text],
+        )
+        const message = {
+          id,
+          chatId,
+          senderId: null,
+          text,
+          attachmentUrl: null,
+          sentAt: rows[0]!.created_at.toISOString(),
+          system: false,
+          // Гостей в чате со своим подрядчиком не бывает — имя гостя всегда пустое (фича 009).
+          guestName: null,
+          // Всем по живому каналу — без признака; автору в ответе — своя (фича 014).
+          mine: null as boolean | null,
+        }
+
+        /* Получатели — только те, кому чат external виден по матрице,
+         * не все участники свадьбы: тело не должно утекать помощнику (ERR-0106). */
+        const { rows: members } = await client.query<{ user_id: string }>(
+          'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
+          [access.weddingId, rolesSeeing('external')],
+        )
+        await assertExternalLinkNotExpired(client, access.expiresAt)
+        return { message, members, tz: access.tz }
+      })
+      const { message, members, tz } = committed
+      const { chatId } = message
+      // Publish only a committed message, never a later rolled-back denial.
       await app.realtime.publish({ chatId, type: 'message', actorId: 'external', payload: { message } })
-
-      /* Пара узнаёт о сообщении так же, как о любом другом: подрядчик без
-       * аккаунта — не повод молчать в её уведомлениях.
-       *
-       * Получатели — те, кому чат `external` виден по матрице, а не все
-       * участники свадьбы. Помощник его не открывает (403), но получал бы
-       * в теле уведомления первые 120 символов переписки — ровно та же
-       * утечка, что закрыта в `chats.ts` (ERR-0099). Там я починил место
-       * вызова, а не класс, и второе место осталось (ERR-0106). */
-      const { rows: members } = await db().query<{ user_id: string }>(
-        'select user_id from wedding_members where wedding_id = $1 and role = any($2)',
-        [invite.wedding_id, rolesSeeing('external')],
-      )
-      // Тихие часы по поясу свадьбы, если у получателя свой не задан (RF-BE-04).
-      const { rows: tzRow } = await db().query<{ tz: string | null }>('select tz from weddings where id = $1', [
-        invite.wedding_id,
-      ])
       for (const m of members) {
         await notify(db(), {
           userId: m.user_id,
@@ -510,41 +500,11 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
           title: 'Сообщение от своего подрядчика',
           body: text.length > 120 ? `${text.slice(0, 119)}…` : text,
           link: `/chats/${chatId}`,
-        }, new Date(), tzRow[0]?.tz ?? null)
+        }, new Date(), tz)
       }
       return reply.code(201).send({ ...message, mine: true })
     },
   )
-
-  /** Живая ссылка или 410 — общая проверка для всех путей кабинета. */
-  async function inviteByToken(
-    token: string,
-  ): Promise<{ wedding_id: string; slot_id: string; deal_id: string; date: string | null }> {
-    const { rows } = await db().query<{ slot_id: string; wedding_id: string; deal_id: string | null; date: string | null }>(
-      `select i.slot_id, i.wedding_id, s.deal_id, w.date::text as date
-         from external_invites i
-         join weddings w on w.id = i.wedding_id
-         join slots s on s.id = i.slot_id
-        where i.token = $1 and ${LIVE_INVITE}`,
-      [token],
-    )
-    if (!rows[0]) throw new AppError(410, 'gone', 'Ссылка недействительна: истекла или отозвана')
-    return { ...rows[0], deal_id: dealOfInvite(rows[0].deal_id) }
-  }
-
-  /**
-   * Сделка, к которой ведёт ссылка, — текущая сделка слота.
-   *
-   * Ссылка привязана к слоту, а переписка — к сделке (`chats.deal_id`):
-   * без текущей сделки подрядчика в слоте больше нет, и открывать по ссылке
-   * нечего. Каждая дверь отмены гасит ссылку сама (ERR-0242); здесь —
-   * страховка на случай, если сделка ушла из слота другим путём: 410,
-   * а не чат чужой сделки и не 500.
-   */
-  function dealOfInvite(dealId: string | null): string {
-    if (!dealId) throw new AppError(410, 'gone', 'Подрядчика в слоте больше нет — ссылка закрыта')
-    return dealId
-  }
 
   /**
    * Чат сделки со своим подрядчиком: заводится вместе с ней, но у сделок,
@@ -553,8 +513,8 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
    * сделка, не слот: второй чат на неё не заведётся, а чат прежнего
    * подрядчика того же слота остаётся его (ERR-0219).
    */
-  async function externalChatId(weddingId: string, slotId: string, dealId: string): Promise<string> {
-    const { rows } = await db().query<{ id: string }>(
+  async function externalChatId(client: Queryable, weddingId: string, slotId: string, dealId: string): Promise<string> {
+    const { rows } = await client.query<{ id: string }>(
       `insert into chats (id, wedding_id, kind, slot_id, deal_id) values ($1,$2,'external',$3,$4)
        on conflict (deal_id) where kind = 'external' do update set kind = 'external'
        returning id`,

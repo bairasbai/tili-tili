@@ -6,6 +6,7 @@ import { UUID_ID, uuidv7, isUuid } from '../ids.js'
 import { sendChatMessage } from '../chats/post.js'
 import { notifyCoupleOfferEvent } from '../offers/notify.js'
 import { isUniqueViolation } from '../plugins/db.js'
+import { lockVendorProgramAccess } from '../vendor/program-access.js'
 
 const VENDOR_PAID_SUM = `(select coalesce(sum(case when p.kind='refund' then -p.amount else p.amount end),0)
   from payments p
@@ -408,9 +409,15 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
       `select u.id, w.title as wedding, w.date::text as date, u.kind, u.text, u.created_at, u.ack_at
          from vendor_updates u join weddings w on w.id = u.wedding_id
         where u.vendor_id = $1 and w.archived_at is null and w.cancelled_at is null
+          and exists (select 1 from deals d where d.wedding_id=u.wedding_id
+            and d.vendor_id=u.vendor_id and d.state in ('booked','paid_deposit','done'))
+          and exists (select 1 from vendors v join users owner on owner.id=v.user_id
+            join sessions s on s.user_id=owner.id
+            where v.id=u.vendor_id and owner.id=$2 and owner.deleted_at is null
+              and s.id=$3 and s.revoked_at is null)
         order by (u.ack_at is not null), u.created_at desc
         limit 50`,
-      [vendorId],
+      [vendorId, request.caller!.userId, request.caller!.sessionId],
     )
     // Неподтверждённые сверху: подтверждённые остаются как история дня,
     // но глаз должен упираться в то, что ещё не учтено.
@@ -429,12 +436,24 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
     const { updateId } = request.params as { updateId: string }
     if (!isUuid(updateId)) throw notFound('Обновление не найдено')
     const vendorId = await myVendorId(request.caller!.userId)
-    // Повторное подтверждение не двигает время: «учёл» случается один раз.
-    const res = await db().query(
-      'update vendor_updates set ack_at = coalesce(ack_at, now()) where id = $1 and vendor_id = $2',
-      [updateId, vendorId],
-    )
-    if (res.rowCount === 0) throw notFound('Обновление не найдено')
+    await db().tx(async client => {
+      const update = await client.query<{ wedding_id: string }>(
+        'select wedding_id from vendor_updates where id=$1 and vendor_id=$2', [updateId, vendorId],
+      )
+      if (!update.rows[0]) throw notFound('Обновление не найдено')
+      const weddingId = update.rows[0].wedding_id
+      try {
+        await lockVendorProgramAccess(client, request, weddingId, false, vendorId)
+      } catch (error) {
+        if (error instanceof AppError && error.statusCode === 404) throw notFound('Обновление не найдено')
+        throw error
+      }
+      const res = await client.query(
+        'update vendor_updates set ack_at=coalesce(ack_at,now()) where id=$1 and vendor_id=$2 and wedding_id=$3',
+        [updateId, vendorId, weddingId],
+      )
+      if (res.rowCount === 0) throw notFound('Обновление не найдено')
+    })
     return reply.code(204).send()
   })
 

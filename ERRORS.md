@@ -2246,5 +2246,784 @@ Append-only. Читать **до** правок в затронутой обла
 - **Ошибка.** PUT принимал id, но игнорировал его: удалял все строки свадьбы и вставлял с новыми UUID. Повтор, изменение имени и перестановка меняли идентичность; чужой, неизвестный или повторный id не приводили к отказу. Это противоречит FR-036.
 - **Доказательство.** Семь тестов `backend/test/timeline021.test.ts` упали до правки (`C:/Тили-тили/.unlazy/master-plan-20260930/negative.log`) и прошли после (`targeted.log`). Полный gate: 1089 frontend / 1293 backend, skipped нет, типы/линт/сборки прошли (`final.log`).
 - **Локальная правка.** UUID проверяется общей схемой и нормализуется; дубли и отсутствующий в своей свадьбе id отвергаются до изменений. Под замком свадьбы прежние строки обновляются, новые ID выдаются только новым блокам, удаляются только отсутствующие в списке. Это пока не опубликованный feature-коммит.
-- **Открытая часть FR-036.** Защиты устаревшего снимка ещё нет: `stale-save-probe.log` подтверждает 200/200 и перезапись новой правки старой. T003 остаётся открытой; стабильные ID и замок не выдаются за optimistic concurrency control.
+- **Открытая на первом шаге часть FR-036.** `stale-save-probe.log` подтвердил 200/200 и перезапись новой правки старой. Последующая защита версии описана в ERR-0339; постоянные ID сами по себе не являются optimistic concurrency control.
 - **Правило (R-338).** Полная замена списка не означает замену идентичности. Перед мутацией проверяются все ID и принадлежность; идентичность отдельно проверяется от версии снимка и конфликтов.
+
+## ERR-0339 · 2026-09-30 · устаревший тайминг перезаписывал чужую правку
+
+- **Доказательство до правки.** `C:/Тили-тили/.unlazy/wp03-versions-20260930/before-version.log`: пять новых проверок версии упали; отдельный probe предыдущего этапа получил 200/200 для двух сохранений из одного снимка.
+- **Исправление.** Миграция добавляет монотонную ревизию свадьбы и триггер всех insert/update/delete блоков. GET/PUT/autogen возвращают ETag именно своего снимка. PUT требует If-Match: без него 428 timeline_version_required, с устаревшей версией 409 timeline_conflict до изменений/уведомлений. Shift и перенос даты инвалидируют старый редактор. Автор устанавливается сервером в текущей транзакции; исторический автор/время не выдумываются.
+- **Клиент.** Версия принадлежит конкретному списку/предпросмотру, не глобальному кэшу. Отказ сохраняет поля и черновик; перечитывание списка не присваивает автоплану новую версию. При ошибке reload следующая запись использует фактически принятые сервером ID/ETag. Полная запись сохраняет outdoor и forGuests.
+- **Доказательства текущего этапа.** `server-metadata.log`: четыре backend-файла, 50/50; `client-metadata.log`: три frontend-файла, 52/52, включая видимые metadata RU/EN. `migration-drill-result.json`: семь проверок исторических данных, up/down/up, повторного up, отказа populated rollback и транзакционного отката. `browser-evidence-v2/timeline-browser-result.json`: восемь проверок на настоящих API/UI, две сессии, metadata, конфликт, ручное обновление, автоплан, ширины 320/390/1440; page_errors пуст. `full-metadata-final.log`: полный gate 1100 frontend / 1308 backend, skipped нет, типы/линт/сборки прошли. Это не приёмка остальных FR-037–040 и не физические устройства.
+- **Правило (R-339).** Lock сериализует записи, но не проверяет свежесть пользовательского снимка. Версия проверяется под тем же замком до мутации; новые данные и их версия возвращаются вместе, без автоматической повторной записи после 409.
+
+## ERR-0340 · 2026-09-30 · удалённый участник сохранял программу после ожидания замка
+
+- **Доказательство.** Тест `rechecks membership after waiting for the wedding lock` удержал реальную строку свадьбы PostgreSQL, дождался входа PUT в lock query, удалил членство и отпустил транзакцию. До исправления PUT отвечал 200 вместо 404 (`server-before-access-fix.log`).
+- **Исправление.** После получения замка timeline-пути повторно проверяют архив/отмену, живой аккаунт/сессию и текущее членство по общей матрице ролей. Строки пользователя/сессии/членства удерживаются до завершения транзакции. Та же проверка покрывает GET, PUT, autogen и shift; она не расширяет права helper на команду дня X.
+- **Регрессия.** После исправления тот же тест получает 404, исходные блоки не изменены (`server-access-fixed.log`).
+- **Правило (R-340).** Права, проверенные до ожидания транзакционного замка, могут устареть. Действие после ожидания обязано проверить актуальный доступ в транзакции, а не доверять старому request.member.
+
+## ERR-0341 · 2026-09-30 · planning down оставлял CHECK и ломал повторный up
+
+- **Доказательство.** C:/Тили-тили/.unlazy/wp03-planning-20260930/drill-up-again.log: constraint timeline_interval_valid already exists после down первой версии новой миграции. CHECK зависел от прежних starts_at/ends_at, поэтому удаление новых planning columns не удаляло его автоматически.
+- **Исправление.** Down явно удаляет timeline_interval_valid; непредставимые planning данные защищены предварительным атомарным отказом. drill3-*.log/migration-drill-result.json подтвердили up/down/up/repeated up и protected down; drill4/migration-bad-history-result.json дополнительно сохранили недопустимую synthetic историю без выдуманной коррекции, новые invalid updates запрещены.
+- **Правило (R-341).** Проверять не только down, но и следующий up. Ограничение, добавленное миграцией к старым колонкам, не исчезает от удаления новых колонок.
+
+## ERR-0342 · 2026-09-30 · select редактора не находился по точному доступному имени
+
+- **Доказательство.** Browser planning1 / timeline-browser-result.json: настоящий Chromium не нашёл select по get_by_label('Ответственный', exact=True), хотя заголовок был виден на screenshot. Только jsdom-проверки этого не выявили.
+- **Исправление.** Заголовок получил отдельный id, select — aria-labelledby. Реальные planning2/3 сценарии выбирают внешнего подрядчика, сохраняют и восстанавливают его после reload. Финальный planning3 содержит девять успешных проверок, page_errors пуст.
+- **Правило (R-342).** Видимый текст и точное доступное имя — разные проверяемые свойства. Проверять native controls в реальном браузере, а не только по textContent/jsdom.
+
+## ERR-0343 · 2026-09-30 · старые SQL-фикстуры расходились с новой длительностью
+
+- **Доказательство.** full-editor-final.log: audit7, audit7c и два stage7 сценария упали до сдвига на timeline_duration_consistent. Фикстуры устанавливали endpoints часового интервала, не меняя известную шаблонную duration_minutes.
+- **Исправление.** Пять setup UPDATE явно задают duration_minutes=60. Сценарии уведомлений, прошлых блоков и идемпотентности не ослаблены; CHECK сохранён. full-final.log: 1110 frontend / 1324 backend, skipped нет, все типы/линт/сборки прошли, exit 0.
+- **Правило (R-343).** При расширении связанной модели SQL-фикстура должна создавать согласованное состояние всех её полей. Зелёный старый набор не является основанием ослаблять новый доменный инвариант.
+
+## ERR-0344 · 2026-09-30 · первая дата присваивала время чужой позиции шаблона
+
+- **Доказательство.** C:/Тили-тили/.unlazy/wp03-shift-20260930/server-before-origin-valid.log: три новые регрессии упали, прежние 38 прошли. Переименованный brunch дня 2, перемещённый в sort=0, получил 03:00Z первого дня вместо 07:00Z второго; custom/историческому блоку присваивались часы по sort, explicit unknown duration получала template end.
+- **Исправление.** При создании template_start/template_day_offset записываются непосредственно у постоянного ID. Первая дата использует этот origin и текущую duration; unknown origin/duration не реконструируются. Переименование/перестановка/удаление соседей не меняют источник; manual/fixed начало сохраняется. Миграция оставляет исторический origin NULL с NOTICE и отказывает populated down.
+- **Проверка.** server-origin.log: 41/41; origin-migration-result.json: шесть checks сохранности, safe down/up/repeat, constraints и rollback. full-origin-engine.log и финальный full-final.log после общей календарной проверки: 1110 frontend / 1348 backend без skipped, типы/линт/сборки прошли, exit 0. Подробности REPORT-SHIFT-CORE.md.
+- **Правило (R-344).** Позиция списка и редактируемый текст не являются идентичностью происхождения. Источник времени записывается при создании; если история его не содержит, отсутствие нельзя исправлять догадкой.
+
+## ERR-0345 · 2026-09-30 · fallback часового пояса ошибочно использован как boolean
+
+- **Доказательство.** C:/Тили-тили/.unlazy/wp03-shift-20260930/server-events.log: 49/50 passed, PATCH event с Unknown/Zone отвечал 500 вместо 422. knownTimeZone возвращает строку принятого пояса или fallback, а не признак валидности; проверка `!knownTimeZone(value)` пропускала неизвестный ввод до DB CHECK.
+- **Исправление.** Сравнивается возвращённое значение с исходным, затем явно проверяется pg_timezone_names в авторизованной транзакции. DB trigger независимо запрещает новый/изменённый неизвестный timezone. Неизвестная historical zone не заменяется и не запрещает name-only edit.
+- **Проверки.** server-events-validation.log 50/50; текущая новая БД server-events-current.log 55/55; два event migration drill 7/8 checks, включая old unknown zone. full-events-types.log 1112 frontend / 1362 backend без skipped, exit 0.
+- **Правило (R-345).** Fallback-функция для отображения не является валидатором ввода. Проверять реальный return type, отдельно совместимость с PostgreSQL и не реконструировать неизвестную историческую зону.
+
+## ERR-0346 · 2026-09-30 · общий клиентский draft терял eventId
+
+- **Доказательство.** client-before-event-retention.log: converter regression failed, семь прежних/compatibility tests passed. GET уже отдавал eventId, но toTimelineDraft его не переносил. Серверный omission fallback сохранял старую связь, поэтому это не доказательство отвязки строк в БД; терялись данные клиентского снимка.
+- **Исправление.** TimelineDraft содержит optional eventId, общий converter переносит только фактически полученное значение. Старому response без поля ID не выдумывается; редактор через spread удерживает его.
+- **Проверки.** client-event-retention.log восемь passed; полный gate после исправления двух TS-invalid fixtures 1112/1362, без skipped. browser-evidence-events1/timeline-browser-result.json: реальные owner/helper editor saves, stale event context/explicit reopen, accepted/reloaded response, autogen/apply удерживают independent/main links; всего восемь checks, page_errors пуст. Это не event management/shift UI приёмка.
+- **Правило (R-346).** Новое поле full-list модели проверяется на каждом преобразовании ответа/черновика/accepted response, а не только в backend schema. Зелёный vitest subset не заменяет typecheck: тестовые fixtures должны соответствовать generated types.
+
+## ERR-0347 · 2026-09-30 · старый shift обходил scoped preview и версию
+
+- **До правки.** server-before-http.log в C:/Тили-тили/.unlazy/wp03-shift-20260930/: legacy POST minutes без If-Match выполнял сдвиг; девять новых HTTP tests failed, прежние 55 passed. Восемь failures отсутствующего preview route отдельно не считаются проверкой его будущих инвариантов.
+- **Исправление.** Старый путь теперь confirm-only с strict previewToken schema, исходным ETag и logical key. Legacy input только отказ; ни minutes, ни force не могут выполнить запись. После wedding lock повторяются актуальные access/session/version/actual-clock/digest. Replay тоже авторизуется заново. Сдвиг/ledger/notification/receipt одной транзакцией.
+- **Проверки.** server-command-integrity-baseline.log 74/74: scope/concurrency/replay, actual vendor identity, другая DB session, TTL, actual eligibility, RSVP change, fault после настоящего notification INSERT и три wait/revoke проверки. Новые дополнительные legacy+version/extra-force случаи входят в final full. REPORT-SHIFT-HTTP.md отделяет это от отсутствующих invitees/transfers/ack/offline.
+- **Правило (R-347).** Новый безопасный протокол не защищает операцию, пока прежний endpoint остаётся альтернативным обходом. Replay должен проверять текущие права, а все побочные записи и ключ должны иметь один transaction boundary.
+
+## ERR-0348 · 2026-09-30 · первая загрузка контекста оставляла пустую дату сдвига
+
+- **Ошибка.** State формы создавался до завершения GET wedding; последующее получение даты не меняло initial state. Нельзя решать это постоянным синхронизирующим effect: он заменил бы введённый день при refresh.
+- **Исправление.** Первый open получает уже загруженную дату; trigger закрыт до actual wedding context. Последующие открытия/refresh сохраняют пользовательский день и captured ETag. Неверный import useApi и optional block name также исправлены; первая ошибка typecheck сохранена в full-http-first.log.
+- **Проверки.** ui-dialog-context.log, ui-dialog-regressions.log; timelineShiftControl.test.tsx явно проверяет late context перед first open и сохранение изменённого дня после close/refresh/reopen. Это не обещание полной offline-модели.
+- **Правило (R-348).** Загружаемый контекст формы и пользовательский draft имеют разный жизненный цикл. Инициализация при первом открытии не означает автоматическую перебазировку последующих edits.
+
+## ERR-0349 · 2026-09-30 · runtime schema подтверждения расходилась с контрактом
+
+- **Доказательство.** full-scoped-command.log: audit14 обнаружил лишнее minutes и отсутствие required previewToken; audit55 — неописанный auth_unavailable. Фронт прошёл 1122 tests, backend 1379 passed / 2 failed: частичный успех не считался итоговым gate.
+- **Исправление.** Runtime schema требует previewToken и запрещает extra properties; attachValidation используется только для явных отказов старому input, после проверки доступа. YAML содержит db_unavailable/auth_unavailable для обоих endpoints и 403/404 confirm. Source/генераторы обновлены штатно.
+- **Проверка.** full-contract-strict.log прошёл 1122/1381, типы/линт/сборки; текущий final повтор фиксируется в REPORT-SHIFT-HTTP.md. Старые role/zero/oversize регрессии не удалены и обход не добавлен.
+- **Правило (R-349).** Совместимость отказов старому запросу не должна становиться дополнительным допустимым телом команды. Generated files не исправляют divergence runtime schema; нужен полный contract audit.
+
+## ERR-0350 · 2026-09-30 · доступное имя select включало названия options
+
+- **Доказательство.** browser-evidence-shift1/timeline-browser-result.json: первые шесть real scenarios прошли, выбор event остановился на exact label области. jsdom subset это не выявил. Снимки/trace не скрыты.
+- **Исправление.** Оба native select получили явный переведённый aria-label. Dialog использует штатный Radix focus management, запрет закрытия pending и restore focus.
+- **Проверка.** browser-evidence-shift2 и shift3: по десять passed, page_errors пуст, actual event select/role grant/confirm, mobile widths/stale/replay/manual resolution. Это не физические устройства.
+- **Правило (R-350).** Select внутри label не гарантирует однозначное доступное имя в настоящем браузере. Проверять реальные controls по role/label, не ослаблять locator до случайного совпадения текста.
+
+## ERR-0351 · 2026-09-30 · forbidden reader выглядел пустым списком мероприятий
+
+- **Доказательство.** ui-event-denial-before.log: новый тест failed, 101 прежний passed. useApi хранит 403 в forbiddenText, не error; компонент читал только error и терял причину отказа.
+- **Исправление.** Показывается actual forbiddenText, event select закрыт; retry CTA только для повторяемого network/server отказа. Preview/confirm не объявляются выполненными.
+- **Проверка.** ui-event-denial-after.log: пять файлов / 102 passed. Final full и browser повтор — REPORT-SHIFT-HTTP.md.
+- **Правило (R-351).** Использовать весь контракт AsyncData: loading/error/forbidden/forbiddenText. Отсутствие error не доказывает успешную загрузку, а отказ в доступе не является пустой выдачей.
+
+## ERR-0352 · 2026-09-30 · DayX называл законченный блок LIVE и показывал часы браузера
+
+- **До исправления.** dayx-before-clock-locators.log: восемь новых failures / 70 прежних passed. Исторический блок 2020 показывался LIVE; unknown end считался активным; parallel ветка терялась, next зависел от sort. Часы main/event брались из браузерного пояса. Более ранний лог с неоднозначными locator не выдаётся за восемь behavioral witnesses.
+- **Исправление.** Все известные start <= now < end, ближайший future start, отдельные empty/ended/unknown состояния. Даты/оба конца/реальный IANA-пояс eventId; unknown context показывает ISO, не fallback. Старый offline не LIVE. Минутное обновление не стирает карточку и снимается при unmount.
+- **Проверка.** REPORT-DAYX.md: 14 новых regressions; final full-dayx-revisions-final.log 1137/1381 без skipped, типы/линт/сборки; browser-evidence-dayx1 15 real UI/API checks, page_errors пуст, 320/390/1440 и два parallel LIVE с явным browser clock. Не физические устройства и не full offline lifecycle.
+- **Правило (R-352).** Последний начавшийся блок не означает «идёт сейчас». Не выводить неизвестное окончание из соседей; при parallel программе нельзя молча выбрать один блок. Пояс устройства не является поясом мероприятия.
+
+## ERR-0353 · 2026-09-30 · программа и контекст часов смешивались между версиями
+
+- **До исправления.** dayx-before-context-hours-count.log: новый тест failed / 83 прежних passed. При timeline ETag 1 и events ETag 2 экран дважды показывал местные 18:00 из несовместимых ответов. Первый witness с неоднозначным query locator сохранён отдельно.
+- **Исправление.** DayX получает реальные snapshot ETag, event context применяется только при одинаковой ненулевой версии. Несовпадение/неизвестная версия даёт метку и явное перечитывание; captured shift draft/version не меняется. Full-dayx-clock.log также выявил generic AsyncState без переданного actual forbiddenText: передан явно для обоих readers, 403 без retry.
+- **Проверка.** dayx-context-version.log 84/84, включая explicit refresh и отказ контекста; final full и real browser повтор — REPORT-DAYX.md. Модель API/БД/контракт в этом этапе не менялась.
+- **Правило (R-353).** Даже два корректных ответа о своей свадьбе не составляют один snapshot автоматически. Часы eventId требуют той же ревизии, что блоки; контекст другой версии нельзя молча подставлять.
+
+## ERR-0354 · 2026-09-30 · имя в последствиях не было частью подтверждаемого снимка
+
+- **До исправления.** server-before-effects-valid.log: три новые regression failures / 74 прежних passed; изменение имени подрядчика без timeline revision допускало прежний shift с 200. UI использовал parent block names вместо captured context; ui-before-effects-content.log подтвердил отсутствие нужных имён/интервалов.
+- **Исправление.** Minimal tenant-scoped block/ref/guest details прочитаны под lock и входят в signed digest; confirm перечитывает их, changed label даёт 409 без мутации. Parent refresh не заменяет названия preview. Телефоны/цены/private guest comments не входят в DTO; helper denied, coordinator разрешён после реального role grant.
+- **Проверка.** REPORT-EFFECTS.md: четыре новых real DB/API tests, final full 1146/1385 без skipped; browser effects2 сохраняет captured имя после actual parent refresh и проверяет реальные guest/member/external contractor данные.
+- **Правило (R-354).** Если человек подтверждает отображённые последствия, их имена и контекст принадлежат тому же подписанному снимку. Нельзя отдельно проверять ID/version и молча обновлять подписи из другой версии.
+
+## ERR-0355 · 2026-09-30 · конфликт не показывал сравниваемый неподвижный интервал
+
+- **До исправления.** ui-before-fixed-context.log: новый content failure / 110 прежних passed. Предпросмотр не показывал известный интервал неподвижного конфликтующего блока; полные окончания/пояса отсутствовали в более раннем content witness.
+- **Исправление.** Captured known intervals и общий planningEnd; moved block показывает AFTER, fixed/unmoved показывает unchanged. Неизвестное окончание/пояс явно отмечено, manual travel times названы плановыми началами, не реальным прибытием.
+- **Проверка.** ui-effects-fixed-context.log 111/111; final full и 18 actual browser checks — REPORT-EFFECTS.md. effects2 conflict390 проверяет четыре точных времени с milliseconds в реальном event zone, снимок просмотрен.
+- **Правило (R-355).** Конфликт времени должен показывать фактически сравниваемые интервалы после предлагаемой правки. Before неподвижного блока допустим только как unchanged, не как предполагаемое after; неизвестное время не выводится догадкой.
+
+## ERR-0356 · 2026-09-30 · старое vendor update давало доступ после отмены брони
+
+- **До исправления.** vendor-before-live-access.log: три новых failures/21 прежний passed. После реального POST slots/cancel GET всё ещё выдавал карточку, ack204 записывал время; archive/cancel wedding скрывали GET, но прямой ack оставался204.
+- **Исправление.** GET проверяет live committed deals, account/session/vendor ownership. Ack транзакционно берёт wedding share lock, перечитывает wedding/account/session/ownership/deals и только затем записывает ack_at. Отказы401/404 без записи; surviving booking сохраняет доступ, retry не меняет время.
+- **Проверка.** vendor-live-access.log30/30, включая пять real waiting-lock revocations; init.sh full-vendor-access-current.log1146/1394 без skipped. Browser vendoraccess1 девять real API/UI checks: cached card404/видимый отказ/reload removal. REPORT-VENDOR-ACCESS.md.
+- **Правило (R-356).** Принадлежность исторической карточки не является текущим правом к заказу. Read/ack должны проверять действующую сделку и lifecycle, а после ожидания блокировки — повторно живые аккаунт/сессию/владение. Legacy ack не заменяет точное versioned ознакомление.
+
+## ERR-0357 · 2026-09-30 · новая запись programme audit использовала неверную колонку
+
+- **Доказательство.** vendor-program-ack-first.log:31passed/1failed; новый POST program ack возвращал500 из-за нового INSERT audit_log.details, тогда как схема/существующие model writers используют diff. Это локальная ошибка реализации, не production incident.
+- **Исправление.** Колонка diff, audit/history в одной транзакции. Отдельный regression создаёт настоящий DB division-by-zero на audit шаге:500 и отсутствие обоих следов; следующая попытка сохраняет один ack.
+- **Проверка.** REPORT-PROGRAM-ACK-HTTP.md фиксирует реальные API, history/rollback и final gate. Новый acknowledgment_unavailable также пойман G-c1 в первом full и явно включён в503 OpenAPI, проверка не ослаблена.
+- **Правило (R-357).** При добавлении журнала брать реальные названия колонок из схемы/действующих writers. Проверять сохранение и rollback основного действия вместе с журналом; ошибка audit не должна оставлять ложное подтверждение. Все выдаваемые коды отказа включать в контракт.
+
+## ERR-0358 · 2026-09-30 · новые vendor program screens отсутствовали в общем обходе
+
+- Доказательство: full-program-ui.log — dictionary guard и route-inventory guard
+  failed;18 из первоначальных component cases passed. В full уже20new component
+  cases; всего1164passed/2failed. Новый route не входил в общий no-server render,
+  две строки не имели EN. Это локальный отказ проверок, не production incident.
+- Исправление: добавлены два route в существующий ROUTES и stronger forbidden-down
+  assertions; EN для «Нет связи с сервером»/«мин» и server «Программа недоступна».
+  Полнота словаря/routes не ослаблялась, actual English browser проверен отдельно.
+- Правило R-358: новый экран добавляется одновременно в общий обход отказов;
+  component fixtures и локальный английский smoke не заменяют guards всего приложения.
+  Final full1168frontend/1414backend passed без skipped; evidence — REPORT-PROGRAM-UI.md.
+
+## ERR-0359 · 2026-09-30 · новая сводка скрывала реальную причину отказа
+
+- Доказательство: direct vitest summary17cases/16pass/1fail; expectedactual403
+  text, DOM generic «Этот раздел ведёт пара…». Это ошибка caller AsyncState,
+  не отсутствие доступа на сервере. Прямой вывод не назван savedlog.
+- Исправление: q.forbiddenText передан явно в summary и related VendorPrograms
+  list/reader; twoGET403 regressions, отказ не считается пустым/готовым.
+- Проверка: ackui-team-ack-current.log62passed; full-team-ack-final.log1187/1432
+  passed no skipped/types/lint/build/contracts. REPORT-TEAM-ACK.md.
+- Правило R-359: q.forbidden недостаточно для причины. Каждый новый caller
+  AsyncState передаёт actual forbiddenText и проверяет не стандартный fallback.
+
+## ERR-0360 · 2026-09-30 · planning tests считали alert единственным на странице
+
+- Доказательство: full-team-ack-current.log1185pass/2failfrontend; getByRole alert
+  нашёл сообщение редактора и сообщение новой summary при old fixture response.
+  Это locator assumption, не два выявленных product defects. Backend не достигнут.
+- Исправление: within actual named planning form, unchanged exacterror/draft/
+  disabled/retry checks; validationalert.closest form теперь equals testedform.
+  Сводка/её ошибки не скрыты ради старых assertions.
+- Проверка: focused62passed и finalfull1187/1432. Правило R-360: проверка редактора
+  должна выбирать его semantic container, а не любой alert всей страницы.
+
+## ERR-0361 · 2026-09-30 · browser crop не доказывал отсутствие перекрытия
+
+- Доказательство: teamack1 team320/history390/team-en390 PNG показывали fixed
+  navigation поверх нижних строк; DOM visibility/horizontal overflow были зелёными.
+  Это слабость browser evidence, не доказанный дефект невозможности прокрутки.
+- Исправление: capture_summary позиционирует регион выше nav через доступную
+  прокрутку; assert whole-region bounds и elementFromPoint для refresh, плюс
+  viewport PNG. Product CSS не менялся: существующий pb-28 оставляет нужное место.
+- Проверка: teamack2 16checks/exit0/no page_errors; six regions/viewport320 inspected.
+  Правило R-361: to_be_visible и screenshot не исключают fixed-overlay occlusion;
+  проверять геометрию и доступность hit target, просматривать итоговый снимок.
+
+## ERR-0362 · 2026-09-30 · legacy external cabinet обходил границу назначенной программы
+
+- Доказательство: vendor-vendor-external-legacy-witness.log1failed/89passed. При одном
+  назначенном блоке старый GET вернул два, включая SECRET INTERNAL BLOCK, и
+  читал who. Новый signed reader не закрывал эту старую дверь сам по себе.
+- Исправление: legacy SQL фильтрует actual timeline_assignments текущей сделки;
+  who null. New protocol использует общий minimal readProgram. Regression
+  проверяет точное число/имя/отсутствие скрытого блока и private legacy notes.
+- Проверка: vendor-vendor-external-program-current.log90passed,22new cases. Final full
+  ещё ожидается в REPORT-EXTERNAL-PROGRAM-HTTP.md. Правило R-362: ограниченная
+  новая projection не закрывает прежние двери, возвращающие те же private данные.
+
+## ERR-0363 · 2026-09-30 · старый сценарий предполагал весь тайминг у внешнего исполнителя
+
+- Доказательство: full-full-external-program-first.log1187frontendpassed,
+  backend1453passed/1failed prod2. Сценарий создавал «Сбор гостей» без назначения,
+  но ожидал его в external cabinet. Не новая утечка в реализации фильтра.
+- Исправление: actual externalSetup возвращает actual created dealId, owner PUT
+  назначает блок этой сделке; прежняя проверка имени/чата сохранена. Добавлен
+  неназначенный служебный блок и assertions его отсутствия, точного count и who null.
+  Контракт описывает assigned-only legacy read и действительную reusable ссылку.
+- Правило R-363: при изменении границы прав fixture должен выдавать нужное право
+  реальным действием; нельзя возвращать старую утечку ради зелёного сценария.
+
+## ERR-0364 · 2026-09-30 · выдача ссылки сохраняла время начала ожидавшей транзакции
+
+- Доказательство: vendor-vendor-external-issued-time-witness-held.log1failed/90passed.
+  created_at1790757979005ms < release1790757979060ms:55ms до снятия блокировки
+  (1790757979060-1790757979005=55). Default now() принадлежал
+  началу transaction, не моменту выдачи. Первый witness без50ms ожидания был
+  зелёным91 из-за недостаточного разрешения Date, не отрицательное доказательство.
+- Исправление: explicit created_at clock_timestamp вместе с actual expiry.
+  Добавлены пять реальных waits с live role/session/account/wedding проверками
+  issuing owner, без новой ссылки после отказа. Final proof — REPORT-EXTERNAL-PROGRAM-HTTP.md.
+- Правило R-364: время действия после lock wait не равно transaction now();
+  temporal regression должен создать различимый интервал в точности API времени.
+
+## ERR-0365 · 2026-09-30 · full suite Connection is closed после зелёных test cases
+
+- Доказательство: full-full-external-program-bound-final.log frontend1187pass,
+  backend1460pass, но ratelimit.test.ts suite failed. Стек ioredis socket close,
+  причина прежнего разрыва не установлена. Нельзя считать такой full зелёным.
+- Наблюдение: redis-observation.json actual PONG/ready/localDB13; isolated
+  redis-external-close-isolated.log10passed. Limiter/его тест не менялись.
+  Это не доказательство причины и не исправление Redis lifecycle. Новый full
+  на fresh DB проверяется отдельно; исходный failure сохранён в отчёте.
+- Правило R-365: зелёные отдельные cases не отменяют failed suite/hooks.
+  Инфраструктурный failure сохранять, проверять current health и изолированный
+  сценарий; не ослаблять тест и не присваивать непроверенную причину.
+
+## ERR-0366 · 2026-09-30 · browser fixture timezone нельзя угадывать
+
+- Доказательство: externalui1 actual browser result failed на ожидании
+  Europe/Moscow. API fixture свадьбы в Уфе прислал Asia/Yekaterinburg;
+  failure.png reader правильно показывает16:00-16:30 для11:00-11:30UTC.
+- Исправление: browser acceptance ожидает фактический event timezone и16:00/
+  16:30, не меняет корректный reader ради московского времени. externalui2
+  UI14passed/zero page_errors, seven PNG inspected; REPORT-EXTERNAL-PROGRAM-UI.md.
+- Правило R-366: timezone относится к фактическому мероприятию, а не к месту
+  агента/браузера или привычному примеру. Неверный fixture assertion — не баг UI.
+
+## ERR-0367 · 2026-09-30 · SQL observer prefix выглядел как unscoped UPDATE
+
+- Доказательство: full-external-team-final.log1219frontpass/1481backpass,
+  audit53 failed на fixture string 'update deals set current_program_invite_id=$3'.
+  Production query содержит WHERE wedding_id=$1 AND id=$2.
+- Исправление: rollback observer сравнивает полную SQL строку с WHERE;
+  guard audit53 не изменён. Checkpoint full-external-team-verify.log1219/1482
+  прошёл; текущий final после дополнительной history проверки отдельно.
+- Правило R-367: строковый SQL matcher тоже проходит guard на массовые изменения;
+  используйте полный scoped statement, не исключайте тест из защитного анализа.
+
+## ERR-0368 · 2026-09-30 · JS millisecond tie выбирал неправильную receipt history
+
+- Доказательство: vendor-external-team-time-witness.log1fail/118pass. Explicit
+  local SQL fixture .123999Z/.123001Z, разница998microseconds, оба JS .123Z.
+  Expired current fallback выбрал version20 вместо actual SQL-latest version16.
+- Исправление: bounded SQL latest query выбирает receipt до преобразования Date;
+  после всех queries actual TTL check переводит current в unavailable с этой history.
+  vendor-external-team-time-fixed.log119pass. Synthetic timestamp fixture —
+  не доказательство исторического времени реального человека.
+- Правило R-368: не определять DB chronology сравнениями сериализованных DTO,
+  если их точность меньше исходной; выбирать latest в хранилище.
+
+## ERR-0369 · 2026-09-30 · Browser locator перепутал current и history source
+
+- Доказательство: externalteam1 прошёл13checks и остановился на strict-mode
+  violation: одинаковая English link-source подпись в current и collapsed history.
+  failure.png просмотрен: текущий статус/подпись правильные, page_errors пуст.
+- Исправление только browser runner: current источник проверяется отдельно;
+  history раскрывается и её источник проверяется внутри group. Не удалены
+  assertions и не менялась продуктовая разметка. externalteam2:17passed/exit0,
+  eight region PNG и viewport320 просмотрены; REPORT-EXTERNAL-TEAM-ACK.md.
+- Правило R-369: одинаковая подпись current/history не уникальный locator;
+  проверять оба смысловых региона, включая видимость раскрытой истории.
+
+## ERR-0370 · 2026-09-30 · Старый external кабинет/чат обходил actual deal state
+
+- Доказательство: vendor-external-legacy-witness.log3failed/119pass. Explicit
+  local SQL отменил actual deal, не отзывая link. Cabinet200 вернул cancelled
+  сделку/own contact/finance; messages200, POST201 сохранил запрещённое сообщение.
+- Исправление: все legacy doors общая issued-bound/live wedding/invite/slot/
+  external deal проверка в одной транзакции; actual TTL после SQL waits,
+  lazychat/accepted/message атомарны. Realtime/notify только после commit.
+  Historical unbound409 требует новой выдачи, не угадывает текущую чужую сделку.
+- Проверка: targeted160passed/41new, actual waits27/rollback/concurrency/time.
+  FINAL full1219/1524 no skipped и actual Chromium externallegacy2:11passed/
+  eightPNG inspected — REPORT-EXTERNAL-LEGACY-ACCESS.md; не полный WP03.
+- Правило R-370: действующий токен не доказывает действующую связанную сделку;
+  старые и новые маршруты должны соблюдать одну transaction/live границу.
+
+## ERR-0371 · 2026-09-30 · Wait fixture нарушал production lock order
+
+- Доказательство: vendor-external-legacy-current.log три actual PG deadlocks
+  при прямом deal FOR UPDATE -> отмена. Trigger очищает assignment и пишет
+  wedding, пока reader уже держит wedding SHARE и ждёт deal. Фикстура инвертировала
+  wedding-first порядок рабочего cancel path. Это не подтверждение deadlock
+  публичного cancel route. После отклонённого blocker finally не восстановил
+  observers, оставив unbound вызов метода хаба; последующий allowed POST500.
+  Точную единственную причину500 отдельно не воспроизводили.
+- Исправление: cancelled deal fixture держит wedding first; отдельный deal
+  expiry fixture действительно ждёт deal без инвертированного trigger update.
+  Observer вызывает publish с его this, finally восстанавливает обе функции
+  даже после ошибки blocker. Denial/time assertions не ослаблены.
+- Проверка: targeted158pass, затем расширенный160pass. Правило R-371:
+  реальные SQL locks не делают некорректный порядок фикстуры production-сценарием;
+  состояние наблюдателей всегда возвращать в независимом finally.
+
+## ERR-0372 · 2026-09-30 · Full frontend route-loading timeout остаётся фактом
+
+- Доказательство: full-external-legacy-current.log1217pass/2fail; audit17/audit49h
+  loading-route ещё существовал после4000ms. Full остановился до backend.
+  Причину я не могу подтвердить; изменение API не доказывает причину timeout.
+- Наблюдение: isolated same27tests passed, без изменения assertions/timeouts/
+  app route code. Новый full на fresh DB проверяется отдельно; старый failure
+  не переименовывается в зелёный и isolated не считается исправлением причины.
+- Правило R-372: transient timeout фиксировать и отдельно проверять текущий
+  полный прогон; не выдумывать нагрузку/причину и не ослаблять regression ради pass.
+
+## ERR-0373 · 2026-09-30 · Fresh DB создана, но migrate перед full пропущен
+
+- Доказательство: full-external-legacy-final.logfrontend1219pass; backend
+  153failed/305passed/1066skipped и96failed suites из отсутствующей schema.
+  Последовательность вызовов была setup->full, без migrate. init.sh47 явно
+  требует migrate up отдельно. Actual preflight public.pgmigrations null.
+- Исправление external verify.mjs: full проверяет реальные pgmigrations/users
+  и отсутствие неприменённых migration .cjs имён до запуска init.sh. Старый
+  пустой final2 DB отказан до тестов; новый final3 setup->migrateexit0->preflight
+  passed->full. Repo init.sh/продуктовые тесты/skip assertions не менялись.
+- Правило R-373: существование свежей БД не доказывает готовность schema;
+  проверять применение всех текущих миграций до полного набора, сохранять failure.
+
+## ERR-0374 · 2026-09-30 · Exact chat reply selector включал author label
+
+- Доказательство: externallegacy1 прошёл5checks, остановился на exact text
+  ответа пары. failure.png просмотрен: реальный ответ есть, но в том же p
+  находится подпись «Пара», поэтому exact whole text не совпал. page_errors пуст.
+- Исправление only browser runner: scoped chat paragraph+actual author label
+  и API message ID/mine=false; это усиливает сверку, не удаляет assertion и
+  не меняет продукт. externallegacy2:11passed/exit0/eightPNG inspected.
+- Правило R-374: locator полного сообщения должен учитывать вложенную подпись;
+  отдельная API identity проверка связывает видимый текст с реальным ответом.
+
+## ERR-0375 · 2026-09-30 · Offline fallback не различал отказ и недоступность
+
+- offlinewitness-offline-before.log:4failed подтверждают копию после404/смены
+  сессии той же свадьбы, LIVE после offline event и потерянный event zone.
+- Исправлены schema2 session-bound minimal snapshot, captured same-version
+  context, typed useApi.failure, read-only online/offline lifecycle, cleanup
+  по финальным read401/403/404/410/actual membership/consent/cancellation и
+  generation guard против позднего восстановления. REPORT-OFFLINE-DAY.md.
+- R-375: weddingId не заменяет session isolation; ошибка текста не доказывает
+  отсутствие сети. Namespace JWT не доказывает личность/авторизацию; действующие
+  права и роль читаются с сервера, офлайн их актуальность неизвестна.
+
+## ERR-0376 · 2026-09-30 · Offline regression fixture/timing evidence
+
+- Initial focused failures: duplicate error locator, context refusal expected
+  before deliberately blocked timeline exists, early asynchronous cleanup
+  assertion. Domain assertions retained; request/cleanup first, UI afterwards.
+- it.each массивы раскрывались в arguments: два membership case проходили
+  cleanup через invalid-input catch, не реальные []/changed-role list. Types
+  обнаружили проблему; cases теперь objects, positive same-role control retained.
+- audit29/30 timeouts в offline-expanded.log не имеют доказанной причины.
+  offlineloop-offline-race-witness.log1pass/19filtered skips даже без temporarily
+  removed settled guard НЕ подтвердил гипотезу retry loop. Guard restored,
+  assertions/timeouts не ослаблялись. Последний targeted156passed.
+- R-376: зелёный тест не доказывает нужный вход; проверять параметризацию и
+  positive controls. Не объявлять гипотезу причиной таймаута по соседнему pass.
+
+## ERR-0377 · 2026-09-30 · Shared accessor/context missing in old full mocks
+
+- full-offline-current.log:1259frontpass/8failed, backend не запущен. Два full
+  mocks client не определяли accessTokenForWs; PlanB scenario не определял
+  /events и возвращал fixture404. Добавлены no-namespace accessor и реальный
+  same-version context; проверки выхода/отказа/no second POST остались.
+- offlineregression-offline-compatibility.log63pass, следующий full-offline-final
+  1267/1524/no skipped. Layout source затем изменился, это не финал текущего кода.
+- R-377: новый shared import требует сверки full mocks; отсутствующий mock-route
+  не превращать в production fallback и не выключать проверку отказа.
+
+## ERR-0378 · 2026-09-30 · Offline browser runner assumptions
+
+- offlineday1/2 неверно искали kind=main/name ещё не созданного мероприятия.
+  Main маркируется isMain; runner теперь создаёт реальный event publicPOST.
+- offlineday3 exact имя встречается в current и timeline; actual failure PNG
+  показывает новую программу. Scoped row + separate LIVE/version проверка.
+- offlineday4 ошибочно ожидал403 после member deletion. access.ts188-190
+  защищает от enumeration через404; offlineday5 actual404/not_found и13checks.
+- R-378: читать фактическую event/access модель до fixture; проверить точный
+  статус/код и обе UI области, не подменять несовпадение широким any error.
+
+## ERR-0379 · 2026-09-30 · No-overflow не доказывает отсутствие перекрытия
+
+- offlineday5/offline320.png иoffline390.png просмотрены: fixed OfflineBanner
+  закрывает heading/back; horizontal contact clipped. Browser13passed не
+  проверял эти bounds, поэтому не заменяет послефиксную visual acceptance.
+- Banner in-flow, wrapped offline rows/phone, PlanB responsive flex-wrap.
+  Новый browser capture проверяет banner.bottom<=back.top и phone внутри
+  anchor/viewport, но проверка новой сборки ещё pending до финального прогона.
+- R-379: scrollWidth<=innerWidth недостаточно; смотреть PNG и проверять
+  взаимную геометрию баннера, controls и полностью видимого текста.
+
+## ERR-0380 · 2026-09-30 · HTTP201 приглашения опережал COMMIT и переживал rollback
+
+- full-offline-layout-final.log: frontend1268passed; backend1522passed/2failed.
+  audit32 сразу после выдачи получал410, prod4 после201 не находил inserted row.
+  Это не объявлено случайным сбоем: route external/invite отправлял HTTP201
+  внутри callback db().tx, до завершения PostgreSQL transaction.
+- Два реальных PG witness в prod4: удержанный COMMIT с независимым pool read
+  и SQL select1/0 после INSERT. До исправления HTTP уже завершён, хотя pool
+  не видит строку; при реальном rollback тоже201, строка/pointer не сохраняются.
+  issuancecommit-offline-commit-two-before.log:2failed/144 filtered skips.
+- Callback теперь возвращает invitation, reply201 только после await db().tx.
+  Контракт0.62.0/тело ответа не менялись. Fixed witness2pass/144 filtered skips;
+  vendorcommit-offline-commit-current.log:5files/173pass/no skipped. Новый
+  полный fresh migrated прогон проверяется отдельно, пока не принят.
+- R-380: успешный HTTP критичного перехода публиковать после COMMIT; факт INSERT
+  внутри callback не доказывает успешную транзакцию. Проверять также SQL rollback
+  и видимость результата через независимое соединение, не только statusCode.
+
+## ERR-0381 · 2026-09-30 · Geometry runner искал RU label в английском интерфейсе
+
+- offlineday6:8passed, затем capture offline-en390 ожидал button «Назад»,
+  хотя chrome.tsx переводит aria-label через t, i18n.en.ts задаёт Back.
+  failure.png просмотрен: английский экран и back control действительно есть.
+- Только runner capture использует exact bilingual regex ^(Назад|Back)$;
+  banner/back/phone geometry assertions сохранены. Приложение не менялось.
+  Повторный browser прогон будет отдельным, предыдущая ошибка сохранена.
+- R-381: общие browser helpers должны учитывать проверяемый язык; отсутствие
+  локализованного селектора не является доказательством исчезновения кнопки.
+
+## ERR-0382 · 2026-09-30 · Reconnect HTTP404 оставлял ложную подпись «Нет связи»
+
+- offlineday7:13passed/zero errors; все восемь PNG просмотрены. На
+  known-revocation390.png сохранённая программа/контакты уже удалены, но
+  connectionLost до complete revalidation оставляет «Нет связи с сервером»
+  рядом с фактическим «Свадьба не найдена». Это ложная классификация отказа.
+- Новый lifecycle test выполняет online->offline->online404 и требует
+  скрыть connection claim, сохраняя проверку удаления copy/content.
+  offlinewitness-offline-refusal-label-before.log:1failed/21passed.
+- DayX no-copy status не пишет connection claim при известном non-down отказе;
+  конкретная API ошибка остаётся видимой. Browser теперь также требует actual
+  «Свадьба не найдена» и отсутствие «Нет связи» после публичного удаления member.
+  Новый full/browser после этого source edit ещё не принят.
+- R-382: технический флаг ожидания свежих данных не доказывает сетевой сбой;
+  смотреть итоговые сообщения вместе с реальным HTTP статусом после reconnect.
+
+## ERR-0383 · 2026-09-30 · Conditional JSX подпись нарушила существующий typography gate
+
+- full-offline-refusal-final.log:1268frontendpass/1failed, backend не запускался.
+  typography.test.ts сканирует соседние }{t('…') и отметил Smart.tsx новую
+  no-copy подпись. Разделитель находился внутри условного fragment, что этот
+  source guard не учитывает. Это не доказательство runtime склейки текста.
+- Подпись представлена одним translated string expression с явным separator;
+  typography assertions/исключения не менялись. External focused offline mode
+  теперь включает этот существующий shared typography gate. Повторный full
+  проверяется отдельно, предыдущий отказ сохранён.
+- R-383: сверять даже узкую JSX правку с общими source/layout guards; корректировать
+  представление кода, не расширять исключения теста ради зелёного результата.
+
+Итоговая проверка исправлений ERR0375-0383: full-offline-verified-final.log
+1269frontend/1526backend no skipped/types/lint/build/contracts/initexit0 на
+fresh migrated offlinefinal6/Redis13; targeted160frontend/173backend.
+Chromium offlineday8:13passed/zeroerrors, all eightPNG inspected, banner/back/
+phone geometry320/390/1440 и precise actual404/no-copy status. Runner7 старые
+PNG не подменены, runner8 проверяет новую сборку. No source edits since full.
+Это локальный DayX этап, не весь T009/WP03; source/report REPORT-OFFLINE-DAY.md.
+
+## ERR-0384 · 2026-09-30 · Contractor offline терял разрешённую программу
+
+- offlineprogramwitness-contractor-before.log:2failed, valid registered session
+  и external link после offline лишались своей разрешённой projection.
+- Минимальный versioned namespace snapshot/read-only readers без raw link/proof,
+  явный savedAt/access uncertainty и fresh reconnect. TTL read proof не принят
+  за срок доступа к offline-копии; policy retention не выдумана.
+- R-384: offline unmount критичных controls не заменяет доступность последней
+  разрешённой программы. Проверять projection/context, не сохранять весь кабинет.
+
+## ERR-0385 · 2026-09-30 · Cleanup обгонял known ACK refusal
+
+- offlineprogram-contractor-core.log128pass/8fail: шесть отказов показали race
+  новой реализации: client стирал snapshot, generation размонтировал старый
+  ACK reader, его alive catch терял отказ, новый GET молча открывал данные.
+- Explicit refusal event до очистки/generation, отсутствие автоматического GET
+  по cleanup, mounted/unmounted read/ACK denial cases и late-response guard.
+  Refusal-order136pass; затем resume160pass. Это дефект данного этапа, не
+  неподтверждённая причина ошибок старого кода.
+- R-385: общий privacy cleanup должен доставить известный отказ до уничтожения
+  компонента действия; удаление localStorage само по себе не закрывает UI race.
+
+## ERR-0386 · 2026-09-30 · Storage fixture не перехватывал фактический API
+
+- Тот же core log: Storage.prototype spy не заставил текущий global localStorage
+  бросить исключение. Fixture заменяет actual global getItem/setItem на throwing
+  functions и проверяет вызов getItem; невозможная успешная запись не заявлена.
+- R-386: отказ infrastructure fixture нужно наблюдать в реально вызываемом API,
+  а не считать установленный spy доказательством произошедшего отказа.
+
+## ERR-0387 · 2026-09-30 · Full lint остановил новый program reader
+
+- full-contractor-fresh.log:1325frontendpass, lint two synchronous effect state
+  setters, backend/build не выполнены. ProgramReader использует derived known
+  failure/read-only/settled generation, не отключает react-hooks rule.
+- R-387: targeted tests/type check не заменяют CI whole-tree lint/full build.
+
+## ERR-0388 · 2026-09-30 · Saved text не доказывает завершение reconnect GET
+
+- derived-state161pass/1fail и revalidation-settled161pass/1fail: неизменное имя
+  уже есть в saved copy, а chat parent обновляется после свежего reader render.
+- Тест ждёт actual fresh checkbox/chat input, сохраняет unchecked/empty/no POST;
+  два новых pending-GET tests запрещают ACK до фактического свежего ответа.
+  revalidation-current8files/162pass/no skips. Full/browser ещё проверяются.
+- R-388: окончание загрузки доказывать новым серверным состоянием/action controls,
+  не текстом, который по требованиям должен оставаться доступен из offline copy.
+
+## ERR-0389 · 2026-09-30 · Browser пытался назначить уже отменённую сделку
+
+- offlineprogram1:11checks/zeroerrors, затем real owner PUT rejected participants
+  как недоступных: fixture после actual cancel200/ACK404 снова слал old deal ID.
+- Runner после этих реальных ответов убирает assignment, не ослабляет live
+  access validation. offlineprogram2:15checks/zeroerrors. App не менялся.
+- R-389: многошаговая fixture должна учитывать фактически выполненный переход;
+  защитный отказ API не обходить и не объявлять багом ради продолжения сценария.
+
+## ERR-0390 · 2026-09-30 · Program heading320 был обрезан без overflow
+
+- registered-offline320.png из offlineprogram1 просмотрен: TopBar truncate
+  показывал «Программа свад...». No overflow/bounds это не обнаружили.
+- TopBar получил opt-in wrapTitle, только два новых program screens; остальные
+  callers сохраняют поведение. Новые source regression + browser heading
+  whiteSpace/scrollWidth проверяют полный title. Focused163passed, финальные
+  full/browser после изменения source ещё проверяются отдельно.
+- R-390: отсутствие горизонтального overflow не доказывает полный видимый текст;
+  осматривать PNG и проверять truncation/nowrap, не только общий viewport.
+
+Приёмка contractor offline этапа2026-10-01: focused163, final
+full-contractor-layout-final.log1328frontend/1526backend no skips/types/lint/
+build/contracts/initexit0 на fresh migrated contractorfinal3/Redis13.
+Chromium offlineprogram3:15checks/zeroerrors/all12PNG inspected320/390/1440;
+wrapped complete heading, warm SW/session/link/actual ACK404/410/reconnect/
+no POST replay. Source/tests unchanged since final full; history ERR0384-0390
+сохранена. REPORT-OFFLINE-PROGRAM.md; не весь T009/WP03/WP00-WP16.
+
+## ERR-0391 · 2026-10-01 · Seating Повторно Считала Семейный Флаг
+
+seatingwitness-seating-before.log4fail: две реальные person-shaped строки семьи
+занимали3/2, один человек2/2. Backend toGuest возвращает plusOne для primary
+семьи, а не несуществующее дополнительное место. Seating counts one row once;
+old full-table regression uses two explicit named rows and retains noPATCH/
+capacity assertion. Actual Chromium/API secondary-person PATCH ->2/2, third409.
+R-391: проверять UI на фактической текущей форме DTO, не obsolete combined-row fixture.
+
+## ERR-0392 · 2026-10-01 · Seating Offline Сохраняла Живые Mutators
+
+Тот же before log: actual offline event оставлял add/rename/seat, minimum copy
+отсутствовала. Read-only schema1 and editor unmount, fresh reconnect guard,
+matching refusal cleanup/role/session/consent/cancel/list membership/generation.
+16lifecycle+23projector cases и real browser cold/SW/account/member-removal404.
+R-392: отдельная копия бизнес-данных не заменяет запрет mutator/late restore.
+
+## ERR-0393 · 2026-10-01 · Shell Не Гарантировала Cold Lazy Chunk
+
+Source public/sw.js precached only SHELL; lazy page available only after runtime
+fetch. Actual-build plugin now derives entry/critical routes/static imports/CSS
+and fail-closed install, no API caching.6tests include actual VM installer on
+missing/HTML/redirect. Actual first-ever cold Seating/unread registered/external
+routes after SW activation succeed without network; no unread data fabricated.
+R-393: warm route hard reload cannot prove first-ever offline route availability.
+
+## ERR-0394 · 2026-10-01 · Server Capacity Считала Всю Named Family
+
+Actual PostgreSQL before logs: named primary/secondary each wrongly409 at1seat;
+repeated plusOne with named position2 ->500. Capacity projected actual assigned
+rows; named members separate, generated legacy placeholder follow retained,
+compatibility true with existing named second idempotent.22after-fix actual PG
+tests. Initial added test expected409 for existingnamedsecond; correct behavior
+is200/count2. Fourth fixture missed actual DELETE compaction and likewise needed
+idempotent200. Wrong expectations corrected from source/data before acceptance;
+before4failed remains, not proof that every initial expectation was correct.
+R-394: capacity must model actual mutations; tests must respect real party identity
+and position lifecycle, not infer a hidden new person from a compatibility flag.
+
+## ERR-0395 · 2026-10-01 · Reload Удалял Form409 И Fixture Теряла Envelope
+
+9-file run176pass/1fail: table save swallowed409, outerwrite resolved and reloaded,
+new editor unmount destroyed form/error. Propagate failure to scoped error handler;
+409 no reload, actual browser form/error retained. Lifecycle15pass/1fail unrelated:
+mock error lacked actual {error:{code,message}} envelope; client correctly used
+fallback403. Envelope corrected, known-refusal/no-data/no-controls assertions kept.
+R-395: resolved Promise is not a success if inner catch swallowed a server refusal.
+
+## ERR-0396 · 2026-10-01 · Full Проверка Поймала Test Typing И Dictionary
+
+full-seating-full stopped at TS it.each list spread; explicit fixture objects.
+Plugin tsc also caught untyped apply/hook after filter(Boolean); satisfiesPlugin,
+no any/suppression. full-seating-full-v2:1372pass/1fail, warning key lacked final
+period of existing RU/EN entry; source now reuses existing key. Final fresh
+full-seating-final:1373front/1532back no skips/types/lint/build/contracts/initexit0.
+Vite entry over500KB warning retained as remaining NFR risk, limit not raised.
+R-396: focused green tests do not replace whole-tree types/dictionary/build/performance review.
+
+## ERR-0397 · 2026-10-01 · Actual Browser Fixtures Не Соответствовали Контракту
+
+offlineseating1 actual422 on invalid diet special, fixed to source-defined other;
+API not loosened. offlineseating2 reached5checks then exact-text locator missed
+actual combined network/no-copy reader message; failurePNG inspected, substring
+checks same actual message. offlineseating3:14checks/zeroerrors/all11PNG inspected,
+real API/PG/productionSW; no browser API mock or guard bypass.
+R-397: protective actual422 and combined rendered text are not product defects;
+adjust fixture/locator from verified contract and PNG, preserve meaningful assertions.
+
+Scoped source acceptance: REPORT-OFFLINE-SEATING.md;117SHA256 inventory,
+no source edits after final full started. Full T009/WP03/WP00-WP16 remains open;
+pending route/SW-update/subpath/cache-scope/live-after-wait review still required.
+
+## ERR-0398 · 2026-10-01 · Запоздалое Чтение Сохраняло Чужую Copy
+
+Before seating-seating-lifetime-scope-before: старый w1 GET после свежего w2
+перезаписал минимум; закрытый экран тоже записывал ответ. Caller lifetime guard,
+latest request/ref cleanup и DayX effect cleanup проверяются перед remember.
+R-398: игнорирование React setState не отменяет side effect внутри fetcher.
+
+## ERR-0399 · 2026-10-01 · SW Читал И Удалял Чужие Кэши
+
+Actual source VM witnesses: activate удалял foreign app и другой subpath;
+global caches.match отдавал чужой hit под own static URL. Scope-prefixed cache,
+только own cache.match и очистка exact prefix. Actual upgrade9 Chromium
+сохранил второй scope и foreigncanary. Финальная приёмка в lifecycle report.
+R-399: CacheStorage общий для origin, не для конкретного service worker.
+
+## ERR-0400 · 2026-10-01 · Принудительная Замена Worker
+
+Before witness skipWaiting вызывался даже при существующем active worker.
+Новое правило ждёт явное same-scope подтверждение; dialog предупреждает о
+несохранённых изменениях; first claim не reload, replacement один reloadToRoot.
+Actual pair2 upgrade9: old cold route offline до approval, new cold route после.
+R-400: новый manifest не делает текущий открытый клиент совместимым с новым
+набором hashed chunks; не удалять old cache до согласованной активации.
+
+## ERR-0401 · 2026-10-01 · Install Ждал Заголовки До Чтения Тел
+
+upgrade2-7 actual worker install timeout: только первые shell requests; изменение
+Content-Length fixture не помогло. Bounded network streams VM witness отдельно
+падает. Drain each validated body прежде общего Promise.all завершения, cache
+writes после всех полных ответов. После исправления реальный install прошёл.
+R-401: headers-only fetch completion не означает освобождение сетевого потока
+или полное получение статического ресурса; incomplete body тоже ошибка install.
+
+## ERR-0402 · 2026-10-01 · Проверки Не Равны Финальному Успеху
+
+Update tests сначала использовали неустановленный matcher и неверный exact
+getByRole option; исправлены из текущих API тестового проекта. Whole lint
+запретил мутацию useMemo, заменено ref/cleanup без suppression. Full first:
+1384passed/1duplicate-dictionary; добавленный дубль существующего перевода
+удалён. Browser8: wrong fixture /seating вместо actual /wedding/seating; PNG
+просмотрен, fixture исправлена, product route/guards не ослаблены.
+Full2 потерян при прерывании: no log/no live process, результат не подтверждён.
+После resume отдельная test PG не слушала55432; восстановление существующей
+test data directory, не production/service/application database. Новые проверки
+требуют фактической готовности PG; финальный результат в lifecycle report.
+R-402: interrupted run, stale manifest и focused tests нельзя выдавать за full
+acceptance. Полный WP00-WP16 и production restriction не меняются.
+
+Final for ERR0398-0402: REPORT-OFFLINE-LIFECYCLE.md; actual PG recovered before
+new seatinghard3/all migrations/preflight. Full3:1385front/1532back/no skips/
+types/wholelint/build/contracts/initexit0. Same finalsource actual pair3 upgrade10:
+9checks/all8PNG inspected, seating4:14checks/all11PNG inspected, zeroerrors.
+122 hashes match;117historical. Warning617.99KB, legacy cache/device proof,
+real write authorization after waits/full T009/SC/NFR/WP00-WP16 remain. No release.
+
+## ERR-0403 · 2026-10-01 · Рассадка Писалась После Отзыва Доступа
+
+Before2 realPG:40 failures=guest PATCH/DELETE и table POST/PATCH/DELETE×8changes.
+Настоящий pg_blocking_pids до отзыва/commit/release, HTTP200/201/204 после
+member/role/session/account/consent/policy/archive/cancel изменения. Scoped
+wedding→principal→member→central consent locks/current ACL, tablePOST atomic.
+R-403: preHandler разрешение не переносится через ожидание изменяемого ресурса.
+
+## ERR-0404 · 2026-10-01 · Старая Роль Раскрывала Контакты
+
+Before2:2 phone-write и2 private projection failures. Во время реального wait
+couple стал helper/coordinator; phone:null применялся, seating-only ответ
+раскрывал phone/comment/inviteUrl. Теперь locked role для обеих проверок;
+рассадка разрешена, изменение телефона403, частные поля исключены.
+R-404: право организационной записи не означает право на закрытый контакт.
+
+## ERR-0405 · 2026-10-01 · JWT Истекал После Проверки Перед Записью
+
+Intermediate expiry-before actual200 вместо401 при позднем guest wait. Сейчас
+повтор JWT перед завершением callback, включая single/family delete branches.
+9 expiry cases=5wedding+4late-resource, real elapsed time/signed tokens, no fake
+clock. Real booked vendor fixtures/version/state/update rollback и positive
+committed controls: focused108passed. Full/browser status в новом отчёте.
+R-405: held DB access rows не удерживают время; final expiry failure должен
+откатить SQL side effects, а не отправить успех после истечения.
+
+## ERR-0406 · 2026-10-01 · Наблюдатель Wait Читал Старую Статистику
+
+Initial fixture invite-link201 была ошибкой: actual200, before2 исправлен до
+реальной privacy проверки. Firstfix1/expiry-before имели1/2 wait-observer timeout:
+pg_stat_activity snapshot кэшировался в транзакции. pg_stat_clear_snapshot перед
+каждой bounded probe, current pg_blocking_pids и Lock до release. Fix2:104passed,
+expanded final:108passed/65actualwaits; источник REPORT-SEATING-LIVE-ACCESS.md.
+R-406: timeout наблюдения не доказывает наличие/отсутствие дефекта; не заменять
+realwait фиктивным сигналом или задержкой и не скрывать промежуточные failures.
+
+Final local ERR0403-0406: full1385front/1592back/no skips/types/wholelint/build/
+contracts/init0, fresh migrated PG/Redis13; actual Chromium seating5:14checks/
+zeroerrors/all11PNG inspected;124 current hashes, prior122 historical. Scoped
+manual docs/gates не заменяют весь T009/WP03/SC/NFR/WP00-WP16. No publication.
+
+## ERR-0407 · 2026-10-01 · CORS Не Разрешал Реальные Методы Записи
+
+Original HTTP3failed/7passed: GET/HEAD/POST only. Actual Chromium corsbefore1
+PATCH/PUT/DELETE CORS TypeError, реальные guests/tables/timeline unchanged;
+GET с readableETag работал. Изолированная methods6 строка в original app.ts,
+без wildcardorigin/ACL change/wholeclone import. HTTP10passed/corsafter1 actual
+9checks/zeroerrors/all3PNG inspected; SQLwrite подтверждён, реальные401/403/409
+и foreignorigin refusal сохранены. REPORT-CORS-WRITES.md/full pending.
+R-407: успешный native/inject PATCH не доказывает работоспособность браузерного
+cross-origin PATCH; проверять настоящий preflight и private errors/ETag тоже.
+
+Final ERR0407: fresh actual PG/Redis full1385front/1602back/no skips/types/
+wholelint/build/contracts/init0; actual same-source corsafter2:9checks/zeroerrors/
+all3PNG inspected,125hashmatch. Scoped manual gates do not finish the whole WP.
+
+## ERR-0408 · 2026-10-01 · Создание И Приглашение Гостей По Старым Правам
+
+Actual before58:32access failures (create/import/member/invite x8changes),
+12role/phone/private-projection failures and6genuine elapsed JWT failures.
+Existing preHandler let writes/rotation commit after revoke/member removal/
+consent policy/archive/cancel. Current scoped four doors use wedding-first
+pinned access/current role/sole consent reader and final JWT rollback.
+Expanded72new/180total after3 passed;76actualwaits. GET/remind not covered.
+R-408: organizational family writes do not grant phone or invite capability;
+projection and permission must use the same locked current role.
+
+## ERR-0409 · 2026-10-01 · Член Семьи Получал Ложный HTTP201
+
+Real held-COMMIT witness: HTTP201 arrived before new person became externally
+visible. Real SQL select1/0 after writes rolled back but HTTP still201.
+Member tx now returns DTO, caller sends201 after await tx. All four doors
+have held-COMMIT and real rollback tests, no fake response/SQL failure.
+R-409: success sent inside transaction callback is not proof of COMMIT.
+
+## ERR-0410 · 2026-10-01 · Тестовая База Потеряла Свободный Порт
+
+Expanded after2 failed ECONNREFUSED55432, not treated as green. Actual pg_ctl
+status no server; restart55432 failed Permission denied, Boundcodex.exe13532.
+Same retained cluster recovered on verified-free15432, ready10:42:49MSK;
+no deletion/PID removal/production env/duplicate instance. Cause of shutdown
+not confirmed. Focused after3 actual180passed; full/browser status in
+REPORT-GUEST-WRITE-ACCESS.md. R-410: distinguish runtime interruption from
+verified application failure, and never erase retained DB to hide it.
+
+## ERR-0411 · 2026-10-01 · Browser Witness Ждал Не Тот URL
+
+guestafter1 timeout expected direct3001 response; actual UI uses /api proxy,
+confirmed client.ts BASE and vite.config.ts rewrite. Screenshot family already
+created, no pageerrors. Observer now accepts exact proxy/direct same-door URL;
+guestafter2 actual7checks/zeroerrors. R-411: a broken observer is not proof of
+an app write failure; retain diagnostic and rerun real scenario on fresh DB.
+
+## ERR-0412 · 2026-10-01 · Заголовок Гостей Вытесняли Кнопки
+
+Actual guestafter2 PNG320 invisible title/390truncated. Added heading geometry
+assertion guestlayoutbefore failed after7functional checks. Guests scoped Invite
+action icon-only undersm with aria-label/title, textsm+; no global TopBar changes.
+Current126count but Wedding.tsx hash changed; pre-layout manifest preserved,
+final fresh full/browser recorded below. R-412: functional browser steps and no page
+overflow do not prove text remains visible; inspect PNG and text geometry.
+
+Final ERR0408-0412: fullguest-layout-full1385front/1674back/no skips/types/
+wholelint/build/contracts/init0, actualguestwrite3 PG15432/Redis13/allmigrations.
+Production Chromium guestfinal1:9checks/zeroerrors/all5PNG inspected RU320/390/
+1440 EN320/390, titlegeometry and actualInvite navigation.126hashmatch after
+full/browser, old126beforelayout manifest retained. REPORT-GUEST-WRITE-ACCESS,
+no publication/provider/prod/wholeWP acceptance; other reads/remind still open.

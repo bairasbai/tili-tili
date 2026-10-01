@@ -1,15 +1,15 @@
 import { createElement, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus } from 'lucide-react'
+import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus, RefreshCw, Pencil, LockKeyhole } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
 import type { Slot } from '@/lib/types'
 import { useApi, explainError, noWedding, NO_WEDDING } from '@/lib/api/useApi'
 import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } from '@/lib/weddingDate'
 import { AsyncState, num, ready } from '@/components/AsyncState'
-import { getBudget, getDocuments, getGuests, getMembers, getTasks, getTimeline, getTips, getWedding } from '@/lib/api/weddingData'
+import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
 import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
@@ -31,6 +31,8 @@ import { TaskPlanningFields, TaskPlanningEditor, type TaskPlanningValue } from '
 import { OfferRequestComposer } from '@/components/OfferRequestComposer'
 import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { OfferSummary } from '@/components/OfferSummary'
+import { TimelinePlanningEditor, type TimelineChoice } from '@/components/TimelinePlanning'
+import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
@@ -1119,17 +1121,39 @@ export function Timeline() {
   const [forGuestsNew, setForGuestsNew] = useState(true)
   /* Черновик автоплана: показан, но ещё не применён. */
   const [draft, setDraft] = useState<TimelineDraft[] | null>(null)
+  const [draftVersion, setDraftVersion] = useState<string | null>(null)
 
   /* Тайминг с сервера. Раньше он жил в `useState` и терялся при перезагрузке:
      добавленное событие исчезало вместе с вкладкой (единственный экран, где
      это было так). */
-  const q = useApi(() => weddingId ? getTimeline(weddingId) : noWedding(), [weddingId])
+  const q = useApi(() => weddingId ? getTimelineSnapshot(weddingId) : noWedding(), [weddingId])
+  const membersQ = useApi(() => weddingId ? getMembers(weddingId) : Promise.resolve([]), [weddingId])
+  const guestsQ = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
+  const slotsQ = useApi(() => weddingId ? getSlots(weddingId) : Promise.resolve([]), [weddingId])
+  const [blockEditor, setBlockEditor] = useState<{ weddingId: string; id: string; list: TimelineDraft[]; version: string } | null>(null)
+  const choices: TimelineChoice[] = [
+    ...(membersQ.data ?? []).filter(m => m.user?.id && ['couple', 'helper', 'coordinator'].includes(m.role ?? '')).map(m => ({
+      reference: { kind: 'member' as const, id: m.user!.id! }, name: `${t('Команда')}: ${m.user!.name || m.user!.id}`,
+    })),
+    ...(guestsQ.data ?? []).filter(g => g.id).map(g => ({ reference: { kind: 'guest' as const, id: g.id! }, name: `${t('Гости')}: ${g.name || g.id}` })),
+    ...(slotsQ.data ?? []).filter(s => s.deal?.id && ['booked', 'paid_deposit', 'done'].includes(s.deal.state ?? '')).map(s => ({
+      reference: { kind: 'deal' as const, id: s.deal!.id! }, name: `${s.label ?? t('Подрядчик')}: ${s.deal!.vendor?.name || s.deal!.externalName || s.deal!.id}`,
+    })),
+  ]
+  const [conflictedVersion, setConflictedVersion] = useState<string | null>(null)
   /* Часовой пояс места свадьбы, а не зрителя: по нему живёт день X. Пара может
      смотреть тайминг из другого города, и «13:00» должно означать 13:00 на
      площадке. */
   const wq = useApi(() => weddingId ? getWedding(weddingId) : noWedding(), [weddingId])
   const tz = wq.data?.tz
-  const raw = q.data ?? []
+  const raw = q.data?.data ?? []
+  const updatedAt = q.data?.headers.get('X-Timeline-Updated-At')
+  const updatedBy = q.data?.headers.get('X-Timeline-Updated-By')
+  const author = updatedBy ? membersQ.data?.find(m => m.user?.id === updatedBy)?.user?.name || updatedBy : null
+  const changedAt = updatedAt && !Number.isNaN(Date.parse(updatedAt))
+    ? tz ? new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', {
+      dateStyle: 'medium', timeStyle: 'short', timeZone: tz,
+    }).format(new Date(updatedAt)) : updatedAt : null
   const events = raw.map(e => ({
     id: e.id ?? '',
     /* Сервер отдаёт метку времени, экран показывает часы и минуты в поясе
@@ -1142,6 +1166,7 @@ export function Timeline() {
     who: e.who ?? '',
     /* Без поля в ответе — умолчание контракта «виден»: так же читает базу сервер. */
     forGuests: e.forGuests ?? true,
+    planning: toTimelineDraft(e),
   }))
 
   /*
@@ -1152,7 +1177,7 @@ export function Timeline() {
    * PUT возвращал только что убранный блок или, при пустом экране, стирал
    * весь тайминг (ревью R3-02).
    */
-  const [sent, setSent] = useState<{ weddingId: string; list: TimelineDraft[]; shown: typeof q.data } | null>(null)
+  const [sent, setSent] = useState<{ weddingId: string; list: TimelineDraft[]; etag: string | null; shown: typeof q.data } | null>(null)
 
   /*
    * Тайминг сохраняется списком целиком: отдельного пути «добавить блок»
@@ -1162,33 +1187,31 @@ export function Timeline() {
   /* Возвращает, принял ли сервер список: форма нового блока очищается только
      по «да» — иначе отказ (сеть, 422) стирал набранное название и время
      (ревью 015). */
-  const save = async (next: TimelineDraft[]): Promise<boolean> => {
+  const save = async (next: TimelineDraft[], fromVersion?: string | null): Promise<boolean> => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — тайминг живёт в ней')); return false }
+    const version = fromVersion ?? (sent && sent.weddingId === weddingId && (sent.shown === q.data || q.data === null) ? sent.etag : q.data?.etag)
+    if (!version) { setErr(t('Обновите программу перед сохранением')); return false }
     setBusy(true)
     setErr(null)
     try {
-      await putTimeline(weddingId, next)
-      setSent({ weddingId, list: next, shown: q.data })
+      const saved = await putTimeline(weddingId, next, version)
+      setSent({ weddingId, list: saved.data.map(toTimelineDraft), etag: saved.etag, shown: q.data })
+      setConflictedVersion(null)
       q.reload()
       return true
-    } catch (e) { setErr(explainError(e)); return false } finally { setBusy(false) }
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'timeline_conflict') setConflictedVersion(version)
+      const details = e instanceof ApiError && e.status === 422 ? Object.values(e.fields).map(t).join('. ') : ''
+      setErr(details ? `${explainError(e)}: ${details}` : explainError(e)); return false
+    } finally { setBusy(false) }
   }
 
   const accepted = sent && sent.weddingId === weddingId && (sent.shown === q.data || q.data === null) ? sent.list : null
   const asDraft = (): TimelineDraft[] => {
     if (accepted) return accepted
-    return raw.map(e => ({
-      id: e.id,
-      name: e.name ?? '',
-      startsAt: e.startsAt ?? '',
-      ...(e.endsAt ? { endsAt: e.endsAt } : {}),
-      ...(e.who ? { who: e.who } : {}),
-      ...(e.location ? { location: e.location } : {}),
-      ...(e.icon ? { icon: e.icon } : {}),
-      forGuests: e.forGuests ?? true,
-    }))
+    return raw.map(toTimelineDraft)
   }
   /* Крестики и «Добавить» закрыты, пока список перечитывается: правка по
      прежнему списку откатила бы предыдущую. Закрыты и когда списка нет
@@ -1196,14 +1219,16 @@ export function Timeline() {
      «не знаю», а не «пусто» (инвариант 13), и PUT из него стёр бы тайминг. */
   /* И пока не пришёл пояс площадки: время блока считается в нём, и до ответа
      «13:00» легло бы в чужой пояс (ревью 015, FB3). */
-  const locked = busy || q.refreshing || (q.data === null && !accepted) || !ready(wq)
+  const version = accepted ? sent?.etag : q.data?.etag
+  const locked = busy || q.refreshing || !version || (q.data === null && !accepted) || !ready(wq) || conflictedVersion === version
 
   const addEvent = () => void (async () => {
-    if (!name.trim() || !weddingDate) return
-    const startsAt = isoAtWeddingTime(weddingDate, from, tz)
-    if (!startsAt) { setErr(t('Укажите время в формате 19:00')); return }
-    const endsAt = till ? isoAtWeddingTime(weddingDate, till, tz) : null
-    const ok = await save([...asDraft(), { name: name.trim(), startsAt, ...(endsAt ? { endsAt } : {}), forGuests: forGuestsNew }])
+    if (!name.trim()) return
+    const startsAt = from && weddingDate ? isoAtWeddingTime(weddingDate, from, tz) : ''
+    if (from && !startsAt) { setErr(t('Укажите дату и время начала блока')); return }
+    const endsAt = till && weddingDate ? isoAtWeddingTime(weddingDate, till, tz) : null
+    if (till && !startsAt) { setErr(t('Укажите дату и время начала блока')); return }
+    const ok = await save([...asDraft(), { name: name.trim(), startsAt: startsAt || '', ...(endsAt ? { endsAt } : {}), forGuests: forGuestsNew }])
     if (!ok) return
     setName(''); setFrom(''); setTill(''); setForGuestsNew(true); setEditing(false)
   })()
@@ -1228,26 +1253,19 @@ export function Timeline() {
     setErr(null)
     try {
       const res = await autogenTimeline(weddingId)
-      setConflicts(res?.conflicts ?? [])
-      setDraft((res?.events ?? []).map(e => ({
-        id: e.id,
-        name: e.name ?? '',
-        startsAt: e.startsAt ?? '',
-        ...(e.endsAt ? { endsAt: e.endsAt } : {}),
-        ...(e.who ? { who: e.who } : {}),
-        ...(e.location ? { location: e.location } : {}),
-        ...(e.icon ? { icon: e.icon } : {}),
-        forGuests: e.forGuests ?? true,
-      })))
+      setConflicts(res.data?.conflicts ?? [])
+      setDraftVersion(res.etag)
+      setDraft((res.data?.events ?? []).map(toTimelineDraft))
     } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
   })()
 
-  const applyDraft = () => {
+  const applyDraft = () => void (async () => {
     if (!draft) return
-    void save(draft)
-    setDraft(null)
-    setConflicts(null)
-  }
+    if (!draftVersion) { setErr(t('Обновите программу перед сохранением')); return }
+    if (await save(draft, draftVersion)) {
+      setDraft(null); setDraftVersion(null); setConflicts(null)
+    }
+  })()
 
   return (
     <div className="pb-28">
@@ -1255,6 +1273,11 @@ export function Timeline() {
         <button onClick={() => setEditing(!editing)} className="press h-10 px-4 rounded-full bg-[var(--card)] text-[12px] font-semibold text-[var(--rose-deep)]" style={{ boxShadow: 'var(--shadow)' }}>{editing ? t('Готово') : t('Править')}</button>
       } />
       <AsyncState q={q} />
+      {ready(q) && q.data?.etag && <div aria-label={t('Версия программы')} className="px-5 mt-2 text-[11px] text-[var(--soft)] space-y-1 break-words">
+        <p>{t('Версия программы')}: {q.data.etag.replace(/^"|"$/g, '')}</p>
+        <p>{author ? <>{t('Автор изменения')}: {author}</> : t('Автор изменения неизвестен')}</p>
+        <p>{changedAt ? <>{t('Изменено')}: <time dateTime={updatedAt!}>{changedAt}</time></> : t('Время изменения неизвестно')}</p>
+      </div>}
       {/* Прогноз погоды убран: здесь стояло «Прогноз на 14 июня: +22°, к вечеру
           кратковременный дождь» — выдуманный текст с чужой датой. Погоды нет ни
           в контракте, ни в источниках данных; показывать её нарисованной нельзя,
@@ -1278,12 +1301,13 @@ export function Timeline() {
               <input type="checkbox" checked={forGuestsNew} onChange={e => setForGuestsNew(e.target.checked)} className="accent-[var(--rose)]" />
               {t('Показывать гостям')}
             </label>
-            {!weddingDate && <p className="text-[11px] text-[var(--soft)] mt-2">{t('Сначала выберите дату свадьбы — без неё у события нет дня.')}</p>}
             {weddingDate && !ready(wq) && <p className="text-[11px] text-[var(--soft)] mt-2">{wq.loading ? t('Загружаем часовой пояс площадки…') : t('Часовой пояс площадки не загрузился — время блока считать не в чем')}</p>}
-            <button disabled={locked || !weddingDate} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
+            <button disabled={locked || !!blockEditor} onClick={addEvent} className="press w-full h-[44px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold mt-3 disabled:opacity-50">{busy ? t('Сохраняем…') : t('Добавить в тайминг')}</button>
           </div>
         )}
-        {err && <p className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {err && (!blockEditor || blockEditor.weddingId !== weddingId) && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{err}</p>}
+        {ready(q) && !q.data?.etag && <p role="alert" className="text-[12px] text-[var(--rose-ink)]">{t('Обновите программу перед сохранением')}</p>}
+        {conflictedVersion !== null && <button type="button" disabled={q.refreshing} onClick={() => q.reload()} className="press flex items-center gap-2 text-[12px] text-[var(--rose-deep)] disabled:opacity-50"><RefreshCw size={14} />{t('Обновить')}</button>}
         {/* Пустой тайминг — состояние, а не пустое место: без этой строки экран
             без событий и экран без ответа сервера выглядели одинаково. */}
         {!events.length && ready(q) && (
@@ -1297,18 +1321,38 @@ export function Timeline() {
               <p className="text-[11px] text-[var(--soft)] mt-0.5">{e.loc}</p>
               <p className="text-[11px] text-[var(--rose-deep)] font-semibold mt-1 tabular">{e.time}</p>
               <p className="text-[10px] text-[var(--sage-deep)] mt-0.5">{e.who}</p>
+              <div className="mt-1 space-y-1 text-[11px] text-[var(--soft)]">
+                {e.planning.durationMinutes != null && <p>{t('Длительность, мин')}: {e.planning.durationMinutes}</p>}
+                {e.planning.fixed && <p className="flex items-center gap-1"><LockKeyhole size={12} />{t('Фиксированное начало')}</p>}
+                {!!e.planning.travelMinutes && <p>{t('Переезд, мин')}: {e.planning.travelMinutes}</p>}
+                {!!e.planning.bufferMinutes && <p>{t('Запас, мин')}: {e.planning.bufferMinutes}</p>}
+                {e.planning.responsible && <p className="break-words">{t('Ответственный')}: {choices.find(c => c.reference.kind === e.planning.responsible!.kind && c.reference.id === e.planning.responsible!.id)?.name || e.planning.responsible.id}</p>}
+                {!!e.planning.participants?.length && <p className="break-words">{t('Участники блока')}: {e.planning.participants.map(r => choices.find(c => c.reference.kind === r.kind && c.reference.id === r.id)?.name || r.id).join(', ')}</p>}
+                {!!e.planning.dependsOn?.length && <p className="break-words">{t('Зависит от блоков')}: {e.planning.dependsOn.map(id => raw.find(r => r.id === id)?.name || id).join(', ')}</p>}
+              </div>
               {/* Пометка — по ответу сервера, а не по галочке на экране: гость
                   этого блока в своей программе не увидит. */}
               {!e.forGuests && <p className="text-[10px] text-[var(--soft)] mt-0.5">{t('скрыт от гостей')}</p>}
               {editing && (
                 <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[var(--soft)]">
-                  <input type="checkbox" checked={e.forGuests} disabled={locked} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
+                  <input type="checkbox" checked={e.forGuests} disabled={locked || !!blockEditor} onChange={() => toggleForGuests(e.id)} className="accent-[var(--rose)]" />
                   {t('Показывать гостям')}
                 </label>
               )}
+              {editing && <button type="button" title={t('Изменить блок')} aria-label={`${t('Изменить блок')}: ${e.name}`}
+                disabled={locked || !!blockEditor} className="press mt-2 h-8 w-8 inline-flex items-center justify-center text-[var(--rose-deep)] disabled:opacity-50"
+                onClick={() => { if (weddingId && version) setBlockEditor({ weddingId, id: e.id, list: asDraft(), version }) }}><Pencil size={16} /></button>}
+              {editing && blockEditor?.weddingId === weddingId && blockEditor.id === e.id && tz && <TimelinePlanningEditor
+                key={`${blockEditor.weddingId}:${blockEditor.id}:${blockEditor.version}`} event={blockEditor.list.find(r => r.id === e.id)!}
+                events={blockEditor.list} choices={choices} timeZone={tz}
+                referencesReady={ready(membersQ) && ready(guestsQ) && ready(slotsQ)}
+                referencesError={membersQ.error || guestsQ.error || slotsQ.error}
+                serverError={err}
+                disabled={locked || blockEditor.version === conflictedVersion}
+                onCancel={() => setBlockEditor(null)} onSave={next => save(blockEditor.list.map(r => r.id === next.id ? next : r), blockEditor.version)} />}
             </div>
             {editing && (
-              <button disabled={locked} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
+              <button disabled={locked || !!blockEditor} onClick={() => removeEvent(e.id)} className="press text-[var(--rose-deep)] text-[14px] shrink-0 disabled:opacity-50" aria-label={t('Убрать из тайминга')}>×</button>
             )}
           </div>
         ))}
@@ -1335,13 +1379,14 @@ export function Timeline() {
                 {/* Заменять тайминг целиком — решение пары: у неё уже могут
                     стоять свои блоки, и молча стирать их нельзя. */}
                 <div className="flex gap-2.5 mt-3">
-                  <button onClick={() => { setDraft(null); setConflicts(null) }} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
-                  <button disabled={busy} onClick={applyDraft} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Заменить тайминг')}</button>
+                  <button disabled={busy} onClick={() => { setDraft(null); setDraftVersion(null); setConflicts(null) }} className="press flex-1 h-[42px] rounded-full bg-[var(--bg)] text-[12px] font-semibold text-[var(--soft)]">{t('Отмена')}</button>
+                  <button disabled={busy || !draftVersion || draftVersion === conflictedVersion} onClick={applyDraft} className="press flex-1 h-[42px] rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold disabled:opacity-50">{t('Заменить тайминг')}</button>
                 </div>
               </>
             ) : null}
           </div>
         )}
+        {weddingId && ready(q) && !q.refreshing && q.data?.etag && <TimelineAcknowledgments key={weddingId} weddingId={weddingId} timelineVersion={q.data.etag} refreshTimeline={q.reload} />}
         <button onClick={() => window.print()} className="press w-full card-s py-4 text-[13.5px] font-semibold flex items-center justify-center gap-2"><Download size={15} />{t('Скачать PDF для координатора')}</button>
       </div>
     </div>
@@ -1564,11 +1609,11 @@ export function Guests() {
       {/* Числа появляются вместе с ответом сервера. «0 в списке · 0
           подтвердили» при отказе читается как «нам никто не ответил». */}
       <TopBar back title={t('Гости')} sub={ready(q) ? `${list.length}${t(' в списке · ')}${yes}${t(' подтвердили')}` : undefined} right={
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <button onClick={() => { setAdding(!adding); setBulk(false) }} className="press h-10 w-10 rounded-full bg-[var(--card)] flex items-center justify-center" style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить гостя')}><Plus size={16} /></button>
           {/* Списком — рядом с добавлением одного: одна панель за раз. */}
           <button onClick={() => { setBulk(!bulk); setAdding(false) }} className={cn('press h-10 w-10 rounded-full flex items-center justify-center', bulk ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')} style={{ boxShadow: 'var(--shadow)' }} aria-label={t('Добавить списком')} title={t('Добавить списком')}><ListPlus size={16} /></button>
-          <button onClick={() => nav('/wedding/invites')} className="press h-10 px-4 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold flex items-center gap-1.5"><Send size={13} />{t('Пригласить')}</button>
+          <button onClick={() => nav('/wedding/invites')} aria-label={t('Пригласить')} title={t('Пригласить')} className="press h-10 w-10 shrink-0 sm:w-auto sm:px-4 rounded-full grad text-[var(--on-grad)] text-[12px] font-semibold flex items-center justify-center gap-1.5"><Send size={16} /><span className="hidden sm:inline">{t('Пригласить')}</span></button>
         </div>
       } />
       <AsyncState q={q} />

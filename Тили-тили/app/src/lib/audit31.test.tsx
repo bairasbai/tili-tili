@@ -15,7 +15,7 @@
  * Проверяется то, что ушло на сервер и что видно на экране, а не то, что
  * нарисовал обработчик (приём из `audit25`/`audit30`).
  */
-import { render, cleanup, waitFor, fireEvent, screen } from '@testing-library/react'
+import { render, cleanup, waitFor, fireEvent, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StoreProvider, useStore } from './store'
@@ -25,6 +25,7 @@ import { Deal } from '@/pages/Tools'
 import { DayX } from '@/pages/Smart'
 import { WishlistManage } from '@/pages/Wishlist'
 import { Catering } from '@/pages/Logistics'
+import { shiftPreviewFixture } from '@/test/timelineShiftFixture'
 
 type Routes = Record<string, unknown>
 type Call = { method: string; path: string; url: string; body: unknown; headers: Record<string, string> }
@@ -75,9 +76,10 @@ function serve(routes: Routes): Call[] {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
       })
     }
-    if (isLater(reply)) return reply.__later.then(body => json(body))
+    const version: Record<string, string> = /\/timeline(?:\/autogen)?$/.test(path) ? { etag: '"1"' } : {}
+    if (isLater(reply)) return reply.__later.then(body => json(body, 200, version))
     if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status, reply.headers))
-    return Promise.resolve(json(reply))
+    return Promise.resolve(json(reply, 200, version))
   }))
   return calls
 }
@@ -102,6 +104,7 @@ const base = (over: Routes = {}): Routes => ({
   '/weddings': [{ ...WEDDING, role: 'couple' }],
   '/weddings/w1': WEDDING,
   '/weddings/w1/slots': [],
+  '/weddings/w1/members': [{ user: ME, role: 'couple' }],
   '/me/favorites': [],
   '/users/me': ME,
   ...over,
@@ -139,27 +142,34 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     const calls = serve(base({
       '/weddings/w1/timeline': () => (++timelines === 1 ? [CEREMONY] : fresh.reply),
       '/weddings/w1/planb': { checklist: [], activatedAt: null },
-      [SHIFT]: {},
+      '/weddings/w1/events': [],
+      [`${SHIFT}/preview`]: { __status: 200, body: shiftPreviewFixture(), headers: { etag: '"1"' } },
+      [SHIFT]: { minutes: 15, shiftedBlocks: 1, guestsAffected: 15 },
     }))
     const r = renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
     await waitFor(() => expect(text(r)).toContain('Церемония'), { timeout: 4000 })
-    await waitFor(() => expect(disabled('+15 мин всей программе')).toBe(false))
+    await waitFor(() => expect(disabled('Сдвиг тайминга')).toBe(false))
 
-    fireEvent.click(button('+15 мин всей программе'))
+    fireEvent.click(button('Сдвиг тайминга'))
+    fireEvent.click(button('Предпросмотр сдвига'))
+    await waitFor(() => expect(disabled('Подтвердить сдвиг')).toBe(false))
+    expect(posts(calls, SHIFT)).toHaveLength(0)
+    fireEvent.click(button('Подтвердить сдвиг'))
     await waitFor(() => expect(posts(calls, SHIFT).length).toBe(1))
     /* POST прошёл, `GET /timeline` ушёл и висит: на экране прежние часы. */
     await waitFor(() => expect(timelines).toBe(2))
     await waitFor(() => expect(screen.queryByText('Двигаем…')).toBeNull())
-    expect(disabled('+15 мин всей программе'), '«+15 мин» открыта при старом тайминге — второе касание сдвинет ещё на 15 и разошлёт команде второй push').toBe(true)
+    expect(disabled('Подтвердить сдвиг'), 'повтор подтверждения доступен при старом тайминге').toBe(true)
 
-    fireEvent.click(button('+15 мин всей программе'))
+    fireEvent.click(button('Подтвердить сдвиг'))
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(posts(calls, SHIFT).length, 'второй POST /timeline/shift с новым ключом идемпотентности').toBe(1)
 
     /* Свежий тайминг пришёл — кнопка снова открыта, на экране то, что прислал сервер. */
     fresh.release([CEREMONY, { id: 'e2', name: 'Банкет', startsAt: '2027-06-14T13:00:00.000Z' }])
     await waitFor(() => expect(text(r)).toContain('Банкет'))
-    await waitFor(() => expect(disabled('+15 мин всей программе')).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: 'Закрыть' }))
+    await waitFor(() => expect(disabled('Сдвиг тайминга')).toBe(false))
   })
 
   it('план Б: после «Подтвердить» кнопка закрыта и не в состоянии подтверждения, второй клик не даёт второго POST', async () => {
@@ -167,6 +177,7 @@ describe('R3-01: день X — «+15 мин» и план Б закрыты, п
     const fresh = gate()
     const calls = serve(base({
       '/weddings/w1/timeline': [CEREMONY],
+      '/weddings/w1/events': { __status: 200, body: [], headers: { etag: '"1"' } },
       '/weddings/w1/planb': () => (++planbs === 1 ? { checklist: [], activatedAt: null } : fresh.reply),
       [ACTIVATE]: {},
     }))
@@ -265,6 +276,90 @@ describe('R3-02: тайминг — крестики и «Добавить» з�
 })
 
 const WISHLIST = '/weddings/w1/wishlist'
+describe('WP03 planning editor: complete snapshot and stale form isolation', () => {
+  beforeEach(couple)
+  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+  const planned = { ...A, endsAt: '2027-06-14T07:00:00.000Z', durationMinutes: 60, fixed: false,
+    travelMinutes: 10, bufferMinutes: 5, dependsOn: ['b'], responsible: { kind: 'member', id: 'u1' }, participants: [{ kind: 'guest', id: 'g1' }] }
+  const planningBase = (over: Routes = {}) => base({ '/weddings/w1/guests': [{ id: 'g1', name: 'Гость' }], ...over })
+  it('editing location/duration and an external contractor sends exact structured references and keeps the other block', async () => {
+    const calls = serve(planningBase({
+      '/weddings/w1/slots': [{ id: 's1', label: 'Ведущий', deal: { id: 'd1', state: 'booked', externalName: 'Иван' } }],
+      [TIMELINE]: (c: Call) => c.method === 'PUT' ? c.body : [planned, B],
+    }))
+    renderAt('/wedding/timeline', <Route path="/wedding/timeline" element={<Timeline />} />)
+    await waitFor(() => expect(screen.getByText('Церемония')).toBeTruthy())
+    fireEvent.click(button('Править'))
+    await waitFor(() => expect(screen.getByLabelText('Изменить блок: Сборы').hasAttribute('disabled')).toBe(false))
+    fireEvent.click(screen.getByLabelText('Изменить блок: Сборы'))
+    fireEvent.change(screen.getByLabelText('Место блока'), { target: { value: 'Новая площадка' } })
+    fireEvent.change(screen.getByLabelText('Длительность, мин'), { target: { value: '90' } })
+    fireEvent.click(screen.getByLabelText('Фиксированное начало'))
+    const responsible = screen.getByLabelText('Ответственный') as HTMLSelectElement
+    await waitFor(() => expect(responsible.disabled).toBe(false))
+    fireEvent.change(responsible, { target: { value: 'deal:d1' } })
+    fireEvent.click(button('Сохранить блок'))
+    await waitFor(() => expect(puts(calls, TIMELINE)).toHaveLength(1))
+    const request = puts(calls, TIMELINE)[0]!
+    expect(request.headers['if-match']).toBe('"1"')
+    expect(request.body).toEqual([expect.objectContaining({ id: 'a', location: 'Новая площадка', durationMinutes: 90, fixed: true,
+      travelMinutes: 10, bufferMinutes: 5, responsible: { kind: 'deal', id: 'd1' }, participants: [{ kind: 'guest', id: 'g1' }], dependsOn: ['b'] }), expect.objectContaining(B)])
+    expect((request.body as { endsAt?: string }[])[0]!.endsAt).toBeUndefined()
+  })
+  it('a stale form retains input and remains tied to the old version after refresh; cancellation is available', async () => {
+    let fresh = false
+    const calls = serve(planningBase({ [TIMELINE]: (c: Call) => c.method === 'PUT'
+      ? { __status: 409, headers: {}, body: { error: { code: 'timeline_conflict', message: 'Программа уже изменена' } } }
+      : { __status: 200, headers: { etag: fresh ? '"2"' : '"1"' }, body: [planned, B] },
+    }))
+    renderAt('/wedding/timeline', <Route path="/wedding/timeline" element={<Timeline />} />)
+    await waitFor(() => expect(screen.getByText('Церемония')).toBeTruthy())
+    fireEvent.click(button('Править'))
+    await waitFor(() => expect(screen.getByLabelText('Изменить блок: Сборы').hasAttribute('disabled')).toBe(false))
+    fireEvent.click(screen.getByLabelText('Изменить блок: Сборы'))
+    fireEvent.change(screen.getByLabelText('Место блока'), { target: { value: 'Несохранённое место' } })
+    fireEvent.click(button('Сохранить блок'))
+    await waitFor(() => expect(within(screen.getByRole('form', { name: 'Планирование блока' })).getByRole('alert').textContent).toContain('Программа уже изменена'))
+    expect((screen.getByLabelText('Место блока') as HTMLInputElement).value).toBe('Несохранённое место')
+    fresh = true
+    fireEvent.click(button('Обновить'))
+    await waitFor(() => expect(screen.getByLabelText('Версия программы').textContent).toContain('2'))
+    expect(button('Сохранить блок').hasAttribute('disabled')).toBe(true)
+    expect(button('Отмена').hasAttribute('disabled')).toBe(false)
+    fireEvent.click(button('Сохранить блок'))
+    expect(puts(calls, TIMELINE)).toHaveLength(1)
+    fireEvent.click(button('Отмена'))
+    expect(screen.queryByRole('form', { name: 'Планирование блока' })).toBeNull()
+  })
+  it('guest visibility full-list writes retain all planning fields', async () => {
+    const calls = serve(planningBase({ [TIMELINE]: (c: Call) => c.method === 'PUT' ? c.body : [planned, B] }))
+    renderAt('/wedding/timeline', <Route path="/wedding/timeline" element={<Timeline />} />)
+    await waitFor(() => expect(screen.getByText('Церемония')).toBeTruthy())
+    fireEvent.click(button('Править'))
+    await waitFor(() => expect(screen.getAllByLabelText('Показывать гостям')[1]!.hasAttribute('disabled')).toBe(false))
+    fireEvent.click(screen.getAllByLabelText('Показывать гостям')[1]!)
+    await waitFor(() => expect(puts(calls, TIMELINE)).toHaveLength(1))
+    expect((puts(calls, TIMELINE)[0]!.body as unknown[])[0]).toMatchObject({ ...planned, forGuests: false })
+  })
+  it('planning validation fields appear next to the editor and do not erase the draft', async () => {
+    serve(planningBase({ [TIMELINE]: (c: Call) => c.method === 'PUT'
+      ? { __status: 422, headers: {}, body: { error: { code: 'validation_failed', message: 'Запрос не прошёл проверку', fields: { dependsOn: 'зависимости программы образуют цикл' } } } }
+      : [planned, B],
+    }))
+    renderAt('/wedding/timeline', <Route path="/wedding/timeline" element={<Timeline />} />)
+    await waitFor(() => expect(screen.getByText('Церемония')).toBeTruthy())
+    fireEvent.click(button('Править'))
+    await waitFor(() => expect(screen.getByLabelText('Изменить блок: Сборы').hasAttribute('disabled')).toBe(false))
+    fireEvent.click(screen.getByLabelText('Изменить блок: Сборы'))
+    fireEvent.change(screen.getByLabelText('Место блока'), { target: { value: 'Черновик места' } })
+    fireEvent.click(button('Сохранить блок'))
+    const editor = screen.getByRole('form', { name: 'Планирование блока' })
+    await waitFor(() => expect(within(editor).getByRole('alert').textContent).toContain('зависимости программы образуют цикл'))
+    expect(within(editor).getByRole('alert').closest('form')).toBe(editor)
+    expect((screen.getByLabelText('Место блока') as HTMLInputElement).value).toBe('Черновик места')
+    expect(button('Сохранить блок').hasAttribute('disabled')).toBe(false)
+  })
+})
 const ANTI = '/weddings/w1/anti-gifts'
 
 describe('R3-02: анти-вишлист — «Добавить» и крестики закрыты, пока список перечитывается; Enter тоже', () => {
