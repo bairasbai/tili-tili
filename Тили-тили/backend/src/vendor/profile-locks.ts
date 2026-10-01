@@ -43,6 +43,15 @@ export async function lockVendorProfileWrite(client: Queryable, actor: OrderActo
     await client.query('select id from vendors where id=$1 for update', [located.vendorId])
   }
   const current = await locate(client, actor.userId, retainedIds)
+  // A double «Сохранить» on the very first save: the same owner's concurrent
+  // request created the company while this one waited on the owner mutex. A
+  // brand-new company has no orders to pin backwards, so this request locks the
+  // new row and continues as an ordinary update instead of failing with 409.
+  if (located.vendorId === null && current.vendorId !== null && current.weddings.length === 0 &&
+    current.requests.length === 0 && current.deals.length === 0) {
+    await client.query('select id from vendors where id=$1 for update', [current.vendorId])
+    return
+  }
   if (current.vendorId !== located.vendorId || current.weddings.some(id => !located.weddings.includes(id)) ||
     current.requests.some(id => !located.requests.includes(id)) || current.deals.some(id => !located.deals.includes(id))) {
     throw conflict('vendor_profile_scope_changed', 'Связанные заказы изменились — обновите анкету и повторите сохранение')
