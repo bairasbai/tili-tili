@@ -42,3 +42,19 @@ These tests do not validate real provider delivery or all WP00-WP16 requirements
 Pending integration commit, feature push/PR/CI/merge and local-main fast-forward. GitHub queries
 sequential, no watch loops; CI status at most once per2-3minutes, stop on auth/
 rate-limit/403/429. Next source work only after verified publication boundary.
+
+## GitHub CI Follow-Up
+
+47bf879 pushed and PR21 created: https://github.com/bairasbai/tili-tili/pull/21.
+Initial GitHub backend CI failed in the separate payment migration rehearsal,
+not in the test suite: latest migration was external_program_current, while
+the script assumed payment_methods_privacy was latest. Source: push run
+36838456034/job110291478986 failed log. No merge performed with red CI.
+Fix targets the payment-stage timestamp for initial chain application, retains
+down-one checks, and additionally applies/verifies the latest full chain.
+Local disposable publishdrill1 actual rehearsal exit0: legacy mapping,
+unknown amount/null, bounded aggregate, populated rollback refusal, empty
+down/up and current-chain application all passed; script lint exit0.
+App/backend routes/tests/contracts/browser source unchanged from merged full.
+Initial frontend and all three GitHub browser workflows passed; replacement
+CI after the fix still must pass before merging. Production untouched.
