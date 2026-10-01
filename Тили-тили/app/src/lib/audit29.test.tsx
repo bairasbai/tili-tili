@@ -357,8 +357,8 @@ describe('день X: «сейчас» и тайминг перечитываю�
 
   it('через 60 с блок «СЕЙЧАС» переходит к следующему событию, тайминг спрошен заново', async () => {
     const events = [
-      { id: 'e1', name: 'Сборы', startsAt: '2027-06-14T11:00:00.000Z' },
-      { id: 'e2', name: 'Церемония', startsAt: '2027-06-14T12:00:30.000Z' },
+      { id: 'e1', name: 'Сборы', startsAt: '2027-06-14T11:00:00.000Z', endsAt: '2027-06-14T12:00:30.000Z' },
+      { id: 'e2', name: 'Церемония', startsAt: '2027-06-14T12:00:30.000Z', endsAt: '2027-06-14T13:00:00.000Z' },
     ]
     const calls = serve({ ...BASE, '/weddings/w1/timeline': events, '/weddings/w1/planb': { checklist: [], activatedAt: null } })
     const setSpy = vi.spyOn(globalThis, 'setInterval')

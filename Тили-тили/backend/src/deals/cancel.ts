@@ -4,6 +4,7 @@ import type { Queryable } from '../plugins/db.js'
 import { detachBusRoutes, releaseVendorDate } from './repo.js'
 import { assertTransition, type DealState } from './state.js'
 import { releaseLead } from '../vendor/leads.js'
+import { setTimelineActor } from '../timeline/version.js'
 
 /**
  * Единственная дверь, переводящая сделку в `cancelled` (F1, F-RL-2-02/SA-06).
@@ -24,6 +25,8 @@ export async function cancelDeal(
   dealId: string,
   opts: { actorId: string; note?: string | null; reason?: string | null },
 ): Promise<{ from: DealState }> {
+  await client.query('select id from weddings where id=(select wedding_id from deals where id=$1) for update', [dealId])
+  await setTimelineActor(client, opts.actorId)
   const { rows } = await client.query<{ state: DealState; slot_id: string }>(
     'select state, slot_id from deals where id = $1 for update',
     [dealId],

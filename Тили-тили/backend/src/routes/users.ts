@@ -132,6 +132,9 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
      * Для 152-ФЗ это хуже, чем неудавшийся запрос: тот можно повторить,
      * а зависшее состояние надо чинить руками в базе (ERR-0108). */
     await db().tx(async (client) => {
+      await client.query(`select id from weddings where id in
+        (select wedding_id from wedding_members where user_id=$1) order by id for update`, [userId])
+      await client.query("select set_config('tili.timeline_actor',$1,true)", [userId])
       await client.query('update consents set withdrawn_at = now() where user_id = $1 and withdrawn_at is null', [
         userId,
       ])
@@ -263,10 +266,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     await db().tx(async (client) => {
       await client.query(
         `select id from weddings
-          where id in (select wedding_id from wedding_members where user_id = $1 and role = 'couple')
-          for update`,
+          where id in (select wedding_id from wedding_members where user_id = $1)
+          order by id for update`,
         [userId],
       )
+      await client.query("select set_config('tili.timeline_actor',$1,true)", [userId])
       /* Своя строка `users` — следом за свадьбами, тем же порядком, что берёт
        * бронь (SA-05, хвост FL-9). Замка на свадьбах хватало только для
        * стороны пары и только в одном порядке: если удаление успевало

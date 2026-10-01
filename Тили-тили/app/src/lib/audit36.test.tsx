@@ -26,6 +26,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StoreProvider } from './store'
 import Invite, { GuestDayChat } from '@/pages/Invite'
 import { Timeline } from '@/pages/Wedding'
+import { setI18nLang } from './i18n'
 import { Chat } from '@/pages/Us'
 
 /* Живой канал чата подменяется, как в audit27/audit32: настоящий WebSocket в
@@ -72,8 +73,10 @@ function serve(routes: Routes): Call[] {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
       })
     }
+    if (reply instanceof Response) return Promise.resolve(reply)
     if (isStatus(reply)) return Promise.resolve(json(reply.body, reply.__status, reply.headers))
-    return Promise.resolve(json(reply))
+    const version: Record<string, string> = /\/timeline(?:\/autogen)?$/.test(path) ? { etag: '"1"' } : {}
+    return Promise.resolve(json(reply, 200, version))
   }))
   return calls
 }
@@ -99,6 +102,7 @@ const base = (over: Routes = {}): Routes => ({
   '/weddings': [{ ...WEDDING, role: 'couple' }],
   '/weddings/w1': WEDDING,
   '/weddings/w1/slots': [],
+  '/weddings/w1/members': [{ user: ME, role: 'couple' }],
   '/me/favorites': [],
   '/users/me': ME,
   ...over,
@@ -374,14 +378,40 @@ const flags = (c: Call) => (c.body as { forGuests?: boolean }[]).map(e => e.forG
 
 describe('T3: тайминг пары — «Показывать гостям» у блока и в форме; PUT несёт forGuests у каждого блока', () => {
   beforeEach(couple)
-  afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 
   const openTimeline = () => renderAt('/wedding/timeline', <Route path="/wedding/timeline" element={<Timeline />} />)
+  const snapshot = (body: unknown, version?: string) => new Response(JSON.stringify(body), {
+    headers: { 'content-type': 'application/json', ...(version ? { etag: version } : {}) },
+  })
   const addEvent = (name: string, from: string) => {
     fireEvent.change(screen.getByPlaceholderText('Событие (например, «Первый танец»)'), { target: { value: name } })
     fireEvent.change(screen.getByLabelText('Начало'), { target: { value: from } })
     fireEvent.click(screen.getByText('Добавить в тайминг'))
   }
+
+  it.each(['ru', 'en'] as const)('shows the exact revision, author and server timestamp in %s', async lang => {
+    localStorage.setItem('tt_lang', lang)
+    setI18nLang(lang)
+    serve(base({ [TIMELINE]: () => ({ __status: 200, body: [A], headers: {
+      etag: '"12"', 'X-Timeline-Updated-At': '2026-09-30T10:00:00.000Z', 'X-Timeline-Updated-By': ME.id,
+    } }) }))
+    const r = openTimeline()
+    await waitFor(() => expect(text(r)).toContain(lang === 'ru' ? 'Версия программы: 12' : 'Schedule version: 12'))
+    await waitFor(() => expect(text(r)).toContain(lang === 'ru' ? 'Автор изменения: Аня' : 'Changed by: Аня'))
+    expect(r.container.querySelector('time')?.dateTime).toBe('2026-09-30T10:00:00.000Z')
+    await waitFor(() => expect(r.container.querySelector('time')?.textContent).toContain('15:00'))
+  })
+
+  it('unknown historical author/time remain explicitly unknown', async () => {
+    serve(base({ [TIMELINE]: () => snapshot([A], '"0"') }))
+    const r = openTimeline()
+    await screen.findByText('Сборы')
+    expect(text(r)).toContain('Версия программы: 0')
+    expect(text(r)).toContain('Автор изменения неизвестен')
+    expect(text(r)).toContain('Время изменения неизвестно')
+    expect(r.container.querySelector('time')).toBeNull()
+  })
 
   it('снять галочку у «Сборов» → PUT всего списка: forGuests false у A и true у B', async () => {
     const calls = serve(base({ [TIMELINE]: (c: Call) => (c.method === 'PUT' ? c.body : [A, B]) }))
@@ -437,6 +467,91 @@ describe('T3: тайминг пары — «Показывать гостям» 
     fireEvent.click(screen.getAllByLabelText('Убрать из тайминга')[0]!)
     await waitFor(() => expect(puts(calls, TIMELINE).length).toBe(1), { timeout: 4000 })
     expect(flags(puts(calls, TIMELINE)[0]!), 'блок ушёл без forGuests — сервер вернул бы его к умолчанию').toEqual([true])
+  })
+
+  it('conflict preserves inputs and requires a fresh snapshot before a deliberate retry', async () => {
+    let reads = 0
+    let writes = 0
+    const fresh = [{ ...A, name: 'Changed elsewhere', outdoor: true }, B]
+    const calls = serve(base({ [TIMELINE]: (c: Call) => {
+      if (c.method === 'GET') return snapshot(++reads === 1 ? [A, B] : fresh, reads === 1 ? '"1"' : '"2"')
+      if (++writes === 1) return withStatus(409, 'timeline_conflict', 'Программа уже изменена — обновите её и проверьте свои правки')
+      return snapshot(c.body, '"3"')
+    } }))
+    openTimeline()
+    await screen.findByText('Церемония')
+    fireEvent.click(screen.getByText('Править'))
+    addEvent('Keep my input', '19:00')
+    await screen.findByRole('alert')
+    expect((screen.getByPlaceholderText('Событие (например, «Первый танец»)') as HTMLInputElement).value).toBe('Keep my input')
+    const save = screen.getByRole('button', { name: 'Добавить в тайминг' }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.click(save)
+    expect(writes).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    await screen.findByText('Changed elsewhere')
+    await waitFor(() => expect(save.disabled).toBe(false))
+    expect((screen.getByLabelText('Начало') as HTMLInputElement).value).toBe('19:00')
+    expect(writes).toBe(1)
+    fireEvent.click(save)
+    await waitFor(() => expect(writes).toBe(2))
+    expect(puts(calls, TIMELINE).map(c => c.headers['if-match'])).toEqual(['"1"', '"2"'])
+    expect((puts(calls, TIMELINE)[1]!.body as typeof fresh)[0]).toMatchObject({ name: 'Changed elsewhere', outdoor: true })
+  })
+
+  it('does not save an unversioned response or invent a fallback version', async () => {
+    const calls = serve(base({ [TIMELINE]: () => snapshot([A, B]) }))
+    openTimeline()
+    await screen.findByText('Церемония')
+    expect(screen.getByRole('alert').textContent).toBe('Обновите программу перед сохранением')
+    fireEvent.click(screen.getByText('Править'))
+    addEvent('Do not write', '19:00')
+    expect((screen.getByRole('button', { name: 'Добавить в тайминг' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(puts(calls, TIMELINE)).toHaveLength(0)
+  })
+
+  it('keeps a conflicted autogen preview and never rebases its version on refresh', async () => {
+    const calls = serve(base({
+      [TIMELINE]: (c: Call) => c.method === 'GET' ? snapshot([A, B], '"8"') : withStatus(409, 'timeline_conflict', 'Программа уже изменена — обновите её и проверьте свои правки'),
+      [TIMELINE + '/autogen']: () => snapshot({ events: [{ ...A, name: 'Preview stays', outdoor: true }], conflicts: [] }, '"7"'),
+    }))
+    openTimeline()
+    await screen.findByText('Церемония')
+    fireEvent.click(screen.getByRole('button', { name: /Собрать автоплан по команде/ }))
+    await screen.findByText('Preview stays')
+    const apply = screen.getByRole('button', { name: 'Заменить тайминг' }) as HTMLButtonElement
+    fireEvent.click(apply)
+    await screen.findByRole('alert')
+    expect(screen.getByText('Preview stays')).toBeTruthy()
+    expect(apply.disabled).toBe(true)
+    expect(puts(calls, TIMELINE)[0]!.headers['if-match']).toBe('"7"')
+    expect((puts(calls, TIMELINE)[0]!.body as { outdoor: boolean }[])[0]!.outdoor).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    await waitFor(() => expect(calls.filter(c => c.path === TIMELINE && c.method === 'GET')).toHaveLength(2))
+    fireEvent.click(apply)
+    expect(puts(calls, TIMELINE)).toHaveLength(1)
+  })
+
+  it('uses the saved server IDs and revision after the subsequent reload fails', async () => {
+    let reads = 0
+    const calls = serve(base({ [TIMELINE]: (c: Call) => {
+      if (c.method === 'GET') return ++reads === 1 ? snapshot([A], '"4"') : DOWN
+      return snapshot((c.body as { id?: string }[]).map(e => ({ ...e, id: e.id ?? 'server-new-id' })), '"5"')
+    } }))
+    openTimeline()
+    await screen.findByText('Сборы')
+    fireEvent.click(screen.getByText('Править'))
+    addEvent('First new', '19:00')
+    await waitFor(() => expect(screen.queryByText('Сохраняем…')).toBeNull())
+    await waitFor(() => expect(reads).toBe(2))
+    fireEvent.click(screen.getByText('Править'))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Добавить в тайминг' }) as HTMLButtonElement).disabled).toBe(false))
+    addEvent('Second new', '20:00')
+    await waitFor(() => expect(puts(calls, TIMELINE)).toHaveLength(2))
+    expect(puts(calls, TIMELINE)[1]!.headers['if-match']).toBe('"5"')
+    expect((puts(calls, TIMELINE)[1]!.body as { id: string; name: string }[]).map(e => [e.id, e.name])).toEqual([
+      ['a', 'Сборы'], ['server-new-id', 'First new'], [undefined, 'Second new'],
+    ])
   })
 })
 

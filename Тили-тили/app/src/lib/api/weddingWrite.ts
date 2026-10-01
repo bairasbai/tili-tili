@@ -141,14 +141,24 @@ export const deleteTable = (weddingId: string, tableId: string) =>
 
 /* ── Тайминг ── */
 
+export type TimelineReference = { kind: 'member' | 'guest' | 'deal'; id: string }
 export interface TimelineDraft {
   id?: string
+  eventId?: string
   name: string
   startsAt: string
   endsAt?: string
   who?: string
   location?: string
   icon?: string
+  outdoor?: boolean
+  durationMinutes?: number | null
+  fixed?: boolean
+  travelMinutes?: number
+  bufferMinutes?: number
+  dependsOn?: string[]
+  responsible?: TimelineReference | null
+  participants?: TimelineReference[]
   /**
    * Видят ли блок гости в день X (`TimelineEvent.forGuests`, контракт
    * v0.32.0, фича 009). Обязательное, а не `?`: тайминг пишется списком
@@ -158,6 +168,19 @@ export interface TimelineDraft {
   forGuests: boolean
 }
 
+export function toTimelineDraft(e: components['schemas']['TimelineEvent']): TimelineDraft {
+  return {
+    id: e.id, name: e.name, startsAt: e.startsAt ?? '',
+    ...(e.eventId !== undefined ? { eventId: e.eventId } : {}),
+    ...(e.endsAt ? { endsAt: e.endsAt } : {}), ...(e.who ? { who: e.who } : {}),
+    ...(e.location ? { location: e.location } : {}), ...(e.icon ? { icon: e.icon } : {}),
+    outdoor: e.outdoor ?? false, forGuests: e.forGuests ?? true,
+    durationMinutes: e.durationMinutes ?? null, fixed: e.fixed ?? false,
+    travelMinutes: e.travelMinutes ?? 0, bufferMinutes: e.bufferMinutes ?? 0,
+    dependsOn: e.dependsOn ?? [], responsible: e.responsible ?? null, participants: e.participants ?? [],
+  }
+}
+
 /**
  * Заменить тайминг целиком.
  *
@@ -165,8 +188,8 @@ export interface TimelineDraft {
  * нет, есть общий сдвиг (`/timeline/shift`). Поэтому экран отправляет весь
  * список — и обязан отправлять его полным, иначе пропущенные блоки исчезнут.
  */
-export const putTimeline = (weddingId: string, events: TimelineDraft[]) =>
-  api.put(url('/weddings/{weddingId}/timeline', { weddingId }), events)
+export const putTimeline = (weddingId: string, events: TimelineDraft[], version: string) =>
+  api.putSnapshot(url('/weddings/{weddingId}/timeline', { weddingId }), events, { ifMatch: version })
 
 /**
  * Автоплан дня по забронированной команде.
@@ -175,7 +198,7 @@ export const putTimeline = (weddingId: string, events: TimelineDraft[]) =>
  * применение это отдельный `putTimeline`.
  */
 export const autogenTimeline = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/timeline/autogen', { weddingId }))
+  api.postSnapshot(url('/weddings/{weddingId}/timeline/autogen', { weddingId }))
 
 /* ── Логистика ── */
 
@@ -299,14 +322,15 @@ export const remindGuests = (weddingId: string) =>
 export type DayXBroadcast = components['schemas']['DayXBroadcast']
 
 /**
- * Сдвинуть день X на N минут.
- *
- * Двигает все последующие блоки тайминга и уведомляет команду (§19.6).
- * Раньше кнопка «+15 мин» копила задержку в `tt_dayx` браузера: у пары число
- * росло, а команда о сдвиге не знала.
+ * Preview captures the selected scope and exact version. Confirmation/retry
+ * reuses that preview token, ETag and one idempotency key for the same command.
  */
-export const shiftTimeline = (weddingId: string, minutes: number) =>
-  api.post(url('/weddings/{weddingId}/timeline/shift', { weddingId }), { minutes }, { idempotencyKey: newIdempotencyKey() })
+export type TimelineShiftScope = components['schemas']['TimelineShiftScope']
+export type TimelineShiftPreview = components['schemas']['TimelineShiftPreview']
+export const previewTimelineShift = (weddingId: string, scope: TimelineShiftScope, minutes: number) =>
+  api.postSnapshot(url('/weddings/{weddingId}/timeline/shift/preview', { weddingId }), { scope, minutes })
+export const shiftTimeline = (weddingId: string, previewToken: string, version: string, idempotencyKey: string) =>
+  api.postSnapshot(url('/weddings/{weddingId}/timeline/shift', { weddingId }), { previewToken }, { ifMatch: version, idempotencyKey })
 
 /**
  * Включить запасной сценарий: сценарий фиксируется, команда получает

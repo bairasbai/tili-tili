@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { prepareShift } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 import { deliverAfter, parseTime } from '../src/notify/quiet.js'
 
@@ -455,12 +456,12 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
   it('сдвиг тайминга двигает будущие блоки и не трогает прошедшие', async () => {
     const w = await newWedding()
     await app.db!.query(
-      `update timeline_events set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour'
+      `update timeline_events set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour', duration_minutes=60
         where wedding_id = $1 and sort = (select min(sort) from timeline_events where wedding_id = $1)`,
       [w.weddingId],
     )
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours'
+      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
         where wedding_id = $1 and sort > (select min(sort) from timeline_events where wedding_id = $1)`,
       [w.weddingId],
     )
@@ -472,8 +473,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
     const shift = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/timeline/shift`,
-      headers: { ...auth(w.token), ...key() },
-      payload: { minutes: 15 },
+      ...await prepareShift(app, w.weddingId, { ...auth(w.token), ...key() }, 15),
     })
     expect(shift.statusCode).toBe(200)
     expect(shift.json().minutes).toBe(15)
@@ -491,22 +491,21 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
   it('повтор сдвига с тем же ключом не двигает дважды', async () => {
     const w = await newWedding()
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours'
+      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
         where wedding_id = $1`,
       [w.weddingId],
     )
     const headers = { ...auth(w.token), ...key() }
+    const confirmation = await prepareShift(app, w.weddingId, headers, 15)
     const first = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/timeline/shift`,
-      headers,
-      payload: { minutes: 15 },
+      ...confirmation,
     })
     const again = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/timeline/shift`,
-      headers,
-      payload: { minutes: 15 },
+      ...confirmation,
     })
     expect(again.statusCode).toBe(200)
     expect(again.headers['idempotent-replay']).toBe('true')

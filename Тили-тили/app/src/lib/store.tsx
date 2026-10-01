@@ -4,7 +4,9 @@
 import { createContext, startTransition, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
 import type { Slot, SlotState } from './types'
 import { setI18nLang, type Lang } from './i18n'
-import { isAuthorized, onSessionExpired } from './api/client'
+import { accessTokenForWs, isAuthorized, onSessionExpired } from './api/client'
+import { offlineScope, sameOfflineScope } from './offlineAccess'
+import { reconcileOfflineDay } from './offlineDay'
 import { forgetLocally } from './api/auth'
 import { listMyWeddings, pickMyWedding, setWeddingDateOnServer, type MyWedding } from './api/wedding'
 import { getSlots, getWedding } from './api/weddingData'
@@ -176,6 +178,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthorized()) return
     myWeddings.current ??= listMyWeddings()
+    const requestedScope = offlineScope(accessTokenForWs())
     let alive = true
     setWeddingsState(prev => prev === 'idle' ? 'loading' : prev)
     void myWeddings.current
@@ -183,6 +186,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         /* Ответ пришёл после выхода — он про чужой уже аккаунт: записывать
            его свадьбу на очищенное устройство нельзя (RF-01). */
         if (!alive || !isAuthorized()) return
+        if (requestedScope && !sameOfflineScope(requestedScope, offlineScope(accessTokenForWs()))) return
+        reconcileOfflineDay(list, offlineScope(accessTokenForWs()))
         setWeddingIdState(prev => {
           if (prev !== remembered.current) return prev
           if (prev && list.some(w => w.id === prev)) return prev
@@ -199,6 +204,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setWeddingIdState])
   const adoptWeddings = useCallback((list: MyWedding[] | null) => {
     if (!list) { setWeddingsState('error'); return }
+    reconcileOfflineDay(list, offlineScope(accessTokenForWs()))
     myWeddings.current = Promise.resolve(list)
     setWeddingIdState(prev => (prev && list.some(w => w.id === prev) ? prev : pickMyWedding(list)))
     setWeddingsState('ready')

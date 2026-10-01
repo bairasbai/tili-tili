@@ -163,6 +163,12 @@ export function VendorDashboard() {
           <ChevronRight size={16} className="text-[var(--soft)]" />
         </button>
 
+        <button onClick={() => nav('/vendor-app/programs')} className="press w-full py-4 mt-3.5 flex items-center gap-3 text-left border-y border-[var(--line)]">
+          <CalendarDays size={20} className="shrink-0" />
+          <b className="text-[13px] min-w-0 flex-1">{t('Программы свадеб')}</b>
+          <ChevronRight size={16} className="shrink-0" />
+        </button>
+
         {/* Обновления от пар: настоящие правки по забронированным свадьбам.
             Раньше здесь стояли три строки про «Алину & Тимура» — у любого
             подрядчика одни и те же. */}

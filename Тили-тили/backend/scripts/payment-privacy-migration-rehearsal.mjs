@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
+import { readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
@@ -35,9 +36,9 @@ try {
     assert.equal(p.status,0,`Migration ${args.join(' ')} failed; raw logs are deliberately not published`)
   }
 
-  // Build the exact pre-021 schema. Apply the normal chain, then use the same
-  // node-pg-migrate down-one semantics as production while the database is empty.
-  migrate(['up'])
+  // Target the tested stage explicitly: later migrations must not change which
+  // migration down-one exercises on this empty disposable database.
+  migrate(['up',STAGE.split('_')[0],'--timestamp'])
   const latestBeforeDown=await client.query('select name from pgmigrations order by id desc limit 1')
   assert.equal(latestBeforeDown.rows[0].name,STAGE)
   migrate(['down','1'])
@@ -92,10 +93,17 @@ try {
   assert.equal(cols.rowCount,0)
   migrate(['up',STAGE])
 
+  // The isolated down/up drill must also remain compatible with the current chain.
+  migrate(['up'])
+  const current=readdirSync(resolve(root,'migrations')).filter(name=>name.endsWith('.cjs')).sort().at(-1).slice(0,-4)
+  const final=await client.query('select name from pgmigrations order by id desc limit 1')
+  assert.equal(final.rows[0].name,current)
+
   process.stdout.write(JSON.stringify({
     status:'passed',migration:STAGE,legacyRowsPreserved:true,legacyMapping:'other/private/known',
     unknownAmountStoredAsNull:true,knownAggregateIsLowerBound:true,populatedRollbackRefused:true,
     emptyDownUpCycle:true,
+    currentChainApplied:true,
   },null,2)+'\n')
 } finally {
   await client.end()

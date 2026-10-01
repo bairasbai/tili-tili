@@ -226,17 +226,22 @@ describe.skipIf(!live)('прод: мягкая бронь, отзывы и св�
       headers: auth(couple.token),
     })
     expect(invite.statusCode).toBe(201)
-    return { couple, slotId, token: invite.json().token as string }
+    return { couple, slotId, dealId: added.json().deal.id as string, token: invite.json().token as string }
   }
 
   it('кабинет своего подрядчика отдаёт чат и тайминг, а не пустое поле', async () => {
-    const { couple, token } = await externalSetup('T')
-    await app.inject({
+    const { couple, token, dealId } = await externalSetup('T')
+    const snapshot = await app.inject({ method: 'GET', url: `/weddings/${couple.weddingId}/timeline`, headers: auth(couple.token) })
+    const saved = await app.inject({
       method: 'PUT',
       url: `/weddings/${couple.weddingId}/timeline`,
-      headers: auth(couple.token),
-      payload: [{ name: 'Сбор гостей', startsAt: '2027-07-05T12:00:00.000Z', who: 'Дядя Ваня' }],
+      headers: { ...auth(couple.token), 'if-match': snapshot.headers.etag! },
+      payload: [
+        { name: 'Сбор гостей', startsAt: '2027-07-05T12:00:00.000Z', who: 'Дядя Ваня', responsible: { kind: 'deal', id: dealId } },
+        { name: 'Служебный неназначенный блок', forGuests: false },
+      ],
     })
+    expect(saved.statusCode, saved.body).toBe(200)
 
     const view = await app.inject({ method: 'GET', url: `/guest-vendor/${token}` })
     expect(view.statusCode).toBe(200)
@@ -244,6 +249,9 @@ describe.skipIf(!live)('прод: мягкая бронь, отзывы и св�
      * с этапа 6 — то есть подрядчик не мог написать паре вообще. */
     expect(view.json().chatId).toBeTruthy()
     expect((view.json().timeline as { name: string }[]).map((e) => e.name)).toContain('Сбор гостей')
+    expect(view.json().timeline).toHaveLength(1)
+    expect(view.json().timeline[0].who).toBeNull()
+    expect(view.body).not.toContain('Служебный неназначенный блок')
   })
 
   it('свой подрядчик и пара переписываются в одном чате', async () => {

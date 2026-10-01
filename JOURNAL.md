@@ -2648,6 +2648,538 @@ PR #12 (`integration/020-clean-main-20260928 → main`) прошёл merge-candi
 
 **Окружение.** Основная локальная роль не имеет CREATEDB, поэтому использован отдельный PostgreSQL 16 на `127.0.0.1:55432`; существующая база приложения не мигрировалась и не наполнялась тестами. Первый live-прогон выявил окружение с локалью C и отсутствующим sh в PATH: тестовые базы пересозданы под отдельными именами с `Russian_Russia.1251` (как у рабочей базы), проверки запущены через Git Bash. Повтор этих четырёх наборов — 92/92. Production deployment и внешние release gates этим не подтверждаются.
 
+## 2026-09-30 · Старт реализации полного WP00–WP16
+
+**Решение владельца.** Реализовать весь master plan без сокращения до P1, с тестами, сценариями, документацией по этапам и отдельной публикацией фич в main. Провайдеры пока не выбраны; правила тарифов/хранения владелец предоставит. Production не трогать.
+
+**Подготовка.** Пакет ТЗ перенесён из `c2dea5a4a4e60152c5329ad9a161fc92ef274fd7` без кода старой ветки. Четыре исходных содержательных файла сверены с Git-источником; README дополнен текущим разрешением. По ID исходного текста: 73 FR, 18 SC и 17 WP. Исторические чекбоксы не превращались в текущую приёмку. Статусы и решения — `tasks/wedding-platform-master-plan/delivery.md`.
+
+**Baseline.** Чистый main совпадал с origin/main на `ccd68fd`, fetch + divergence `0 0`. Новый изолированный `bash init.sh`: frontend 1089/1089, backend 1286/1286, skipped нет; типы, линт и сборки прошли. Лог: `C:/Тили-тили/.unlazy/master-plan-20260930/baseline.log`. Общая база приложения не затронута.
+
+**Следующий прикладной шаг.** WP03/тайминг: сервер игнорирует присланный ID и удаляет весь список; устаревшая запись не конфликтует. Спека/план/задачи записаны до исправления. Полный пакет включает версии всех способов изменения, зависимости/fixed, scoped сдвиг, ознакомление подрядчика и offline. Существующая платёжная privacy-021 не закрывает этот этап.
+
+**Почему так.** Перенос целой docs-ветки вернул бы старый прикладной код. Автоматическая отметка слитых 017–020 как закрытых WP пропустила бы расширенные требования нового ТЗ. Ненастроенный провайдер и headless-браузер не доказывают реальные интеграции, push физического устройства или пользовательский пилот.
+
+**Первый локальный шаг WP03.** Семь тестов упали до фикса ID (`negative.log`) и прошли после (`targeted.log`). PUT нормализует UUID, отклоняет дубли и отсутствующие/чужие ID до изменений, запирает свадьбу и обновляет существующие строки вместо удаления всего списка. Полный gate: frontend 1089/1089, backend 1293/1293, без skipped; типы/линт/сборки прошли (`final.log`). Отдельные offers019/shortlist019/accept019: 50/50 (`wp00.log`).
+
+**Оставшееся.** Probe подтвердил 200/200 и потерю первой правки; постоянный ID не даёт защиту версии. WP03 не принят, прикладная правка пока не публикуется feature-коммитом. Следующий шаг — T003 и остальные задачи до полной приёмки. Логи: `C:/Тили-тили/.unlazy/master-plan-20260930/`.
+
+## 2026-09-30 · WP03: локальная версия программы, доступ и UI конфликта
+
+**Реализация.** Монотонный bigint-счётчик триггером на каждую мутацию блока; серверный автор в transaction-local setting и время PostgreSQL. История не подменяется выдуманной датой/автором. GET-массив совместим с существующими читателями; ETag и metadata описывают именно этот снимок. PUT без If-Match отвергается 428, старый — 409 до записи/уведомлений. PUT отдаёт принятые ID/версию; autogen — версию источника, shift/перенос даты инвалидируют старые редакторы. Контракт v0.53.0 и generated-файлы обновлены.
+
+**Проверка доступа.** Реальная транзакция воспроизвела запись после удаления членства во время ожидания lock: 200 до правки. Повторная проверка аккаунта/сессии/членства/роли под замком даёт 404 без изменения блоков (ERR-0340). Права helper на команду дня X не расширялись.
+
+**Интерфейс.** Версия/автор/time видны в RU/EN. При конфликте ввод и предпросмотр сохраняются; «Обновить» читает список, не пишет автоматически. Версия автоплана не заменяется версией основного списка. После успешного PUT следующая запись строится из реального ответа даже при упавшем reload; outdoor/forGuests не теряются.
+
+**Доказательства.** `server-metadata.log` 50/50, `client-metadata.log` 52/52; семь миграционных проверок, восемь реальных browser-проверок, page_errors пуст, ширины 320/390/1440. Полный gate после metadata: 1100 frontend / 1308 backend, без skipped, типы/линт/сборки прошли, exit 0 (`full-metadata-final.log`). Логи: `C:/Тили-тили/.unlazy/wp03-versions-20260930/`.
+
+**Границы.** Это не выпуск WP03 и не завершение всего ТЗ: зависимости/fixed, scoped shift, ознакомление и offline впереди. Автор/time не реконструируются для истории; версия не равна количеству сохранений. Реальный браузер не выдаётся за физические устройства/пилот. Прикладные изменения пока не feature-коммит/push/main; production не затронут.
+
+## 2026-09-30 · WP03 / T005: планирование блоков и редактор
+
+**Модель.** Длительность до начала, fixed, ручной переезд/запас, граф постоянных ID, ответственный/участники {kind,id} команды/персон гостей/забронированных сделок. Member-only модель не использована: она исключила бы гостя и внешнего подрядчика без аккаунта. Зависимости и назначения нормализованы, composite FK/cycle/availability constraints защищают прямую БД. Очистка недоступных назначений, дата и пояс меняют версию; автор остаётся фактическим или неизвестным, не заменяется выдуманным человеком.
+
+**Совместимость и UI.** Пропущенные новые поля существующего блока сохраняются, explicit null/[]/false/0 очищают их. Все full-list действия используют один toTimelineDraft. Форма удерживает исходный список/ETag, 409 не перебазируется; ошибки полей видны рядом с редактором. Есть реальные team/guest/deal choices, RU/EN, пустое/отказ/числовые проверки и сохранность секунд/миллисекунд в поясе свадьбы. Fixed исключён из старого сдвига/переноса, но это не scoped preview/confirm.
+
+**Миграция.** Из известных endpoints выводится точная длительность; старые ID/время/флаги/metadata не меняются. Корректная история валидируется; недопустимая synthetic история сохраняется с NOTICE и обязательным последующим явным исправлением/VALIDATE, а новые некорректные записи запрещены. Down защищён от потери planning. Репетиция выявила оставленное CHECK после down; исправление подтверждено up/down/up. Browser выявил точное accessible-name несоответствие select; aria-labelledby и повторный сценарий подтвердили исправление. Старые SQL-фикстуры приведены к согласованной длительности, ограничения не ослаблены.
+
+**Проверки.** До модели: семь planning-тестов упали, прежние 22 прошли. После: backend 38/38; frontend subset до последнего regression 61/61. Final init.sh на свежей isolated DB/Redis: 1110 frontend / 1324 backend, skipped нет, типы/линт/сборки прошли, exit 0. Historical drill шесть, bad-history drill семь, browser девять проверок с настоящими API/UI и двумя сессиями, page_errors пуст; 320/390/1440 и скриншоты проверены. Источники: C:/Тили-тили/.unlazy/wp03-planning-20260930/, REPORT-PLANNING.md.
+
+**Далее.** T006 scoped preview/confirm/конфликты, T007 ознакомление точной версии, T008 оставшийся UI, T009 offline, полная SC/NFR приёмка. Сопоставление шаблона первой даты по sort после перестановки/удаления всё ещё открыто. T005 локально проверен, но WP03/остальные WP00–WP16 не объявлены завершёнными; feature-коммит/push/main ещё не выполнены, production не затронут.
+
+## 2026-09-30 · WP03 / T006: источник времени и pure scoped calculator
+
+**Первая дата.** Три поведенческие регрессии подтвердили, что reschedule использовал текущий sort и мог сдвинуть brunch второго дня в сборы первого, дать custom блоку чужие часы и восстановить выдуманное окончание при unknown duration. Источник теперь записывается при создании в template_start/template_day_offset у постоянного блока. Текст/sort/текущий формат не используются для реконструкции. Исторический источник без доказательств остаётся NULL с NOTICE. Миграция сохраняет metadata/планирование и отказывает rollback с потерей origin.
+
+**Расчёт.** Чистая функция проверяет local day и event identity, excludes past/fixed/other days, dependencies/responsible/participants/resources, explicit travel/buffer, границы суток и неизвестное время; возвращает before/after/affected/conflicts без мутаций. Не запрещает независимые параллельные активности и touching intervals. Маршрут и UI пока не подключены; тип eventId не выдаётся за реализованную event модель. Server-resolved canonical resources, access/ETag/actual-time recheck, idempotent confirm и coordinator resolution ещё обязательны.
+
+**Доказательства и границы.** server-before-origin-valid.log (три failed до исправления), server-origin.log 41/41, shift-engine-date.log 21/21; origin-migration-result.json шесть проверок. Первый full-origin-engine.log и финальный full-final.log после reuse общей календарной проверки: 1110 frontend / 1348 backend, skipped нет, типы/линт/сборки прошли, exit 0. Источники в C:/Тили-тили/.unlazy/wp03-shift-20260930/, подробности REPORT-SHIFT-CORE.md. Реального browser shift, новых API/провайдеров/devices/pilot не проверяли. T006/весь WP03 остаются открыты; публикации и production deployment нет.
+
+## 2026-09-30 · WP03 / T006: реальная модель мероприятий
+
+**Данные.** wedding_events и обязательная composite tenant-safe связь блоков. Истории назначено одно main с прежним date/tz/venue, без деления по названию и без изменения ID/времени/planning/origin/relations/metadata. Main context синхронизирован с weddings; main/populated event не удаляется, whole-wedding cascade разрешён. NOT VALID исторического invalid interval сохранён точно, новый invalid write запрещён. Unknown historical timezone не заменяется fallback. Managed event защищает down; untouched backfilled history down/up/repeat проверен.
+
+**API и клиент.** Контракт 0.55.0, 153 пути/203 операции/98 схем, generated пересозданы штатно. GET events читает общий snapshot, команды couple требуют If-Match и актуальных прав после lock, actor/time серверные. Main reschedule не двигает independently assigned blocks; independent context edit не сдвигает часы автоматически. eventId сохранён GET/PUT/autogen/toTimelineDraft/editor. Legacy guest day временно только main, не раскрывает independent program до индивидуальных приглашений WP04; это не RSVP/visibility implementation.
+
+**Проверки.** До API девять failed / 41 passed; первая реализация выявила timezone 500 вместо 422 (ERR-0345). До client retention один failed / семь passed (ERR-0346). Текущая свежая isolated DB: 55 server tests, POST race 201/409 и пять wait/revoke вариантов. Event historical drills 7/8 checks на разных БД. Финальный init.sh: 1112 frontend / 1362 backend, skipped нет, типы/линт/сборки прошли, exit 0. Первая попытка full остановилась на двух TS-invalid тестовых fixtures, они исправлены. Browser events1: восемь actual editor/API проверок, две сессии, stale/explicit reopen, autogen/apply, 320/390/1440; page_errors пуст, screenshots просмотрены. Источники: C:/Тили-тили/.unlazy/wp03-shift-20260930/, REPORT-EVENT-MODEL.md.
+
+**Далее.** DB reader реальных event date/tz/canonical vendor resources, scoped preview/confirm с exact-version/access/actual-time/idempotency, отказ без частичных изменений/уведомлений, запрет legacy обхода и полноценный UI последствий. Coordinator resolution, индивидуальные приглашения/трансферы, T007–T011 и весь WP00–WP16 обязательны. WP03/WP04 не приняты; feature-коммита/push/main и production deployment не было. Внешние gates G1/G4 остаются открытыми, ALL MET не объявлялся.
+
+## 2026-09-30 · WP03 / T006: scoped HTTP и подтверждение в интерфейсе
+
+**Протокол.** Reader разрешает actual day/event context и canonical vendor
+identity из full graph. Preview без записи, отдельный signed token на 600 секунд
+для user/session/wedding/version/digest. Confirm-only endpoint со strict schema,
+ETag и одним logical key; legacy minutes не обход. Actual access/time/consequences
+перепроверяются после lock; blocks/revision/ledger/broadcast/vendor notice/
+notification/receipt атомарны. Предпочтён отдельный signed preview, а не доверие
+присланному списку последствий; coordinator override не вводился.
+
+**UI.** /dayx штатный Dialog, explicit scope/preview/confirm, exclusions/conflicts,
+RU/EN, focus restore/pending guard. First open использует загруженный context;
+refresh не заменяет draft/ETag. Потерянный после commit ответ повторяется тем же
+token/version/key. Guest count не является обещанием доставки. 403 reader виден
+как actual refusal, не пустой список. Ошибки/регрессии — ERR-0347…0351.
+
+**Проверки.** 74 server checks на real isolated PG; 102 frontend checks в пяти
+файлах. Browser shift3: десять passed, page_errors пуст, actual API scopes,
+320/390/1440, helper denial → coordinator grant, stale, lost committed response
+с replay и manual conflict resolution редактором. Итоговый full-final-scoped.log:
+83 frontend files/1123 tests, 111 backend files/1381 tests, без skipped, все
+типы/линт/сборки/contract audits прошли, exit 0. Failed fixtures
+vendor_updates исправлены сравнением настоящего baseline, rollback/recipients
+assertions не ослаблены. REPORT-SHIFT-HTTP.md — source/evidence/границы.
+
+**Остаток.** T006 не принят: human-readable effects/полные интервалы, event
+invitations/RSVP/transfers; далее exact-version ack T007 и versioned offline
+T009. Все WP00–WP16, SC/NFR, физические устройства/нагрузка/restore/пилот и
+настоящие интеграции остаются. Существующий /dayx current/clock отдельно требует
+endsAt и реальный timezone: screenshot показал законченный historical block как
+LIVE, хотя scoped preview правильный; внесено в T008, не скрыто зелёным gate.
+Код незакоммичен/не опубликован, production не
+трогали; незавершённый пакет не выдаётся за feature delivery.
+
+## 2026-09-30 · WP03 T008: Основной DayX, Интервалы И Часы
+
+**Решение.** «Сейчас» опирается только на известный half-open interval, а не
+последний sort/ближайший сосед. Все parallel blocks видны, next выбирается по
+instant. Основная программа показывает полные даты/начала/окончания/пояса.
+Unknown end/zone не выводятся догадкой; старый offline snapshot не LIVE.
+
+**Контекст.** Отдельные GET timeline/events могут завершиться по разные стороны
+правки. Вместо browser/main fallback DayX сверяет реальные ETag и при mismatch
+требует явное перечитывание обоих. Это чтение не заменяет captured preview.
+Legacy no-eventId строки используют известный wedding tz; для реального eventId
+это не обход проверки. Ошибки/403 контекста показывают actual server text.
+
+**Доказательства.** Восемь отрицательных component regressions и отдельный
+реальный UI witness смешивания ETag 1/2; финальные 14 новых tests и 84 targeted.
+init.sh full-dayx-revisions-final.log: 1137 frontend / 1381 backend, skipped нет,
+типы/линт/сборки exit 0. Browser dayx1: 15 actual Chromium/API checks, no page
+errors, UTC browser и реальные Ufa/Moscow события, ширины 320/390/1440, parallel
+clock boundary и полный scoped shift regression. Screenshots просмотрены,
+runner/private fixture убраны. REPORT-DAYX.md отделяет headless от devices.
+
+**Остаток.** T006 human-readable consequences/полные preview-интервалы и реальные
+event invitations/transfers, T007 ack, event management UI, T009 versioned
+offline/access cleanup и полная SC/NFR приёмка остаются обязательными. Никакой
+полный WP не принят/не опубликован. Production/remote/.env/lockfiles не трогались.
+
+## 2026-09-30 · WP03: Подтверждаемые Читаемые Последствия
+
+**Решение.** Names/assignments/event contexts/known intervals получаются сервером
+в том же lock snapshot и входят в signed digest. Parent refresh не меняет
+captured preview. DTO минимальный: нет телефонов, финансов или private notes;
+unknown name/end/zone показаны явно. Conflict сравнивает moved AFTER и unchanged
+fixed interval. Travel/buffer времена обозначают плановые начала блоков, а не
+реальное прибытие транспорта. API source 0.57.0 сгенерирован штатно.
+
+**Проверки.** Отрицательные content и реальные DB witnesses сохранены; final
+full-effects-graph-final.log: 1146 frontend/1385 backend без skipped, типы/линт/
+сборки. Delta к DayX: 1146-1137=9 UI, 1385-1381=4 server tests. effects2 browser:
+18 passed, page_errors пуст, реальные guest/member/own supplier, parent refresh,
+roles/stale/replay/manual conflict; top/bottom 320/390/1440 и conflict390
+просмотрены. Временные server/Python processes завершены. REPORT-EFFECTS.md.
+
+**Остаток.** T006 event invitees/transfers, T007 exact-version acknowledgment,
+event-management UI, T009 offline и полная SC/NFR/все WP00–WP16 не закрыты.
+Незавершённый WP03 не выпускается; production/remote/.env/lockfiles не трогались.
+
+## 2026-09-30 · T007: Историческая Карточка Не Даёт Живое Право
+
+**Дефект.** Сохранённая vendor update разрешала read/ack после отмены последней
+брони; archive/cancel скрывали список, но прямой ack оставался разрешён.
+Это воспроизведено тремя real DB/API отрицательными regressions.
+
+**Решение.** Live booking+wedding+account/session+vendor ownership на чтении;
+ack атомарный под wedding-first share lock с повторными row-lock checks.
+Не удалять историю и не отзывать другую действующую бронь: карточка остаётся в
+БД, доступ вычисляется по текущим committed deals. Retry сохраняет время.
+Legacy «Учтено» не объявляется ознакомлением с конкретной программой.
+
+**Доказательства.** Subset30/30, девять новых tests (включая пять waiting-lock
+revocations); current init.sh1146/1394 без skipped, типы/линт/сборки прошли.
+Browser vendoraccess1:9passed/no page errors, actual publication/book/edit/
+cancel, cached UI404/error и reload removal; screenshots320/390/1440/denied
+просмотрены. REPORT-VENDOR-ACCESS.md. Verification children завершены.
+
+**Следующее.** Разрешённый exact-version program reader/ack/UI и новое ожидание
+при редакции; offline/access cleanup, event invitees/transfers и полный scope
+остаются. Никаких remote/production операций, API shapes/миграций/.env/lockfile
+правок. Неполный пакет не публиковался.
+
+## Registered Vendor Program UI · 2026-09-30
+
+Добавлен отдельный list/reader/checkbox/exact-version acknowledgment, а не новая
+трактовка старого «Учтено». Только server projection по actual committed-deal
+assignments; captured snapshot/proof/ETag, event zone/full intervals/unknowns.
+Actual receipt/time только после matching-version response. При network/5xx
+повтор той же команды: real server commit + потерянный транспортный ответ
+проверен браузером, retry сохраняет originalreceipt.4xx/expiry скрывают snapshot
+и требуют повторного просмотра, не auto-rebase/auto-confirm. Offline unmount
+и fresh reconnect не объявлены полноценным offline reader/access lifecycle.
+
+Server checkpoint full1146/1414/migration8; UI20component cases +14actual browser
+checks RU/EN/320/390/1440/no page_errors, PNG просмотрены. Final init.sh1168frontend/
+1414backend no skipped/types/lint/build/contracts на fresh programuifinal DB;
+1168-1146=20component+2nomocks routes. Источники REPORT-PROGRAM-ACK-HTTP/REPORT-PROGRAM-UI.
+Пара/команда, external/delegated actors и весь исходный WP00–WP16 scope остаются.
+GitHub/production не трогались, неполный пакет не выпускается.
+
+## 2026-09-30 · Team Current Acknowledgment Не Равно History
+
+Registered program acknowledgment теперь виден паре/helper/coordinator своей
+активной свадьбы. Повторно проверяются actual request access/session/member после
+wedding lock; общий vendor readProgram/digest не расходится со сводкой. Vendor
+multi-deal identity общая; external по dealID, не имени. Current owner/version/
+content matching, prior receipt отдельно. Actor name — текущий профиль реального
+storeduser, неизвестное null; не выдуманный historical name. No proof/finance/phone.
+Lock order wedding/user/vendor/deal совпадает с vendor reader, ownership race409
+не выдаёт неполный actor snapshot. История не загружается вся: два limit1.
+
+UI same main timeline/summaryETag/bodyVersion, explicitrefresh/blocked partial/
+refusal/offline/session unmount. No green after old receipt/new revision, no
+claim full offline or automatic remote revocation. Внешний not_supported видимый
+остаток реализации, не подмена external/delegated ack. All WP00–WP16 retained.
+Negative missingroute2/50; current API68, newcases18; UI62, newcases19. Full1187/
+1432 no skipped/types/lint/build/contracts on freshteamackfinalDB. REPORT-TEAM-ACK.
+First403caller failure fixedactualtext; old planning tests globalalerts scoped to
+their form preserving error/draft assertions. ERR0359–0360. No remote/production.
+
+Actual browser teamack2:16passed/no page_errors. Six region screenshots and
+viewport320 reviewed. First teamack1 crops captured fixed navigation over rows;
+runner now positions region with available scrolling and asserts bottom above
+nav plus refresh elementFromPoint. Existing pb-28 sufficient: no unsupported CSS
+fix. Screenshot capture/visibility is not the same as unobstructed content.
+Preview on isolated teamack2 DB: healthok/UI200, API4060/parent21432/UI10900
+verified from actual listeners/command lines. Start script works in current
+PowerShell; legacy powershell.exe misread UTF-8 Cyrillic paths before launch.
+Scoped team ledger status then approve ALL MET5; CRLF-aware diff check exit0.
+Next substantive work external guest-vendor exact-version reader/ack with live
+link/deal revocation; delegated company actors and all remaining WP retained.
+
+## 2026-09-30 · External Program Identity Не Личность Человека
+
+API0.60.0 separate anonymous link protocol, explicit real issuance-time deal
+binding under wedding/live member/session lock. Existing links receive random
+row identities but historical program_deal_id stays null: no invented historical
+association or acknowledgment. New invite required for versioned protocol.
+Shared assigned-only minimal projection, external purpose/key/audience proof,
+actual DBclock after waits, exact link/deal/version/content. Audit actorKind
+external_link/actor_id null, no fake account/name or stored rawtoken/proof.
+Atomic real receipt/history/audit, original retry/concurrent time preserved.
+
+Legacy full timeline/who bypass reproduced then filtered (ERR0362). First full
+old prod2 expectation failed; actual assignment fixture strengthened instead of
+restoring disclosure (ERR0363). API subset90 (22new), migration10 realchecks;
+full and actual HTTP browser scenario pending. These do not replace external
+checkbox UI/team receipt/delegated actors/full offline/events/all WP00–WP16.
+No GitHub/production operations and no partial feature publication.
+
+External binding strengthened in actual DB: exact invite/deal composite FK,
+13 migration checks including unbound/wrong same-wedding deal/recorded binding
+mutation denial. Issued created_at uses actualclock after wait, held witness
+failed before fix; five issuing-owner live revocation races added (ERR0364).
+Latest bound full had1187frontend/1460backend tests passed but a ratelimit suite
+Connection is closed error. Current RedisPONG/ready, isolated10passed; earlier
+disconnect cause not confirmed, no unrelated app limiter/test code changed.
+NEW externalverify full retry pending; no failed run reclassified as success.
+
+FINAL full-external-protocol-current.log1187frontend/1460backend no skipped,
+types/lint/build/contracts/initexit0.28new API cases=22+issuance-time+5issuing
+revocations; migration-bound13. Browser externalprogram1 HTTP8passed/zeroerrors,
+legacy390/revoked390 PNG viewed. This is browser fetch protocol plus legacy UI
+projection/cancel visibility, not new checkbox/team state acceptance.
+API/backend/test/schema unchanged since final; docs/external preview only.
+Preview externalprogram1DB healthok/UI200, actual21108/21140/3132 listeners
+inspected. Scoped server ledger status/approve ALL MET5, CRLF diffcheckexit0.
+Next external checkbox/event-context reader + team link-actor receipt;
+legacy lifecycle/delegated/offline/events/all WP retained. No remote/production.
+
+## 2026-09-30 · External Versioned Program UI
+
+External checkbox/reader now checked locally — REPORT-EXTERNAL-PROGRAM-UI.md.
+Shared ProgramSnapshot removes duplicated exact-version logic, caller injects
+actual registered/link route; no fabricated vendor identity. Anonymous auth:false
+does not refresh/send an unrelated account or trigger its consent gate.
+External program/chat access refusal clears complete cabinet; stale clears only
+program, explicit fresh read/new checkbox. Offline clears program/chat/draft,
+not a full offline acceptance substitute. Legacy local-clock duplicate removed.
+Full1210/1460 no skipped/types/lint/build/contracts, external23new, focused56;
+actual externalui2 UI14passed/zero errors/seven PNG inspected, real SQL commit
+then lost-response retry same original receipt. First browser wrong Moscow
+expectation retained; actual Ufa event Asia/Yekaterinburg reader correct (ERR0366).
+Next team external receipt/history/current link, then full legacy/delegated/
+offline/events/all WP. No feature commit/push/main or production operation.
+Scoped UI ledger status then approve ALL MET4. First checker EXPECT was a
+literal string resembling regex, so56passing tests didn't match it; replaced
+with success-only marker emitted by verify-ui.mjs only on test exit0, reapproved
+and reran56. Product assertions unchanged. Preview externalui2 isolated DB
+healthok/UI200, actual9008/18384/4404 processes checked; CRLF diff checkexit0.
+
+## 2026-09-30 · Current External Link И Team Receipt
+
+Current внешняя ссылка теперь explicit pointer сделки, записанный атомарно при
+выдаче, а не maximum created_at/UUID/receipt: такие выборы не доказывают порядок
+выдачи при clock changes/ties. Historical pointer unknown, не угадывается migration.
+Прежние ссылки остаются живыми по своим правам, но не подтверждают новую.
+Точная FK/deal/wedding/link, live slot/expiry/version/content и server receipt;
+actual time после всех projection/receipt waits. External actor label — link
+possession, не external_name/проверенный человек; previous история отдельно.
+Registered permission/actual author unchanged; all full legacy/delegated/offline/
+events/WP00-WP16/release requirements остаются обязательными.
+API0.61.0 normal generators160paths/210ops/109schemas. Migration14checked,
+subset119API/71frontend. Old historical fixture now unknown pointer + binding,
+not weakened FK. Full first audit53 observer-prefix failure fixed by exact scoped
+SQL match (ERR0367), checkpoint1219/1482passed. Stronger precision witness then
+failed version20 vs16 on equal JS .123Z timestamps, realPG difference998micro;
+latest SQL selection fixes it (ERR0368). Final full-external-team-current.log
+1219frontend/1483backend/no skipped/types/lint/build/contracts/initexit0 on fresh
+PG+Redis13. Actual externalteam2 Chromium17checks/zero page_errors; eight regions
+and viewport320 viewed with actual bounds/nav/hit targets. First externalteam1
+stopped after13checks on ambiguous English current/history locator, not product
+label error; separately checked both sources on rerun (ERR0369). Explicit local
+SQL expiry is a fixture, not public revoke or natural thirty-day wait. No production/
+GitHub/provider calls. REPORT-EXTERNAL-TEAM-ACK.md preserves exact evidence and
+unfinished full scope. Next full legacy external cabinet/chat rights after waits.
+
+## 2026-09-30 · Одна Граница Для Legacy External Кабинета И Чата
+
+Witness подтвердил старый обход: cancelled actual deal + still-live link давали
+cabinet/messages200 и POST201. Все старые двери теперь используют общий
+issued-binding/live access с versioned reader, под wedding->invite->slot->deal
+locks и actual TTL после всех запросов. Unknown historical binding не следует
+за текущим слотом: новая ссылка нужна и для кабинета/чата409. Альтернатива
+«оставить legacy доступ по current slot ради compatibility» сохраняла бы
+непроверенное право; historical identity не восстановлена и не выдумана.
+Lazy chat/accepted/message в одной TX, actual post-wait timestamps, realtime/
+notifications только после commit. No-store GET, unchanged recipient matrix;
+accepted_at всё ещё не program acknowledgment. API0.62.0 normal generators,
+targeted160pass/41new; current full/browser в REPORT-EXTERNAL-LEGACY-ACCESS.md.
+Fixture lock-order/observer failures сохранены ERR0371, frontend timeout full
+не скрыт ERR0372. Все WP00-WP16/full SC/NFR/offline/delegated/events/release открыты.
+
+FINAL legacy full-external-legacy-current-migrated.log1219frontend/1524backend
+no skipped/types/lint/build/contracts/initexit0, fresh PGfinal3+Redis13. Предыдущий
+fullfinal2 был unmigrated (ERR0373); external full preflight теперь проверяет все
+реальные migration names/users, пустая БД отказана до тестов. Actual browser
+externallegacy2:11checks/zeroerrors/eightPNG inspected, allowed UI chat/actual
+owner reply, controlled SQL cancelled-deal/unbound/expiry denies actual legacy
+API and hides entire cabinet. externallegacy1 exact reply locator mismatch с
+author label сохранён ERR0374, API ID/author сверка усилена. No product edits
+after finalfull. Preview isolated externallegacy2DB healthok/UI200, actual
+5176/12652/19452 commands checked; no physical device/provider/login claim.
+Scoped legacy ledger status/approve ALL MET4; CRLF-aware diffcheckexit0 and
+immutable master spec/plan/baseline diff empty. Next full T009 offline snapshot/
+access lifecycle and agreed parallel delegation/event integration, not a
+shrink of original WP00-WP16 or partial feature publication.
+
+## 2026-09-30 · WP03 Versioned Offline DayX Lifecycle
+
+Минимальная schema2 copy привязана к untrusted user/session namespace и actual
+member role, включает captured same-version timeline/event zones/date, разрешённые
+контакты и observed PlanB. Нет raw token/read proof/finance/internal who. Без
+сети/недоступности явно непроверенная read-only программа без LIVE/critical
+actions/chat; known read refusals/session/consent/member/role/cancel cleanup,
+generation не даёт late response восстановить copy. Reconnect fresh/no replay.
+In-flow shared connection banner, wrapped contacts, no false connection label
+после actual404. До исправления реальные component witnesses; failure history
+ERR0375-0383/REPORT-OFFLINE-DAY.md сохранена, причины таймаутов не придуманы.
+
+Full run выявил issuer HTTP201 внутри db().tx до COMMIT; actual held transaction
+и actual SQL rollback воспроизвели дефект. Route sends201 только после COMMIT,
+API0.62.0/body unchanged. Targeted173backend/160frontend; current full fresh
+offlinefinal6 migrated PG/Redis13:1269front/1526back no skipped/types/lint/build/
+contracts/initexit0. Chromium offlineday8:13passed/zeroerrors/eightPNG inspected,
+320/390/1440 banner/back/tel bounds, warm SW hard reload/static not privateAPI,
+actual account switch/helper copy/memberDELETE204/helperGET404/reconnect/logout.
+No critical commands replayed. Browser children/private fixture disposed; actual
+ports3000/3001 no listeners. Local preview stopped, production/provider untouched.
+Manifest101 source/test/migration/API SHA256 entries excludes env/secrets/build/docs.
+Registered/external/delegated full offline, cold critical routes/рассадка/events/
+transfers/SC/NFR и WP00-WP16 остаются обязательными. Приложение uncommitted/unpushed;
+не частичный feature release и не утверждение о синхронизации GitHub.
+
+Scoped offline manual ledger status/approve ALL MET4; initial status rejected
+execution-only --cwd, corrected read-only invocation passed. Manifest/interface/
+real issuer commit-fix boundaries sent to human-authorized parallel task; no
+integration. Immutable master spec/plan/baseline diff empty, CRLF diff checkexit0.
+
+## 2026-10-01 · WP03 Contractor Offline Programs (Local)
+
+Продолжено после просьбы владельца, весь WP00-WP16 сохранён. Registered/external
+reader теперь имеет minimal permitted schema1 copy/version/context/savedAt,
+session/SHA256-link namespace, no raw proof/link/chat/finance. Namespace не
+авторизует; offline copy не подтверждает current access/version. Не вводится
+TTL retention или access lease из600s proof. Read-only/no ACK/chat; pending
+fresh reconnect остаётся read-only, old checkbox/draft/POST не переносится.
+Common final read/ACK/legacy denial cleanup, event before generation, no silent
+GET после отказа, no late restoration; same-session refresh/session/consent/
+logout/actual cancellation scopes. Historical receipt только из actual GET.
+Скриншот320 выявил heading ellipsis; optional wrapped TopBar только в этих
+двух экранах, другие defaults не меняются. ERR0384-0390 сохраняют failures.
+
+Focused163; final init.sh fresh migrated contractorfinal3/Redis13:1328frontend/
+1526backend no skips/types/lint/build/contracts/initexit0. Actual production
+Chromium offlineprogram3:15checks/zeroerrors/all12PNG inspected320/390/1440,
+warm SW reload, own offline list, another-tab session, unread URL isolation,
+owner edit/reconnect, actual cancel200/ACK404/410, historical receipt/RUEN,
+static-only CacheStorage/no raw capability. All verification sessions terminal,
+ports3000/3001 no listeners, private fixture absent.106-source SHA256 inventory,
+old101 no longer current. No source edits since final full. Source report:
+tasks/фичи/021-тайминг/REPORT-OFFLINE-PROGRAM.md. No commit/push/main/GitHub/
+provider/production operations; local=GitHub не подтверждено.
+Следом offline рассадка/критичные маршруты/cold routes, event invitations/RSVP/
+transfers; delegated actor integration только на actual reviewed contract.
+Other authorized clone's API0.64/participation/staff draft не принят/не перенесён;
+границы обсуждены, конфликтующих staff migrations здесь не создаём. T009/WP03
+и все SC/NFR/WP00-WP16 открыты, checkpoint не заменяет полный feature release.
+
+## 2026-10-01 · Seating Minimum Offline Copy And Cold Critical Assets
+
+Продолжение полного WP00-WP16. Explicit Guest person rows count once; actual
+backend projected capacity for named individual assignments, generated legacy
+placeholder followsprimary, repeatedcompatibility true with existingnamedsecond
+idempotent. Named singleperson false409/compatibility500 reproduced before fix.
+Minimum schema1 seating binds observed memberrole/user/session/wedding and two
+independent successful read times, not an atomic server revision. Drop phone/
+comment/diet/medical/link/finance/proof/raw tokens. Offline/down/pending reconnect
+read-only; editor unmount drops draft/selection, no mutationqueue/replay; shared
+refusal-before-cleanup/session/consent/cancel/listmembership/generation guards.
+DayX preparation actual permission-checked reads can save before visiting Seating.
+Build-derived entry/critical routes/static imports/CSS installed fail-closed by
+SW, noAPI-cache. Avoid guessed hashes/fictional atomicversion/TTL/provider facts.
+409 error remains in openform; mobile onecolumn/wrappednames and realicons.
+
+Failure history ERR0391-0397 retained, including corrected initial fixture
+expectations, fullTS/dictionary stops and actualbrowser422/combinedtext locator.
+Focused215front/22familyPG; final init.sh fresh seatingfinal3 actual migrations/
+Redis13:1373front/1532back no skips/types/lint/build/contracts/exit0. Chromium
+offlineseating3:14checks/zeroerrors/all11PNG inspected320/390/1440, actualcold
+routes/reload/secondaryPATCH2/2/third409/form409/reconnect/session/helper-removal404.
+117actualsource/test/migration/API/buildconfig hashes, immutablemasterdiffempty,
+HEAD unchanged/uncommitted/unpushed. Childrendisposed/ports3000,3001nolisteners/
+privatefixtureabsent, no preview/production/GitHub. Full T009/WP03/allSC/NFR and
+alloriginalWP00-WP16 remain. Next pendingroute/SWupdate/subpath/cache scope/
+liveafterwait audit, then eventsRSVP/transfers/delegation on actualreviewedcontract.
+Otherauthorizedclon's staff62/resources53/drill13/355 and CORS5 are REPORTS,
+not independentacceptance here; no source/schema/migration integration.
+
+## 2026-10-01 · T009 Read Lifetime And Scoped Upgrade
+
+Direct user continued full WP00-WP16 without stopping; no reduced scope.
+Before5 failures: old wedding overwrite/abandoned seating persistence, forced
+SW replacement, foreign/sibling cache deletion, foreign exact-URL static hit.
+Caller lifetime/latest request/ref + DayX cleanup; exact pathname cache prefix,
+own reads/own obsolete cleanup, installed replacement waits explicit same-scope
+approval. Scoped dialog unsaved/open-tabs warning/cancel/error timeout and
+first claim no reload/replacement reloadToRoot once. Bounded-stream witness
+also failed; drain each validated body before all-header wait, cache writes
+only after all complete assets. No API/capability cache, mutation queue or replay.
+
+Failures retained ERR0398-0402 including test matcher/typing/useMemo immutability,
+full dictionary duplicate, actual install timeouts and wrong browser route.
+Full2 lost on interruption/no log/process; result not claimed. Existing separate
+test PG interrupted, pg_ctl timeout while recovery/fsync ran; actual ready log
+before successful fresh seatinghard3 migrations/preflight, no PID/data deletion.
+Final full3:95frontfiles1385pass/111backfiles1532pass/no skips/types/wholelint/
+build/contracts/initexit0, actual PG/Redis13. Delta12frontend=2lifetime+5SW+5UI;
+backend unchanged1532. Same-source actual production pair3 upgrade10:9checks/
+all8PNG inspected320/390/1440; seating4:14checks/all11PNG inspected, zeroerrors.
+Own browser children/privatefixtures disposed, actual3000/3001 no listeners.
+122source hashes match unchanged final source, immutablemasterdiffempty/diffcheck0;
+617.99KB warning not hidden. REPORT-OFFLINE-LIFECYCLE.md, scoped manual gates
+after docs; not full T009/WP03. No commit/push/main/GitHub/provider/production.
+Next principal/consent/phone-role after real PG waits, separately reviewed CORS,
+event invitations/RSVP/transfers/delegated SC/NFR and every original WP remain.
+
+Authorized other-task coordination: read-only verified4 staff/domain hashes,
+not its reported publicAPI/UI/tests acceptance. Agreed purpose-specific current
+member/duty/vendor/wedding/deal/event/assignment program access, no blanket
+money/terms/ACK grant; original slots await COMMIT preserved. No copied code.
+
+## 2026-10-01 · T009 Seating Live Write Access
+
+Продолжение полного WP00-WP16, без публикации или изменения production.
+Before2 realPG44failed/48passed:5doors×8access changes+2phone+2projection.
+Scoped wedding-first current user/session/member locks и sole consent reader
+с active-row share locks; existing ACL unchanged, private fields используют
+locked role. TablePOST atomic/201 после callback/COMMIT. Family person capacity
+не изменена. Held6 ordering cases с двумя фактическими wait до release.
+
+Intermediate real guest-wait expiry200 исправлен проверкой JWT до завершения
+callback/rollback, включая guest deletion branches. Actual booked vendor,
+version/state/update rollback и разрешённые side-effect controls. Central auth
+hooks не переписаны, второй consent reader не заведен, role matrix не расширена.
+Fixture actual invite200 и PG statistics refresh исправлены по реальным данным;
+промежуточные1/3failures сохранены, не названы финальным успехом.
+Focused108=60new+22family+26consent, scoped lint0, current124 hashes frozen перед
+fresh actual PG/all migrations/Redis13 full. Full/browser pending в
+REPORT-SEATING-LIVE-ACCESS.md; ERR0403-0406. Other guest reads/doors/delegated/
+events/SC/NFR/full WP и отдельный reviewed CORS остаются.
+
+Финальный локальный результат этого этапа: full-seating-access-full1385front/
+1592back/no skips/types/wholelint/build/contracts/init0; fresh actual PG/all
+migrations/preflight/Redis13. Production Chromium seating5:14checks/zeroerrors/
+all11PNG inspected320/390/1440;124 hashes rechecked after full/browser, source
+unchanged since freeze. Children/privatefixture disposed/ports3000-3001 empty;
+separate testPG retained. Maps/report/handoff/master/coordination/todo updated,
+immutable master diff empty/README historicalheader retained/diffcheck0. Scoped
+manual gates only, not wholeT009/WP03/SC/NFR/feature commit or release.
+
+## 2026-10-01 · Original CORS Writes
+
+Прочитан reported isolated patch из разрешённой параллельной сессии, затем
+original doors проверены независимо: HTTP3fail/7pass (GET/HEAD/POST only),
+Chromium corsbefore1:8checks/три CORS-blocked methods/no SQL changes. Original
+app.ts получил только methods GET/HEAD/POST/PUT/PATCH/DELETE; corsOrigins,
+credentials/exposedHeaders/ACL не меняются. Не переносился whole app.ts, order/
+resource/users/consent/code/API/migrations. Auth/CORS разные права: оставить
+401/403/409 читаемыми, не разрешать private operations ролью origin.
+Focused10/scopedlint0, actual corsafter1:9checks/zeroerrors/all3PNG inspected,
+POST/PATCH/PUT readableETag+IfMatch/DELETE actual SQL, foreignoriginblocked.
+125 source frozen before freshfullseatingcors1/Redis13; full/finalbrowser pending.
+REPORT-CORS-WRITES.md/ERR0407, весь WP/SC/NFR/production restriction сохранён.
+
+Финальный CORS результат: full-cors-full1385front/1602back/no skips/types/
+wholelint/build/contracts/init0, actualfreshseatingcors1/Redis13/allmigrations.
+Actual production Chromium corsafter2:9checks/zeroerrors/all3PNG inspected,
+125 source match/unchanged since freeze. Browser privatefixture/children disposed,
+actual3000/3001 no listeners/no preview, testPG retained. Fullmaster diff empty/
+README historical8line header retained/diffcheck0; scoped manual docs/gates,
+не completedT009/WP00-WP16/release. Следующий untouchedscope: other guest doors/
+reads/actual COMMIT/rollback/privacy proofs, event/delegation/SC/NFR integration.
+
+## 2026-10-01 · Guest Write Access И Реальный COMMIT
+
+Четыре original POST: create/import/member/invite, without provider/production/
+GitHub/clone source integration. Before52failed/6passed of58:32stale access,
+12rolephone/privacy,6expiry,2premature member201. Wedding-first scoped guard,
+current role permission/DTO inside tx, locked invite guest/party identity,
+final expiry rollback; member201 after actualCOMMIT. Actual held COMMIT and
+select1/0 rollback controls across all4doors. Expanded72new/180total passed,
+76actualwaits, scopedlint/backendtypes0, frozen126source.
+Interrupted after2 PG55432 ECONNREFUSED retained as failure; same retained
+data proper recovery15432 actualready, shutdown cause unconfirmed; no data/
+PID deletion or production environment change. Full and production-browser
+verification pending in REPORT-GUEST-WRITE-ACCESS.md; no whole-WP claim.
+
+Финальный guest stage: firstfull1385/1674 and browserguestafter2 sevenchecks
+were pre-layout only. All3PNG review exposedclipped320/390heading; explicit
+guestlayoutbefore failedgeometry, compact existingInvite/aria/title fixed in
+Wedding.tsx, no globalTopBar edit. Old126manifest retained, currentcount126
+withchangedWeddingSHA. Final freshguestwrite3 PG15432/Redis13/allmigrations
+fullguest-layout-full1385front/1674back/no skips/types/wholelint/build/contracts/
+init0. Same-source actual production Chromium guestfinal1 ninechecks/zeroerrors/
+all5PNG inspected RU320/390/1440 EN320/390, geometry/Invite navigation included.
+126hashmatch afterfinalfull/browser; no ownlisteners3000/3001/privatefixture/
+liveexec/no preview, PG15432 retained. Warning617.99KB/gzip192.59KB remains.
+Next actual guest/table GET after waits/privacy and reminder dispatch/consent
+bookkeeping, then event/delegation/SC/NFR/allWP. No remote/release/provider;
+manual scoped documentation/gates do not imply full feature acceptance.
+Финальный manual gate status/approve actualexit0/ALL MET4 afterdocs; firststatus
+missingEVIDENCE rejected/corrected, not app-test result. CRLFdiffcheck0.
 
 ## 2026-09-30 — исправления аудита 021 поверх main cdd2f2f
 

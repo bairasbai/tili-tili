@@ -3,6 +3,78 @@
 Одна активная задача за раз. Пункты отмечать по ходу, не в конце.
 Готово = типы + тесты + линт + сборка прогнаны, вывод показан.
 
+## Полное ТЗ WP00–WP16 · 2026-09-30
+
+Локально проверен scoped guest write access,2026-10-01:
+- [x] Actual before58cases52fail/6pass; stale access/role/privacy/expiry and premature family201 reproduced. Transactional fresh access/projection/final JWT and post-COMMIT response fixed, same ACL/family/import semantics.
+- [x] Expanded actual PG after3:180passed=72new+60seating+22family+26consent. Real interrupted after2 retained as failure; same retained PG recovered15432, no data deletion/production env changes.
+- [x] Pre-layout full fresh1385front/1674back/no skips/types/wholelint/build/contracts/init0; actual guestafter2:7checks/zeroerrors/all3PNG inspected. Wrong proxy-response observer failure retained, then corrected.
+- [x] Mobile heading clipped: actual guestlayoutbefore7checks then geometry failure, compact accessible Invite action fixed.126 entries but new Wedding.tsx hash; first manifest retained separately. Final guestwrite3 full1385/1674/no skips/types/lint/build/contracts/init0; actual guestfinal1:9checks/zeroerrors/all5RUEN PNG inspected/geometry/navigation/hashmatch, scoped docs/gates only, not whole-WP acceptance.
+- [ ] Next: actual guest/table GET privacy after waits and reminders bookkeeping/consent, then event invitations/RSVP/transfers/agreed delegation and all SC/NFR/WP.
+
+Исторический125 checkpoint CORS,2026-10-01:
+- [x] Original before-fix HTTP3fail/7pass, actual Chromium corsbefore1:8 checks/3CORS failures/no SQL changes. Isolated methods allowlist; HTTP10pass, corsafter1:9 checks/private401/403/stale409 preserved, all3PNG inspected. No wholeclone app.ts import.
+- [x] Full fresh1385front/1602back/no skips/types/wholelint/build/contracts/init0; final actual corsafter2:9checks/zeroerrors/all3PNG inspected/current125hashes. REPORT-CORS-WRITES.md, scoped docs/manual gates, not wholeT009/WP00-WP16.124 below historical.
+- [ ] Следующий этап: actual witnesses для остальных guest doors/reads и commit-before-response; затем event invitations/RSVP/transfers и agreed delegated integration/SC/NFR/full WP. Static review не объявляет неподтверждённые дефекты исправленными.
+
+Локально проверен seating live write access,2026-10-01:
+- [x] Реальные PG blocker/wait before2:44failed/48passed =5doors×8access+2phone-write+2private projection; реальные поздние expiry200 вместо401. Fix2:104passed включая held locks. Новые atomic vendor-update/version rollback/allowed controls ещё проверяются.
+- [x] Scoped transactional access/sole consent reader/locked-role privacy/final expiry rollback, unchanged ACL/person capacity. Focused108/full fresh1385front1592back/no skips/types/lint/build/contracts; actual Chromium seating5:14checks/all11PNG inspected/zeroerrors,124hashes. REPORT-SEATING-LIVE-ACCESS.md; scoped docs/gates ниже не равны entireT009.
+122-source lifecycle inventory ниже исторический;124 current до следующих source edits.
+
+Локально проверен T009 lifecycle hardening,2026-10-01, full scope не сокращён:
+- [x] Before-fix5 failures: late old wedding overwrote copy, abandoned reader persisted; lifetime/latest request/ref guard и DayX cleanup. Focused222 Seating /22 update+SW, bounded-stream before-fix witness также сохранён.
+- [x] Exact scope-owned static SW caches; не читать/удалять чужие app/subpath caches. Waiting new worker/explicit dialog/cancel, old cold shell до approval/new offline shell после; body drain до ожидания всех headers, fail-closed complete installation.
+- [x] Final full-hardening-final3:1385front/1532back без skipped/types/lint/build/contracts, fresh migrated actual PG/Redis13. Actual pair3 production upgrade10:9checks/all8PNG inspected; seating4:14checks/all11PNG inspected; zero page_errors. REPORT-OFFLINE-LIFECYCLE.md,122-source hashes; final docs/gate status ниже не заменяет целую фичу.
+Предыдущие117/106-source manifests исторические;122 current только до следующих source edits.
+- [x] Seating write principal/consent/phone-role after actualPG waits проверен новым отчётом выше. Другие guest doors/reads ещё не охвачены этим helper.
+- [ ] Следующий scoped этап: отдельно reviewed CORS patch и actual cross-origin write; затем other guest doors/reads, events/delegation/SC/NFR/full WP.
+
+Локально проверен T009 seating/cold critical routes,2026-10-01; не весь T009:
+- [x] Actual PostgreSQL: separate named primary/secondary one-seat assignment; compatibility plusOne повтор не вставляет скрытого человека вместо существующего named second; legacy placeholder follows primary, отдельная посадка и atomic capacity refusal. Before-fix4fail/16pass (два уточнения неверной fixture expectation сохранены), after-fix22pass.
+- [x] До изменения4 frontend failures: physical family rows3/2 вместо2/2,1person2/2 вместо1/2, mutators offline/no snapshot; после исправления16lifecycle+23projection+6build/SW cases, regressions215pass.
+- [x] Минимальный seating snapshot после обоих успешных чтений/согласованных assignments и actual member role; captured device times отдельно, без atomic/version/retention/чувствительных полей; optional actual DayX preparation до посещения рассадки.
+- [x] Offline read-only/no mutation/replay, cleanup известных refusal/session/consent/cancel/list-membership, generation guards; fresh reconnect/reset editor и409 сохраняет ошибку/форму.
+- [x] Build-derived critical static assets, actual cold route/SW14checks/zeroerrors/all11PNG inspected320/390/1440; fresh migrated full1373frontend/1532backend no skips/types/lint/build/contracts. REPORT-OFFLINE-SEATING.md;117source hashes, scoped gates проверяются после docs. Delegated/events/SC/NFR/all WP остаются.
+- [x] Pending seating preparation/SW scope и upgrade проверены новым локальным lifecycle checkpoint выше; это не whole T009.
+- [ ] Реальные stale authorization после waits, event invitations/RSVP/transfers и actual согласованная delegation интеграция остаются.
+
+Проверен локальный T009 registered/external contractor reader, не весь T009:
+- [x] Реально воспроизвести исчезновение разрешённой программы valid session/link при offline:2failed до реализации.
+- [x] Валидированный минимальный program snapshot, отдельный namespace для зарегистрированной сессии и SHA256 внешней ссылки; без raw token/read proof/служебных полей.
+- [x] Read-only readers/list navigation, observed receipt отдельно от current server, reconnect fresh/no checkbox/POST/chat replay; known refusal/session/consent/cancel cleanup и late response guard.
+- [x] Focused163/full fresh migrated1328frontend/1526backend no skips/types/lint/build/contracts; actual production SW/Chromium offlineprogram3:15checks/all12PNG inspected320/390/1440, report/maps/errors updated. Scoped manual gates status/approve ALL MET4, не весь T009. Delegated/cold critical routes/рассадка всё ещё обязательны.
+- [x] Следующий локальный участок seating/cold opening описан выше и в REPORT-OFFLINE-SEATING.md; прежнее отсутствие seating кода историческое, не текущее. Это не full T009 acceptance.
+
+Проверен локальный T009 DayX lifecycle, не весь T009.
+- [x] До исправления: копия после HTTP404/смены сессии, LIVE после offline event; отдельный reconnect404 status witness и два реальных PG invitation commit/rollback witness.
+- [x] Session-bound минимальный снимок с версией и captured event zones; fallback только при недоступности, read-only действия, очистка при известных отказах/выходе/смене сессии, запрет восстановления поздним ответом; HTTP201 приглашения после COMMIT.
+- [x] Focused160frontend/173backend; fresh migrated full1269front/1526back без skipped/types/lint/build/contracts, Chromium offlineday8:13checks/eightPNG inspected — REPORT-OFFLINE-DAY.md.
+- [x] Report/maps/business/JOURNAL/ERRORS/handoff/coordination updated; scoped manual gates status/approve ALL MET4. Manifest101 SHA256 sent to user-authorized parallel task, no source integration/remote operations.
+- [ ] Принять все T009 readers: registered/external/delegated lifecycle, cold critical routes/рассадка/остальные offline сценарии, финальные SC/NFR. Один warm DayX не закрывает полный T009.
+Следующий шаг: offline рассадка/остальные критичные маршруты и cold-route сценарии, затем event invitations/RSVP/transfers и согласованная delegation интеграция. Registered/external snapshots проверены в REPORT-OFFLINE-PROGRAM.md; полный WP00-WP16 сохранён.
+
+Проверенный checkpoint: external team receipt (не завершение WP03).
+- [x] Atomic explicit current-link pointer при выдаче; миграция без выдуманной исторической очередности.
+- [x] Team summary exact current link/deal/version/digest, anonymous source label/history, no old-link green fallback.
+- [x] Actual DB119/frontend71, full1219/1483 no skipped/types/lint/build/contracts, migration14 и Chromium externalteam2:17checks/eight regions+viewport320 reviewed — REPORT-EXTERNAL-TEAM-ACK.md.
+- [x] Reports/maps/business/JOURNAL/ERRORS/handoff/scoped gates status/approve ALL MET5; CRLF diff check exit0. Не весь WP03.
+Текущий checkpoint: full legacy external cabinet/chat rights after waits. Параллельная
+аудит-сессия работает изолированно; [границы](wedding-platform-master-plan/COORDINATION-20260930.md), весь исходный объём сохранён.
+- [x] Reproduce legacy cabinet/messages read/write after cancelled deal:3failed/119pass before fix, exact source REPORT-EXTERNAL-LEGACY-ACCESS.md. No fake historical binding.
+- [x] Same-TX actual live access/expiry after waits, atomic refusal/no write/chat/accepted/notification side effects; targeted160pass/41new incl27actualwaits and committed publish/SQLrollback.
+- [x] Fresh full1219front/1524back no skipped/types/lint/build/contracts (actual migration preflight), Chromium externallegacy2:11checks/eightPNG inspected. Docs/maps/errors updated; full failure history retained. Это не весь T007/WP03.
+- [x] Scoped legacy gates status/approve ALL MET4, CRLF diff exit0/handoff updated. Затем full T009 versioned offline/access cleanup и согласованные delegated/event contracts.
+Следующий шаг: полный T009 offline snapshot/access lifecycle, не только unmount;
+затем интеграция company/event contracts с изолированной сессией. Все SC/NFR/WP00–WP16 остаются обязательными.
+
+Текущий этап: external program UI (не завершение WP03).
+- [x] Общий captured-version reader и реальные anonymous API wrappers; без старого timezone-дубля.
+- [x] Отказы/отзыв/офлайн убирают программу и чат; reconnect и смена ссылки требуют нового чтения/checkbox.
+- [x] Targeted56, fresh full init.sh1210frontend/1460backend no skipped и actual Chromium externalui2 UI14/sevenPNG — REPORT-EXTERNAL-PROGRAM-UI.md.
+- [x] Документы/maps/report/handoff и scoped UI gates status/approve ALL MET4; CRLF diff check exit0. Затем current external receipt/history в сводке команды.
+
+- [ ] Реализовать и принять весь объём: [программа и решения](wedding-platform-master-plan/delivery.md). WP03 версии/planning/events foundation/shift/DayX/effects, registered/external acknowledgment/team, legacy server live rights, DayX и contractor offline checkpoints проверены локально. Последний full1328frontend/1526backend no skipped/types/lint/build/contracts; actual Chromium offlineprogram3:15checks — [REPORT-OFFLINE-PROGRAM](фичи/021-тайминг/REPORT-OFFLINE-PROGRAM.md). Далее critical/cold offline/рассадка, delegated actors и event invitees/RSVP/transfers/management. T006/T007/T008/T009/WP03 и весь WP00–WP16 не завершены. Прикладной код не опубликован этой сессией; production не трогать.
 ## Исправления аудита 021 · 2026-09-30
 
 - [x] Убрать раскрытие private/finance_members сумм через slot/pay и legacy-флаг в vendor aggregates; закрепить обе двери и старые строки регрессией.
@@ -11,9 +83,45 @@
 - [x] Прогнать типы, тесты с PostgreSQL, линт, сборки и browser E2E; обновить карты и передачу сессии. После rebase локально: frontend 1097; backend 1275 + 15 Redis-skips. GitHub CI кода `9e05381`: frontend 1097, backend 1290 без пропусков; browser 018 14/14 и 021 5/5, page_errors=[]; Task Planning и Offers 019 — success.
 - [x] Подготовить отдельный [PR #20](https://github.com/bairasbai/tili-tili/pull/20) в main с результатами проверок.
 
-Следующий шаг: ревью и слияние PR #20 ветки `fix/021-payment-privacy-vendor-ui` в main.
+Исторический следующий шаг был review/merge PR20. Fetch2026-10-01 подтвердил
+merge2b77687; обе функциональности объединяются с текущим WP03 checkpoint.
 
 ## Синхронизация и проверка приватности · 2026-09-30
+
+Подэтап T007 legacy vendor updates revocation проверен локально: full1146/1394
+без skipped, девять новых server tests и девять real browser checks. Источник:
+[REPORT-VENDOR-ACCESS](фичи/021-тайминг/REPORT-VENDOR-ACCESS.md). Следующий шаг:
+versioned разрешённый program reader/ack/UI и новое ожидание при редакции;
+legacy «Учтено» не считается FR-038 ознакомлением. Прикладной код не опубликован.
+
+Подэтап T007 versioned server: разрешённая projection по назначениям действующих
+сделок; read proof version/content/user/session, durable history и новый pending
+после редакции. Full1146/1414 на fresh ackfresh DB и migration8 прошли;
+[REPORT-PROGRAM-ACK-HTTP](фичи/021-тайминг/REPORT-PROGRAM-ACK-HTTP.md).
+
+Проверенный checkpoint: registered vendor program UI (не весь T007).
+- [x] Список с cursor pagination и отдельный reader/checkbox/exact-version ack.
+- [x] Captured proof/ETag, stale/refusal/expiry, network retry, RU/EN и offline unmount.
+- [x] Actual browser programui2:14 checks, zero page_errors, desktop/mobile screenshots reviewed.
+- [x] Full init.sh на fresh programuifinal DB:1168frontend/1414backend, no skipped,
+  types/lint/build/contracts passed — [REPORT-PROGRAM-UI](фичи/021-тайминг/REPORT-PROGRAM-UI.md).
+- [x] Итоговые журналы/handoff и scoped gates: server6/UI4 ALL MET10,
+  не весь T007/WP03. CRLF-aware diff --check exit0. Локальный preview3000/3001
+  на disposable programui2 DB, healthok/UI200; production/GitHub не трогались.
+Следующий шаг после приёмки подэтапа: обратная видимость ознакомления паре/команде,
+external/delegated actors, полный T009 offline lifecycle и прочие задачи WP03.
+Код не опубликован; весь WP00–WP16, сценарии, release gates и feature delivery обязательны.
+
+Проверенный checkpoint T007: сводка ознакомления пары/helper/coordinator.
+- [x] Общая разрешённая projection/digest, current owner/version/content status и actual actor/time.
+- [x] API права/live after-lock checks, external unsupported/unavailable/unassigned, история без ложного current ack:68subsetpassed,18new DB/API cases.
+- [x] UI coherent с показанной timeline version, RU/EN/refusal/network/refresh:62subsetpassed,17summary+2vendor403 new cases.
+- [x] Real DB/API tests68, actual browser teamack2 16checks vendor->team->edit->pending, full1187/1432 no skipped/types/lint/build/contracts; six region screenshots and viewport320 reviewed. REPORT-TEAM-ACK.md, full feature remains open.
+- [x] Scoped team ledger status/approve ALL MET5; CRLF diff check exit0, handoff updated. Preview isolated teamack2 DB healthok/UI200, actual listener commands inspected. Только этот этап, не весь T007/WP03.
+- [x] T007 external server stage: новая bound ссылка/assigned-only reader/read proof/exact-version ack/history/retry/live afterwait. Historical binding не выдумана. Legacy global timeline/who bypass закрыт и reproduced; actual issuance time/live owner checks.
+- [x] Full1187frontend/1460backend no skipped/types/lint/build/contracts на fresh externalverifyPG+Redis13;28new DB/API cases, migration13 и actual Chromium/HTTP8checks/twoPNG reviewed. Failed Redis suite/isolated10pass recorded, historical cause not confirmed — [REPORT-EXTERNAL-PROGRAM-HTTP](фичи/021-тайминг/REPORT-EXTERNAL-PROGRAM-HTTP.md).
+- [x] External server scoped ledger status/approve ALL MET5, CRLF diff check exit0, docs/handoff/preview checked. External UI/team/delegated/T007/WP03 не приняты целиком.
+- [x] Current external team summary проверен локально (REPORT-EXTERNAL-TEAM-ACK.md). Delegated actors/full legacy/offline/events и все WP остаются обязательными. Этот этап не заменяет полный внешний сценарий.
 
 - [x] Сверить локальную историю с GitHub: `git fetch origin --prune`, `git rev-list --left-right --count HEAD...origin/main` до обновления дали `0 189`.
 - [x] Сохранить прежний HEAD в `backup/local-main-before-sync-20260930`; обновить `main` через `git merge --ff-only origin/main` до `cdd2f2f6bed9dec02472b566fc12f27ddcaf97f8`.

@@ -3,10 +3,7 @@ import { AppError } from '../errors.js'
 import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { notifyWedding } from '../notify/notify.js'
-import { noteVendorUpdate } from '../vendor/updates.js'
-
-/** Насколько можно двигать день за один раз. Больше — это уже не «отстаём». */
-const MAX_SHIFT_MINUTES = 240
+import { timelineShiftRoutes } from '../timeline/routes.js'
 
 /** Сценарии плана Б из §13.1: то, что в моках переключается кнопкой. */
 const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
@@ -40,99 +37,7 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
 
-  /* ── сдвиг тайминга ───────────────────────────────────────────────── */
-  app.post(
-    '/weddings/:weddingId/timeline/shift',
-    {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['minutes'],
-          additionalProperties: false,
-          properties: { minutes: { type: 'integer', minimum: -MAX_SHIFT_MINUTES, maximum: MAX_SHIFT_MINUTES } },
-        },
-      },
-    },
-    async (request, reply) => {
-      const weddingId = request.member!.weddingId
-      const { minutes } = request.body as { minutes: number }
-      // 422, а не 409: контракт не обещает конфликта, а «ноль минут» —
-      // это неверное значение, а не столкновение с чужим действием.
-      if (minutes === 0) {
-        throw new AppError(422, 'empty_shift', 'Сдвиг на ноль минут ничего не меняет', { minutes: 'не может быть 0' })
-      }
-
-      return withIdempotency(db(), request, reply, 'timeline-shift', async (tx) => {
-        /* Ответ — из транзакции действия: туда же ложится и запись
-         * идемпотентности (D2-13). Рассылка — после: она не часть ответа. */
-        const result = await tx(async (client) => {
-          /* Двигаются блоки, которые ЕЩЁ НЕ НАЧАЛИСЬ. Прошедшие не трогаем:
-           * церемония, которая уже прошла, не сдвинется от того, что банкет
-           * задержался, а в расписании поедет всё. */
-          const { rows: moved } = await client.query<{ id: string }>(
-            `update timeline_events
-                set starts_at = starts_at + make_interval(mins => $2),
-                    ends_at = ends_at + make_interval(mins => $2)
-              where wedding_id = $1 and starts_at is not null and starts_at > now()
-              returning id`,
-            [weddingId, minutes],
-          )
-          /* Двигать нечего — и объявлять нечего: сдвиг после последнего блока
-           * (или без тайминга) писал журнал, заметку подрядчикам и слал
-           * критический push всей команде мимо тихих часов ни о чём (ревью
-           * 015). Ответ честный — `shiftedBlocks: 0`, рассылки ниже нет. */
-          if (moved.length === 0) return { status: 200, body: { minutes, shiftedBlocks: 0, guestsAffected: 0 } }
-          await client.query('insert into timeline_shifts (id, wedding_id, minutes, actor_id) values ($1,$2,$3,$4)', [
-            uuidv7(),
-            weddingId,
-            minutes,
-            request.caller!.userId,
-          ])
-          // Факт рассылки — в общий журнал: он же считает получателей
-          // и держит дебаунс на массовых действиях (этап 5).
-          const { rows: guests } = await client.query<{ n: string }>(
-            "select count(*)::text as n from guests where wedding_id = $1 and rsvp = 'yes'",
-            [weddingId],
-          )
-          await client.query(
-            'insert into broadcasts (id, wedding_id, action, recipients) values ($1,$2,$3,$4)',
-            [uuidv7(), weddingId, 'timeline-shift', Number(guests[0]!.n)],
-          )
-          await noteVendorUpdate(
-            client,
-            weddingId,
-            'timeline',
-            `Тайминг сдвинут на ${minutes > 0 ? '+' : ''}${minutes} мин`,
-          )
-          /* Кого сдвиг КАСАЕТСЯ — `guestsAffected`, то же число, что
-           * `recipients` в журнале рассылок: команда сообщает им сама. */
-          return { status: 200, body: { minutes, shiftedBlocks: moved.length, guestsAffected: Number(guests[0]!.n) } }
-        })
-
-        // Ничего не сдвинулось — рассылки нет (см. выше).
-        if (result.body.shiftedBlocks === 0) return result
-        /* День X критичен: тихие часы его не держат — гости уже в дороге.
-         * Подрядчикам тоже: §13.2 требует, чтобы `timeline.shifted` доходил
-         * до забронированных, иначе ведущий приедет к прежнему времени. */
-        await notifyWedding(
-          db(),
-          weddingId,
-          request.caller!.userId,
-          {
-            kind: 'system',
-            title: 'Тайминг сдвинут',
-            body: `День X сдвинут на ${minutes > 0 ? '+' : ''}${minutes} мин`,
-            link: '/dayx',
-            critical: true,
-          },
-          new Date(),
-          true,
-        )
-
-        return result
-      })
-    },
-  )
+  await timelineShiftRoutes(app)
 
   /* ── план Б ───────────────────────────────────────────────────────── */
   /**

@@ -291,10 +291,11 @@ describe('D3-03 рассадка считает людей, а не записи
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-  it('гость с +1 занимает два места: «2/2», второго не сажает', async () => {
+  it('два явных человека семьи занимают два места: «2/2», третьего не сажает', async () => {
     const calls = serve(base({
       '/weddings/w1/guests': [
-        { id: 'g1', name: 'Ольга и Денис', status: 'yes', plusOne: true, tableId: 'tb1' },
+        { id: 'g1', name: 'Ольга', status: 'yes', plusOne: true, tableId: 'tb1', partyId: 'p1', partySize: 2, partyPosition: 1 },
+        { id: 'g3', name: 'Денис', status: 'yes', plusOne: false, tableId: 'tb1', partyId: 'p1', partySize: 2, partyPosition: 2 },
         { id: 'g2', name: 'Пётр', status: 'yes', plusOne: false, tableId: null },
       ],
       '/weddings/w1/tables': [{ id: 'tb1', name: 'Стол №1', capacity: 2 }],

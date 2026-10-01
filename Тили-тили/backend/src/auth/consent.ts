@@ -23,7 +23,13 @@ export type ConsentState = 'current' | 'outdated' | 'none'
  * «согласился, но под старой редакцией» (`consent_outdated`) — эти два
  * состояния ведут к разным экранам на фронте.
  */
-export async function consentState(db: Queryable, userId: string, policyVersion: string): Promise<ConsentState> {
+export async function consentState(
+  db: Queryable, userId: string, policyVersion: string, options: { lock?: boolean } = {},
+): Promise<ConsentState> {
+  if (options.lock) {
+    // Transactional access keeps accepted consent stable through later resource waits.
+    await db.query('select id from consents where user_id=$1 and withdrawn_at is null order by id for share', [userId])
+  }
   const { rows } = await db.query<{ current: boolean; any: boolean }>(
     `select
        exists (select 1 from consents where user_id = $1 and withdrawn_at is null and policy_version = $2) as current,

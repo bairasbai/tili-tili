@@ -18,7 +18,7 @@ describe('service worker не кэширует ответы API', () => {
     const fetchHandler = sw.slice(sw.indexOf("addEventListener('fetch'"))
     expect(fetchHandler.length, 'обработчик fetch не найден').toBeGreaterThan(0)
     const guard = fetchHandler.indexOf("pathname.startsWith('/api/')")
-    const cache = fetchHandler.indexOf('caches.match(request)')
+    const cache = fetchHandler.indexOf('c.match(request)')
     expect(guard, 'нет исключения для /api/').toBeGreaterThan(0)
     expect(guard, 'исключение стоит после обращения к кэшу').toBeLessThan(cache)
   })
@@ -97,18 +97,19 @@ describe('service worker кэширует только сборку и обол�
   it('до кэша доходит только статика: проверка стоит перед caches.match', () => {
     const f = handler(projectFile(SW), 'fetch')
     const guard = f.indexOf('isStaticAsset(request)')
-    const cache = f.indexOf('caches.match(request)')
+    const cache = f.indexOf('c.match(request)')
     expect(guard, 'в обработчике fetch нет проверки на статику').toBeGreaterThan(0)
     expect(cache, 'обращения к кэшу нет вовсе').toBeGreaterThan(0)
     expect(guard, 'кэш опрашивается до проверки на статику').toBeLessThan(cache)
     /* Ровно одна ветка с кэшем: вторая — это вторая дыра. */
-    expect(f.split('caches.match(request)').length - 1, 'кэш опрашивается в нескольких ветках').toBe(1)
+    expect(f.split('c.match(request)').length - 1, 'кэш опрашивается в нескольких ветках').toBe(1)
+    expect(f).not.toContain('caches.match(')
   })
 
   it('офлайн-оболочка на месте: навигация отвечает страницей из кэша', () => {
     const f = handler(projectFile(SW), 'fetch')
     expect(f).toContain("request.mode === 'navigate'")
-    expect(f).toContain('caches.match(OFFLINE_PAGE)')
+    expect(f).toContain('caches.open(CACHE).then(c => c.match(OFFLINE_PAGE))')
     /* Навигация разбирается раньше правила статики — иначе прямая ссылка
        офлайн упирается в «не статика, идём в сеть» и получает пустоту. */
     expect(f.indexOf("request.mode === 'navigate'")).toBeLessThan(f.indexOf('isStaticAsset(request)'))
@@ -116,7 +117,7 @@ describe('service worker кэширует только сборку и обол�
 
   it('версия кэша поднята, а старые версии чистит activate', () => {
     const src = projectFile(SW)
-    const version = src.match(/CACHE = 'tilitili-v(\d+)'/)
+    const version = src.match(/CACHE_VERSION = 'v(\d+)'/)
     expect(version, 'версия кэша не найдена').not.toBeNull()
     /* Правило кэширования изменилось (фича 014): без новой версии в кэше
        остаются записи, положенные туда старым правилом, и чистить их нечем. */
@@ -124,6 +125,7 @@ describe('service worker кэширует только сборку и обол�
     const a = handler(src, 'activate')
     expect(a).toContain('caches.keys()')
     expect(a, 'activate не отбирает чужие версии').toContain('k !== CACHE')
+    expect(a).toContain('k.startsWith(CACHE_PREFIX)')
     expect(a, 'activate не удаляет старые кэши').toContain('caches.delete')
   })
 })

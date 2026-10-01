@@ -494,7 +494,7 @@ describe.skipIf(!live)('этап 5: гости, RSVP, рассадка, логи
     const replaced = await app.inject({
       method: 'PUT',
       url: `/weddings/${w.weddingId}/timeline`,
-      headers: auth(w.token),
+      headers: { ...auth(w.token), 'if-match': before.headers.etag! },
       payload: [
         { name: 'Сборы', startsAt: '2027-06-14T05:00:00Z', endsAt: '2027-06-14T09:00:00Z' },
         { name: 'Церемония', startsAt: '2027-06-14T08:00:00Z', endsAt: '2027-06-14T09:00:00Z', outdoor: true },

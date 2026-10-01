@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.52.1).
- * Операций: 199. Путей: 151. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.62.1).
+ * Операций: 210. Путей: 160. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -60,6 +60,8 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/guest-vendor/{token}","url":"/guest-vendor/:token","operationId":null,"summary":"Кабинет гостя-подрядчика","tag":"bookings"},
   {"method":"GET","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Переписка своего подрядчика с парой","tag":"bookings"},
   {"method":"POST","openapi":"/guest-vendor/{token}/messages","url":"/guest-vendor/:token/messages","operationId":null,"summary":"Написать паре","tag":"bookings"},
+  {"method":"GET","openapi":"/guest-vendor/{token}/timeline","url":"/guest-vendor/:token/timeline","operationId":null,"summary":"Разрешённая программа внешнего исполнителя по ссылке","tag":"bookings"},
+  {"method":"POST","openapi":"/guest-vendor/{token}/timeline/ack","url":"/guest-vendor/:token/timeline/ack","operationId":null,"summary":"Подтверждение точного снимка по ссылке внешнего исполнителя","tag":"bookings"},
   {"method":"GET","openapi":"/health","url":"/health","operationId":null,"summary":"Жив ли процесс","tag":"health"},
   {"method":"GET","openapi":"/health/ready","url":"/health/ready","operationId":null,"summary":"Готов ли принимать трафик","tag":"health"},
   {"method":"GET","openapi":"/inspiration/likes","url":"/inspiration/likes","operationId":null,"summary":"Избранные истории","tag":"catalog"},
@@ -116,12 +118,15 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/vendor/profile","url":"/vendor/profile","operationId":null,"summary":"Моя анкета подрядчика","tag":"vendor"},
   {"method":"PUT","openapi":"/vendor/profile","url":"/vendor/profile","operationId":null,"summary":"Создать/обновить анкету (мастер: категория → пакеты → город → публикация)","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/profile/publish","url":"/vendor/profile/publish","operationId":null,"summary":"Опубликовать анкету (модерация → live)","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/programs","url":"/vendor/programs","operationId":null,"summary":"Программы моих действующих заказов","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/reviews","url":"/vendor/reviews","operationId":null,"summary":"Отзывы на меня","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/reviews/{reviewId}/reply","url":"/vendor/reviews/:reviewId/reply","operationId":null,"summary":"Ответить на отзыв","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/updates","url":"/vendor/updates","operationId":null,"summary":"Обновления от пар","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/updates/{updateId}/ack","url":"/vendor/updates/:updateId/ack","operationId":null,"summary":"Подтвердить получение обновления","tag":"vendor"},
   {"method":"GET","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Состояние моей заявки на верификацию","tag":"vendor"},
   {"method":"POST","openapi":"/vendor/verification","url":"/vendor/verification","operationId":null,"summary":"Подать документы на верификацию","tag":"vendor"},
+  {"method":"GET","openapi":"/vendor/weddings/{weddingId}/timeline","url":"/vendor/weddings/:weddingId/timeline","operationId":null,"summary":"Разрешённый снимок программы для ознакомления","tag":"vendor"},
+  {"method":"POST","openapi":"/vendor/weddings/{weddingId}/timeline/ack","url":"/vendor/weddings/:weddingId/timeline/ack","operationId":null,"summary":"Подтвердить ознакомление с точным снимком программы","tag":"vendor"},
   {"method":"GET","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Мои свадьбы","tag":"weddings"},
   {"method":"POST","openapi":"/weddings","url":"/weddings","operationId":null,"summary":"Создать свадьбу (после квиза)","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}","url":"/weddings/:weddingId","operationId":null,"summary":"Карточка свадьбы (данные для Home)","tag":"weddings"},
@@ -139,6 +144,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/weddings/{weddingId}/budget/settings","url":"/weddings/:weddingId/budget/settings","operationId":null,"summary":"Изменить резерв бюджета","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/cancel","url":"/weddings/:weddingId/cancel","operationId":null,"summary":"Отменить свадьбу","tag":"weddings"},
   {"method":"GET","openapi":"/weddings/{weddingId}/documents","url":"/weddings/:weddingId/documents","operationId":null,"summary":"Договоры свадьбы","tag":"documents"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Мероприятия своей свадьбы","tag":"timeline"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/events","url":"/weddings/:weddingId/events","operationId":null,"summary":"Добавить мероприятие","tag":"timeline"},
+  {"method":"DELETE","openapi":"/weddings/{weddingId}/events/{eventId}","url":"/weddings/:weddingId/events/:eventId","operationId":null,"summary":"Удалить пустое мероприятие","tag":"timeline"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/events/{eventId}","url":"/weddings/:weddingId/events/:eventId","operationId":null,"summary":"Изменить мероприятие","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/funds","url":"/weddings/:weddingId/funds","operationId":null,"summary":"Завести денежный фонд","tag":"wishlist"},
   {"method":"DELETE","openapi":"/weddings/{weddingId}/funds/{fundId}","url":"/weddings/:weddingId/funds/:fundId","operationId":null,"summary":"Удалить фонд","tag":"wishlist"},
   {"method":"GET","openapi":"/weddings/{weddingId}/guest-reviews","url":"/weddings/:weddingId/guest-reviews","operationId":null,"summary":"Отзывы гостей о подрядчиках (для пары)","tag":"reviews"},
@@ -207,8 +216,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"PATCH","openapi":"/weddings/{weddingId}/tasks/{taskId}","url":"/weddings/:weddingId/tasks/:taskId","operationId":null,"summary":"Отметить/изменить задачу","tag":"tasks"},
   {"method":"GET","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Тайминг дня","tag":"timeline"},
   {"method":"PUT","openapi":"/weddings/{weddingId}/timeline","url":"/weddings/:weddingId/timeline","operationId":null,"summary":"Заменить тайминг целиком","tag":"timeline"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/timeline/acknowledgments","url":"/weddings/:weddingId/timeline/acknowledgments","operationId":null,"summary":"Сводка ознакомления исполнителей для пары и команды","tag":"timeline"},
   {"method":"POST","openapi":"/weddings/{weddingId}/timeline/autogen","url":"/weddings/:weddingId/timeline/autogen","operationId":null,"summary":"Автоплан дня по забронированной команде","tag":"timeline"},
-  {"method":"POST","openapi":"/weddings/{weddingId}/timeline/shift","url":"/weddings/:weddingId/timeline/shift","operationId":null,"summary":"Сдвинуть день X на N минут","tag":"timeline"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/timeline/shift","url":"/weddings/:weddingId/timeline/shift","operationId":null,"summary":"Подтвердить точный предпросмотр сдвига","tag":"timeline"},
+  {"method":"POST","openapi":"/weddings/{weddingId}/timeline/shift/preview","url":"/weddings/:weddingId/timeline/shift/preview","operationId":null,"summary":"Предпросмотр сдвига выбранного дня или мероприятия","tag":"timeline"},
   {"method":"GET","openapi":"/weddings/{weddingId}/tips","url":"/weddings/:weddingId/tips","operationId":null,"summary":"Подсказки Тиля по правилам (Бизнес-логика §3.14)","tag":"wedding"},
   {"method":"GET","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Список желаний пары","tag":"wishlist"},
   {"method":"POST","openapi":"/weddings/{weddingId}/wishlist","url":"/weddings/:weddingId/wishlist","operationId":null,"summary":"Добавить желание","tag":"wishlist"},

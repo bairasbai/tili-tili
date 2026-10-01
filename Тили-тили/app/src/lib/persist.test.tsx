@@ -49,7 +49,7 @@ const { profile, profilePatches, endedSessions, notifications, readNotifications
   endedSessions: [] as string[],
   notifications: [] as Record<string, unknown>[],
   readNotifications: [] as string[],
-  shifts: [] as { weddingId: string; minutes: number }[],
+  shifts: [] as { weddingId: string; previewToken: string; version: string; key: string }[],
   planbActivations: [] as string[],
 }))
 
@@ -90,7 +90,11 @@ vi.mock('@/lib/api/notifications', async (orig) => ({
 
 vi.mock('@/lib/api/weddingWrite', async (orig) => ({
   ...await orig<object>(),
-  shiftTimeline: async (weddingId: string, minutes: number) => { shifts.push({ weddingId, minutes }) },
+  previewTimelineShift: async () => ({ data: (await import('@/test/timelineShiftFixture')).shiftPreviewFixture(), etag: '"1"' }),
+  shiftTimeline: async (weddingId: string, previewToken: string, version: string, key: string) => {
+    shifts.push({ weddingId, previewToken, version, key })
+    return { data: { minutes: 15, shiftedBlocks: 1, guestsAffected: 0 }, etag: '"2"' }
+  },
   activatePlanB: async (_w: string, scenario = 'rain') => { planbActivations.push(scenario) },
 }))
 
@@ -98,7 +102,13 @@ vi.mock('@/lib/api/weddingWrite', async (orig) => ({
 vi.mock('@/lib/api/weddingData', async (orig) => ({
   ...await orig<object>(),
   ...(await import('@/test/slotsMock')).slotsRead,
-  getWedding: async () => ({ id: 'w1', title: 'Алина & Тимур', date: '2027-06-14', city: { name: 'Уфа' } }),
+  getWedding: async () => ({ id: 'w1', title: 'Алина & Тимур', date: '2027-06-14', tz: 'Asia/Yekaterinburg', city: { name: 'Уфа' } }),
+  getWeddingEvents: async () => [],
+  getWeddingEventsSnapshot: async () => ({ data: [], etag: '"1"', headers: new Headers() }),
+  getTimelineSnapshot: async () => ({ data: [
+    { id: 'e1', name: 'Сбор гостей', startsAt: '2027-06-14T12:00:00Z', location: 'Усадьба' },
+    { id: 'e2', name: 'Церемония', startsAt: '2027-06-14T15:00:00Z', location: 'Сад' },
+  ], etag: '"1"', headers: new Headers() }),
   getTimeline: async () => [
     { id: 'e1', name: 'Сбор гостей', startsAt: '2027-06-14T12:00:00Z', location: 'Усадьба' },
     { id: 'e2', name: 'Церемония', startsAt: '2027-06-14T15:00:00Z', location: 'Сад' },
@@ -300,7 +310,7 @@ describe('уведомления: «прочитано» уходит на се�
 })
 
 describe('день X: сдвиг программы уходит команде, а не в браузер пары', () => {
-  const shiftButton = () => screen.getByText('+15 мин всей программе').closest('button')!
+  const shiftButton = () => screen.getByRole('button', { name: 'Сдвиг тайминга' }) as HTMLButtonElement
 
   it('«+15 мин всей программе» уходит запросом и не оседает локально', async () => {
     authorize()
@@ -310,7 +320,11 @@ describe('день X: сдвиг программы уходит команде,
     await waitFor(() => expect(shiftButton().disabled).toBe(false))
 
     fireEvent.click(shiftButton())
-    await waitFor(() => expect(shifts).toEqual([{ weddingId: 'w1', minutes: 15 }]))
+    fireEvent.click(screen.getByRole('button', { name: 'Предпросмотр сдвига' }))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Подтвердить сдвиг' }) as HTMLButtonElement).disabled).toBe(false))
+    expect(shifts).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить сдвиг' }))
+    await waitFor(() => expect(shifts).toEqual([{ weddingId: 'w1', previewToken: 'signed-preview-fixture', version: '"1"', key: expect.any(String) }]))
     /* Ключа `tt_dayx` больше нет: пара видела в нём накопленную задержку,
        а команда и гости о ней не знали. */
     expect(localStorage.getItem('tt_dayx')).toBeNull()

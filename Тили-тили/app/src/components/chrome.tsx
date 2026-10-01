@@ -20,7 +20,7 @@ import type { ShortlistEntry } from '@/lib/api/shortlist'
  * По умолчанию это главная, но внутри раздела она уводит вон из него: с детали
  * анкеты в панели человек ждёт возврата в очередь, а не выхода на «Главную».
  */
-export function TopBar({ title, sub, back, right, fallback }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; fallback?: string }) {
+export function TopBar({ title, sub, back, right, fallback, wrapTitle = false }: { title: string; sub?: string; back?: boolean; right?: React.ReactNode; fallback?: string; wrapTitle?: boolean }) {
   const nav = useNavigate()
   const back2 = () => goBack(n => nav(n), (to, o) => nav(to, o), fallback)
   return (
@@ -32,7 +32,7 @@ export function TopBar({ title, sub, back, right, fallback }: { title: string; s
           </button>
         )}
         <div className="min-w-0">
-          <h1 className="font-serif-d text-[26px] leading-tight truncate">{title}</h1>
+          <h1 className={cn('font-serif-d text-[26px] leading-tight', wrapTitle ? 'break-words' : 'truncate')}>{title}</h1>
           {sub && <p className="text-[12px] text-[var(--soft)] mt-0.5">{sub}</p>}
         </div>
       </div>
@@ -320,7 +320,7 @@ export function Bar({ pct, color }: { pct: number; color?: string }) {
   )
 }
 
-/* Баннер офлайна: приложение работает без сети, данные сохранятся */
+/* Connection status occupies real layout space; it must not cover page controls. */
 export function OfflineBanner() {
   const [online, setOnline] = useState(() => navigator.onLine)
   /* Сеть и сервер — разные поломки: при живом Wi-Fi и лежащем бэкенде
@@ -335,15 +335,12 @@ export function OfflineBanner() {
   }, [])
   if (online && server !== 'down') return null
   return (
-    <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-50 px-5 pt-2">
+    <div role="status" data-testid="connection-status" className="relative mx-auto w-full max-w-[430px] z-50 px-5 pt-2">
       <div className="rounded-2xl bg-[var(--ink)] text-[var(--bg)] text-[11.5px] font-semibold px-4 py-2.5 text-center" style={{ boxShadow: 'var(--shadow-lift)' }}>
-        {/* Обещание «всё сохранится на устройстве» устарело вместе с моками:
-            свадьба, бюджет, гости и переписка живут на сервере, и без него
-            ни показать, ни сохранить нечего. Обещать обратное — врать в самый
-            неудобный момент. */}
+        {/* A saved DayX snapshot is read-only, not an offline write queue. */}
         {online
-          ? t('Сервер не отвечает — данные не загружаются. Мы уже чиним')
-          : t('Нет сети — данные не загружаются и не сохраняются')}
+          ? t('Сервер не отвечает — актуальность данных не проверена')
+          : t('Нет сети — новые данные недоступны')}
       </div>
     </div>
   )

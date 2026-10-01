@@ -5,7 +5,7 @@ import { OPEN_BOOKINGS } from '../deals/state.js'
 import { holdVendorDate } from '../deals/repo.js'
 import { notifyWedding } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
-import { timelineTemplate, type WeddingFormat } from './templates.js'
+import { setTimelineActor } from '../timeline/version.js'
 
 /**
  * Перенос свадьбы на другую дату — со всем, что от даты зависит.
@@ -37,8 +37,8 @@ export async function rescheduleWedding(
    * старую дату, и второй сдвигал сроки задач и тайминг на свою разницу
    * ПОВЕРХ уже сделанного первого — итог не совпадал ни с одной из дат
    * (D2-08, R-187). Второй теперь ждёт первого и считает разницу от его даты. */
-  const { rows: w } = await client.query<{ date: string | null; tz: string | null; format: WeddingFormat | null }>(
-    'select date::text as date, tz, format from weddings where id = $1 for update',
+  const { rows: w } = await client.query<{ date: string | null; tz: string | null }>(
+    'select date::text as date, tz from weddings where id = $1 for update',
     [weddingId],
   )
   const oldDate = w[0]?.date ?? null
@@ -46,6 +46,7 @@ export async function rescheduleWedding(
      превращаются в 13:00 у пары в Уфе. */
   const tz = w[0]?.tz ?? 'Europe/Moscow'
   if (oldDate === date) return { free: [], busy: [] }
+  await setTimelineActor(client, actorId)
 
   // In the same transaction: a later team_busy refusal also rolls this back.
   await closeWeddingOfferRequests(client, weddingId, tz, 'date_changed')
@@ -170,19 +171,18 @@ export async function rescheduleWedding(
         where wedding_id = $1 and due is null and due_mode = 'relative' and period ~ '^[0-9]+$'`,
       [weddingId, date],
     )
-    // Время шаблона местное для площадки: пояс берём у свадьбы. Шаблон — по
-    // формату, как при создании (фича 018): у «Классики» под `sort` 3 —
-    // ЗАГС в 14:00, а не выездная церемония в 16:00; второй день двухдневной
-    // свадьбы — на следующее число.
-    for (const e of timelineTemplate(w[0]?.format ?? null)) {
-      await client.query(
-        `update timeline_events
-            set starts_at = (($2::date + $7::int) + $3::time) at time zone $5,
-                ends_at = (($2::date + $7::int) + $4::time) at time zone $5
-          where wedding_id = $1 and sort = $6 and starts_at is null`,
-        [weddingId, date, e.startsAt, e.endsAt, tz, e.sort, e.dayOffset ?? 0],
-      )
-    }
+    // Origin belongs to the persistent block, not its current list position.
+    // Unknown historical/custom origins and unknown durations stay unknown.
+    await client.query(
+      `update timeline_events
+          set starts_at = (($2::date + template_day_offset) + template_start) at time zone $3,
+              ends_at = case when duration_minutes is null then null
+                else ((($2::date + template_day_offset) + template_start) at time zone $3)
+                  + make_interval(secs => duration_minutes*60) end
+        where wedding_id=$1 and starts_at is null and not fixed and template_start is not null
+          and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main)`,
+      [weddingId, date, tz],
+    )
   }
   if (oldDate) {
     await client.query(
@@ -195,7 +195,8 @@ export async function rescheduleWedding(
       `update timeline_events
           set starts_at = starts_at + make_interval(days => ($2::date - $3::date)),
               ends_at = ends_at + make_interval(days => ($2::date - $3::date))
-        where wedding_id = $1`,
+        where wedding_id = $1 and not fixed
+          and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main)`,
       [weddingId, date, oldDate],
     )
   }
@@ -208,7 +209,7 @@ export async function rescheduleWedding(
    * (§13.2); команде и подрядчикам — уведомление мимо тихих часов: дата
    * свадьбы — из тех новостей, которые не ждут утра (§18.6). */
   const human = date.split('-').reverse().join('.')
-  await noteVendorUpdate(client, weddingId, 'timeline', `Свадьба перенесена на ${human}: тайминг сдвинут на новый день`)
+  await noteVendorUpdate(client, weddingId, 'timeline', `Свадьба перенесена на ${human}: тайминг обновлён; фиксированные блоки не сдвинуты`)
   await notifyWedding(
     client,
     weddingId,
@@ -216,7 +217,7 @@ export async function rescheduleWedding(
     {
       kind: 'system',
       title: 'Дата свадьбы изменена',
-      body: `Теперь свадьба ${human}. Сроки задач и тайминг сдвинуты.`,
+      body: `Теперь свадьба ${human}. Сроки задач и тайминг обновлены; фиксированные блоки не сдвинуты.`,
       link: '/wedding',
       critical: true,
     },

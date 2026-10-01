@@ -40,6 +40,7 @@ import { Catering, Logistics } from '@/pages/Logistics'
 import { DayX } from '@/pages/Smart'
 import { VendorDashboard, VendorDeals, VendorProfileWizard } from '@/pages/VendorApp'
 import { Auth, Settings } from '@/pages/Account'
+import { shiftPreviewFixture } from '@/test/timelineShiftFixture'
 
 /* Живой канал чата подменяется, как в audit27: настоящий WebSocket в jsdom
    тянулся бы к серверу и переподключался по таймеру. Остальное — настоящее. */
@@ -159,6 +160,8 @@ describe('T6: после «+15 мин» и плана Б экран называ
   const dayx = (over: Routes) => base({
     '/weddings/w1/timeline': [CEREMONY],
     '/weddings/w1/planb': { checklist: [], activatedAt: null },
+    '/weddings/w1/events': [],
+    '/weddings/w1/timeline/shift/preview': { __status: 200, body: shiftPreviewFixture(), headers: { etag: '"1"' } },
     ...over,
   })
 
@@ -166,11 +169,14 @@ describe('T6: после «+15 мин» и плана Б экран называ
     serve(dayx({ '/weddings/w1/timeline/shift': { minutes: 15, shiftedBlocks: 1, guestsAffected: 15, notifiedGuests: 0 } }))
     const r = renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
     await waitFor(() => expect(text(r)).toContain('Церемония'), { timeout: 4000 })
-    await waitFor(() => expect(disabled('+15 мин всей программе')).toBe(false))
-    fireEvent.click(button('+15 мин всей программе'))
+    await waitFor(() => expect(disabled('Сдвиг тайминга')).toBe(false))
+    fireEvent.click(button('Сдвиг тайминга'))
+    fireEvent.click(button('Предпросмотр сдвига'))
+    await waitFor(() => expect(disabled('Подтвердить сдвиг')).toBe(false))
+    fireEvent.click(button('Подтвердить сдвиг'))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('касается гостей: 15'), { timeout: 4000 })
     expect(screen.getByRole('status').textContent).toContain('сообщите им сами')
-    expect(text(r), 'ноль из устаревшего notifiedGuests попал на экран').not.toContain('гостей: 0')
+    expect(screen.getByRole('dialog').textContent, 'ноль из устаревшего notifiedGuests попал на экран').not.toContain('гостей: 0')
   })
 
   it('план Б: ответ с guestsAffected: 3 → строка про трёх гостей', async () => {
@@ -187,12 +193,15 @@ describe('T6: после «+15 мин» и плана Б экран называ
     serve(dayx({ '/weddings/w1/timeline/shift': { minutes: 15, shiftedBlocks: 1, notifiedGuests: 0 } }))
     const r = renderAt('/dayx', <Route path="/dayx" element={<DayX />} />)
     await waitFor(() => expect(text(r)).toContain('Церемония'), { timeout: 4000 })
-    await waitFor(() => expect(disabled('+15 мин всей программе')).toBe(false))
-    fireEvent.click(button('+15 мин всей программе'))
+    await waitFor(() => expect(disabled('Сдвиг тайминга')).toBe(false))
+    fireEvent.click(button('Сдвиг тайминга'))
+    fireEvent.click(button('Предпросмотр сдвига'))
+    await waitFor(() => expect(disabled('Подтвердить сдвиг')).toBe(false))
+    fireEvent.click(button('Подтвердить сдвиг'))
     await waitFor(() => expect(screen.queryByText('Двигаем…')).toBeNull(), { timeout: 4000 })
     await settle()
     expect(screen.queryByRole('status')).toBeNull()
-    expect(text(r)).not.toContain('касается гостей')
+    expect(screen.getByRole('dialog').textContent).not.toContain('undefined')
   })
 })
 

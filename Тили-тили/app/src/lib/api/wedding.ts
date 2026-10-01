@@ -1,4 +1,6 @@
-import { api, isAuthorized, newIdempotencyKey, url } from './client'
+import { accessTokenForWs, api, isAuthorized, newIdempotencyKey, url } from './client'
+import { forgetOfflineDay, forgetOfflinePrograms, forgetOfflineSeating, offlineScope, sameOfflineScope } from '../offlineAccess'
+import { reconcileOfflineSeating } from '../offlineSeating'
 import type { components, paths } from './schema'
 
 /*
@@ -91,7 +93,10 @@ export type MyWedding = NonNullable<
  */
 export async function listMyWeddings(): Promise<MyWedding[]> {
   if (!isAuthorized()) return []
-  return (await api.get('/weddings')) ?? []
+  const scope = offlineScope(accessTokenForWs())
+  const list = (await api.get('/weddings')) ?? []
+  if (sameOfflineScope(scope, offlineScope(accessTokenForWs()))) reconcileOfflineSeating(list, scope)
+  return list
 }
 
 /**
@@ -120,8 +125,15 @@ export function pickMyWedding(list: MyWedding[]): string | null {
  * (`cancelled`). Клиент не решает, какой из двух случаев наступил, — он
  * показывает то, что ответил сервер.
  */
-export const cancelWedding = (weddingId: string) =>
-  api.post(url('/weddings/{weddingId}/cancel', { weddingId }), {})
+export const cancelWedding = async (weddingId: string) => {
+  const result = await api.post(url('/weddings/{weddingId}/cancel', { weddingId }), {})
+  if (result.state === 'cancelled') {
+    forgetOfflineDay(weddingId)
+    forgetOfflineSeating(weddingId)
+    forgetOfflinePrograms({ weddingId })
+  }
+  return result
+}
 
 /**
  * Перенос свадьбы на другую дату.

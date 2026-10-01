@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { prepareShift } from './helpers/shift.js'
 import { hashCode } from '../src/auth/otp.js'
 
 /**
@@ -475,8 +476,7 @@ describe.skipIf(!live)('фича 006, BE-006: перевозчик как под
     const shift = await app.inject({
       method: 'POST',
       url: `/weddings/${w.weddingId}/timeline/shift`,
-      headers: { ...auth(w.token), ...key() },
-      payload: { minutes: 15 },
+      ...await prepareShift(app, w.weddingId, { ...auth(w.token), ...key() }, 15),
     })
     expect(shift.statusCode, shift.body.slice(0, 200)).toBe(200)
     const planb = await app.inject({

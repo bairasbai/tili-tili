@@ -476,6 +476,100 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
   })
 
 
+  async function namedSeatingFamily(capacity = 1) {
+    const f = await newWedding()
+    const created = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests`, headers: auth(f.token),
+      payload: { name: 'Named Alice', members: [{ name: 'Named Bob' }] } })
+    expect(created.statusCode, created.body).toBe(201)
+    const people = (await app.inject({ method: 'GET', url: `/weddings/${f.weddingId}/guests`, headers: auth(f.token) })).json() as { id: string; name: string }[]
+    const table = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/tables`, headers: auth(f.token), payload: { name: 'Individual seats', capacity } })
+    expect(table.statusCode, table.body).toBe(201)
+    return { ...f, primaryId: created.json().id as string, people, tableId: table.json().id as string }
+  }
+
+  it('seating a single named family person uses one seat and does not move the other person', async () => {
+    const f = await namedSeatingFamily()
+    const saved = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${f.primaryId}`, headers: auth(f.token), payload: { tableId: f.tableId } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const { rows } = await app.db!.query<{ id: string; table_id: string | null }>('select id,table_id from guests where wedding_id=$1', [f.weddingId])
+    expect(rows.find(g => g.id === f.primaryId)?.table_id).toBe(f.tableId)
+    expect(rows.find(g => g.id !== f.primaryId)?.table_id).toBeNull()
+    const other = f.people.find(g => g.id !== f.primaryId)!
+    const refused = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${other.id}`, headers: auth(f.token), payload: { tableId: f.tableId } })
+    expect(refused.statusCode, refused.body).toBe(409)
+    expect(refused.json().error.code).toBe('table_full')
+  })
+
+  it('a named secondary person may be assigned to its own one-seat table', async () => {
+    const f = await namedSeatingFamily()
+    const other = f.people.find(g => g.id !== f.primaryId)!
+    const saved = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${other.id}`, headers: auth(f.token), payload: { tableId: f.tableId } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const { rows } = await app.db!.query<{ id: string; table_id: string | null }>('select id,table_id from guests where wedding_id=$1', [f.weddingId])
+    expect(rows.find(g => g.id === other.id)?.table_id).toBe(f.tableId)
+    expect(rows.find(g => g.id === f.primaryId)?.table_id).toBeNull()
+  })
+
+  it('repeating compatibility plusOne for an existing named companion is idempotent, without a hidden person or SQL error', async () => {
+    const f = await namedSeatingFamily(2)
+    for (const person of f.people) {
+      const saved = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${person.id}`, headers: auth(f.token), payload: { tableId: f.tableId } })
+      expect(saved.statusCode, saved.body).toBe(200)
+    }
+    const saved = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${f.primaryId}`, headers: auth(f.token), payload: { plusOne: true } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const { rows } = await app.db!.query<{ n: string }>('select count(*)::text as n from guests where wedding_id=$1', [f.weddingId])
+    expect(rows[0]!.n).toBe('2')
+  })
+
+  it('compatibility plusOne after removing a named person retains the compacted family without an SQL error', async () => {
+    const f = await namedSeatingFamily(3)
+    const third = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests/${f.primaryId}/members`, headers: auth(f.token), payload: { name: 'Named Charlie' } })
+    expect(third.statusCode, third.body).toBe(201)
+    for (const id of [f.primaryId, third.json().id as string]) {
+      const saved = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${id}`, headers: auth(f.token), payload: { tableId: f.tableId } })
+      expect(saved.statusCode, saved.body).toBe(200)
+    }
+    const other = f.people.find(g => g.id !== f.primaryId)!
+    const removed = await app.inject({ method: 'DELETE', url: `/weddings/${f.weddingId}/guests/${other.id}`, headers: auth(f.token) })
+    expect(removed.statusCode, removed.body).toBe(204)
+    const shrunk = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/tables/${f.tableId}`, headers: auth(f.token), payload: { capacity: 2 } })
+    expect(shrunk.statusCode, shrunk.body).toBe(200)
+    const saved = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${f.primaryId}`, headers: auth(f.token), payload: { plusOne: true } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const { rows } = await app.db!.query<{ n: string }>('select count(*)::text as n from guests where wedding_id=$1 and table_id=$2', [f.weddingId, f.tableId])
+    expect(rows[0]!.n).toBe('2')
+  })
+
+  it('a generated legacy companion still moves with the primary and cannot fit together at a one-seat table', async () => {
+    const f = await family()
+    const table = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/tables`, headers: auth(f.token), payload: { name: 'One seat', capacity: 1 } })
+    expect(table.statusCode, table.body).toBe(201)
+    const tableId = table.json().id as string
+    const refused = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${f.primaryId}`, headers: auth(f.token), payload: { tableId } })
+    expect(refused.statusCode, refused.body).toBe(409)
+    expect(refused.json().error.code).toBe('table_full')
+    const { rows: members } = await app.db!.query<{ id: string; table_id: string | null }>('select id,table_id from guests where party_id=$1 and party_position=2', [f.partyId])
+    expect(members[0]!.table_id).toBeNull()
+    const single = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${members[0]!.id}`, headers: auth(f.token), payload: { tableId } })
+    expect(single.statusCode, single.body).toBe(200)
+  })
+
+  it('legacy plusOne creation at a one-seat table is refused atomically without a new person', async () => {
+    const f = await newWedding()
+    const guest = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests`, headers: auth(f.token), payload: { name: 'Solo person' } })
+    expect(guest.statusCode, guest.body).toBe(201)
+    const table = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/tables`, headers: auth(f.token), payload: { name: 'One seat', capacity: 1 } })
+    const id = guest.json().id as string
+    const seated = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${id}`, headers: auth(f.token), payload: { tableId: table.json().id } })
+    expect(seated.statusCode, seated.body).toBe(200)
+    const refused = await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${id}`, headers: auth(f.token), payload: { plusOne: true } })
+    expect(refused.statusCode, refused.body).toBe(409)
+    expect(refused.json().error.code).toBe('table_full')
+    const { rows } = await app.db!.query<{ n: string }>('select count(*)::text as n from guests where wedding_id=$1', [f.weddingId])
+    expect(rows[0]!.n).toBe('1')
+  })
+
   it('table capacity counts materialized family people once even if deprecated plus_one is stale', async () => {
     const f = await family()
     const page = (await app.inject({ method: 'GET', url: `/rsvp/${encodeURIComponent(f.guestToken)}` })).json()

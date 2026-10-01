@@ -13,6 +13,8 @@ import { noteVendorUpdate } from '../vendor/updates.js'
 import { plural } from '../text/plural.js'
 import { assertRealDate, isRealDate } from '../wedding/dates.js'
 import { COMMITTED, type DealState } from '../deals/state.js'
+import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor } from '../timeline/version.js'
+import { planningProperties, prepareTimelinePlanning, readTimelinePlanning, replaceTimelineRelations, type TimelinePlanning } from '../timeline/planning.js'
 
 /** Повтор рассылки в это окно считается тем же нажатием. */
 const DEBOUNCE_SECONDS = 30
@@ -150,12 +152,18 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     forGuests: r.for_guests,
   })
 
-  app.get('/weddings/:weddingId/timeline', async (request) => {
-    const { rows } = await db().query<EventRow>(
-      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort, starts_at`,
-      [request.member!.weddingId],
-    )
-    return rows.map(toEvent)
+  app.get('/weddings/:weddingId/timeline', async (request, reply) => {
+    return db().tx(async client => {
+      const weddingId = request.member!.weddingId
+      const snapshot = await lockTimelineForRequest(client, request, false)
+      const { rows } = await client.query<EventRow>(
+        `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort, starts_at`,
+        [weddingId],
+      )
+      sendTimelineVersion(reply, snapshot)
+      const planning = await readTimelinePlanning(client, weddingId)
+      return rows.map(r => ({ ...toEvent(r), ...planning.get(r.id)! }))
+    })
   })
 
   app.put(
@@ -170,7 +178,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
             required: ['name'],
             additionalProperties: false,
             properties: {
-              id: { type: 'string' },
+              id: UUID_ID,
               name: { type: 'string', minLength: 1, maxLength: 200 },
               location: { type: 'string', nullable: true, maxLength: 300 },
               startsAt: { type: 'string', nullable: true },
@@ -180,14 +188,16 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               outdoor: { type: 'boolean', default: false },
               // Пропущено — виден: как у колонки в базе и у блока без галочки.
               forGuests: { type: 'boolean', default: true },
+              ...planningProperties,
             },
           },
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const weddingId = request.member!.weddingId
-      const events = request.body as {
+      const events = request.body as ({
+        id?: string
         name: string
         location?: string | null
         startsAt?: string | null
@@ -196,7 +206,7 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         icon?: string | null
         outdoor?: boolean
         forGuests?: boolean
-      }[]
+      } & Partial<TimelinePlanning>)[]
 
       // Время проверяется ДО базы: иначе «вчера» и 30 февраля доходят до
       // `::timestamptz`, и человек получает 500 вместо отказа (D2-12).
@@ -205,17 +215,42 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
         endsAt: momentOrNull(e.endsAt, `${i}.endsAt`),
       }))
 
+      const suppliedIds = events.flatMap(e => e.id ? [e.id.toLowerCase()] : [])
+      if (new Set(suppliedIds).size !== suppliedIds.length) {
+        throw validationFailed({ id: 'идентификаторы блоков не должны повторяться' })
+      }
+      const expected = expectedTimelineVersion(request.headers['if-match'])
+
       return db().tx(async (client) => {
-        // Замена целиком: клиент присылает состояние экрана, а не список
-        // правок. Дописывание оставило бы удалённые блоки.
-        await client.query('delete from timeline_events where wedding_id = $1', [weddingId])
+        const snapshot = await lockTimelineForRequest(client, request, true)
+        if (snapshot.version !== expected) {
+          throw conflict('timeline_conflict', 'Программа уже изменена — обновите её и проверьте свои правки')
+        }
+        await setTimelineActor(client, request.caller!.userId)
+        const { rows: current } = await client.query<{ id: string }>(
+          'select id from timeline_events where wedding_id = $1 for update', [weddingId],
+        )
+        const existing = new Set(current.map(e => e.id))
+        if (suppliedIds.some(id => !existing.has(id))) {
+          throw validationFailed({ id: 'блок отсутствует в текущей программе свадьбы' })
+        }
+        const ids = events.map(e => e.id?.toLowerCase() ?? uuidv7())
+        const plans = await prepareTimelinePlanning(client, weddingId, events, ids, moments)
+        await client.query('delete from timeline_events where wedding_id = $1 and not (id = any($2::uuid[]))', [weddingId, ids])
         let sort = 0
         for (const [i, e] of events.entries()) {
           await client.query(
-            `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort)
-             values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11)`,
+            `insert into timeline_events (id, wedding_id, name, location, starts_at, ends_at, who, icon, outdoor, for_guests, sort,
+               duration_minutes,fixed,travel_minutes,buffer_minutes,program_event_id)
+             values ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+             on conflict (id) do update set name = excluded.name, location = excluded.location,
+               starts_at = excluded.starts_at, ends_at = excluded.ends_at, who = excluded.who,
+               icon = excluded.icon, outdoor = excluded.outdoor, for_guests = excluded.for_guests,
+               sort = excluded.sort, duration_minutes=excluded.duration_minutes, fixed=excluded.fixed,
+               travel_minutes=excluded.travel_minutes, buffer_minutes=excluded.buffer_minutes,program_event_id=excluded.program_event_id
+             where timeline_events.wedding_id = excluded.wedding_id`,
             [
-              uuidv7(),
+              ids[i]!,
               weddingId,
               e.name,
               e.location ?? null,
@@ -226,27 +261,36 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
               e.outdoor ?? false,
               e.forGuests ?? true,
               sort++,
+              plans[i]!.durationMinutes,
+              plans[i]!.fixed,
+              plans[i]!.travelMinutes,
+              plans[i]!.bufferMinutes,
+              plans[i]!.eventId,
             ],
           )
         }
+        await replaceTimelineRelations(client, weddingId, ids, plans)
         // Тайминг переписали целиком — подрядчику приезжать к другому часу.
         await noteVendorUpdate(client, weddingId, 'timeline', 'Тайминг дня обновлён')
         const { rows } = await client.query<EventRow>(
           `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
           [weddingId],
         )
-        return rows.map(toEvent)
+        sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
+        const planning = await readTimelinePlanning(client, weddingId)
+        return rows.map(r => ({ ...toEvent(r), ...planning.get(r.id)! }))
       })
     },
   )
 
-  app.post('/weddings/:weddingId/timeline/autogen', async (request) => {
+  app.post('/weddings/:weddingId/timeline/autogen', async (request, reply) => db().tx(async client => {
     const weddingId = request.member!.weddingId
-    const { rows: current } = await db().query<EventRow>(
+    const snapshot = await lockTimelineForRequest(client, request, false)
+    const { rows: current } = await client.query<EventRow>(
       `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 order by sort`,
       [weddingId],
     )
-    const { rows: team } = await db().query<{ label: string; performer: string | null }>(
+    const { rows: team } = await client.query<{ label: string; performer: string | null }>(
       `select s.label, coalesce(ven.name, d.external_name) as performer
          from deals d join slots s on s.id = d.slot_id
          left join vendors ven on ven.id = d.vendor_id
@@ -257,8 +301,10 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     // Кто за что отвечает — из забронированной команды. Черновик, а не
     // применение: контракт обещает предпросмотр, и переписывать тайминг
     // без спроса нельзя.
+    const planning = await readTimelinePlanning(client, weddingId)
     const events = current.map((e) => ({
       ...toEvent(e),
+      ...planning.get(e.id)!,
       who: e.who ?? (team.map((t) => `${t.label}: ${t.performer ?? ''}`).join(' · ') || null),
     }))
 
@@ -271,8 +317,9 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     if (team.length === 0) conflicts.push('Команда ещё не забронирована — план собран без исполнителей')
+    sendTimelineVersion(reply, snapshot)
     return { events, conflicts }
-  })
+  }))
 
   /* ── логистика: автобусы ──────────────────────────────────────────── */
   interface BusRow {
@@ -1265,7 +1312,8 @@ export async function dayRoutes(app: FastifyInstance): Promise<void> {
     const guest = await guestOfDay(db(), guestToken)
     const day = await guestDayOf(guest.weddingId)
     const { rows: timeline } = await db().query<EventRow>(
-      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 and for_guests order by sort, starts_at`,
+      `select ${EVENT_COLUMNS} from timeline_events where wedding_id = $1 and for_guests
+         and program_event_id=(select id from wedding_events where wedding_id=$1 and is_main) order by sort, starts_at`,
       [guest.weddingId],
     )
     const { rows: table } = await db().query<{ name: string }>(

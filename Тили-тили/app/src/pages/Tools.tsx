@@ -1,6 +1,6 @@
 import { createElement, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Download, Check, Copy, FileText, Plus, Armchair, Bus } from 'lucide-react'
+import { Download, Check, Copy, FileText, Plus, Armchair, Bus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { dressPalettes } from '@/lib/dressPalettes'
 import { fmt } from '@/lib/money'
@@ -10,19 +10,22 @@ import { useStore } from '@/lib/store'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
-import { explainError, useApi } from '@/lib/api/useApi'
+import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
 import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { isAuthorized } from '@/lib/api/client'
+import { ApiError, isAuthorized } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
 import { getBuses, getGuests, getWedding } from '@/lib/api/weddingData'
-import { addTable, deleteTable, getTables, patchGuest, patchTable } from '@/lib/api/weddingWrite'
+import { addTable, deleteTable, patchGuest, patchTable } from '@/lib/api/weddingWrite'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, escapeHtml, pct } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
+import { useSeating, type SeatingRead } from '@/lib/useSeating'
+import { useRegisteredProgramNamespace } from '@/lib/offlineProgramHooks'
+import { offlineGeneration } from '@/lib/offlineAccess'
 
 /*
  * Карточка сделки.
@@ -637,22 +640,62 @@ const DIET_ICON: Record<string, string> = {
 
 export function Seating() {
   const { weddingId } = useStore()
+  const namespace = useRegisteredProgramNamespace()
+  return <SeatingReader key={JSON.stringify([weddingId, namespace])} weddingId={weddingId} />
+}
+
+function SeatingReader({ weddingId }: { weddingId: string | null }) {
+  const { q, copy, live, online, refusal } = useSeating(weddingId)
+  if (live && weddingId) return <SeatingEditor weddingId={weddingId} q={q} />
+  const attending = copy?.guests.filter(g => g.status !== 'no') ?? []
+  return <div className="pb-28">
+    <TopBar back title={t('Рассадка')} />
+    {refusal ? <p role="alert" className="px-5 py-4 text-[12px]">{explainError(refusal)}</p> : <AsyncState q={q} />}
+    {!refusal && copy && <div className="px-5 space-y-4">
+      <div role="status" className="py-3 border-b border-[var(--line)] text-[12px] leading-relaxed">
+        <p>{t('Сохранённая рассадка — только чтение')}</p>
+        <p>{t('Актуальность и доступ не проверены.')}</p>
+        <p>{t('Гости и столы прочитаны отдельно; единая версия не подтверждена')}</p>
+        <p>{t('Гости: ')}{new Date(copy.guestsReadAt).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')}</p>
+        <p>{t('Столы: ')}{new Date(copy.tablesReadAt).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')}</p>
+      </div>
+      <section>
+        <h2 className="text-[13px] font-semibold">{t('Без стола:')}</h2>
+        {attending.filter(g => !g.tableId).map(g => <p key={g.id} className="text-[12px] break-words">{g.name}</p>)}
+        {!attending.some(g => !g.tableId) && <p className="text-[12px]">{attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</p>}
+      </section>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {copy.tables.map(tb => {
+          const people = attending.filter(g => g.tableId === tb.id)
+          return <section key={tb.id} className="border-t border-[var(--line)] pt-3 min-w-0">
+            <h2 className="text-[14px] font-semibold break-words">{tb.name}</h2>
+            <p className="text-[12px] tabular">{people.length}/{tb.capacity}</p>
+            {people.map(g => <p key={g.id} className="text-[12px] break-words py-1">{g.name}</p>)}
+            {!people.length && <p className="text-[12px]">{t('Пусто')}</p>}
+          </section>
+        })}
+      </div>
+    </div>}
+    {!refusal && !copy && !online && <p className="px-5 py-3 text-[12px]">{t('Сохранённой рассадки для этой сессии и свадьбы нет')}</p>}
+    {!refusal && online && !q.loading && !q.refreshing && !q.error && !q.forbidden && !live && <button onClick={q.reload} aria-label={t('Перечитать рассадку')} title={t('Перечитать рассадку')} className="mx-5 h-11 w-11 flex items-center justify-center"><RefreshCw size={18} /></button>}
+  </div>
+}
+
+function SeatingEditor({ weddingId, q }: { weddingId: string; q: AsyncData<SeatingRead> }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  const guestsQ = useApi(() => weddingId ? getGuests(weddingId) : Promise.resolve([]), [weddingId])
-  const tablesQ = useApi(() => weddingId ? getTables(weddingId) : Promise.resolve([]), [weddingId])
+  const guestsQ = { ...q, data: q.data?.guests ?? null }
+  const tablesQ = { ...q, data: q.data?.tables ?? null }
 
   // Рассаживать начинают до того, как ответят все, поэтому за столы попадают и
   // ждущие ответа. Исключаются только отказавшиеся.
   //
-  // Считаем людей, а не записи (R-29): «Ольга и Денис» с +1 — двое за столом,
-  // как и в сводке для кейтеринга. До ревью D3-03 стол на восемь мест принимал
-  // восемь записей «с +1» — шестнадцать человек — и подписывался «8/8».
+  // WP02: every row is one person; plusOne describes a primary family member.
   const attending = (guestsQ.data ?? [])
     .filter(g => g.status !== 'no')
-    .map(g => ({ id: g.id ?? '', name: g.name ?? '', tableId: g.tableId ?? null, diet: g.diet ?? null, persons: 1 + (g.plusOne ? 1 : 0) }))
+    .map(g => ({ id: g.id ?? '', name: g.name ?? '', tableId: g.tableId ?? null, diet: g.diet ?? null, persons: 1 }))
 
   const tables = (tablesQ.data ?? []).map(tb => {
     const guests = attending.filter(g => g.tableId === tb.id)
@@ -666,17 +709,20 @@ export function Seating() {
   })
   const unseated = attending.filter(g => !g.tableId)
   const selectedGuest = attending.find(g => g.id === selected)
-  /* Поместится ли выбранный гость (с его +1) за этот стол. */
+  /* One selected person occupies one seat. */
   const fits = (tb: { seated: number; capacity: number }) => !!selectedGuest && tb.seated + selectedGuest.persons <= tb.capacity
 
-  const write = async (fn: () => Promise<unknown>) => {
+  const write = async (fn: () => Promise<unknown>, onFailure: (e: unknown) => void = e => setErr(explainError(e))) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — рассадка живёт в ней')); return }
-    if (busy) return // второй запрос, пока идёт первый (Enter, двойной тап) — ревью 015
+    if (busy || !navigator.onLine || q.refreshing || q.loading) return
     setBusy(true)
     setErr(null)
-    try { await fn(); guestsQ.reload(); tablesQ.reload() } catch (e) { setErr(explainError(e)) } finally { setBusy(false) }
+    try { await fn(); q.reload() } catch (e) {
+      onFailure(e)
+      if (e instanceof ApiError && e.isDown) q.reload()
+    } finally { setBusy(false) }
   }
   const seat = (tableId: string) => {
     const tb = tables.find(x => x.id === tableId)
@@ -715,9 +761,9 @@ export function Seating() {
     if (!name || !Number.isFinite(capacity) || capacity < 1) return
     setEditErr(null)
     void write(async () => {
-      try { await patchTable(weddingId!, tableId, { name, capacity }) } catch (e) { setEditErr(explainError(e)); return }
+      await patchTable(weddingId!, tableId, { name, capacity })
       setEditId(null)
-    })
+    }, e => setEditErr(explainError(e)))
   }
   const removeTable = (tableId: string) => void write(async () => {
     await deleteTable(weddingId!, tableId)
@@ -725,12 +771,11 @@ export function Seating() {
     if (editId === tableId) setEditId(null)
   })
 
-  /* Тиль раскидывает нерассаженных по свободным местам — по людям, не по
-     записям: гость с +1 занимает два. Записей столько, сколько гостей:
-     отдельного пути «рассадить всех» контракт не знает. */
+  /* Each mutation addresses one explicit person; never queue offline writes. */
   const autoSeat = () => void write(async () => {
     const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.seated }))
     for (const g of unseated) {
+      if (!navigator.onLine || q.data?.generation !== offlineGeneration()) break
       const spot = free.find(f => f.left >= g.persons)
       if (!spot) continue
       await patchGuest(weddingId!, g.id, { tableId: spot.id })
@@ -749,10 +794,10 @@ export function Seating() {
           выглядел как «столов пока нет». */}
       {ready(guestsQ) && <AsyncState q={tablesQ} />}
       <div className="px-5 mt-3">
-        <div className="card-s px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <div className="px-1 py-3 flex flex-wrap items-center gap-2 border-b border-[var(--line)]">
           <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0">{t('Без стола:')}</span>
           {unseated.map(g => (
-            <button key={g.id} onClick={() => setSelected(s => s === g.id ? null : g.id)} className={cn('press text-[10.5px] font-medium px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 transition-all', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--bg)]')}>{g.name}</button>
+            <button key={g.id} onClick={() => setSelected(s => s === g.id ? null : g.id)} className={cn('press text-[12px] font-medium px-3 py-2 rounded-lg max-w-full break-words text-left transition-all', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')}>{g.name}</button>
           ))}
           {/* «все рассажены» и «гостей пока нет» — только по пришедшему списку. */}
           {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{!ready(guestsQ) ? '—' : attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
@@ -763,9 +808,9 @@ export function Seating() {
           D3-12): пока он грузится или упал, «0/8» и «Пусто» под честным
           «Сервер недоступен» читались как факт о рассадке. */}
       {ready(guestsQ) && (
-      <div className="px-5 mt-3 grid grid-cols-2 gap-3 stagger">
+      <div className="px-5 mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 stagger">
         {tables.map(tb => (
-          <div key={tb.id} onClick={() => seat(tb.id)} className={cn('card p-4 text-left fade-up transition-all', fits(tb) && 'ring-2 ring-[var(--sage)] cursor-pointer')}>
+          <div key={tb.id} onClick={() => seat(tb.id)} className={cn('card p-4 min-w-0 text-left fade-up transition-all', fits(tb) && 'ring-2 ring-[var(--sage)] cursor-pointer')}>
             {editId === tb.id ? (
               /* Клики в форме не сажают выбранного гостя за этот стол. */
               <div className="space-y-1.5" onClick={e => e.stopPropagation()}>
@@ -781,23 +826,25 @@ export function Seating() {
                 {editErr && <p role="alert" className="text-[10.5px] text-[var(--rose-ink)] leading-snug">{editErr}</p>}
               </div>
             ) : (
-              <div className="flex items-center justify-between gap-1.5">
-                <b className="font-serif-d text-[16px] truncate">{tb.name}</b>
+              <div>
+                <b className="block font-serif-d text-[16px] break-words">{tb.name}</b>
+                <div className="flex items-center gap-1.5 min-h-9">
                 <span className="text-[9px] text-[var(--soft)] flex items-center gap-1 shrink-0"><Armchair size={10} /> {tb.seated}/{tb.capacity}</span>
-                <button onClick={e => { e.stopPropagation(); openEdit(tb) }} className="press text-[10px] text-[var(--soft)] shrink-0" aria-label={t('Переименовать стол')}>✎</button>
+                <span className="flex-1" />
+                <button onClick={e => { e.stopPropagation(); openEdit(tb) }} className="press h-9 w-9 flex items-center justify-center text-[var(--soft)] shrink-0" aria-label={t('Переименовать стол')} title={t('Переименовать стол')}><Pencil size={15} /></button>
                 {confirmDel === tb.id ? (
                   <button disabled={busy} onClick={e => { e.stopPropagation(); removeTable(tb.id) }} className="press text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--rose-deep)] text-[var(--card)] shrink-0 disabled:opacity-50">{t('Удалить?')}</button>
                 ) : (
-                  <button onClick={e => { e.stopPropagation(); setConfirmDel(tb.id) }} className="press text-[10px] text-[var(--soft)] shrink-0" aria-label={t('Удалить стол')}>×</button>
+                  <button onClick={e => { e.stopPropagation(); setConfirmDel(tb.id) }} className="press h-9 w-9 flex items-center justify-center text-[var(--soft)] shrink-0" aria-label={t('Удалить стол')} title={t('Удалить стол')}><Trash2 size={15} /></button>
                 )}
+                </div>
               </div>
             )}
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
-                <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id) }} className="press w-full text-left text-[11px] bg-[var(--bg)] rounded-lg px-2.5 py-1.5 truncate flex items-center gap-1.5 disabled:opacity-50">
+                <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id) }} className="press w-full text-left text-[12px] bg-[var(--bg)] rounded-lg px-2.5 py-2 flex items-center gap-1.5 disabled:opacity-50">
                   {g.diet && <span className="text-[10px] shrink-0">{DIET_ICON[g.diet] ?? '🍽'}</span>}
-                  <span className="truncate">{g.name}</span>
-                  {g.persons > 1 && <span className="text-[9px] text-[var(--soft)] shrink-0">{t('+1')}</span>}
+                  <span className="min-w-0 break-words">{g.name}</span>
                 </button>
               )) : <div className="text-[10.5px] text-[var(--soft2)] py-3 text-center border-[1.5px] border-dashed border-[var(--line)] rounded-xl">{t('Пусто')}</div>}
             </div>
@@ -810,7 +857,7 @@ export function Seating() {
         <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: 'var(--shadow-lift)' }}>✨ {t('Рассадить автоматически')}</button>
         {/* Легенда описывает то, что гость сам указал в RSVP. Прежняя обещала
             «из опроса меню» три значка, которые выдавались хешем имени. */}
-        <div className="card-s px-4 py-3 flex items-center gap-3 text-[10.5px] text-[var(--soft)]">
+        <div className="px-1 py-3 flex flex-wrap items-center gap-3 text-[10.5px] text-[var(--soft)] border-t border-[var(--line)]">
           <span className="font-semibold tracking-[.12em] uppercase shrink-0">{t('Легенда:')}</span>
           <span>🥦 {t('вег')}</span><span>🌾 {t('без глютена')}</span><span>🍽 {t('особое меню')}</span>
           <span className="ml-auto">{t('из ответа гостя')}</span>

@@ -20,12 +20,14 @@ export async function noteVendorUpdate(
   weddingId: string,
   kind: VendorUpdateKind,
   text: string,
+  vendorIds: readonly string[] | null = null,
 ): Promise<number> {
   const { rows } = await db.query<{ vendor_id: string }>(
     `select distinct d.vendor_id from deals d
       where d.wedding_id = $1 and d.vendor_id is not null
-        and d.state in ('booked','paid_deposit','done')`,
-    [weddingId],
+        and d.state in ('booked','paid_deposit','done')
+        and ($2::uuid[] is null or d.vendor_id=any($2::uuid[]))`,
+    [weddingId, vendorIds],
   )
   for (const row of rows) {
     /* Рассадку двигают мышью, и каждое движение — не новость. Пока

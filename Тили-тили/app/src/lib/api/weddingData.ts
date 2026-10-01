@@ -32,6 +32,18 @@ export const getGuests = (weddingId: string) =>
 export const getTimeline = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/timeline', { weddingId }))
 
+export const getTimelineSnapshot = (weddingId: string) =>
+  api.getSnapshot(url('/weddings/{weddingId}/timeline', { weddingId }))
+
+export const getTimelineAcknowledgments = (weddingId: string) =>
+  api.getSnapshot(url('/weddings/{weddingId}/timeline/acknowledgments', { weddingId }))
+
+export const getWeddingEvents = (weddingId: string) =>
+  api.get(url('/weddings/{weddingId}/events', { weddingId }))
+
+export const getWeddingEventsSnapshot = (weddingId: string) =>
+  api.getSnapshot(url('/weddings/{weddingId}/events', { weddingId }))
+
 export const getDocuments = (weddingId: string) =>
   api.get(url('/weddings/{weddingId}/documents', { weddingId }))
 

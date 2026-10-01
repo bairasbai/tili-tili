@@ -29,6 +29,7 @@ vi.mock('@/lib/api/client', () => ({
   onSessionExpired: () => () => {},
   SESSION_EXPIRED: 'Сессия истекла — войдите снова',
   isAuthorized: () => true,
+  accessTokenForWs: () => null,
   url: (tpl: string, p: Record<string, string>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => p[k]),
   api: {
     get: async (path: string) => {

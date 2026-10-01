@@ -311,13 +311,14 @@ describe.skipIf(!live)('ревью 015: бэкенд', () => {
   })
 
   /* ── G15 ──────────────────────────────────────────────────────────── */
-  it('G15: сдвиг тайминга без блоков — shiftedBlocks 0, ни журнала, ни рассылки', async () => {
+  it('G15: пустой предпросмотр сдвига не подтверждается и не пишет журнал/рассылку', async () => {
     const w = await newWedding()
     await app.db!.query('delete from timeline_events where wedding_id = $1', [w.weddingId])
     const before = (await app.db!.query<{ n: string }>('select count(*)::text as n from notifications where user_id = $1', [w.userId])).rows[0]!.n
-    const res = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/timeline/shift`, headers: { ...auth(w.token), ...key() }, payload: { minutes: 30 } })
+    const context = await app.inject({ method: 'GET', url: `/weddings/${w.weddingId}`, headers: auth(w.token) })
+    const res = await app.inject({ method: 'POST', url: `/weddings/${w.weddingId}/timeline/shift/preview`, headers: auth(w.token), payload: { minutes: 30, scope: { kind: 'day', date: context.json().date } } })
     expect(res.statusCode, res.body.slice(0, 200)).toBe(200)
-    expect(res.json()).toMatchObject({ shiftedBlocks: 0, guestsAffected: 0 })
+    expect(res.json()).toMatchObject({ canConfirm: false, blocks: [], previewToken: null, guestsAffected: 0 })
     const { rows: shifts } = await app.db!.query('select 1 from timeline_shifts where wedding_id = $1', [w.weddingId])
     expect(shifts, 'сдвиг ни о чём в журнал не пишется').toHaveLength(0)
     const after = (await app.db!.query<{ n: string }>('select count(*)::text as n from notifications where user_id = $1', [w.userId])).rows[0]!.n

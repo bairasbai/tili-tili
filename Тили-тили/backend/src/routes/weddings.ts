@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { setTimelineActor } from '../timeline/version.js'
 import { AppError, conflict, notFound } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { knownTimeZone } from '../notify/quiet.js'
@@ -274,6 +275,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         )
         if (live[0]) return live[0].id
 
+        await client.query("select set_config('tili.timeline_actor', $1, true)", [userId])
         await client.query(
           `insert into weddings (id, owner_id, title, date, city_id, style, guests_planned,
                                  budget_total, currency, invite_code, tz, format, planner)
@@ -332,17 +334,18 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             ],
           )
         }
+        await client.query("select set_config('tili.timeline_actor', $1, true)", [userId])
         for (const e of timelineTemplate(format)) {
           // Время шаблона — местное на площадке, а не UTC. Собирали его строкой
           // `${date}T08:00:00Z`, и «сборы невесты в 08:00» в Уфе (+5) выходили
           // на экране в 13:00 — ровно на разницу поясов. Второй день
           // двухдневной свадьбы — следующее число (`dayOffset`, фича 018).
           await client.query(
-            `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort)
+            `insert into timeline_events (id, wedding_id, name, starts_at, ends_at, icon, sort, duration_minutes, template_start, template_day_offset)
              values ($1, $2, $3,
                      case when $4::date is null then null else ((($4::date + $10::int) + $5::time) at time zone $8) end,
                      case when $4::date is null then null else ((($4::date + $10::int) + $6::time) at time zone $8) end,
-                     $7, $9)`,
+                     $7, $9, extract(epoch from ($6::time - $5::time))/60, $5::time, $10::int)`,
             [uuidv7(), weddingId, e.name, date, e.startsAt, e.endsAt, e.icon, cityTz, e.sort, e.dayOffset ?? 0],
           )
         }
@@ -454,6 +457,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
         if (body.date !== undefined) {
           await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId)
         }
+        await setTimelineActor(client, request.caller!.userId)
         await client.query(
           `update weddings set
              city_id = coalesce($2, city_id),
@@ -523,6 +527,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * смены состава одной команды идут по очереди, и вторая видит первую. */
       const changed = await db().tx(async (client) => {
         await client.query('select id from weddings where id = $1 for update', [weddingId])
+        await setTimelineActor(client, request.caller!.userId)
         return client.query(
           `update wedding_members m set role = $3
             where m.wedding_id = $1 and m.user_id = $2
@@ -550,6 +555,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
       // строка свадьбы под `for update` выстраивает такие удаления в очередь.
       const res = await db().tx(async (client) => {
         await client.query('select id from weddings where id = $1 for update', [weddingId])
+        await setTimelineActor(client, request.caller!.userId)
         return client.query(
           `delete from wedding_members m
             where m.wedding_id = $1 and m.user_id = $2

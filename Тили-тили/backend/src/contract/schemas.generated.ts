@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 95. */
+ * Схем: 109. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -3313,11 +3313,137 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TimelineAcknowledgmentStatus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "kind",
+              "id",
+              "name",
+              "blockCount",
+              "status",
+              "acknowledgedAt",
+              "acknowledgedBy",
+              "previousAcknowledgment"
+          ],
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "registered",
+                      "external"
+                  ]
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "ID анкеты для registered, ID реальной сделки для external"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "blockCount": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "acknowledged",
+                      "unassigned",
+                      "unavailable",
+                      "not_supported"
+                  ]
+              },
+              "acknowledgedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "acknowledgedBy": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Текущее имя реального автора для registered; для external всегда null, личность владельца ссылки не проверена"
+              },
+              "previousAcknowledgment": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                      "sourceVersion",
+                      "acknowledgedAt",
+                      "acknowledgedBy"
+                  ],
+                  "properties": {
+                      "sourceVersion": {
+                          "type": "string"
+                      },
+                      "acknowledgedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                      },
+                      "acknowledgedBy": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "TimelineAcknowledgments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "sourceVersion",
+              "updatedAt",
+              "items"
+          ],
+          "properties": {
+              "sourceVersion": {
+                  "type": "string"
+              },
+              "updatedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineAcknowledgmentStatus"
+                  }
+              }
+          }
+      },
       "TimelineEvent": {
           "type": "object",
+          "required": [
+              "name"
+          ],
           "properties": {
               "id": {
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "ID существующего блока; для нового блока поле не передаётся"
+              },
+              "eventId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Мероприятие своей свадьбы. Пропущено у существующего блока — связь сохраняется; у нового — основное мероприятие. В гостевой проекции отсутствует. Legacy guest day показывает только разрешённые блоки основной программы до подключения индивидуальных приглашений."
               },
               "name": {
                   "type": "string"
@@ -3349,8 +3475,551 @@ export const CONTRACT_SCHEMAS = {
                   "type": "boolean",
                   "default": true,
                   "description": "Видят ли блок гости в день X (`GET /join/{guestToken}/day`). По\nумолчанию да — программа праздника; «Сборы невесты» и «Монтаж\nарки» пара снимает галочкой (План §8.8, фича 009).\n"
+              },
+              "durationMinutes": {
+                  "type": [
+                      "number",
+                      "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 10080,
+                  "description": "Длительность в минутах; допустима до назначения начала. При начале и длительности сервер вычисляет окончание; противоречащие значения отклоняются. Только в полном тайминге команды."
+              },
+              "fixed": {
+                  "type": "boolean",
+                  "description": "Фиксированное начало: нужно startsAt; автоматический сдвиг не двигает блок. Только в полном тайминге команды."
+              },
+              "travelMinutes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 10080,
+                  "description": "Ручное время переезда, без автоматической оценки маршрута. Только для команды."
+              },
+              "bufferMinutes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 10080,
+                  "description": "Ручной запас времени. Только для команды."
+              },
+              "dependsOn": {
+                  "type": "array",
+                  "maxItems": 60,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  },
+                  "description": "Уникальные ID других блоков сохраняемой программы; чужие, удалённые, собственный ID и циклы запрещены. В гостевой проекции отсутствует."
+              },
+              "responsible": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/TimelineReference"
+                      }
+                  ],
+                  "description": "Один ответственный; null снимает назначение. В гостевой проекции отсутствует.",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              },
+              "participants": {
+                  "type": "array",
+                  "maxItems": 200,
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineReference"
+                  },
+                  "description": "Уникальные участники. В гостевой проекции отсутствует. Удаление персоны/членства, мягкое удаление аккаунта или отмена сделки снимает назначения и меняет версию."
               }
           }
+      },
+      "TimelineReference": {
+          "type": "object",
+          "required": [
+              "kind",
+              "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "member",
+                      "guest",
+                      "deal"
+                  ]
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              }
+          },
+          "description": "Участник своей свадьбы: живой член команды, персона гостей или забронированная сделка (включая своего подрядчика). Только ID и тип, без финансовых данных."
+      },
+      "TimelineShiftBlockDetails": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "name",
+              "eventId",
+              "eventName",
+              "eventDate",
+              "timeZone",
+              "location",
+              "startsAt",
+              "endsAt"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "eventId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "eventName": {
+                  "type": "string"
+              },
+              "eventDate": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "startsAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Известное окончание из записи или точной durationMinutes, тем же расчётом что preview; неизвестное остаётся null"
+              }
+          }
+      },
+      "TimelineShiftMoment": {
+          "type": "object",
+          "required": [
+              "startsAt",
+              "endsAt"
+          ],
+          "properties": {
+              "startsAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "TimelineShiftPreview": {
+          "type": "object",
+          "required": [
+              "scope",
+              "minutes",
+              "canConfirm",
+              "blocks",
+              "blockDetails",
+              "excluded",
+              "conflicts",
+              "affectedBlockIds",
+              "affectedReferences",
+              "referenceDetails",
+              "movements",
+              "guestsAffected",
+              "affectedGuestIds",
+              "affectedGuests",
+              "affectedVendorIds",
+              "affectedMemberIds",
+              "expiresAt",
+              "previewToken",
+              "sourceVersion"
+          ],
+          "properties": {
+              "scope": {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "date",
+                      "timeZone"
+                  ],
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "day",
+                              "event"
+                          ]
+                      },
+                      "eventId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "date": {
+                          "type": "string",
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": "string"
+                      }
+                  }
+              },
+              "minutes": {
+                  "type": "integer"
+              },
+              "sourceVersion": {
+                  "type": "string"
+              },
+              "canConfirm": {
+                  "type": "boolean"
+              },
+              "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "previewToken": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "blocks": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "before",
+                          "after"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "before": {
+                              "$ref": "contract#/definitions/TimelineShiftMoment"
+                          },
+                          "after": {
+                              "$ref": "contract#/definitions/TimelineShiftMoment"
+                          }
+                      }
+                  }
+              },
+              "excluded": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "id",
+                          "reason"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "reason": {
+                              "type": "string",
+                              "enum": [
+                                  "undated",
+                                  "other_day",
+                                  "other_event",
+                                  "fixed",
+                                  "past"
+                              ]
+                          }
+                      }
+                  }
+              },
+              "conflicts": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "kind",
+                          "blockIds"
+                      ],
+                      "properties": {
+                          "kind": {
+                              "type": "string",
+                              "enum": [
+                                  "shifted_into_past",
+                                  "crosses_day",
+                                  "unknown_duration",
+                                  "invalid_interval",
+                                  "missing_dependency",
+                                  "unknown_dependency_time",
+                                  "dependency_timing",
+                                  "unknown_participant_time",
+                                  "participant_overlap",
+                                  "travel_buffer_overlap"
+                              ]
+                          },
+                          "blockIds": {
+                              "type": "array",
+                              "items": {
+                                  "type": "string",
+                                  "format": "uuid"
+                              }
+                          }
+                      }
+                  }
+              },
+              "affectedBlockIds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              },
+              "affectedReferences": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineReference"
+                  }
+              },
+              "blockDetails": {
+                  "type": "array",
+                  "description": "Имена и контекст блоков из того же авторизованного снимка; родительский список клиента не является источником подписанных последствий.",
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineShiftBlockDetails"
+                  }
+              },
+              "referenceDetails": {
+                  "type": "array",
+                  "description": "Минимальные имена затронутых назначений, без телефонов, финансов и скрытых vendor user IDs. Неизвестное имя остаётся null.",
+                  "items": {
+                      "$ref": "contract#/definitions/TimelineShiftReferenceDetails"
+                  }
+              },
+              "affectedGuests": {
+                  "type": "array",
+                  "description": "Персоны из affectedGuestIds с именами, не доставка и не индивидуальные event invitations.",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "id",
+                          "name"
+                      ],
+                      "properties": {
+                          "id": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "name": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          }
+                      }
+                  }
+              },
+              "movements": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "required": [
+                          "blockId",
+                          "location",
+                          "travelMinutes",
+                          "bufferMinutes",
+                          "beforeArrival",
+                          "afterArrival"
+                      ],
+                      "properties": {
+                          "blockId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "location": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ]
+                          },
+                          "travelMinutes": {
+                              "type": "number"
+                          },
+                          "bufferMinutes": {
+                              "type": "number"
+                          },
+                          "beforeArrival": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time",
+                              "description": "Плановое начало блока с ручными travel/buffer до сдвига, не фактическое прибытие рейса"
+                          },
+                          "afterArrival": {
+                              "type": [
+                                  "string",
+                                  "null"
+                              ],
+                              "format": "date-time",
+                              "description": "Плановое начало блока с ручными travel/buffer после сдвига, не фактическое прибытие рейса"
+                          }
+                      }
+                  }
+              },
+              "guestsAffected": {
+                  "type": "integer"
+              },
+              "affectedGuestIds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              },
+              "affectedVendorIds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              },
+              "affectedMemberIds": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              }
+          }
+      },
+      "TimelineShiftReferenceDetails": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "kind",
+              "id",
+              "name",
+              "assignments"
+          ],
+          "properties": {
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "member",
+                      "guest",
+                      "deal"
+                  ]
+              },
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "assignments": {
+                  "type": "array",
+                  "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                          "blockId",
+                          "role"
+                      ],
+                      "properties": {
+                          "blockId": {
+                              "type": "string",
+                              "format": "uuid"
+                          },
+                          "role": {
+                              "type": "string",
+                              "enum": [
+                                  "responsible",
+                                  "participant"
+                              ]
+                          }
+                      }
+                  }
+              }
+          }
+      },
+      "TimelineShiftScope": {
+          "oneOf": [
+              {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "date"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "day"
+                          ]
+                      },
+                      "date": {
+                          "type": "string",
+                          "format": "date"
+                      }
+                  }
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "kind",
+                      "eventId"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                      "kind": {
+                          "type": "string",
+                          "enum": [
+                              "event"
+                          ]
+                      },
+                      "eventId": {
+                          "type": "string",
+                          "format": "uuid"
+                      }
+                  }
+              }
+          ]
       },
       "Tip": {
           "type": "object",
@@ -3816,6 +4485,261 @@ export const CONTRACT_SCHEMAS = {
               }
           ]
       },
+      "VendorProgramAck": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "sourceVersion",
+              "acknowledgedAt"
+          ],
+          "properties": {
+              "sourceVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+              },
+              "acknowledgedAt": {
+                  "type": "string",
+                  "format": "date-time"
+              }
+          }
+      },
+      "VendorProgramBlock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "name",
+              "location",
+              "startsAt",
+              "endsAt",
+              "durationMinutes",
+              "fixed",
+              "travelMinutes",
+              "bufferMinutes",
+              "outdoor",
+              "roles",
+              "dependsOn",
+              "event"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "startsAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "endsAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Сохранённое окончание или точная явная длительность; неизвестное null"
+              },
+              "durationMinutes": {
+                  "type": [
+                      "number",
+                      "null"
+                  ]
+              },
+              "fixed": {
+                  "type": "boolean"
+              },
+              "travelMinutes": {
+                  "type": "number",
+                  "minimum": 0
+              },
+              "bufferMinutes": {
+                  "type": "number",
+                  "minimum": 0
+              },
+              "outdoor": {
+                  "type": "boolean"
+              },
+              "roles": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "enum": [
+                          "responsible",
+                          "participant"
+                      ]
+                  }
+              },
+              "dependsOn": {
+                  "type": "array",
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  },
+                  "description": "Только ID других разрешённых блоков этого снимка"
+              },
+              "event": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                      "id",
+                      "name",
+                      "date",
+                      "timeZone",
+                      "location"
+                  ],
+                  "properties": {
+                      "id": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "name": {
+                          "type": "string"
+                      },
+                      "date": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "date"
+                      },
+                      "timeZone": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      },
+                      "location": {
+                          "type": [
+                              "string",
+                              "null"
+                          ]
+                      }
+                  }
+              }
+          }
+      },
+      "VendorProgramSnapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "weddingId",
+              "wedding",
+              "sourceVersion",
+              "updatedAt",
+              "blocks",
+              "acknowledgedAt",
+              "requiresAcknowledgment",
+              "readToken",
+              "expiresAt"
+          ],
+          "properties": {
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "wedding": {
+                  "type": "string"
+              },
+              "sourceVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+              },
+              "updatedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "blocks": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/VendorProgramBlock"
+                  }
+              },
+              "acknowledgedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "requiresAcknowledgment": {
+                  "type": "boolean"
+              },
+              "readToken": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "expiresAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              }
+          }
+      },
+      "VendorProgramSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "weddingId",
+              "wedding",
+              "sourceVersion",
+              "updatedAt",
+              "blockCount",
+              "acknowledgedAt",
+              "requiresAcknowledgment"
+          ],
+          "properties": {
+              "weddingId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "wedding": {
+                  "type": "string"
+              },
+              "sourceVersion": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+              },
+              "updatedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "blockCount": {
+                  "type": "integer",
+                  "minimum": 0
+              },
+              "acknowledgedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "requiresAcknowledgment": {
+                  "type": "boolean"
+              }
+          }
+      },
       "VendorUpsert": {
           "type": "object",
           "description": "Анкета целиком. Правило для списков (`packages`, `portfolioUrls`, `media`):\n**поля нет — список не трогаем, пустой массив — очищаем**. Пакеты\nсохраняются по `id`: присланный с `id` — тот же пакет, без `id` —\nновый, неприсланный удаляется (019, FR-006).\n\nИначе экран, который списком не занимается — мастер анкеты портфолио не\nредактирует, загрузка ждёт хранилища, — стирал бы чужие работы при\nсохранении имени или телефона.\n",
@@ -4206,6 +5130,63 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "WeddingEvent": {
+          "type": "object",
+          "required": [
+              "id",
+              "name",
+              "kind",
+              "date",
+              "timeZone",
+              "location",
+              "isMain"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "kind": {
+                  "$ref": "contract#/definitions/WeddingEventKind"
+              },
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date"
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "location": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "isMain": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "WeddingEventKind": {
+          "type": "string",
+          "enum": [
+              "registration",
+              "nikah",
+              "ceremony",
+              "banquet",
+              "second_day",
+              "other"
+          ]
+      },
       "WeddingFormat": {
           "type": "string",
           "enum": [
@@ -4392,7 +5373,15 @@ export type ContractSchemaName =
   | "Task"
   | "TaskCreate"
   | "TaskPatch"
+  | "TimelineAcknowledgmentStatus"
+  | "TimelineAcknowledgments"
   | "TimelineEvent"
+  | "TimelineReference"
+  | "TimelineShiftBlockDetails"
+  | "TimelineShiftMoment"
+  | "TimelineShiftPreview"
+  | "TimelineShiftReferenceDetails"
+  | "TimelineShiftScope"
   | "Tip"
   | "User"
   | "UserProfile"
@@ -4403,6 +5392,10 @@ export type ContractSchemaName =
   | "VendorPackageInput"
   | "VendorPage"
   | "VendorPaymentRecord"
+  | "VendorProgramAck"
+  | "VendorProgramBlock"
+  | "VendorProgramSnapshot"
+  | "VendorProgramSummary"
   | "VendorUpsert"
   | "VerificationDecision"
   | "VerificationItem"
@@ -4411,6 +5404,8 @@ export type ContractSchemaName =
   | "VerificationStatus"
   | "VerificationSubmit"
   | "Wedding"
+  | "WeddingEvent"
+  | "WeddingEventKind"
   | "WeddingFormat"
   | "WeddingPlanner"
   | "WeddingPublic"

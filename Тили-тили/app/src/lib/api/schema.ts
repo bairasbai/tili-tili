@@ -4528,6 +4528,237 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/programs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Программы моих действующих заказов
+         * @description Keyset pagination по wedding ID. Только свои booked/paid_deposit/done сделки и активные свадьбы; статус относится к current version и содержимому разрешённой программы этого пользователя. Legacy Учтено не закрывает ожидание ознакомления. Нет назначенных блоков — blockCount 0, ожидания нет. Получение списка ничего не подтверждает. Cache-Control no-store.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Текущие разрешённые программы */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: components["schemas"]["VendorProgramSummary"][];
+                            nextCursor: string | null;
+                        };
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/weddings/{weddingId}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Разрешённый снимок программы для ознакомления
+         * @description Только блоки с назначением на собственные действующие сделки этой свадьбы. Служебные блоки/скрытые dependency IDs, другие участники, legacy who, телефоны и деньги не раскрываются. Даты/пояса/места мероприятий фактические, неизвестные остаются null. GET не подтверждает ознакомление. ETag и sourceVersion относятся к одному снимку под lock; Cache-Control no-store. ReadToken подписан для wedding/vendor/user/session/version/content на 600 секунд. При отсутствии назначений readToken/expiresAt null.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Снимок разрешённых блоков */
+                200: {
+                    headers: {
+                        /** @description Версия программы */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VendorProgramSnapshot"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/weddings/{weddingId}/timeline/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подтвердить ознакомление с точным снимком программы
+         * @description Явная команда, отдельная от legacy vendor updates/ack. Требуются readToken из GET и его исходный If-Match. После wedding lock повторно проверяются live wedding/account/session/ownership/committed deals, exact version, срок token и digest фактической разрешённой projection. Старый снимок не подтверждает новую редакцию. Повтор сохраняет исходное время и не создаёт второй audit event; отказ не пишет историю. В истории сохраняется минимальный подтверждённый снимок без token/телефонов/денег. Это не доказательство доставки SMS/push или человеческого прочтения каждой строки.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        readToken: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Сохранённое ознакомление с этой версией */
+                200: {
+                    headers: {
+                        /** @description Подтверждённая версия */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VendorProgramAck"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description timeline_conflict / program_read_expired / program_snapshot_changed / program_unassigned */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+                /** @description timeline_version_required — нужен исходный If-Match */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description acknowledgment_unavailable — подтверждение не сохранено, повторите позже */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/timeline/acknowledgments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Сводка ознакомления исполнителей для пары и команды
+         * @description Только couple/helper/coordinator своей активной свадьбы, live access после wedding lock. GET не подтверждает и не выдаёт readToken/digest/session/деньги. Current acknowledged требует ту же версию, содержание разрешённой projection и текущего живого владельца анкеты. PreviousAcknowledgment — отдельная история, не подтверждение этой редакции; имя читается из текущего профиля реального автора, не восстановленный снимок имени. External deal использует явный current-link указатель, атомарно сохранённый при выдаче последней ссылки, ту же deal/link identity/version/content. Старая ссылка не подтверждает новую; старые подтверждения доступны отдельно. Неизвестный исторический указатель, отозванная/истёкшая ссылка или устаревшая сделка слота дают unavailable, без возврата к старой зелёной отметке. После всех запросов проверяется фактическое время ссылки. External acknowledgedBy всегда null: это подтверждение владельцем ссылки, не проверенная личность. Отсутствующее назначение unassigned; удалённый зарегистрированный владелец unavailable. not_supported сохранён для совместимости прежних ответов. ETag/sourceVersion из одного lock; Cache-Control no-store. Сводка не доказывает доставку уведомлений или прочтение каждой строки.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Текущее состояние и отдельное предыдущее подтверждение */
+                200: {
+                    headers: {
+                        /** @description Версия программы */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineAcknowledgments"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description program_actors_changed — состав исполнителей поменялся во время чтения */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/analytics": {
         parameters: {
             query?: never;
@@ -5472,7 +5703,13 @@ export interface paths {
         put?: never;
         /**
          * Ссылка-приглашение для своего подрядчика
-         * @description Одноразовый токен, scope guest_vendor, TTL 30 дней, привязан к слоту.
+         * @description Секретная многократная ссылка для guest-vendor, TTL 30 дней, привязана
+         *     к слоту и текущей внешней сделке при выдаче. Выдача под wedding lock
+         *     повторно проверяет live membership/session и действующую внешнюю сделку.
+         *     Новая ссылка имеет свою program identity и не наследует receipt другой ссылки.
+         *     В той же транзакции становится current program link сделки для сводки
+         *     команды. Прежние ссылки не отзываются автоматически, но их receipt не
+         *     подтверждает новую ссылку. Историческая очередность миграцией не угадывается.
          *     Только для своего подрядчика: в слоте с каталожной сделкой — 409
          *     `not_external` (у каталожного есть кабинет и чат по анкете; ссылка
          *     открывала бы слот и переписку постороннему — ревью 015). Пустой слот — 404.
@@ -5514,6 +5751,155 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/guest-vendor/{token}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Разрешённая программа внешнего исполнителя по ссылке
+         * @description Без аккаунта, по действующей ссылке, выданной конкретной внешней сделке. Только назначенные этой сделке блоки и зависимости между ними, без who, чужих участников/служебных блоков/телефонов/денег. Общая projection с registered reader. ETag/sourceVersion/readToken относятся к одному снимку. Proof 600 секунд, отдельные purpose/key/audience, wedding/invite/deal/version/content. GET не подтверждает. Cache-Control no-store. После всех ожиданий проверяются actual clock/expiry/revocation/wedding/slot/current committed external deal. Исторические ссылки без issuance-time deal binding требуют новой ссылки от пары.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Назначенная разрешённая программа */
+                200: {
+                    headers: {
+                        /** @description Версия снимка */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VendorProgramSnapshot"];
+                    };
+                };
+                /** @description program_link_unbound — пара должна выдать новую ссылку с явной привязкой к сделке */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description gone — ссылка/свадьба/слот/внешняя сделка недоступны */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guest-vendor/{token}/timeline/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Подтверждение точного снимка по ссылке внешнего исполнителя
+         * @description Явная команда с readToken и исходным If-Match. Live access, actual TTL, exact version/content и конкретная ссылка/сделка повторно проверяются под lock. История содержит actual link identity, deal, minimal snapshot и server time; это действие владельца ссылки, не подтверждённая личность человека. Нет выдуманного user/session/actor name и нет raw link/proof в истории/audit. GET/accepted_at старого кабинета не заменяют этот receipt. Retry/concurrency сохраняют исходное время; отказ/ошибка audit откатывают оба следа.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        readToken: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Реальная запись ознакомления этой ссылкой */
+                200: {
+                    headers: {
+                        /** @description Подтверждённая версия */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["VendorProgramAck"];
+                    };
+                };
+                /** @description program_link_unbound / timeline_conflict / program_read_expired / program_snapshot_changed / program_unassigned */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description gone — ссылка/свадьба/слот/внешняя сделка недоступны */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+                /** @description timeline_version_required — нужен исходный If-Match */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description acknowledgment_unavailable — запись не сохранена */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/guest-vendor/{token}": {
         parameters: {
             query?: never;
@@ -5523,7 +5909,7 @@ export interface paths {
         };
         /**
          * Кабинет гостя-подрядчика
-         * @description Без регистрации. Отдаёт только дату, тайминг дня и чат с парой — ничего больше.
+         * @description Без регистрации. Дата свадьбы, свой слот/сделка, назначенный тайминг и чат именно сохранённой при выдаче внешней сделки. Ссылка не следует за новой сделкой слота. Wedding/invite/slot/deal проверяются под блокировками в одной транзакции; actual TTL после всех ожиданий. Исторически unbound ссылке нужна новая ссылка. Cache-Control no-store. accepted_at записывается атомарно по actual clock, не является ознакомлением с программой; отказ откатывает chat/accepted_at.
          */
         get: {
             parameters: {
@@ -5552,12 +5938,21 @@ export interface paths {
                             chatId?: string;
                             /** @description срок мягкой брони в часах (§18.3) — справочно, как у сделки */
                             holdHours?: number;
-                            /** @description Тайминг дня целиком (§11): подрядчику нужно знать, когда начинается церемония и когда его выход. Ни гостей, ни бюджета, ни остальной команды здесь нет. */
+                            /** @description Только блоки с назначением на текущую внешнюю сделку слота. Legacy who всегда null; служебные неназначенные блоки скрыты. Для полного версионного снимка/ознакомления используется отдельный GET /guest-vendor/{token}/timeline; accepted_at кабинета не является подтверждением программы. */
                             timeline?: components["schemas"]["TimelineEvent"][];
                         };
                     };
                 };
-                /** @description `gone` — ссылка истекла или отозвана */
+                /** @description `program_link_unbound` — нужна новая ссылка от пары, историческая сделка не угадывается */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `gone` — ссылка/свадьба/сделка недействительны или слот больше не ведёт к выданной сделке */
                 410: {
                     headers: {
                         [name: string]: unknown;
@@ -5585,7 +5980,7 @@ export interface paths {
         };
         /**
          * Переписка своего подрядчика с парой
-         * @description Тот же чат, что пара видит у себя в списке. Аккаунта у подрядчика нет, поэтому право читать даёт токен из ссылки, а не заголовок авторизации.
+         * @description Тот же чат, что пара видит у себя в списке. Аккаунта у подрядчика нет, поэтому право читать даёт токен из ссылки, а не заголовок авторизации. Actual выданная сделка и live wedding/invite/slot/deal проверяются в одной транзакции; actual TTL после всех ожиданий. Исторически unbound ссылка требует новой. Cache-Control no-store.
          */
         get: {
             parameters: {
@@ -5614,6 +6009,15 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
+                /** @description `program_link_unbound` — нужна новая ссылка от пары */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /** @description `gone` — ссылка истекла или отозвана */
                 410: {
                     headers: {
@@ -5626,7 +6030,10 @@ export interface paths {
             };
         };
         put?: never;
-        /** Написать паре */
+        /**
+         * Написать паре
+         * @description Сохранённая выданная сделка и live wedding/invite/slot/deal проверяются под блокировками в одной транзакции. Actual TTL после всех ожиданий. Отказ откатывает сообщение/chat, не публикует realtime/notify. senderId null — владение ссылкой, не подтверждённая личность. Realtime/уведомления только после commit; sentAt actual clock после wait.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -5651,6 +6058,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["Message"];
+                    };
+                };
+                /** @description `program_link_unbound` — нужна новая ссылка от пары */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
                 /** @description `gone` — ссылка истекла или отозвана */
@@ -7738,6 +8154,232 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weddings/{weddingId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Мероприятия своей свадьбы
+         * @description Команда видит дату, пояс и место каждого мероприятия. Историческая свадьба имеет одну основную программу; названия блоков не используются для её автоматического дробления. ETag относится к согласованному снимку программы и контекста.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        /** @description Версия снимка программы и мероприятий */
+                        ETag?: string;
+                        /** @description Фактическое время изменения */
+                        "X-Timeline-Updated-At"?: string;
+                        /** @description Фактический автор изменения */
+                        "X-Timeline-Updated-By"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingEvent"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        /**
+         * Добавить мероприятие
+         * @description Только пара. Исходный If-Match обязателен (428 без версии, 409 timeline_conflict при старой). Технический предел 50 мероприятий. Неуказанные дата/пояс/место остаются неизвестными; создание не назначает приглашённых и не даёт гостям доступ к программе. Все исходные блоки/ID сохраняются.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        kind: components["schemas"]["WeddingEventKind"];
+                        /** Format: date */
+                        date?: string | null;
+                        timeZone?: string | null;
+                        location?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Создано */
+                201: {
+                    headers: {
+                        /** @description Принятая версия программы */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingEvent"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                /** @description Нужен If-Match исходного снимка */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}": {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": string;
+            };
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Удалить пустое мероприятие
+         * @description Только пара, с исходным If-Match. Основное мероприятие или мероприятие с блоками — 409 event_in_use; блоки никогда не удаляются каскадом этого действия. Сначала явно перенести их в другое мероприятие.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Удалено */
+                204: {
+                    headers: {
+                        /** @description Принятая версия программы */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Нужен If-Match исходного снимка */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /**
+         * Изменить мероприятие
+         * @description Только пара; старая версия отклоняется до мутации. Основные дата/пояс/место
+         *     синхронизированы с контекстом свадьбы; назначенная основная дата не снимается.
+         *     Перенос основной даты двигает только её non-fixed программу, не блоки
+         *     независимо датированных мероприятий. Изменение даты/пояса отдельного
+         *     мероприятия не переписывает часы его блоков автоматически: их нужно
+         *     проверить/изменить явно. Неизвестный пояс или невозможная дата — 422.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "If-Match": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name?: string;
+                        kind?: components["schemas"]["WeddingEventKind"];
+                        /** Format: date */
+                        date?: string | null;
+                        timeZone?: string | null;
+                        location?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        /** @description Принятая версия программы */
+                        ETag?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingEvent"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+                /** @description Нужен If-Match исходного снимка */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/weddings/{weddingId}/timeline": {
         parameters: {
             query?: never;
@@ -7760,6 +8402,12 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Версия этого снимка программы */
+                        ETag?: string;
+                        /** @description Время изменения; отсутствует для неизвестной истории */
+                        "X-Timeline-Updated-At"?: string;
+                        /** @description ID фактического автора; отсутствует для неизвестного автора */
+                        "X-Timeline-Updated-By"?: string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -7768,11 +8416,16 @@ export interface paths {
                 };
             };
         };
-        /** Заменить тайминг целиком */
+        /**
+         * Заменить тайминг целиком
+         * @description Сохраняет ID существующих блоков. Требует версию исходного снимка; устаревшая запись ничего не меняет и получает 409 timeline_conflict. Без версии — 428 timeline_version_required.
+         */
         put: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    "If-Match": string;
+                };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
                 };
@@ -7787,13 +8440,29 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Версия сохранённой программы */
+                        ETag?: string;
+                        /** @description Время изменения; отсутствует для неизвестной истории */
+                        "X-Timeline-Updated-At"?: string;
+                        /** @description ID фактического автора; отсутствует для неизвестного автора */
+                        "X-Timeline-Updated-By"?: string;
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": components["schemas"]["TimelineEvent"][];
                     };
                 };
+                409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
+                /** @description timeline_version_required — исходная версия не передана */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         post?: never;
@@ -7830,6 +8499,12 @@ export interface paths {
                 /** @description OK */
                 200: {
                     headers: {
+                        /** @description Исходная версия предпросмотра */
+                        ETag?: string;
+                        /** @description Время изменения исходного снимка; отсутствует для неизвестной истории */
+                        "X-Timeline-Updated-At"?: string;
+                        /** @description ID фактического автора исходного снимка; отсутствует для неизвестного автора */
+                        "X-Timeline-Updated-By"?: string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -7837,6 +8512,80 @@ export interface paths {
                             events?: components["schemas"]["TimelineEvent"][];
                             conflicts?: string[];
                         };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/timeline/shift/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Предпросмотр сдвига выбранного дня или мероприятия
+         * @description Только couple/coordinator. Ничего не записывает и не отправляет.
+         *     Дата и пояс event берутся из своей wedding_events; day использует
+         *     явно выбранную дату и реальный пояс свадьбы. Unknown context — 422,
+         *     чужое/неизвестное event — одинаковый 404. Fixed, past, undated и другие
+         *     дни/мероприятия исключаются. Все зависимости и общие ресурсы проверяются
+         *     по полному снимку. Разные booked deals одного vendor — один ресурс.
+         *     canConfirm=false при конфликте/пустом сдвиге, previewToken тогда null.
+         *     Конфликт требует ручной правки программы, coordinator override отсутствует.
+         *     Токен подписан сервером, привязан к пользователю/сессии/свадьбе/версии и
+         *     последствиям, действует десять минут. Отсутствующий провайдер не считается
+         *     доставкой гостям; их адресаты/трансферы не реконструируются по тексту блока.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        scope: components["schemas"]["TimelineShiftScope"];
+                        /** @description Ненулевой сдвиг; 0 даёт 422 empty_shift. */
+                        minutes: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Снимок и последствия без мутации */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        "X-Timeline-Updated-At"?: string;
+                        "X-Timeline-Updated-By"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TimelineShiftPreview"];
+                    };
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                422: components["responses"]["Validation"];
+                /** @description `db_unavailable`, `auth_unavailable` — база или подписание предпросмотра недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
                     };
                 };
             };
@@ -7857,20 +8606,26 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Сдвинуть день X на N минут
-         * @description Кнопка «+15 мин» в режиме дня X. Сдвигает все последующие блоки и
-         *     рассылает push команде и гостям — killer-фича §19.6. Нулевой сдвиг —
-         *     422 `empty_shift`. Обязательный `Idempotency-Key`: без него — 400
-         *     `idempotency_key_required`, длиннее 200 символов — 400
-         *     `idempotency_key_too_long`, тот же ключ на другой запрос — 409
-         *     `idempotency_key_reused`, тот же ключ ещё выполняется — 409
-         *     `idempotency_in_progress`.
+         * Подтвердить точный предпросмотр сдвига
+         * @description Только couple/coordinator. Обязательны подписанный previewToken,
+         *     исходный If-Match и Idempotency-Key (до 128 символов). Старая команда
+         *     {minutes} не является обходом: без версии 428, без preview 422.
+         *     После ожидания замка проверяются текущие права/сессия/версия и фактическое
+         *     серверное время. Изменившиеся последствия, истёкший preview или пустой/
+         *     конфликтный план дают 409 без частичной записи, журнала и уведомления.
+         *     Подтверждаются только точные blocks предпросмотра. Результат, новый ETag,
+         *     журнал и адресные in-app notification rows сохраняются одной транзакцией.
+         *     Replay сначала проверяет актуальные права и возвращает тот же ответ/ETag,
+         *     не сдвигает и не уведомляет повторно. Другой token/If-Match на том же ключе
+         *     даёт 409 idempotency_key_reused. Нулевой старый сдвиг — 422 empty_shift.
+         *     guestsAffected означает затронутых подтвердившихся гостей, не доставку.
          */
         post: {
             parameters: {
                 query?: never;
                 header: {
                     "Idempotency-Key": string;
+                    "If-Match": string;
                 };
                 path: {
                     weddingId: components["parameters"]["WeddingId"];
@@ -7880,15 +8635,16 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @example 15 */
-                        minutes: number;
+                        previewToken: string;
                     };
                 };
             };
             responses: {
-                /** @description OK */
+                /** @description Подтверждённый результат; ETag сохранён вместе с ответом для replay */
                 200: {
                     headers: {
+                        ETag?: string;
+                        "Idempotent-Replay"?: string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -7896,7 +8652,9 @@ export interface paths {
                     };
                 };
                 400: components["responses"]["BadRequest"];
-                /** @description `idempotency_key_reused` — тот же ключ на другой запрос; `idempotency_in_progress` — тот же ключ ещё выполняется */
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `timeline_conflict`, `shift_preview_changed`, `shift_preview_expired`, `shift_conflict`, `idempotency_key_reused`, `idempotency_in_progress` — отказ без мутации */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -7906,6 +8664,24 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["Validation"];
+                /** @description timeline_version_required */
+                428: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `db_unavailable`, `auth_unavailable` — база или подписание предпросмотра недоступны */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -10321,6 +11097,97 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TimelineAcknowledgments: {
+            sourceVersion: string;
+            /** Format: date-time */
+            updatedAt: string | null;
+            items: components["schemas"]["TimelineAcknowledgmentStatus"][];
+        };
+        TimelineAcknowledgmentStatus: {
+            /** @enum {string} */
+            kind: "registered" | "external";
+            /**
+             * Format: uuid
+             * @description ID анкеты для registered, ID реальной сделки для external
+             */
+            id: string;
+            name: string | null;
+            blockCount: number;
+            /** @enum {string} */
+            status: "pending" | "acknowledged" | "unassigned" | "unavailable" | "not_supported";
+            /** Format: date-time */
+            acknowledgedAt: string | null;
+            /** @description Текущее имя реального автора для registered; для external всегда null, личность владельца ссылки не проверена */
+            acknowledgedBy: string | null;
+            previousAcknowledgment: {
+                sourceVersion: string;
+                /** Format: date-time */
+                acknowledgedAt: string;
+                acknowledgedBy: string | null;
+            } | null;
+        };
+        VendorProgramSummary: {
+            /** Format: uuid */
+            weddingId: string;
+            wedding: string;
+            sourceVersion: string;
+            /** Format: date-time */
+            updatedAt: string | null;
+            blockCount: number;
+            /** Format: date-time */
+            acknowledgedAt: string | null;
+            requiresAcknowledgment: boolean;
+        };
+        VendorProgramBlock: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            location: string | null;
+            /** Format: date-time */
+            startsAt: string | null;
+            /**
+             * Format: date-time
+             * @description Сохранённое окончание или точная явная длительность; неизвестное null
+             */
+            endsAt: string | null;
+            durationMinutes: number | null;
+            fixed: boolean;
+            travelMinutes: number;
+            bufferMinutes: number;
+            outdoor: boolean;
+            roles: ("responsible" | "participant")[];
+            /** @description Только ID других разрешённых блоков этого снимка */
+            dependsOn: string[];
+            event: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date */
+                date: string | null;
+                timeZone: string | null;
+                location: string | null;
+            };
+        };
+        VendorProgramSnapshot: {
+            /** Format: uuid */
+            weddingId: string;
+            wedding: string;
+            sourceVersion: string;
+            /** Format: date-time */
+            updatedAt: string | null;
+            blocks: components["schemas"]["VendorProgramBlock"][];
+            /** Format: date-time */
+            acknowledgedAt: string | null;
+            requiresAcknowledgment: boolean;
+            readToken: string | null;
+            /** Format: date-time */
+            expiresAt: string | null;
+        };
+        VendorProgramAck: {
+            sourceVersion: string;
+            /** Format: date-time */
+            acknowledgedAt: string;
+        };
         Readiness: {
             /** @enum {string} */
             status?: "ok" | "not_ready";
@@ -11406,6 +12273,122 @@ export interface components {
             /** @description true — та же рассылка уже была недавно, повторно не отправлялась */
             debounced?: boolean;
         };
+        TimelineShiftScope: {
+            /** @enum {string} */
+            kind: "day";
+            /** Format: date */
+            date: string;
+        } | {
+            /** @enum {string} */
+            kind: "event";
+            /** Format: uuid */
+            eventId: string;
+        };
+        TimelineShiftPreview: {
+            scope: {
+                /** @enum {string} */
+                kind: "day" | "event";
+                /** Format: uuid */
+                eventId?: string;
+                /** Format: date */
+                date: string;
+                timeZone: string;
+            };
+            minutes: number;
+            sourceVersion: string;
+            canConfirm: boolean;
+            /** Format: date-time */
+            expiresAt: string;
+            previewToken: string | null;
+            blocks: {
+                /** Format: uuid */
+                id: string;
+                before: components["schemas"]["TimelineShiftMoment"];
+                after: components["schemas"]["TimelineShiftMoment"];
+            }[];
+            excluded: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                reason: "undated" | "other_day" | "other_event" | "fixed" | "past";
+            }[];
+            conflicts: {
+                /** @enum {string} */
+                kind: "shifted_into_past" | "crosses_day" | "unknown_duration" | "invalid_interval" | "missing_dependency" | "unknown_dependency_time" | "dependency_timing" | "unknown_participant_time" | "participant_overlap" | "travel_buffer_overlap";
+                blockIds: string[];
+            }[];
+            affectedBlockIds: string[];
+            affectedReferences: components["schemas"]["TimelineReference"][];
+            /** @description Имена и контекст блоков из того же авторизованного снимка; родительский список клиента не является источником подписанных последствий. */
+            blockDetails: components["schemas"]["TimelineShiftBlockDetails"][];
+            /** @description Минимальные имена затронутых назначений, без телефонов, финансов и скрытых vendor user IDs. Неизвестное имя остаётся null. */
+            referenceDetails: components["schemas"]["TimelineShiftReferenceDetails"][];
+            /** @description Персоны из affectedGuestIds с именами, не доставка и не индивидуальные event invitations. */
+            affectedGuests: {
+                /** Format: uuid */
+                id: string;
+                name: string | null;
+            }[];
+            movements: {
+                /** Format: uuid */
+                blockId: string;
+                location: string | null;
+                travelMinutes: number;
+                bufferMinutes: number;
+                /**
+                 * Format: date-time
+                 * @description Плановое начало блока с ручными travel/buffer до сдвига, не фактическое прибытие рейса
+                 */
+                beforeArrival: string | null;
+                /**
+                 * Format: date-time
+                 * @description Плановое начало блока с ручными travel/buffer после сдвига, не фактическое прибытие рейса
+                 */
+                afterArrival: string | null;
+            }[];
+            guestsAffected: number;
+            affectedGuestIds: string[];
+            affectedVendorIds: string[];
+            affectedMemberIds: string[];
+        };
+        TimelineShiftBlockDetails: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uuid */
+            eventId: string;
+            eventName: string;
+            /** Format: date */
+            eventDate: string | null;
+            timeZone: string | null;
+            location: string | null;
+            /** Format: date-time */
+            startsAt: string | null;
+            /**
+             * Format: date-time
+             * @description Известное окончание из записи или точной durationMinutes, тем же расчётом что preview; неизвестное остаётся null
+             */
+            endsAt: string | null;
+        };
+        TimelineShiftReferenceDetails: {
+            /** @enum {string} */
+            kind: "member" | "guest" | "deal";
+            /** Format: uuid */
+            id: string;
+            name: string | null;
+            assignments: {
+                /** Format: uuid */
+                blockId: string;
+                /** @enum {string} */
+                role: "responsible" | "participant";
+            }[];
+        };
+        TimelineShiftMoment: {
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string | null;
+        };
         /** @description Ответ на «+15 мин» и активацию плана Б. */
         DayXBroadcast: {
             /** @description только у сдвига */
@@ -11511,10 +12494,26 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
         };
+        /** @description Участник своей свадьбы: живой член команды, персона гостей или забронированная сделка (включая своего подрядчика). Только ID и тип, без финансовых данных. */
+        TimelineReference: {
+            /** @enum {string} */
+            kind: "member" | "guest" | "deal";
+            /** Format: uuid */
+            id: string;
+        };
         TimelineEvent: {
+            /**
+             * Format: uuid
+             * @description ID существующего блока; для нового блока поле не передаётся
+             */
             id?: string;
+            /**
+             * Format: uuid
+             * @description Мероприятие своей свадьбы. Пропущено у существующего блока — связь сохраняется; у нового — основное мероприятие. В гостевой проекции отсутствует. Legacy guest day показывает только разрешённые блоки основной программы до подключения индивидуальных приглашений.
+             */
+            eventId?: string;
             /** @example Выездная церемония */
-            name?: string;
+            name: string;
             location?: string;
             /** Format: date-time */
             startsAt?: string;
@@ -11539,6 +12538,33 @@ export interface components {
              * @default true
              */
             forGuests: boolean;
+            /** @description Длительность в минутах; допустима до назначения начала. При начале и длительности сервер вычисляет окончание; противоречащие значения отклоняются. Только в полном тайминге команды. */
+            durationMinutes?: number | null;
+            /** @description Фиксированное начало: нужно startsAt; автоматический сдвиг не двигает блок. Только в полном тайминге команды. */
+            fixed?: boolean;
+            /** @description Ручное время переезда, без автоматической оценки маршрута. Только для команды. */
+            travelMinutes?: number;
+            /** @description Ручной запас времени. Только для команды. */
+            bufferMinutes?: number;
+            /** @description Уникальные ID других блоков сохраняемой программы; чужие, удалённые, собственный ID и циклы запрещены. В гостевой проекции отсутствует. */
+            dependsOn?: string[];
+            /** @description Один ответственный; null снимает назначение. В гостевой проекции отсутствует. */
+            responsible?: components["schemas"]["TimelineReference"] | null;
+            /** @description Уникальные участники. В гостевой проекции отсутствует. Удаление персоны/членства, мягкое удаление аккаунта или отмена сделки снимает назначения и меняет версию. */
+            participants?: components["schemas"]["TimelineReference"][];
+        };
+        /** @enum {string} */
+        WeddingEventKind: "registration" | "nikah" | "ceremony" | "banquet" | "second_day" | "other";
+        WeddingEvent: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            kind: components["schemas"]["WeddingEventKind"];
+            /** Format: date */
+            date: string | null;
+            timeZone: string | null;
+            location: string | null;
+            isMain: boolean;
         };
         AlbumPhoto: {
             id?: string;

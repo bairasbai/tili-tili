@@ -25,11 +25,15 @@ import { weddingLifecycleRoutes } from './routes/weddingLifecycle.js'
 import { chatRoutes } from './routes/chats.js'
 import { realtimeRoutes } from './routes/realtime.js'
 import { vendorCabinetRoutes } from './routes/vendorCabinet.js'
+import { vendorProgramRoutes } from './vendor/program.js'
+import { externalProgramRoutes } from './vendor/external-program.js'
+import { timelineAcknowledgmentRoutes } from './routes/timelineAcknowledgments.js'
 import { reviewRoutes } from './routes/reviews.js'
 import { adminRoutes } from './routes/admin.js'
 import { RealtimeHub } from './realtime/hub.js'
 import { registerJobs } from './jobs/index.js'
 import { dayxRoutes } from './routes/dayx.js'
+import { eventRoutes } from './routes/events.js'
 import { geoRoutes } from './routes/geo.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { noteRoutes } from './routes/notes.js'
@@ -143,7 +147,9 @@ export async function buildApp(
 
   await app.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
+    exposedHeaders: ['ETag', 'X-Timeline-Updated-At', 'X-Timeline-Updated-By'],
   })
 
   /* Заголовки безопасности — своим хуком, а не пакетом.
@@ -333,8 +339,12 @@ export async function buildApp(
   await app.register(notificationRoutes)
   await app.register(noteRoutes)
   await app.register(dayxRoutes)
+  await app.register(eventRoutes)
   await app.register(realtimeRoutes)
   await app.register(vendorCabinetRoutes)
+  await app.register(vendorProgramRoutes)
+  await app.register(externalProgramRoutes)
+  await app.register(timelineAcknowledgmentRoutes)
   await app.register(reviewRoutes)
   await app.register(adminRoutes)
   for (const routes of extraRoutes) await app.register(routes)
