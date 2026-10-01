@@ -1277,6 +1277,7 @@ Object.assign(EN, {
   'Обязательства уже съели резерв — на неожиданности запаса нет': 'Commitments have eaten the reserve — nothing is left for surprises',
   'ещё не ответили': 'have not answered yet',
   'Отправлено:': 'Sent:',
+  'Не отправлено:': 'Not sent:',
   'без телефона:': 'no phone number:',
   'ссылку уже открыли:': 'link already opened:',
   'Напомнить не ответившим': 'Remind those who have not answered',

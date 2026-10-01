@@ -14,8 +14,14 @@ own-stamp reset fixed:15before13fail/2pass, focused292pass. Fresh full1393front/
 1733back/no skips/types/lint/build/init0; actual production reminderui3 eight
 checks/zeroerrors/all4PNG inspected, source565match. REPORT-REMINDER-CLAIM.md
 retains failed smooth-scroll browser witness and real-provider limitations.
-This reminder code awaits scoped commit/push/CI/main at this timestamp.
-Owner withdrawal survey and failed-counter UI correction pending;
+Reminder claim published through PR23/green CI, main9cf734f verified0/0/clean.
+Continued failed-counter UI: corrected8before2:3fail/5pass, actual HTTP failed1
+not displayed before; RU/EN Not sent and role=status after focused56pass/type/
+lint0. Fresh full resultfull1:1401front/1733back/no skips/types/wholelint/build/
+init0; actual production resultafter1:10checks/zeroerrors/all7PNG inspected
+RUEN320/390/1440/nav geometry/source566hashmatch. Maps/report updated, scoped
+result publication pending. REPORT-REMINDER-RESULT.md.
+Owner withdrawal survey pending;
 event/RSVP/transfers/delegation and all FR/SC/NFR/WP obligations unchanged.
 
 ## Решения владельца · 2026-09-30

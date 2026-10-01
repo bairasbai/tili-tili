@@ -3099,3 +3099,14 @@ succeeded, then old sender failed. Old unconditional reset cleared the newer
 stamp. Reset compares own exact PostgreSQL text timestamp, not truncated JSDate.
 Actual newer stamp is preserved after fix. Aging is a synthetic eligible-state
 fixture, not a claim of an actual25hour provider wait or realSMS delivery.
+
+## ERR-0419 · 2026-10-01 · Reminder UI Hid Failed Sends
+
+Actual HTTP sent1/failed1/skips using controlled sender, old UI showed only
+success/skips. Correct permanent8before2:3fail/5pass (RU/EN mixed, RU all-failed).
+Initial EN expectation typo identified separately and retained, not a product
+defect. Append positive failed as Not sent/Не отправлено, not a guessed reason;
+role=status. Focused56pass/types/scopedlint0; fresh full1401front/1733back/
+no skips/types/wholelint/build/init0, actual browser10checks/zeroerrors/
+all7PNG inspected RUEN320/390/1440/nav geometry/source566hashmatch.
+Source: REPORT-REMINDER-RESULT.md and guestReminderResult.test.tsx.

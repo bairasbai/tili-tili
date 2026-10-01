@@ -3248,3 +3248,27 @@ failures, fix only external harness with instant scroll/bottom wait/actual nav
 bounds, inspect viewport PNGs. No product layout patch or real SMS. No own
 listeners/privatefixtures. Scoped publication next, accepted-batch/failed-counter
 UI/providers/allWP still pending.
+
+## 2026-10-01 · PR23 Main And Reminder Failure Result
+
+PR23 merged after7displayed GitHubSUCCESS, main9cf734f0f46587dc7f84c80466e8a116f6ed9490
+local/fetched0/0/clean/source565match. Continued separate reminder-result branch.
+Actual production-preview HTTP controlled sender returns sent1/failed1/skips,
+old UI omits failed. External first startup failed on Windows C: ESM import,
+fixed to file URL; retained as harness failure. Initial EN unit expectation
+wrongly shortened existing no phone number; initial after focused55/1fail.
+Correct expected label, temporarily restore only our UI/translation changes
+to exact main, corrected before2:8tests3fail/5pass; then fix focused56pass.
+Append server failed as Not sent/Не отправлено (not all provider errors,
+also batch limit), role=status. Preserve zero/skips/busy/helper/refusal controls.
+Types/scopedlint0, source566frozen/fresh resultfull1 full running. Screen/button
+maps and REPORT-REMINDER-RESULT added, full/browser/publication pending.
+No real provider/production/batch withdrawal policy or wholeWP claim.
+
+Reminder result final local verification: fresh resultfull1 full1401frontend/
+1733backend/no skips/types/wholelint/build/init0; actual production resultafter1
+ten checks/zeroerrors/all7PNG inspected RUEN320/390/1440/actual nav bounds.
+Controlled sender only, real_provider_delivery=false, no HTTP response mocking.
+Source566hashmatch/no own listeners/privatefixture; maps/report/current progress
+updated. Scoped publication next. Owner accepted-batch survey/providers/events/
+SC/NFR/allWP remain, no production command or real-delivery acceptance.

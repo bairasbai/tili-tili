@@ -1844,11 +1844,12 @@ export function Guests() {
               const parts = [`${t('Отправлено:')} ${res?.sent ?? 0}`]
               if (res?.skippedNoPhone) parts.push(`${t('без телефона:')} ${res.skippedNoPhone}`)
               if (res?.skippedLinkUsed) parts.push(`${t('ссылку уже открыли:')} ${res.skippedLinkUsed}`)
+              if (res?.failed) parts.push(`${t('Не отправлено:')} ${res.failed}`)
               setReminded(parts.join(' · '))
             })} className="press w-full card-s py-3.5 text-[12.5px] font-semibold disabled:opacity-50">
               {busyId === 'remind' ? t('Отправляем…') : t('Напомнить не ответившим')}
             </button>}
-            {reminded && <p className="text-[11px] text-[var(--soft)] px-1">{reminded}</p>}
+            {reminded && <p role="status" className="text-[11px] text-[var(--soft)] px-1">{reminded}</p>}
           </div>
         )}
       </div>
