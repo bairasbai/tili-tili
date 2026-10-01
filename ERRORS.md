@@ -3110,3 +3110,30 @@ role=status. Focused56pass/types/scopedlint0; fresh full1401front/1733back/
 no skips/types/wholelint/build/init0, actual browser10checks/zeroerrors/
 all7PNG inspected RUEN320/390/1440/nav geometry/source566hashmatch.
 Source: REPORT-REMINDER-RESULT.md and guestReminderResult.test.tsx.
+
+## ERR-0420 · 2026-10-01 · DELETE Dropped Snapshot Version
+
+client.test.ts permanent runtime witness: If-Match expected "7", actual null.
+The shared delete method lacked Options, unlike PATCH/PUT; event DELETE
+requires the captured version by existing contract. Forward optional Options
+and preserve previous call signatures. New real browser DELETE204 and stale/
+populated refusal checks retain the exact version. Source: report022, client
+regression, final full1429/1733/init0 and actual browser9checks/source569match.
+
+## ERR-0421 · 2026-10-01 · New Event Conflict Form Overflow
+
+During022 development, eventsui2 captured disabled fields past the320px modal
+edge. Native fieldset intrinsic minimum was not constrained; min-width:0 now
+keeps fields within Dialog. Explicit select accessible names also added after
+browser exact-label failure. Final actual eventsfinal1 geometry and inspected
+RU/EN screenshots pass. English early-enter geometry was a separate harness
+sampling failure; wait for actual animation completion, no weakened limits.
+
+## ERR-0422 · 2026-10-01 · New Submit Color Pair Failed Contrast Guard
+
+Full eventsfull1 source token scanner measured2.31 for on-grad/rose-ink in light
+theme, below its4.5 requirement. Use existing rose-soft/rose-ink pair that passes
+both theme checks; no scanner exceptions. Also add /wedding/events to mandatory
+server-down route sweep. Full eventsfull3:1429/1733/no skips/init0. Old audit36
+unique-alert fixture ambiguity fixed by exact conflict message +alert role,
+preserving draft/If-Match/retry assertions and the other real refusal.

@@ -1,5 +1,20 @@
 # Реализация полного ТЗ
 
+## Текущая Работа 022 · 2026-10-01
+
+PR24 опубликован/влит, исходный main788e801 локально и fetched origin/main
+совпадают, clean. Ниже старые pending-публикации исторические.
+Продолжение: [022: интерфейс управления мероприятиями](../фичи/022-мероприятия/REPORT.md).
+Реальные create/edit/delete/версионные отказы и couple/team UI на существующем
+API; индивидуальные приглашения/RSVP и весь WP04 не приняты. Опрос основной
+даты не отвечен; дата остаётся в существующем `/us` переносе. Full/browser/
+publication итог фиксируется в отчёте022, не по старым числам ниже.
+Все WP00–WP16, FR/SC/NFR и product/provider ограничения сохраняются.
+Итог локального022: focused219pass; fresh full1429front/1733back/no skips/init0;
+actual browser9checks/zeroerrors/all11PNG inspected/RUEN320/390/1440/source569
+match. Scoped публикация ещё не утверждается этим pre-publication документом;
+проверять фактический PR и внешний PUBLICATION-CONFIRMED.md указанного отчёта.
+
 ## Current Verified Checkpoint · 2026-10-01
 
 PR21 published and merged after7GitHub checksSUCCESS, main f9ccfa1 at verified

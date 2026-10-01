@@ -1,5 +1,5 @@
 import { createElement, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus, RefreshCw, Pencil, LockKeyhole } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
 import { fmt } from '@/lib/money'
@@ -1274,6 +1274,7 @@ export function Timeline() {
       } />
       <AsyncState q={q} />
       {ready(q) && q.data?.etag && <div aria-label={t('Версия программы')} className="px-5 mt-2 text-[11px] text-[var(--soft)] space-y-1 break-words">
+        <Link to="/wedding/events" className="inline-flex items-center gap-2 py-2 text-[13px] font-semibold text-[var(--ink)]"><Clock3 size={16} />{t('Мероприятия')}</Link>
         <p>{t('Версия программы')}: {q.data.etag.replace(/^"|"$/g, '')}</p>
         <p>{author ? <>{t('Автор изменения')}: {author}</> : t('Автор изменения неизвестен')}</p>
         <p>{changedAt ? <>{t('Изменено')}: <time dateTime={updatedAt!}>{changedAt}</time></> : t('Время изменения неизвестно')}</p>

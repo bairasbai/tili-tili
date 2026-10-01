@@ -3272,3 +3272,26 @@ Controlled sender only, real_provider_delivery=false, no HTTP response mocking.
 Source566hashmatch/no own listeners/privatefixture; maps/report/current progress
 updated. Scoped publication next. Owner accepted-batch survey/providers/events/
 SC/NFR/allWP remain, no production command or real-delivery acceptance.
+
+## 2026-10-01 · 022 Event Management UI
+
+Started from verified clean main788e801 (PR24 merged); separate feature branch.
+Spec/owner main-date survey/plan/tasks/external gates before code. Added real
+/wedding/events CRUD UI with timeline navigation, typed existing-schema API
+wrappers and DELETE If-Match option support. Capture form/version; current
+role gates, unknown/null preservation, changed-only PATCH, main/date protection,
+confirmation, retained409/network drafts, explicit fresh opening, no automatic
+retry/optimistic success, keyed wedding/late callback cleanup, RU/EN.
+Permanent DELETE witness before1failed. New26 UI cases and additional route
+server-down sweep. Retained failed full1 contrast2.31/missing route, full2
+ambiguous old audit36 alert; fixes keep contrast guard and exact conflict/ETag
+assertions. Retained browser label/fieldset overflow/enter-animation witnesses.
+Final focused10files219pass; fresh migrated eventsfull3 actual PG15432/Redis13
+full1429frontend/1733backend/no skips/types/wholelint/build/init0. Production
+preview eventsfinal1 actual API/DB Chromium9checks/zeroerrors/all11PNG inspected
+RUEN320/390/1440 and fixed nav; source569SHA hashes match. Maps and REPORT022
+record evidence/failures, handoff replaced with current scoped state.
+Publication next at this commit boundary; actual later confirmation external
+.unlazy/wp04-events-ui-20261001/PUBLICATION-CONFIRMED.md/attached PR. No
+production/external provider or wholeWP04 completion claim. Personal event
+invites/RSVP/transfers/delegation/allSC/NFR/WP00-WP16 still required.

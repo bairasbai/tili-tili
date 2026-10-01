@@ -5,6 +5,9 @@
 
 ## Полное ТЗ WP00–WP16 · 2026-09-30
 
+Текущая задача: [022: управление мероприятиями](фичи/022-мероприятия/tasks.md), только интерфейс на существующем API, не весь WP04. Исходный main788e801 проверен локально/fetch, clean. PR24 опубликован и влит; старые pending-пункты ниже исторические. Опрос об основной дате ожидает ответа. Production запрещён.
+Локально022: focused219pass, fresh full1429front/1733back/no skips/types/wholelint/build/init0, actual production browser9checks/zeroerrors/all11PNG inspected/source569match. Публикация022 следует после этого commit boundary; её фактическое подтверждение: внешний `.unlazy/wp04-events-ui-20261001/PUBLICATION-CONFIRMED.md` и attached PR. T010/весьWP04 остаются открыты.
+
 Current reminder claim scope,2026-10-01:
 Latest continuation after PR23:
 - [x] PR23 merged after7displayed GitHubSUCCESS, main9cf734f local/fetched0/0/clean/source565match. Production untouched.

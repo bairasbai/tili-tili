@@ -21,6 +21,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('version-bound snapshots', () => {
+  it('sends the captured If-Match on DELETE and accepts its empty 204 response', async () => {
+    const fetcher = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(api.delete(url('/weddings/{weddingId}/events/{eventId}', { weddingId: 'w1', eventId: 'e1' }), { ifMatch: '"7"' })).resolves.toBeUndefined()
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('If-Match')).toBe('"7"')
+  })
   it('binds each response version to its own data instead of a global cache', async () => {
     let revision = 0
     let submitted: string | undefined
