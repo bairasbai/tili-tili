@@ -3042,3 +3042,32 @@ no publication/provider/prod/wholeWP acceptance; other reads/remind still open.
 - **Ошибка.** API истории и подтверждений был защищён и работал, но клиент загружал только сделки и события. Подрядчик не мог увидеть раскрытый способ оплаты или скачать чек.
 - **Исправление.** VendorPaymentHistory читает vendor-scoped API, показывает дату/способ/сумму/статус и скачивает файл с именем и MIME сервера. Пустая история отличается от отказа; доступен повтор.
 - **Правило (R-339).** Доступный endpoint не доказывает готовность сценария: проверить реальный экран, сетевой запрос и результат скачивания.
+
+## ERR-0413 · 2026-10-01 · Payment Drill Assumed The Last Migration
+
+GitHub PR21 initial backend CI failed: payment rehearsal expected payment
+privacy as latest migration, but timeline stages followed it. Target initial
+chain by payment timestamp, then down-one exactly that stage; preserve data
+mapping/unknown amounts/populated rollback refusal, and apply current chain at
+end. Actual local drill passed and replacement CI passed before PR21 merge.
+Evidence: PUBLICATION-20261001.md / run36838456034 job110291478986.
+
+## ERR-0414 · 2026-10-01 · Guest Reads Trusted Pre-Wait Access
+
+Actual before39:34fail/5pass, including14late refusals/4expiry/14absent pins/
+2private projection leaks. GET guests/tables read after revoked membership,
+session/account/consent/archive or expired JWT; helper/coordinator retained
+private fields after role change. Read transaction pins current access,
+uses current role and finalJWT, preserves cancelled-history reading.
+Focused219passed after fix; final fresh full1393front/1718back/init0,
+actual production guest9/seating14 passed/zeroerrors/all16PNG inspected,
+source564hashmatch. REPORT-GUEST-READ-ACCESS.md. Reminders not covered.
+
+## ERR-0415 · 2026-10-01 · Whole-Table Witness Saw Other Test PIDs
+
+First focused read run11failed/208passed. Actual LOCK TABLE blocked unrelated
+parallel suites, making waiter count/PID attribution incorrect. Isolate read
+test by application_name and existing serial group; audit53 now requires serial
+execution for explicit table locks, including existing prod4 witness. Do not
+replace exact scoped waiter assertions with a loose any-waiter assertion.
+Second focused219passed; separate guard5passed. Original failure log retained.

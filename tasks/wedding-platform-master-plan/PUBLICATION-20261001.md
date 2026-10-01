@@ -58,3 +58,16 @@ down/up and current-chain application all passed; script lint exit0.
 App/backend routes/tests/contracts/browser source unchanged from merged full.
 Initial frontend and all three GitHub browser workflows passed; replacement
 CI after the fix still must pass before merging. Production untouched.
+
+## Confirmed Publication Boundary
+
+2026-10-01 08:58UTC: PR21 merged after all7 displayed checks for174864e were
+COMPLETED/SUCCESS (two frontend, two backend, three browser workflows).
+Merge commit f9ccfa184c5c12e2727b5e4f94fe2e4f600967cb fetched; local main
+fast-forwarded from ccd68fd. git rev-list main...origin/main returned0/0;
+working tree clean and561 checked source hashes matched. No production command.
+Second fresh migrated local full-publish-cifix.log also passed1393/1678,
+types/lint/build/init0. Initial failed CI is retained above, not hidden.
+Continuation starts on feature/guest-read-access-20261001 from that main.
+Local main matches the fetched remote boundary; new feature edits are not
+automatically present on GitHub and must be tested before a later publication.

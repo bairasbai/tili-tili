@@ -1,5 +1,17 @@
 # Реализация полного ТЗ
 
+## Current Verified Checkpoint · 2026-10-01
+
+PR21 published and merged after7GitHub checksSUCCESS, main f9ccfa1 at verified
+local/fetched0/0 boundary. Details PUBLICATION-20261001.md; no production.
+Then guest/table GET access corrected on a separate feature branch, not wholeWP:
+before39:34fail/5pass; after2 focused219pass plus audit53guard5pass. Fresh full
+1393frontend/1718backend/init0, actual production guest9/seating14/zeroerrors/
+all16PNG inspected/source564hashmatch. REPORT-GUEST-READ-ACCESS.md.
+This timestamp is before the next scoped commit/push/CI/main publication.
+Next reminders access/claim/reset/dispatch, owner withdrawal survey pending;
+event/RSVP/transfers/delegation and all FR/SC/NFR/WP obligations unchanged.
+
 ## Решения владельца · 2026-09-30
 
 - Подтверждён весь объём WP00–WP16, не только P1. Исходные FR-001–073, SC-001–018 и NFR-001–012 не сокращаются.

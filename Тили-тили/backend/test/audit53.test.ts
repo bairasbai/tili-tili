@@ -102,6 +102,7 @@ function touchesSharedState(rawText: string): boolean {
    * проходит каждая запись соседей в эту таблицу, а создание и снятие берут
    * блокировку всей таблицы (ревью 018, 018-B BB-03). */
   if (/\bcreate\s+(?:constraint\s+)?trigger\b/i.test(code)) return true
+  if (/\block\s+table\b/i.test(code)) return true
   if (/\b(insert\s+into|update|delete\s+from)\s+(categories|category_synonyms)\b/i.test(code)) return true
   return false
 }
@@ -162,6 +163,12 @@ function matchBracket(text: string, openIdx: number): number {
 describe('audit53: устройство серийной группы держит верный список файлов', () => {
   const serial = readSerialList()
   const serialSet = new Set(serial)
+
+  it('explicit whole-table locks require serial execution, but row locks and comments do not', () => {
+    expect(touchesSharedState("await client.query('lock table guests in access exclusive mode')")).toBe(true)
+    expect(touchesSharedState('await client.query(`lock table ${door} in access exclusive mode`)')).toBe(true)
+    expect(touchesSharedState("// lock table guests\nawait client.query('select id from guests where id=$1 for update')")).toBe(false)
+  })
 
   it('(1) каждый файл, трогающий общее состояние, — в vitest.serial.json', () => {
     const missing: string[] = []
