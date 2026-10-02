@@ -259,7 +259,7 @@ describe.skipIf(!DATABASE)('actual catalogue booking mode and concurrent first p
     expect(rows[0]!.query).toMatch(/^select id from users where id=\$1 for update$/)
     waits.push({ change, holder: holderPid, waiter: rows[0]!.pid, event: rows[0]!.wait_event, query: rows[0]!.query })
   }
-  it('two initially absent profiles serialize on the actual account UPDATE mutex, return a bounded stale-scope response and retry cleanly', async () => {
+  it('two initially absent profiles serialize on the actual account UPDATE mutex and the second continues as an update of the new company', async () => {
     const person = await actor(), db = app.db!, originalTx: Db['tx'] = db.tx.bind(db)
     let firstReady!: () => void, bothReady!: () => void, firstLocked!: () => void, allowFirst!: () => void, allowSecond!: () => void, completeFirst!: () => void
     const firstPaused = new Promise<void>(r => { firstReady = r }), bothPaused = new Promise<void>(r => { bothReady = r }), hasMutex = new Promise<void>(r => { firstLocked = r })
@@ -299,11 +299,14 @@ describe.skipIf(!DATABASE)('actual catalogue booking mode and concurrent first p
       expect(transactions).toHaveLength(2); expect(transactions.every(t => t.initiallyAbsent && t.paused)).toBe(true)
       allowFirst(); await hasMutex; allowSecond(); await observe('concurrent initially absent profile', transactions[0]!.pid, transactions[1]!.pid)
       completeFirst()
-      const a = ok<Card>(await first), b = await second; vendors.add(a.id); error(b, 'vendor_profile_scope_changed', 409)
-      expect((await db.query('select id,name from vendors where user_id=$1', [person.id])).rows).toEqual([{ id: a.id, name: firstName }])
+      // A brand-new company has no orders to pin backwards: the second save
+      // (double «Сохранить») locks the new row and continues as an update
+      // instead of a misleading «Связанные заказы изменились» 409 (CI PR #27).
+      const a = ok<Card>(await first), b = ok<Card>(await second); vendors.add(a.id); expect(b.id).toBe(a.id)
+      expect((await db.query('select id,name from vendors where user_id=$1', [person.id])).rows).toEqual([{ id: a.id, name: secondName }])
       expect((await db.query('select count(*)::int n from vendor_packages where vendor_id=$1', [a.id])).rows).toEqual([{ n: 1 }])
       expect(transactions[0]!.forwarded.filter(sql => /insert into vendors/.test(sql))).toHaveLength(1)
-      expect(transactions[1]!.forwarded.some(sql => /insert into vendors/.test(sql))).toBe(false)
+      expect(transactions[1]!.forwarded).toContain('select id from vendors where id=$1 for update')
     } finally {
       allowFirst(); allowSecond(); completeFirst()
       try { await first; if (second) await second } finally { db.tx = originalTx }

@@ -10,6 +10,7 @@
   "test/audit26.test.ts",
   "test/audit27.test.ts",
   "test/audit28.test.ts",
+  "test/audit3.test.ts",
   "test/audit33.test.ts",
   "test/audit43.test.ts",
   "test/audit44.test.ts",
