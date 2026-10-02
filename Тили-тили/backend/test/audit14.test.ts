@@ -97,9 +97,13 @@ describe('контракт против обработчиков: тела, secu
         .map(([k]) => k)
       const hProps = Object.keys(handlerBody!.properties ?? {})
       for (const p of hProps) if (!cAll.includes(p)) drift.push(`${key}: обработчик принимает «${p}», контракт о нём молчит`)
-      for (const p of cWritable) if (!hProps.includes(p)) drift.push(`${key}: контракт объявляет «${p}», обработчик не принимает`)
+      for (const p of cWritable) {
+        if (!hProps.includes(p)) drift.push(`${key}: контракт объявляет «${p}», обработчик не принимает`)
+      }
       for (const r of contractBody!.required ?? []) {
-        if (!(handlerBody!.required ?? []).includes(r)) drift.push(`${key}: контракт требует «${r}», обработчик — нет`)
+        if (!(handlerBody!.required ?? []).includes(r)) {
+          drift.push(`${key}: контракт требует «${r}», обработчик — нет`)
+        }
       }
     }
     expect(drift).toEqual([])

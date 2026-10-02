@@ -53,6 +53,7 @@ const Checklist = lazy(() => load.wedding().then(m => ({ default: m.Checklist })
 const Timeline = lazy(() => load.wedding().then(m => ({ default: m.Timeline })))
 const WeddingEvents = lazy(() => import('@/pages/WeddingEvents'))
 const EventInvitations = lazy(() => import('@/pages/EventInvitations'))
+const EventRsvp = lazy(() => import('@/pages/EventRsvp'))
 const Guests = lazy(() => load.wedding().then(m => ({ default: m.Guests })))
 const Documents = lazy(() => load.wedding().then(m => ({ default: m.Documents })))
 const Album = lazy(() => load.wedding().then(m => ({ default: m.Album })))
@@ -248,6 +249,7 @@ function Shell() {
           <Route path="/wedding/timeline" element={<Timeline />} />
           <Route path="/wedding/events" element={<WeddingEvents />} />
           <Route path="/wedding/events/:eventId/invitations" element={<EventInvitations />} />
+          <Route path="/wedding/events/:eventId/rsvp" element={<EventRsvp />} />
           <Route path="/wedding/guests" element={<Guests />} />
           <Route path="/wedding/seating" element={<Seating />} />
           <Route path="/wedding/wishlist" element={<WishlistManage />} />

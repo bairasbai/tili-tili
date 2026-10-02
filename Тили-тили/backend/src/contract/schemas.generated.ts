@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 146. */
+ * Схем: 153. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -1042,6 +1042,258 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "EventRsvpCouplePerson": {
+          "description": "EventRsvpPerson с привязкой к семейному приглашению — вид пары (T012).",
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/EventRsvpPerson"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "partyId",
+                      "partyLabel"
+                  ],
+                  "properties": {
+                      "partyId": {
+                          "type": "string",
+                          "format": "uuid"
+                      },
+                      "partyLabel": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "maxLength": 120,
+                          "description": "Подпись семейного приглашения; `null` — приглашение без подписи."
+                      }
+                  }
+              }
+          ]
+      },
+      "EventRsvpDeadline": {
+          "type": "object",
+          "description": "Срок ответа на дополнительное мероприятие и его текущее состояние (T012).",
+          "required": [
+              "date",
+              "timeZone",
+              "state",
+              "closesAt"
+          ],
+          "properties": {
+              "date": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Срок ответа включительно, в часовом поясе мероприятия; `null` — срок не задан."
+              },
+              "timeZone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "description": "Часовой пояс мероприятия на момент расчёта срока; `null` только вместе с `date=null`."
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "none",
+                      "open",
+                      "closed"
+                  ],
+                  "description": "`none` — срок не задан; `open` — ответ ещё принимается; `closed` — срок прошёл."
+              },
+              "closesAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "Момент закрытия (начало суток `date+1` по `timeZone`) в UTC; `null` при `state=none`."
+              }
+          }
+      },
+      "EventRsvpDecisionResult": {
+          "type": "object",
+          "description": "Итог решения пары по просьбе гостя (T012).",
+          "required": [
+              "request",
+              "person"
+          ],
+          "properties": {
+              "request": {
+                  "$ref": "contract#/definitions/EventRsvpRequest"
+              },
+              "person": {
+                  "$ref": "contract#/definitions/EventRsvpCouplePerson"
+              }
+          }
+      },
+      "EventRsvpPerson": {
+          "type": "object",
+          "description": "Ответ одной персоны на дополнительное мероприятие (T012).",
+          "required": [
+              "guestId",
+              "name",
+              "status",
+              "source",
+              "version",
+              "request"
+          ],
+          "properties": {
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "status": {
+                  "type": "string",
+                  "enum": [
+                      "unknown",
+                      "attending",
+                      "declined"
+                  ]
+              },
+              "source": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "enum": [
+                      null,
+                      "legacy_main_rsvp",
+                      "guest_response",
+                      "team_observation",
+                      "organizer_correction"
+                  ],
+                  "description": "`null` — персона ни разу не отвечала на это мероприятие."
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$",
+                  "description": "Версия ответа в `event_guest_participation`; `\"0\"` — персона ни разу не отвечала."
+              },
+              "request": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/EventRsvpRequest"
+                      }
+                  ],
+                  "description": "Последняя просьба персоны изменить ответ; `null` — просьб не было или активной не осталось.",
+                  "type": [
+                      "object",
+                      "array",
+                      "string",
+                      "number",
+                      "boolean",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "EventRsvpRequest": {
+          "type": "object",
+          "description": "Просьба гостя изменить ответ после срока (T012, таблица `event_rsvp_requests`).",
+          "required": [
+              "id",
+              "guestId",
+              "requestedStatus",
+              "state",
+              "comment",
+              "decisionNote",
+              "createdAt",
+              "decidedAt",
+              "version"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "guestId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "requestedStatus": {
+                  "type": "string",
+                  "enum": [
+                      "attending",
+                      "declined"
+                  ]
+              },
+              "state": {
+                  "type": "string",
+                  "enum": [
+                      "pending",
+                      "accepted",
+                      "rejected"
+                  ]
+              },
+              "comment": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 500,
+                  "description": "Комментарий гостя к просьбе; `null` — без комментария."
+              },
+              "decisionNote": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 500,
+                  "description": "Пояснение пары к решению; `null` — пока не решено или решено без пояснения."
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "decidedAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time",
+                  "description": "`null`, пока `state=pending`."
+              },
+              "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              }
+          }
+      },
+      "EventRsvpRoster": {
+          "type": "object",
+          "description": "Срок, состав ответов и просьбы дополнительного мероприятия — вид пары (T012).",
+          "required": [
+              "deadline",
+              "people",
+              "requests"
+          ],
+          "properties": {
+              "deadline": {
+                  "$ref": "contract#/definitions/EventRsvpDeadline"
+              },
+              "people": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/EventRsvpCouplePerson"
+                  }
+              },
+              "requests": {
+                  "type": "array",
+                  "description": "Ожидающие просьбы и несколько последних решений; не вся история просьб.",
+                  "items": {
+                      "$ref": "contract#/definitions/EventRsvpRequest"
+                  }
+              }
+          }
+      },
       "FinancialBalance": {
           "type": "object",
           "required": [
@@ -1395,6 +1647,31 @@ export const CONTRACT_SCHEMAS = {
               "isPlaceholder": {
                   "type": "boolean",
                   "readOnly": true
+              }
+          }
+      },
+      "GuestRsvpEvent": {
+          "type": "object",
+          "description": "Одно дополнительное мероприятие семьи со сроком и ответами её персон (T012).",
+          "required": [
+              "event",
+              "deadline",
+              "people"
+          ],
+          "properties": {
+              "event": {
+                  "$ref": "contract#/definitions/WeddingEvent"
+              },
+              "deadline": {
+                  "$ref": "contract#/definitions/EventRsvpDeadline"
+              },
+              "people": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "items": {
+                      "$ref": "contract#/definitions/EventRsvpPerson"
+                  }
               }
           }
       },
@@ -7062,7 +7339,8 @@ export const CONTRACT_SCHEMAS = {
               "date",
               "timeZone",
               "location",
-              "isMain"
+              "isMain",
+              "rsvpDeadline"
           ],
           "properties": {
               "id": {
@@ -7096,6 +7374,14 @@ export const CONTRACT_SCHEMAS = {
               },
               "isMain": {
                   "type": "boolean"
+              },
+              "rsvpDeadline": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date",
+                  "description": "Срок ответа на мероприятие включительно, в его часовом поясе (T012).\nБывает только у дополнительных мероприятий (`is_main=false`); `null` —\nсрок не задан. Не обязательное поле: ответы, выданные до T012, его не\nнесут.\n"
               }
           }
       },
@@ -7939,12 +8225,19 @@ export type ContractSchemaName =
   | "Document"
   | "Error"
   | "EventInvitationRoster"
+  | "EventRsvpCouplePerson"
+  | "EventRsvpDeadline"
+  | "EventRsvpDecisionResult"
+  | "EventRsvpPerson"
+  | "EventRsvpRequest"
+  | "EventRsvpRoster"
   | "FinancialBalance"
   | "Fund"
   | "Gift"
   | "Guest"
   | "GuestInvitedEvent"
   | "GuestPersonRsvp"
+  | "GuestRsvpEvent"
   | "HotelBlock"
   | "InviteLink"
   | "Lead"

@@ -7,8 +7,9 @@ import { checkEntityId, checkVersion } from '../orders/model.js'
 export type ParticipationStatus = 'unknown' | 'attending' | 'declined'
 export type ParticipationPrincipal = { kind: 'team'; actor: OrderActor } | { kind: 'guest'; token: string }
 export interface ParticipationInput { weddingId: string; eventId: string; principal: ParticipationPrincipal; guestId?: string }
+export type ParticipationSource = 'legacy_main_rsvp' | 'guest_response' | 'team_observation' | 'organizer_correction'
 export interface ParticipationDto { guestId: string; programEventId: string; status: ParticipationStatus; version: string;
-  source: 'legacy_main_rsvp' | 'guest_response' | 'team_observation' | null; actorUserId: string | null; recordedAt: string | null }
+  source: ParticipationSource | null; actorUserId: string | null; recordedAt: string | null }
 async function scope(client: Queryable, input: ParticipationInput, write: boolean) {
   checkEntityId(input.weddingId, 'weddingId'); checkEntityId(input.eventId, 'eventId')
   if (input.guestId !== undefined) checkEntityId(input.guestId, 'guestId')

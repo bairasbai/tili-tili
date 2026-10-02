@@ -41,6 +41,13 @@ interface Rule {
  */
 const MATRIX: Rule[] = [
   { url: /^\/weddings\/:weddingId\/events\/[^/]+\/invitations$/, by: { GET: ONLY_COUPLE, PUT: ONLY_COUPLE } },
+  /* T012: срок, состав и просьбы дополнительного мероприятия. Чтение — как у
+   * остального по гостям (couple/helper/coordinator); правка ответа и решение
+   * по просьбе — только пара (helper/coordinator — 403), разрешено в любое
+   * время. Правила стоят ВЫШЕ общего по `events` — побеждает первое подошедшее. */
+  { url: /^\/weddings\/:weddingId\/events\/[^/]+\/rsvp$/, by: { GET: ALL_TEAM } },
+  { url: /^\/weddings\/:weddingId\/events\/[^/]+\/rsvp\/[^/]+$/, by: { PUT: ONLY_COUPLE } },
+  { url: /^\/weddings\/:weddingId\/events\/[^/]+\/rsvp-requests\/[^/]+\/decision$/, by: { POST: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/attention$/, by: { GET: ALL_TEAM, PATCH: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/events(\/|$)/, by: { GET: ALL_TEAM, POST: ONLY_COUPLE, PATCH: ONLY_COUPLE, DELETE: ONLY_COUPLE } },
   { url: /^\/weddings\/:weddingId\/offers\/[^/]+\/accept$/, by: { POST: ONLY_COUPLE } },

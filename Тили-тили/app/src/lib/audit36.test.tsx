@@ -144,6 +144,9 @@ const DAY = {
 }
 const guestRoutes = (over: Routes = {}): Routes => ({
   '/rsvp/tok1': PAGE,
+  /* T012: блок «Дополнительные мероприятия» — свой запрос, независимый от
+     остальной страницы гостя; для этой семьи дополнительных событий нет. */
+  '/rsvp/tok1/events': { events: [] },
   '/join/tok1/menu-vote': { question: '', options: [] },
   '/join/tok1/shuttle': { routes: [] },
   '/join/tok1/hotels': [],

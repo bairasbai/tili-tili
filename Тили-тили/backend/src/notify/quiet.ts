@@ -65,10 +65,26 @@ function toLocal(at: Date, tz: string): Local {
   }
 }
 
-/** Местные дата и время суток → момент по UTC. */
+/**
+ * Местные дата и время суток → момент по UTC.
+ *
+ * Два прохода (P3-7): смещение зоны само зависит от искомого момента, а
+ * не только от даты/времени на входе — вблизи перехода на/с летнего
+ * времени `offsetMinutes(guess, tz)` берёт смещение ДО перехода (`guess`
+ * ещё наивно трактует местные поля как UTC), и однопроходная поправка
+ * иногда приземляется уже ПОСЛЕ перехода, где настоящее смещение другое —
+ * результат уезжал на величину скачка (например, Америка/Сантьяго, где
+ * переход ровно в местную полночь, съезжал на час). Второй проход берёт
+ * смещение уже в ТОЧКЕ первой поправки и перепроверяет: если оно другое —
+ * значит, первая поправка перепрыгнула через переход, и считаем от
+ * исходного `guess` ещё раз, уже верным смещением.
+ */
 export function fromLocal(local: Local, tz: string): Date {
   const guess = Date.UTC(local.year, local.month - 1, local.day, 0, 0) + local.minutes * 60_000
-  return new Date(guess - offsetMinutes(new Date(guess), tz) * 60_000)
+  const firstOffset = offsetMinutes(new Date(guess), tz)
+  const corrected = guess - firstOffset * 60_000
+  const secondOffset = offsetMinutes(new Date(corrected), tz)
+  return new Date(guess - secondOffset * 60_000)
 }
 
 /**

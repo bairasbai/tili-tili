@@ -9,8 +9,8 @@ import { setI18nLang } from './i18n'
 const store = vi.hoisted(() => ({ weddingId: 'w1' as string | null }))
 vi.mock('./store', () => ({ useStore: () => store }))
 type Call = { path: string; method: string; body: Record<string, unknown> | null; headers: Headers }
-const main: WeddingEvent = { id: 'main', name: 'Main', kind: 'ceremony', date: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Main hall', isMain: true }
-const extra: WeddingEvent = { id: 'extra', name: 'Second', kind: 'second_day', date: null, timeZone: null, location: null, isMain: false }
+const main: WeddingEvent = { id: 'main', name: 'Main', kind: 'ceremony', date: '2027-06-14', timeZone: 'Europe/Moscow', location: 'Main hall', isMain: true, rsvpDeadline: null }
+const extra: WeddingEvent = { id: 'extra', name: 'Second', kind: 'second_day', date: null, timeZone: null, location: null, isMain: false, rsvpDeadline: null }
 const json = (body: unknown, status = 200, etag: string | null = '"1"') => new Response(JSON.stringify(body), {
   status, headers: { 'content-type': 'application/json', ...(etag ? { etag } : {}) },
 })
