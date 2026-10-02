@@ -29,8 +29,13 @@
         function appRootFor(pathname) {
           var p = pathname.replace(/^[\/\\]+/, '/')
           if (p.indexOf('//') !== -1 || p.indexOf('\\') !== -1) return null
-          if (p === '/' || /\/$/.test(p) || p === '/index.html' || /\.[a-z0-9]+$/i.test(p)) return null
+          if (p === '/' || p === '/index.html' || /\.[a-z0-9]+$/i.test(p)) return null
           var m = p.match(new RegExp('^(.*?)\\/(' + SEGMENTS.join('|') + ')(\\/|$)'))
+          /* Слеш на конце без известного сегмента — корень приложения в подпапке
+             (/app/), уводить некуда. С сегментом (/wedding/guests/) — та же прямая
+             ссылка: без увода скрипты шли бы от /wedding/guests/assets/, nginx
+             с SPA-fallback отдаёт на них HTML — и вместо экрана белая страница. */
+          if (/\/$/.test(p) && !m) return null
           return m && m[1] ? m[1] + '/' : '/'
         }
         var p = window.location.pathname
