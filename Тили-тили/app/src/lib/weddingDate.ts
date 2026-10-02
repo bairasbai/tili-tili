@@ -1,4 +1,4 @@
-import { getI18nLang } from './i18n'
+import { getI18nLang, t } from './i18n'
 
 /**
  * Дата свадьбы: хранение, показ и обратный отсчёт.
@@ -52,6 +52,32 @@ export function formatWeddingDate(iso: string | null): string {
     month: 'long',
     year: 'numeric',
   }).format(isoToDate(iso))
+}
+
+/**
+ * Часовой пояс словами — для гостя (T012): «по московскому времени»,
+ * «Екатеринбург, UTC+5» вместо системного `Asia/Yekaterinburg`, который гостю
+ * ничего не говорит. Город и смещение даёт Intl на языке экрана, поэтому
+ * подходит любой пояс, а не только перечисленные в словаре. Смещение — на дату
+ * `iso`: у поясов с летним временем оно разное, а без даты его не по чему
+ * посчитать, и остаётся один город. Пояс, которого Intl не знает, показывается
+ * как есть — экран не падает.
+ */
+export function zoneLabel(tz: string, iso?: string | null): string {
+  if (tz === 'Europe/Moscow') return t('по московскому времени')
+  const at = iso && isRealIso(iso) ? new Date(`${iso}T12:00:00Z`) : null
+  const part = (timeZoneName: 'shortGeneric' | 'shortOffset', date: Date) =>
+    new Intl.DateTimeFormat(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { timeZone: tz, timeZoneName })
+      .formatToParts(date).find(p => p.type === 'timeZoneName')?.value ?? ''
+  try {
+    const name = part('shortGeneric', at ?? new Date(0))
+    const offset = at ? part('shortOffset', at).replace(/^GMT/, 'UTC') : ''
+    /* У UTC и `Etc/GMT±N` «город» — то же смещение: дважды его не пишем. */
+    if (/^(GMT|UTC)/.test(name)) return offset || name.replace(/^GMT/, 'UTC')
+    return offset ? `${name}, ${offset}` : name
+  } catch {
+    return tz
+  }
 }
 
 /** «14.06.2027» — короткая подпись для плашек и документов. */

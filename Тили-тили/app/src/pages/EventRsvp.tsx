@@ -39,6 +39,12 @@ function deadlineText(deadline: EventRsvpDeadline): string {
   return `${t('Ответить до')} ${formatWeddingDate(deadline.date)} ${t('включительно')} (${deadline.timeZone})`
 }
 
+/* Семья из одного человека подписана его же именем — «Анна Гостева · Анна
+   Гостева» ничего не добавляет к строке. Подпись семьи — только если она другая. */
+const plain = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
+const partyCaption = (name: string, partyLabel: string | null) =>
+  partyLabel && plain(partyLabel) !== plain(name) ? ` · ${partyLabel}` : ''
+
 export default function EventRsvp() {
   const { weddingId } = useStore(), { eventId } = useParams()
   return <EventRsvpScreen key={`${weddingId}/${eventId}`} weddingId={weddingId} eventId={eventId ?? null} />
@@ -180,7 +186,7 @@ function PersonRow({ person, canCorrect, onEdit }: { person: EventRsvpCouplePers
   return (
     <li className="py-3 flex items-start gap-3 text-[13px] min-w-0">
       <div className="flex-1 min-w-0 space-y-0.5">
-        <p className="break-words [overflow-wrap:anywhere] font-medium">{person.name}{person.partyLabel ? ` · ${person.partyLabel}` : ''}</p>
+        <p className="break-words [overflow-wrap:anywhere] font-medium">{person.name}{partyCaption(person.name, person.partyLabel)}</p>
         <p className="text-[11.5px] text-[var(--soft)]">{sourceLabel}</p>
       </div>
       <span className={cn('shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold', statusClass)}>{statusLabel}</span>

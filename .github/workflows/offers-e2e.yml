@@ -23,6 +23,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser:
+    # Уникальное имя проверки: три job'а `browser` давали в PR три одинаковых
+    # строки, их нельзя было различить и сделать обязательными по имени.
+    name: offers-browser
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
