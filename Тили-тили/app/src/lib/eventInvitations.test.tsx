@@ -150,19 +150,35 @@ describe('individual event roster from captured actual client requests', () => {
   })
 })
 
+/* T012: «Ваши мероприятия» теперь один блок — основное мероприятие (здесь его
+   нет в ответе /rsvp/{token}, только доп.) информационное без кнопок, а доп.
+   мероприятия несут личный срок/ответ из отдельного /rsvp/{token}/events и
+   потому теперь ЕСТЬ кнопки — другое дерево, другой тест (eventRsvp.test.tsx);
+   здесь по-прежнему проверяется только то, что это ровно СВОИ приглашённые
+   события/персоны этой семьи, а легаси-ответ остаётся main-only. */
 for (const lang of ['ru', 'en'] as const) it(`guest ${lang} shows only returned personal events/subset, legacy answer is explicitly main-only`, async () => {
   setI18nLang(lang); localStorage.setItem('tt_guest_token', 'private-token')
-  const events = [{ ...initial.event, guestIds: ['g2'] }]
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).includes('/rsvp/') ? json({
-    partyId: 'p1', guestName: 'Марина', status: 'pending', members: [
-      { guestId: 'g1', name: 'Марина', status: 'pending' }, { guestId: 'g2', name: 'Спутник', status: 'pending' },
-    ], wedding: { title: 'Our wedding', date: null, venue: null, inviteThemeId: 0 }, events,
-  }) : refusal(404)))
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path.endsWith('/rsvp/private-token/events')) return json({ events: [{
+      event: initial.event,
+      deadline: { date: null, timeZone: null, state: 'none', closesAt: null },
+      people: [{ guestId: 'g2', name: 'Спутник', status: 'unknown', source: null, version: '0', request: null }],
+    }] })
+    if (path.includes('/rsvp/')) return json({
+      partyId: 'p1', guestName: 'Марина', status: 'pending', members: [
+        { guestId: 'g1', name: 'Марина', status: 'pending' }, { guestId: 'g2', name: 'Спутник', status: 'pending' },
+      ], wedding: { title: 'Our wedding', date: null, venue: null, inviteThemeId: 0 }, events: [],
+    })
+    return refusal(404)
+  }))
   render(<MemoryRouter><Invite /></MemoryRouter>)
   const region = await screen.findByRole('region', { name: lang === 'ru' ? 'Ваши мероприятия' : 'Your events' })
-  expect(within(region).getByText('Second day')).toBeTruthy()
+  // регион появляется с основным ответом страницы; карточка доп. мероприятия — отдельным запросом внутри него
+  expect(await within(region).findByText('Second day')).toBeTruthy()
   expect(within(region).getByText('Спутник')).toBeTruthy(); expect(within(region).queryByText('Марина')).toBeNull()
   expect(within(region).getByText(lang === 'ru' ? 'Часовой пояс не задан' : 'Time zone not set')).toBeTruthy()
   expect(screen.getByText(lang === 'ru' ? 'Ответ на основную программу' : 'Response for the main program')).toBeTruthy()
-  expect(within(region).queryByRole('button')).toBeNull()
+  // T012: доп. (не основное) мероприятие теперь несёт личный ответ — кнопки есть.
+  expect(within(region).queryAllByRole('button').length).toBeGreaterThan(0)
 })

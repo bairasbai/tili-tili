@@ -78,29 +78,12 @@ describe('контракт против обработчиков: тела, secu
   })
 
   it('поля тела запроса у обработчика те же, что в контракте (readOnly не в счёт)', () => {
-    /* Заглушка загрузки не разбирает тело — она отвечает 501 до хранилища.
-     * T012 (контракт v0.70.0, драйвер до fan-out) добавил четыре операции с
-     * телом, чьи обработчики пишет отдельный лейн backend (1.2.1): до тех пор
-     * путь отвечает общей заглушкой 501 `not_implemented`, у которой схемы тела
-     * нет вовсе — как у загрузки выше. */
-    const STUBS = new Set([
-      'POST /media/upload-url',
-      'PUT /rsvp/{guestToken}/events/{eventId}/answers',
-      'POST /rsvp/{guestToken}/events/{eventId}/requests',
-      'PUT /weddings/{weddingId}/events/{eventId}/rsvp/{guestId}',
-      'POST /weddings/{weddingId}/events/{eventId}/rsvp-requests/{requestId}/decision',
-    ])
-    /* `rsvpDeadline` (T012) — то же самое для ОДНОГО поля существующего PATCH:
-     * путь уже реализован и дальше сверяется как обычно, а это поле примет
-     * обработчик backend-лейна 1.2.1. Снять исключение в его PR. */
-    const PENDING_FIELDS = new Map<string, Set<string>>([
-      ['PATCH /weddings/{weddingId}/events/{eventId}', new Set(['rsvpDeadline'])],
-    ])
+    /* Заглушка загрузки не разбирает тело — она отвечает 501 до хранилища. */
+    const STUBS = new Set(['POST /media/upload-url'])
     const drift: string[] = []
     for (const o of ops) {
       const key = `${o.method} ${o.openapi}`
       if (STUBS.has(key)) continue
-      const pendingFields = PENDING_FIELDS.get(key)
       const contractBody = deref(o.op.requestBody?.content?.['application/json']?.schema)
       const route = recorded.find((r) => r.method === o.method && r.path === o.url)
       const handlerBody = route?.store.schema?.body as SchemaNode | undefined
@@ -115,10 +98,10 @@ describe('контракт против обработчиков: тела, secu
       const hProps = Object.keys(handlerBody!.properties ?? {})
       for (const p of hProps) if (!cAll.includes(p)) drift.push(`${key}: обработчик принимает «${p}», контракт о нём молчит`)
       for (const p of cWritable) {
-        if (!hProps.includes(p) && !pendingFields?.has(p)) drift.push(`${key}: контракт объявляет «${p}», обработчик не принимает`)
+        if (!hProps.includes(p)) drift.push(`${key}: контракт объявляет «${p}», обработчик не принимает`)
       }
       for (const r of contractBody!.required ?? []) {
-        if (!(handlerBody!.required ?? []).includes(r) && !pendingFields?.has(r)) {
+        if (!(handlerBody!.required ?? []).includes(r)) {
           drift.push(`${key}: контракт требует «${r}», обработчик — нет`)
         }
       }

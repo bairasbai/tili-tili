@@ -3,18 +3,20 @@ import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import type { Queryable } from '../plugins/db.js'
 import { knownTimeZone } from '../notify/quiet.js'
-import { assertWeddingDate } from '../wedding/dates.js'
+import { assertRealDate, assertWeddingDate } from '../wedding/dates.js'
 import { rescheduleWedding } from '../wedding/reschedule.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor } from '../timeline/version.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
+import { applyOrganizerCorrection, decideRequest, loadCoupleRoster } from '../wedding/rsvp-events.js'
 
 interface EventRow {
   id: string; name: string; kind: string; date: string | null; time_zone: string | null; location: string | null; is_main: boolean
+  rsvp_deadline: string | null
 }
-type EventPatch = { name?: string; kind?: string; date?: string | null; timeZone?: string | null; location?: string | null }
-const columns = 'id,name,kind,date::text,time_zone,location,is_main'
+type EventPatch = { name?: string; kind?: string; date?: string | null; timeZone?: string | null; location?: string | null; rsvpDeadline?: string | null }
+const columns = 'id,name,kind,date::text,time_zone,location,is_main,rsvp_deadline::text'
 const project = (r: EventRow) => ({ id: r.id, name: r.name, kind: r.kind, date: r.date,
-  timeZone: r.time_zone, location: r.location, isMain: r.is_main })
+  timeZone: r.time_zone, location: r.location, isMain: r.is_main, rsvpDeadline: r.rsvp_deadline })
 const properties = {
   name: { type: 'string', minLength: 1, maxLength: 200 },
   kind: { type: 'string', enum: ['registration', 'nikah', 'ceremony', 'banquet', 'second_day', 'other'] },
@@ -22,12 +24,15 @@ const properties = {
   timeZone: { type: 'string', nullable: true, minLength: 1, maxLength: 100 },
   location: { type: 'string', nullable: true, maxLength: 300 },
 }
+// T012: срок ответа задаётся только правкой существующего мероприятия — не при создании.
+const patchProperties = { ...properties, rsvpDeadline: { type: 'string', format: 'date', nullable: true } }
 function validate(p: EventPatch): void {
   if (p.name !== undefined && !p.name.trim()) throw validationFailed({ name: 'нужно название мероприятия' })
   if (p.date) assertWeddingDate(p.date)
   if (p.timeZone !== undefined && p.timeZone !== null && knownTimeZone(p.timeZone) !== p.timeZone) {
     throw validationFailed({ timeZone: 'неизвестный часовой пояс' })
   }
+  if (p.rsvpDeadline) assertRealDate(p.rsvpDeadline, 'rsvpDeadline')
 }
 export async function eventRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -121,7 +126,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
   })
   app.patch('/weddings/:weddingId/events/:eventId', { schema: {
     params: { type: 'object', required: ['weddingId', 'eventId'], properties: { weddingId: UUID_ID, eventId: UUID_ID } },
-    body: { type: 'object', minProperties: 1, additionalProperties: false, properties },
+    body: { type: 'object', minProperties: 1, additionalProperties: false, properties: patchProperties },
   } }, async (request, reply) => {
     const patch = request.body as EventPatch
     validate(patch)
@@ -132,6 +137,23 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — обновите её')
       const before = await event(client, weddingId, id)
       await checkTimeZone(client, patch)
+      /* T012: срок — только у дополнительного мероприятия с известным поясом
+       * и не позже его даты. Эффективные значения — с учётом этого патча, ещё
+       * до записи: DB CHECK (is_main/time_zone) — тот же инвариант задним
+       * числом, сравнение с датой — только здесь (в CHECK не выражено).
+       * Перепроверяем, если патч трогает ЛЮБОЕ из трёх полей: снятие одного
+       * только пояса при уже заданном сроке — тоже нарушение (не только явная
+       * правка самого rsvpDeadline). */
+      if (patch.rsvpDeadline !== undefined || patch.timeZone !== undefined || patch.date !== undefined) {
+        const effectiveDeadline = patch.rsvpDeadline !== undefined ? patch.rsvpDeadline : before.rsvp_deadline
+        const effectiveTimeZone = patch.timeZone !== undefined ? patch.timeZone : before.time_zone
+        const effectiveDate = patch.date !== undefined ? patch.date : before.date
+        if (effectiveDeadline !== null) {
+          if (before.is_main) throw validationFailed({ rsvpDeadline: 'у основной программы срока ответа нет' })
+          if (!effectiveTimeZone) throw validationFailed({ rsvpDeadline: 'нужен известный часовой пояс мероприятия' })
+          if (effectiveDate !== null && effectiveDeadline > effectiveDate) throw validationFailed({ rsvpDeadline: 'срок не может быть позже даты мероприятия' })
+        }
+      }
       await setTimelineActor(client, request.caller!.userId)
       if (before.is_main) {
         if (patch.date === null && before.date !== null) throw validationFailed({ date: 'назначенную основную дату нельзя снять; используйте перенос' })
@@ -140,11 +162,12 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         if (patch.location !== undefined) await client.query('update weddings set venue=$2 where id=$1', [weddingId, patch.location])
       }
       const current = await event(client, weddingId, id)
-      await client.query('update wedding_events set name=$3,kind=$4,date=$5,time_zone=$6,location=$7 where wedding_id=$1 and id=$2',
+      await client.query('update wedding_events set name=$3,kind=$4,date=$5,time_zone=$6,location=$7,rsvp_deadline=$8 where wedding_id=$1 and id=$2',
         [weddingId, id, patch.name?.trim() ?? current.name, patch.kind ?? current.kind,
           before.is_main || patch.date === undefined ? current.date : patch.date,
           before.is_main || patch.timeZone === undefined ? current.time_zone : patch.timeZone,
-          before.is_main || patch.location === undefined ? current.location : patch.location])
+          before.is_main || patch.location === undefined ? current.location : patch.location,
+          patch.rsvpDeadline !== undefined ? patch.rsvpDeadline : current.rsvp_deadline])
       sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
       return project(await event(client, weddingId, id))
     })
@@ -162,7 +185,8 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         exists(select 1 from timeline_events where wedding_id=$1 and program_event_id=$2)
         or exists(select 1 from slots where wedding_id=$1 and program_event_id=$2)
         or exists(select 1 from order_assignments where wedding_id=$1 and program_event_id=$2)
-        or exists(select 1 from guest_event_invitations where wedding_id=$1 and event_id=$2)`, [weddingId, id])
+        or exists(select 1 from guest_event_invitations where wedding_id=$1 and event_id=$2)
+        or exists(select 1 from event_rsvp_requests where wedding_id=$1 and program_event_id=$2)`, [weddingId, id])
       if (selected.is_main || dependencies.rowCount) {
         throw conflict('event_in_use', 'Мероприятие используется программой, приглашениями, позициями услуг или историей заказов; основное мероприятие не удаляется')
       }
@@ -171,5 +195,59 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
     })
     return reply.code(204).send()
+  })
+
+  /* ── T012: срок, ростер и просьбы дополнительного мероприятия (пара/команда) ── */
+  app.get('/weddings/:weddingId/events/:eventId/rsvp', { schema: {
+    params: { type: 'object', required: ['weddingId', 'eventId'], properties: { weddingId: UUID_ID, eventId: UUID_ID } },
+  } }, async (request) => {
+    const eventId = (request.params as { eventId: string }).eventId
+    return db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const roster = await loadCoupleRoster(client, request.member!.weddingId, eventId)
+      await assertSeatingToken(request)
+      return roster
+    })
+  })
+
+  app.put('/weddings/:weddingId/events/:eventId/rsvp/:guestId', { schema: {
+    params: { type: 'object', required: ['weddingId', 'eventId', 'guestId'], properties: { weddingId: UUID_ID, eventId: UUID_ID, guestId: UUID_ID } },
+    body: { type: 'object', required: ['status', 'expectedVersion'], additionalProperties: false, properties: {
+      status: { type: 'string', enum: ['unknown', 'attending', 'declined'] },
+      expectedVersion: { type: 'string', pattern: '^(0|[1-9][0-9]{0,18})$' },
+    } },
+  } }, async (request) => {
+    const { eventId, guestId } = request.params as { eventId: string; guestId: string }
+    const body = request.body as { status: 'unknown' | 'attending' | 'declined'; expectedVersion: string }
+    return db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const person = await applyOrganizerCorrection(client, {
+        weddingId: request.member!.weddingId, eventId, guestId, status: body.status,
+        expectedVersion: body.expectedVersion, actorUserId: request.caller!.userId,
+      })
+      await assertSeatingToken(request)
+      return person
+    })
+  })
+
+  app.post('/weddings/:weddingId/events/:eventId/rsvp-requests/:requestId/decision', { schema: {
+    params: { type: 'object', required: ['weddingId', 'eventId', 'requestId'], properties: { weddingId: UUID_ID, eventId: UUID_ID, requestId: UUID_ID } },
+    body: { type: 'object', required: ['decision', 'expectedVersion'], additionalProperties: false, properties: {
+      decision: { type: 'string', enum: ['accept', 'reject'] },
+      note: { type: 'string', maxLength: 500 },
+      expectedVersion: { type: 'string', pattern: '^[1-9][0-9]{0,18}$' },
+    } },
+  } }, async (request) => {
+    const { eventId, requestId } = request.params as { eventId: string; requestId: string }
+    const body = request.body as { decision: 'accept' | 'reject'; note?: string; expectedVersion: string }
+    return db().tx(async client => {
+      await lockSeatingAccess(client, request)
+      const result = await decideRequest(client, {
+        weddingId: request.member!.weddingId, eventId, requestId, decision: body.decision,
+        note: body.note ?? null, expectedVersion: body.expectedVersion, actorUserId: request.caller!.userId,
+      })
+      await assertSeatingToken(request)
+      return result
+    })
   })
 }
