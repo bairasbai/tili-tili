@@ -1254,6 +1254,7 @@ Object.assign(EN, {
   'Предыдущий месяц': 'Previous month',
   'Следующий месяц': 'Next month',
   'Закрыть': 'Close',
+  'Очистить поиск города': 'Clear city search',
   'Дату можно менять и позже — команда и чек-лист переедут вместе с ней.': 'You can change the date later — the team and the checklist move with it.',
   '💡 Без даты тоже работает: чек-лист и бюджет соберутся, а сроки появятся, как только дата будет.': '💡 Works without a date too: the checklist and budget come together, and deadlines appear as soon as there is a date.',
 

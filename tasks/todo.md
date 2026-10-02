@@ -1395,3 +1395,9 @@ Next: actual allocation ledger and common booking/cancellation/erasure/capacity 
 ## Экосистема030 — граница остановки 2026-10-01
 
 Текущий этап atomic legacy replacement и принятые основы завершаются отдельно. Продолжение всей экосистемы: tasks/фичи/030-экосистема-local/CLAUDE-CONTINUE.md. Невыполненные критерии030 остаются открытыми;370+ пока только дизайн. Последняя инструкция владельца разрешила проверенную публикацию/main и требует остановиться после этого этапа; production вне поручения.
+
+## 2026-10-02 · Scoped presentation fixes (separate branch)
+
+- [x] Implement the five independent presentation groups: responsive sidebar, fixed pickers, picker focus lifecycle, date selection semantics, localized icon actions.
+- [x] Targeted frontend verification: 104/104 tests, TypeScript, lint and production build.
+- [ ] Next step: review the single-commit draft PR; perform supported-browser visual/keyboard/screen-reader QA before claiming rendered-UI verification. See `tasks/presentation-accessibility-20261002.md`. No automatic main merge.

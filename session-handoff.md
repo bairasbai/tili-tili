@@ -207,3 +207,13 @@ Active external-only leaf1.9.5 (/root/atomic_domain, ready34) finite-calendar-de
 Дизайн finite-calendar-design.md подготовлен и проверен, но370+ DDL/домен/тесты не реализованы. Нужны явная инвентаризация старых DATE/всех держателей, доказанные конечные интервалы/IANA, новый schema3 proof, adoption того же оплаченного корня, ручные источники и атомарный перенос. Owner-only предложение не освобождает чужие обещания. Остальной незавершённый scope перенесён в CLAUDE-CONTINUE.md; исходный аудит сохранён рядом.
 
 На момент этой записи финальный полный прогон и интеграция в опубликованный main f725ce96f0f694c3e1db74b0fe768556230aa915 ещё проверяются. Они не считаются успешными по частным результатам выше. Более поздняя итоговая запись содержит фактически измеренный результат. Подробные локальные доказательства: C:/Тили-тили/.unlazy/ecosystem-audit-20260930; не включать токены/fixtures/runtime в Git.
+
+## 2026-10-02 · Separate presentation-fix handoff
+
+Scope is limited to the five UI groups in `tasks/presentation-accessibility-20261002.md`.
+Branch: `fix/presentation-accessibility-20261002`, base main aa85f8868154000cab2c5b049dcf92a1c679259f.
+104 targeted frontend tests, TypeScript, full frontend lint and build pass; 15 new
+regressions fail on the base. Browser/screen-reader/full-app verification is not claimed.
+No backend/API/authentication/membership/receipt changes, deployment or main merge.
+Next: review the single-commit draft PR and run supported-browser presentation QA.
+Earlier work and its pending decisions above are unchanged.

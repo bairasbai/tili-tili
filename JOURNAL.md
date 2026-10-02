@@ -3558,3 +3558,17 @@ event_guest_participation as the single per-person/per-event answer source;
 add organizer_correction provenance (couple only); deadline and personal RSVP
 only for additional events, legacy main RSVP and its effects untouched.
 Migration numbers: T012 1763700000000; 370+ shift to 1763800000000+.
+
+## 2026-10-02 · Scoped presentation and accessibility fixes
+
+The five independent UI findings are fixed on a separate branch from main aa85f886.
+PickerDialog reuses the existing Radix Dialog dependency rather than maintaining a
+second hand-written focus trap. A portal plus dedicated layout class removes both
+the fixed/relative conflict and desktop sidebar padding from pickers. Sidebar
+position now clamps to the real shell edge; date selection and icon actions expose
+localized accessible state/names. No dependency or backend changes.
+
+Final targeted regressions: 104 passed, zero skipped; the 17 new cases produce
+15 failures on the untouched base. Types/lint/build pass, with the existing build
+chunk warning. Browser/visual/screen-reader QA and the full application suite were
+not run. Scope, commands and remaining verification: `tasks/presentation-accessibility-20261002.md`.

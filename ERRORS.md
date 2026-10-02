@@ -3364,3 +3364,18 @@ Whole stage_final: front1835/98passed; backend2753passed/1failed (taskReminders 
 
 CI PR #27 (backend, push-прогон): `audit3 › два одновременных PUT анкеты не роняют запрос` — `[200, 409]` вместо `[200, 200]`; в PR-прогоне того же коммита тест прошёл, локальный full тоже — гонка зависела от расписания. Причина: `lockVendorProfileWrite` (030) при первом сохранении берёт мьютекс строки владельца; второй запрос того же владельца, дождавшись его, находил созданную первым компанию и считал это сменой связанных заказов (`vendor_profile_scope_changed`). Тест 030 `catalogBookingMode` закреплял именно этот 409, а старый инвариант audit3 (двойное нажатие на медленной связи не показывает ошибку) — обратное. Исправление: если компания появилась за время ожидания и у неё нет заказов/запросов/сделок, запрос запирает новую строку компании и продолжает как обновление; порядок замков прежний (владелец → принципал → компания), обратного захвата свадеб нет. Новый детерминированный тест audit3 держит строку владельца, пока оба запроса реально не встанут в очередь (двухуровневый подсчёт: второй ждёт первого, а не держателя), — без исправления `[200, 409]`, с ним `[200, 200]`; тест 030 переписан на новое поведение. **Правило:** гонку, найденную CI по расписанию, закреплять тестом с реальным ожиданием замка; при очереди за строкой считать и ожидающих за ожидающими (`pg_blocking_pids` второго указывает на первого).
 Второй CI-прогон: audit53 потребовал серийности audit3 — свидетель ожидания читает `pg_stat_activity`+`pg_blocking_pids`, а такой файл должен идти последовательно (иначе чужой набор станет лишним ожидающим). audit3 добавлен в `vitest.serial.json`; audit53+audit3 — 21/21. **Правило:** после добавления теста-свидетеля замков прогонять audit53 до push.
+
+## ERR-0426 · 2026-10-02 · Presentation layout and picker semantics
+
+- **Errors.** Desktop navigation used a fixed half-width translation before the
+  viewport reached that width. Picker containers combined `fixed` and `!relative`
+  and inherited sidebar padding. They declared modality while handling only Escape.
+  Selected dates lacked an accessible selection state/full date name; city clearing
+  lacked a name, and shared dialog Close was not localized.
+- **Rule.** Clamp fixed navigation against actual shell bounds. Keep modal positioning
+  independent from page-shell layout; reuse the existing dialog primitive for focus
+  containment/isolation and restore the invoking control. Expose selected state and
+  localized names independently of color/iconography.
+- **Evidence.** `presentationAccessibility.test.tsx`: 15 failing / 2 passing on the
+  base, 17 passing after the fix; 104 targeted frontend cases pass in total. Browser
+  layout and screen-reader verification remain unrun. See `tasks/presentation-accessibility-20261002.md`.

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
-import { useEscape } from '@/lib/useEscape'
+import { PickerDialog } from './PickerDialog'
 import { dateRange, dateToIso, isoToDate } from '@/lib/weddingDate'
 
 /* Названия месяцев и дней недели даёт Intl, а не словарь: склонения
@@ -44,7 +44,6 @@ export function DatePicker({
   /** Отказ сервера в переносе: дата бывает занята у забронированной команды. */
   error?: string | null
 }) {
-  useEscape(onClose)
   const { min, max } = dateRange(now)
   const start = value ? isoToDate(value) : now
   const [cursor, setCursor] = useState(() => new Date(start.getFullYear(), start.getMonth(), 1, 12))
@@ -59,13 +58,7 @@ export function DatePicker({
   const canForward = new Date(cursor.getFullYear(), cursor.getMonth(), 1, 12) < new Date(max.getFullYear(), max.getMonth(), 1, 12)
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('Выбор даты свадьбы')}
-      className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col app-shell !relative"
-      style={{ margin: '0 auto' }}
-    >
+    <PickerDialog label={t('Выбор даты свадьбы')} onClose={onClose}>
       <div className="px-5 pt-6 pb-3 flex items-center gap-3">
         <b className="flex-1 font-serif-d text-[20px]">{t('Дата свадьбы')}</b>
         <button onClick={onClose} className="press w-10 h-10 rounded-full bg-[var(--card)] flex items-center justify-center" aria-label={t('Закрыть')}>
@@ -108,6 +101,8 @@ export function DatePicker({
               key={iso}
               onClick={() => onPick(iso)}
               disabled={disabled}
+              aria-label={new Intl.DateTimeFormat(locale(), { dateStyle: 'full' }).format(day)}
+              aria-pressed={chosen}
               aria-current={iso === todayIso ? 'date' : undefined}
               className={cn(
                 'press h-11 rounded-2xl text-[13px] font-medium tabular',
@@ -127,6 +122,6 @@ export function DatePicker({
       <p className="px-6 mt-5 text-[10.5px] text-[var(--soft2)] leading-relaxed">
         {t('Дату можно менять и позже — команда и чек-лист переедут вместе с ней.')}
       </p>
-    </div>
+    </PickerDialog>
   )
 }
