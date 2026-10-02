@@ -53,5 +53,6 @@
   "test/resourceBookingBoundaries.test.ts",
   "test/resourceCommitments.test.ts",
   "test/shortlist019.test.ts",
-  "test/atomicLegacyReplacement.test.ts"
+  "test/atomicLegacyReplacement.test.ts",
+  "test/legacyCalendarSources.test.ts"
 ]
