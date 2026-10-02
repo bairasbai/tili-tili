@@ -11,7 +11,7 @@ import {
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
-import { formatTime, formatWeddingDate, todayIn } from '@/lib/weddingDate'
+import { formatTime, formatWeddingDate, todayIn, zoneLabel } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
@@ -429,7 +429,7 @@ function InviteView({
                 <h3 className="text-[16px] font-semibold">{event.name}</h3>
                 <p style={{ color: T.soft }}>{event.date ? formatWeddingDate(event.date) : t('Дата не задана')}</p>
                 <p style={{ color: T.soft }}>{event.location ?? t('Место не задано')}</p>
-                <p style={{ color: T.soft }}>{event.timeZone ?? t('Часовой пояс не задан')}</p>
+                <p style={{ color: T.soft }}>{event.timeZone ? zoneLabel(event.timeZone, event.date) : t('Часовой пояс не задан')}</p>
                 <p style={{ color: T.soft }}>{familyMembers.filter(person => event.guestIds.includes(person.guestId)).map(person => person.name).join(', ')}</p>
                 <a href="#main-rsvp" className="inline-block font-semibold underline" style={{ color: T.accent }}>{t('Ответ на основную программу')} ↓</a>
               </div>
@@ -826,7 +826,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
 
   const deadlineLine = closed ? t('Срок ответа прошёл')
     : ev.deadline.state === 'none' ? t('Срок ответа не задан')
-    : `${t('Ответить до')} ${ev.deadline.date ? formatWeddingDate(ev.deadline.date) : ''} ${t('включительно')} (${ev.deadline.timeZone})`
+    : `${t('Ответить до')} ${ev.deadline.date ? formatWeddingDate(ev.deadline.date) : ''} ${t('включительно')}${ev.deadline.timeZone ? ` (${zoneLabel(ev.deadline.timeZone, ev.deadline.date)})` : ''}`
 
   return (
     <div className="rounded-[24px] p-5 space-y-3 text-[13px]" style={{ background: T.card, boxShadow: shadow }}>
@@ -834,7 +834,7 @@ function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onR
         <h3 className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
         <p style={{ color: T.soft }}>{ev.event.date ? formatWeddingDate(ev.event.date) : t('Дата не задана')}</p>
         <p style={{ color: T.soft }}>{ev.event.location ?? t('Место не задано')}</p>
-        <p style={{ color: T.soft }}>{ev.event.timeZone ?? t('Часовой пояс не задан')}</p>
+        <p style={{ color: T.soft }}>{ev.event.timeZone ? zoneLabel(ev.event.timeZone, ev.event.date) : t('Часовой пояс не задан')}</p>
         <p className="font-medium mt-1" style={{ color: closed ? T.accent : T.ink }}>{deadlineLine}</p>
       </div>
       {!closed ? (

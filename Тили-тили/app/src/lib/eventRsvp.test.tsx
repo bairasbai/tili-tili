@@ -46,6 +46,7 @@ type GuestFixtureState = { people: GuestPersonFixture[]; calls: Call[] }
 
 function guestFixture(options: {
   deadlineState?: 'open' | 'closed' | 'none'
+  zone?: string
   people?: GuestPersonFixture[]
   answers?: (call: Call, state: GuestFixtureState) => Promise<Response> | Response
   requests?: (call: Call, state: GuestFixtureState) => Promise<Response> | Response
@@ -55,12 +56,13 @@ function guestFixture(options: {
     { guestId: 'g1', name: 'Марина', status: 'unknown' as const, source: null, version: '0', request: null },
     { guestId: 'g2', name: 'Спутник', status: 'unknown' as const, source: null, version: '0', request: null },
   ]
+  const zone = options.zone ?? 'Europe/Moscow'
   const deadline: EventRsvpDeadline = options.deadlineState === 'closed'
-    ? { date: '2026-10-01', timeZone: 'Europe/Moscow', state: 'closed', closesAt: '2026-10-02T00:00:00.000Z' }
+    ? { date: '2026-10-01', timeZone: zone, state: 'closed', closesAt: '2026-10-02T00:00:00.000Z' }
     : options.deadlineState === 'none'
       ? { date: null, timeZone: null, state: 'none', closesAt: null }
-      : { date: '2026-12-31', timeZone: 'Europe/Moscow', state: 'open', closesAt: '2027-01-01T00:00:00.000Z' }
-  const event = { id: 'e1', name: 'Second day', kind: 'second_day' as const, date: '2026-12-30', timeZone: 'Europe/Moscow', location: 'Дача', isMain: false, rsvpDeadline: deadline.date }
+      : { date: '2026-12-31', timeZone: zone, state: 'open', closesAt: '2027-01-01T00:00:00.000Z' }
+  const event = { id: 'e1', name: 'Second day', kind: 'second_day' as const, date: '2026-12-30', timeZone: zone, location: 'Дача', isMain: false, rsvpDeadline: deadline.date }
   const state: GuestFixtureState = { people: structuredClone(people), calls: [] }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input).replace(/^\/api/, '')
@@ -135,6 +137,33 @@ describe('гость: «Ваши мероприятия» — доп. событ
       body: { answers: [{ guestId: 'g1', status: 'attending', expectedVersion: '0' }, { guestId: 'g2', status: 'declined', expectedVersion: '0' }] },
     })
     expect(button('Сохранить', region).disabled).toBe(true)
+  })
+
+  /* Хвост T012: гость видел системное имя пояса — «(Europe/Moscow)». Теперь
+     пояс словами на языке экрана: город и смещение на дату срока. */
+  it('часовой пояс гостю словами: «по московскому времени», «Екатеринбург, UTC+5», а не Europe/Moscow', async () => {
+    localStorage.setItem('tt_guest_token', 'token')
+    guestFixture({ deadlineState: 'open' })
+    render(<MemoryRouter><Invite /></MemoryRouter>)
+    let region = await screen.findByRole('region', { name: 'Ваши мероприятия' })
+    expect((await within(region).findByText(/Ответить до/)).textContent).toMatch(/включительно \(по московскому времени\)$/)
+    expect(within(region).getByText('по московскому времени')).toBeTruthy() // строка пояса на карточке
+    expect(region.textContent).not.toContain('Europe/Moscow')
+    cleanup()
+
+    guestFixture({ deadlineState: 'open', zone: 'Asia/Yekaterinburg' })
+    render(<MemoryRouter><Invite /></MemoryRouter>)
+    region = await screen.findByRole('region', { name: 'Ваши мероприятия' })
+    expect((await within(region).findByText(/Ответить до/)).textContent).toMatch(/включительно \(Екатеринбург, UTC\+5\)$/)
+    expect(within(region).getByText('Екатеринбург, UTC+5')).toBeTruthy()
+    expect(region.textContent).not.toContain('Asia/Yekaterinburg')
+    cleanup()
+
+    setI18nLang('en')
+    guestFixture({ deadlineState: 'open' })
+    render(<MemoryRouter><Invite /></MemoryRouter>)
+    region = await screen.findByRole('region', { name: 'Your events' })
+    expect((await within(region).findByText(/Respond by/)).textContent).toMatch(/inclusive \(Moscow time\)$/)
   })
 
   it('срок не задан: явное состояние «none», ответить можно напрямую', async () => {
@@ -416,6 +445,19 @@ describe('пара: экран ответов мероприятия (T012)', ()
     expect(screen.queryByRole('button', { name: 'Изменить срок ответа' })).toBeNull()
     expect(screen.queryByRole('button', { name: /Исправить ответ/ })).toBeNull()
     expect(screen.getByText('По основному ответу')).toBeTruthy()
+  })
+
+  /* Хвост T012: семья из одного человека подписана его же именем, и строка
+     читалась «Анна Гостева · Анна Гостева». Подпись семьи — только другая. */
+  it('не повторяет имя подписью семьи; другую подпись семьи показывает', async () => {
+    coupleFixture({ people: [
+      { guestId: 'g1', name: 'Анна Гостева', status: 'unknown', source: null, version: '0', request: null, partyId: 'p1', partyLabel: 'Анна Гостева' },
+      { guestId: 'g2', name: 'Пётр', status: 'unknown', source: null, version: '0', request: null, partyId: 'p2', partyLabel: 'Семья Ивановых' },
+    ] })
+    render(screenAt())
+    expect(await screen.findByText('Анна Гостева')).toBeTruthy()
+    expect(screen.queryByText(/Анна Гостева · Анна Гостева/)).toBeNull()
+    expect(screen.getByText('Пётр · Семья Ивановых')).toBeTruthy()
   })
 
   it('мероприятие без часового пояса объясняет это и ведёт на правку мероприятия', async () => {
