@@ -112,8 +112,8 @@ describe.skipIf(!live)('второй проход по этапу 7', () => {
       )
     ).rows
 
-  /* ── день X снимает тишину и лимит ────────────────────────────────── */
-  it('в день свадьбы уведомления не ждут утра и не считают лимит', async () => {
+  /* 030: wedding-day date alone does not override personal quiet hours. */
+  it('в день свадьбы обычные уведомления соблюдают тишину и лимит', async () => {
     const w = await newWedding()
     // Свадьба сегодня. Ночь: 23:00 по Москве — обычно это «отложить до 09:00».
     /* «Сегодня» — тем же выражением, что у `notify()`: по поясу свадьбы. `current_date`
@@ -132,10 +132,15 @@ describe.skipIf(!live)('второй проход по этапу 7', () => {
 
     const rows = await notificationsOf(w.userId)
     expect(rows).toHaveLength(6)
-    // В день X «разбудим утром» означает «уже неважно»: свадьба идёт сейчас.
-    // И лимита три-в-сутки в этот день тоже нет (План §18.6).
+    // The notice remains immediately available in-app; ordinary push waits.
     const deferred = rows.filter((r) => r.deliver_after.getTime() > night.getTime() + 60_000)
-    expect(deferred).toHaveLength(0)
+    expect(deferred).toHaveLength(6)
+    const byDay = new Map<string, number>()
+    for (const row of rows) {
+      const day = row.deliver_after.toISOString().slice(0,10)
+      byDay.set(day,(byDay.get(day) ?? 0)+1)
+    }
+    expect([...byDay.values()].every(count => count<=3)).toBe(true)
   })
 
   it('не в день свадьбы ограничения на месте', async () => {

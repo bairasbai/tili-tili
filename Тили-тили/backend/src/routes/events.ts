@@ -158,9 +158,13 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       const snapshot = await lockTimelineForRequest(client, request, true)
       if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — обновите её')
       const selected = await event(client, weddingId, id)
-      if (selected.is_main || (await client.query('select id from timeline_events where wedding_id=$1 and program_event_id=$2 limit 1', [weddingId, id])).rowCount
-        || (await client.query('select guest_id from guest_event_invitations where wedding_id=$1 and event_id=$2 limit 1', [weddingId, id])).rowCount) {
-        throw conflict('event_in_use', 'Сначала перенесите блоки и снимите дополнительные приглашения; основное мероприятие не удаляется')
+      const dependencies = await client.query(`select 1 where
+        exists(select 1 from timeline_events where wedding_id=$1 and program_event_id=$2)
+        or exists(select 1 from slots where wedding_id=$1 and program_event_id=$2)
+        or exists(select 1 from order_assignments where wedding_id=$1 and program_event_id=$2)
+        or exists(select 1 from guest_event_invitations where wedding_id=$1 and event_id=$2)`, [weddingId, id])
+      if (selected.is_main || dependencies.rowCount) {
+        throw conflict('event_in_use', 'Мероприятие используется программой, приглашениями, позициями услуг или историей заказов; основное мероприятие не удаляется')
       }
       await setTimelineActor(client, request.caller!.userId)
       await client.query('delete from wedding_events where wedding_id=$1 and id=$2', [weddingId, id])

@@ -153,10 +153,16 @@ describe.skipIf(!DB)('017-B: task reminders, delivery guards and transactional a
     expect(await notices(id)).toHaveLength(0)
     expect((await sendTaskReminders(app,new Date('2027-05-07T04:00:00Z'))).expired).toBe(0)
   })
-  it('notification opt-out suppresses both new assignments and reminders',async()=>{
+  it('push opt-out keeps current notices silent, expires old assignment and creates no duplicate reminders',async()=>{
     const w=await setup();await app.db!.query('update notification_prefs set tasks=false where user_id=$1',[w.helper.id])
-    const id=await make(w,{assigneeId:w.helper.id});expect(await notices(id)).toHaveLength(0)
-    expect((await sendTaskReminders(app,AT)).suppressed).toBe(1);expect(await notices(id)).toHaveLength(0)
+    const id=await make(w,{assigneeId:w.helper.id});expect(await notices(id)).toHaveLength(1)
+    expect((await notices(id))[0]!.push_disposition).toBe('inbox_only')
+    expect((await sendTaskReminders(app,AT)).suppressed).toBe(1)
+    expect(await notices(id)).toHaveLength(1)
+    expect((await notices(id))[0]!.task_event).toBe('reminder')
+    expect((await notices(id)).every(n => n.push_disposition==='inbox_only')).toBe(true)
+    await sendTaskReminders(app,AT);expect(await notices(id)).toHaveLength(1)
+    expect((await app.db!.query('select task_event from notifications where task_id=$1',[id])).rowCount).toBe(2)
   })
   it('archived weddings have no visible or deliverable task notices',async()=>{
     const w=await setup();const id=await make(w,{assigneeId:w.helper.id})
@@ -185,14 +191,31 @@ describe.skipIf(!DB)('017-B: task reminders, delivery guards and transactional a
   })
   it('task push rechecks opt-out and is not sent through the transport',async()=>{
     const w=await setup();const id=await make(w,{assigneeId:w.helper.id})
+    const ownNotice = (await notices(id))[0]!.id as string
     await app.db!.query('update notifications set deliver_after=now() where task_id=$1',[id])
     await app.db!.query('update notification_prefs set tasks=false where user_id=$1',[w.helper.id])
     await app.db!.query('insert into push_subscriptions(id,user_id,endpoint,keys) values($1,$2,$3,$4)',
       [randomUUID(),w.helper.id,'https://push.example/'+randomUUID(),JSON.stringify({p256dh:'test',auth:'test'})])
     const send=vi.spyOn(webpush,'sendNotification').mockResolvedValue({statusCode:201,body:'',headers:{}})
     const keys=webpush.generateVAPIDKeys()
-    await sendDuePushes(app.db!,{...app.appConfig,vapidPublicKey:keys.publicKey,vapidPrivateKey:keys.privateKey})
-    expect(send).not.toHaveBeenCalled();expect(await notices(id)).toHaveLength(0)
+    const pushConfig={...app.appConfig,vapidPublicKey:keys.publicKey,vapidPrivateKey:keys.privateKey}
+    // The real worker processes a bounded shared queue. Earlier suites may
+    // leave more than one batch; one pass does not prove our notice was read.
+    const queued=(await app.db!.query<{count:string}>(`select count(*)::text as count from notifications
+      where cancelled_at is null and pushed_at is null and push_disposition='planned' and deliver_after<=now()`)).rows[0]!
+    expect(Number(queued.count)).toBeLessThanOrEqual(10_000)
+    const passes=Math.ceil(Number(queued.count)/200)+2
+    for(let pass=0;pass<passes;pass++){
+      await sendDuePushes(app.db!,pushConfig)
+      if((await notices(id))[0]?.push_disposition==='inbox_only') break
+    }
+    expect(send.mock.calls.some(([,payload]) => typeof payload==='string'
+      && (JSON.parse(payload) as {data?:{notificationId?:string}}).data?.notificationId===ownNotice)).toBe(false)
+    const inbox = await notices(id)
+    expect(inbox).toHaveLength(1)
+    expect(inbox[0]!.push_disposition).toBe('inbox_only')
+    expect((await app.db!.query(`select status,attempts,provider_accepted_at from notification_push_deliveries
+      where notification_id=$1`,[ownNotice])).rows).toEqual([{status:'cancelled',attempts:0,provider_accepted_at:null}])
   })
   it('helper cannot configure someone else’s wedding or plan-b tasks',async()=>{
     const w=await setup();const other=await setup();const id=await make(other)

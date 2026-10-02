@@ -7,6 +7,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
+import { routeSources } from './routeSource.js'
 
 /**
  * F5 · контракт v0.41.0 — единственный сторож всех 14 расхождений ревью 016
@@ -152,6 +153,7 @@ function listSourceFiles(dir: string): string[] {
 const SOURCE_FILES = listSourceFiles(SRC_DIR)
 const SOURCES = SOURCE_FILES.map((file) => ({ file, text: fs.readFileSync(file, 'utf8') }))
 const ALL_SOURCE = SOURCES.map((s) => s.text).join('\n')
+const ROUTE_SOURCES = SOURCES.flatMap(source => routeSources(source.text))
 
 /** Индекс парной закрывающей скобки от `openIdx` (символ `(`) — вне строк/шаблонов/комментариев. */
 function matchParen(text: string, openIdx: number): number {
@@ -188,22 +190,9 @@ function skipQuoted(text: string, start: number, quote: string): number {
   return i
 }
 
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 /** Текст регистрации обработчика (`app.<метод>('<путь>', …)`) — от вызова до его собственной парной скобки. */
 function findHandlerSlice(fastifyPath: string, method: Method): string | null {
-  const anchor = new RegExp(`app\\.${method}\\(\\s*['"]${escapeRe(fastifyPath)}['"]`)
-  for (const { text } of SOURCES) {
-    const m = anchor.exec(text)
-    if (!m) continue
-    const openIdx = text.indexOf('(', m.index)
-    const closeIdx = matchParen(text, openIdx)
-    if (closeIdx === -1) continue
-    return text.slice(openIdx, closeIdx + 1)
-  }
-  return null
+  return ROUTE_SOURCES.find(route => route.method === method && route.path === fastifyPath)?.text ?? null
 }
 
 /** `required`, с которым вызван `withIdempotency(…)` — берётся из последнего аргумента ЕГО СОБСТВЕННОЙ пары скобок. */
@@ -465,8 +454,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.63.0 (022 individual event invitations)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.63.0')
+  it('версия контракта — 0.69.0 (022 invitations +030 atomic/resource foundations)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.69.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {

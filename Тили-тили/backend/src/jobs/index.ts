@@ -9,6 +9,8 @@ import { reportJobFailure } from '../plugins/sentry.js'
 import { uuidv7 } from '../ids.js'
 import { plural } from '../text/plural.js'
 import { personCount } from '../routes/guests.js'
+import { prepareUserResourceErasure, prepareWeddingResourceErasure } from '../resources/erasure.js'
+import { releasePreparedDealResources } from '../resources/commitments.js'
 
 /**
  * Фоновые задачи — BullMQ на том же Redis (раздел 5 плана).
@@ -137,11 +139,14 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
        * след не пишется и `purged` не растёт — уборка не лжёт о том, что не
        * сделала. */
       const ok = await db.tx(async (client) => {
-        const { rowCount } = await client.query(
-          'select 1 from weddings where id = $1 and cancelled_at is not null for update',
-          [row.id],
+        const { rows: current } = await client.query<{cancelled_at:Date;archived_at:Date}>(
+          `select cancelled_at,archived_at from weddings where id=$1 and cancelled_at is not null
+            and archived_at<now()-make_interval(days=>$2) for update`,
+          [row.id,days],
         )
-        if (rowCount === 0) return false
+        if (!current[0]) return false
+        const resources=await prepareWeddingResourceErasure(client,row.id)
+        for(const scope of resources)await releasePreparedDealResources(client,scope,'wedding_erased')
         await client.query(
           `delete from vendor_busy_dates
             where source = 'deal' and deal_id in (select id from deals where wedding_id = $1)`,
@@ -152,7 +157,7 @@ export async function purgeArchivedWeddings(app: FastifyInstance): Promise<numbe
         await client.query(
           `insert into audit_log (actor_id, action, entity, entity_id, diff)
            values (null, 'wedding.purged', 'wedding', $1, $2)`,
-          [row.id, JSON.stringify({ cancelledAt: row.cancelled_at, archivedAt: row.archived_at })],
+          [row.id, JSON.stringify({ cancelledAt: current[0].cancelled_at, archivedAt: current[0].archived_at })],
         )
         // Каскад по `weddings.id` уносит участников, гостей, сделки, слоты,
         // чаты, задачи — все двадцать три таблицы свадьбы.
@@ -226,6 +231,7 @@ export async function eraseDeletedUsers(app: FastifyInstance): Promise<number> {
  * тем же путём и заводит аккаунт заново.
  */
 export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId: string | null = null): Promise<void> {
+  const resources=await prepareUserResourceErasure(client,id)
   /* 019/T039: request is the response mutex. Lock all vendor requests before
    * the user cascade so account erasure and an offer reply use one order. */
   const { rows: ownedVendors } = await client.query<{ id: string }>(
@@ -280,6 +286,7 @@ export async function eraseUser(client: Queryable, id: string, preserveOtpCodeId
        from vendors v where v.id = d.vendor_id and v.user_id = $1`,
     [id],
   )
+  for(const scope of resources)await releasePreparedDealResources(client,scope,'vendor_erased')
   /* Idempotency responses are a one-day transport cache, not archive
    * data. Scheduled cleanup runs this before hard erasure; stale-account
    * login can call eraseUser directly, so enforce the same TTL here too.

@@ -404,7 +404,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
     expect(after[0]!.read).toBe(true)
   })
 
-  it('выключенный вид уведомлений не создаёт записей', async () => {
+  it('выключенный push-канал сохраняет новость в приложении без очереди отправки', async () => {
     const w = await newWedding()
     const vendor = await newVendor()
     await app.inject({
@@ -426,7 +426,10 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
     const forVendor = (
       await app.inject({ method: 'GET', url: '/notifications', headers: auth(vendor.token) })
     ).json() as unknown[]
-    expect(forVendor).toHaveLength(0)
+    expect(forVendor).toHaveLength(1)
+    const userId = (await app.inject({url:'/users/me',headers:auth(vendor.token)})).json().id as string
+    const disposition = await app.db!.query("select n.push_disposition from notifications n where n.user_id=$1 and n.kind='chat'",[userId])
+    expect(disposition.rows).toEqual([{push_disposition:'inbox_only'}])
   })
 
   /* ── push ─────────────────────────────────────────────────────────── */

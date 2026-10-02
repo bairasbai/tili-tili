@@ -99,7 +99,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
     [t('Рейтинг'), ({ vendor }) => vendor?.rating != null ? `★ ${vendor.rating}` : '—'],
     [t('Отзывы'), ({ vendor }) => vendor?.reviewsCount != null
       ? `${vendor.reviewsCount} ${plural(vendor.reviewsCount, t('отзыв'), t('отзыва'), t('отзывов'))}` : '—'],
-    [t('Свободен на вашу дату'), ({ occupancy }) => occupancy === 'free' ? t('Свободен')
+    [t('Свободен на вашу дату'), ({ occupancy, vendor }) => vendor?.bookingMode !== 'legacy_day' ? '—' : occupancy === 'free' ? t('Свободен')
       : occupancy === 'held' ? t('Идут переговоры с другой парой')
       : occupancy === 'busy' ? t('Занят на вашу дату') : '—'],
     [t('Пакеты и цены'), ({ vendor }) => vendor?.packages?.length ? (

@@ -3,6 +3,7 @@
    касается только скорости hot-reload, а не поведения приложения. */
 import { createContext, startTransition, useCallback, useContext, useMemo, useRef, useState, type ReactNode, useEffect } from 'react'
 import type { Slot, SlotState } from './types'
+import type { components } from './api/schema'
 import { setI18nLang, type Lang } from './i18n'
 import { accessTokenForWs, isAuthorized, onSessionExpired } from './api/client'
 import { offlineScope, sameOfflineScope } from './offlineAccess'
@@ -24,6 +25,7 @@ export interface QuizAnswers {
   format: string | null
   style: string | null
   planner: string | null
+  attentionMode?: components['schemas']['WeddingAttention']['mode']
   booked: string[]
 }
 
@@ -122,7 +124,7 @@ interface Store {
  * происходит при рендере, а в состоянии лежит русский ключ.
  */
 const DEAL_LABEL: Record<string, string | undefined> = {
-  negotiating: 'Бронь держится 72 часа',
+  negotiating: 'Переговоры',
   booked: 'Забронировано',
   paid_deposit: 'Аванс внесён',
   done: 'Выполнено',

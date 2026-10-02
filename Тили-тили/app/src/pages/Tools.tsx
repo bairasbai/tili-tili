@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react'
+import { createElement, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, Copy, FileText, Plus, Armchair, Bus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -11,11 +11,16 @@ import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
 import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
+import { OrderDraft } from '@/components/OrderDraft'
+import { OrderTerms } from '@/components/OrderTerms'
+import { OrderResourcePlan } from '@/components/OrderResourcePlan'
+import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
+import { getVendorBookingPolicy } from '@/lib/api/orders'
 import { listMyWeddings, saveInviteDesign } from '@/lib/api/wedding'
 import { createContract, guestInviteLink } from '@/lib/api/weddingWrite'
 import { getDealEvents } from '@/lib/api/slots'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized } from '@/lib/api/client'
+import { ApiError, isAuthorized, onSessionChanged, onSessionExpired } from '@/lib/api/client'
 import { ready } from '@/components/AsyncState'
 import { getBuses, getGuests, getWedding } from '@/lib/api/weddingData'
 import { addTable, deleteTable, patchGuest, patchTable } from '@/lib/api/weddingWrite'
@@ -65,7 +70,7 @@ export function Deal() {
       </p>
     </div>
   )
-  return <DealView s={s} />
+  return <DealView key={s.dealId} s={s} />
 }
 
 /*
@@ -136,7 +141,7 @@ function DealRoutes({ dealId }: { dealId: string }) {
 
 function DealView({ s }: { s: Slot }) {
   const nav = useNavigate()
-  const { paySlot, cancelBooking, advanceDealTo } = useStore()
+  const { weddingId, paySlot, cancelBooking, advanceDealTo, refreshSlots } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [dispute, setDispute] = useState(false)
@@ -144,10 +149,22 @@ function DealView({ s }: { s: Slot }) {
      на медленной сети идёт дольше, и второй тап уходил вторым запросом
      (ревью 015, FB7). */
   const [busy, setBusy] = useState(false)
+  const [resourceOpenRequest, setResourceOpenRequest] = useState(0)
+  const inFlight = useRef(false), active = useRef(false), sessionGeneration = useRef(0)
+  const currentScope = `${weddingId ?? ''}:${s.id}:${s.dealId ?? ''}:${s.vendorId ?? ''}:${s.dealState ?? ''}:${seesMoney(s)}`
+  const scope = useRef(currentScope)
+  scope.current = currentScope
+  useEffect(() => {
+    active.current = true
+    const invalidate = () => { sessionGeneration.current++; active.current = false }
+    const changed = onSessionChanged(invalidate), expired = onSessionExpired(invalidate)
+    return () => { invalidate(); changed(); expired() }
+  }, [])
   const run = (fn: () => Promise<unknown>) => void (async () => {
-    if (busy) return
+    if (inFlight.current || !active.current) return
+    inFlight.current = true
     setBusy(true)
-    try { await fn() } finally { setBusy(false) }
+    try { await fn() } finally { inFlight.current = false; if (active.current) setBusy(false) }
   })()
 
   const at = DEAL_STEPS.findIndex(x => x.state === s.dealState)
@@ -162,8 +179,40 @@ function DealView({ s }: { s: Slot }) {
      дату в календаре подрядчика или фиксирует деньги. Ошибку показываем словами. */
   const guard = (fn: () => Promise<unknown>) => run(async () => {
     setErr(null)
-    try { await fn() } catch (e) { setErr(explainError(e)) }
+    try { await fn() } catch (e) { if (active.current) setErr(explainError(e)) }
   })
+
+  // Discover the current strategy only on the person's explicit action.
+  // The server transaction remains authoritative for financial transitions.
+  const agreeBooking = async () => {
+    const selectedScope = scope.current, selectedSession = sessionGeneration.current
+    const current = () => active.current && isAuthorized() && scope.current === selectedScope && sessionGeneration.current === selectedSession
+    if (!s.dealId || !weddingId || !money) return
+    const weddings = await listMyWeddings()
+    if (!current()) return
+    if (weddings.find(w => w.id === weddingId)?.role !== 'couple') {
+      setErr(t('Бронирование может согласовать только текущая пара. Обновите сведения.')); return
+    }
+    if (s.vendorId) {
+      const policy = await getVendorBookingPolicy(s.vendorId)
+      if (!current()) return
+      if (!policy || !['legacy_day', 'resources'].includes(policy.mode) || typeof policy.revision !== 'string' ||
+        !/^(0|[1-9]\d{0,18})$/.test(policy.revision) || BigInt(policy.revision) > 9223372036854775807n ||
+        (policy.mode === 'resources' && policy.revision === '0')) {
+        setErr(t('Способ бронирования пока неизвестен. Повторите проверку перед действием.')); return
+      }
+      if (policy.mode === 'resources') { setResourceOpenRequest(n => n + 1); return }
+    }
+    if (!current()) return
+    try { await advanceDealTo(s.dealId, 'booked') }
+    catch (e) {
+      if (!current()) return
+      if (e instanceof ApiError && e.code === 'resource_booking_required') {
+        setResourceOpenRequest(n => n + 1); return
+      }
+      throw e
+    }
+  }
 
   /* Адрес переписки выдаёт сервер, и он может отказать (429, истёкшая сессия,
      сеть). Раньше промис висел без `catch`: кнопка молча не делала ничего, а
@@ -193,18 +242,15 @@ function DealView({ s }: { s: Slot }) {
             </div>
             {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
-          <div className="flex items-center mt-5">
+          <div className="grid grid-cols-6 gap-1 mt-5">
             {DEAL_STEPS.map((step, k) => {
               /* Пройденным считаем шаг не позже текущего: «выполнено» ставилось
                  галочкой всем шестерым сразу, включая те, до которых не дошли. */
               const done = at >= 0 && k <= at
               return (
-                <div key={step.state} className="flex items-center flex-1 last:flex-none">
-                  <div className="flex flex-col items-center">
+                <div key={step.state} className="min-w-0 flex flex-col items-center">
                     <span className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold', done ? 'grad text-[var(--on-grad)]' : 'bg-[var(--track)] text-[var(--track-ink)]')}>{done ? '✓' : k + 1}</span>
-                    <span className={cn('text-[7.5px] mt-1 whitespace-nowrap', done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{t(step.label)}</span>
-                  </div>
-                  {k < DEAL_STEPS.length - 1 && <div className={cn('flex-1 h-[2px] mx-1 rounded', done ? 'bg-[var(--sage)]' : 'bg-[var(--track)]')} />}
+                    <span className={cn('text-[8px] leading-tight mt-1 text-center break-words w-full', done ? 'text-[var(--sage-deep)] font-bold' : 'text-[var(--soft2)]')}>{t(step.label)}</span>
                 </div>
               )
             })}
@@ -257,6 +303,10 @@ function DealView({ s }: { s: Slot }) {
         {/* `revision` — состояние и оплаченное: после действия на этом же
             экране журнал обязан перечитаться, иначе он показывает историю до
             последнего шага и выглядит так, будто шага не было. */}
+        {money && s.dealId && <OrderDraft dealId={s.dealId} />}
+        {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
+        {money && s.dealId && <OrderTerms dealId={s.dealId} />}
+        {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
         {s.dealId && <DealJournal dealId={s.dealId} revision={`${s.dealState ?? ''}:${s.paid ?? 0}`} />}
 
         {/* Маршруты для гостей — только у живой брони в слоте «Транспорт»: до
@@ -281,12 +331,12 @@ function DealView({ s }: { s: Slot }) {
           ) : s.dealState === 'booked' ? (
             <button disabled={busy} onClick={() => guard(() => paySlot(s.id))} className="press card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] disabled:opacity-50">{busy ? t('Проводим…') : t('✓ Отметить оплату')}</button>
           ) : next ? (
-            <button disabled={busy || !s.dealId} onClick={() => guard(() => advanceDealTo(s.dealId!, next.state))} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{busy ? t('Проводим…') : t(next.label)}</button>
+            <button disabled={busy || !s.dealId} onClick={() => guard(() => next.state === 'booked' ? agreeBooking() : advanceDealTo(s.dealId!, next.state))} className="press card-s py-3.5 text-[13px] font-semibold disabled:opacity-50">{busy ? t('Проводим…') : t(next.state === 'booked' ? 'Согласовать бронирование' : next.label)}</button>
           ) : (
             <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--sage-deep)] text-center">{t('✓ Выполнено')}</div>
           )}
           {cancelled ? (
-            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Дата свободна')}</div>
+            <div className="card-s py-3.5 text-[13px] font-semibold text-[var(--soft)] text-center">{t('Заказ отменён')}</div>
           ) : !money ? null : finished ? (
             /* Выполненное не отменяется (ревью D2-02): работа сделана, деньги
                внесены — сервер отвечает 409, и предлагать это нечестно. */
@@ -303,7 +353,7 @@ function DealView({ s }: { s: Slot }) {
           <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Защита сделки')}</span>
           <div className="mt-3 space-y-2.5 text-[12px] text-[var(--soft)] leading-relaxed">
             <p>💸 <b className="text-[var(--ink)]">{t('Оплата:')}</b> {t('деньги идут напрямую подрядчику — приложение фиксирует факт оплаты, но не держит их у себя.')}</p>
-            <p>📅 <b className="text-[var(--ink)]">{t('Отмена:')}</b> {t('условия возврата — в договоре со сторонами. Отмена освобождает вашу дату в календаре подрядчика сразу.')}</p>
+            <p>📅 <b className="text-[var(--ink)]">{t('Отмена:')}</b> {t('условия возврата — в договоре со сторонами. Отмена снимает бронь этого заказа; другие заказы и их обязательства сохраняются.')}</p>
             <p>⚖️ <b className="text-[var(--ink)]">{t('Спор:')}</b> {t('откройте спор — жалоба уйдёт модерации, а переписка и договор останутся в приложении.')}</p>
           </div>
           {/* Спор — жалоба на сделку (`POST /complaints`, §18.2): раньше кнопка вела
@@ -334,7 +384,7 @@ function DealView({ s }: { s: Slot }) {
 const EVENT_STATE: Record<string, string> = {
   candidate: 'Не связывались',
   contacted: 'Написали',
-  negotiating: 'Переговоры — бронь держится 72 часа',
+  negotiating: 'Переговоры',
   booked: 'Забронировано',
   paid_deposit: 'Аванс внесён',
   done: 'Выполнено',
@@ -366,7 +416,7 @@ function DealJournal({ dealId, revision }: { dealId: string; revision: string })
               <p className="text-[12.5px] font-medium">
                 {/* Правка цены несёт свой текст — старую и новую сумму; у перехода
                     состояния текста нет, и его даёт словарь. */}
-                {e.kind === 'price' ? (e.note ?? t('Цена изменена')) : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}
+                {e.kind === 'price' ? (e.note ?? t('Цена изменена')) : e.fromState === null && e.toState === 'candidate' ? t('Создан черновик заказа') : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}
               </p>
               <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
                 {e.at ? new Date(e.at).toLocaleString(getI18nLang() === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}

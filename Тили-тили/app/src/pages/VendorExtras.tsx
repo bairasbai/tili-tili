@@ -4,6 +4,10 @@ import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, Ch
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, ready } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
+import { OrderDraft } from '@/components/OrderDraft'
+import { OrderTerms } from '@/components/OrderTerms'
+import { OrderResourceCommitments } from '@/components/OrderResourceCommitments'
+import { OrderResourcePlan } from '@/components/OrderResourcePlan'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getVendorAnalytics, getVendorDeals, getVendorLeads, getVendorOfferRequests, getVendorProfile, getVendorReviews, leadAction, replyToReview, sendVendorOffer, type VendorOfferInput, type VendorOfferRequest } from '@/lib/api/vendor'
 import { getDealEvents } from '@/lib/api/slots'
@@ -41,11 +45,11 @@ const dateLocale = () => (getI18nLang() === 'en' ? 'en-GB' : 'ru-RU')
  * только ей); подрядчику здесь — журнал, оплаты, договор, чат и спор.
  */
 const DEAL_STATE_LABEL: Record<string, string> = {
-  candidate: 'Не связывались', contacted: 'Написали', negotiating: 'Держим дату', booked: 'Забронировано',
+  candidate: 'Не связывались', contacted: 'Написали', negotiating: 'Переговоры', booked: 'Забронировано',
   paid_deposit: 'Аванс получен', done: 'Завершена', cancelled: 'Отменена',
 }
 const EVENT_STATE: Record<string, string> = {
-  candidate: 'Вернулась к статусу «Не связывались»', contacted: 'Пара написала', negotiating: 'Мягкая бронь', booked: 'Забронировано',
+  candidate: 'Вернулась к статусу «Не связывались»', contacted: 'Пара написала', negotiating: 'Переговоры', booked: 'Забронировано',
   paid_deposit: 'Аванс внесён', done: 'Выполнено', cancelled: 'Сделка отменена',
 }
 const EVENT_BY: Record<string, string> = { couple: 'пара', vendor: 'вы', system: 'автоматически' }
@@ -280,6 +284,10 @@ export function VendorDealCard() {
               )}
             </div>
 
+            <OrderDraft dealId={id} />
+            <OrderResourcePlan dealId={id} />
+            <OrderTerms dealId={id} />
+            <OrderResourceCommitments dealId={id} onChanged={q.reload} />
             {d.busRoutes && d.busRoutes.length > 0 && (
               <div className="card p-5">
                 <span className="text-[10px] tracking-[.2em] uppercase text-[var(--soft)] font-semibold">{t('Маршруты для гостей')}</span>
@@ -300,7 +308,7 @@ export function VendorDealCard() {
                   <div key={e.id} className="flex gap-3">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--rose-deep)] mt-1.5 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-[12.5px] font-medium">{e.kind === 'price' ? (e.note ?? t('Цена изменена')) : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}</p>
+                      <p className="text-[12.5px] font-medium">{e.kind === 'price' ? (e.note ?? t('Цена изменена')) : e.fromState === null && e.toState === 'candidate' ? t('Создан черновик заказа') : t(EVENT_STATE[e.toState ?? ''] ?? e.toState ?? '')}</p>
                       <p className="text-[10.5px] text-[var(--soft2)] mt-0.5">
                         {e.at ? new Date(e.at).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : ''}
                         {e.by && ` · ${t(EVENT_BY[e.by] ?? e.by)}`}

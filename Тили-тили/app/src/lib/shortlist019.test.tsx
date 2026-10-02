@@ -11,9 +11,10 @@ import { StoreProvider } from '@/lib/store'
 import { VendorDetail } from '@/pages/Search'
 import { WeddingTeam, SlotDetail } from '@/pages/Wedding'
 import { Compare } from '@/pages/Smart'
+import type { ResourceCommitmentView, VendorBookingPolicy } from '@/lib/api/orders'
 
 type Reply = unknown | { __status: number; body: unknown }
-type Call = { method: string; path: string; url: string; body: unknown }
+type Call = { method: string; path: string; url: string; body: unknown; headers: Headers }
 type RouteTable = Record<string, Reply | ((call: Call) => Reply | Promise<Reply>)>
 
 const WEDDING = {
@@ -29,10 +30,18 @@ const VENDOR = {
   packages: [{ id: 'p1', name: 'День целиком', price: { amount: 250000, currency: 'RUB' }, includes: ['8 часов', 'Готовые фото'] }],
   gallery: [], media: [],
 }
+// Exact safe projections for these controlled legacy-only fixtures. They
+// establish neither available resources nor atomic replacement of a booking.
+const LEGACY_POLICY: VendorBookingPolicy = { mode: 'legacy_day', revision: '0' }
+const NO_RESOURCE_COMMITMENTS: ResourceCommitmentView = {
+  revision: '0', state: 'not_reserved', termsId: null,
+  planRevisionId: null, reservation: 'not_reserved',
+}
 
 function entry(id: string, vendorId: string, name: string, position: number, occupancy: 'free' | 'held' | 'busy' | null, patch: Record<string, unknown> = {}) {
   const vendor = vendorId ? {
     id: vendorId, name, categoryId: 'photo', city: 'Уфа',
+    bookingMode: 'legacy_day' as const,
     priceFrom: { amount: 100000 + position * 10000, currency: 'RUB' },
     rating: position === 1 ? 4.8 : null, reviewsCount: position === 1 ? 5 : 2,
     photoUrl: null, verified: true, hasVideo: false,
@@ -61,7 +70,7 @@ function serve(routes: RouteTable) {
     const path = decodeURIComponent(url.split('?')[0] ?? '')
     let body: unknown = null
     try { body = init?.body ? JSON.parse(String(init.body)) : null } catch { body = init?.body }
-    const call: Call = { method: init?.method ?? 'GET', path, url, body }
+    const call: Call = { method: init?.method ?? 'GET', path, url, body, headers: new Headers(init?.headers) }
     calls.push(call)
     const route = routes[`${call.method} ${path}`] ?? routes[path]
     if (route === undefined) {
@@ -90,6 +99,7 @@ function baseRoutes(overrides: RouteTable = {}): RouteTable {
     '/catalog/vendors/v1': VENDOR,
     '/catalog/vendors/v1/availability': { busyDates: [], holdDates: [] },
     '/catalog/vendors/v1/reviews': { items: [], nextCursor: null },
+    'GET /vendors/v1/booking-policy': LEGACY_POLICY,
     '/catalog/vendors': { items: [], nextCursor: null },
     '/vendor/profile': withStatus(404, { error: { code: 'not_found', message: 'Анкета не найдена' } }),
     '/weddings/w1/slots/s1/shortlist': [],
@@ -447,7 +457,7 @@ describe('shortlist019 · кандидаты и сравнение', () => {
     expect(await screen.findByRole('region', { name: 'Кандидаты' })).toBeTruthy()
   })
 
-  it('T16: замена текущей брони — два клика до cancel + book; busy-кандидат CTA не получает', async () => {
+  it('T16: замена текущей брони — два клика до одной атомарной команды; busy-кандидат CTA не получает', async () => {
     const bookedSlot = {
       ...SLOT,
       tileState: 'booked',
@@ -465,18 +475,17 @@ describe('shortlist019 · кандидаты и сравнение', () => {
     const view = mount('/wedding/slot/s1', {
       '/weddings/w1/slots': () => [serverSlot],
       [shortlistPath]: [freeEntry, busyEntry],
-      'POST /weddings/w1/slots/s1/cancel': () => {
-        serverSlot = { ...bookedSlot, tileState: 'empty', deal: null }
-        return withStatus(204, null)
-      },
-      'POST /weddings/w1/slots/s1/book': (call: Call) => {
-        expect(call.body).toEqual({ vendorId: 'v2', price: { amount: 250000, currency: 'RUB' }, packageId: 'p1' })
-        serverSlot = { ...bookedSlot, tileState: 'booked', deal: { ...bookedSlot.deal, id: 'deal-v2', vendor: { id: 'v2', name: 'Борис Фото' } } }
-        return withStatus(201, { id: 'deal-v2', state: 'booked' })
+      'POST /weddings/w1/slots/s1/replace': (call: Call) => {
+        expect(call.body).toEqual({ expectedSelectedDealId: 'deal-v1', expectedSelectedDealState: 'booked', vendorId: 'v2', price: { amount: 250000, currency: 'RUB' }, packageId: 'p1', expectedPolicyRevision: '0' })
+        expect(call.headers.get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/i)
+        serverSlot = { ...bookedSlot, tileState: 'booked', deal: { ...bookedSlot.deal, id: '55555555-5555-4555-8555-555555555555', vendor: { id: 'v2', name: 'Борис Фото' } } }
+        return withStatus(201, serverSlot)
       },
       '/catalog/vendors/v2': v2,
       '/catalog/vendors/v2/availability': { busyDates: [], holdDates: [] },
       '/catalog/vendors/v2/reviews': { items: [], nextCursor: null },
+      'GET /vendors/v2/booking-policy': LEGACY_POLICY,
+      'GET /deals/deal-v1/order/resource-commitments': NO_RESOURCE_COMMITMENTS,
     })
 
     const region = await screen.findByRole('region', { name: 'Кандидаты' })
@@ -492,46 +501,42 @@ describe('shortlist019 · кандидаты и сравнение', () => {
     fireEvent.click(replaceButton)
     expect((await screen.findByRole('status')).textContent).toContain('Подрядчик заменён в свадьбе')
     expect(humanClicks).toBe(2)
-    await waitFor(() => expect(view.calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots')).toHaveLength(2))
+    await waitFor(() => expect(view.calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots')).toHaveLength(3))
     expect(serverSlot).toMatchObject({ tileState: 'booked', deal: { vendor: { id: 'v2' } } })
-    const mutations = view.calls.filter(c => c.method === 'POST' && /^\/weddings\/w1\/slots\/s1\/(cancel|book)$/.test(c.path))
+    const mutations = view.calls.filter(c => c.method === 'POST')
     expect(mutations.map(c => [c.method, c.path, c.body])).toEqual([
-      ['POST', '/weddings/w1/slots/s1/cancel', {}],
-      ['POST', '/weddings/w1/slots/s1/book', { vendorId: 'v2', price: { amount: 250000, currency: 'RUB' }, packageId: 'p1' }],
+      ['POST', '/weddings/w1/slots/s1/replace', { expectedSelectedDealId: 'deal-v1', expectedSelectedDealState: 'booked', vendorId: 'v2', price: { amount: 250000, currency: 'RUB' }, packageId: 'p1', expectedPolicyRevision: '0' }],
     ])
   })
 
-  it('T17: если новая бронь не проходит после отмены, анкета честно сообщает о потерянной старой брони', async () => {
+  it('T17: определённый отказ атомарной замены сохраняет прежнюю бронь', async () => {
     const bookedSlot = {
       ...SLOT,
       tileState: 'booked',
       deal: { id: 'deal-v1', state: 'booked', vendor: { id: 'v1', name: 'Анна Фотограф' }, price: { amount: 250000, currency: 'RUB' }, paid: { amount: 0, currency: 'RUB' } },
     }
     const v2 = { ...VENDOR, id: 'v2', name: 'Борис Фото' }
-    let serverSlot: unknown = bookedSlot
+    const serverSlot = bookedSlot
     const view = mount('/vendor/v2?replaceSlot=s1', {
       '/weddings/w1/slots': () => [serverSlot],
       [shortlistPath]: [entry('replace-free', 'v2', 'Борис Фото', 1, 'free')],
-      'POST /weddings/w1/slots/s1/cancel': () => {
-        serverSlot = { ...bookedSlot, tileState: 'empty', deal: null }
-        return withStatus(204, null)
-      },
-      'POST /weddings/w1/slots/s1/book': withStatus(409, { error: { code: 'slot_taken', message: 'На эту дату уже есть бронь' } }),
+      'POST /weddings/w1/slots/s1/replace': withStatus(409, { error: { code: 'slot_taken', message: 'На эту дату уже есть бронь' } }),
       '/catalog/vendors/v2': v2,
       '/catalog/vendors/v2/availability': { busyDates: [], holdDates: [] },
       '/catalog/vendors/v2/reviews': { items: [], nextCursor: null },
+      'GET /vendors/v2/booking-policy': LEGACY_POLICY,
+      'GET /deals/deal-v1/order/resource-commitments': NO_RESOURCE_COMMITMENTS,
     })
     fireEvent.click(await screen.findByRole('button', { name: 'Заменить в свадьбе' }))
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('Старая бронь уже отменена, но новую подтвердить не удалось')
+    expect(alert.textContent).toContain('Замена не выполнена — обновите позицию.')
     expect(alert.textContent).toContain('На эту дату уже есть бронь')
     expect(view.calls.filter(c => c.method === 'POST').map(c => c.path)).toEqual([
-      '/weddings/w1/slots/s1/cancel',
-      '/weddings/w1/slots/s1/book',
+      '/weddings/w1/slots/s1/replace',
     ])
-    await waitFor(() => expect(view.calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots')).toHaveLength(2))
-    expect(serverSlot).toMatchObject({ tileState: 'empty', deal: null })
-    expect(screen.getByRole('alert').textContent).toContain('Старая бронь уже отменена')
+    await waitFor(() => expect(view.calls.filter(c => c.method === 'GET' && c.path === '/weddings/w1/slots')).toHaveLength(3))
+    expect(serverSlot).toEqual(bookedSlot)
+    expect(screen.getByRole('alert').textContent).not.toContain('Старая бронь уже отменена')
   })
 
   it('T18: replaceSlot ждёт слоты и роль пары; при роли helper не открывает обычное добавление', async () => {
@@ -551,6 +556,7 @@ describe('shortlist019 · кандидаты и сравнение', () => {
       },
       [shortlistPath]: [entry('replace-free', 'v2', 'Борис Фото', 1, 'free')],
       '/catalog/vendors/v2': { ...VENDOR, id: 'v2', name: 'Борис Фото' },
+      'GET /vendors/v2/booking-policy': LEGACY_POLICY,
       '/catalog/vendors/v2/availability': { busyDates: [], holdDates: [] },
       '/catalog/vendors/v2/reviews': { items: [], nextCursor: null },
     })

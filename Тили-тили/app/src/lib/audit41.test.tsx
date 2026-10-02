@@ -167,8 +167,8 @@ describe('фича 014: настройки (A4, A5)', () => {
     serve(base({ '/vendor/profile': { id: 'v1', name: 'Салют' } }))
     const r = await open('/vendor-app/settings', 'Кабинет подрядчика')
     await waitFor(() => expect(text(r)).toContain('Тихие часы'), { timeout: 4000 })
-    expect(text(r)).toContain('Уведомления: сообщения')
-    expect(text(r)).toContain('Уведомления: сделки и оплаты')
+    expect(text(r)).toContain('Push: сообщения')
+    expect(text(r)).toContain('Push: сделки и оплаты')
     expect(text(r)).not.toContain('дедлайны задач')
   })
 })
@@ -184,6 +184,9 @@ describe('фича 014: слот вне шаблона при брони (A1) и
   }
   const vendorRoutes = (over: Routes = {}): Routes => base({
     '/catalog/vendors/v-fw': VENDOR,
+    // These A1 witnesses exercise the existing day-booking strategy. Unknown
+    // policy now correctly refuses the write rather than guessing legacy.
+    '/vendors/v-fw/booking-policy': { mode: 'legacy_day', revision: '0' },
     '/catalog/vendors': { items: [], nextCursor: null },
     '/catalog/vendors/v-fw/availability': { busyDates: [] },
     '/catalog/vendors/v-fw/reviews': { items: [], nextCursor: null },
@@ -196,11 +199,14 @@ describe('фича 014: слот вне шаблона при брони (A1) и
       '/weddings/w1/slots/s-fw/book': SLOT('s-fw', 'firework', 'Пиротехника'),
     }))
     await open('/vendor/v-fw', 'Добавить в свадьбу')
+    await waitFor(() => expect((screen.getByText('Добавить в свадьбу') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Добавить в свадьбу'))
     await waitFor(() => expect(posts(calls, '/weddings/w1/slots')).toHaveLength(1), { timeout: 4000 })
     expect(posts(calls, '/weddings/w1/slots')[0]!.body).toEqual({ categoryId: 'firework' })
     await waitFor(() => expect(posts(calls, '/weddings/w1/slots/s-fw/book')).toHaveLength(1), { timeout: 4000 })
     expect((posts(calls, '/weddings/w1/slots/s-fw/book')[0]!.body as { vendorId: string }).vendorId).toBe('v-fw')
+    expect(posts(calls, '/weddings/w1/slots/s-fw/book')[0]!.body).toEqual({ vendorId: 'v-fw', price: { amount: 3_000_000, currency: 'RUB' } })
+    expect(gets(calls, '/vendors/v-fw/booking-policy').length).toBeGreaterThanOrEqual(2)
     await waitFor(() => expect(screen.getByText('✓ В моей свадьбе!')).toBeTruthy(), { timeout: 4000 })
   })
 
@@ -212,8 +218,12 @@ describe('фича 014: слот вне шаблона при брони (A1) и
       '/weddings/w1/slots/s-old/book': SLOT('s-old', 'firework', 'Пиротехника'),
     }))
     await open('/vendor/v-fw', 'Добавить в свадьбу')
+    await waitFor(() => expect((screen.getByText('Добавить в свадьбу') as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByText('Добавить в свадьбу'))
     await waitFor(() => expect(posts(calls, '/weddings/w1/slots/s-old/book')).toHaveLength(1), { timeout: 4000 })
+    expect(posts(calls, '/weddings/w1/slots')[0]!.body).toEqual({ categoryId: 'firework' })
+    expect(posts(calls, '/weddings/w1/slots/s-old/book')[0]!.body).toEqual({ vendorId: 'v-fw', price: { amount: 3_000_000, currency: 'RUB' } })
+    expect(gets(calls, '/vendors/v-fw/booking-policy').length).toBeGreaterThanOrEqual(2)
   })
 
   it('заявка консьержу несёт город свадьбы (Уфа), а не город устройства (Казань)', async () => {

@@ -235,7 +235,7 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
     expect(rows.length).toBeGreaterThanOrEqual(3)
   })
 
-  it('критичное уведомление лимита не знает', async () => {
+  it('сдвиг тайминга сохраняет новости, но сам по себе не снимает лимит push', async () => {
     const w = await newWedding()
     const helper = await newUser()
     const invite = await app.inject({
@@ -274,9 +274,9 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
           and user_id in (select user_id from wedding_members where wedding_id = $1)`,
       [w.weddingId],
     )
-    // День X не ждёт утра и не считает лимиты: гости уже в дороге.
+    // A timeline shift is actionable, but is not proof of an urgent incident.
     expect(Number(rows[0]!.n)).toBeGreaterThanOrEqual(5)
-    expect(Number(rows[0]!.late)).toBe(0)
+    expect(Number(rows[0]!.late)).toBeGreaterThanOrEqual(2)
   })
 
   /* ── чат дня X без даты ───────────────────────────────────────────── */

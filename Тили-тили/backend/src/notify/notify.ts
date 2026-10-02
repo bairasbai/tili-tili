@@ -18,14 +18,16 @@ export interface NewNotification {
   title: string
   body: string
   link?: string | null
-  /** Сделки и день X идут мимо тихих часов и мимо лимита. */
+  /** Legacy caller hint; never authorizes bypass of personal quiet hours. */
   critical?: boolean
   /** Personal task notices never bypass the recipient's quiet hours, even on day X. */
   respectQuietHours?: boolean
+  /** Explicit inbox-only information; never wakes the recipient. */
+  push?: boolean
   task?: { id: string; version: string; event: 'assignment' | 'reminder'; expiresAt: Date }
 }
 
-/** Сколько НЕкритичных push в сутки вне дня X (План §18.6). */
+/** Ordinary push quota, including on the wedding day. */
 export const PUSH_LIMIT_PER_DAY = 3
 
 /**
@@ -48,8 +50,6 @@ interface Prefs {
   quiet_from: string
   quiet_to: string
   tz: string | null
-  /** Сегодня у этого человека свадьба. */
-  wedding_today: boolean
 }
 
 /**
@@ -78,33 +78,22 @@ export async function notify(
     `select coalesce(${column ? `p.${column}` : 'true'}, true) as enabled,
             coalesce(p.quiet_from::text, '22:00') as quiet_from,
             coalesce(p.quiet_to::text, '09:00') as quiet_to,
-            u.tz,
-            /* День X: свадьба ровно сегодня по её собственной таймзоне.
-             * Считается здесь, а не отдельной ночной задачей с флагом:
-             * флаг пришлось бы ставить и снимать, а он ещё и переживал бы
-             * перенос даты. Вопрос «сегодня ли» дешевле задать, чем хранить. */
-            exists(
-              select 1 from wedding_members m join weddings w on w.id = m.wedding_id
-               where m.user_id = u.id and w.archived_at is null and w.cancelled_at is null
-                 and w.date = (now() at time zone coalesce(w.tz, 'Europe/Moscow'))::date
-            ) as wedding_today
+            u.tz
        from users u left join notification_prefs p on p.user_id = u.id
       where u.id = $1 and u.deleted_at is null`,
     [item.userId],
   )
   const prefs = rows[0]
-  // Пользователя нет или он выключил этот вид — новости не будет вовсе.
-  // Молча писать строку, которую никто не увидит, незачем.
-  if (!prefs || !prefs.enabled) return null
+  // A disabled push channel still permits the in-app notice; a deleted user does not.
+  if (!prefs) return null
 
   // Пояс: профиль → свадьба, о которой новость → Москва. Таймзона может быть
   // не указана или испорчена: сервис работает в РФ, считаем по Москве.
   // Уронить уведомление из-за настройки профиля нельзя.
   const tz = knownTimeZone(prefs.tz || weddingTz)
-  /* В день X тишины и лимита нет вовсе (План §18.6): свадьба идёт прямо
-   * сейчас, и «разбудим утром» тут значит «уже неважно». */
-  const unlimited = !item.respectQuietHours && (item.critical || prefs.wedding_today)
-  const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, unlimited)
+  // Date and a generic critical flag cannot prove a current scoped incident.
+  const pushRequested = prefs.enabled && item.push !== false
+  const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, false)
 
   /*
    * Поиск места и вставка — В ОДНОЙ транзакции за замком по человеку
@@ -115,14 +104,12 @@ export async function notify(
    * получал лишние звонки ровно в тот день, когда новостей и так много.
    *
    * Замок advisory: строки, которую можно было бы запереть, ещё нет —
-   * запирается сам человек как ключ. При `unlimited` (день X, критичное)
-   * лимита нет вовсе, считать нечего — замок не берём, чтобы не
-   * сериализовать залп новостей в самый горячий день.
+   * запирается сам человек как ключ. Тихая информация не занимает квоту.
    */
   const place = async (client: Queryable): Promise<string> => {
     let after = startAt
-    let placed = true
-    if (!unlimited) {
+    let placed = pushRequested
+    if (pushRequested) {
       await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [NOTIFY_LIMIT_LOCK, item.userId])
       /* Лимит считается по УЖЕ ЗАПЛАНИРОВАННЫМ на эти сутки, а не по
        * отправленным: иначе три уведомления, отложенные до утра, утром
@@ -141,7 +128,11 @@ export async function notify(
         const { rows: planned } = await client.query<{ n: string }>(
           `select count(*)::text as n from notifications
             where user_id = $1 and deliver_after >= $2 and deliver_after < $3
-              and (cancelled_at is null or pushed_at is not null)`,
+              and push_disposition <> 'inbox_only'
+              and (cancelled_at is null or pushed_at is not null or exists (
+                select 1 from notification_push_deliveries d
+                 where d.notification_id = notifications.id and d.attempts > 0
+              ))`,
           [item.userId, bounds.from, bounds.to],
         )
         // Свыше лимита — не выбрасываем, а переносим: непрочитанное
@@ -163,10 +154,11 @@ export async function notify(
     const id = uuidv7()
     await client.query(
       `insert into notifications (id, user_id, kind, title, body, link, deliver_after, pushed_at,
-         task_id,task_version,task_event,expires_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+         task_id,task_version,task_event,expires_at,push_disposition,delivery_time_zone)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [id, item.userId, item.kind, item.title, item.body, item.link ?? null, after, placed ? null : now,
-        item.task?.id ?? null, item.task?.version ?? null, item.task?.event ?? null, item.task?.expiresAt ?? null],
+        item.task?.id ?? null, item.task?.version ?? null, item.task?.event ?? null, item.task?.expiresAt ?? null,
+        placed ? 'planned' : 'inbox_only',tz],
     )
     return id
   }

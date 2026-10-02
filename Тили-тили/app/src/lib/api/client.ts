@@ -52,6 +52,38 @@ export function saveTokens(t: Tokens | null): void {
     else localStorage.removeItem(TOKENS_KEY)
   } catch { /* см. readTokens */ }
   if (changed) window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
+  for (const observe of scopeObservers) {
+    try { observe() } catch { /* A reader cannot interrupt credential renewal. */ }
+  }
+}
+
+// Only a local privacy boundary, never authentication or permission evidence.
+// Access-token renewal for the same subject/session keeps an active reader;
+// logout or switching account/session destroys its private in-memory state.
+const scopeObservers = new Set<() => void>()
+function localSessionScope(): string | null {
+  const token = readTokens()?.accessToken
+  if (!token) return null
+  const scope = offlineScope(token)
+  return scope ? JSON.stringify([scope.userId, scope.sessionId]) : 'unparsed:' + token
+}
+export function onSessionChanged(listener: () => void): () => void {
+  let scope = localSessionScope()
+  const observe = () => {
+    const current = localSessionScope()
+    if (current !== scope) { scope = current; listener() }
+  }
+  const storage = (event: StorageEvent) => { if (event.key === TOKENS_KEY || event.key === null) observe() }
+  scopeObservers.add(observe)
+  window.addEventListener('storage', storage)
+  window.addEventListener('focus', observe)
+  document.addEventListener('visibilitychange', observe)
+  return () => {
+    scopeObservers.delete(observe)
+    window.removeEventListener('storage', storage)
+    window.removeEventListener('focus', observe)
+    document.removeEventListener('visibilitychange', observe)
+  }
 }
 
 export function isAuthorized(): boolean {

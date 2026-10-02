@@ -47,7 +47,7 @@ const WEDDING = { id: 'w1', title: 'Аня ♥ Боря', date: '2027-06-14', ci
 
 /* Пара с одной свадьбой: всё, что читают главная и разделы свадьбы, отвечает. */
 const COUPLE_OK: Routes = {
-  '/weddings': [WEDDING],
+  '/weddings': [{ ...WEDDING, role: 'couple' }],
   '/weddings/w1': WEDDING,
   '/weddings/w1/slots': [],
   '/weddings/w1/budget': { total: { amount: 10_000_000, currency: 'RUB' }, spent: { amount: 0, currency: 'RUB' }, items: [] },
@@ -176,6 +176,7 @@ const VENDOR = {
 
 const CATALOG_OK: Routes = {
   ...COUPLE_OK,
+  '/vendors/v1/booking-policy': { mode: 'legacy_day', revision: '0' },
   '/catalog/vendors/v1': VENDOR,
   '/catalog/vendors/v1/availability': { busyDates: [] },
   '/catalog/vendors/v1/reviews': { items: [] },

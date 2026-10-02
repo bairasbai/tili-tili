@@ -4,6 +4,7 @@ import { ChevronLeft, Shield, Smartphone, ChevronRight, Eye, HelpCircle, LogOut,
 import { TopBar, Tile } from '@/components/chrome'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
+import { AttentionSettings } from '@/components/AttentionSettings'
 import { useStore } from '@/lib/store'
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -1033,9 +1034,10 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
               клиент до блока 8 аудита не умел вовсе. Подрядчику — «сообщения»
               и «сделки»: ему приходят те же виды и держат их те же настройки
               (фича 014, A4); «дедлайны задач» — про чек-лист пары. */}
-          {!vendor && <Row label={t('Уведомления: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />}
-          <Row label={t('Уведомления: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
-          <Row label={t('Уведомления: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
+          {!vendor && <Row label={t('Push: дедлайны задач')} value={push.tasks} onChange={v => setPush('tasks', v)} />}
+          <Row label={t('Push: сообщения')} value={push.chats} onChange={v => setPush('chats', v)} />
+          <Row label={t('Push: сделки и оплаты')} value={push.deals} onChange={v => setPush('deals', v)} />
+          <p className="text-[10.5px] text-[var(--soft)] py-2">{t('Эти переключатели управляют push. Новости остаются во входящих; отправка на устройство требует включённой подписки.')}</p>
           {/* Тумблер «Советы ИИ-координатора» убран: таких уведомлений никто не
               шлёт (ни одной задачи с видом «совет» в бэкенде), а переключатель
               для того, чего нет, — обещание (R-174). Поле `push.tips` в
@@ -1066,13 +1068,20 @@ export function Settings({ vendor = false }: { vendor?: boolean }) {
             {!ready(me)
               ? (me.loading ? t('Загружаем…') : t('Настройки не загрузились'))
               : quiet
-                ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('только критичные уведомления. В день X тихие часы отключены автоматически.')}`
+                ? `${prof?.quietHours?.from ?? '22:00'}–${prof?.quietHours?.to ?? '09:00'} — ${t('тихие часы действуют и в день свадьбы.')}`
                 : t('Тихих часов нет: уведомления приходят в любое время суток.')}
           </p>
+          {ready(me) && <Row label={t('Срочные проблемы моего события вне тихих часов')}
+            value={prof?.urgentIncidents ?? false}
+            onChange={v => save({ urgentIncidents: v }, p => ({ ...p, urgentIncidents: v }))} />}
+          <p className="text-[10.5px] text-[var(--soft)] py-2">{t('Только подтверждённые проблемы. Отключённые каналы остаются выключенными.')}</p>
           {/* Push на устройстве — обеим ролям: без ключей сервер ответит 501
               своими словами и подрядчику, и паре (R-174). */}
           <DevicePushRow />
         </div>
+        {weddingId && iAmCouple && ready(wedding) && ready(me) && <AttentionSettings weddingId={weddingId}
+          coordinators={(wedding.data?.members ?? []).flatMap(member => member.role==='coordinator' && member.user?.id
+            ? [{id:member.user.id,name:member.user.name ?? ''}] : [])} />}
         <div className="card px-4 py-1.5">
           <AsyncState q={sessions} />
           {/* Раньше здесь всегда стояли «iPhone · Safari» и «Android · Chrome ·

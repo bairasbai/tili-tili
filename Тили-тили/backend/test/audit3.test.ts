@@ -170,6 +170,63 @@ describe.skipIf(!live)('перепроверка после этапа 3', () =>
     expect(rows[0]!.n).toBe(1)
   })
 
+  /* ── то же двойное нажатие, но оба запроса реально ждут замок владельца ── */
+  it('первая анкета: оба PUT, дождавшиеся замка владельца, отвечают 200', async () => {
+    // Без замка тест выше ловит гонку лишь при удачном расписании (CI PR #27:
+    // [200, 409] — второй запрос увидел созданную первым компанию и счёл это
+    // сменой связанных заказов). Здесь оба запроса гарантированно встают за
+    // строкой владельца до создания компании.
+    const user = await newUser()
+    const put = () =>
+      app.inject({
+        method: 'PUT',
+        url: '/vendor/profile',
+        headers: auth(user.token),
+        payload: { name: 'Студия', categoryId: 'photo', city: { name: 'Уфа', region: 'Башкортостан' } },
+      })
+    let both: Promise<Awaited<ReturnType<typeof put>>[]> | undefined
+    let settled = false
+    try {
+      await app.db!.tx(async (client) => {
+        const pid = (await client.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
+        await client.query('select id from users where id = $1 for update', [user.id])
+        both = Promise.all([put(), put()])
+        void both.then(
+          () => { settled = true },
+          () => { settled = true },
+        )
+        const until = Date.now() + 12000
+        for (;;) {
+          await client.query('select pg_stat_clear_snapshot()')
+          // Второй ждущий встаёт в очередь за первым (tuple lock), и его блокирует
+          // уже первый запрос, а не этот держатель, — считаем оба уровня очереди.
+          const r = await client.query<{ n: number }>(
+            `with direct as (
+               select pid from pg_stat_activity
+                where datname = current_database() and wait_event_type = 'Lock' and $1 = any(pg_blocking_pids(pid)))
+             select count(*)::int as n from pg_stat_activity a
+              where a.datname = current_database() and a.wait_event_type = 'Lock'
+                and (a.pid in (select pid from direct)
+                  or exists (select 1 from direct d where d.pid = any(pg_blocking_pids(a.pid))))`,
+            [pid],
+          )
+          if (r.rows[0]!.n >= 2) break
+          if (settled) throw new Error('HTTP settled before both requests waited on the owner lock')
+          if (Date.now() > until) throw new Error('two owner-lock waiters not observed')
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+      })
+    } finally {
+      if (both) await both.catch(() => undefined)
+    }
+    const [a, b] = await both!
+    expect([a.statusCode, b.statusCode], `${a.body} | ${b.body}`).toEqual([200, 200])
+    const { rows } = await app.db!.query<{ n: number }>('select count(*)::int as n from vendors where user_id = $1', [
+      user.id,
+    ])
+    expect(rows[0]!.n).toBe(1)
+  })
+
   /* ── удалённый аккаунт исчезает из выдачи ─────────────────────────── */
   it('анкета удалённого аккаунта пропадает из каталога', async () => {
     const vendor = await newVendor()

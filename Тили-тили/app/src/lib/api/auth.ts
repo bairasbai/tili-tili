@@ -22,6 +22,7 @@ export const patchMe = (patch: {
   name?: string
   lang?: 'ru' | 'en'
   tz?: string
+  urgentIncidents?: boolean
   push?: Partial<Record<'tasks' | 'chats' | 'deals' | 'tips', boolean>>
   quietHours?: { from: string; to: string }
 }) => api.patch('/users/me', patch)

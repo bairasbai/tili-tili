@@ -4,6 +4,7 @@ import { Check, ChevronRight, MessageCircle, CalendarDays, Plus, Star } from 'lu
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState, CabinetDenied, num, ready } from '@/components/AsyncState'
 import { CityPicker } from '@/components/CityPicker'
+import { VendorResources } from '@/components/VendorResources'
 import { ApiError } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import {
@@ -315,6 +316,10 @@ export function VendorDashboard() {
               пары дату, о которой договорились. */}
           <p className="text-[10px] text-[var(--soft2)] mt-2.5">{t('Тап — закрыть или открыть дату. Дни в рамке заняты сделкой или мягкой бронью: их снимает не календарь, а сама сделка.')}</p>
         </div>
+
+        {p.id && <div className="mt-3.5 min-w-0">
+          <VendorResources vendorId={p.id} />
+        </div>}
 
         <div className="flex justify-between items-baseline px-1 mt-6 mb-2">
           <h2 className="font-serif-d text-[19px]">{t('Входящие заявки')}</h2>
@@ -875,7 +880,7 @@ export function VendorDeals() {
 const DEAL_STATE_LABEL: Record<string, string> = {
   candidate: 'Не связывались',
   contacted: 'Написали',
-  negotiating: 'Держим дату',
+  negotiating: 'Переговоры',
   booked: 'Забронировано',
   paid_deposit: 'Аванс получен',
   done: 'Завершена',

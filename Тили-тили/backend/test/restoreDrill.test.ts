@@ -84,7 +84,7 @@ describe('restore-drill.sh · FL-15: копия разворачивается �
     const file = path.join(dir, 'tili-20260926.dump')
     fs.writeFileSync(file, 'archive')
     const r = drill({ DRILL_DB: 'tili_restore', DUMP: slash(file) })
-    expect(r.code).toBe(0)
+    expect(r.code, r.err).toBe(0)
     expect(r.calls).not.toMatch(/^pg_dump/m)
     expect(r.calls).toMatch(/DROP DATABASE IF EXISTS "tili_restore"/)
     expect(r.calls).toMatch(/pg_restore --dbname=postgres:\/\/tili:x@127\.0\.0\.1:1\/tili_restore /)
@@ -93,7 +93,7 @@ describe('restore-drill.sh · FL-15: копия разворачивается �
 
   it('без DUMP — плановая репетиция на свежем дампе боевой базы', () => {
     const r = drill({})
-    expect(r.code).toBe(0)
+    expect(r.code, r.err).toBe(0)
     expect(r.calls).toMatch(/^pg_dump .*postgres:\/\/tili:x@127\.0\.0\.1:1\/tili$/m)
     expect(r.calls).toMatch(/DROP DATABASE IF EXISTS "tili_drill"/)
   })

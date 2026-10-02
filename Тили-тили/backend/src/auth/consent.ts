@@ -1,4 +1,5 @@
 import type { Queryable } from '../plugins/db.js'
+import { forbidden } from '../errors.js'
 
 /**
  * Состояние согласия человека на обработку персональных данных относительно
@@ -40,4 +41,11 @@ export async function consentState(
   if (row.current) return 'current'
   if (row.any) return 'outdated'
   return 'none'
+}
+
+/** Pin the current receipt on the caller's transaction after user/session locks.
+ * A pre-handler read alone cannot protect a write that waited for another lock. */
+export async function lockCurrentConsent(client: Queryable, userId: string, policyVersion: string): Promise<void> {
+  const consent = await client.query('select id from consents where user_id=$1 and policy_version=$2 and withdrawn_at is null for share', [userId, policyVersion])
+  if (!consent.rows[0]) throw forbidden('Нужно действующее согласие на обработку персональных данных')
 }

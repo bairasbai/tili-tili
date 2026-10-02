@@ -1,6 +1,7 @@
 import type { Db, Queryable } from '../plugins/db.js'
 import { AppError } from '../errors.js'
 import { COMMITTED, HOLD_HOURS, tileState, type DealState } from './state.js'
+import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 
 export interface DealRow {
   id: string
@@ -194,6 +195,7 @@ export async function holdVendorDate(
   dealId: string,
   weddingId: string,
 ): Promise<void> {
+  await assertLegacyDateBookingAllowed(client, vendorId)
   const inserted = await client.query(
     `insert into vendor_busy_dates (vendor_id, date, source, deal_id)
      values ($1, $2::date, 'deal', $3)

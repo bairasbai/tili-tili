@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
 import { CONTRACT_FILE } from '../scripts/gen-contract.mjs'
+import { routeSources } from './routeSource.js'
 
 const require = createRequire(import.meta.url)
 
@@ -127,26 +128,20 @@ describe('контракт против обработчиков: тела, secu
   })
 
   it('коды ответов, которые обработчик выдаёт сам, объявлены в контракте', () => {
-    /* Проход по исходникам маршрутов: `conflict(`/`AppError(409` в куске
-       файла между двумя объявлениями маршрутов относится к первому из них.
-       Коды из общих помощников (reschedule, claimContribution, доступ к
-       чатам) сюда не попадают — они сверены руками и записаны в аудите. */
+    /* AST registrations include only actually called local helpers, never
+       a later unrelated function lying between two route declarations. */
     const known = new Map<string, Set<number>>()
     for (const f of fs.readdirSync(new URL('../src/routes/', import.meta.url))) {
       const src = fs.readFileSync(new URL(`../src/routes/${f}`, import.meta.url), 'utf8')
-      const starts = [...src.matchAll(/app\.(get|post|put|patch|delete)\(\s*\n?\s*'([^']+)'/g)].map((m) => ({
-        key: `${m[1]!.toUpperCase()} ${m[2]!}`,
-        idx: m.index!,
-      }))
-      starts.forEach((s, i) => {
-        const text = src.slice(s.idx, starts[i + 1]?.idx ?? src.length)
+      for (const route of routeSources(src)) {
+        const text = route.text
         const codes = new Set<number>()
         for (const m of text.matchAll(/AppError\(\s*(\d{3})/g)) codes.add(Number(m[1]))
         if (/\bconflict\(/.test(text)) codes.add(409)
         if (/\bquotaExceeded\(|new TooManyRequests\(/.test(text)) codes.add(429)
         if (/\bgone\(/.test(text)) codes.add(410)
-        known.set(s.key, codes)
-      })
+        known.set(`${route.method.toUpperCase()} ${route.path}`, codes)
+      }
     }
     const drift: string[] = []
     for (const o of ops) {

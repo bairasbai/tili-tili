@@ -148,6 +148,42 @@ describe('К1: последний шаг — «Как вас зовут?», дв
   })
 })
 
+describe('Режим уведомлений при создании свадьбы', () => {
+  beforeEach(signedIn)
+
+  it('не требует дополнительного ответа: свёрнутый выбор по умолчанию отправляет essential', async () => {
+    const calls = serve(quizRoutes({ id: 'u1', name: 'Алина' }))
+    const r = quizScreen()
+    walkToNames()
+    await waitFor(() => expect(ownInput().value).toBe('Алина'))
+    const summary = screen.getByText('Режим уведомлений — необязательно')
+    expect((summary.closest('details') as HTMLDetailsElement).open).toBe(false)
+    type(partnerInput(), 'Тимур')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(text(r)).toContain('ГЛАВНАЯ'))
+    expect(postOf(calls)?.body).toMatchObject({ attentionMode: 'essential' })
+  })
+
+  it('выбранный режим отправляет код и сохраняет в черновике при отказе сервера', async () => {
+    const calls = serve(quizRoutes({ id: 'u1', name: 'Алина' }, {
+      '/weddings': (c: Call) => c.method === 'POST'
+        ? withStatus(503, 'service_unavailable', 'Сервис недоступен') : [],
+    }))
+    const r = quizScreen()
+    walkToNames()
+    await waitFor(() => expect(ownInput().value).toBe('Алина'))
+    fireEvent.click(screen.getByText('Режим уведомлений — необязательно'))
+    fireEvent.change(screen.getByLabelText('Как получать обновления'), { target: { value: 'coordinator' } })
+    type(partnerInput(), 'Тимур')
+    fireEvent.click(createButton())
+    await waitFor(() => expect(text(r)).toContain('Сервер недоступен'))
+    expect(postOf(calls)?.body).toMatchObject({ attentionMode: 'coordinator' })
+    expect(JSON.parse(localStorage.getItem('tt_quiz') ?? 'null')).toMatchObject({ attentionMode: 'coordinator' })
+    expect(postOf(calls)?.body).not.toHaveProperty('coordinatorUserId')
+    expect(text(r)).not.toContain('ГЛАВНАЯ')
+  })
+})
+
 describe('К2: имя уходит в профиль до создания свадьбы', () => {
   beforeEach(signedIn)
 

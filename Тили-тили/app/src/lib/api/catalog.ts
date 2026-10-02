@@ -35,6 +35,8 @@ export interface Vendor {
   photoUrl?: string | null
   verified?: boolean
   hasVideo?: boolean
+  /** Способ бронирования; сам по себе не подтверждает доступность. */
+  bookingMode?: 'legacy_day' | 'resources'
   /** Километры от города поиска до города анкеты (фича 011): 0 — свой город, null — нет города или координат. */
   distanceKm?: number | null
 }

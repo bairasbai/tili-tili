@@ -1,4 +1,5 @@
 import { api, ApiError, newIdempotencyKey, url } from './client'
+import type { paths } from './schema'
 
 /*
  * Мозаика команды: бронь, отмена, аванс, свои подрядчики.
@@ -77,6 +78,11 @@ export const bookSlot = (weddingId: string, slotId: string, vendorId: string, pr
     { vendorId, price: { amount: price, currency: 'RUB' }, ...(packageId ? { packageId } : {}) },
     { idempotencyKey: newIdempotencyKey() },
   )
+
+export type ReplaceSlotWrite = paths['/weddings/{weddingId}/slots/{slotId}/replace']['post']['requestBody']['content']['application/json']
+/** One explicit intent; response loss must reuse its immutable body and key. */
+export const replaceSlot = (weddingId: string, slotId: string, body: ReplaceSlotWrite, idempotencyKey: string) =>
+  api.post(url('/weddings/{weddingId}/slots/{slotId}/replace', { weddingId, slotId }), body, { idempotencyKey })
 
 /** Отменить бронь. Дата уходит обратно в календарь подрядчика. */
 export const cancelSlot = (weddingId: string, slotId: string) =>

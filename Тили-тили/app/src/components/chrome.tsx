@@ -187,7 +187,7 @@ export function VendorCard({ v, categoryTitle, categoryIcon, tile, freeOnDate, c
         <div className={cn('h-[104px] relative transition-transform duration-700 group-hover:scale-[1.03]', tile ?? 'bg-[var(--rose-soft)]')} style={{ transitionTimingFunction: 'var(--ease)' }}>
           <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 70% 25%, rgba(255,255,255,.65), transparent 55%)' }} />
           <span className="absolute top-3 left-3 text-[26px]">{categoryIcon}</span>
-          {freeOnDate && <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-[var(--on-grad)]">{t('● Свободен на вашу дату')}</span>}
+          {freeOnDate && v.bookingMode === 'legacy_day' && <span className="absolute bottom-3 left-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[#A9BCA0] text-[var(--on-grad)]">{t('● Свободен на вашу дату')}</span>}
           {v.hasVideo && <span className="absolute bottom-3 right-3 text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-black/45 text-white">{t('▶ Видео')}</span>}
         </div>
       </button>
