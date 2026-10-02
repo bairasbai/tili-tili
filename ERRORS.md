@@ -3365,6 +3365,21 @@ Whole stage_final: front1835/98passed; backend2753passed/1failed (taskReminders 
 CI PR #27 (backend, push-прогон): `audit3 › два одновременных PUT анкеты не роняют запрос` — `[200, 409]` вместо `[200, 200]`; в PR-прогоне того же коммита тест прошёл, локальный full тоже — гонка зависела от расписания. Причина: `lockVendorProfileWrite` (030) при первом сохранении берёт мьютекс строки владельца; второй запрос того же владельца, дождавшись его, находил созданную первым компанию и считал это сменой связанных заказов (`vendor_profile_scope_changed`). Тест 030 `catalogBookingMode` закреплял именно этот 409, а старый инвариант audit3 (двойное нажатие на медленной связи не показывает ошибку) — обратное. Исправление: если компания появилась за время ожидания и у неё нет заказов/запросов/сделок, запрос запирает новую строку компании и продолжает как обновление; порядок замков прежний (владелец → принципал → компания), обратного захвата свадеб нет. Новый детерминированный тест audit3 держит строку владельца, пока оба запроса реально не встанут в очередь (двухуровневый подсчёт: второй ждёт первого, а не держателя), — без исправления `[200, 409]`, с ним `[200, 200]`; тест 030 переписан на новое поведение. **Правило:** гонку, найденную CI по расписанию, закреплять тестом с реальным ожиданием замка; при очереди за строкой считать и ожидающих за ожидающими (`pg_blocking_pids` второго указывает на первого).
 Второй CI-прогон: audit53 потребовал серийности audit3 — свидетель ожидания читает `pg_stat_activity`+`pg_blocking_pids`, а такой файл должен идти последовательно (иначе чужой набор станет лишним ожидающим). audit3 добавлен в `vitest.serial.json`; audit53+audit3 — 21/21. **Правило:** после добавления теста-свидетеля замков прогонять audit53 до push.
 
+## ERR-0426 · 2026-10-02 · Presentation layout and picker semantics
+
+- **Errors.** Desktop navigation used a fixed half-width translation before the
+  viewport reached that width. Picker containers combined `fixed` and `!relative`
+  and inherited sidebar padding. They declared modality while handling only Escape.
+  Selected dates lacked an accessible selection state/full date name; city clearing
+  lacked a name, and shared dialog Close was not localized.
+- **Rule.** Clamp fixed navigation against actual shell bounds. Keep modal positioning
+  independent from page-shell layout; reuse the existing dialog primitive for focus
+  containment/isolation and restore the invoking control. Expose selected state and
+  localized names independently of color/iconography.
+- **Evidence.** `presentationAccessibility.test.tsx`: 15 failing / 2 passing on the
+  base, 17 passing after the fix; 104 targeted frontend cases pass in total. Browser
+  layout and screen-reader verification remain unrun. See `tasks/presentation-accessibility-20261002.md`.
+
 ### LOCAL-030-32 — страж BEFORE DELETE на истории просьб блокировал легитимные каскады
 
 `event_rsvp_requests` (T012) сперва получила `BEFORE DELETE`-триггер «история просьбы живёт, пока жива свадьба» — тот же приём, что уже применялся к другим историческим таблицам. Для этой таблицы выбор оказался неверным: прямого `DELETE FROM event_rsvp_requests` в коде нет нигде — строка уходит только через `ON DELETE CASCADE` от гостя, члена семьи, legacy +1 (`POST /rsvp/token` с `plusOne:false`) или дополнительного мероприятия, и триггер одинаково стрелял и по честному каскадному удалению. Любое из этих легитимных удалений с живой просьбой падало 500. Независимое ревью нашло дефект тестом на каждый из четырёх путей каскада; тест падал до фикса, проходил после. Исправление — убрать `BEFORE DELETE` целиком, оставить только неизменяемость по `UPDATE`; «удаление события с просьбами запрещено» остаётся отдельной проверкой на уровне API (`409 event_in_use`), а не стражем в БД. Правило: прежде чем вешать `BEFORE DELETE`-страж на таблицу истории, проверить все существующие `ON DELETE CASCADE`, которые в неё ведут, — страж для «ручного» удаления и реальный каскад от родителя неотличимы для триггера, если не развести их явно.

@@ -36,7 +36,7 @@ import { Inspiration } from '@/pages/Discover'
 const wrap = (node: React.ReactNode) =>
   render(<MemoryRouter><StoreProvider>{node}</StoreProvider></MemoryRouter>)
 
-const escape = () => fireEvent.keyDown(window, { key: 'Escape' })
+const escape = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
 
 beforeEach(() => {
   localStorage.clear()

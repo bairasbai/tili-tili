@@ -129,6 +129,22 @@ body {
   box-shadow: 0 0 0 1px rgba(46,42,38,.05), 0 0 80px rgba(46,42,38,.06);
 }
 
+/* Портальный диалог не наследует position/отступ сайдбара от .app-shell. */
+.picker-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--ink);
+}
+
 .card { background: var(--card); border-radius: 26px; box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.7); }
 .card-s { background: var(--card); border-radius: 18px; box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.7); }
 @media (hover: hover) {
@@ -263,6 +279,7 @@ input[type="range"] { accent-color: var(--rose-deep); }
      него оставлял слева мёртвые 232px и уводил контент вправо от центра экрана.
      Ширина колонки та же (1180 - 232), меняется только выключка. */
   .app-shell.no-tab { max-width: 948px; padding-left: 0; }
+  .picker-dialog { max-width: 948px; }
   .action-bar { bottom: 0 !important; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)) !important; border-bottom: none; }
   /* Сайдбаром становится только таб-бар (`nav` в chrome.tsx). Стекло `.glass-tab`
      носят ещё шапка и строка ввода чата, панель «Написать / Добавить в свадьбу»
@@ -270,8 +287,8 @@ input[type="range"] { accent-color: var(--rose-deep); }
      край — чат открывался пустым, кнопки брони лежали под сайдбаром (ERR-0263). */
   nav.glass-tab {
     top: 0 !important; bottom: 0 !important;
-    left: 50% !important; right: auto !important;
-    transform: translateX(-590px) !important;
+    left: max(0px, calc(50% - 590px)) !important; right: auto !important;
+    transform: none !important;
     width: 216px !important; max-width: none !important;
     height: 100dvh;
     border-top: none !important;
