@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { MapPin, Search, X, Navigation, ChevronRight } from 'lucide-react'
 import { POPULAR_CITIES, searchCities, nearestCity, type City } from '@/lib/cities'
 import { cn } from '@/lib/utils'
 import { t } from '@/lib/i18n'
-import { useEscape } from '@/lib/useEscape'
+import { PickerDialog } from './PickerDialog'
 
 /*
  * Строка списка — на уровне модуля (инвариант 4): объявленная внутри
@@ -25,7 +25,7 @@ function Row({ c, onPick }: { c: City; onPick: (c: City) => void }) {
 
 /** Пикер города: полноэкранный оверлей с автопоиском. Используется в квизе, настройках, кабинете подрядчика. */
 export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onClose: () => void }) {
-  useEscape(onClose)
+  const search = useRef<HTMLInputElement>(null)
   const [q, setQ] = useState('')
   const [geo, setGeo] = useState<'idle' | 'loading' | 'error'>('idle')
   const results = searchCities(q)
@@ -47,12 +47,12 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
   }
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={t('Выбор города')} className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col app-shell !relative" style={{ margin: '0 auto' }}>
+    <PickerDialog label={t('Выбор города')} onClose={onClose}>
       <div className="px-5 pt-6 pb-3 flex items-center gap-3">
         <div className="flex-1 flex items-center gap-2.5 bg-[var(--card)] rounded-full px-4 h-12" style={{ boxShadow: 'var(--shadow)' }}>
           <Search size={15} className="text-[var(--soft2)]" />
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={t('Начните вводить: Сибай, Баймак…')} className="flex-1 bg-transparent text-[13.5px] outline-none" />
-          {q && <button onClick={() => setQ('')} className="press text-[var(--soft2)]"><X size={15} /></button>}
+          <input ref={search} value={q} onChange={e => setQ(e.target.value)} aria-label={t('Выбор города')} placeholder={t('Начните вводить: Сибай, Баймак…')} className="min-w-0 flex-1 bg-transparent text-[13.5px] outline-none" />
+          {q && <button type="button" onClick={() => { setQ(''); search.current?.focus() }} aria-label={t('Очистить поиск города')} className="press text-[var(--soft2)]"><X size={15} /></button>}
         </div>
         <button onClick={onClose} className="press text-[12px] font-bold text-[var(--soft)]">{t('Отмена')}</button>
       </div>
@@ -62,7 +62,7 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
         {geo === 'loading' ? t('Определяем…') : geo === 'error' ? t('Не получилось — введите вручную') : t('Определить автоматически')}
       </button>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-8">
+      <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar pb-8">
         {q.length >= 2 ? (
           results.length ? (
             <div className="card mx-5 overflow-hidden !p-0 stagger">
@@ -89,6 +89,6 @@ export function CityPicker({ onPick, onClose }: { onPick: (c: City) => void; onC
           </>
         )}
       </div>
-    </div>
+    </PickerDialog>
   )
 }
