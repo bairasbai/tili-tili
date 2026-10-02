@@ -15,12 +15,16 @@ const DATABASES = [
   'tili_ecosystem_migration_drill12_20260930_test',
   'tili_ecosystem_migration_drill13_20260930_test',
   'tili_ecosystem_migration_drill14_20260930_test',
+  'tili_ecosystem_migration_drill15_20260930_test',
+  'tili_ecosystem_migration_drill16_20260930_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
-const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, LATEST = 1763690000000
+const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, LATEST = 1763700000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const localCheckout = backend.replaceAll('\\', '/') === 'C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend'
+// Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend']
+  .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
 assert(localCheckout || repositoryCi, 'Only the isolated checkout or this repository CI checkout is allowed')
@@ -41,6 +45,7 @@ const expectedOwn = [
   '1763650000000_resource_commitments', '1763660000000_commitment_proof_guard',
   '1763670000000_commitment_trigger_records', '1763680000000_commitment_history_cascade',
   '1763690000000_allocation_release_proof',
+  '1763700000000_event_rsvp_deadlines',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -187,7 +192,8 @@ async function assertNoBusinessData() {
   for (const table of legacyTables) assert.equal((await db.query(`select count(*)::int as count from public.${quote(table)}`)).rows[0].count, 0, `Empty rollback requires no ${table} rows`)
   for (const table of ['notification_push_deliveries', 'deal_orders', 'order_assignments', 'order_parts', 'event_guest_participation', 'deal_terms_versions', 'deal_terms_receipts',
     'vendor_staff_members', 'vendor_staff_duties', 'vendor_resources', 'vendor_availability_policy', 'resource_capacity_windows', 'deal_resource_plan_versions',
-    'resource_conflict_keys', 'deal_resource_commitments', 'deal_resource_commitment_versions', 'resource_allocations', 'deal_resource_commitment_members']) {
+    'resource_conflict_keys', 'deal_resource_commitments', 'deal_resource_commitment_versions', 'resource_allocations', 'deal_resource_commitment_members',
+    'event_rsvp_requests']) {
     assert.equal((await db.query(`select count(*)::int as count from public.${quote(table)}`)).rows[0].count, 0)
   }
 }
@@ -258,7 +264,7 @@ async function expectAtomicRefusal(message, target = FIRST, exactFile = false) {
 }
 
 let termsNegativeCount = 0, atomicDownCount = 0
-let staffNegativeCount = 0, resourceNegativeCount = 0, invitationNegativeCount = 0, planNegativeCount = 0, commitmentNegativeCount = 0
+let staffNegativeCount = 0, resourceNegativeCount = 0, invitationNegativeCount = 0, planNegativeCount = 0, commitmentNegativeCount = 0, t012NegativeCount = 0
 async function expectTermsSqlRefusal(label, sql, values, code, message) {
   await expectSqlRefusal('terms', label, sql, values, code, message)
   termsNegativeCount++
@@ -281,6 +287,7 @@ async function expectSqlRefusal(scope, label, sql, values, code, message, atComm
   if (scope === 'invitation') invitationNegativeCount++
   if (scope === 'plan') planNegativeCount++
   if (scope === 'commitment') commitmentNegativeCount++
+  if (scope === 't012') t012NegativeCount++
   console.log(`Expected ${scope} SQL refusal: ${label} (${code}${atCommit ? ', actual deferred commit' : ''})`)
 }
 
@@ -956,6 +963,70 @@ async function erasePreservedFacts(f) {
   return facts
 }
 
+/**
+ * T012 (1763700000000_event_rsvp_deadlines): deadline CHECK on wedding_events,
+ * extended event_guest_participation.source enum, and the new event_rsvp_requests
+ * table (pending-partial-unique index, state/decided_at CHECK, immutability
+ * trigger). Synthetic SQL fixture only; it proves schema invariants, not a
+ * real guest answer or couple decision.
+ */
+async function eventRsvpDeadlineFixture(f) {
+  await expectSqlRefusal('t012', 'rsvp deadline requires a non-main event', 'update wedding_events set rsvp_deadline=$2 where id=$1', [f.mainEvent, '2027-06-10'], '23514')
+  await expectSqlRefusal('t012', 'rsvp deadline requires a known time zone', 'update wedding_events set time_zone=null,rsvp_deadline=$2 where id=$1', [f.secondEvent, '2027-06-10'], '23514')
+  // P2-4: deadline cannot be later than the event's own date (secondEvent's date is 2027-06-15).
+  await expectSqlRefusal('t012', 'rsvp deadline cannot be later than the event date', 'update wedding_events set rsvp_deadline=$2 where id=$1', [f.secondEvent, '2027-06-20'], '23514')
+  await write('update wedding_events set rsvp_deadline=$2 where id=$1', [f.secondEvent, '2027-06-10'])
+  await expectSqlRefusal('t012', 'clearing the zone while a deadline stands is refused', 'update wedding_events set time_zone=null where id=$1', [f.secondEvent], '23514')
+
+  const guest = f.guestYes
+  const party = (await db.query('select party_id from guests where id=$1', [guest])).rows[0].party_id
+  const foreignParty = (await db.query('select party_id from guests where id=$1', [f.guestNo])).rows[0].party_id
+  await expectSqlRefusal('t012', 'participation source is still a closed enum', "update event_guest_participation set source='invented' where program_event_id=$1 and guest_id=$2", [f.mainEvent, guest], '23514')
+  await write(`insert into event_guest_participation(wedding_id,program_event_id,guest_id,status,source,actor_user_id)
+    values($1,$2,$3,'attending','organizer_correction',$4)
+    on conflict(program_event_id,guest_id) do update set status=excluded.status,source=excluded.source,actor_user_id=excluded.actor_user_id,version=event_guest_participation.version+1`,
+  [f.wedding, f.secondEvent, guest, f.owner])
+  assert.equal((await db.query('select source from event_guest_participation where program_event_id=$1 and guest_id=$2', [f.secondEvent, guest])).rows[0].source, 'organizer_correction')
+
+  const request = randomUUID()
+  await expectSqlRefusal('t012', 'a pending request requires a null decision time',
+    'insert into event_rsvp_requests(id,wedding_id,program_event_id,guest_id,party_id,requested_status,state,decided_at,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [randomUUID(), f.wedding, f.secondEvent, guest, party, 'attending', 'pending', '2026-09-30T12:00:00Z', randomUUID()], '23514')
+  // P3-9: party_id must be the GUEST's own party — guest is in `party`, not `foreignParty`
+  // (guestNo's own, separate, single-person party). Two independent FKs would both be
+  // individually satisfiable here; only the composite FK on (guest_id,party_id) catches it.
+  await expectSqlRefusal('t012', 'event_rsvp_requests.party_id must match the guest\'s actual party',
+    'insert into event_rsvp_requests(id,wedding_id,program_event_id,guest_id,party_id,requested_status,idempotency_key) values($1,$2,$3,$4,$5,$6,$7)',
+    [randomUUID(), f.wedding, f.secondEvent, guest, foreignParty, 'attending', randomUUID()], '23503')
+  await write('insert into event_rsvp_requests(id,wedding_id,program_event_id,guest_id,party_id,requested_status,idempotency_key) values($1,$2,$3,$4,$5,$6,$7)',
+    [request, f.wedding, f.secondEvent, guest, party, 'declined', randomUUID()])
+  await expectSqlRefusal('t012', 'only one pending request per person/event',
+    'insert into event_rsvp_requests(id,wedding_id,program_event_id,guest_id,party_id,requested_status,idempotency_key) values($1,$2,$3,$4,$5,$6,$7)',
+    [randomUUID(), f.wedding, f.secondEvent, guest, party, 'attending', randomUUID()], '23505')
+  await expectSqlRefusal('t012', 'request identity is immutable', 'update event_rsvp_requests set requested_status=$2 where id=$1', [request, 'attending'], '23514', 'event rsvp request identity is immutable')
+  await write("update event_rsvp_requests set state='accepted',decided_at=clock_timestamp(),decided_by=$2,version=version+1 where id=$1", [request, f.owner])
+  await expectSqlRefusal('t012', 'a decided request cannot go back to pending without a decision time', "update event_rsvp_requests set state='pending' where id=$1", [request], '23514')
+  // P3-9: resetting decided_at ALONGSIDE state keeps the pre-existing (state,decided_at)
+  // CHECK satisfied — only the dedicated state-immutability clause in the trigger catches this.
+  await expectSqlRefusal('t012', 'a decided request cannot go back to pending even with decided_at reset together',
+    "update event_rsvp_requests set state='pending',decided_at=null where id=$1", [request], '23514', 'event rsvp request identity is immutable')
+  await expectSqlRefusal('t012', 'a decided request cannot flip to the other decision either',
+    "update event_rsvp_requests set state='rejected' where id=$1", [request], '23514', 'event rsvp request identity is immutable')
+  // P1-1: DELETE is deliberately unguarded now (only UPDATE immutability remains) — the old
+  // BEFORE DELETE guard also fired for ordinary ON DELETE CASCADE from guest/party/event/wedding
+  // deletion and broke those (500). Prove a (disposable, separate) row can actually be removed
+  // directly; `request` itself is left alone so it still exists for the down-guard check below.
+  const disposable = randomUUID()
+  await write('insert into event_rsvp_requests(id,wedding_id,program_event_id,guest_id,party_id,requested_status,idempotency_key) values($1,$2,$3,$4,$5,$6,$7)',
+    [disposable, f.wedding, f.secondEvent, guest, party, 'attending', randomUUID()])
+  await write('delete from event_rsvp_requests where id=$1', [disposable])
+  assert.equal((await db.query('select count(*)::int as n from event_rsvp_requests where id=$1', [disposable])).rows[0].n, 0,
+    'event_rsvp_requests rows must be deletable now that only UPDATE is guarded (P1-1)')
+
+  await expectAtomicRefusal('Refusing rollback with event RSVP deadlines, requests or organizer corrections', 1763700000000)
+  console.log(`T012 checks passed: ${t012NegativeCount} actual SQL refusals plus one guarded CLI down; schema-level deadline/source/request invariants hold — synthetic fixture only, not a real guest answer or couple decision`)
+}
+
 try {
   await safety()
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
@@ -1156,6 +1227,7 @@ try {
     for (const row of originalRows) assert(actual.includes(canonicalFixture(row)), `${table}: each original inherited financial/program/notification/identity row must remain after the additional synthetic histories`)
   }
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000')
+  await eventRsvpDeadlineFixture(f)
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))

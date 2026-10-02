@@ -9,6 +9,8 @@ import { familyEventInvitations } from '../guests/event-invitations.js'
 import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess, requireRole, type Role } from '../wedding/access.js'
 import { lockOrderWedding } from '../orders/context.js'
 import { syncMainParticipationFromLegacy } from '../wedding/participation.js'
+import { answerGuestRsvp, createLateRequest, guestRsvpEvents } from '../wedding/rsvp-events.js'
+import { readKeyHeader } from '../deals/idempotency.js'
 
 const SHARE_TTL_DAYS = 30
 
@@ -1408,6 +1410,92 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           transfer: m.transfer,
         })),
       }
+    },
+  )
+
+  /* ── T012: дополнительные мероприятия по токену семьи ────────────────── */
+  app.get('/rsvp/:guestToken/events', async (request) => {
+    const { guestToken } = request.params as { guestToken: string }
+    const initial = await guestByToken(db(), guestToken)
+    const events = await db().tx((client) => guestRsvpEvents(client, { weddingId: initial.weddingId, partyId: initial.partyId, token: guestToken }))
+    return { events }
+  })
+
+  app.put(
+    '/rsvp/:guestToken/events/:eventId/answers',
+    {
+      schema: {
+        params: { type: 'object', required: ['guestToken', 'eventId'], properties: { guestToken: { type: 'string' }, eventId: UUID_ID } },
+        body: {
+          type: 'object',
+          required: ['answers'],
+          additionalProperties: false,
+          properties: {
+            answers: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 10,
+              items: {
+                type: 'object',
+                required: ['guestId', 'status', 'expectedVersion'],
+                additionalProperties: false,
+                properties: {
+                  guestId: UUID_ID,
+                  status: { type: 'string', enum: ['attending', 'declined'] },
+                  expectedVersion: { type: 'string', pattern: '^(0|[1-9][0-9]{0,18})$' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { guestToken, eventId } = request.params as { guestToken: string; eventId: string }
+      const { answers } = request.body as { answers: { guestId: string; status: 'attending' | 'declined'; expectedVersion: string }[] }
+      const initial = await guestByToken(db(), guestToken)
+      const people = await db().tx((client) =>
+        answerGuestRsvp(client, { weddingId: initial.weddingId, partyId: initial.partyId, token: guestToken, eventId, answers }),
+      )
+      return { people }
+    },
+  )
+
+  app.post(
+    '/rsvp/:guestToken/events/:eventId/requests',
+    {
+      schema: {
+        params: { type: 'object', required: ['guestToken', 'eventId'], properties: { guestToken: { type: 'string' }, eventId: UUID_ID } },
+        body: {
+          type: 'object',
+          required: ['guestId', 'requestedStatus'],
+          additionalProperties: false,
+          properties: {
+            guestId: UUID_ID,
+            requestedStatus: { type: 'string', enum: ['attending', 'declined'] },
+            comment: { type: 'string', maxLength: 500 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { guestToken, eventId } = request.params as { guestToken: string; eventId: string }
+      const body = request.body as { guestId: string; requestedStatus: 'attending' | 'declined'; comment?: string }
+      const idempotencyKey = readKeyHeader(request, true)!
+      const initial = await guestByToken(db(), guestToken)
+      const result = await db().tx((client) =>
+        createLateRequest(client, {
+          weddingId: initial.weddingId,
+          partyId: initial.partyId,
+          token: guestToken,
+          eventId,
+          guestId: body.guestId,
+          requestedStatus: body.requestedStatus,
+          comment: body.comment ?? null,
+          idempotencyKey,
+        }),
+      )
+      return reply.code(201).send(result)
     },
   )
 

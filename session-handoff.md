@@ -1,17 +1,42 @@
 # Session Handoff: Full WP00-WP16 Delivery
 
 ## Current Boundary · 2026-10-02 (Claude)
-Owner handed both Codex specs (022 + 030) and the whole WP00-WP16 to Claude;
-driver ledger outside the repo: C:/Тили-тили/.unlazy/tz-full-20261002/PLAN.md.
-030 publication: branch integration/ecosystem-stage-20261001 = 516c750 + serial
-registration of guestWriteAccess/seatingAccess (audit53) + docs. Fresh isolated
-full init.sh 2026-10-02: front 110 files/2068, back 144 files/3033, no skips,
-types/lint/build ok (log in the driver ledger). Final CI/merge is recorded in
-the PR and in main docs of the next delivery, not inferred here.
-Next: T012 (022 per-person event RSVP, deadline, late request, organizer
-provenance) on merged main; then 030 stages 370-374; then remaining WPs.
-Production forbidden; deploy later together with the owner.
-Older boundaries below are historical.
+
+Ведомость драйвера вне репозитория: `C:/Тили-тили/.unlazy/tz-full-20261002/PLAN.md`.
+030 опубликован: PR https://github.com/bairasbai/tili-tili/pull/27, merge
+2026-10-02T06:31:56Z (aa85f88), CI 7/7, включая фикс «двойное «Сохранить»
+первой анкеты» (LOCAL-030-31). T012 (022: персональный RSVP по person/event,
+общий дедлайн до конца дня по поясу события, обращение после срока,
+organizer-provenance) реализован на этом main и проверен локально: контракт
+0.70.0/6 операций (0da3e23), миграция `1763700000000_event_rsvp_deadlines.cjs`,
+backend `rsvp-events.ts`, гостевой блок `/invite` (один список, решение D5) и
+новый экран пары `/wedding/events/:eventId/rsvp`.
+
+Проверки: targeted 4 files/68 tests; весь фронт 111 files/2085 passed, tsc/
+eslint чисто. Backend на свежей полной БД (79 миграций по порядку): T012
+131 tests + legacy regression 266, tsc ok; после независимого Opus-ревью —
+155 tests на dev-БД + regression тихих часов/notify 318. Migration drill на
+чистой БД: 22 own migrations до 1763700000000 включительно / 12 T012 SQL-отказов
++ 1 guarded CLI down. Browser (prod build + real API/PG,
+`.unlazy/tz-full-20261002/scripts/browser-t012.mjs`): 9/9 checks, 0 ошибок,
+RU/EN 320/390/1440.
+
+Независимое ревью нашло и закрыло до публикации (разбор и правило —
+`ERRORS.md` LOCAL-030-32…35): P1 каскадное удаление гостя/семьи/+1/события с
+живой просьбой падало 500 (BEFORE DELETE стража против легитимного ON DELETE
+CASCADE); P1 решение по просьбе человека, снятого с ростера между просьбой и
+решением, 404-илось и откатывалось целиком (просьба оставалась pending
+навсегда); P2 чужой guestId с действующим токеном пары отдавал 401 вместо 404
+(identity-оракул); P2 срок ≤ дата мероприятия вынесен в CHECK базы; P3 чтение
+по гостевому токену — for share вместо for update; P3 DST-переход ровно на
+местной полуночи потребовал второго прохода коррекции смещения в `fromLocal`.
+Источник и полные числа — `REPORT-RSVP.md` (`tasks/фичи/022-мероприятия/`).
+
+PENDING: полный `bash init.sh` на финальном дереве, CI, merge владельцем —
+T012 не объявлен опубликованным. Next: публикация T012 → затем 030 этапы
+370–374 (K-Q10: основная дата остаётся на «Мы» до этого момента) → остальные
+WP. Production запрещён; выкладка — позже вместе с владельцем.
+Старые границы ниже — исторические.
 
 ## Boundary · 2026-10-01
 Primary repo: C:/Тили-тили/Тили-тили_код_и_документация.

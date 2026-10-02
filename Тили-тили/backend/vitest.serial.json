@@ -32,6 +32,7 @@
   "test/guestWriteAccess.test.ts",
   "test/seatingAccess.test.ts",
   "test/eventInvitations022.test.ts",
+  "test/eventRsvp012.test.ts",
   "test/ecosystemDelivery.test.ts",
   "test/orderApi.test.ts",
   "test/orderTermsApi.test.ts",

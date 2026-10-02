@@ -2809,6 +2809,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -2888,6 +2890,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -2941,6 +2945,281 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["Conflict"];
+                422: components["responses"]["Validation"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rsvp/{guestToken}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Дополнительные мероприятия семьи — срок ответа и текущие ответы (T012)
+         * @description Только мероприятия с `is_main=false`, на которые приглашена хотя бы одна
+         *     персона этой семьи, и только эти персоны (решения драйвера T012 D1/D2).
+         *     Основная программа и её RSVP (`GET`/`POST /rsvp/{guestToken}`) этим путём
+         *     не затрагиваются и не повторяются здесь.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Дополнительные мероприятия семьи с их сроком ответа и текущими ответами */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            events: components["schemas"]["GuestRsvpEvent"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rsvp/{guestToken}/events/{eventId}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Ответить за персон семьи на дополнительное мероприятие (T012)
+         * @description Атомарно для всей пачки: отказ по одной персоне (404/409/422) откатывает
+         *     ответы остальных из той же пачки. No-op (повтор уже записанного статуса)
+         *     версию персоны не меняет. Версия сравнивается с версией
+         *     `event_guest_participation`; персона, ещё не ответившая на это мероприятие,
+         *     несёт версию `"0"`. После срока ответа — 409 `rsvp_deadline_passed`: дальше
+         *     доступна только просьба (`POST .../requests`). 404 — персона или мероприятие
+         *     не приглашены либо принадлежат другой семье/свадьбе; 401 — токен
+         *     недействителен.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        answers: {
+                            /** Format: uuid */
+                            guestId: string;
+                            /** @enum {string} */
+                            status: "attending" | "declined";
+                            expectedVersion: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Принятый состав ответов события (все приглашённые персоны семьи) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            people: components["schemas"]["EventRsvpPerson"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+                /**
+                 * @description `rsvp_deadline_passed` — срок ответа на мероприятие уже прошёл.
+                 *     `version_conflict` — версию персоны успели изменить (гонка двух ответов).
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rsvp/{guestToken}/events/{eventId}/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Попросить организатора изменить ответ после срока (T012)
+         * @description Доступно только ПОСЛЕ срока ответа — пока срок открыт (`rsvp_deadline_open`),
+         *     персона отвечает напрямую через `PUT .../answers`. Повторная просьба при
+         *     уже ожидающей — 409 `rsvp_request_pending`. Пишет in-app уведомление паре
+         *     (`notifyWedding`, роли couple, kind guest). Повтор того же
+         *     `Idempotency-Key` возвращает тот же 201. 404 — персона или мероприятие не
+         *     приглашены либо принадлежат другой семье/свадьбе; 401 — токен недействителен.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    /**
+                     * @description Персональный токен гостя из его ссылки-приглашения. Решение владельца
+                     *     2026-09-02: гость опознаётся ОДНИМ токеном во всех гостевых путях.
+                     *     Общий код свадьбы не годится — по нему нельзя ни подставить имя в
+                     *     приглашение (план §8.6), ни дать гостю снять СВОЙ резерв подарка.
+                     *     Анонимность подарков при этом сохраняется: система знает гостя, а API
+                     *     пары этот токен не отдаёт никогда (§9).
+                     *
+                     *     Мёртвая ссылка гостя — токен неизвестен, свадьба отменена или в
+                     *     архиве. Пути дня X — `GET /join/{guestToken}/day`,
+                     *     `GET /join/{guestToken}/day-chat/messages` и
+                     *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
+                     *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
+                     *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
+                     *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
+                     *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
+                     *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
+                     *     `GET` и `POST /join/{guestToken}/menu-vote`, `GET /join/{guestToken}/team`,
+                     *     `GET` и `POST /weddings/{weddingId}/album?guestToken=…`,
+                     *     `POST /weddings/{weddingId}/guest-reviews?guestToken=…`. По коду ответа
+                     *     не видно, существовал ли токен. Токен чужой свадьбы в `?guestToken=` — 404.
+                     */
+                    guestToken: components["parameters"]["GuestToken"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        guestId: string;
+                        /** @enum {string} */
+                        requestedStatus: "attending" | "declined";
+                        comment?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Созданная просьба */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventRsvpRequest"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                404: components["responses"]["NotFound"];
+                /**
+                 * @description `rsvp_deadline_open` — срок ответа не прошёл, нужно ответить напрямую
+                 *     через `PUT .../answers`.
+                 *     `rsvp_request_pending` — у персоны уже есть необработанная просьба.
+                 *     `idempotency_key_reused` / `idempotency_in_progress` — повтор с другим
+                 *     телом или ещё не завершённая попытка.
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 422: components["responses"]["Validation"];
             };
         };
@@ -5241,6 +5520,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -5330,6 +5611,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -5389,6 +5672,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -5461,6 +5746,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -5548,6 +5835,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6447,6 +6736,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6507,6 +6798,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6585,6 +6878,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6687,6 +6982,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6752,6 +7049,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6838,6 +7137,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6927,6 +7228,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -6980,6 +7283,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -7167,6 +7472,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -7231,6 +7538,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -7345,6 +7654,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -8335,6 +8646,13 @@ export interface paths {
          *     независимо датированных мероприятий. Изменение даты/пояса отдельного
          *     мероприятия не переписывает часы его блоков автоматически: их нужно
          *     проверить/изменить явно. Неизвестный пояс или невозможная дата — 422.
+         *
+         *     `rsvpDeadline` (T012) — срок ответа на ДОПОЛНИТЕЛЬНОЕ мероприятие
+         *     (`is_main=false`); у основной программы срока нет. Установить срок можно
+         *     только когда у мероприятия уже задан `timeZone` — без пояса сравнение
+         *     «прошёл/не прошёл» неоднозначно. Неизвестная часовому справочнику
+         *     (`pg_timezone_names`) зона или срок позже даты мероприятия — 422
+         *     `validation_failed`. Снять срок — передать `null`.
          */
         patch: {
             parameters: {
@@ -8357,6 +8675,13 @@ export interface paths {
                         date?: string | null;
                         timeZone?: string | null;
                         location?: string | null;
+                        /**
+                         * Format: date
+                         * @description Срок ответа включительно, в часовом поясе мероприятия (T012).
+                         *     Только у дополнительных мероприятий (`is_main=false`); требует
+                         *     заданного `timeZone`. `null` снимает срок.
+                         */
+                        rsvpDeadline?: string | null;
                     };
                 };
             };
@@ -8490,6 +8815,197 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/rsvp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                weddingId: components["parameters"]["WeddingId"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Ответы на дополнительное мероприятие — срок, состав, просьбы (T012)
+         * @description Команда свадьбы — по действующим правилам доступа к гостям (couple,
+         *     helper, coordinator); посторонний/чужой подрядчик — 404, помощник вне
+         *     команды — 403. Персона без собственного ответа несёт `status: unknown`,
+         *     `source: null`, `version: "0"`.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Снимок ответов мероприятия */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventRsvpRoster"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/rsvp/{guestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Внести или исправить ответ персоны («внесено организатором», T012)
+         * @description Только пара — helper/coordinator получают 403. Разрешено в любое время:
+         *     срок ответа действует на гостя, не на запись пары. Пишет `event_guest_participation`
+         *     с источником `organizer_correction`. 404 — персона не приглашена на это
+         *     мероприятие либо мероприятие основное или чужой свадьбы. 409 `version_conflict` —
+         *     версию персоны успели изменить. 422 `validation_failed` — например, неизвестный статус.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                    guestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "unknown" | "attending" | "declined";
+                        expectedVersion: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Обновлённый ответ персоны */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventRsvpCouplePerson"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description `version_conflict` — версию персоны успели изменить. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/events/{eventId}/rsvp-requests/{requestId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять или отклонить просьбу гостя изменить ответ (T012)
+         * @description Только пара — helper/coordinator получают 403. Принятие (`accept`) одной
+         *     транзакцией меняет ответ персоны на `requestedStatus` с источником
+         *     `organizer_correction`; отклонение (`reject`) меняет только состояние
+         *     просьбы. Повторное решение уже решённой просьбы — 409 `rsvp_request_decided`.
+         *     404 — просьба не найдена либо принадлежит другому мероприятию/свадьбе.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    eventId: string;
+                    requestId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        decision: "accept" | "reject";
+                        note?: string;
+                        expectedVersion: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Решение принято */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["EventRsvpDecisionResult"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /**
+                 * @description `rsvp_request_decided` — просьба уже принята или отклонена.
+                 *     `version_conflict` — версию просьбы успели изменить (гонка двух решений).
+                 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -9141,6 +9657,8 @@ export interface paths {
                      *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
                      *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
                      *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+                     *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+                     *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
                      *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
                      *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
                      *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -13900,6 +14418,14 @@ export interface components {
             timeZone: string | null;
             location: string | null;
             isMain: boolean;
+            /**
+             * Format: date
+             * @description Срок ответа на мероприятие включительно, в его часовом поясе (T012).
+             *     Бывает только у дополнительных мероприятий (`is_main=false`); `null` —
+             *     срок не задан. Не обязательное поле: ответы, выданные до T012, его не
+             *     несут.
+             */
+            rsvpDeadline: string | null;
         };
         EventInvitationRoster: {
             event: components["schemas"]["WeddingEvent"];
@@ -13922,6 +14448,91 @@ export interface components {
             isMain: boolean;
             /** @description Только приглашённые люди своей семьи; без чужих ответов и полного состава события. */
             guestIds: string[];
+        };
+        /** @description Срок ответа на дополнительное мероприятие и его текущее состояние (T012). */
+        EventRsvpDeadline: {
+            /**
+             * Format: date
+             * @description Срок ответа включительно, в часовом поясе мероприятия; `null` — срок не задан.
+             */
+            date: string | null;
+            /** @description Часовой пояс мероприятия на момент расчёта срока; `null` только вместе с `date=null`. */
+            timeZone: string | null;
+            /**
+             * @description `none` — срок не задан; `open` — ответ ещё принимается; `closed` — срок прошёл.
+             * @enum {string}
+             */
+            state: "none" | "open" | "closed";
+            /**
+             * Format: date-time
+             * @description Момент закрытия (начало суток `date+1` по `timeZone`) в UTC; `null` при `state=none`.
+             */
+            closesAt: string | null;
+        };
+        /** @description Просьба гостя изменить ответ после срока (T012, таблица `event_rsvp_requests`). */
+        EventRsvpRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            guestId: string;
+            /** @enum {string} */
+            requestedStatus: "attending" | "declined";
+            /** @enum {string} */
+            state: "pending" | "accepted" | "rejected";
+            /** @description Комментарий гостя к просьбе; `null` — без комментария. */
+            comment: string | null;
+            /** @description Пояснение пары к решению; `null` — пока не решено или решено без пояснения. */
+            decisionNote: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description `null`, пока `state=pending`.
+             */
+            decidedAt: string | null;
+            version: string;
+        };
+        /** @description Ответ одной персоны на дополнительное мероприятие (T012). */
+        EventRsvpPerson: {
+            /** Format: uuid */
+            guestId: string;
+            name: string;
+            /** @enum {string} */
+            status: "unknown" | "attending" | "declined";
+            /**
+             * @description `null` — персона ни разу не отвечала на это мероприятие.
+             * @enum {string|null}
+             */
+            source: null | "legacy_main_rsvp" | "guest_response" | "team_observation" | "organizer_correction";
+            /** @description Версия ответа в `event_guest_participation`; `"0"` — персона ни разу не отвечала. */
+            version: string;
+            /** @description Последняя просьба персоны изменить ответ; `null` — просьб не было или активной не осталось. */
+            request: components["schemas"]["EventRsvpRequest"] | null;
+        };
+        /** @description EventRsvpPerson с привязкой к семейному приглашению — вид пары (T012). */
+        EventRsvpCouplePerson: components["schemas"]["EventRsvpPerson"] & {
+            /** Format: uuid */
+            partyId: string;
+            /** @description Подпись семейного приглашения; `null` — приглашение без подписи. */
+            partyLabel: string | null;
+        };
+        /** @description Одно дополнительное мероприятие семьи со сроком и ответами её персон (T012). */
+        GuestRsvpEvent: {
+            event: components["schemas"]["WeddingEvent"];
+            deadline: components["schemas"]["EventRsvpDeadline"];
+            people: components["schemas"]["EventRsvpPerson"][];
+        };
+        /** @description Срок, состав ответов и просьбы дополнительного мероприятия — вид пары (T012). */
+        EventRsvpRoster: {
+            deadline: components["schemas"]["EventRsvpDeadline"];
+            people: components["schemas"]["EventRsvpCouplePerson"][];
+            /** @description Ожидающие просьбы и несколько последних решений; не вся история просьб. */
+            requests: components["schemas"]["EventRsvpRequest"][];
+        };
+        /** @description Итог решения пары по просьбе гостя (T012). */
+        EventRsvpDecisionResult: {
+            request: components["schemas"]["EventRsvpRequest"];
+            person: components["schemas"]["EventRsvpCouplePerson"];
         };
         AlbumPhoto: {
             id?: string;
@@ -15201,6 +15812,8 @@ export interface components {
          *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
          *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
          *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+         *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+         *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
          *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
          *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
          *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,
@@ -15224,6 +15837,8 @@ export interface components {
          *     `POST /join/{guestToken}/day-chat/messages` — отвечают 410 `gone`:
          *     ссылка отозвана, попросите пару прислать новую. Остальные гостевые
          *     операции отвечают 401 `unauthorized`: `GET` и `POST /rsvp/{guestToken}`,
+         *     `GET /rsvp/{guestToken}/events`, `PUT /rsvp/{guestToken}/events/{eventId}/answers`,
+         *     `POST /rsvp/{guestToken}/events/{eventId}/requests` (T012),
          *     `GET /gifts/{guestToken}`, `POST` и `DELETE /gifts/{guestToken}/{giftId}/reserve`,
          *     `POST /gifts/{guestToken}/{giftId}/fund`, `POST /gifts/{guestToken}/funds/{fundId}`,
          *     `GET` и `POST /join/{guestToken}/shuttle`, `GET` и `POST /join/{guestToken}/hotels`,

@@ -3,17 +3,19 @@ import { useNavigate } from 'react-router'
 import { MapPin, Heart, CalendarPlus, UtensilsCrossed, Bus, Hotel, Clock3, Armchair, Phone, MessageCircle, ChevronLeft, Send, Gift } from 'lucide-react'
 import { inviteThemes } from '@/lib/inviteThemes'
 import { useApi, explainError } from '@/lib/api/useApi'
-import { ApiError } from '@/lib/api/client'
+import { ApiError, newIdempotencyKey } from '@/lib/api/client'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
   joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu,
 } from '@/lib/api/guest'
+import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
 import { formatTime, formatWeddingDate, todayIn } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
+import { useProgramOnline } from '@/lib/offlineProgramHooks'
 
 /*
  * Гостевое приглашение.
@@ -415,19 +417,29 @@ function InviteView({
             столом, а не за формой ответа. */}
         {dayMayHaveCome && <GuestDay token={token} city={w.city?.name} now={now} T={T} shadow={shadow} />}
 
+        {/* Ваши мероприятия: основное — информационная карточка с указателем на
+            форму ответа ниже; дополнительные — рабочие карточки со сроком и
+            личным RSVP (T012, свой запрос `GET /rsvp/{guestToken}/events`). Один
+            блок, один список — пара не видит их раздельно, и гость тоже не должен. */}
         {page.events && <section aria-label={t('Ваши мероприятия')} className="px-6 mt-12 relative z-10">
           <h2 className={cn('text-[20px] font-semibold', disp)}>{t('Ваши мероприятия')}</h2>
-          <ul className="mt-3">{page.events.map(event => <li key={event.id} className="py-4 border-b space-y-2 text-[13px] break-words [overflow-wrap:anywhere]" style={{ borderColor: T.soft }}>
-            <h3 className="text-[16px] font-semibold">{event.name}</h3>
-            <p>{event.date ? formatWeddingDate(event.date) : t('Дата не задана')}</p>
-            <p>{event.location ?? t('Место не задано')}</p>
-            <p>{event.timeZone ?? t('Часовой пояс не задан')}</p>
-            <p>{familyMembers.filter(person => event.guestIds.includes(person.guestId)).map(person => person.name).join(', ')}</p>
-          </li>)}</ul>
+          <div className="mt-3 space-y-4">
+            {page.events.filter(event => event.isMain).map(event => (
+              <div key={event.id} className="rounded-[24px] p-5 space-y-2 text-[13px] break-words [overflow-wrap:anywhere]" style={{ background: T.card, boxShadow: shadow }}>
+                <h3 className="text-[16px] font-semibold">{event.name}</h3>
+                <p style={{ color: T.soft }}>{event.date ? formatWeddingDate(event.date) : t('Дата не задана')}</p>
+                <p style={{ color: T.soft }}>{event.location ?? t('Место не задано')}</p>
+                <p style={{ color: T.soft }}>{event.timeZone ?? t('Часовой пояс не задан')}</p>
+                <p style={{ color: T.soft }}>{familyMembers.filter(person => event.guestIds.includes(person.guestId)).map(person => person.name).join(', ')}</p>
+                <a href="#main-rsvp" className="inline-block font-semibold underline" style={{ color: T.accent }}>{t('Ответ на основную программу')} ↓</a>
+              </div>
+            ))}
+            <AdditionalEventsList token={token} T={T} shadow={shadow} />
+          </div>
         </section>}
 
         {/* RSVP */}
-        <div className="px-6 mt-12 relative z-10 rv rv-scale">
+        <div id="main-rsvp" className="px-6 mt-12 relative z-10 rv rv-scale">
           <div className="rounded-[28px] p-6 relative overflow-hidden" style={{ background: T.card, boxShadow: shadow }}>
             <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: T.accentGrad }} />
             <h2 className={cn('text-[24px] text-center', disp)}>{t('Вы придёте?')}</h2>
@@ -715,6 +727,265 @@ function GuestBlockError({ title, error, onRetry, T, shadow }: { title: string; 
         <p className="text-[11px] font-semibold">{title}</p>
         <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{error}</p>
         <button onClick={onRetry} className="press mt-3 px-4 h-[36px] rounded-full text-[11.5px] font-semibold" style={{ background: T.bg, color: T.ink }}>{t('Повторить')}</button>
+      </div>
+    </div>
+  )
+}
+
+/*
+ * Дополнительные мероприятия — срок ответа и персональный RSVP (T012).
+ *
+ * Свой запрос (`GET /rsvp/{guestToken}/events`), отдельный от `page.events`:
+ * тот список знает только имя/дату/приглашённых, этот несёт срок, ответы и
+ * просьбы. Рендерится БЕЗ своего заголовка — вызывающий «Ваши мероприятия»
+ * уже дал общий (решение драйвера: один блок на гостевой странице, не два).
+ * Молчит (null), если у семьи нет дополнительных мероприятий — тот же приём,
+ * что у `GuestMenu`/`GuestShuttle` ниже.
+ */
+function AdditionalEventsList({ token, T, shadow }: { token: string; T: Theme; shadow: string }) {
+  const q = useApi(() => getGuestEventRsvp(token), [token])
+  const online = useProgramOnline(q.reload)
+  if (q.loading) return <p className="text-[11.5px] text-center" style={{ color: T.soft }}>{t('Загружаем…')}</p>
+  /* Не `GuestBlockError` целиком: та несёт собственный `px-6` для места
+     верхнего уровня, а здесь карточка уже стоит внутри таких же отступов
+     общего блока «Ваши мероприятия» — двойной отступ съедал бы половину
+     ширины на 320px. */
+  if (q.error) return (
+    <div className="rounded-[24px] p-5" style={{ background: T.card, boxShadow: shadow }}>
+      <p className="text-[11px] font-semibold">{t('Дополнительные мероприятия')}</p>
+      <p role="alert" className="text-[11.5px] mt-2" style={{ color: T.accent }}>{q.error}</p>
+      <button onClick={q.reload} className="press mt-3 px-4 h-[36px] rounded-full text-[11.5px] font-semibold" style={{ background: T.bg, color: T.ink }}>{t('Повторить')}</button>
+    </div>
+  )
+  const events = q.data ?? []
+  if (!events.length) return null
+  return <>
+    {events.map(ev => (
+      <GuestEventRsvpCard key={ev.event.id} token={token} ev={ev} online={online} refreshing={q.refreshing} onChanged={q.reload} T={T} shadow={shadow} />
+    ))}
+  </>
+}
+
+/**
+ * `key={serial}` пересоздаёт черновик снизу только по явному «Открыть свежую
+ * версию» — тот же приём, что `opened.serial` у `RosterForm`/`EventDialog`:
+ * фоновое перечитывание списка не подменяет открытый черновик тихо.
+ */
+function GuestEventRsvpCard(props: { token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean; onChanged: () => void; T: Theme; shadow: string }) {
+  const [serial, setSerial] = useState(0)
+  return <GuestEventRsvpCardInner key={serial} {...props} onReopen={() => setSerial(s => s + 1)} />
+}
+
+type GuestDraftStatus = 'unknown' | 'attending' | 'declined'
+
+function GuestEventRsvpCardInner({ token, ev, online, refreshing, onChanged, onReopen, T, shadow }: {
+  token: string; ev: GuestRsvpEvent; online: boolean; refreshing: boolean
+  onChanged: () => void; onReopen: () => void; T: Theme; shadow: string
+}) {
+  /* `people` — захваченный при монтировании снимок (имя/статус/версия каждого
+     приглашённого); живой `ev.people` после этого его не подменяет — только
+     успешное сохранение или пересоздание по `onReopen`. */
+  const [people, setPeople] = useState(ev.people)
+  const [draft, setDraft] = useState<Record<string, GuestDraftStatus>>(() => Object.fromEntries(people.map(p => [p.guestId, p.status])))
+  const [sending, setSending] = useState(false)
+  const [blocked, setBlocked] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [forceClosed, setForceClosed] = useState(false)
+  const submitting = useRef(false)
+  const alive = useRef(false)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+
+  const closed = forceClosed || ev.deadline.state === 'closed'
+  const answers: { guestId: string; status: 'attending' | 'declined'; expectedVersion: string }[] = []
+  for (const p of people) {
+    const chosen = draft[p.guestId]
+    if ((chosen === 'attending' || chosen === 'declined') && chosen !== p.status) answers.push({ guestId: p.guestId, status: chosen, expectedVersion: p.version })
+  }
+  const changed = answers.length > 0
+
+  const save = () => void (async () => {
+    if (!online || blocked || closed || submitting.current || !changed) return
+    submitting.current = true; setSending(true); setError(null)
+    try {
+      const fresh = await saveGuestEventAnswers(token, ev.event.id, answers)
+      if (!alive.current) return
+      setPeople(fresh)
+      setDraft(Object.fromEntries(fresh.map(p => [p.guestId, p.status])))
+    } catch (e) {
+      if (!alive.current) return
+      const code = e instanceof ApiError ? e.code : undefined
+      /* Срок истёк между открытием карточки и «Сохранить» — это не гонка
+         версий, а честная смена состояния: карточка переходит в «закрыто»
+         сама, без требования явно «обновить» (в отличие от конфликта версий
+         ниже, где черновик сохраняется до явного действия). */
+      if (code === 'rsvp_deadline_passed') { setForceClosed(true); setError(null); onChanged(); return }
+      setError(code === 'version_conflict' ? t('Ответ уже изменили — обновите') : explainError(e))
+      if (!(e instanceof ApiError && e.status === 422)) { setBlocked(true); onChanged() }
+    } finally { if (alive.current) { submitting.current = false; setSending(false) } }
+  })()
+
+  const deadlineLine = closed ? t('Срок ответа прошёл')
+    : ev.deadline.state === 'none' ? t('Срок ответа не задан')
+    : `${t('Ответить до')} ${ev.deadline.date ? formatWeddingDate(ev.deadline.date) : ''} ${t('включительно')} (${ev.deadline.timeZone})`
+
+  return (
+    <div className="rounded-[24px] p-5 space-y-3 text-[13px]" style={{ background: T.card, boxShadow: shadow }}>
+      <div>
+        <h3 className="text-[15px] font-semibold break-words [overflow-wrap:anywhere]">{ev.event.name}</h3>
+        <p style={{ color: T.soft }}>{ev.event.date ? formatWeddingDate(ev.event.date) : t('Дата не задана')}</p>
+        <p style={{ color: T.soft }}>{ev.event.location ?? t('Место не задано')}</p>
+        <p style={{ color: T.soft }}>{ev.event.timeZone ?? t('Часовой пояс не задан')}</p>
+        <p className="font-medium mt-1" style={{ color: closed ? T.accent : T.ink }}>{deadlineLine}</p>
+      </div>
+      {!closed ? (
+        <>
+          <fieldset disabled={sending || blocked} className="space-y-2 min-w-0">
+            {people.map(person => (
+              <div key={person.guestId} className="flex items-center justify-between gap-3">
+                <span className="min-w-0 break-words [overflow-wrap:anywhere]">{person.name}</span>
+                <div className="flex gap-1.5 shrink-0">
+                  <button type="button" aria-label={`${person.name} — ${t('Приду')}`} aria-pressed={draft[person.guestId] === 'attending'}
+                    onClick={() => setDraft(d => ({ ...d, [person.guestId]: 'attending' }))}
+                    className="press h-8 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+                    style={draft[person.guestId] === 'attending' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
+                    {t('Приду')}
+                  </button>
+                  <button type="button" aria-label={`${person.name} — ${t('Не приду')}`} aria-pressed={draft[person.guestId] === 'declined'}
+                    onClick={() => setDraft(d => ({ ...d, [person.guestId]: 'declined' }))}
+                    className="press h-8 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+                    style={draft[person.guestId] === 'declined' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>
+                    {t('Не приду')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </fieldset>
+          <button type="button" disabled={!online || !changed || sending || blocked} onClick={save}
+            className="press w-full h-10 rounded-full text-[12.5px] font-semibold disabled:opacity-50" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+            {sending ? t('Отправляем…') : t('Сохранить')}
+          </button>
+          {error && <p role="alert" className="text-[11.5px]" style={{ color: T.accent }}>{error}</p>}
+          {blocked && (
+            <button type="button" disabled={refreshing} onClick={onReopen} className="press text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>
+              {t('Открыть свежую версию')}
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="space-y-3">
+          {people.map(person => (
+            <GuestEventClosedPerson key={person.guestId} token={token} eventId={ev.event.id} person={person} online={online} T={T} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Человек после срока: статус + источник, статус его просьбы и форма новой. */
+function GuestEventClosedPerson({ token, eventId, person, online, T }: {
+  token: string; eventId: string; person: EventRsvpPerson; online: boolean; T: Theme
+}) {
+  const [request, setRequest] = useState(person.request)
+  const [justSent, setJustSent] = useState(false)
+  const [open, setOpen] = useState(false)
+  const statusLabel = person.status === 'attending' ? t('Придёт') : person.status === 'declined' ? t('Не придёт') : t('Ждём')
+  const sourceLabel = person.source === 'guest_response' ? t('Ответил гость')
+    : person.source === 'organizer_correction' ? t('Внесено организатором')
+    : person.source === 'legacy_main_rsvp' ? t('По основному ответу')
+    : person.source === 'team_observation' ? t('Наблюдение команды')
+    : t('Нет ответа')
+  const canAsk = !request || request.state !== 'pending'
+  return (
+    <div className="pt-3 border-t" style={{ borderColor: T.soft }}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 break-words [overflow-wrap:anywhere] font-medium">{person.name}</span>
+        <span className="text-[11px] shrink-0" style={{ color: T.soft }}>{statusLabel}</span>
+      </div>
+      <p className="text-[10.5px]" style={{ color: T.soft }}>{sourceLabel}</p>
+      {request && (
+        <p role="status" className="text-[11px] mt-1">
+          {(justSent ? t('Просьба отправлена организатору')
+            : request.state === 'pending' ? t('Просьба ждёт решения')
+              : request.state === 'accepted' ? t('Просьба принята') : t('Просьба отклонена'))
+            + (!justSent && request.decisionNote ? ` — ${request.decisionNote}` : '')}
+        </p>
+      )}
+      {canAsk && !open && (
+        <button type="button" disabled={!online} onClick={() => setOpen(true)}
+          className="press mt-2 text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.accent }}>
+          {t('Попросить организатора изменить ответ')}
+        </button>
+      )}
+      {canAsk && open && (
+        <GuestEventRequestForm token={token} eventId={eventId} guestId={person.guestId} online={online} T={T}
+          onDone={req => { setRequest(req); setJustSent(true); setOpen(false) }} onCancel={() => setOpen(false)} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Форма просьбы после срока (K-Q9): приду/не приду + комментарий ≤500.
+ *
+ * Idempotency-Key создаётся здесь, в обработчике отправки, а не при рендере
+ * (R-04): один ключ на черновик — повтор того же status+comment уходит с тем
+ * же ключом, изменённый черновик получает новый.
+ */
+function GuestEventRequestForm({ token, eventId, guestId, online, T, onDone, onCancel }: {
+  token: string; eventId: string; guestId: string; online: boolean; T: Theme
+  onDone: (req: EventRsvpRequest) => void; onCancel: () => void
+}) {
+  const [status, setStatus] = useState<'attending' | 'declined' | null>(null)
+  const [comment, setComment] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const keyRef = useRef<string | null>(null)
+  const lastRef = useRef<string | null>(null)
+  const submitting = useRef(false)
+  const alive = useRef(false)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+
+  const submit = () => void (async () => {
+    if (!online || submitting.current || !status) return
+    submitting.current = true
+    const snapshot = JSON.stringify([status, comment])
+    if (keyRef.current === null || lastRef.current !== snapshot) keyRef.current = newIdempotencyKey()
+    lastRef.current = snapshot
+    setSending(true); setError(null)
+    try {
+      const req = await requestGuestEventChange(token, eventId, { guestId, requestedStatus: status, ...(comment.trim() ? { comment: comment.trim() } : {}) }, keyRef.current)
+      if (alive.current) onDone(req)
+    } catch (e) {
+      if (alive.current) setError(explainError(e))
+    } finally {
+      submitting.current = false
+      if (alive.current) setSending(false)
+    }
+  })()
+
+  return (
+    <div className="mt-2 space-y-2">
+      <fieldset disabled={sending} className="grid grid-cols-2 gap-2 min-w-0">
+        <button type="button" aria-pressed={status === 'attending'} onClick={() => setStatus('attending')}
+          className="press h-9 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+          style={status === 'attending' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{t('Приду')}</button>
+        <button type="button" aria-pressed={status === 'declined'} onClick={() => setStatus('declined')}
+          className="press h-9 rounded-full text-[11.5px] font-semibold disabled:opacity-50"
+          style={status === 'declined' ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{t('Не приду')}</button>
+      </fieldset>
+      <textarea value={comment} disabled={sending} maxLength={500} rows={2} onChange={e => setComment(e.target.value)}
+        placeholder={t('Комментарий (необязательно)')} aria-label={t('Комментарий (необязательно)')}
+        className="w-full rounded-xl p-2 text-[11.5px] outline-none" style={{ background: T.bg, color: T.ink }} />
+      {error && <p role="alert" className="text-[11px]" style={{ color: T.accent }}>{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" disabled={sending} onClick={onCancel} className="press h-9 px-3 rounded-full text-[11.5px] disabled:opacity-50" style={{ background: T.bg, color: T.ink }}>
+          {t('Отмена')}
+        </button>
+        <button type="button" disabled={!online || sending || !status} onClick={submit}
+          className="press h-9 px-3 rounded-full text-[11.5px] font-semibold disabled:opacity-50" style={{ background: T.accentGrad, color: '#FFF7F0' }}>
+          {sending ? t('Отправляем…') : t('Отправить просьбу')}
+        </button>
       </div>
     </div>
   )

@@ -34,7 +34,7 @@ const ROUTES = [
   '/home', '/notifications', '/settings', '/support', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
   '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/payments', '/wedding/checklist',
-  '/wedding/timeline', '/wedding/events', '/wedding/events/e1/invitations', '/wedding/guests', '/wedding/documents', '/wedding/documents/new',
+  '/wedding/timeline', '/wedding/events', '/wedding/events/e1/invitations', '/wedding/events/e1/rsvp', '/wedding/guests', '/wedding/documents', '/wedding/documents/new',
   '/wedding/invites', '/wedding/seating', '/wedding/wishlist', '/gifts', '/wedding/album',
   '/wedding/logistics', '/wedding/catering', '/wedding/planb',
   '/us', '/us/chats', '/us/chats/c1', '/us/team',
