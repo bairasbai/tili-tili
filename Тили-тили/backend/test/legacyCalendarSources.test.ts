@@ -463,7 +463,9 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       await blockedBy(holderPid, 1, 'repoint mid-capture'); await finish()
       await expectDomainError(pending, 'legacy_source_changed', 409)
     })
-    it('смена владельца во время ожидания — scope_changed, не 403', async () => {
+    /* Арбитраж драйвера 370-T04: компания перечитывается на шаге 7 (vendors FOR SHARE, «как load»)
+       раньше сверки области на шаге 10 — сменившийся владелец получает 403, а не 409 scope_changed. */
+    it('смена владельца во время ожидания — 403 на шаге 7, до сверки области', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
       const { source, dto } = await capturedDay(pair, c, w)
       const newOwner = await actor()
@@ -472,7 +474,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       })
       const pending = capture(c.id, source.id as string, c.owner, dto.sourceRevision, dto.inventoryRevision)
       await blockedBy(holderPid, 1, 'owner change mid-capture'); await finish()
-      await expectDomainError(pending, 'legacy_source_scope_changed', 409)
+      await expectDomainError(pending, 'forbidden', 403)
     })
     it('отзыв сессии владельца во время ожидания — 401', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
