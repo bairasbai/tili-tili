@@ -422,3 +422,41 @@ wholelint/build/contracts. Same-source production guestfinal1:9checks/zeroerrors
 all5PNG inspected RU320/390/1440 EN320/390, current126hashmatch. Scoped docs/gates
 not full feature acceptance. Next GET/remind actual witnesses; no real provider/
 production/GitHub/main operations. All SC/NFR/WP requirements remain mandatory.
+
+## T012: Персональные Ответы На Мероприятия (локально) · 2026-10-02
+
+Продолжение «Текущая Работа 022 · 2026-10-01» выше: после публикации состава
+приглашённых следующим шагом был T012 — отдельный RSVP с дедлайном; эта запись
+фиксирует его локальный результат. Основание — merged main после 030: PR
+https://github.com/bairasbai/tili-tili/pull/27, merge2026-10-02T06:31:56Z
+(aa85f88), CI7/7, включая фикс «двойное «Сохранить» первой анкеты» (LOCAL-030-31).
+Контракт0.70.0/6операций(0da3e23), миграция1763700000000_event_rsvp_deadlines.cjs,
+backend rsvp-events.ts, гостевой блок `/invite` (один список, решение D5) и новый
+экран пары `/wedding/events/:eventId/rsvp`. Основной RSVP и его эффекты
+(автобус/гостиница/стол/меню) не меняются (решение D2).
+
+Targeted4files/68tests, весь фронт111files/2085passed, tsc/eslint чисто. Backend
+на свежей полной БД (79миграций по порядку): набор T012131tests+legacy regression
+RSVP/family/access266; после независимого Opus-ревью (ниже) —155tests на dev-БД,
+регрессия тихих часов/notify318. Migration drill на чистой БД:22own migrations
+до1763700000000/12T012SQL-отказов+1guarded CLI down refusal. Actual production
+build+real API/PG browser сценарий (`.unlazy/tz-full-20261002/scripts/browser-t012.mjs`):
+9/9checks/zeroerrors RU/EN320/390/1440.
+
+Независимое ревью нашло и закрыло до публикации: P1 каскадное удаление
+гостя/семьи/+1/события с живой просьбой падало500 (BEFORE DELETE стража путал
+ON DELETE CASCADE с прямым удалением, которого в коде нет); P1 решение по
+просьбе человека, снятого с ростера между просьбой и решением, 404-илось и
+откатывалось целиком, просьба оставалась pending навсегда; P2 чужой guestId
+с действующим токеном пары отдавал401 вместо404 (identity-оракул); P2 срок
+≤ дата мероприятия вынесен из обработчика в CHECK базы; P3 чтение по
+гостевому токену взяло for share вместо безусловного for update; P3
+DST-переход ровно на местной полуночи (America/Santiago) потребовал второго
+прохода коррекции смещения в `fromLocal`. Источник и числа:
+[REPORT-RSVP](../фичи/022-мероприятия/REPORT-RSVP.md); правила на будущее —
+`ERRORS.md` (LOCAL-030-32…35).
+
+PENDING на этой границе: полный `bash init.sh` на финальном дереве, CI, merge
+владельцем — следующий шаг, T012 не объявлен опубликованным. После публикации —
+030, этапы370–374 (K-Q10: основная дата остаётся на «Мы» до этого момента);
+батчи напоминаний (K-Q11) и остальной WP00–WP16/FR/SC/NFR сохраняются открытыми.
