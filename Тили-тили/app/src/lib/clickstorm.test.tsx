@@ -54,6 +54,13 @@ const ROUTES = [
 const settled = (container: HTMLElement) =>
   waitFor(() => expect(container.querySelector('[data-testid="route-loading"]')).toBeNull(), { timeout: 4000 })
 
+/* Чанк приехал — ещё не значит, что экран готов: экран может ждать свои данные
+ * («Загружаем…» без единой кнопки, как /guest-vendor/:token). Под нагрузкой CI
+ * четыре волны кликов успевали пройти раньше ответа, и проверка «кликнули хоть
+ * раз» падала на пустом экране. Ждём первую доступную кнопку. */
+const firstButton = (container: HTMLElement) =>
+  waitFor(() => expect(container.querySelector('button:not([disabled])')).not.toBeNull(), { timeout: 4000 })
+
 describe('клик-шторм: все кнопки всех экранов нажимаются без падения', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -73,6 +80,7 @@ describe('клик-шторм: все кнопки всех экранов на�
       const errSpy = vi.spyOn(console, 'error').mockImplementation((...a) => { errors.push(String(a[0])) })
       const { container, unmount } = render(<MemoryRouter initialEntries={[r]}><App /></MemoryRouter>)
       await settled(container)
+      await firstButton(container)
       // кликаем кнопки волнами: каждый клик может менять DOM и открывать новые кнопки
       let clicked = 0
       for (let wave = 0; wave < 4; wave++) {
