@@ -3,7 +3,15 @@
 Одна активная задача за раз. Пункты отмечать по ходу, не в конце.
 Готово = типы + тесты + линт + сборка прогнаны, вывод показан.
 
-## Полное ТЗ WP00–WP16 · 2026-09-30
+## Актуальная граница · Codex, 2026-10-03
+
+Наша ограниченная поставка 030 уже в main через PR №27. Продолжение Клода вошло в PR №29–31; проверенный коммит — `4f6381d`. Повторная приёмка: 2105 тестов фронтенда / 3067 сервера, без пропусков, типы/линт/сборки; браузерная замена HTTP 409/200 и RU/EN 320/390/480. `wt/pa` уже отсутствует, повторное удаление не требуется.
+
+Текущая задача этой сессии — опубликовать итоговые документы, проверить CI, подтвердить merge и остановиться. Источники и полная инструкция: [REPORT-CLOSE](фичи/030-экосистема-local/REPORT-CLOSE-20261003.md) и [CLAUDE-CONTINUE](фичи/030-экосистема-local/CLAUDE-CONTINUE.md), раздел 15. Следующий 380 — непринятый черновик: remote `6a0e6a3` новее local `bde3e40`; модуль и репетиция не закончены. Широкие WP/A/U остаются открытыми.
+
+## История поручений WP00–WP16 · записи ниже сохранены для контекста
+
+Следующие записи отражают состояние на момент их написания. Их «текущие задачи», pending-публикации и команды очистки не являются действующим планом; актуальная граница указана выше.
 
 Текущая задача (2026-10-03, Claude): хвосты §3 из `C:/Тили-тили/.unlazy/tz-full-20261002/HANDOFF-NEW-CHAT.md` по порядку, новое не начинать. T012 опубликован (PR #29, merge a495968), PR #30 влит (main 92d79f4).
 - [ ] №1 удалить worktree `C:/Тили-тили/wt/pa` (сначала junction node_modules через `cmd /c rmdir`) — только на ПК.
@@ -1410,3 +1418,12 @@ Next: actual allocation ledger and common booking/cancellation/erasure/capacity 
 - [x] Implement the five independent presentation groups: responsive sidebar, fixed pickers, picker focus lifecycle, date selection semantics, localized icon actions.
 - [x] Targeted frontend verification: 104/104 tests, TypeScript, lint and production build.
 - [ ] Next step: review the single-commit draft PR; perform supported-browser visual/keyboard/screen-reader QA before claiming rendered-UI verification. See `tasks/presentation-accessibility-20261002.md`. No automatic main merge.
+
+
+### Закрытие поставки030 · Codex, 2026-10-03
+
+- [x] Проверить продолжение Клода: PR27/31 merged, актуальный main4f6381d; независимое ревью фиксов.
+- [x] Повторить full2105/3067 и браузерную замену409/200, сохранение оплаты/истории/чужих дат; RU/EN320/390/480.
+- [x] Сохранить полную переносимую инструкцию: [REPORT-CLOSE](фичи/030-экосистема-local/REPORT-CLOSE-20261003.md), [Claude](фичи/030-экосистема-local/CLAUDE-CONTINUE.md), [контракт380](фичи/030-экосистема-local/c380-inventory-contract.md).
+- Итоговые документы публикуются отдельным PR после проверок; подтверждение CI/merge — в PR и финальном отчёте. Затем эта сессия останавливается.
+- [ ] Будущее отдельное поручение: принять черновик380, завершить legacy-source.ts, репетицию миграций и независимое ревью. Remote6a0e6a3 новее localbde3e40; не перезаписывать. Широкие A/U/WP не отмечать выполненными.
