@@ -1,0 +1,197 @@
+{
+  "reviewedCodeCommit": "4f6381dd1c58bdf7cb3090b03b17d31751e3e1d0",
+  "platform": "Windows / Node25.9.0 / PostgreSQL16 loopback15432 / Redis DB12",
+  "full": {
+    "exit": 0,
+    "frontend": {
+      "files": 112,
+      "tests": 2105
+    },
+    "backend": {
+      "files": 145,
+      "tests": 3067
+    },
+    "skips": 0,
+    "summary": [
+      "== фронт: типы",
+      "== фронт: тесты",
+      " Test Files  112 passed (112)",
+      "      Tests  2105 passed (2105)",
+      "== фронт: линт (всё дерево, как в CI)",
+      "== фронт: сборка",
+      "== бэк: типы",
+      "== бэк: тесты",
+      " Test Files  145 passed (145)",
+      "      Tests  3067 passed (3067)",
+      "== бэк: линт",
+      "== бэк: сборка",
+      "OK — фронт и бэк: типы, тесты, линт и сборка прошли."
+    ],
+    "rawLog": {
+      "path": "C:/Тили-тили/.unlazy/tz-full-20261002/logs/full-codex-final-20261003.log",
+      "sha256": "32d1e757a1e947d8ce9351e42dd47d652b2d1a7a406f686525f63dd97f89acf1"
+    }
+  },
+  "browser": {
+    "synthetic": true,
+    "actualRegisteredHttp": true,
+    "commands": {
+      "refusal": 1,
+      "success": 1
+    },
+    "refusal": {
+      "synthetic": true,
+      "live": {
+        "name": "tili_ecosystem_commitment_browser_20260930_test",
+        "principal": "codex_test",
+        "port": 15432,
+        "address": "127.0.0.1"
+      },
+      "source": "actual-local-http-server-capture",
+      "actualHttpStatus": 409,
+      "wholeScopedBookingSnapshotIdentical": true,
+      "originalBusinessFixturesIdentical": true,
+      "exclusions": [
+        "auth/session renewal",
+        "GET profile view analytics"
+      ]
+    },
+    "success": {
+      "synthetic": true,
+      "live": {
+        "name": "tili_ecosystem_commitment_browser_20260930_test",
+        "principal": "codex_test",
+        "port": 15432,
+        "address": "127.0.0.1"
+      },
+      "source": "actual-local-http-server-capture",
+      "actualHttpStatus": 200,
+      "oldDeal": "01a0ff52-2329-7035-87d1-629249a4c410",
+      "newDeal": "01a0ff54-6c55-70bc-9d31-8983a6a15ee9",
+      "retainedPaymentFacts": 1,
+      "originalHistoryRowsRetained": true,
+      "legitimateCancellationAndOneNewRoot": true,
+      "foreignDatesAndOriginalFixturesIdentical": true,
+      "noAcceptedTermsOrRefund": true
+    },
+    "widths": [
+      {
+        "language": "ru",
+        "width": 320,
+        "body": 305,
+        "document": 305
+      },
+      {
+        "language": "ru",
+        "width": 390,
+        "body": 375,
+        "document": 375
+      },
+      {
+        "language": "ru",
+        "width": 480,
+        "body": 465,
+        "document": 465
+      },
+      {
+        "language": "en",
+        "width": 320,
+        "body": 305,
+        "document": 305
+      },
+      {
+        "language": "en",
+        "width": 390,
+        "body": 375,
+        "document": 375
+      },
+      {
+        "language": "en",
+        "width": 480,
+        "body": 465,
+        "document": 465
+      }
+    ],
+    "scope": "RU success notice + EN booked slot, both320/390/480; synthetic Chromium; not physical-device/human/provider/legal acceptance"
+  },
+  "migration": {
+    "id": {
+      "name": "tili_ecosystem_commitment_browser_20260930_test",
+      "principal": "codex_test",
+      "address": "127.0.0.1",
+      "port": 15432
+    },
+    "oldTablesPreserved": 96,
+    "missing": [
+      "1762500000000_event_invitations",
+      "1763700000000_event_rsvp_deadlines"
+    ],
+    "appliedMigrations": 79,
+    "originalColumnRowsIdentical": true,
+    "nativeExit": 0
+  },
+  "artifacts": [
+    {
+      "name": "accepted-main-20261003-source-manifest.json",
+      "sha256": "14c66e127169c58df7251d6c70f1cce9bec6722bd59e9855ed45618079e1b7d7"
+    },
+    {
+      "name": "atomic-main20261003-browser-helper.mts",
+      "sha256": "1059a191cb2f5834d63c9f01cf2a5fc1750ec701d8179883b6626fdff51caa3c"
+    },
+    {
+      "name": "atomic-main20261003-refusal-http.json",
+      "sha256": "ef86f97eb34cf7197a15aa25e7c7b89ac8331cf17737537f7bd96622d54f17fb"
+    },
+    {
+      "name": "atomic-main20261003-success-http.json",
+      "sha256": "06fac26510f267f111407ccfeec1f1ee20997e89fec9e24aff9bba22b393ef3b"
+    },
+    {
+      "name": "atomic-main20261003-refusal-oracle.json",
+      "sha256": "4e5bb4a6c90a42e0fb7bbf256fae076958998d9f149d79be80074511c45a5dd9"
+    },
+    {
+      "name": "atomic-main20261003-success-oracle.json",
+      "sha256": "191b445120862eb8fbadaec04de05d15ee7f24be59dc81629a30e54d19d0009b"
+    },
+    {
+      "name": "atomic-main20261003-migration-preservation.json",
+      "sha256": "e19e83d1e0c2ccafb942cfcef11984445e2bfa6ae7484be1714aca034de1a201"
+    },
+    {
+      "name": "atomic-main20261003-widths.json",
+      "sha256": "d5d45268899df7324e0487512b39d98d1325e2ee6505f211458a27441b627047"
+    },
+    {
+      "name": "atomic-main20261003-refusal.png",
+      "sha256": "08aebde57a0868bb0109056d87049ad8b3a3e6e56a7bc7ca48a81e9f45c17ddd"
+    },
+    {
+      "name": "atomic-main20261003-success-ru-320.png",
+      "sha256": "b9bca8a6aee4cea0c3c170ad7fba0448e79dd7dd7f5c670d747d0ca3e0804ec7"
+    },
+    {
+      "name": "atomic-main20261003-booked-en-320.png",
+      "sha256": "c5975b7caedcafebcdb3a52a61bbfcbb04e977d3106ffcff056d6be457f6a558"
+    },
+    {
+      "name": "atomic-main20261003-success-ru-390.png",
+      "sha256": "e35d869322ccf2ff09697f254da95a13900fc82c692755ac09f7c004195f7a06"
+    },
+    {
+      "name": "atomic-main20261003-booked-en-390.png",
+      "sha256": "c5d092045999fbda2a6792937710c151323b6c844627c1a67b847d710742ca71"
+    },
+    {
+      "name": "atomic-main20261003-success-ru-480.png",
+      "sha256": "be6c46f784c3a9a856ab5b5ee79a0e7ea54e2fa204104bb40eaefce63a43e006"
+    },
+    {
+      "name": "atomic-main20261003-booked-en-480.png",
+      "sha256": "9d4c4497341270ed6b223696ac7b4d559e8be32036d0ada546ae7df0ff9143d8"
+    }
+  ],
+  "production": "not deployed",
+  "futureDraft": "feature/030-370-legacy-inventory@6a0e6a328321d22a00362d979d64bf0e8eeb617d unverified; original localbde3e40 preserved"
+}
