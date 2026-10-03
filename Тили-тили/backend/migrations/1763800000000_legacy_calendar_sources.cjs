@@ -326,16 +326,19 @@ exports.up = (pgm) => {
         return OLD;
       end if;
       if TG_OP='UPDATE' then
-        if (to_jsonb(NEW)-'captured_by')<>(to_jsonb(OLD)-'captured_by') or
-          (NEW.captured_by is distinct from OLD.captured_by and not
-            (OLD.captured_by is not null and NEW.captured_by is null and not exists(select 1 from users where id=OLD.captured_by))) then
+        -- Единственный законный UPDATE версии — FK ON DELETE SET NULL у автора
+        -- стёртого аккаунта: captured_by X -> NULL, X уже нет, всё остальное
+        -- равно. Любой иной UPDATE (в том числе «пустой») — отказ.
+        if OLD.captured_by is null or NEW.captured_by is not null
+          or exists(select 1 from users where id=OLD.captured_by)
+          or (to_jsonb(NEW)-'captured_by')<>(to_jsonb(OLD)-'captured_by') then
           raise exception 'inventory evidence is immutable' using errcode='23514';
         end if;
         return NEW;
       end if;
       select * into src from legacy_calendar_sources where id=NEW.source_id;
       select * into h from legacy_calendar_heads where source_id=NEW.source_id for update;
-      if not found or NEW.revision<>h.revision+1 or NEW.previous_version_id is distinct from h.current_version_id then
+      if not found or NEW.revision<>h.revision+1 then
         raise exception 'inventory version requires next exact head revision' using errcode='23514';
       end if;
       if NEW.canonical<>legacy_calendar_inventory_material(src)::text then
@@ -349,6 +352,11 @@ exports.up = (pgm) => {
         if not exists(select 1 from vendors v where v.id=src.vendor_id and v.user_id=NEW.captured_by) then
           raise exception 'inventory capture author must be the current company owner' using errcode='23514';
         end if;
+      end if;
+      -- Предок — ровно версия головы. Проверяется последним: ревизия, материал
+      -- и автор говорят о более грубом нарушении, чем разрыв цепочки.
+      if NEW.previous_version_id is distinct from h.current_version_id then
+        raise exception 'inventory version requires next exact head revision' using errcode='23514';
       end if;
       return NEW;
     end $$;
@@ -393,16 +401,8 @@ exports.up = (pgm) => {
         end if;
         return NEW;
       end if;
-      if NEW.source_id<>OLD.source_id then
-        raise exception 'inventory head must advance by one exact revision' using errcode='23514';
-      end if;
-      if NEW.revision=OLD.revision then
-        if NEW.current_version_id is distinct from OLD.current_version_id then
-          raise exception 'inventory head must advance by one exact revision' using errcode='23514';
-        end if;
-        return NEW;
-      end if;
-      if NEW.revision<>OLD.revision+1 or not exists(
+      -- Каждый UPDATE головы — ровно один шаг вперёд; «пустого» UPDATE нет.
+      if NEW.source_id<>OLD.source_id or NEW.revision<>OLD.revision+1 or not exists(
         select 1 from legacy_calendar_versions v where v.source_id=NEW.source_id and v.id=NEW.current_version_id
           and v.revision=NEW.revision and v.previous_version_id is not distinct from OLD.current_version_id) then
         raise exception 'inventory head must advance by one exact revision' using errcode='23514';
@@ -463,6 +463,10 @@ exports.up = (pgm) => {
       if NEW.id<>OLD.id or NEW.created_at<>OLD.created_at or NEW.vendor_id<>OLD.vendor_id or NEW.date<>OLD.date or NEW.source<>OLD.source then
         raise exception 'operational day identity is immutable' using errcode='23514';
       end if;
+      -- Ревизию ведёт только база: явная правка отказывает, указатель растит её на единицу.
+      if NEW.source_revision<>OLD.source_revision then
+        raise exception 'source revision is maintained by the database' using errcode='23514';
+      end if;
       NEW.source_revision := OLD.source_revision + (case when NEW.deal_id is distinct from OLD.deal_id then 1 else 0 end);
       return NEW;
     end $$;
@@ -506,9 +510,10 @@ exports.up = (pgm) => {
     begin
       if TG_OP='INSERT' then
         effective_deal_id := NEW.deal_id;
+        -- Класс строки: ручная, осиротевшая (deal без указателя) или с указателем.
         if NEW.source='manual' then k:='manual_day';
-        elsif NEW.source='deal' and NEW.deal_id is not null then k:='app_day';
-        else return NEW; end if;
+        elsif NEW.deal_id is null then k:='orphan_day';
+        else k:='app_day'; end if;
       else
         if NEW.source<>'deal' or OLD.deal_id is null or NEW.deal_id is not null then return NEW; end if;
         k:='orphan_day'; effective_deal_id := OLD.deal_id;

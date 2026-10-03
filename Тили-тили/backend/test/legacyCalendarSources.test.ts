@@ -12,7 +12,7 @@ import { createOrderPart } from '../src/orders/model.js'
 import { saveOrderResourcePlan } from '../src/orders/resource-plan.js'
 import { publishOrderTerms, loadOrderTerms, acceptOrderTerms } from '../src/orders/terms.js'
 import { createResource, createCapacityWindow } from '../src/resources/model.js'
-import { getAvailabilityPolicy } from '../src/resources/policy.js'
+import { getAvailabilityPolicy, setAvailabilityPolicy } from '../src/resources/policy.js'
 import { commitAgreedOrderResources } from '../src/resources/commitments.js'
 import { assertLegacyDateBookingAllowed } from '../src/resources/booking-boundary.js'
 import { inviteStaff, acceptStaffInvite } from '../src/vendor/staff.js'
@@ -161,8 +161,11 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       await app.db!.tx(x => acceptOrderTerms(x, { ...party, termsId: selected.id, expectedTermsVersion: selected.version, digest: selected.digest, readToken: read.readToken! }, { secret: SECRET }))
     }
     const terms = await app.db!.tx(x => loadOrderTerms(x, input, { secret: SECRET }))
+    // Арбитраж драйвера: бронь ресурсов требует режима ресурсов компании (commitments.ts,
+    // `resource_policy_required`) — как `validLedger` в resourceBookingBoundaries.test.ts.
+    const policy = await app.db!.tx(x => setAvailabilityPolicy(x, { vendorId: c.id, actor: principal(c.owner), mode: 'resources', expectedRevision: '0' }))
     await app.db!.tx(x => commitAgreedOrderResources(x, { ...input, expectedOrderVersion: plan.orderVersion, expectedCommitmentRevision: '0',
-      termsId: terms.selected!.id, expectedTermsVersion: terms.selected!.version, termsDigest: terms.selected!.digest, planRevisionId: plan.current!.planRevisionId, expectedPolicyRevision: '0' }))
+      termsId: terms.selected!.id, expectedTermsVersion: terms.selected!.version, termsDigest: terms.selected!.digest, planRevisionId: plan.current!.planRevisionId, expectedPolicyRevision: policy.revision }))
     return dealId
   }
 
@@ -240,7 +243,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
     it.each(['id', 'vendor_id', 'date', 'source', 'created_at'] as const)('колонка %s операционного дня неизменна', async column => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
       await book(pair, w, c)
-      const value = column === 'id' ? randomUUID() : column === 'vendor_id' ? randomUUID() : column === 'date' ? "'2027-09-01'" :
+      const value = column === 'id' || column === 'vendor_id' ? `'${randomUUID()}'::uuid` : column === 'date' ? "'2027-09-01'" :
         column === 'source' ? "'manual'" : "now()"
       const sql = column === 'date' || column === 'source'
         ? `update vendor_busy_dates set ${column}=${value} where vendor_id=$1 and date=$2::date`
@@ -252,7 +255,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       await expect(app.db!.query("insert into vendor_busy_dates(vendor_id,date,source,source_revision) values($1,'2027-09-05','manual',2)", [c.id])).rejects.toMatchObject({ code: '23514' })
     })
     it('повтор удалённого id операционного дня отказывает', async () => {
-      const owner = (await company()).owner, c = await company(owner)
+      const c = await company(), owner = c.owner
       expect((await manual(owner, ['2027-09-10'], 'busy')).statusCode).toBe(204)
       const row = (await app.db!.query<{ id: string }>('select id from vendor_busy_dates where vendor_id=$1 and date=$2', [c.id, '2027-09-10'])).rows[0]!
       expect((await manual(owner, ['2027-09-10'], 'free')).statusCode).toBe(204)
@@ -283,7 +286,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       expect(root!.id).not.toBe(negotiation!.id)
     })
     it('ручной день обнаруживает manual_day', async () => {
-      const owner = (await company()).owner, c = await company(owner)
+      const c = await company(), owner = c.owner
       expect((await manual(owner, ['2027-08-05'], 'busy')).statusCode).toBe(204)
       const id = await dayId(c.id, '2027-08-05'), row = await sourceRow(c.id, 'manual_day', id)
       expect(row).toMatchObject({ kind: 'manual_day', vendor_id: c.id, company_id: c.id, wedding_id: null, day_id: id })
@@ -372,12 +375,12 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       await book(pair, w, c)
       const id = await dayId(c.id, w.date)
       await sourceRow(c.id, 'app_day', id) // app_day already discovered
-      // Only path to orphan per the contract (D9/model.7): the day row
-      // survives a wedding purge via `vendor_busy_dates.deal_id` FK SET NULL,
-      // while the deal itself is cascade-deleted. A heirless owner's wedding
-      // is cascaded by `eraseUser`.
-      await app.db!.tx(x => eraseUser(x, pair.userId))
-      users.delete(pair.userId); weddings.delete(w.id)
+      // Арбитраж драйвера (неоднозначность (2) автора теста): purge/`eraseUser` снимают строки дней
+      // ЯВНО до удаления свадьбы (jobs/index.ts; контракт, «Писатели»), поэтому сироту даёт только
+      // каскад без этой уборки — модель п. 7: сделка удаляется каскадом свадьбы, строка дня остаётся
+      // с `deal_id` NULL (FK SET NULL) и обнаруживается как orphan_day.
+      await app.db!.query('delete from weddings where id=$1', [w.id])
+      weddings.delete(w.id)
       const orphan = await sourceRow(c.id, 'orphan_day', id)
       expect(orphan).toMatchObject({ kind: 'orphan_day' })
       const dto = (await load(c.id, c.owner)).sources.find(s => s.sourceId === orphan!.id)!
@@ -397,7 +400,7 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       expect(dto).toMatchObject({ scopeCompleteness: 'unknown', unavailableReason: 'mixed_scope', holderCount: 0 })
     })
     it('manual_day: без свадьбы, держателей всегда 0', async () => {
-      const owner = (await company()).owner, c = await company(owner)
+      const c = await company(), owner = c.owner
       await manual(owner, ['2027-08-07'], 'busy')
       const id = await dayId(c.id, '2027-08-07'), source = await sourceRow(c.id, 'manual_day', id)
       expect(source).toMatchObject({ wedding_id: null })
@@ -448,7 +451,10 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       await book(pair, w, c, randomUUID(), s2)
       const id = await dayId(c.id, w.date), source = await sourceRow(c.id, 'app_day', id)
       const view = await load(c.id, c.owner), dto = view.sources.find(s => s.sourceId === source!.id)!
-      const { holderPid, finish } = await holdLock('select id from vendor_busy_dates where vendor_id=$1 and date=$2::date for update', [c.id, w.date], async c2 => {
+      // Арбитраж драйвера: держатель идёт порядком настоящих писателей — сначала свадьба
+      // (lockOrderContext/PATCH deals FOR UPDATE), как и шаг 3 захвата; строка дня первой давала
+      // взаимную блокировку, которой у приложения нет (контракт, «Риски» п. 1).
+      const { holderPid, finish } = await holdLock('select id from weddings where id=$1 for update', [w.id], async c2 => {
         await cancelDealRepointLocked(c2, dealA)
       })
       async function cancelDealRepointLocked(c2: Queryable, dealId: string) {
@@ -588,8 +594,8 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       } },
       { label: 'heads UPDATE пропускает ревизию', substring: 'advance by one exact revision', run: (f, c2) => c2.query('update legacy_calendar_heads set revision=99 where source_id=$1', [f.source.id]) },
       { label: 'orphan-версия без цепочки до головы (отложено на COMMIT)', substring: 'orphan inventory version', deferred: true, run: (f, c2) =>
-        c2.query("insert into legacy_calendar_versions(id,source_id,revision,previous_version_id,canonical,digest,capture_kind) values($1,$2,2,$3,$4,$5,'owner_capture')",
-          [randomUUID(), f.source.id, f.version.id, f.version.canonical, f.version.digest]) },
+        c2.query("insert into legacy_calendar_versions(id,source_id,revision,previous_version_id,canonical,digest,capture_kind,captured_by) values($1,$2,2,$3,$4,$5,'owner_capture',$6)",
+          [randomUUID(), f.source.id, f.version.id, f.version.canonical, f.version.digest, f.c.owner.userId]) },
       { label: 'operational day: явная чужая source_revision на UPDATE', substring: 'source revision is maintained', run: (f, c2) =>
         c2.query('update vendor_busy_dates set source_revision=5 where vendor_id=$1 and date=$2::date', [f.c.id, f.w.date]) },
       { label: 'operational day: повторная вставка с идентификатором уже известного дня', substring: 'identity cannot be reused', run: (f, c2) =>
@@ -755,9 +761,13 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
   describe('T11 — полнота: present = дни ∪ COMMITTED-корни без книги ∪ живые мягкие брони', () => {
     it('независимый SQL по условиям legacyBoundary совпадает с источниками, которые load считает не-unavailable', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair)
-      await book(pair, w, c) // day row -> present
+      // Арбитраж драйвера: legacyBoundary (commitments.ts) не бронирует ресурсы компании с прежними
+      // обязательствами, а после брони ресурсов assertLegacyDateBookingAllowed не пускает бронь даты —
+      // настоящими писателями эту смесь не собрать. Поэтому корень с книгой первым, прежние обязательства —
+      // сырым SQL, как историческая выгрузка (обнаружение — триггерами БД и на сыром SQL, D3).
+      const ledgered = await ledger(w, c, pair); await app.db!.query("update deals set state='booked' where id=$1", [ledgered]) // committed root WITH ledger -> never discovered
       const ledgerless = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='booked' where id=$1", [ledgerless]) // committed root w/o ledger -> present
-      const ledgered = await ledger(w, c, pair); await app.db!.query("update deals set state='booked' where id=$1", [ledgered]) // committed root WITH ledger -> NOT present
+      await app.db!.query("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,$2::date,'deal',$3)", [c.id, w.date, ledgerless]) // day row -> present
       const negotiating = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='negotiating',negotiating_until=now()+interval '1 hour' where id=$1", [negotiating]) // live -> present
       const lapsed = await rawDeal(w, c, 'contacted'); await app.db!.query("update deals set state='negotiating',negotiating_until=now()-interval '1 hour' where id=$1", [lapsed]) // lapsed -> NOT present
       const independent = (await app.db!.query<{ n: number }>(`select
@@ -770,8 +780,8 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       const present = view.sources.filter(s => s.freshness !== 'unavailable')
       expect(present.length).toBe(independent)
       expect(view.sources.find(s => s.kind === 'app_root' && s.sourceId)).toBeTruthy()
-      const ledgeredSource = await sourceRow(c.id, 'app_root', ledgered)
-      expect(view.sources.find(s => s.sourceId === ledgeredSource!.id)!.freshness).toBe('unavailable')
+      // Контракт (модель п. 6, T02): корень с головой брони revision>0 не обнаруживается вовсе.
+      expect(await sourceRow(c.id, 'app_root', ledgered)).toBeUndefined()
       const lapsedSource = await sourceRow(c.id, 'live_negotiation', lapsed)
       expect(view.sources.find(s => s.sourceId === lapsedSource!.id)!.freshness).toBe('unavailable')
       void negotiating
@@ -790,7 +800,8 @@ describe.sequential('370 Stage A — legacy calendar sources inventory (contract
       expect(version.digest).toBe(sha256hex(version.canonical as string))
       const parsed = JSON.parse(version.canonical as string) as Record<string, unknown>
       expect(parsed.encoding).toBe('legacy-calendar-inventory/1')
-      expect(JSON.stringify(JSON.parse(version.canonical as string))).toBe(version.canonical) // canonical::jsonb::text=canonical shape
+      // Контракт D5: канон = jsonb::text PostgreSQL (с пробелами), не компактный JSON.stringify.
+      expect((await app.db!.query<{ t: string }>('select $1::jsonb::text t', [version.canonical])).rows[0]!.t).toBe(version.canonical)
     })
     it('повторный захват под другими TimeZone/DateStyle сессии остаётся no-op — байты материала не зависят от настроек сессии', async () => {
       const pair = await actor(), c = await company(), w = await wedding(pair, null), deal = await rawDeal(w, c, 'contacted')
