@@ -3632,8 +3632,45 @@ REPORT-RSVP.md, правила в ERRORS.md. Эта запись — решен�
 
 По последнему поручению проверены опубликованные PR27/31 и фиксыe44fad8/04d349f. Повторная приёмка main4f6381d: фронт112/2105, сервер145/3067, без пропусков; типы, линт и сборки прошли. Браузерная замена409/200 сохранила оплаты, историю и чужие даты; RU/EN320/390/480 проверены. Все867 хешей совпали до/после проверок. Доказательства, точная передача и будущий контракт380 сохранены в tasks/фичи/030-экосистема-local/REPORT-CLOSE-20261003.md и CLAUDE-CONTINUE.md, раздел15. Черновик380 не реализуется в этой сессии; весь WP00–WP16 не объявлен завершённым. После публикации итоговых документов, CI и merge сессия останавливается. Production не затронут.
 
+## 2026-10-03 · 030/370: инвентарь прежнего календаря — на GitHub
+
+Черновик 370 жил только на ПК владельца (незакоммичен). По поручению «сделай на GitHub, потом локально 1 в 1» локальная сессия запушила его (`bde3e40`) и выдала контракт драйвера `c370-contract.md` rev 1 с решением 370-T04; продолжение — в облаке, ветка `feature/030-370-legacy-inventory`, PR #32.
+
+**Решения (контракт D1–D12, технические, вопросов владельцу нет).** Одна миграция `1763800000000`; нет HTTP/OpenAPI/UI до 371 — экран без пути решения читался бы как «календарь» (D2, отклонено: «показать уже сейчас»). Обнаружение — триггерами БД, а не правками TS-писателей: ловит все пути, включая сырой SQL, и не добавляет новых замков кроме KEY SHARE на уже удерживаемую свадьбу/компанию (D3, отклонено: хуки в `deals/repo.ts`). Свежесть вычисляется, а не хранится — у чужих транзакций нет записей в инвентарь и обратного порядка замков (D4). Канон — `jsonb::text`, отпечаток — SHA-256 в SQL; TS не сериализует (D5, отклонено: вторая кодировка в JS). Владение историей: app — свадьба, manual/orphan — компания (D6).
+
+**Арбитраж.** 370-T04: сменившийся во время ожидания владелец получает 403 на шаге 7 (компания перечитывается раньше сверки области). Одиннадцать падений независимого теста разобраны по контракту — все дефекты фикстур/ожиданий (ERR-0430), модуль и миграция ради них не менялись.
+
+Проверки на этот момент: `legacyCalendarSources` 60/60 + `audit53` 6/6 (7 настоящих ожиданий); регрессия писателей календаря/брони/заказов на базе с 370 — 20 файлов / 376 тестов; tsc, eslint. Расширение репетиции миграций, полный прогон и независимое ревью — следующими шагами этой же поставки.
+
+## 2026-10-03 · Продолжение Claude 030/380 и оркестрация
+
+Свежий fetch обнаружил main58349e0 и черновикde414fa с уже реализованным legacy-source.ts (93028a2), хотя старая передача сообщала его отсутствие. Продолжение ведётся в отдельной codex/030-380-inventory-completion; основной checkoutbde3e40 и ветка Claude сохранены. Пользователь расширил поручение: распределять задачи агентам и создать производный skill от harnessmachine/codex-orchestrate. Read-only scope audit сохранил все WP/FR/SC/NFR и выявленные пробелы; он не заменяет runtime-приёмку.
+
+Технические решения 380 уточнены по подтверждённым отказам: ancestry нельзя пропускать при head0; holders каждого промежуточного снимка обязаны быть полными; predicate origin должен отклонять NULL; raw wedding cascade закрепляет KEY SHARE компаний фактических deal-days до SET NULL. Альтернатива просто запретить raw DELETE или удалить regression отклонена: контракт требует законный whole-wedding lifecycle и сохранение manual/orphan истории. Существующие TS-писатели/legacy booking boundary не изменены, конечные границы и согласия не выдуманы.
+
+Checkpoint: 65 inventory + 6 audit53 = 71 прошли на новой verified loopback15432 БД; три прежние версии тестовой базы сохранены как inv380before/inv380nullbefore/inv380cascadebefore. Первый preserving drill17 прошёл23 миграции,16 новых SQL-отказов,18 CLI guarded-down до последнего cascade-fix; финальный drill18/full/CI ещё проверяются. Источники и корректировка D3: tasks/фичи/030-экосистема-local/c380-inventory-contract.md; .unlazy/tz-full-20261002/logs/. Production не выполнялся.
+
+## 2026-10-03 · Forward381, окончательная репетиция и поставка оркестратора
+
+Независимое ревью выявило потерю app_day после указателя D1(W1)→D2(W2) и DELETE W1; root воспроизвёл missing-source для одной/чужой компании.380 уже applied, поэтому агент реализовал отдельную381, затем другой reviewer проверил actual new SQL. История W1 удаляется, живой день получает новый W2 source/head rev0; old bytes/consent не переносятся. Чужая свадьба запирается KEY SHARE NOWAIT и при занятости вся операция откатывается55P03. Early company union включает repointed retained days. Backfill append-only, quiescent writers required. Alternative rewrite380/старой ownership history отклонена по frozen migration/D6.
+
+Targeted74/74; native inventory/full forward upgrade сохранил прежние строки102таблиц каждой БД. Final preserving drill20:24own migrations through381, SQL128=12+9+23+7+17+30+12+18, CLI19=16+1+1+1; actual mixed manual/cascade both orders committed. Источники: REPORT-INVENTORY-20261003.md и drill-codex381-drill20.log. Failed19 fixture alias42601 сохранён. Full380 I/O failed, full381 fixture phone collision failed; оба результата отражены как failures. Phone fixture corrected, single-file62pass, окончательный full codex381-final active;680 source/config file hashes frozen before run. Эти checks не доказывают всю продуктовую Stage371 или внешний human consent.
+
+Собственный установленный skill опубликован отдельным635c9f6 черезPR35:7CI SUCCESS, merge a18695b. Полный WP scope сохранён. Независимое ревью draft c382-bounds-contract.md выявило восемь требований до реализации: completeness person barriers, successor activation, current-negotiation exception, association freshness, общий порядок замков, manual retention, calendar_closed predicate и точные DDL/DTO. Это проверка проекта, не runtime acceptance. Вопрос владельцу о retention остаётся открытым. Current inventory branch ещёне опубликован; gates/CI/main проверяются перед поставкой. Production не затронут.
+
+## 2026-10-03 · Локальная приёмка 380+381 после исправления фикстуры
+
+Финальный полный `init.sh` прошёл: фронт 112 файлов / 2105 тестов, бэкенд 146 файлов / 3135 тестов, без пропусков, типы, линт всего дерева и обе сборки. Всего 2105 + 3135 = 5240 тестов. Источник: `full-codex381-final.log`, exit=0, `TZ_FULL_PASSED tag=codex381-final`. Все680 исходных файлов совпали с manifest до прогона; read-only oracle `verify-evidence.mjs full` подтвердил текущий snapshot. Прежние failed full сохранены и не объявлены успешными. Удалённый CI и merge inventory ещё ожидаются; локальная приёмка не завершает WP00–WP16.
 ## 2026-10-03 · Собственный skill tili-orchestrate
 
 По поручению пользователя создан и установлен tili-orchestrate на основе harnessmachine/codex-orchestrate@e44c06e5738a5ea9007ff01ab894df97e89217e8. MIT LICENSE сохранён; root ведёт весь WP scope, ограничивает владение файлов и последовательно выполняет общие DB/Redis/browser/GitHub операции. Skill не даёт разрешения production и не обещает отсутствие всех ошибок.
 
 Штатный quick_validate: Skill is valid!, exit 0. Реальная offline fixture: отдельные source/test агенты и свежий read-only reviewer; root повторил 106 node:test cases, 106 passed, 0 skipped. Наблюдаемые команды и границы — .agents/skills/tili-orchestrate/README.md; локальная fixture .unlazy/tili-orchestrate-forward-20261003/RESULT.md. Скопированы и проверены SHA-256 пяти установленных файлов. Поставка этой фичи выполняется отдельно от незавершённого инвентаря380/381; CI и merge ещё не подтверждены этой записью.
+
+## 2026-10-03 · PR36: исправление подтверждённого отказа CI
+
+Inventory опубликован draft PR36 с head ed9b322. Шесть проверок прошли, один backend job111140690199 упал на users_phone_key в orderTermsApi.actor():46 до проверки vendor_blocked; отдельный backend job111140625307 того же head прошёл. Merge не выполнялся. Новый test-only helper атомарно allocates synthetic phone с bounded8 retries, сохраняя security assertions и добавляя UUID в cleanup только после успешного INSERT.68/68 standalone и scoped ESLint/tsc прошли; новый полный init выполняется по680-file manifest SHA894d136698a2b1f51a8c6732523d0ef8d06cea52cbb1be663b9c252fdc48db03. Прежний full остаётся успешным checkpoint прежнего source, не нового файла. Источники: ERR-0434, REPORT-INVENTORY и сохранённый CI log.
+
+## 2026-10-03 · PR36: новый local fixture failure и точный снимок
+
+Head9cba47f получил7CI SUCCESS (pr36-ci-0627.json), но local full codex381-ci-fixture отдельно отказал на users_phone_key в orderApi.actor до membership-after-wait assertion;3134passed/1failed, ERR-0435. Узко исправлена только атомарная allocation synthetic actor, assertions/cleanup/production сохранены; root targeted62/62 и ESLint/tsc прошли, независимый source reviewer подтвердил equality вне helper. Новые680 source hashes зафиксированы (manifest SHA4238a02adeb4226912f5beff311e10eeb731f3e8ca8444fe2b796bdc4c1815b3), full codex381-order-fixture active. Следующий head требует своего CI/full перед merge. Неуспехи и прежний успешный checkpoint сохранены; полный WP scope продолжает действовать.

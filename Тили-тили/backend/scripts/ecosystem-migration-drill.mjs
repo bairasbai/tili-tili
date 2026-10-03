@@ -17,10 +17,14 @@ const DATABASES = [
   'tili_ecosystem_migration_drill14_20260930_test',
   'tili_ecosystem_migration_drill15_20260930_test',
   'tili_ecosystem_migration_drill16_20260930_test',
+  'tili_ecosystem_migration_drill17_20260930_test',
+  'tili_ecosystem_migration_drill18_20260930_test',
+  'tili_ecosystem_migration_drill19_20260930_test',
+  'tili_ecosystem_migration_drill20_20260930_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
-const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, LATEST = 1763700000000
+const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, LATEST = 1763810000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend']
@@ -46,6 +50,8 @@ const expectedOwn = [
   '1763670000000_commitment_trigger_records', '1763680000000_commitment_history_cascade',
   '1763690000000_allocation_release_proof',
   '1763700000000_event_rsvp_deadlines',
+  '1763800000000_legacy_calendar_sources',
+  '1763810000000_legacy_calendar_day_recovery',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -193,7 +199,7 @@ async function assertNoBusinessData() {
   for (const table of ['notification_push_deliveries', 'deal_orders', 'order_assignments', 'order_parts', 'event_guest_participation', 'deal_terms_versions', 'deal_terms_receipts',
     'vendor_staff_members', 'vendor_staff_duties', 'vendor_resources', 'vendor_availability_policy', 'resource_capacity_windows', 'deal_resource_plan_versions',
     'resource_conflict_keys', 'deal_resource_commitments', 'deal_resource_commitment_versions', 'resource_allocations', 'deal_resource_commitment_members',
-    'event_rsvp_requests']) {
+    'event_rsvp_requests', 'legacy_calendar_sources', 'legacy_calendar_versions', 'legacy_calendar_version_holders', 'legacy_calendar_heads']) {
     assert.equal((await db.query(`select count(*)::int as count from public.${quote(table)}`)).rows[0].count, 0)
   }
 }
@@ -264,7 +270,7 @@ async function expectAtomicRefusal(message, target = FIRST, exactFile = false) {
 }
 
 let termsNegativeCount = 0, atomicDownCount = 0
-let staffNegativeCount = 0, resourceNegativeCount = 0, invitationNegativeCount = 0, planNegativeCount = 0, commitmentNegativeCount = 0, t012NegativeCount = 0
+let staffNegativeCount = 0, resourceNegativeCount = 0, invitationNegativeCount = 0, planNegativeCount = 0, commitmentNegativeCount = 0, t012NegativeCount = 0, inventoryNegativeCount = 0
 async function expectTermsSqlRefusal(label, sql, values, code, message) {
   await expectSqlRefusal('terms', label, sql, values, code, message)
   termsNegativeCount++
@@ -288,6 +294,7 @@ async function expectSqlRefusal(scope, label, sql, values, code, message, atComm
   if (scope === 'plan') planNegativeCount++
   if (scope === 'commitment') commitmentNegativeCount++
   if (scope === 't012') t012NegativeCount++
+  if (scope === 'inventory') inventoryNegativeCount++
   console.log(`Expected ${scope} SQL refusal: ${label} (${code}${atCommit ? ', actual deferred commit' : ''})`)
 }
 
@@ -1027,6 +1034,271 @@ async function eventRsvpDeadlineFixture(f) {
   console.log(`T012 checks passed: ${t012NegativeCount} actual SQL refusals plus one guarded CLI down; schema-level deadline/source/request invariants hold — synthetic fixture only, not a real guest answer or couple decision`)
 }
 
+/** Actual populated 370 -> 380 upgrade; independent SQL fixtures and refusals.
+ * All captured facts are synthetic history, never consent or finite occupancy. */
+async function inventoryForwardFixture(f) {
+  assert.equal((await db.query("select to_regclass('legacy_calendar_sources') t")).rows[0].t, null)
+  const foreign = await fixture(false, '+1555000930')
+  const extra = {}
+  for (const [label, state] of [['shared', 'booked'], ['doneOther', 'done'], ['doneLedgerless', 'done'], ['negotiation', 'negotiating'], ['cancelled', 'cancelled']]) {
+    const slot = randomUUID(), deal = randomUUID(); extra[label] = deal
+    await write("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo',$3)", [slot, f.wedding, `Synthetic inventory ${label}`])
+    await write(`insert into deals(id,wedding_id,slot_id,vendor_id,state,price,negotiating_until)
+      values($1,$2,$3,$4,$5,987654321,case when $5='negotiating' then clock_timestamp()+interval '10 days' else null end)`, [deal, f.wedding, slot, f.vendor, state])
+    await write('update slots set deal_id=$2 where id=$1', [slot, deal])
+  }
+  await write(`insert into vendor_busy_dates(vendor_id,date,source,deal_id,created_at) values
+    ($1,'2031-02-02','deal',$2,'2026-10-01T01:02:03.123456Z'),
+    ($1,'2031-02-03','manual',null,'2026-10-01T01:02:03.234567Z'),
+    ($1,'2031-02-04','deal',null,'2026-10-01T01:02:03.345678Z'),
+    ($1,'2031-02-05','deal',$3,'2026-10-01T01:02:03.456789Z'),
+    ($1,'2031-02-06','deal',$4,'2026-10-01T01:02:03.567890Z')`, [f.vendor, extra.doneOther, foreign.deal, extra.cancelled])
+  const before = await snapshot(), layout = {}
+  for (const table of Object.keys(before.data)) layout[table] = await columns(table)
+  const expectedDays = (await db.query(`select vendor_id,date::text,case when source='manual' then 'manual_day'
+    when deal_id is null then 'orphan_day' else 'app_day' end kind from vendor_busy_dates order by vendor_id,date`)).rows
+  const expectedRoots = (await db.query(`select d.id,case when d.state='negotiating' then 'live_negotiation' else 'app_root' end kind
+    from deals d where d.vendor_id is not null and (d.state='negotiating' or (d.state in ('booked','paid_deposit','done')
+      and not exists(select 1 from deal_resource_commitments c where c.deal_id=d.id and c.revision>0))) order by d.id`)).rows
+  await migrate('up', PRE_RECOVERY)
+  for (const [table, data] of Object.entries(before.data)) {
+    if (table !== 'pgmigrations') assert.deepEqual(await rows(table, layout[table]), data, `380 must preserve every inherited ${table} value`)
+  }
+  assert.deepEqual((await db.query(`select b.vendor_id,b.date::text,s.kind from vendor_busy_dates b
+    join legacy_calendar_sources s on s.day_id=b.id order by b.vendor_id,b.date`)).rows, expectedDays, 'Backfill must discover every day exactly once with its actual class')
+  assert.deepEqual((await db.query('select root_deal_id as id,kind from legacy_calendar_sources where root_deal_id is not null order by root_deal_id')).rows,
+    expectedRoots, 'Backfill must include all ledgerless committed roots and negotiations without inventing a reservation')
+  const evidence = (await db.query(`select s.id,s.kind,s.origin,v.id as version,v.canonical,v.digest,h.revision::text,
+    v.capture_kind,v.captured_by,legacy_calendar_inventory_material(s)::text current_material,
+    (select count(*)::int from legacy_calendar_version_holders vh where vh.version_id=v.id) holder_count
+    from legacy_calendar_sources s join legacy_calendar_heads h on h.source_id=s.id
+    join legacy_calendar_versions v on v.id=h.current_version_id order by s.id`)).rows
+  assert.equal(evidence.length, expectedDays.length + expectedRoots.length)
+  for (const row of evidence) {
+    assert.equal(row.revision, '1'); assert.equal(row.capture_kind, 'migration_backfill'); assert.equal(row.captured_by, null)
+    assert.equal(row.canonical, row.current_material)
+    assert.equal(row.digest, createHash('sha256').update(row.canonical, 'utf8').digest('hex'))
+    assert.equal(row.holder_count, JSON.parse(row.canonical).holders.length)
+  }
+  const shared = (await db.query(`select s.id,v.id as version,v.canonical,v.digest,b.id as day_id,b.source_revision::text
+    from legacy_calendar_sources s join vendor_busy_dates b on b.id=s.day_id
+    join legacy_calendar_heads h on h.source_id=s.id join legacy_calendar_versions v on v.id=h.current_version_id
+    where b.vendor_id=$1 and b.date='2027-06-14' and s.kind='app_day'`, [f.vendor])).rows[0]
+  assert(shared)
+  const group = JSON.parse(shared.canonical).holders.map(h => h.dealId)
+  assert(group.includes(f.deal)); assert(group.includes(extra.shared)); assert(group.includes(extra.doneLedgerless))
+  assert(!group.includes(extra.doneOther), 'Done root holding its own other day is excluded from the shared day')
+  assert(group.every(id => ![extra.negotiation, extra.cancelled, foreign.deal].includes(id)))
+  const classes = (await db.query(`select s.kind,b.date::text,legacy_calendar_inventory_material(s) mat
+    from legacy_calendar_sources s join vendor_busy_dates b on b.id=s.day_id
+    where b.vendor_id=$1 and b.date between '2031-02-03' and '2031-02-06' order by b.date`, [f.vendor])).rows
+  assert.deepEqual(classes.map(r => [r.kind, r.mat.completeness, r.mat.reason, r.mat.holders.length]),
+    [['manual_day', 'complete', null, 0], ['orphan_day', 'unknown', 'orphan', 0], ['app_day', 'unknown', 'mixed_scope', 0], ['app_day', 'unknown', 'mixed_scope', 0]])
+  const bytes = await rows('legacy_calendar_versions')
+  await write('begin')
+  try {
+    await write("set local timezone='Pacific/Auckland'"); await write("set local datestyle='SQL, DMY'")
+    for (const row of evidence) assert.equal((await db.query('select legacy_calendar_inventory_material(s)::text canonical from legacy_calendar_sources s where id=$1', [row.id])).rows[0].canonical, row.canonical)
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await rows('legacy_calendar_versions'), bytes, 'Session formatting cannot alter canonical bytes')
+  const repeated = await snapshot(); await migrate('up', PRE_RECOVERY)
+  assert.deepEqual(await snapshot(), repeated, 'Populated repeat must be an exact no-op')
+  const unchanged = await snapshot()
+  assert.deepEqual((await write("select * from legacy_calendar_append_version($1,$2,'owner_capture')", [shared.id, f.vendorOwner])).rows[0],
+    { version_id: shared.version, revision: '1', created: false })
+  assert.deepEqual(await snapshot(), unchanged, 'Identical capture neither adds evidence nor changes a head')
+
+  const nextVersion = `insert into legacy_calendar_versions(id,source_id,revision,previous_version_id,canonical,digest,capture_kind,captured_by)
+    select $1,s.id,h.revision+1,h.current_version_id,m.canonical,encode(sha256(convert_to(m.canonical,'UTF8')),'hex'),'owner_capture',$3
+    from legacy_calendar_sources s join legacy_calendar_heads h on h.source_id=s.id
+    cross join lateral (select legacy_calendar_inventory_material(s)::text canonical) m where s.id=$2`
+  const refuse = (label, sql, values, message, atCommit = false) => expectSqlRefusal('inventory', label, sql, values, '23514', message, atCommit)
+  await refuse('immutable source', 'update legacy_calendar_sources set discovered_by=discovered_by where id=$1', [shared.id], 'source is immutable')
+  await refuse('history cannot be deleted while parent lives', 'delete from legacy_calendar_sources where id=$1', [shared.id], 'can only be erased')
+  await refuse('source must match actual origin', `insert into legacy_calendar_sources(kind,vendor_id,wedding_id,day_id,origin,discovered_by)
+    values('app_day',$1,$2,$3,'{}','writer')`, [f.vendor, f.wedding, shared.day_id], 'actual operational origin')
+  for (const [kind, state] of [['app_root', 'booked'], ['live_negotiation', 'negotiating']]) {
+    await refuse(`${kind} cannot attach an external root to a company`, async () => {
+      const slot = randomUUID(), deal = randomUUID(), source = randomUUID()
+      await write("insert into slots(id,wedding_id,category_id,label) values($1,$2,'host','Synthetic external inventory refusal')", [slot, f.wedding])
+      await write("insert into deals(id,wedding_id,slot_id,external_name,state,price) values($1,$2,$3,'Synthetic external contractor',$4,12345)", [deal, f.wedding, slot, state])
+      await write(`insert into legacy_calendar_sources(id,kind,vendor_id,wedding_id,root_deal_id,origin,discovered_by)
+        values($1,$2,$3,$4,$5,legacy_calendar_origin($2,null,$5),'writer')`, [source, kind, f.vendor, f.wedding, deal])
+      await write('insert into legacy_calendar_heads(source_id) values($1)', [source])
+    }, [], 'actual operational origin')
+  }
+  await refuse('exact next version', `insert into legacy_calendar_versions(source_id,revision,canonical,digest,capture_kind)
+    values($1,9,'{}',encode(sha256(convert_to('{}','UTF8')),'hex'),'owner_capture')`, [shared.id], 'next exact head revision')
+  await refuse('canonical must equal current material', `insert into legacy_calendar_versions(source_id,revision,canonical,digest,capture_kind)
+    values($1,2,'{}',encode(sha256(convert_to('{}','UTF8')),'hex'),'owner_capture')`, [shared.id], 'equal current material')
+  await refuse('capture author is current owner', nextVersion, [randomUUID(), shared.id, f.owner], 'current company owner')
+  await refuse('immutable captured evidence', 'update legacy_calendar_versions set canonical=canonical where id=$1', [shared.version], 'evidence is immutable')
+  await refuse('holder equals captured material', `insert into legacy_calendar_version_holders(source_id,version_id,wedding_id,deal_id,snapshot,fingerprint)
+    values($1,$2,$3,$4,'{}',encode(sha256(convert_to('{}','UTF8')),'hex'))`, [shared.id, shared.version, f.wedding, randomUUID()], 'match captured material')
+  await refuse('immutable holder', 'update legacy_calendar_version_holders set snapshot=snapshot where version_id=$1', [shared.version], 'evidence is immutable')
+  await refuse('head cannot skip revisions', 'update legacy_calendar_heads set revision=99 where source_id=$1', [shared.id], 'advance by one exact revision')
+  await refuse('orphan subsequent version fails COMMIT', nextVersion, [randomUUID(), shared.id, f.vendorOwner], 'orphan inventory version', true)
+  await refuse('day identity is immutable', "update vendor_busy_dates set date=date+1 where id=$1", [shared.day_id], 'day identity is immutable')
+  await refuse('revision is maintained by database', 'update vendor_busy_dates set source_revision=99 where id=$1', [shared.day_id], 'revision is maintained')
+  await refuse('old operational identity cannot be reused', "insert into vendor_busy_dates(id,vendor_id,date,source) values($1,$2,'2031-02-07','manual')", [shared.day_id, f.vendor], 'identity cannot be reused')
+  await refuse('first orphan version at zero head fails COMMIT', async () => {
+    const day = (await write("insert into vendor_busy_dates(vendor_id,date,source) values($1,'2031-02-07','manual') returning id", [f.vendor])).rows[0].id
+    const source = (await db.query('select id from legacy_calendar_sources where day_id=$1', [day])).rows[0].id
+    await write(nextVersion, [randomUUID(), source, f.vendorOwner])
+  }, [], 'orphan inventory version', true)
+  await refuse('incomplete intermediate version fails COMMIT', async () => {
+    const next = randomUUID()
+    await write(nextVersion, [next, shared.id, f.vendorOwner])
+    await write('update legacy_calendar_heads set revision=2,current_version_id=$2 where source_id=$1', [shared.id, next])
+    await write('update deals set price=price+1 where id=$1', [f.deal])
+    await write("select * from legacy_calendar_append_version($1,$2,'owner_capture')", [shared.id, f.vendorOwner])
+  }, [], 'version holders incomplete', true)
+  assert.equal(inventoryNegativeCount, 18, 'All independent inventory SQL refusals must execute')
+  await expectAtomicRefusal('legacy calendar inventory evidence exists; use a preserving forward migration', '1763800000000_legacy_calendar_sources', true)
+
+  // Runtime identity/revision and lifecycle probes stay rollback-contained.
+  const lifecycleBefore = await snapshot()
+  await write('begin')
+  try {
+    const dayBefore = (await db.query('select * from vendor_busy_dates where id=$1', [shared.day_id])).rows[0]
+    await write('update vendor_busy_dates set deal_id=deal_id where id=$1', [shared.day_id])
+    assert.deepEqual((await db.query('select * from vendor_busy_dates where id=$1', [shared.day_id])).rows[0], dayBefore)
+    await write('update vendor_busy_dates set deal_id=$2 where id=$1', [shared.day_id, extra.shared])
+    assert.equal((await db.query('select source_revision::text r from vendor_busy_dates where id=$1', [shared.day_id])).rows[0].r, '2')
+    await write('delete from vendor_busy_dates where id=$1', [shared.day_id])
+    const replacement = (await write("insert into vendor_busy_dates(vendor_id,date,source,deal_id) values($1,'2027-06-14','deal',$2) returning id", [f.vendor, f.deal])).rows[0].id
+    assert.notEqual(replacement, shared.day_id)
+    assert.equal((await db.query('select canonical from legacy_calendar_versions where id=$1', [shared.version])).rows[0].canonical, shared.canonical)
+    assert.equal((await db.query('select legacy_calendar_present(s) present from legacy_calendar_sources s where id=$1', [shared.id])).rows[0].present, false)
+    assert.equal((await db.query('select h.revision::text r from legacy_calendar_heads h join legacy_calendar_sources s on s.id=h.source_id where s.day_id=$1', [replacement])).rows[0].r, '0')
+    // Whole-wedding cascade may erase its app history, retaining the company's
+    // manual/orphan histories and all other weddings' immutable snapshots.
+    const retainedSources = (await db.query('select id from legacy_calendar_sources where wedding_id is distinct from $1', [f.wedding])).rows.map(r => r.id)
+    await write('delete from weddings where id=$1', [f.wedding])
+    assert.equal((await db.query('select 1 from legacy_calendar_sources where wedding_id=$1', [f.wedding])).rowCount, 0)
+    assert.equal((await db.query('select 1 from legacy_calendar_sources where id=any($1::uuid[])', [retainedSources])).rowCount, retainedSources.length)
+    assert.equal((await db.query('select 1 from legacy_calendar_sources where company_id=$1 and kind in (\'manual_day\',\'orphan_day\')', [f.vendor])).rowCount > 0, true)
+    await write('set constraints all immediate')
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), lifecycleBefore, 'Rollback-contained lifecycle must preserve every original fact')
+  console.log(`Inventory checks passed: ${inventoryNegativeCount} actual SQL refusals plus one exact guarded CLI down; complete backfill/shared holders/unknown sources/canonical bytes/runtime identity/cascades preserved`)
+  await recoveryForwardFixture(f, foreign)
+}
+
+async function recoveryForwardFixture(f, foreign) {
+  // Reproduce a real populated 380 gap before applying the preserving fix.
+  // This is synthetic history, not permission to infer bounds or consent.
+  const prior = await fixture(false, '+1555000931')
+  const day = (await db.query('select * from vendor_busy_dates where vendor_id=$1', [prior.vendor])).rows[0]
+  const original = (await db.query("select id from legacy_calendar_sources where day_id=$1 and kind='app_day'", [day.id])).rows[0]
+  await write("select * from legacy_calendar_append_version($1,$2,'owner_capture')", [original.id, prior.vendorOwner])
+  await write('update vendor_busy_dates set deal_id=$2 where id=$1', [day.id, foreign.deal])
+  await write('delete from weddings where id=$1', [prior.wedding])
+  assert.equal((await db.query('select 1 from legacy_calendar_sources where day_id=$1', [day.id])).rowCount, 0, '380 gap must exist before the real forward migration')
+  const operational = await rows('vendor_busy_dates'), before = await snapshot()
+  await migrate('up', LATEST)
+  const after = await snapshot()
+  for (const [table, data] of Object.entries(before.data)) {
+    if (table === 'pgmigrations') continue
+    if (['legacy_calendar_sources', 'legacy_calendar_heads'].includes(table)) {
+      assert.equal(after.data[table].length, data.length + 1, 'Only the missing day source/head can be appended')
+      for (const old of data) assert(after.data[table].some(current => JSON.stringify(current) === JSON.stringify(old)), `381 changed an existing ${table} row`)
+    } else assert.deepEqual(after.data[table], data, `381 changed inherited ${table} facts`)
+  }
+  const recovered = (await db.query(`select s.*,h.revision::text,h.current_version_id,legacy_calendar_inventory_material(s) material
+    from legacy_calendar_sources s join legacy_calendar_heads h on h.source_id=s.id where s.day_id=$1 and s.kind='app_day'`, [day.id])).rows[0]
+  assert(recovered); assert.notEqual(recovered.id, original.id)
+  assert.equal(recovered.wedding_id, foreign.wedding); assert.equal(recovered.vendor_id, prior.vendor)
+  assert.equal(recovered.company_id, null); assert.equal(recovered.discovered_by, 'writer')
+  assert.equal(recovered.revision, '0'); assert.equal(recovered.current_version_id, null)
+  assert.equal(recovered.material.completeness, 'unknown'); assert.equal(recovered.material.reason, 'mixed_scope')
+  assert.deepEqual(recovered.material.holders, [])
+  assert.deepEqual(await rows('vendor_busy_dates'), operational, 'Recovery cannot change the operational day or pointer revision')
+  const repeated = await snapshot(); await migrate('up', LATEST)
+  assert.deepEqual(await snapshot(), repeated, 'Repeated recovery up must be an exact no-op')
+  await expectAtomicRefusal('legacy calendar inventory evidence exists; use a preserving forward migration', '1763810000000_legacy_calendar_day_recovery', true)
+
+  // Exercise the installed trigger in both cascade directions while retaining
+  // every prior row, immutable byte and schema/journal after ROLLBACK.
+  const lifecycle = await snapshot()
+  await write('begin')
+  try {
+    const source = (await db.query("select s.id,b.id as day_id from legacy_calendar_sources s join vendor_busy_dates b on b.id=s.day_id where s.kind='app_day' and s.wedding_id=$1 and b.deal_id=$2", [f.wedding, f.deal])).rows[0]
+    assert(source)
+    await write('update vendor_busy_dates set deal_id=$2 where id=$1', [source.day_id, foreign.deal])
+    const retainedDay = (await db.query('select * from vendor_busy_dates where id=$1', [source.day_id])).rows[0]
+    await write('delete from weddings where id=$1', [f.wedding])
+    assert.deepEqual((await db.query('select * from vendor_busy_dates where id=$1', [source.day_id])).rows[0], retainedDay)
+    const next = (await db.query("select s.id,s.wedding_id,h.revision::text from legacy_calendar_sources s join legacy_calendar_heads h on h.source_id=s.id where s.day_id=$1 and s.kind='app_day'", [source.day_id])).rows[0]
+    assert(next); assert.notEqual(next.id, source.id); assert.equal(next.wedding_id, foreign.wedding); assert.equal(next.revision, '0')
+    assert.equal((await db.query('select 1 from legacy_calendar_sources where wedding_id=$1', [f.wedding])).rowCount, 0)
+    await write('delete from weddings where id=$1', [foreign.wedding])
+    assert.equal((await db.query('select deal_id from vendor_busy_dates where id=$1', [source.day_id])).rows[0].deal_id, null)
+    assert.equal((await db.query("select 1 from legacy_calendar_sources where day_id=$1 and kind='orphan_day' and company_id=$2", [source.day_id, f.vendor])).rowCount, 1)
+    await write('set constraints all immediate')
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), lifecycle, 'Recovery and subsequent foreign wedding cascade must be rollback-contained')
+  await recoveryManualRace(foreign, 'manual-first', '+1555000932')
+  await recoveryManualRace(foreign, 'cascade-first', '+1555000933')
+  console.log('Recovery checks passed: actual populated 380 gap repaired with new rev0 identity; every inherited row/history preserved; repeat no-op; installed cascade lifecycle and exact guarded 381 down verified')
+}
+
+async function recoveryManualRace(foreign, order, phone) {
+  const own = await fixture(false, phone)
+  const beforeSource = (await db.query("select id from legacy_calendar_sources where wedding_id=$1 and kind='app_day'", [own.wedding])).rows[0]
+  await write('update vendor_busy_dates set deal_id=$2 where vendor_id=$1', [own.vendor, foreign.deal])
+  const day = (await db.query('select * from vendor_busy_dates where vendor_id=$1', [own.vendor])).rows[0]
+  const manual = new pg.Client({ connectionString: databaseUrl, statement_timeout: 9000, connectionTimeoutMillis: 5000 })
+  const cascade = new pg.Client({ connectionString: databaseUrl, statement_timeout: 9000, connectionTimeoutMillis: 5000 })
+  let completion, manualResult, cascadeResult
+  try {
+    await manual.connect(); await cascade.connect()
+    const manualPid = (await manual.query('select pg_backend_pid() pid')).rows[0].pid
+    const cascadePid = (await cascade.query('select pg_backend_pid() pid')).rows[0].pid
+    await manual.query('begin'); await cascade.query('begin')
+    await manual.query('select id from users where id=$1 for share', [own.vendorOwner])
+    let held, waiting, pending
+    if (order === 'manual-first') {
+      await manual.query('select id from vendors where id=$1 for update', [own.vendor])
+      pending = cascade.query('delete from weddings where id=$1', [own.wedding])
+      held = manualPid; waiting = cascadePid
+    } else {
+      cascadeResult = await cascade.query('delete from weddings where id=$1', [own.wedding])
+      pending = manual.query('select id from vendors where id=$1 for update', [own.vendor])
+      held = cascadePid; waiting = manualPid
+    }
+    completion = Promise.allSettled([pending])
+    const deadline = Date.now() + 5000
+    let witness
+    while (Date.now() < deadline) {
+      const row = (await db.query('select pg_blocking_pids(pid) blockers,query from pg_stat_activity where pid=$1', [waiting])).rows[0]
+      if (row?.blockers.includes(held)) { witness = row; break }
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    assert(witness, `${order}: require an actual PostgreSQL wait, not a timing guess`)
+    if (order === 'manual-first') {
+      manualResult = await manual.query("insert into vendor_busy_dates(vendor_id,date,source) values($1,$2,'manual') on conflict(vendor_id,date) do nothing", [own.vendor, day.date])
+      await manual.query('commit')
+      cascadeResult = await pending; await cascade.query('commit')
+    } else {
+      await cascade.query('commit'); await pending
+      manualResult = await manual.query("insert into vendor_busy_dates(vendor_id,date,source) values($1,$2,'manual') on conflict(vendor_id,date) do nothing", [own.vendor, day.date])
+      await manual.query('commit')
+    }
+    assert.equal(manualResult.rowCount, 0); assert.equal(cascadeResult.rowCount, 1)
+    assert.deepEqual((await db.query('select * from vendor_busy_dates where id=$1', [day.id])).rows[0], day)
+    const recovered = (await db.query(`select s.id,s.wedding_id,h.revision::text,legacy_calendar_inventory_material(s) material
+      from legacy_calendar_sources s join legacy_calendar_heads h on h.source_id=s.id where s.day_id=$1 and s.kind='app_day'`, [day.id])).rows[0]
+    assert(recovered); assert.notEqual(recovered.id, beforeSource.id); assert.equal(recovered.wedding_id, foreign.wedding)
+    assert.equal(recovered.revision, '0'); assert.equal(recovered.material.reason, 'mixed_scope'); assert.deepEqual(recovered.material.holders, [])
+    console.log(`RECOVERY_MANUAL_CASCADE_PG_WAIT order=${order} holder=${held} waiter=${waiting} bothCommitted=true`)
+  } finally {
+    await Promise.allSettled([manual.query('rollback'), cascade.query('rollback')])
+    if (completion) await completion
+    await manual.end(); await cascade.end()
+  }
+}
+
 try {
   await safety()
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
@@ -1189,7 +1461,7 @@ try {
   await write('update resource_capacity_windows set used=3 where id=$1', [inheritedWindow[0].id])
   const beforeCommitments = await snapshot(), commitmentLayout = {}
   for (const table of Object.keys(beforeCommitments.data)) commitmentLayout[table] = await columns(table)
-  await migrate('up', LATEST)
+  await migrate('up', PRE_INVENTORY)
   for (const [table, data] of Object.entries(beforeCommitments.data)) {
     if (table !== 'pgmigrations') assert.deepEqual(await rows(table, commitmentLayout[table]), data, `361 -> 369 must retain every prior ${table} value`)
   }
@@ -1219,7 +1491,7 @@ try {
   ]) await expectAtomicRefusal(message, name, true)
   assert.equal(atomicDownCount, 16, 'All eleven retained and five independently selected actual CLI guards must execute')
   const withCommitments = await snapshot()
-  await migrate('up', LATEST)
+  await migrate('up', PRE_INVENTORY)
   assert.deepEqual(await snapshot(), withCommitments, 'Repeated populated latest up preserves private/terms/ledger/version/member/counter/history and full schema/journal')
   const preservedOriginal = await legacySnapshot(layout)
   for (const [table, originalRows] of Object.entries(inherited)) {
@@ -1228,6 +1500,7 @@ try {
   }
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000')
   await eventRsvpDeadlineFixture(f)
+  await inventoryForwardFixture(f)
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
