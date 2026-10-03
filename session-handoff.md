@@ -8,7 +8,7 @@ GitHub: перед работой `node C:/Users/Bayra/.claude/hooks/github-api-
 
 ## Репозитории и опубликованный оркестратор
 
-Рабочий clone: C:/Тили-тили/ecosystem-local-20260930, ветка `codex/030-380-inventory-completion`, создана из актуального Claude `de414fa`. Исходный checkout C:/Тили-тили/Тили-тили_код_и_документация на `bde3e40` сохранён. Последний fetch: Claude всё ещё `de414fa`, main `a18695b5f8f8849029d0112c2abc606c9c94ba9e`. Inventory-ветка пока не интегрировала main35. PR32 Claude остаётся draft/open; новый inventory PR ещё не создан.
+Рабочий clone: C:/Тили-тили/ecosystem-local-20260930, ветка `codex/030-380-inventory-completion`, создана из актуального Claude `de414fa`. Исходный checkout C:/Тили-тили/Тили-тили_код_и_документация на `bde3e40` сохранён. Последний fetch: Claude всё ещё `de414fa`, main `a18695b5f8f8849029d0112c2abc606c9c94ba9e`. Main35 интегрирован коммитом `e8e0432`; конфликт JOURNAL разрешён сохранением обеих записей. PR32 Claude остаётся draft/open; новый inventory PR ещё не создан.
 
 Собственный skill `tili-orchestrate` основан на harnessmachine/codex-orchestrate@`e44c06e5738a5ea9007ff01ab894df97e89217e8`, MIT LICENSE сохранена. Пять файлов установлены в C:/Users/Bayra/.codex/skills/tili-orchestrate, при установке сверены SHA256. Source/test agents и свежий reviewer выполнили реальную offline fixture; root повторил106 тестов без пропусков. DB/browser/delivery этой fixture не покрыты.
 
@@ -47,8 +47,8 @@ DB inventory/full/drill17–20 сохранены. Старые inventory баз
 ## Дальнейшие действия
 
 1. Gates `.unlazy/codex-inventory-20261003/GATES.md`: --status, --approve точных read-only oracles; G5 остаётся pending до документации/feature delivery/green exact-head CI/main. Локальный full подтверждён, удалённый CI пока нет.
-2. Сделать отдельный test-fixture commit и inventory feature commit только по явным paths. Product source после successful full не менять без новых проверок. Generated вручную не редактировать.
-3. Перед merge main35 сохранить собственный untracked `.agents/skills/tili-orchestrate` в проверенный workspace backup: incoming tracked package мешает merge. JOURNAL сохраняет Claude, inventory root и skill entries. Не использовать force/global safe.directory и не трогать исходный checkout.
+2. Отдельные коммиты уже созданы: fixture `0d7eef4`, inventory feature `a009b5b`. После интеграции main повторная проверка source manifest прошла. Product source после successful full не менять без новых проверок. Generated вручную не редактировать.
+3. Собственный untracked skill сохранён до merge в `.unlazy/codex-inventory-20261003/tili-orchestrate-before-main` с hash manifest. В ветке теперь tracked package из main35; JOURNAL сохраняет обе истории. Не использовать force/global safe.directory и не трогать исходный checkout.
 4. Push своей ветки, create/attach draft PR, прочитать CI редко и последовательно, ready/merge только с успешными проверками текущего head. PR32 Claude сохраняется. Затем финальные docs/gates и продолжение371–374; goal не завершать на этом этапе.
 
 `c382-bounds-contract.md` — draft,382 ещё не reserved/implemented. Независимое ревью выявило восемь требований до реализации; bounded doc agent уточняет completeness, successor membership, negotiation exception, association freshness, locks, retention, closure и точные DDL/DTO. Полный сценарный объём сохранён; ни один finite effect не активировать без всех нужных proofs/barriers.
