@@ -1,0 +1,7 @@
+interface:
+  display_name: "Tili Orchestrate"
+  short_description: "Distribute tasks and verify current evidence"
+  default_prompt: "Use $tili-orchestrate to distribute this repository task among agents, preserve every requirement, and verify the integrated result."
+
+policy:
+  allow_implicit_invocation: true
