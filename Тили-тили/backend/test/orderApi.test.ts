@@ -42,10 +42,16 @@ describe.skipIf(!DB)('order HTTP contract, current access and transactional repl
     } finally { await app.close() }
   })
   async function actor(label: string): Promise<Actor> {
-    const id = randomUUID(), session = randomUUID(), consent = randomUUID(); users.push(id)
+    const session = randomUUID(), consent = randomUUID()
+    let id: string | undefined
     // Synthetic auth fixtures exercise real guards. These rows are not proof
     // that a real human agreed to a contract, program or privacy policy.
-    await app.db!.query('insert into users(id,phone,name) values($1,$2,$3)', [id, '+79' + randomInt(100_000_000, 999_999_999), `Synthetic order API ${label}`])
+    for (let attempt = 0; attempt < 8; attempt++) {
+      id = (await app.db!.query<{ id: string }>('insert into users(id,phone,name) values($1,$2,$3) on conflict(phone) do nothing returning id', [randomUUID(), '+79' + randomInt(100_000_000, 999_999_999), `Synthetic order API ${label}`])).rows[0]?.id
+      if (id) break
+    }
+    if (!id) throw new Error(`Synthetic order API fixture could not allocate a unique phone after 8 attempts (${label})`)
+    users.push(id)
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [session, id, randomUUID()])
     await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [consent, id, POLICY])
     return { id, session, consent, headers: { authorization: `Bearer ${await signAccessToken(SECRET, { sub: id, sid: session })}` } }

@@ -10,7 +10,7 @@
 - [x] После применения380 независимое ревью и actual PG воспроизвели потерю переназначенного дня. Forward381 сохранила прежние строки102 таблиц inventory/full DB и прошла68 inventory +6 audit53 =74 tests. Новые source/head имеют rev0 без снимков/согласий. Накат требует остановленных писателей.
 - [x] Независимый read-only review381 и текущего preserving drill; подтверждённых дефектов новой миграции не найдено. Actual mixed manual/cascade гонки в обоих порядках затем прошли в drill20.
 - [x] Финальный preserving drill20:24 миграции,128 SQL/19 CLI отказов. Полный init.sh:112/2105 front,146/3135 backend, без пропусков, типы/линт/сборки прошли;680 source hashes совпали. Источники в [отчёте](REPORT-INVENTORY-20261003.md).
-- [ ] Отдельные fixture/feature commits, push, зелёный exact-head CI и merge в main.
+- [ ] Отдельные fixture/feature commits, push, зелёный exact-head CI и merge в main. Terms68/68/order62/62 после узких fixture fixes; full codex381-ci-fixture failed order phone allocation, новый codex381-order-fixture active.7CI SUCCESS относятся к9cba47f, не следующему head.
 - [ ] 371–374 и остальные WP/FR/SC/NFR/A/U: полный объём сохранён в [ведомости продолжения](../../wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md).
 
 Отметки приёмки ниже показывают фактическое состояние каждого пункта. Создание документов — подготовка, не реализация. База `9628d0b22711782dec121fa4596119e5fb7cce6a`. Основные [требования](spec.md), [план](plan.md). Commit/push/main правила: только отдельный локальный feature-коммит root-agent; GitHub, main и production не разрешены.

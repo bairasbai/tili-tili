@@ -14,7 +14,7 @@
 - [x] Проверить модуль/миграции 030/380+381, preserving migration drill и SQL-отказы по [контракту](фичи/030-экосистема-local/c380-inventory-contract.md).
 - [x] Целевые PostgreSQL-тесты, полный init.sh, типы/линт/сборки, анализ замков/каскадов, локальный отчёт.
 - [x] Финальный init.sh после исправления phone fixture: front112/2105, backend146/3135, без пропусков; типы/линт/сборки прошли. Все680 файлов manifest совпали после прогона. Источник: full-codex381-final.log. Прежние failures сохранены.
-- [ ] После PR36 CI: narrow orderTermsApi phone-conflict fix68/68 и scoped checks прошли; новый полный codex381-ci-fixture выполняется. CI нового head/merge ещё pending; старый CI ed9b322 имеет6SUCCESS/1FAILURE.
+- [ ] PR36 head9cba47f получил7CI SUCCESS. Локальный full codex381-ci-fixture упал на другой users_phone_key в orderApi.actor до assertion (ERR-0435). Узкий atomic fixture fix прошёл62/62 и ESLint/tsc; новый full codex381-order-fixture выполняется по680-file manifest. CI следующего head/merge pending.
 - [ ] Отдельная публикация этапа, зелёный CI и merge; затем 371–374 и остальные WP по мастер-плану. Production не разрешён.
 
 Исторические границы ниже не заменяют текущую проверку.
