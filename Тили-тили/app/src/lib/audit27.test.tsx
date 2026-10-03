@@ -273,6 +273,16 @@ describe('D6-06: шим deep-link', () => {
     expect(sub.replaced).toEqual(['https://tili-tili.ru/app/'])
   })
 
+  /* Хвост №6 (2026-10-03): под nginx из deploy/ адрес `/legal/privacy/` давал
+     белую страницу — шим пропускал любой путь со слешем на конце. */
+  it('прямая ссылка со слешем на конце тоже уводит на корень; корень в подпапке — нет', () => {
+    const slash = runShim('/wedding/guests/')
+    expect(slash.replaced).toEqual(['https://tili-tili.ru/'])
+    expect(slash.stored.tt_redirect).toBe('/wedding/guests/')
+    expect(runShim('/app/wedding/').replaced).toEqual(['https://tili-tili.ru/app/'])
+    expect(runShim('/app/').replaced).toEqual([])
+  })
+
   it('корень, index.html и файлы ассетов не трогаются', () => {
     expect(runShim('/').replaced).toEqual([])
     expect(runShim('/index.html').replaced).toEqual([])

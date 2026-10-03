@@ -810,6 +810,7 @@ Object.assign(EN, {
   'Дополнительные мероприятия': 'Additional events',
   'Ответить до': 'Respond by',
   'включительно': 'inclusive',
+  'по московскому времени': 'Moscow time',
   'Срок ответа прошёл': 'The response deadline has passed',
   'Срок ответа не задан': 'No response deadline set',
   'Не приду': 'Not attending',
