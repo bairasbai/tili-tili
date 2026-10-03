@@ -4,6 +4,9 @@ import { UUID_ID, uuidv7 } from '../ids.js'
 import { REFRESH_TTL_SECONDS } from '../auth/tokens.js'
 import { knownTimeZone } from '../notify/quiet.js'
 import { clientIp } from './auth.js'
+import type { Queryable } from '../plugins/db.js'
+import { lockProfileMutation } from '../auth/profile-access.js'
+import { assertSeatingToken } from '../wedding/access.js'
 
 interface ProfileRow {
   id: string
@@ -62,8 +65,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     return app.db
   }
 
-  const loadProfile = async (userId: string) => {
-    const { rows } = await db().query<ProfileRow>(
+  const loadProfile = async (userId: string, client: Queryable = db()) => {
+    const { rows } = await client.query<ProfileRow>(
       `select u.id, u.name, u.phone, u.email, u.is_staff, u.lang, u.tz,
               coalesce(p.tasks, true) as tasks, coalesce(p.chats, true) as chats,
               coalesce(p.deals, true) as deals, coalesce(p.tips, true) as tips,
@@ -216,20 +219,23 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         })
       }
 
+      return db().tx(async (client) => {
+        await lockProfileMutation(client, request)
+
       // coalesce, а не сборка SQL строками: пропущенное поле остаётся как было,
       // явный null стирает значение (правило R-17 — очистка это null, не пропуск).
-      await db().query(
+      await client.query(
         `update users set name = coalesce($2, name), lang = coalesce($3, lang), tz = coalesce($4, tz)
           where id = $1 and deleted_at is null`,
         [userId, body.name ?? null, body.lang ?? null, body.tz ?? null],
       )
 
       if (body.push || body.quietHours || body.urgentIncidents !== undefined) {
-        await db().query(
+        await client.query(
           `insert into notification_prefs (user_id) values ($1) on conflict (user_id) do nothing`,
           [userId],
         )
-        await db().query(
+        await client.query(
           `update notification_prefs
               set tasks = coalesce($2, tasks), chats = coalesce($3, chats),
                   deals = coalesce($4, deals), tips = coalesce($5, tips),
@@ -249,7 +255,11 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         )
       }
 
-      return loadProfile(userId)
+      const profile = await loadProfile(userId, client)
+      // Preferences/unique constraints can wait after access rows were pinned.
+      await assertSeatingToken(request)
+      return profile
+      })
     },
   )
 

@@ -413,7 +413,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         )
       }
 
-      await db().query('insert into notification_prefs (user_id) values ($1) on conflict do nothing', [userId])
+      // This short mutex covers default preferences only, not the whole login.
+      await db().tx(async (client) => {
+        const current = await client.query<{ deleted_at: Date | null }>(
+          'select deleted_at from users where id=$1 for update', [userId],
+        )
+        if (!current.rows[0] || current.rows[0].deleted_at) throw unauthorized('Аккаунт удалён')
+        await client.query('insert into notification_prefs (user_id) values ($1) on conflict do nothing', [userId])
+      })
       await db().query(
         `insert into audit_log (actor_id, action, entity, entity_id) values ($1, 'auth.login', 'user', $1)`,
         [userId],
