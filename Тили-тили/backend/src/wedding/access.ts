@@ -226,11 +226,16 @@ export async function lockGuestReadAccess(client: Queryable, request: FastifyReq
   return lockGuestTeamAccess(client, request, false)
 }
 
-async function lockGuestTeamAccess(client: Queryable, request: FastifyRequest, write: boolean): Promise<Role> {
+/** A first Plan B read may initialize tasks; serialize it without erasing cancelled history. */
+export async function lockPlanBReadAccess(client: Queryable, request: FastifyRequest): Promise<Role> {
+  return lockGuestTeamAccess(client, request, false, true)
+}
+
+async function lockGuestTeamAccess(client: Queryable, request: FastifyRequest, write: boolean, exclusiveWedding = false): Promise<Role> {
   const weddingId = request.member!.weddingId
   const caller = request.caller!
   const wedding = await client.query<{ archived_at: Date | null; cancelled_at: Date | null }>(
-    `select archived_at,cancelled_at from weddings where id=$1 for ${write ? 'update' : 'share'}`, [weddingId],
+    `select archived_at,cancelled_at from weddings where id=$1 for ${write || exclusiveWedding ? 'update' : 'share'}`, [weddingId],
   )
   if (!wedding.rows[0] || wedding.rows[0].archived_at || (write && wedding.rows[0].cancelled_at)) throw notFound('Свадьба не найдена')
   const user = await client.query<{ deleted_at: Date | null }>('select deleted_at from users where id=$1 for share', [caller.userId])

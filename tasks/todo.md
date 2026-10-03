@@ -14,8 +14,8 @@
 - [x] Проверить модуль/миграции 030/380+381, preserving migration drill и SQL-отказы по [контракту](фичи/030-экосистема-local/c380-inventory-contract.md).
 - [x] Целевые PostgreSQL-тесты, полный init.sh, типы/линт/сборки, анализ замков/каскадов, локальный отчёт.
 - [x] Финальный init.sh после исправления phone fixture: front112/2105, backend146/3135, без пропусков; типы/линт/сборки прошли. Все680 файлов manifest совпали после прогона. Источник: full-codex381-final.log. Прежние failures сохранены.
-- [ ] PR36 head9cba47f получил7CI SUCCESS. Локальный full codex381-ci-fixture упал на другой users_phone_key в orderApi.actor до assertion (ERR-0435). Узкий atomic fixture fix прошёл62/62 и ESLint/tsc; новый full codex381-order-fixture выполняется по680-file manifest. CI следующего head/merge pending.
-- [ ] Отдельная публикация этапа, зелёный CI и merge; затем 371–374 и остальные WP по мастер-плану. Production не разрешён.
+- [x] Inventory PR36: exact d936458 local full112/2105+146/3135=5240/no skips/types/lint/build,680source hashes current;7CI SUCCESS; actual merge2ef67b5 fetched. Original Claude PR32 reports MERGED with unchanged headde414fa; original checkout cleanbde3e40.
+- [ ] Продолжить WP10/A13 и 371–374/остальные WP. Plan B red:17failed/11pass; new28+audit6=34passed. Fresh review завершён, full planb-full1:2105+3163=5268passed/no skips/types/lint/build,681 hashes совпали. Current whole nginx PWA/6PNG accepted:9checks/10consumed waits/raw6 expected6 unexpected0;7failed runs retained. Nginx отдельно опубликован/7CI SUCCESS/merged PR37 (efb4f7e); отдельная поставка A13/CI/main pending; T023 key schema и A12 обязательны.
 
 Исторические границы ниже не заменяют текущую проверку.
 
@@ -1442,3 +1442,9 @@ Next: actual allocation ledger and common booking/cancellation/erasure/capacity 
 - [x] Сохранить полную переносимую инструкцию: [REPORT-CLOSE](фичи/030-экосистема-local/REPORT-CLOSE-20261003.md), [Claude](фичи/030-экосистема-local/CLAUDE-CONTINUE.md), [контракт380](фичи/030-экосистема-local/c380-inventory-contract.md).
 - Итоговые документы публикуются отдельным PR после проверок; подтверждение CI/merge — в PR и финальном отчёте. Затем эта сессия останавливается.
 - [ ] Будущее отдельное поручение: принять черновик380, завершить legacy-source.ts, репетицию миграций и независимое ревью. Remote6a0e6a3 новее localbde3e40; не перезаписывать. Широкие A/U/WP не отмечать выполненными.
+
+## 2026-10-03 · Принят runtime atomic Plan B и nginx
+
+Actual nginx PWA run 80f6aab9-4646-406a-b5f6-c7564ee2c86b / session50489: exit0, result/overall passed,9checks,10consumed capture waits. Две реальные сессии сохранили6IDs/done/title после reload; monthly checklist исключил Plan B; финальный SQL набор тот же. Page/console/HTTP/capture errors=[], raw6=proved expected6+unexpected0;3отмены имеют measured asset-alias proof, остальные exactURL proof. Parent независимо проверил route/build/document/finish witnesses. Source/build/nginx before/after совпали, fixture cleanup users/sessions/consents/tasks/weddings=0. Root просмотрел6PNG RU/EN320/390/480, documentWidth=viewport; горизонтальное clipping не обнаружено. Server task titles остаются RU в EN, fixed navigation на viewport позиции full-page PNG; полный перевод задач/physical devices/human pilot этим сценарием не заявлены.
+
+Full5268/681-file f920...25423a1 повторно сверён после browser8; native52 baseline/candidate probes приняли E7 nginx. Источники и seven failed runs: [Plan B report](фичи/030-экосистема-local/REPORT-PLANB-ATOMIC-20261003.md), [nginx report](фичи/030-экосистема-local/REPORT-DEEP-LINK-ASSETS-20261003.md), ERR-0437–0443. Nginx отдельно опубликован в [PR37](https://github.com/bairasbai/tili-tili/pull/37), head affde66, exact7CI SUCCESS, actual merge efb4f7e5c89cdb1a1ec4626eefe5e826d8b404fd получен fetch; A13 отдельные commit/CI/main ещё pending. T023/A12/fullWP10/остальные WP и pending owner inputs сохраняются; goal active.
