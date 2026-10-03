@@ -39,9 +39,15 @@ describe.skipIf(!DB)('company staff: actual PostgreSQL consent, scoped work and 
     } finally { await db.close() }
   })
   async function actor(label: string): Promise<Actor> {
-    const userId = randomUUID(), sessionId = randomUUID(), consentId = randomUUID(); users.push(userId)
+    const sessionId = randomUUID(), consentId = randomUUID()
+    let userId: string | undefined
     // Synthetic test principals, not a claim that a real human consented.
-    await db.query('insert into users(id,phone,name) values($1,$2,$3)', [userId, '+79' + randomInt(100_000_000, 999_999_999), 'Synthetic staff ' + label])
+    for (let attempt = 0; attempt < 8; attempt++) {
+      userId = (await db.query<{ id: string }>('insert into users(id,phone,name) values($1,$2,$3) on conflict(phone) do nothing returning id', [randomUUID(), '+79' + randomInt(100_000_000, 999_999_999), 'Synthetic staff ' + label])).rows[0]?.id
+      if (userId) break
+    }
+    if (!userId) throw new Error(`Synthetic staff fixture could not allocate a unique phone after 8 attempts (${label})`)
+    users.push(userId)
     await db.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [sessionId, userId, randomUUID()])
     await db.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [consentId, userId, POLICY])
     return { userId, sessionId, consentId, policyVersion: POLICY }
