@@ -23,14 +23,15 @@ const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
  * (app/src/pages/Smart.tsx). Придумывать свой значило бы дать паре два
  * разных списка на одном экране после первой же синхронизации.
  */
+// Semantic identity is authored here; edits to a task title do not change its key.
 const PLANB_CHECKLIST = [
-  'Обзвонить всех подрядчиков за 1–2 дня: время и адрес прибытия',
-  'Кольца и паспорта — у свидетелей',
-  'Алкоголь и реквизит отвезти на площадку накануне вечером',
-  'Проверить прогноз погоды и план Б площадки',
-  'Запас 15 минут в каждом блоке тайминга',
-  'Powerbank, аптечка, швейный набор, присыпка от пятен',
-]
+  { systemKey: 'planb.vendor_arrival', title: 'Обзвонить всех подрядчиков за 1–2 дня: время и адрес прибытия' },
+  { systemKey: 'planb.rings_passports', title: 'Кольца и паспорта — у свидетелей' },
+  { systemKey: 'planb.venue_materials', title: 'Алкоголь и реквизит отвезти на площадку накануне вечером' },
+  { systemKey: 'planb.weather_venue_backup', title: 'Проверить прогноз погоды и план Б площадки' },
+  { systemKey: 'planb.timeline_buffer', title: 'Запас 15 минут в каждом блоке тайминга' },
+  { systemKey: 'planb.emergency_kit', title: 'Powerbank, аптечка, швейный набор, присыпка от пятен' },
+] as const
 
 export async function dayxRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -66,12 +67,12 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
         [weddingId],
       )
       if (Number(have[0]!.n) === 0) {
-        for (const [i, title] of PLANB_CHECKLIST.entries()) {
+        for (const [i, item] of PLANB_CHECKLIST.entries()) {
           // The wedding lock serializes first opens; one transaction keeps the
           // system set complete without restricting user-created task titles.
           await client.query(
-            `insert into tasks (id, wedding_id, title, source, sort, kind) values ($1,$2,$3,'system',$4,'planb')`,
-            [uuidv7(), weddingId, title, i],
+            `insert into tasks (id, wedding_id, title, source, sort, kind, system_template_key) values ($1,$2,$3,'system',$4,'planb',$5)`,
+            [uuidv7(), weddingId, item.title, i, item.systemKey],
           )
         }
       }
