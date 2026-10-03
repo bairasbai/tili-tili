@@ -55,5 +55,6 @@
   "test/shortlist019.test.ts",
   "test/atomicLegacyReplacement.test.ts",
   "test/legacyCalendarSources.test.ts",
-  "test/planbInitialization.test.ts"
+  "test/planbInitialization.test.ts",
+  "test/planbSystemKeys.test.ts"
 ]

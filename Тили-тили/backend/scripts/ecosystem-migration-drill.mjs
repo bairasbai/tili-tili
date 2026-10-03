@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import pg from 'pg'
 
 // This is a local schema/fixture drill. Historical receipt fixtures are
@@ -21,13 +21,14 @@ const DATABASES = [
   'tili_ecosystem_migration_drill18_20260930_test',
   'tili_ecosystem_migration_drill19_20260930_test',
   'tili_ecosystem_migration_drill20_20260930_test',
+  'tili_ecosystem_migration_drill21_20261003_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
-const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, LATEST = 1763810000000
+const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, LATEST = 1763820000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
-const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend']
+const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend']
   .includes(backend.replaceAll('\\', '/'))
 const repositoryCi = process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REPOSITORY === 'bairasbai/tili-tili'
   && process.env.GITHUB_WORKSPACE && backend === resolve(process.env.GITHUB_WORKSPACE, 'Тили-тили/backend')
@@ -52,6 +53,7 @@ const expectedOwn = [
   '1763700000000_event_rsvp_deadlines',
   '1763800000000_legacy_calendar_sources',
   '1763810000000_legacy_calendar_day_recovery',
+  '1763820000000_planb_system_template_keys',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -97,7 +99,7 @@ async function write(sql, values = []) {
 }
 async function migrate(direction, target, failureMessage, exactFile = false) {
   await safety()
-  // --timestamp down includes the target: >=176300 rolls back all 21 own files.
+  // --timestamp down includes the target: >=176300 rolls back all approved own files.
   // -t would select a migration-table NAME, not a timestamp or target.
   // The installed CLI also accepts an exact migration NAME as its positional
   // argument (runner options.file). This tests each populated down independently
@@ -1196,7 +1198,7 @@ async function recoveryForwardFixture(f, foreign) {
   await write('delete from weddings where id=$1', [prior.wedding])
   assert.equal((await db.query('select 1 from legacy_calendar_sources where day_id=$1', [day.id])).rowCount, 0, '380 gap must exist before the real forward migration')
   const operational = await rows('vendor_busy_dates'), before = await snapshot()
-  await migrate('up', LATEST)
+  await migrate('up', RECOVERY)
   const after = await snapshot()
   for (const [table, data] of Object.entries(before.data)) {
     if (table === 'pgmigrations') continue
@@ -1214,7 +1216,7 @@ async function recoveryForwardFixture(f, foreign) {
   assert.equal(recovered.material.completeness, 'unknown'); assert.equal(recovered.material.reason, 'mixed_scope')
   assert.deepEqual(recovered.material.holders, [])
   assert.deepEqual(await rows('vendor_busy_dates'), operational, 'Recovery cannot change the operational day or pointer revision')
-  const repeated = await snapshot(); await migrate('up', LATEST)
+  const repeated = await snapshot(); await migrate('up', RECOVERY)
   assert.deepEqual(await snapshot(), repeated, 'Repeated recovery up must be an exact no-op')
   await expectAtomicRefusal('legacy calendar inventory evidence exists; use a preserving forward migration', '1763810000000_legacy_calendar_day_recovery', true)
 
@@ -1299,6 +1301,227 @@ async function recoveryManualRace(foreign, order, phone) {
   }
 }
 
+// T023's native SQL witnesses supplement the registered HTTP/lifecycle suite.
+// Old rows are created under actual 381: titles never infer semantic keys.
+const PLANB_MIGRATION = '1763820000000_planb_system_template_keys'
+const PLANB_KEYS = ['planb.vendor_arrival', 'planb.rings_passports', 'planb.venue_materials',
+  'planb.weather_venue_backup', 'planb.timeline_buffer', 'planb.emergency_kit']
+let planbNegativeCount = 0
+function priorPlanbSchema(schema) {
+  return { ...schema,
+    relations: schema.relations.filter(row => row.relname !== 'tasks_system_template_scope_key'),
+    columns: schema.columns.filter(row => !(row.table_schema === 'public' && row.table_name === 'tasks' && row.column_name === 'system_template_key')),
+    columnMetadata: schema.columnMetadata.filter(row => !(row.relname === 'tasks' && row.attname === 'system_template_key')
+      && !(row.relname === 'tasks_system_template_scope_key' && ['wedding_id', 'kind', 'system_template_key'].includes(row.attname)
+        && row.attacl === null && row.comment === null)),
+    constraints: schema.constraints.filter(row => !(row.table_name === 'tasks' && row.conname === 'tasks_system_template_key_shape')),
+    indexes: schema.indexes.filter(row => !(row.tablename === 'tasks' && row.indexname === 'tasks_system_template_scope_key')),
+    triggers: schema.triggers.filter(row => !(row.table_name === 'tasks' && row.tgname === 'tasks_system_template_guard')),
+    functions: schema.functions.filter(row => !(row.proname === 'protect_task_system_template_identity' && row.arguments === '')),
+  }
+}
+function withoutPlanbKey(data) {
+  return { ...data, tasks: data.tasks.map(row => {
+    const copy = { ...row }; delete copy.system_template_key; return copy
+  }).sort((a, b) => canonicalFixture(a).localeCompare(canonicalFixture(b))) }
+}
+function assertPlanbPreserved(before, after) {
+  assert.deepEqual(Object.keys(after.data), Object.keys(before.data), '382 cannot add or remove a public table')
+  const projected = withoutPlanbKey(after.data)
+  for (const [table, data] of Object.entries(before.data)) {
+    if (table !== 'pgmigrations') {
+      const expected = table === 'tasks' ? [...data].sort((a, b) => canonicalFixture(a).localeCompare(canonicalFixture(b))) : data
+      assert.deepEqual(projected[table], expected, `382 changed inherited ${table} data`)
+    }
+  }
+  assert.equal(after.data.pgmigrations.length, before.data.pgmigrations.length + 1)
+  for (const row of before.data.pgmigrations) assert(after.data.pgmigrations.some(current => canonicalFixture(current) === canonicalFixture(row)), '382 changed a prior journal row')
+  assert.equal(after.data.pgmigrations.filter(row => row.name === PLANB_MIGRATION).length, 1)
+  assert.deepEqual(priorPlanbSchema(after.schema), before.schema, '382 changed prior full catalog metadata')
+  assert(after.data.tasks.every(row => row.system_template_key === null), '382 cannot infer keys for existing tasks')
+}
+function planbReaddedSchema(schema) {
+  // Raw snapshots remain unmodified. Only this new column's physical position
+  // differs after its native down/re-add; every other catalog value is exact.
+  return { ...schema, columns: schema.columns.map(row => row.table_schema === 'public' && row.table_name === 'tasks'
+    && row.column_name === 'system_template_key' ? { ...row, ordinal_position: '__NEW_COLUMN_POSITION__', dtd_identifier: '__NEW_COLUMN_POSITION__' } : row) }
+}
+async function planbCatalog() {
+  assert.deepEqual((await db.query("select data_type,is_nullable,column_default from information_schema.columns where table_schema='public' and table_name='tasks' and column_name='system_template_key'")).rows,
+    [{ data_type: 'text', is_nullable: 'YES', column_default: null }])
+  const indexes = (await db.query(`select i.indisunique,i.indisvalid,i.indisready,pg_get_expr(i.indpred,i.indrelid) as predicate,
+    array(select a.attname::text from unnest(i.indkey) with ordinality as k(attnum,position)
+      join pg_attribute a on a.attrelid=i.indrelid and a.attnum=k.attnum order by k.position) as columns
+    from pg_index i join pg_class x on x.oid=i.indexrelid join pg_namespace n on n.oid=x.relnamespace
+    where n.nspname='public' and x.relname='tasks_system_template_scope_key' and i.indrelid='public.tasks'::regclass`)).rows
+  assert.equal(indexes.length, 1)
+  assert.deepEqual(indexes[0].columns, ['wedding_id', 'kind', 'system_template_key'])
+  assert(indexes[0].indisunique && indexes[0].indisvalid && indexes[0].indisready)
+  assert.equal(indexes[0].predicate.replace(/[()\s]/g, '').toLowerCase(), 'system_template_keyisnotnull')
+  const shape = (await db.query("select convalidated from pg_constraint where conrelid='public.tasks'::regclass and conname='tasks_system_template_key_shape' and contype='c'")).rows
+  assert.deepEqual(shape, [{ convalidated: true }])
+  const trigger = (await db.query("select tgtype,tgenabled from pg_trigger where tgrelid='public.tasks'::regclass and tgname='tasks_system_template_guard' and not tgisinternal")).rows
+  assert.deepEqual(trigger, [{ tgtype: 23, tgenabled: 'O' }])
+}
+async function planbEmptyCycle() {
+  assert.equal((await db.query('select count(*)::int n from tasks')).rows[0].n, 0)
+  const before = await snapshot()
+  await migrate('down', PLANB_MIGRATION, undefined, true)
+  const down = await snapshot()
+  assert.deepEqual(down.schema, priorPlanbSchema(before.schema), 'Empty exact382 down must preserve every old catalog row')
+  assert.deepEqual(down.data, { ...withoutPlanbKey(before.data), pgmigrations: before.data.pgmigrations.filter(row => row.name !== PLANB_MIGRATION) })
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= RECOVERY).map(item => item.name))
+  await migrate('up', LATEST)
+  const up = await snapshot()
+  assertPlanbPreserved(down, up)
+  assert.deepEqual(planbReaddedSchema(up.schema), planbReaddedSchema(before.schema))
+  await planbCatalog()
+  const repeated = await snapshot(); await migrate('up', LATEST)
+  assert.deepEqual(await snapshot(), repeated, 'Empty 382 repeat must be an exact no-op')
+  console.log('T023 empty exact382 down/re-up/repeat passed with all old metadata preserved')
+}
+async function expectPlanbSqlRefusal(label, sql, values, code, constraint) {
+  const before = await snapshot()
+  await write('begin')
+  try {
+    await assert.rejects(async () => { await write(sql, values); await write('set constraints all immediate') }, error => {
+      assert.equal(error.code, code, `${label}: actual PostgreSQL SQLSTATE required`)
+      assert.equal(error.constraint, constraint, `${label}: actual named T023 invariant required`)
+      return true
+    }, `${label}: invalid task identity unexpectedly persisted`)
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), before, `${label}: preserve every row, journal and catalog after refusal`)
+  planbNegativeCount++
+  console.log(`Expected T023 SQL refusal: ${label} (${code}, ${constraint})`)
+}
+async function planbNativeDownWait() {
+  // Own one real row/relation lock and observe only the uniquely tagged native
+  // CLI's ACCESS EXCLUSIVE waiter. A completed process or timeout is no witness.
+  await safety()
+  const before = await snapshot(), tag = `drill382_${randomUUID().replaceAll('-', '')}`
+  const holder = new pg.Client({ connectionString: databaseUrl, statement_timeout: 9000, connectionTimeoutMillis: 5000 })
+  let child, completion, settled = false, witness
+  try {
+    await holder.connect()
+    const identity = (await holder.query('select current_database() name,current_user principal,host(inet_server_addr()) address,inet_server_port() port,pg_backend_pid() pid')).rows[0]
+    assert.equal(identity.name, DATABASE); assert.equal(identity.principal, 'codex_test'); assert.equal(identity.port, Number(selectedPort))
+    assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(identity.address))
+    await holder.query('begin')
+    assert((await holder.query('select id from tasks where system_template_key is not null limit 1 for share')).rowCount === 1)
+    child = spawn(process.execPath, [cli, 'down', PLANB_MIGRATION, '-m', migrationsDir,
+      '--schema', 'public', '--migrations-table', 'pgmigrations', '--single-transaction', '--verbose', 'false'],
+    { cwd: backend, env: { ...process.env, PGAPPNAME: tag, TILI_DISPOSABLE_PG_PORT: selectedPort, DATABASE_URL: databaseUrl, TEST_DATABASE_URL: databaseUrl }, stdio: ['ignore', 'pipe', 'pipe'] })
+    completion = new Promise((resolve, reject) => {
+      let output = '', processError, overflow = false
+      const timer = setTimeout(() => { child.kill(); reject(new Error('T023 native down subprocess timed out')) }, 30_000)
+      const capture = chunk => {
+        output += chunk.toString('utf8')
+        if (Buffer.byteLength(output) > 16 * 1024 * 1024) { overflow = true; child.kill() }
+      }
+      child.stdout.on('data', capture); child.stderr.on('data', capture)
+      child.on('error', error => { processError = error })
+      child.once('close', (status, signal) => { clearTimeout(timer); settled = true; resolve({ status, signal, output, processError, overflow }) })
+    })
+    // Attach rejection handling immediately; no lost/unhandled child error.
+    completion.catch(() => {})
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      const waiters = (await db.query(`select pid,state,wait_event_type,wait_event,query,pg_blocking_pids(pid) blockers
+        from pg_stat_activity where datname=current_database() and usename=current_user and application_name=$1
+        and state='active' and wait_event_type='Lock'`, [tag])).rows
+      assert(waiters.length <= 1, 'Tagged native command must have at most one observed backend')
+      if (waiters.length && waiters[0].blockers.includes(identity.pid)
+        && /lock\s+table\s+tasks\s+in\s+access\s+exclusive\s+mode/i.test(waiters[0].query)) {
+        witness = waiters[0]; break
+      }
+      assert(!settled, 'Native 382 down finished before an actual tasks-lock waiter was observed')
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    assert(witness, 'Require an actual bounded native382 tasks-lock wait')
+    await holder.query('rollback')
+    const result = await completion
+    assert(!result.processError && !result.overflow && !result.signal, 'Subprocess failure is not a migration refusal')
+    assert.notEqual(result.status, 0)
+    assert.deepEqual([...result.output.matchAll(/^> - (.+)$/gm)].map(match => match[1].trim()), [PLANB_MIGRATION])
+    assert(result.output.includes('system task template key evidence exists; use a preserving forward migration'))
+    assert(/code:\s*['"]23514['"]/.test(result.output), 'Native down must report actual guard SQLSTATE')
+    assert.deepEqual(await snapshot(), before, 'Waiting native382 refusal must preserve whole data/journal/catalog')
+    atomicDownCount++
+    console.log(`T023_NATIVE_DOWN_PG_WAIT holder=${identity.pid} waiter=${witness.pid} guard=23514 allPreserved=true`)
+  } finally {
+    await holder.query('rollback').catch(() => {})
+    if (child && !settled) child.kill()
+    if (completion) await completion.catch(() => {})
+    await holder.end()
+  }
+}
+async function planbForwardFixture(f) {
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= RECOVERY).map(item => item.name))
+  assert(!(await columns('tasks')).includes('system_template_key'), 'Historical fixtures require the actual381 schema')
+  const oldIds = [], oldInsert = `insert into tasks(id,wedding_id,title,source,kind,sort,done_at,period,due)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9)`
+  for (const [i, [source, kind]] of [['system', 'planb'], ['system', 'planb'], ['user', 'planb'], ['ai', 'planb'], ['system', 'checklist'], ['user', 'checklist']].entries()) {
+    const id = randomUUID(); oldIds.push(id)
+    await write(oldInsert, [id, f.wedding, 'Synthetic duplicated historical Plan B title', source, kind, 70 + i,
+      i === 1 ? '2026-09-30T12:34:56.123456Z' : null, 'before', '2027-06-13'])
+  }
+  const before = await snapshot()
+  await migrate('up', LATEST)
+  const after = await snapshot(); assertPlanbPreserved(before, after); await planbCatalog()
+  await assertJournal(manifest.map(item => item.name))
+  const repeated = await snapshot(); await migrate('up', LATEST)
+  assert.deepEqual(await snapshot(), repeated, 'Populated382 repeat must preserve every row and catalog')
+  for (const [column, value, constraint] of [
+    ['id', randomUUID(), 'tasks_system_planb_identity_immutable'], ['wedding_id', null, 'tasks_system_planb_identity_immutable'],
+    ['source', 'user', 'tasks_system_planb_identity_immutable'], ['kind', 'checklist', 'tasks_system_planb_identity_immutable'],
+    ['system_template_key', PLANB_KEYS[0], 'tasks_system_template_key_immutable'],
+  ]) await expectPlanbSqlRefusal(`historical NULL ${column} cannot change`, `update tasks set ${quote(column)}=$2 where id=$1`, [oldIds[0], value], '23514', constraint)
+  await expectPlanbSqlRefusal('unkeyed user row cannot promote around INSERT guard', "update tasks set source='system',kind='planb' where id=$1", [oldIds[5]], '23514', 'tasks_system_planb_insert_identity')
+  // All historical values/IDs/duplicates survive actual exact NULL-history down.
+  await migrate('down', PLANB_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before, 'NULL-history down must restore full381 data/journal/catalog exactly')
+  await migrate('up', LATEST)
+  const reup = await snapshot(); assertPlanbPreserved(before, reup); await planbCatalog()
+  assert.deepEqual(planbReaddedSchema(reup.schema), planbReaddedSchema(after.schema))
+  const insert = 'insert into tasks(id,wedding_id,title,source,kind,system_template_key) values($1,$2,$3,$4,$5,$6)'
+  const values = (source, kind, key, wedding = f.wedding) => [randomUUID(), wedding, 'Synthetic same-title authored keyed item', source, kind, key]
+  for (const key of PLANB_KEYS) await write(insert, values('system', 'planb', key))
+  assert.deepEqual((await db.query("select system_template_key from tasks where wedding_id=$1 and system_template_key is not null order by system_template_key", [f.wedding])).rows.map(row => row.system_template_key), [...PLANB_KEYS].sort())
+  const keyed = (await db.query('select id from tasks where wedding_id=$1 and system_template_key=$2', [f.wedding, PLANB_KEYS[0]])).rows[0].id
+  await expectPlanbSqlRefusal('new system Plan B requires key', insert, values('system', 'planb', null), '23514', 'tasks_system_template_key_required')
+  await expectPlanbSqlRefusal('new system Plan B requires known key', insert, values('system', 'planb', 'planb.unknown'), '23514', 'tasks_system_template_key_required')
+  await expectPlanbSqlRefusal('known key cannot belong to a user row', insert, values('user', 'planb', PLANB_KEYS[0]), '23514', 'tasks_system_template_key_shape')
+  await expectPlanbSqlRefusal('known key cannot belong to checklist kind', insert, values('system', 'checklist', PLANB_KEYS[0]), '23514', 'tasks_system_template_key_shape')
+  await expectPlanbSqlRefusal('unknown key cannot use a non-system row', insert, values('ai', 'planb', 'planb.unknown'), '23514', 'tasks_system_template_key_shape')
+  await expectPlanbSqlRefusal('same wedding semantic key is unique', insert, values('system', 'planb', PLANB_KEYS[0]), '23505', 'tasks_system_template_scope_key')
+  for (const [column, value, constraint] of [
+    ['system_template_key', null, 'tasks_system_template_key_immutable'], ['system_template_key', PLANB_KEYS[1], 'tasks_system_template_key_immutable'],
+    ['id', randomUUID(), 'tasks_system_planb_identity_immutable'], ['wedding_id', null, 'tasks_system_planb_identity_immutable'],
+    ['source', 'user', 'tasks_system_planb_identity_immutable'], ['kind', 'checklist', 'tasks_system_planb_identity_immutable'],
+  ]) await expectPlanbSqlRefusal(`keyed ${column} cannot change`, `update tasks set ${quote(column)}=$2 where id=$1`, [keyed, value], '23514', constraint)
+  const positive = await snapshot(), foreign = (await db.query('select id from weddings where id<>$1 order by id limit 1', [f.wedding])).rows[0]
+  assert(foreign, 'Cross-wedding key witness requires another actual fixture wedding')
+  await write('begin')
+  try {
+    await write(insert, values('system', 'planb', PLANB_KEYS[0], foreign.id))
+    for (let i = 0; i < 2; i++) await write(insert, values('user', 'planb', null))
+    await write(insert, values('system', 'checklist', null))
+    for (const id of [oldIds[0], keyed]) {
+      const old = (await db.query('select id,wedding_id,kind,source,system_template_key from tasks where id=$1', [id])).rows[0]
+      await write("update tasks set title='Synthetic permitted rename',done_at='2026-10-01T02:03:04Z' where id=$1", [id])
+      assert.deepEqual((await db.query('select id,wedding_id,kind,source,system_template_key from tasks where id=$1', [id])).rows[0], old)
+    }
+    await write('set constraints all immediate')
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), positive, 'Permitted same-title/foreign-key/edit probes must be rollback-contained')
+  assert.equal(planbNegativeCount, 18, 'All independent T023 key/scope/NULL SQL refusals must execute')
+  await expectAtomicRefusal('system task template key evidence exists; use a preserving forward migration', PLANB_MIGRATION, true)
+  await planbNativeDownWait()
+  assert.equal(atomicDownCount, 21, 'All19 old guards plus exact382 and waiting exact382 guards must execute')
+  console.log(`T023 checks passed: ${planbNegativeCount} actual named SQL refusals; native populated381 NULL preservation/down/re-up/no-op; scoped six keyed positives; exact keyed downs including actual tasks-lock wait; no HTTP or delivery claim`)
+}
+
+
 try {
   await safety()
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
@@ -1312,6 +1535,7 @@ try {
   assert.deepEqual((await db.query('select singleton,installed_btree_gist from ecosystem_resource_schema')).rows, [{ singleton: true, installed_btree_gist: true }], 'This fresh database has no preexisting btree_gist')
   assert.equal((await db.query("select extversion from pg_extension where extname='btree_gist'")).rows[0].extversion, '1.7', 'Measure the exact local extension version; this is not a production claim')
   await assertJournal(manifest.map(item => item.name))
+  await planbEmptyCycle()
   const clean = await fixture(false)
   assert.deepEqual((await db.query('select attention_mode,attention_version::text,attention_coordinator_user_id from weddings where id=$1', [clean.wedding])).rows[0], { attention_mode: 'essential', attention_version: '1', attention_coordinator_user_id: null })
   assert.equal((await db.query('select urgent_incidents from notification_prefs where user_id=$1', [clean.owner])).rows[0].urgent_incidents, false)
@@ -1501,6 +1725,7 @@ try {
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000')
   await eventRsvpDeadlineFixture(f)
   await inventoryForwardFixture(f)
+  await planbForwardFixture(f)
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
