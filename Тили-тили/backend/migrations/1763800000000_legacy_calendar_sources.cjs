@@ -23,19 +23,13 @@
  *  - manual_day: FK sources.company_id -> vendors берёт KEY SHARE на строку
  *    компании; ручной день (`POST /vendor/calendar/busy`) уже держит
  *    vendors FOR UPDATE (lockResourceScope) той же транзакцией.
- *  - orphan_day (самый чувствительный путь): deal удаляется только каскадом
- *    свадьбы/пользователя; `prepareWeddingResourceErasure`/
- *    `prepareUserResourceErasure` (resources/erasure.ts) уже лочат weddings
- *    FOR UPDATE, deals FOR UPDATE и — через lockSourceUnion — ВСЕ vendor_id
- *    затронутых сделок (включая легаси-дни без ресурсной книги) FOR UPDATE
- *    ДО фактического DELETE. Поэтому к моменту каскада
- *    (deals DELETE -> vendor_busy_dates.deal_id SET NULL -> наш AFTER UPDATE
- *    -> INSERT orphan_day с company_id FK) вендор уже FOR UPDATE в этой же
- *    транзакции; KEY SHARE на свою же строку — самозамок, не ожидание.
- *    Вся экосистема писателей (lockVendorProfileWrite, lockResourceScope,
- *    lockSources/commitments.ts) лочит в порядке «свадьба/заявки/сделки
- *    раньше компании», то же самое соблюдает erasure.ts — порядка инверсии с
- *    обнаружением нет ни в одном известном писателе.
+ *  - orphan_day: штатные purge/eraseUser заранее удаляют deal-days. Raw
+ *    wedding cascade сохраняет день и снимает указатель, создавая orphan.
+ *    BEFORE DELETE weddings заранее берёт company KEY SHARE в UUID-порядке
+ *    по фактическим busy rows, до каскадного UPDATE дня. Иначе manual busy
+ *    (company UPDATE -> day INSERT ON CONFLICT) и orphan FK (day -> company)
+ *    образуют подтверждённый regression-тестом deadlock 40P01. Этот ранний
+ *    pin распространяется и на mixed-scope строки чужого vendor_id.
  *  - Прочитано (не трогаем): deals/repo.ts (hold L191/release L242-270),
  *    resources/commitments.ts (legacyBoundary L135, lockSources),
  *    orders/context.ts (lockOrderPrincipal), vendor/profile-locks.ts,
@@ -308,7 +302,7 @@ exports.up = (pgm) => {
             not exists(select 1 from deal_resource_commitments c where c.deal_id=root_deal.id and c.revision>0)) or
           (NEW.kind='live_negotiation' and root_deal.state='negotiating'));
       end if;
-      if not ok or NEW.origin is distinct from legacy_calendar_origin(NEW.kind,NEW.day_id,NEW.root_deal_id) then
+      if ok is not true or NEW.origin is distinct from legacy_calendar_origin(NEW.kind,NEW.day_id,NEW.root_deal_id) then
         raise exception 'legacy calendar source must match its actual operational origin' using errcode='23514';
       end if;
       return NEW;
@@ -417,14 +411,13 @@ exports.up = (pgm) => {
     -- row type bound for THIS firing, so it must never name a column that is
     -- absent on any of the four — to_jsonb(NEW) sidesteps that entirely.
     create function check_legacy_calendar_inventory() returns trigger language plpgsql as $$
-    declare target uuid; h legacy_calendar_heads%rowtype; expected int; row_json jsonb;
+    declare target uuid; h legacy_calendar_heads%rowtype; row_json jsonb;
     begin
       row_json := to_jsonb(NEW);
       target := case when TG_TABLE_NAME='legacy_calendar_sources' then (row_json->>'id')::uuid else (row_json->>'source_id')::uuid end;
       if not exists(select 1 from legacy_calendar_sources where id=target) then return null; end if;
       select * into h from legacy_calendar_heads where source_id=target;
       if not found then raise exception 'legacy calendar source requires a head' using errcode='23514'; end if;
-      if h.revision=0 then return null; end if;
       if TG_TABLE_NAME='legacy_calendar_versions' and not exists(
         with recursive ancestry as (
           select id,previous_version_id from legacy_calendar_versions where source_id=target and id=h.current_version_id
@@ -434,8 +427,12 @@ exports.up = (pgm) => {
       ) then
         raise exception 'orphan inventory version' using errcode='23514';
       end if;
-      select jsonb_array_length(v.canonical::jsonb->'holders') into expected from legacy_calendar_versions v where v.id=h.current_version_id;
-      if (select count(*) from legacy_calendar_version_holders where version_id=h.current_version_id)<>expected then
+      if h.revision=0 then return null; end if;
+      -- Every immutable version needs its complete captured group, including
+      -- an intermediate version superseded later in the same transaction.
+      if exists(select 1 from legacy_calendar_versions v where v.source_id=target
+        and (select count(*) from legacy_calendar_version_holders where version_id=v.id)
+          <>jsonb_array_length(v.canonical::jsonb->'holders')) then
         raise exception 'inventory version holders incomplete' using errcode='23514';
       end if;
       return null;
@@ -556,6 +553,21 @@ exports.up = (pgm) => {
     create trigger legacy_calendar_discover_deal after insert or update of state,vendor_id on deals
       for each row execute function legacy_calendar_discover_deal();
 
+    -- Raw whole-wedding deletion is a supported lifecycle path. Pin the
+    -- actual companies before SET NULL can hold a day and wait on its FK.
+    -- Operational purge/erasure has already removed these rows, so it adds
+    -- no late company lock to those writers' existing sorted lock union.
+    create function legacy_calendar_pin_cascade_companies() returns trigger language plpgsql as $$
+    begin
+      perform v.id from vendors v where v.id in (
+        select b.vendor_id from vendor_busy_dates b join deals d on d.id=b.deal_id
+        where d.wedding_id=OLD.id and b.source='deal'
+      ) order by v.id for key share;
+      return OLD;
+    end $$;
+    create trigger legacy_calendar_pin_cascade_companies before delete on weddings
+      for each row execute function legacy_calendar_pin_cascade_companies();
+
     comment on table legacy_calendar_sources is 'Технический инвентарь прежнего (DATE-only) календаря — обнаружение и свежесть, без решений владельца (370). DTO.state всегда unresolved; legacyBoundary/политика/каталог/перенос не изменены этой таблицей';
     comment on column legacy_calendar_versions.canonical is 'jsonb::text снимок legacy_calendar_inventory_material(source); digest и каноника считаются только в SQL (D5)';
   `)
@@ -569,6 +581,8 @@ exports.down = (pgm) => {
         raise exception 'legacy calendar inventory evidence exists; use a preserving forward migration';
       end if;
     end $$;
+    drop trigger legacy_calendar_pin_cascade_companies on weddings;
+    drop function legacy_calendar_pin_cascade_companies();
     drop trigger legacy_calendar_discover_deal on deals;
     drop function legacy_calendar_discover_deal();
     drop trigger legacy_calendar_discover_day_orphan on vendor_busy_dates;
