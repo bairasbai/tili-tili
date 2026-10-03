@@ -11,7 +11,7 @@
 - [x] Независимый read-only review381 и текущего preserving drill; подтверждённых дефектов новой миграции не найдено. Actual mixed manual/cascade гонки в обоих порядках затем прошли в drill20.
 - [x] Финальный preserving drill20:24 миграции,128 SQL/19 CLI отказов. Полный init.sh:112/2105 front,146/3135 backend, без пропусков, типы/линт/сборки прошли;680 source hashes совпали. Источники в [отчёте](REPORT-INVENTORY-20261003.md).
 - [x] Отдельные fixture/feature commits опубликованы черезPR36: d936458 full5240/no skips/680hashes,7CI SUCCESS; actual merge2ef67b5 fetched. Orchestrator отдельноPR35/a18695b.
-- [ ] 371–374 и остальные WP/FR/SC/NFR/A/U: полный объём сохранён в [ведомости продолжения](../../wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md). WP10/A13 red17failed/11pass, после atomic/access fix28+audit6=34passed; fresh review завершён, current full5268passed/no skips/types/lint/build/681hashes. Current whole nginx PWA/6PNG accepted:9checks/10consumed waits/raw6 expected6 unexpected0;7failed runs retained. Nginx отдельно опубликован/7CI SUCCESS/merged PR37 (efb4f7e); отдельная поставка A13/CI/main pending; T023 key schema и A12 обязательны.
+- [ ] 371–374 и остальные WP/FR/SC/NFR/A/U: полный объём сохранён в [ведомости продолжения](../../wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md). WP10/A13 red17failed/11pass, после atomic/access fix28+audit6=34passed; fresh review завершён, current full5268passed/no skips/types/lint/build/681hashes. Current whole nginx PWA/6PNG accepted:9checks/10consumed waits/raw6 expected6 unexpected0;7failed runs retained. Nginx отдельно опубликован/7CI SUCCESS/merged PR37 (efb4f7e); A13 опубликован черезPR38/7CI SUCCESS/main0b099f0, T023 черезPR39/7CI SUCCESS/main03f41a0. Atomic profile local acceptance готова, отдельныеPR/CI/main pending; полныйA12 и прочиеWP обязательны.
 
 Отметки приёмки ниже показывают фактическое состояние каждого пункта. Создание документов — подготовка, не реализация. База `9628d0b22711782dec121fa4596119e5fb7cce6a`. Основные [требования](spec.md), [план](plan.md). Commit/push/main правила: только отдельный локальный feature-коммит root-agent; GitHub, main и production не разрешены.
 
@@ -55,7 +55,7 @@
 - [ ] T020 [US6] Scoped routing актуальному actor/role/duty/event, couple reserved decisions/escalation, coalescing only same operation type and assignment; U07/U08/U09.
 - [ ] T021 [US6] Coordinator departure/backup/queued recipient recheck и fallback к паре, no forced historical resend; U15.
 - [ ] T022 [US6] Concrete PlanB location/actions/owners/contacts/event + preview/confirm/dedup/manual alternative; A12.
-- [ ] T023 [US6] Atomic system checklist initialization unique system key without banning same user titles; real race and fail-mid-init; A13.
+- [x] T023 [US6] Atomic system checklist initialization unique system key without banning same user titles; real race and fail-mid-init; A13. [Actual local/native/PWA/CI/main evidence](REPORT-PLANB-SYSTEM-KEYS-20261003.md); PR38 atomic access, PR39 keys, fetched main03f41a0. Это не закрытие WP10 или внешних T040–042.
 - [ ] T024 [US4/6] Scoped operational dietary update to kitchen responsible, actual receipt version and minimal sensitive data; A11.
 
 ## S6 Деньги, аренда, вещи
@@ -106,7 +106,7 @@
 | A10 | T030 | Открыт |
 | A11 | T024/T008 | Открыт |
 | A12 | T022 | Открыт |
-| A13 | T023 | Открыт |
+| A13 | T023 | Принят в границе T023: PR38/PR39, focus97/full5337/native17/PWA9, exact7 CI SUCCESS, fetched main03f41a0; отчёт T023. Полный WP10 и внешние T040–042 открыты. |
 | A14 | T007/T040 | Открыт; provider отдельно |
 | A15 | T027 | Открыт |
 | A16 | T026 | Открыт |
@@ -138,3 +138,12 @@
 Actual nginx PWA run 80f6aab9-4646-406a-b5f6-c7564ee2c86b / session50489: exit0, result/overall passed,9checks,10consumed capture waits. Две реальные сессии сохранили6IDs/done/title после reload; monthly checklist исключил Plan B; финальный SQL набор тот же. Page/console/HTTP/capture errors=[], raw6=proved expected6+unexpected0;3отмены имеют measured asset-alias proof, остальные exactURL proof. Parent независимо проверил route/build/document/finish witnesses. Source/build/nginx before/after совпали, fixture cleanup users/sessions/consents/tasks/weddings=0. Root просмотрел6PNG RU/EN320/390/480, documentWidth=viewport; горизонтальное clipping не обнаружено. Server task titles остаются RU в EN, fixed navigation на viewport позиции full-page PNG; полный перевод задач/physical devices/human pilot этим сценарием не заявлены.
 
 Full5268/681-file f920...25423a1 повторно сверён после browser8; native52 baseline/candidate probes приняли E7 nginx. Источники и seven failed runs: [Plan B report](REPORT-PLANB-ATOMIC-20261003.md), [nginx report](REPORT-DEEP-LINK-ASSETS-20261003.md), ERR-0437–0443. Nginx отдельно опубликован в [PR37](https://github.com/bairasbai/tili-tili/pull/37), head affde66, exact7CI SUCCESS, actual merge efb4f7e5c89cdb1a1ec4626eefe5e826d8b404fd получен fetch; A13 отдельные commit/CI/main ещё pending. T023/A12/fullWP10/остальные WP и pending owner inputs сохраняются; goal active.
+
+
+## 2026-10-03T18:27:32.048Z · A12 profile · local acceptance готова к отдельной публикации
+
+Три product-файла, два независимых test suites и serial registry сохранены в точных проверенных bytes. Fresh final source review не нашёл material bounded blocker: [review](/C:/Тили-тили/.unlazy/codex-planb-20261003/A12-PROFILE-FINAL-SOURCE-REVIEW.md). Actual PG/HTTP RED13=9failed+4passed → GREEN13passed; actual оба creator orders прошли отдельно на primary и штатном FULL target. Последний штатный full5350=2105frontend+3245backend/types/lint/build относится к685 inputs до supplement; два supplement cases проверены отдельно, все686 final inputs сохранены. Новый full5352 этим не заявляется.
+
+Root принял actual browser V5 run892dcec9-a9d4-4f20-a121-2fc8d4cf7c23: child/parent passed,30consumed captures,12layout records,6 RU/EN320/390/480 PNG просмотрены. Два genuine same-client SQLSTATE22012/HTTP500 — UI и compound user+prefs — дали whole rollback. Все9 raw navigation cancellations и3 raw response.body protocol disposals получили independently recomputed exact chronology/replacement proof; unexpected errors0. Raw failures сохраняются. OID620849/own sixmutable cleanup0/audit[]/othersessions[]; source/build до/после/current равны. [Квалификация](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-profile-browser-v5-qualified-root-1.json). V2/V3/V4 failed runs не изменены. Физические устройства/provider этим не проверены.
+
+Подготовлена только отдельная публикация atomic profile/default-prefs. OTP consumption, user restore/audit и выдача сессии не включены в эту короткую auth-default транзакцию; whole-login atomicity не утверждается. Публичный feature commit/push/PR/CI/main ещё pending. Ни этот prerequisite, ни прошлые A13/T023 не закрывают полный A12/WP10; fully accepted WP00–WP16 остаётся0/17. Private C04/C05 и UI candidates не включены вlive. Последний плановый отчёт18:15UTC/21:15МСК; следующий18:45UTC/21:45МСК.

@@ -56,5 +56,7 @@
   "test/atomicLegacyReplacement.test.ts",
   "test/legacyCalendarSources.test.ts",
   "test/planbInitialization.test.ts",
-  "test/planbSystemKeys.test.ts"
+  "test/planbSystemKeys.test.ts",
+  "test/c04ProfilePrefsAtomicity.test.ts",
+  "test/c04ProfileDefaultOrders.test.ts"
 ]
