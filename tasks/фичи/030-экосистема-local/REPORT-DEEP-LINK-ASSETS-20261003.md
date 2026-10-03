@@ -1,0 +1,27 @@
+# PWA: ресурсы deep-link на nginx · 2026-10-03
+
+Исправление прошло native baseline/candidate проверку и полный локальный PWA-сценарий. Отдельные commit/push/exact-head CI/main merge ещё pending. Это serving зависимость Plan B; постоянные ключи T023 и activation A12 остаются отдельными обязательными работами.
+
+## Проблема и изменение
+
+Пятый actual run 7f1b34c0-a1c1-4712-a013-dd21b8d62f2b получил HTML вместо CSS по /wedding/assets/index-Ca88sMJQ.css:4console MIME errors/4unexpected CSS failures. Источник: C:/Тили-тили/.unlazy/codex-planb-20261003/browser-7f1b34c0-a1c1-4712-a013-dd21b8d62f2b/result.json. Старый [nginx.conf](https://github.com/bairasbai/tili-tili/blob/2ef67b5b9d78e70b9361deb6bc91335e45d841a7/deploy/nginx.conf#L93) выдавал SPA index.html для неизвестного nested URL. Portable [base ./](../../../Тили-тили/app/vite.config.ts#L11), [HTML shim](../../../Тили-тили/app/index.html#L6) и [history restore](../../../Тили-тили/app/src/main.tsx#L16) уже существовали; redirect не устранял некорректный ответ на запрошенный relative asset.
+
+[Новый config](../../../deploy/nginx.conf#L74) внутренним rewrite переводит flat /<depth>/assets/<filename> в canonical /assets/<filename>. Прежний static location выдаёт actual bytes/MIME, immutable cache, security headers и missing404. API и canonical assets защищены ^~ от нового regex. Семантика last и ^~: [официальный rewrite](https://nginx.org/en/docs/http/ngx_http_rewrite_module.html#rewrite), [location](https://nginx.org/en/docs/http/ngx_http_core_module.html#location).
+
+Это изменение одного deploy/nginx.conf. Vite base, shim, frontend/backend API и DB не менялись. Hierarchical tail /wedding/assets/sub/file.css новым single-filename правилом не покрывается; canonical /assets/sub/file.css сохраняет собственный static404. Config SHA256 E7BDB5E99F44A1A1818CE580680C4C8C48A592C71208064D588D411071E85410.
+
+## Native HTTP доказательство
+
+Root последовательно запустил официальный nginx/Windows1.31.6 со старым Git blob и новым config на loopback8097. Артефакты: C:/Тили-тили/.unlazy/codex-planb-20261003/nginx-route-c3267f67-6aa5-45e7-8826-b0a673abe0da/. overall.json status=passed/failures=[]; baseline/candidate result.json сохраняют каждый запрос. Baseline pass означает воспроизведение прежнего HTML/MIME defect, не приёмку старой конфигурации.
+
+Каждый profile содержит25 recorded HTTP probes для3реальных CSS/JS refs: root/deep/multiple-depth/query bytes/MIME/cache/security headers, missing404 и защищённые canonical paths. Ещё по1API-lookalike на profile:52=25×2+1×2; readiness requests не включены. Закрытый upstream8095 дал502 в обоих profiles, что доказывает только proxy selection. DB/API/browser этим static proof не запускались. Native syntax и source/build/code/installation guards прошли; каждый owned PID остановлен,8097Free=true.
+
+## PWA и visual acceptance
+
+Actual nginx PWA run 80f6aab9-4646-406a-b5f6-c7564ee2c86b / session50489: exit0, result/overall passed,9checks,10consumed capture waits. Две реальные сессии сохранили6IDs/done/title после reload; monthly checklist исключил Plan B; финальный SQL набор тот же. Page/console/HTTP/capture errors=[], raw6=proved expected6+unexpected0;3отмены имеют measured asset-alias proof, остальные exactURL proof. Parent независимо проверил route/build/document/finish witnesses. Source/build/nginx before/after совпали, fixture cleanup users/sessions/consents/tasks/weddings=0. Root просмотрел6PNG RU/EN320/390/480, documentWidth=viewport; горизонтальное clipping не обнаружено. Server task titles остаются RU в EN, fixed navigation на viewport позиции full-page PNG; полный перевод задач/physical devices/human pilot этим сценарием не заявлены.
+
+Артефакты принятого сценария: C:/Тили-тили/.unlazy/codex-planb-20261003/browser-80f6aab9-4646-406a-b5f6-c7564ee2c86b/result.json, overall.json, cleanup.json, ui-routing.json, source/build/nginx-before/after.json и6PNG. Source digest 820f00b0cca3756ab344b6ee31ce590672d274d740b96baba1980e0d3a76a95b; build digest b90c5049149736fcdde4b4d8541a58f4719567fb8805561a5aa87f74b51d4339. Native/browsing относятся к реальной локальной сборке и адаптированному production config, не production deployment.
+
+PWA выполнялся на combined working tree с отдельным непубликованным A13 backend fix, HEAD2ef67b5. В nginx feature commit backend/app остаются baseline main: их прежний full5240 относится к inventory snapshot. Full5268/681-file manifest проверяет A13 working tree и не включает nginx; эти доказательства не смешиваются. Точное содержимое обоих будущих commits проверяется при поставке.
+
+Семь прежних browser runs остаются failed/retained. V9 source review AB4ADA1583B20FD98E0A79A1843AECBD78EADC7C9CED52A30A4EC09E95975F83:100author CPU+26independent=126passed, bounded no confirmed defect. Этот review не заменяет actual passed run. Raw aborted requests не скрывались: принятие требует current built SHA/MIME, exact recorded route pair, real superseding first-stable document и postcommit successful replacement; page/console/HTTP/capture errors всегда отказ.
