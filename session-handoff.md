@@ -12,7 +12,7 @@ GitHub: перед работой `node C:/Users/Bayra/.claude/hooks/github-api-
 
 Собственный skill `tili-orchestrate` основан на harnessmachine/codex-orchestrate@`e44c06e5738a5ea9007ff01ab894df97e89217e8`, MIT LICENSE сохранена. Пять файлов установлены в C:/Users/Bayra/.codex/skills/tili-orchestrate, при установке сверены SHA256. Source/test agents и свежий reviewer выполнили реальную offline fixture; root повторил106 тестов без пропусков. DB/browser/delivery этой fixture не покрыты.
 
-Пакет `.agents/skills/tili-orchestrate` опубликован отдельным коммитом `635c9f6`: [PR35](https://github.com/bairasbai/tili-tili/pull/35), семь проверок SUCCESS, merge `a18695b`. Изолированный Git worktree C:/Тили-тили/tili-orchestrate-publish-20261003. App create_worktree не смог определить репозиторий в cwd, поэтому использован обычный Git worktree. Global discovery установленного skill проверить в новом диалоге.
+Пакет `.agents/skills/tili-orchestrate` опубликован отдельным коммитом `635c9f6`: [PR35](https://github.com/bairasbai/tili-tili/pull/35), семь проверок SUCCESS, merge `a18695b`. Изолированный Git worktree C:/Тили-тили/tili-orchestrate-publish-20261003 после чистого checkpoint переиспользован для `codex/wp10-planb-atomic` из ed9b322. App create_worktree не смог определить репозиторий в cwd, поэтому использован обычный Git worktree. Global discovery установленного skill проверить в новом диалоге.
 
 ## Текущая поставка 380+381
 
@@ -40,18 +40,24 @@ GitHub: перед работой `node C:/Users/Bayra/.claude/hooks/github-api-
 
 Неуспехи сохранены: full380 UNKNOWN read stage4 (причину I/O я не могу подтвердить; одиночный повтор25/25); full381 users_phone_key в fixture до security assertion (после узкого исправления финальный full прошёл); drill19 SQL42601 alias day (исправлен на day_id, новый fresh20 прошёл). Они не считаются успешной приёмкой.
 
-Логи: C:/Тили-тили/.unlazy/tz-full-20261002/logs. PG16 loopback127.0.0.1:15432, principal codex_test; Redis/Memurai6379 DB12 для full. Shared DB/Redis/browser/server/drill запускает только root последовательно. Full процесс78167 уже завершён, повторять его не нужно.
+Логи: C:/Тили-тили/.unlazy/tz-full-20261002/logs. PG16 loopback127.0.0.1:15432, principal codex_test; Redis/Memurai6379 DB12 для full. Shared DB/Redis/browser/server/drill запускает только root последовательно. Full процесс78167 завершён успешно и относится к checkpoint до следующего CI fixture fix.
+
+PR36 создан/прикреплён: head ed9b322 получил6 SUCCESS/1 FAILURE. Job111140690199 отказал на users_phone_key в orderTermsApi.actor():46 до проверки vendor_blocked; второй backend job111140625307 прошёл. Root изменил только helper на atomic bounded8 phone-conflict retry;68/68 standalone и scoped ESLint/tsc прошли. Независимый source review TERMS-FIXTURE-REVIEW.md подтвердил неизменность остальных assertions/cleanup; runtime reviewer не запускал. Merge не выполнен.
+
+ТЕКУЩИЙ full после terms fixture fix: exec session66516, tag codex381-ci-fixture, log full-codex381-ci-fixture.log. Resume существующий write_stdin, не запускать второй shared DB test. Новый680-file source manifest SHA894d136698a2b1f51a8c6732523d0ef8d06cea52cbb1be663b9c252fdc48db03; проверить через source-manifest.mjs verify codex381-ci-fixture и verify-evidence.mjs full codex381-ci-fixture после завершения. Старый full не удостоверяет изменённый файл. Product source до окончания нового full заморожен; docs/private helpers могут обновляться.
 
 DB inventory/full/drill17–20 сохранены. Старые inventory базы переименованы в inv380before/inv380nullbefore/inv380cascadebefore, не удалены. Fresh-only drill не запускать на populated DB.
 
 ## Дальнейшие действия
 
-1. Gates `.unlazy/codex-inventory-20261003/GATES.md`: --status, --approve точных read-only oracles; G5 остаётся pending до документации/feature delivery/green exact-head CI/main. Локальный full подтверждён, удалённый CI пока нет.
+1. Resume66516 и проверить actual full после CI fixture fix. Gates `.unlazy/codex-inventory-20261003/GATES.md`: G3 снова unchecked и использует новый tag; --status/--approve после actualsuccess. G5 pending до green exact-head CI/main. Предыдущий успешный full сохранён как checkpoint прежнего файла.
 2. Отдельные коммиты уже созданы: fixture `0d7eef4`, inventory feature `a009b5b`. После интеграции main повторная проверка source manifest прошла. Product source после successful full не менять без новых проверок. Generated вручную не редактировать.
 3. Собственный untracked skill сохранён до merge в `.unlazy/codex-inventory-20261003/tili-orchestrate-before-main` с hash manifest. В ветке теперь tracked package из main35; JOURNAL сохраняет обе истории. Не использовать force/global safe.directory и не трогать исходный checkout.
-4. Push своей ветки, create/attach draft PR, прочитать CI редко и последовательно, ready/merge только с успешными проверками текущего head. PR32 Claude сохраняется. Затем финальные docs/gates и продолжение371–374; goal не завершать на этом этапе.
+4. Опубликовать narrow CI fixture commit в уже созданный PR36, прочитать новый CI редко и последовательно, ready/merge только с успешными проверками текущего head и текущим localfull. PR32 Claude сохраняется. Затем финальные docs/gates и продолжение371–374; goal не завершать на этом этапе.
 
 `c382-bounds-contract.md` — draft,382 ещё не reserved/implemented. Независимое ревью выявило восемь требований до реализации; bounded doc agent уточняет completeness, successor membership, negotiation exception, association freshness, locks, retention, closure и точные DDL/DTO. Полный сценарный объём сохранён; ни один finite effect не активировать без всех нужных proofs/barriers.
+
+Независимая подготовка WP10/A13: PROPOSAL.md в .unlazy/codex-planb-20261003/,34 source links checked; отдельный tester пишет только planbInitialization.test.ts в изолированном worktree. Production PlanB ещё не изменён. Runtime/DB этого leaf запускает root после завершения inventory full. Приняты isolated DB names tili_ecosystem_planb_20261003_test и прежний full name, guard port/principal не ослаблять. План: exclusive wedding/team read lock с cancellation history policy, один db.tx, actual concurrent/rollback/auth wait tests, preserve existing IDs/title/done; не дедуплицировать исторические partial/duplicates догадкой.
 
 Полный реестр пробелов: [CONTINUATION-AUDIT](tasks/wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md). Локальный отчёт: [REPORT-INVENTORY](tasks/фичи/030-экосистема-local/REPORT-INVENTORY-20261003.md). Все WP/FR/SC/NFR/A/U, где нет отдельной приёмки, остаются открытыми.
 

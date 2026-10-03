@@ -33,9 +33,10 @@
 | Retained fullDB upgrade | Все прежние колонки/строки 98 таблиц сохранились по before/after SHA-256, verified principal/address/port; `.unlazy/codex-inventory-20261003/full-migration-{before,after}.json` |
 | Forward381 inventory/full | Прежние строки102 таблиц сохранены (источники/головы могут только дополняться); identity/no-other-connections проверены; `inventory381-{before,after}.json`, `full381-{before,after}.json` в том же evidence каталоге |
 | Generated contract | Повтор штатного gensync: TZ_GENSYNC_PASSED; git не показывает содержательных generated changes (первый raw-byte checker обнаружил CRLF/LF) |
-| Полный init.sh | 112 файлов / 2105 тестов фронтенда и 146 файлов / 3135 тестов бэкенда; без пропусков; типы, полный линт и обе сборки прошли. `full-codex381-final.log`, exit=0, `TZ_FULL_PASSED` |
-| Соответствие исходников | Все 680 файлов source/config/test/migrations совпали с manifest до полного прогона; `verify-evidence.mjs full` → `CODEX381_EVIDENCE_VERIFIED full` |
-| CI/main | Публикация и удалённая проверка этого этапа пока не выполнены; отдельный PR35 относится к оркестратору |
+| Полный init.sh до CI fixture fix | 112 файлов / 2105 тестов фронтенда и 146 файлов / 3135 тестов бэкенда; без пропусков; типы, полный линт и обе сборки прошли. `full-codex381-final.log`, exit=0, `TZ_FULL_PASSED`; checkpoint ed9b322 |
+| Соответствие исходников checkpoint | Все680 файлов совпали с manifest до full и после интеграции main35. После следующего узкого изменения terms API fixture создан новый manifest; текущий полный прогон ещё выполняется |
+| Terms API fixture после CI | 68/68, scoped ESLint/tsc passed; `vitest-codex381-terms-ci-fixture.log` |
+| CI/main | [PR36](https://github.com/bairasbai/tili-tili/pull/36), head ed9b322:6 SUCCESS/1 FAILURE (phone fixture); исправление публикуется отдельно, merge ещё не выполнен |
 
 Логи локальной приёмки: `C:/Тили-тили/.unlazy/tz-full-20261002/logs/`. Неуспехи: `vitest-codex380-before-guard.log`, `vitest-codex380-before-nullguard.log`, `vitest-codex380-before-cascade.log`. Первый drill17 относится к более ранней миграции и не заменяет окончательный drill18. Три прежние inventoryDB сохранены; база/история не удалялись. Полная БД обновлена нативным CLI только после review/regression/drill; этот файл миграции после применения туда неизменяем, последующие DDL-исправления требуют forward migration.
 
@@ -46,3 +47,5 @@ SHA-256 применённых миграций:380 `7b8257fb62e3ac8490a06aa15cb
 Новые HTTP/UI-сценарии этим этапом не введены. Доменная end-to-end проверка использует реальные зарегистрированные старые API/SQL/транзакции. Физические устройства, провайдеры, human pilot и production этим результатом не подтверждены.
 
 Локальные коммиты: fixture `0d7eef4`, inventory corrections/recovery/drill/docs `a009b5b`. Main35 интегрирован `e8e0432` с сохранением обеих записей JOURNAL; повторная сверка всех680 исходников прошла. Непубликованный c382 остаётся отдельным локальным черновиком следующего этапа.
+
+После создания PR36 первый backend CI упал на `users_phone_key` в подготовке orderTermsApi.actor() до vendor_blocked assertion; второй backend того же head прошёл. Подтверждённый отказ сохранён (ERR-0434). Узкий atomic phone-conflict retry прошёл68/68; новый full `codex381-ci-fixture` выполняется по новому680-file manifest SHA `894d136698a2b1f51a8c6732523d0ef8d06cea52cbb1be663b9c252fdc48db03`. Старый successful full не объявляется проверкой изменённого файла.

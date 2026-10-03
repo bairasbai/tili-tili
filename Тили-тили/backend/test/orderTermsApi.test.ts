@@ -41,9 +41,15 @@ describe.skipIf(!DB)('actual order terms HTTP, current authority and atomic retr
     } finally { await app.close() }
   })
   async function actor(label: string): Promise<Actor> {
-    const id = randomUUID(), session = randomUUID(); users.push(id)
+    const session = randomUUID()
+    let id: string | undefined
     // Synthetic authentication data exercises real guards, not human consent.
-    await app.db!.query('insert into users(id,phone,name) values($1,$2,$3)', [id, '+79' + randomInt(100_000_000, 999_999_999), label])
+    for (let attempt = 0; attempt < 8; attempt++) {
+      id = (await app.db!.query<{ id: string }>('insert into users(id,phone,name) values($1,$2,$3) on conflict(phone) do nothing returning id', [randomUUID(), '+79' + randomInt(100_000_000, 999_999_999), label])).rows[0]?.id
+      if (id) break
+    }
+    if (!id) throw new Error(`Synthetic terms fixture could not allocate a unique phone after 8 attempts (${label})`)
+    users.push(id)
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [session, id, randomUUID()])
     await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [randomUUID(), id, POLICY])
     return { id, session, headers: { authorization: `Bearer ${await signAccessToken(SECRET, { sub: id, sid: session })}` } }
