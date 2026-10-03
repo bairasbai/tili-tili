@@ -25,6 +25,7 @@
 
 - [ ] T011 [US3] Typed availability policies: личное время/назначенные сотрудники/комплекты/подтверждаемая поставка; unknown и legacy date locks; A01.
 - [ ] T012 [US3] Intervals/setup/teardown/manual travel/capacity, source/freshness/import не снимает app booking; constraints/concurrent actual DB cases; A02/SC010.
+- [x] 370 [US3] Технический инвентарь прежнего календаря — задел T011/T012, ни один A/U не закрывает: идентичность и ревизия строки дня, 4 таблицы (`legacy_calendar_sources/versions/version_holders/heads`), обнаружение триггерами БД, свежесть вычисляется, захват владельцем (`src/resources/legacy-source.ts`); без HTTP/OpenAPI/UI (D2). Миграция `1763800000000`; контракт драйвера c370 rev 1; тест `legacyCalendarSources.test.ts` 60/60.
 
 ## S4 Заказ, условия и исполнение
 

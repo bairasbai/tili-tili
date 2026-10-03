@@ -59,6 +59,8 @@ S1 не закроет всё поведение маршрутизации бе
 
 Инварианты денег/мест/интервалов защищаются constraints/locks и реальными конкурентными тестами; stale write проверяется версиями. После ожидания lock снова проверить wedding/vendor/staff account/session/assignment. Отзыв scopes инвалидирует queue/facts write/cache, сохраняя разрешённую историю. Export/erase/archive охватывают добавленные данные/files/jobs; сроки хранения не изобретать. Если destructive transform нужен, сохранность должна быть проверена до отключения legacy reader.
 
+Этап 370 (2026-10-03): `1763800000000_legacy_calendar_sources` — inventory-only, `vendor_busy_dates` получает `id`/`source_revision`, четыре таблицы инвентаря, накат-захват платформой (rev 1, `captured_by NULL`); down отказывает при любой строке инвентаря. Предложенные ранее номера 371+ сдвигаются на `1763810000000`+ (forward-фикс 370 — только `1763810000000`).
+
 ## Проверки каждого этапа
 
 До изменений root сверяет ERRORS и основные документы области. При API delta root выполняет текущие `gen:contract`, `gen:schemas`, `gen:types` из package scripts; не дублировать их параметры в отдельной системе. Tests включают настоящие DB/API negative witnesses: чужая свадьба/персона/сотрудник, stale consent/version, revoked while waiting, повтор запроса и response loss, concurrent last slot/resource/payment, fail/crash/retry.
