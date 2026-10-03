@@ -3661,3 +3661,8 @@ Targeted74/74; native inventory/full forward upgrade сохранил прежн
 ## 2026-10-03 · Локальная приёмка 380+381 после исправления фикстуры
 
 Финальный полный `init.sh` прошёл: фронт 112 файлов / 2105 тестов, бэкенд 146 файлов / 3135 тестов, без пропусков, типы, линт всего дерева и обе сборки. Всего 2105 + 3135 = 5240 тестов. Источник: `full-codex381-final.log`, exit=0, `TZ_FULL_PASSED tag=codex381-final`. Все680 исходных файлов совпали с manifest до прогона; read-only oracle `verify-evidence.mjs full` подтвердил текущий snapshot. Прежние failed full сохранены и не объявлены успешными. Удалённый CI и merge inventory ещё ожидаются; локальная приёмка не завершает WP00–WP16.
+## 2026-10-03 · Собственный skill tili-orchestrate
+
+По поручению пользователя создан и установлен tili-orchestrate на основе harnessmachine/codex-orchestrate@e44c06e5738a5ea9007ff01ab894df97e89217e8. MIT LICENSE сохранён; root ведёт весь WP scope, ограничивает владение файлов и последовательно выполняет общие DB/Redis/browser/GitHub операции. Skill не даёт разрешения production и не обещает отсутствие всех ошибок.
+
+Штатный quick_validate: Skill is valid!, exit 0. Реальная offline fixture: отдельные source/test агенты и свежий read-only reviewer; root повторил 106 node:test cases, 106 passed, 0 skipped. Наблюдаемые команды и границы — .agents/skills/tili-orchestrate/README.md; локальная fixture .unlazy/tili-orchestrate-forward-20261003/RESULT.md. Скопированы и проверены SHA-256 пяти установленных файлов. Поставка этой фичи выполняется отдельно от незавершённого инвентаря380/381; CI и merge ещё не подтверждены этой записью.
