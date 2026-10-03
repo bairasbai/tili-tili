@@ -4,6 +4,7 @@ import { uuidv7 } from '../ids.js'
 import { withIdempotency } from '../deals/idempotency.js'
 import { notifyWedding } from '../notify/notify.js'
 import { timelineShiftRoutes } from '../timeline/routes.js'
+import { assertSeatingToken, lockPlanBReadAccess } from '../wedding/access.js'
 
 /** Сценарии плана Б из §13.1: то, что в моках переключается кнопкой. */
 const SCENARIOS = ['rain', 'vendor_missing', 'power', 'transport'] as const
@@ -53,38 +54,40 @@ export async function dayxRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/weddings/:weddingId/planb', async (request) => {
     const weddingId = request.member!.weddingId
-    const { rows: w } = await db().query<{ planb_scenario: string | null; planb_at: Date | null }>(
-      'select planb_scenario, planb_at from weddings where id = $1',
-      [weddingId],
-    )
+    return db().tx(async (client) => {
+      await lockPlanBReadAccess(client, request)
+      const { rows: w } = await client.query<{ planb_scenario: string | null; planb_at: Date | null }>(
+        'select planb_scenario, planb_at from weddings where id = $1',
+        [weddingId],
+      )
 
-    const { rows: have } = await db().query<{ n: string }>(
-      "select count(*)::text as n from tasks where wedding_id = $1 and kind = 'planb'",
-      [weddingId],
-    )
-    if (Number(have[0]!.n) === 0) {
-      for (const [i, title] of PLANB_CHECKLIST.entries()) {
-        /* `on conflict do nothing` не спасёт — ограничения уникальности
-         * по названию нет и быть не должно. Два одновременных открытия
-         * экрана разойдутся редко и заметно: дубли видно сразу, а лишний
-         * уникальный индекс на текст мешал бы паре завести свой пункт. */
-        await db().query(
-          `insert into tasks (id, wedding_id, title, source, sort, kind) values ($1,$2,$3,'system',$4,'planb')`,
-          [uuidv7(), weddingId, title, i],
-        )
+      const { rows: have } = await client.query<{ n: string }>(
+        "select count(*)::text as n from tasks where wedding_id = $1 and kind = 'planb'",
+        [weddingId],
+      )
+      if (Number(have[0]!.n) === 0) {
+        for (const [i, title] of PLANB_CHECKLIST.entries()) {
+          // The wedding lock serializes first opens; one transaction keeps the
+          // system set complete without restricting user-created task titles.
+          await client.query(
+            `insert into tasks (id, wedding_id, title, source, sort, kind) values ($1,$2,$3,'system',$4,'planb')`,
+            [uuidv7(), weddingId, title, i],
+          )
+        }
       }
-    }
 
-    const { rows } = await db().query<{ id: string; title: string; done_at: Date | null }>(
-      `select id, title, done_at from tasks
-        where wedding_id = $1 and kind = 'planb' order by sort, title`,
-      [weddingId],
-    )
-    return {
-      scenario: w[0]?.planb_scenario ?? null,
-      activatedAt: w[0]?.planb_at?.toISOString() ?? null,
-      checklist: rows.map((r) => ({ id: r.id, title: r.title, done: r.done_at !== null })),
-    }
+      const { rows } = await client.query<{ id: string; title: string; done_at: Date | null }>(
+        `select id, title, done_at from tasks
+          where wedding_id = $1 and kind = 'planb' order by sort, title`,
+        [weddingId],
+      )
+      await assertSeatingToken(request)
+      return {
+        scenario: w[0]?.planb_scenario ?? null,
+        activatedAt: w[0]?.planb_at?.toISOString() ?? null,
+        checklist: rows.map((r) => ({ id: r.id, title: r.title, done: r.done_at !== null })),
+      }
+    })
   })
 
   app.post(

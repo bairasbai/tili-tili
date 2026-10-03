@@ -1,6 +1,6 @@
 # PWA: ресурсы deep-link на nginx · 2026-10-03
 
-Исправление прошло native baseline/candidate проверку и полный локальный PWA-сценарий. Отдельные commit/push/exact-head CI/main merge ещё pending. Это serving зависимость Plan B; постоянные ключи T023 и activation A12 остаются отдельными обязательными работами.
+Исправление прошло native baseline/candidate проверку и полный локальный PWA-сценарий. Отдельный коммит affde66f88e897b1fa4a6ede6b5893e8a5cea688 опубликован в [PR37](https://github.com/bairasbai/tili-tili/pull/37); все семь CI SUCCESS по сохранённому pr37-ci3.json (проверка 10:29:11 UTC), PR переведён в ready. Actual main merge подтверждён: efb4f7e5c89cdb1a1ec4626eefe5e826d8b404fd, merged=true в connector и тот же origin/main после fetch. Первую попытку отклонила автоматическая проверка разрешений; затем get_goal/read_thread восстановили исходное явное указание пользователя публиковать каждую фичу и вливать в main, и та же проверка разрешила слияние. Дополнительный async вопрос оказался лишним; ответ не требуется. Это serving зависимость Plan B; постоянные ключи T023 и activation A12 остаются отдельными обязательными работами.
 
 ## Проблема и изменение
 

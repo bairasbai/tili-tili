@@ -10,8 +10,8 @@
 - [x] После применения380 независимое ревью и actual PG воспроизвели потерю переназначенного дня. Forward381 сохранила прежние строки102 таблиц inventory/full DB и прошла68 inventory +6 audit53 =74 tests. Новые source/head имеют rev0 без снимков/согласий. Накат требует остановленных писателей.
 - [x] Независимый read-only review381 и текущего preserving drill; подтверждённых дефектов новой миграции не найдено. Actual mixed manual/cascade гонки в обоих порядках затем прошли в drill20.
 - [x] Финальный preserving drill20:24 миграции,128 SQL/19 CLI отказов. Полный init.sh:112/2105 front,146/3135 backend, без пропусков, типы/линт/сборки прошли;680 source hashes совпали. Источники в [отчёте](REPORT-INVENTORY-20261003.md).
-- [ ] Отдельные fixture/feature commits, push, зелёный exact-head CI и merge в main. Terms68/68/order62/62 после узких fixture fixes; full codex381-ci-fixture failed order phone allocation, новый codex381-order-fixture active.7CI SUCCESS относятся к9cba47f, не следующему head.
-- [ ] 371–374 и остальные WP/FR/SC/NFR/A/U: полный объём сохранён в [ведомости продолжения](../../wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md).
+- [x] Отдельные fixture/feature commits опубликованы черезPR36: d936458 full5240/no skips/680hashes,7CI SUCCESS; actual merge2ef67b5 fetched. Orchestrator отдельноPR35/a18695b.
+- [ ] 371–374 и остальные WP/FR/SC/NFR/A/U: полный объём сохранён в [ведомости продолжения](../../wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md). WP10/A13 red17failed/11pass, после atomic/access fix28+audit6=34passed; fresh review завершён, current full5268passed/no skips/types/lint/build/681hashes. Current whole nginx PWA/6PNG accepted:9checks/10consumed waits/raw6 expected6 unexpected0;7failed runs retained. Nginx отдельно опубликован/7CI SUCCESS/merged PR37 (efb4f7e); отдельная поставка A13/CI/main pending; T023 key schema и A12 обязательны.
 
 Отметки приёмки ниже показывают фактическое состояние каждого пункта. Создание документов — подготовка, не реализация. База `9628d0b22711782dec121fa4596119e5fb7cce6a`. Основные [требования](spec.md), [план](plan.md). Commit/push/main правила: только отдельный локальный feature-коммит root-agent; GitHub, main и production не разрешены.
 
@@ -132,3 +132,9 @@
 | U16 | T042 | Открыт; human pilot |
 
 Общее покрытие: A01…A20 = 20 критериев, U01…U16 = 16, всего 36 (20 + 16). Это размер реестра, не число выполненных улучшений. 42 задачи — номера T001…T042, не оценка времени. Приёмка 030 не подменяет все FR/SC/NFR WP00–WP16; WP11 и другие не относящиеся к этому delta работы сохраняют самостоятельные статусы.
+
+## 2026-10-03 · Принят runtime atomic Plan B и nginx
+
+Actual nginx PWA run 80f6aab9-4646-406a-b5f6-c7564ee2c86b / session50489: exit0, result/overall passed,9checks,10consumed capture waits. Две реальные сессии сохранили6IDs/done/title после reload; monthly checklist исключил Plan B; финальный SQL набор тот же. Page/console/HTTP/capture errors=[], raw6=proved expected6+unexpected0;3отмены имеют measured asset-alias proof, остальные exactURL proof. Parent независимо проверил route/build/document/finish witnesses. Source/build/nginx before/after совпали, fixture cleanup users/sessions/consents/tasks/weddings=0. Root просмотрел6PNG RU/EN320/390/480, documentWidth=viewport; горизонтальное clipping не обнаружено. Server task titles остаются RU в EN, fixed navigation на viewport позиции full-page PNG; полный перевод задач/physical devices/human pilot этим сценарием не заявлены.
+
+Full5268/681-file f920...25423a1 повторно сверён после browser8; native52 baseline/candidate probes приняли E7 nginx. Источники и seven failed runs: [Plan B report](REPORT-PLANB-ATOMIC-20261003.md), [nginx report](REPORT-DEEP-LINK-ASSETS-20261003.md), ERR-0437–0443. Nginx отдельно опубликован в [PR37](https://github.com/bairasbai/tili-tili/pull/37), head affde66, exact7CI SUCCESS, actual merge efb4f7e5c89cdb1a1ec4626eefe5e826d8b404fd получен fetch; A13 отдельные commit/CI/main ещё pending. T023/A12/fullWP10/остальные WP и pending owner inputs сохраняются; goal active.
