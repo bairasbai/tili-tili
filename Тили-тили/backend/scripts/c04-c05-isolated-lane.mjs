@@ -5,11 +5,13 @@ import { spawn, execFileSync } from 'node:child_process'
 import { mkdirSync, existsSync, readFileSync, writeFileSync, realpathSync, readdirSync, createWriteStream } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { backend,repo,selectProfile,assertCreation,assertIdentity,assertJournal,assertFKs,assertControl,inspectNative,verifySource,sha,fileSHA,readJSON,IDENTITY,TRIGGERS,AUDITS,SCHEMA_CATALOG,NAMESPACE } from '../test-support/c04-c05-native-admission.mjs'
+import { backend,repo,selectProfile,assertCreation,assertIdentity,assertJournal,assertFKs,assertControl,inspectNative,verifySource,sha,fileSHA,readJSON,IDENTITY,TRIGGERS,AUDITS,SCHEMA_CATALOG,NAMESPACE,assertLocalUpgrade83,loadLocalUpgrade83 } from '../test-support/c04-c05-native-admission.mjs'
 
 const localBase='C:/Тили-тили/.unlazy/codex-planb-20261003'
 const localInputs={creation:[localBase+'/a12-c04-root-createdb.json','0FAE33852E797024F9D56680D3D34BC7EB89851DE89D3EF75F4BC7A80A93B708'],schema:[localBase+'/a12-c04-root-schema382.json','D2E41E7104378348A3BB0AB95EF2DECF0B25091C6F806BBDE58D150B711EAC4E'],qualification:[localBase+'/a12-c04-native-green-v2-root-3/qualified-root-1.json','E3B1B9BC7E25BCDEE61E2F72778E52DA1A30EEDBC2DD6DB4481B973D2B1FF0DF']}
 localInputs.worker=[localBase+'/a12-c05-worker-native-v1-root-1/qualified-root-1.json','B441D4EF0748C6260276A26E65571648EC3A725AE0D713B723AAE9FFB9D0A1F7']
+localInputs.portable=[localBase+'/a12-portable-ci-v2-native-qualified-root-1.json','AEECC1A0D2D09A3835C3E003E050C6B2186C237C405E1E3A667A6F060A65C60F']
+localInputs.portableFinal=[localBase+'/c04-c05-ported-local-e6ca386c-0692-40d8-8cdc-56b1a31e8349/final.json','54036A06A5B1D63374A076B6F27747DC7ABDB2235BE73862A42FF2AB657145D0']
 const err=e=>({name:e.name,message:e.message,code:e.code??null,stack:e.stack})
 export function sanitizedService(inspect,id){
   assert.equal(inspect.Id,id);assert.equal(inspect.Config.Image,'postgres:16-alpine');assert.equal(inspect.State.Running,true);assert.equal(inspect.State.Health.Status,'healthy')
@@ -38,7 +40,7 @@ function captureSource(profile){
   const paths=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard'],{cwd:repo,encoding:'utf8',timeout:10000}).split('\0').filter(Boolean)
     .filter(p=>!p.includes('/.ci/')&&!p.includes('/node_modules/')&&!p.includes('/dist/'))
   const files=[...new Set(paths)].sort().map(path=>({path,sha256:fileSHA(join(repo,path))}))
-  const source={kind:'c04_c05_current_source_v1',at:new Date().toISOString(),backend:realpathSync(backend),repo:realpathSync(repo),checkoutSHA:head,files};verifySource(source);return source
+  const source={kind:'c04_c05_current_source83_v1',at:new Date().toISOString(),backend:realpathSync(backend),repo:realpathSync(repo),checkoutSHA:head,files};verifySource(source);return source
 }
 function witnesses(log,prefix){return log.split(/\r?\n/).filter(line=>line.includes(prefix)).map(line=>JSON.parse(line.slice(line.indexOf(prefix)+prefix.length)))}
 export function qualifyWitnesses(phase,rows){
@@ -79,12 +81,12 @@ async function main(){
       p.on('error',e=>{spawnError=err(e)});p.on('close',(exitCode,signal)=>{clearTimeout(deadline);clearTimeout(killTimer);resolveDone({at,endedAt:new Date().toISOString(),pid:p.pid??null,exitCode,signal,timedOut,spawnError})})
     });await flushed;childRecords.push({label,...result});save(label+'/execution.json',result);return result
   }
-  let primaryError=null,creation,schema,source,sourceRef,creationRef,schemaRef,controlRef,phaseResults={},lastAudits=[],finalProof=null,localTriggers=null
+  let primaryError=null,creation,schema,source,sourceRef,creationRef,schemaRef,controlRef,phaseResults={},lastAudits=[],finalProof=null,localTriggers=null,localUpgrade=null
   const {Client}=createRequire(join(backend,'package.json'))('pg')
   async function connect(url,tag){const c=new Client({connectionString:url,application_name:tag,connectionTimeoutMillis:5000,statement_timeout:15000,query_timeout:18000});try{await c.connect();return c}catch(e){await c.end().catch(()=>{});throw e}}
   const admission=()=>({profile,creation,schema,source,sourceSHA256:sourceRef.sha256,directory,oid:creation.databaseOID})
   async function nativeClean(){const c=await connect(profile.targetURL,'c04ci_post_'+randomUUID());try{return await inspectNative(c,admission())}finally{await c.end()}}
-  function bundle(stage,phase,control){return save(phase+'-admission.json',{kind:'c04_c05_native_admission_v1',stage,phase,profile:profile.mode,files:{creation:creationRef,schema:schemaRef,source:sourceRef,...(control?{control}: {})}})}
+  function bundle(stage,phase,control){return save(phase+'-admission.json',{kind:'c04_c05_native_admission83_v1',stage,phase,profile:profile.mode,files:{creation:creationRef,schema:schemaRef,source:sourceRef,...(localUpgrade?localUpgrade.refs:{}),...(control?{control}: {})}})}
   try{
     save('invocation.json',{kind:'c04_c05_explicit_native_invocation',at:new Date().toISOString(),profile:profile.mode,context:profile.context??null,argv:expected,automaticAdmission:false})
     source=captureSource(profile);sourceRef=save('source.json',source)
@@ -107,11 +109,18 @@ async function main(){
     }else{
       const read=name=>{const [path,expectedSHA]=localInputs[name];assert.equal(fileSHA(path),expectedSHA);return readJSON(path)}
       creation=read('creation');assertCreation(creation,profile);creationRef=save('creation.json',creation)
-      const originalSchema=read('schema');assertJournal(originalSchema.journalNames,verifySource(source));assert.equal(originalSchema.identity.oid,'616406')
+      const originalSchema=read('schema');assert.equal(originalSchema.journalNames.length,82);assert.equal(originalSchema.journalNames.at(-1),'1763820000000_planb_system_template_keys');assert.deepEqual(originalSchema.journalNames,verifySource(source).slice(0,-1));assert.equal(originalSchema.identity.oid,'616406')
       const q=read('qualification');assert.equal(q.kind,'root_actual_independent_C04_native_virtual_source_GREEN');assert.equal(q.actualTotal,30);assert.equal(q.passed,30);assert.equal(q.baseline.failed,18);assert.equal(q.baseline.passed,12);assert.equal(q.current.retainedAudits.length,4);lastAudits=q.current.retainedAudits
       const worker=read('worker');assert.equal(worker.kind,'root_actual_worker19_native_virtual_source_regressions');assert.equal(worker.actualTotal,19);assert.equal(worker.passed,19);assert.equal(worker.failed,0);assert.equal(worker.pending,0);assert.equal(worker.todo,0);assert.equal(worker.providerGuardCalls,0);assert.deepEqual(worker.current.retainedAudits,lastAudits)
       localTriggers=worker.current.nativeTriggers;assert.deepEqual(localTriggers,q.current.nativeTriggers)
-      save('local-historical-provenance.json',{inputs:localInputs,creationHistoricalMain:creation.actualMain,currentSource:sourceRef,retainedAudits:lastAudits})
+      const portable=read('portable'),portableFinal=read('portableFinal');assert.equal(portable.kind,'root_actual_adopted_portable_C04_C05_local_v2_49_tests');assert.deepEqual(portable.tests,{total:49,passed:49,failed:0,pending:0,todo:0});assert.equal(portable.control.gates,8);assert.equal(portable.postflight.immutableAuditCount,6);assert.equal(portable.postflight.retainedHistoricalAuditCount,4);assert.equal(portable.postflight.addedOwnedAuditCount,2);assert.equal(portable.sourceEqual,true)
+      assert.equal(portable.final.path,localInputs.portableFinal[0]);assert.equal(portable.final.sha256,localInputs.portableFinal[1]);assert.equal(portableFinal.overall,'PASSED');assert.equal(portableFinal.runtime,'ACTUAL_NATIVE');assert.equal(portableFinal.profile,'local');assert.equal(portableFinal.databaseOID,'616406');assert.equal(portableFinal.targetName,profile.targetName);assert.equal(portableFinal.primaryError,null)
+      for(const phase of ['c04','worker']){assert.equal(portableFinal.phaseResults[phase].total,phase==='c04'?30:19);assert.equal(portableFinal.phaseResults[phase].passed,true);assert.equal(portableFinal.phaseResults[phase].failed,0);assert.equal(portableFinal.phaseResults[phase].pending,0);assert.equal(portableFinal.phaseResults[phase].todo,0);assert.equal(portableFinal.phaseResults[phase].exitCode,0);assert.equal(portableFinal.phaseResults[phase].witnessError,null)}
+      const previous=portableFinal.finalProof;assert.equal(previous.journalNames.length,82);assert.deepEqual(previous.journalNames,originalSchema.journalNames);assert.deepEqual(previous.triggers,localTriggers);assert.equal(previous.audits.length,6);for(const old of lastAudits)assert.deepEqual(previous.audits.find(r=>r.id===old.id),old);assert.deepEqual(previous.otherSessions,[]);assert.deepEqual(previous.locks,[]);assert(Object.values(previous.counts).every(v=>v==='0'))
+      for(const phase of ['c04','worker']){const ref=portable.phases[phase];assert.equal(fileSHA(ref.rawPath),ref.rawSHA256);const raw=readJSON(ref.rawPath);qualifyJSON(raw,phase==='c04'?30:19)}assert.equal(fileSHA(portable.control.path),portable.control.sha256);const control82=readJSON(portable.control.path);assert.equal(control82.overall,'PASSED');assert.equal(control82.gates.length,8)
+      const loaded=loadLocalUpgrade83(process.env);assertLocalUpgrade83(loaded.upgrade,loaded.before,loaded.after,loaded.source,previous,source,profile,creation);lastAudits=loaded.after.audits;localTriggers=loaded.after.triggers
+      localUpgrade={after:loaded.after,refs:{upgrade:save('local83-upgrade.json',loaded.upgrade),upgradeBefore:save('local83-before.json',loaded.before),upgradeAfter:save('local83-after.json',loaded.after),upgradeSource:save('local83-source.json',loaded.source),portable82:save('local82-portable-final-proof.json',previous)}}
+      save('local-historical-provenance.json',{inputs:localInputs,creationHistoricalMain:creation.actualMain,currentSource:sourceRef,historicalAudits4:q.current.retainedAudits,actualPortableAudits6:previous.audits,upgrade83:localUpgrade.refs})
     }
     const c=await connect(profile.targetURL,'c04ci_schema_'+randomUUID());try{
       const identity=(await c.query(IDENTITY)).rows[0];assertIdentity(identity,profile,creation);if(profile.mode==='github-ci')assert.equal(identity.ownerRoleOID,creation.targetOwnerRoleOID)
@@ -122,7 +131,8 @@ async function main(){
       assert.deepEqual(columns,[{column_name:'key',udt_name:'text'},{column_name:'user_id',udt_name:'uuid'},{column_name:'route',udt_name:'text'},{column_name:'request_hash',udt_name:'text'},{column_name:'status',udt_name:'int4'},{column_name:'body',udt_name:'jsonb'},{column_name:'created_at',udt_name:'timestamptz'}])
       const audits=(await c.query(AUDITS)).rows.map(r=>({...r,at:r.at.toISOString()}));assert.deepEqual(audits,lastAudits)
       const catalog=(await c.query(SCHEMA_CATALOG)).rows[0]
-      schema={kind:'c04_c05_actual_schema_v1',at:new Date().toISOString(),sourceSHA256:sourceRef.sha256,creationSHA256:creationRef.sha256,identity,migrationCount:82,journalNames,triggers,columns,catalog,retainedAudits:audits}
+      if(localUpgrade)assert.deepEqual(catalog,localUpgrade.after.schemaCatalog)
+      schema={kind:'c04_c05_actual_schema83_v1',at:new Date().toISOString(),sourceSHA256:sourceRef.sha256,creationSHA256:creationRef.sha256,identity,migrationCount:83,journalNames,triggers,columns,catalog,retainedAudits:audits}
       const current=await inspectNative(c,admission());schema.nativePreflight=current;schemaRef=save('schema.json',schema)
     }finally{await c.end()}
     const barrier=bundle('barrier','barrier')
@@ -149,7 +159,7 @@ async function main(){
   finally{
     if(creation&&schema&&sourceRef)try{const current=await nativeClean();if(lastAudits.length)for(const r of lastAudits)assert.deepEqual(current.audits.find(a=>a.id===r.id),r);save('final-native-postflight.json',current);finalProof=current}catch(e){save('final-postflight-failure.json',err(e));if(!primaryError)primaryError=err(e)}
     const passed=!primaryError&&phaseResults.c04?.passed===true&&phaseResults.worker?.passed===true&&finalProof!==null
-    save('final.json',{kind:'c04_c05_isolated_native_lane_v1',runtime:'ACTUAL_NATIVE',profile:profile.mode,context:profile.context??null,overall:passed?'PASSED':'FAILED',targetName:profile.targetName,databaseOID:creation?.databaseOID??null,source:sourceRef??null,phaseResults,c04:phaseResults.c04?'EXECUTED':'UNRUN',worker:phaseResults.worker?'EXECUTED':'UNRUN',primaryError,childRecords,finalProof,limits:['Finite30+19 feature acceptance only','No provider/device/M01/fullA12 acceptance','No database drop/reuse or global/audit erasure']})
+    save('final.json',{kind:'c04_c05_isolated_native_lane83_v1',runtime:'ACTUAL_NATIVE',profile:profile.mode,context:profile.context??null,overall:passed?'PASSED':'FAILED',targetName:profile.targetName,databaseOID:creation?.databaseOID??null,source:sourceRef??null,phaseResults,c04:phaseResults.c04?'EXECUTED':'UNRUN',worker:phaseResults.worker?'EXECUTED':'UNRUN',primaryError,childRecords,finalProof,limits:['Finite30+19 feature acceptance only','No provider/device/M01/fullA12 acceptance','No database drop/reuse or global/audit erasure']})
     const index=[];function tree(dir,prefix=''){for(const f of readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){const rel=prefix+f.name;if(f.isDirectory())tree(join(dir,f.name),rel+'/');else index.push({path:rel,sha256:fileSHA(join(dir,f.name))})}}tree(directory);save('SHA256SUMS.json',index)
     process.stdout.write(JSON.stringify({overall:passed?'PASSED':'FAILED',directory,c04:phaseResults.c04??'UNRUN',worker:phaseResults.worker??'UNRUN'})+'\n');if(!passed)process.exitCode=1
   }

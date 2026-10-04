@@ -7,6 +7,8 @@
  */
 
 /** Шесть состояний сделки плюс отмена — те же, что в контракте. */
+import type { components } from './api/schema'
+
 export type DealState = 'candidate' | 'contacted' | 'negotiating' | 'booked' | 'paid_deposit' | 'done' | 'cancelled'
 
 /**
@@ -38,4 +40,5 @@ export interface Slot {
   /** Название пакета, по которому бронировали; нет — бронь без пакета или пакет снят с витрины. */
   packageName?: string
   packageIncludes?: string[]
+  comparisonTerms?: components['schemas']['OfferComparisonTerms']
 }

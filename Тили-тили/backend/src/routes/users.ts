@@ -525,7 +525,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const offerRequestIds = offerRequests.map((r) => r.id as string)
     const offers = offerRequestIds.length === 0 ? [] : (await db().query(
-      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until,
+      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until, comparison_terms,
               superseded_at, accepted_at, created_at
          from offers where request_id = any($1::uuid[]) order by created_at`,
       [offerRequestIds],
@@ -534,7 +534,8 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       ...(await byWeddings(
         coupleIds,
         `select d.wedding_id, s.label as slot, d.state, d.price::text as price, d.currency,
-                coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at
+                coalesce(v.name, d.external_name) as performer, d.created_at, d.booked_at, d.done_at,
+                d.offer_comparison_terms_snapshot
            from deals d
            join slots s on s.id = d.slot_id
            left join vendors v on v.id = d.vendor_id
@@ -710,7 +711,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     )
     const vendorRequestIds = vendorOfferRequests.map((r) => r.id as string)
     const vendorOffers = vendorRequestIds.length === 0 ? [] : (await db().query(
-      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until,
+      `select request_id, kind, title, price::text as price, currency, includes, message, valid_until::text as valid_until, comparison_terms,
               superseded_at, accepted_at, created_at
          from offers where request_id = any($1::uuid[]) order by created_at`,
       [vendorRequestIds],

@@ -1,5 +1,5 @@
 import { api, ApiError, newIdempotencyKey, url } from './client'
-import type { paths } from './schema'
+import type { components, paths } from './schema'
 
 /*
  * Мозаика команды: бронь, отмена, аванс, свои подрядчики.
@@ -34,6 +34,8 @@ export interface SlotDeal {
      его только когда он есть. */
   packageName?: string | null
   packageIncludes?: string[] | null
+  /** Actual agreed snapshot only; omitted when commercial access is unavailable. */
+  comparisonTerms?: components['schemas']['OfferComparisonTerms']
 }
 
 export interface ServerSlot {

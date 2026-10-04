@@ -1,3 +1,4 @@
+import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import type { Db, Queryable } from '../plugins/db.js'
 import { AppError } from '../errors.js'
 import { COMMITTED, HOLD_HOURS, tileState, type DealState } from './state.js'
@@ -15,6 +16,7 @@ export interface DealRow {
   /** Название пакета в момент брони; пусто — сделка была без пакета. */
   package_name: string | null
   package_includes?: string[] | null
+  offer_comparison_terms_snapshot?: OfferComparisonTerms | null
   price: string | null
   currency: string
   negotiating_until: Date | null
@@ -47,7 +49,8 @@ export const DEAL_COLUMNS = `
   (select max(p.created_at) from payments p where p.deal_id = d.id and p.status <> 'cancelled') as paid_at,
   ven.name as vendor_name, ven.category_id as vendor_category, vc.name as vendor_city,
   coalesce(d.package_title_snapshot, pkg.name) as package_name,
-  coalesce(d.package_includes_snapshot, pkg.items) as package_includes`
+  coalesce(d.package_includes_snapshot, pkg.items) as package_includes,
+  d.offer_comparison_terms_snapshot`
 
 /* Новая сделка читает неизменяемый снимок; `left join` остаётся только
  * fallback для старой строки без снимка. Миграция 019 заполняет все живые
@@ -77,6 +80,7 @@ export function toDeal(r: DealRow, seesMoney: boolean) {
           // Negotiated titles/includes may themselves contain a price.
           packageName: r.package_name,
           packageIncludes: r.package_includes ?? null,
+          comparisonTerms: r.offer_comparison_terms_snapshot ?? null,
           price: r.price === null ? null : { amount: Number(r.price), currency: r.currency },
           // Оплаченное — те же деньги: кто не видит цену, не видит и платежей.
           paid: { amount: Number(r.paid ?? 0), currency: r.currency },

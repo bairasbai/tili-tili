@@ -10,6 +10,7 @@ import { useStore } from '@/lib/store'
 import { Bar, Tile, TopBar } from '@/components/chrome'
 import { AsyncState } from '@/components/AsyncState'
 import { ComplaintSheet } from '@/components/ComplaintSheet'
+import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
 import { explainError, useApi, type AsyncData } from '@/lib/api/useApi'
 import { OrderDraft } from '@/components/OrderDraft'
 import { OrderTerms } from '@/components/OrderTerms'
@@ -242,6 +243,7 @@ function DealView({ s }: { s: Slot }) {
             </div>
             {s.status && <span className="text-[9px] font-bold px-2.5 py-1.5 rounded-full bg-[var(--honey)] text-[var(--honey-ink)] shrink-0">{t(s.status)}</span>}
           </div>
+          <OfferComparisonTerms terms={s.comparisonTerms} />
           <div className="grid grid-cols-6 gap-1 mt-5">
             {DEAL_STEPS.map((step, k) => {
               /* Пройденным считаем шаг не позже текущего: «выполнено» ставилось

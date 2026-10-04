@@ -455,7 +455,7 @@ Root independently qualified actual populated FR018 drill V2. Three actual offer
 
 Real meaningful TDD for client response completion: original client passed9 old tests and failed all4 new cases (delayed204/205, streamfailure, changedownerafterdrain); raw failure retained. After exact independently reviewed client change, actual35/35=13client+22C05UI pass. Client now awaits real204/205arrayBuffer and rechecks actionowner before undefined completion; no header/cache/error allowance changes. [Adoption/red evidence](/C:/Тили-тили/.unlazy/codex-planb-20261003/c05-response-drain-production-adoption-root.json), [actualgreen raw](/C:/Тили-тили/.unlazy/tz-full-20261002/logs/vitest-c05-response-drain-green-1.log). Full3frontend evidence no longer current after these2 material changes; backend current bytes unaffected. Root new full4 started00:21:47UTC/session19043 with exact727businesspins, old82/raw84attributes, nativefull517419/Redis12 exclusive. Actual full4 outcome remainsRUNNING, not a pass.
 
-Private FR018 registered30/nativeacceptance14/UI20 source suites exist, configured types/lint pass; fresh different-author reviews of14/20 underway; actual tests UNRUN. C11late/C15/C16races/C22PWA and broader22 remainpending. V4browser source rebind waits actualfull4; previousV3failed204 retained; full14/6/errorzero requirements unchanged. WholeWP0/17; nextformal03:45МСК/00:45UTC.
+Private FR018 registered30/nativeacceptance 14/UI20 source suites exist, configured types/lint pass; fresh different-author reviews of14/20 underway; actual tests UNRUN. C11late/C15/C16races/C22PWA and broader22 remainpending. V4browser source rebind waits actualfull4; previousV3failed204 retained; full14/6/errorzero requirements unchanged. WholeWP0/17; nextformal03:45МСК/00:45UTC.
 
 
 ## 2026-10-04T00:40:37.271Z · Current full4 accepted · 2131+3247=5378 · source727 unchanged
@@ -475,7 +475,7 @@ FR018 localpreserving83/native40proof accepted separately; business/backend10/UI
 
 Исправление204/205включено после независимой проверки и реального TDD: до изменения9PASS+4FAIL, после35/35=13client+22C05UI. [Adoption](/C:/Тили-тили/.unlazy/codex-planb-20261003/c05-response-drain-production-adoption-root.json), [green raw](/C:/Тили-тили/.unlazy/tz-full-20261002/logs/vitest-c05-response-drain-green-1.log). Текущий полный прогон принят:2131frontend+3247backend=5378PASS, типы/линт/сборки прошли, пропусков/ошибок0. [Full4](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c04-c05-full-4-qualified-root-1.json).
 
-Независимо проверены исходники14API/native и20DOM регрессий FR018, configured типы/линт без ошибок; реальное выполнение этих34 ещё впереди. [Native14 review](/C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-native-acceptance-fresh-review-v1/REVIEW.md), [UI20 review](/C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-ui-tests-fresh-review-v1/REVIEW.md). Реальные конкурентные C15/C16 готовятся отдельно; C11late/C22полныйPWA и другие22branches не закрыты.
+Независимо проверены исходники14API/native и20DOM регрессий FR018, configured типы/линт без ошибок; реальное выполнение этих34 ещё впереди. [Native 14 review](/C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-native-acceptance-fresh-review-v1/REVIEW.md), [UI20 review](/C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-ui-tests-fresh-review-v1/REVIEW.md). Реальные конкурентные C15/C16 готовятся отдельно; C11late/C22полныйPWA и другие22branches не закрыты.
 
 Браузер V4: полная root приёмка ещё не подтверждена. Сохраняются14сценариев/6RUENраскладок/нулевые неожиданные network-ошибки и все прошлые неуспешные rawruns. [ПодготовкаV4](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c05-browser-v4/PREPARATION-STATUS.json).
 
@@ -569,3 +569,21 @@ FreshGitHubguard02:35паузы нет; единственный sequentialfetch
 Принят только диагностический source delta: обычный reporter Vitest добавлен рядом с JSON; все проверки количества/пропусков/исходников/native/FK/аудита/cleanup/child exit сохранены. [Независимый source review](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-ci-hook-observability-fresh-review-v1/REVIEW.md), SHAB7912BD76C12F80B60663BB84C26E15F0EBF284B238AFD081E2DDE38F1B6BD91. [Фактическая искусственная CPU-проверка](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-ci-hook-observability-v1/CPU-CHECK-ROOT.json): оба child exit1/pending1; default+JSON показывает sentinel в console, JSON-only console его не показывает. Обе искусственные JSON message содержат sentinel: это проверка наблюдаемости, а не воспроизведение причины пустого message реального CI. Причина исходного сбоя и успешный CI после изменения не подтверждены; main merge UNRUN, PR остаётся draft.
 
 FR018 source proposals остаются UNADOPTED/runtime UNRUN. При совместном source admission обнаружены предел82 в ecosystem-migration-drill и старые raw82-привязки новых тестов; нужны отдельные новые изменения без ослабления guards. CI83 lane требуется новая композиция с reporter delta. После CI41 остаются интеграция83, actual full/routes30/native14/DOM20/races3/SC004PWA и полная приёмка WP00–WP16. Прикрепление PR к задаче было вызвано, подтверждение инструмента не получено.
+
+
+## Этап 2026-10-04T04:13:32.277Z — публикация C04/C05 и подготовка FR018
+
+PR41 объединён в main: 0e84e71827acb3e4bb5681b19d9a250ff55ce6c0, head7d28d0e965cef90ebd6ecd42e0785b7f54765610. Все7 проверок CI прошли. Скачанный артефакт push37174197255 проверен по размеру/SHA GitHub и текущему checkout:30 C04+19worker=49 без ошибок/пропусков,8barrier gates. Старый failed push сохранён; исходная причина hook failure не подтверждена. Источники: https://github.com/bairasbai/tili-tili/pull/41 и https://github.com/bairasbai/tili-tili/actions/runs/37174197255 .
+
+FR018: собрана отдельная композиция backend/UI/OpenAPI/generated/schema83/тестов с неизменной fixture82, сохранённым console reporter и новым запретом down при nonNULL условиях предложения/принятой сделки. Только SOURCE preparation: adoption, новые full/native/rollback/races/PWA/publicCI ещё UNRUN. Whole WP00–WP16:0/17;17=16−0+1. Физические устройства/provider, M01 и прочие целые WP остаются отдельными требованиями.
+
+
+## FR018 — публикация draft; браузерная приёмка открыта 2026-10-04T09:51:10.675Z
+
+Реализованы семь буквальных условий предложения, сравнение для пары и неизменяемый снимок условий принятой сделки; устаревшая версия возвращает 409. UI/API/OpenAPI и миграция 83 согласованы. Существующие записи сохраняют NULL; down запрещён при заполненных условиях.
+
+Локально прошли frontend 2172 + backend 3247 = 5419 тестов, types/lint/build; routes 30 + races 3; исправленный native 14; сохранение82→83/rollback drill; C04/C05 native 49 + barrier 8; Chromium PWA: последний прогон FAILED, браузерная приёмка не завершена. Общий5419 выполнен до двух окончательных изменений тестового oracle/ограниченного ожидания quiescence; native 14 перепроверен после них. Свежий CI опубликованного коммита требуется перед merge.
+
+Это часть WP00: целых WP00–WP16 подтверждено 0/17 (17=16−0+1); FR002 и прочие критерии полной приёмки остаются. По указанию владельца после текущей публикации работу остановить, новые WP не начинать. Подробности: tasks/wedding-platform-master-plan/FR018-PUBLICATION-20261004.md.
+
+Последний Chromium-прогон завершил 7 функциональных сценариев, 6 раскладок RU/EN и 12 снимков, но общий статус FAILED: финальная проверка console не приняла четыре HTTP403 для helper budget/tips и два HTTP404 для couple vendor/profile. Приёмка остаётся открытой; PR сохраняется draft.

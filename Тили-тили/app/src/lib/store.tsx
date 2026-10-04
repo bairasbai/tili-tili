@@ -349,6 +349,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       /* Пакет — только когда сервер его назвал (контракт v0.29.0, фича 005). */
       packageName: d?.packageName ?? undefined,
       packageIncludes: d?.packageIncludes ?? undefined,
+      comparisonTerms: d?.comparisonTerms,
     }
   }), [serverSlots])
   /* Пустой список, а не `['v1']`: подрядчика с таким номером не существует —

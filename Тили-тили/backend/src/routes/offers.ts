@@ -1,3 +1,4 @@
+import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { assertLegacyBookingSlotReady, bookVendor, lockBookingActor, lockBookingContext, lockBookingReplay } from '../deals/book.js'
@@ -331,9 +332,9 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
         // can update offers through SET NULL; locking the offer here would deadlock.
         const { rows: offers } = await client.query<{
           kind: string; package_id: string | null; title: string; includes: string[]; price: string;
-          superseded_at: Date | null; accepted_at: Date | null; expired: boolean
+          superseded_at: Date | null; accepted_at: Date | null; expired: boolean; comparison_terms: OfferComparisonTerms | null
         }>(
-          `select kind, package_id, title, includes, price::text as price, superseded_at, accepted_at,
+          `select kind, package_id, title, includes, price::text as price, superseded_at, accepted_at, comparison_terms,
                   valid_until < (clock_timestamp() at time zone coalesce($3, 'Europe/Moscow'))::date as expired
              from offers where id = $1 and request_id = $2`,
           [offerId, location.request_id, context.weddingTz],
@@ -348,7 +349,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
         const dealId = await bookVendor(client, context, {
           price: Number(offer.price),
           performer: { kind: 'offer', vendorId: incoming.vendor_id, packageId: offer.package_id,
-            packageTitle: offer.title, packageIncludes: offer.includes },
+            packageTitle: offer.title, packageIncludes: offer.includes, comparisonTerms: offer.comparison_terms ?? null },
         }, emissions)
         // Snapshot is already in the deal; the offer link is not its source of truth.
         await client.query('update offers set accepted_at = now(), deal_id = $2 where id = $1', [offerId, dealId])

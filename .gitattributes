@@ -82,3 +82,4 @@
 Тили-тили/backend/migrations/1763820000000_planb_system_template_keys.cjs text eol=lf
 Тили-тили/backend/migrations/data/categories.json text eol=crlf
 Тили-тили/backend/migrations/data/cities.json text eol=crlf
+Тили-тили/backend/migrations/1763825000000_offer_comparison_terms.cjs text eol=lf

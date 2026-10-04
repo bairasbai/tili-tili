@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 153. */
+ * Схем: 156. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -257,6 +257,35 @@ export const CONTRACT_SCHEMAS = {
               "consentRequired": {
                   "type": "boolean",
                   "description": "Только у `POST /auth/otp/verify`: нет живого согласия под\nдействующей редакцией политики — новый аккаунт, восстановленный\nпосле отзыва, или согласие дано под прежней редакцией (фича 005).\nДо `POST /users/me/consent` остальные пути отвечают: без согласия\nвовсе — 403 `forbidden`; под прежней редакцией — 403\n`consent_outdated`.\n"
+              }
+          }
+      },
+      "AvailabilityObservation": {
+          "type": [
+              "object",
+              "null"
+          ],
+          "additionalProperties": false,
+          "description": "Время чтения существующей DATE-занятости в текущем native SELECT, а не время обновления провайдера или обещание свободного ресурса; null означает отсутствие такого наблюдения.",
+          "required": [
+              "source",
+              "date",
+              "checkedAt"
+          ],
+          "properties": {
+              "source": {
+                  "type": "string",
+                  "enum": [
+                      "legacy_day"
+                  ]
+              },
+              "date": {
+                  "type": "string",
+                  "format": "date"
+              },
+              "checkedAt": {
+                  "type": "string",
+                  "format": "date-time"
               }
           }
       },
@@ -851,6 +880,9 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "comparisonTerms": {
+                  "$ref": "contract#/definitions/OfferComparisonTerms"
               },
               "packageName": {
                   "type": [
@@ -2050,7 +2082,7 @@ export const CONTRACT_SCHEMAS = {
           }
       },
       "Offer": {
-          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдевять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
+          "description": "Точная публичная форма одной версии ответа: оба варианта имеют ровно\nдесять полей. У `decline` поля предложения равны только `null`, а\n`includes` строго пуст; у `offer` название, положительная цена и срок\nне могут быть `null`.\n",
           "oneOf": [
               {
                   "type": "object",
@@ -2064,7 +2096,8 @@ export const CONTRACT_SCHEMAS = {
                       "price",
                       "includes",
                       "message",
-                      "validUntil"
+                      "validUntil",
+                      "comparisonTerms"
                   ],
                   "additionalProperties": false,
                   "properties": {
@@ -2112,6 +2145,9 @@ export const CONTRACT_SCHEMAS = {
                           ],
                           "maxLength": 2000
                       },
+                      "comparisonTerms": {
+                          "$ref": "contract#/definitions/OfferComparisonTerms"
+                      },
                       "validUntil": {
                           "type": "string",
                           "format": "date",
@@ -2131,7 +2167,8 @@ export const CONTRACT_SCHEMAS = {
                       "price",
                       "includes",
                       "message",
-                      "validUntil"
+                      "validUntil",
+                      "comparisonTerms"
                   ],
                   "additionalProperties": false,
                   "properties": {
@@ -2190,6 +2227,15 @@ export const CONTRACT_SCHEMAS = {
                           "minLength": 1,
                           "maxLength": 2000
                       },
+                      "comparisonTerms": {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      },
                       "validUntil": {
                           "type": [
                               "string",
@@ -2203,6 +2249,133 @@ export const CONTRACT_SCHEMAS = {
                   }
               }
           ]
+      },
+      "OfferComparisonTerms": {
+          "type": [
+              "object",
+              "null"
+          ],
+          "additionalProperties": false,
+          "description": "Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения.",
+          "required": [
+              "hours",
+              "team",
+              "result",
+              "delivery",
+              "extras",
+              "cancellation",
+              "reschedule"
+          ],
+          "properties": {
+              "hours": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "team": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "result": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "delivery": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "extras": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "cancellation": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "reschedule": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              }
+          }
+      },
+      "OfferComparisonTermsInput": {
+          "type": [
+              "object",
+              "null"
+          ],
+          "additionalProperties": false,
+          "description": "Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения.",
+          "properties": {
+              "hours": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "team": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "result": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "delivery": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "extras": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "cancellation": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              },
+              "reschedule": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 2000
+              }
+          }
       },
       "OfferInput": {
           "description": "Пакет, своё предложение или отказ — ровно одна из трёх строгих форм.",
@@ -2233,6 +2406,9 @@ export const CONTRACT_SCHEMAS = {
                       "message": {
                           "type": "string",
                           "maxLength": 2000
+                      },
+                      "comparisonTerms": {
+                          "$ref": "contract#/definitions/OfferComparisonTermsInput"
                       },
                       "validUntil": {
                           "type": "string",
@@ -2277,6 +2453,9 @@ export const CONTRACT_SCHEMAS = {
                       "message": {
                           "type": "string",
                           "maxLength": 2000
+                      },
+                      "comparisonTerms": {
+                          "$ref": "contract#/definitions/OfferComparisonTermsInput"
                       },
                       "validUntil": {
                           "type": "string",
@@ -4549,6 +4728,7 @@ export const CONTRACT_SCHEMAS = {
               "createdAt",
               "available",
               "occupancy",
+              "availabilityObservation",
               "vendor"
           ],
           "additionalProperties": false,
@@ -4577,6 +4757,9 @@ export const CONTRACT_SCHEMAS = {
                       "null"
                   ],
                   "description": "`true` — живая анкета той же категории; `false` — анкета скрыта,\nзаблокирована или сменила категорию; `null` — обезличенный tombstone.\n"
+              },
+              "availabilityObservation": {
+                  "$ref": "contract#/definitions/AvailabilityObservation"
               },
               "occupancy": {
                   "type": [
@@ -8204,6 +8387,7 @@ export type ContractSchemaName =
   | "AdminMetrics"
   | "AlbumPhoto"
   | "AuthTokens"
+  | "AvailabilityObservation"
   | "BroadcastResult"
   | "Budget"
   | "BudgetItem"
@@ -8250,6 +8434,8 @@ export type ContractSchemaName =
   | "Note"
   | "Notification"
   | "Offer"
+  | "OfferComparisonTerms"
+  | "OfferComparisonTermsInput"
   | "OfferInput"
   | "OfferPublic"
   | "OfferRequest"

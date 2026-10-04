@@ -44,7 +44,7 @@
       "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\c05WorkerFinalBatch.test.ts",
       "target": "backend/test-isolated/c05WorkerFinalBatch.test.ts",
       "originalSHA256": "53B81479D2FBBE6EC6507A561B336F5E0EAB02DE515375FDE16DEA9C7538DF96",
-      "candidateSHA256": "6EAF89740AA667CEFACC8348442326169B03CD99769EAB29597A5FAA9AE90A01",
+      "candidateSHA256": "A5A25C1D8B540C9D32F81C56C506A9940D0A4A1990FAE433A459167B073501D4",
       "replacements": [
         {
           "first": 3,
@@ -81,6 +81,10 @@
           "last": 74,
           "old": "    const schema=JSON.parse(readFileSync(process.env.C05_WORKER_SCHEMA_ATTESTATION??'C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c04-root-schema382.json','utf8'));assert.equal(schema.identity.oid,OID);assert.equal(schema.identity.name,TARGET);assert.equal(schema.migrationCount,82)\n",
           "new": "    const schema=admission.schema;assert.equal(schema.migrationCount,82)\n"
+        },
+        {
+          "old": "assert.equal(schema.migrationCount,82)",
+          "new": "assert.equal(schema.migrationCount,83)"
         }
       ],
       "inverseByteEqual": true

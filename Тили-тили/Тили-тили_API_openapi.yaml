@@ -3929,6 +3929,8 @@ paths:
                           type: string
                           nullable: true
                           description: снимок принятого названия; не зависит от удаления живого пакета
+                        comparisonTerms:
+                          $ref: '#/components/schemas/OfferComparisonTerms'
                         packageIncludes:
                           type: array
                           nullable: true
@@ -12017,6 +12019,7 @@ components:
         - createdAt
         - available
         - occupancy
+        - availabilityObservation
         - vendor
       additionalProperties: false
       properties:
@@ -12040,6 +12043,8 @@ components:
           description: |
             `true` — живая анкета той же категории; `false` — анкета скрыта,
             заблокирована или сменила категорию; `null` — обезличенный tombstone.
+        availabilityObservation:
+          $ref: '#/components/schemas/AvailabilityObservation'
         occupancy:
           type: string
           nullable: true
@@ -12133,10 +12138,106 @@ components:
           type: string
           enum:
             - RUB
+    OfferComparisonTermsInput:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения.
+      properties:
+        hours:
+          type: string
+          nullable: true
+          maxLength: 2000
+        team:
+          type: string
+          nullable: true
+          maxLength: 2000
+        result:
+          type: string
+          nullable: true
+          maxLength: 2000
+        delivery:
+          type: string
+          nullable: true
+          maxLength: 2000
+        extras:
+          type: string
+          nullable: true
+          maxLength: 2000
+        cancellation:
+          type: string
+          nullable: true
+          maxLength: 2000
+        reschedule:
+          type: string
+          nullable: true
+          maxLength: 2000
+    OfferComparisonTerms:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения.
+      required:
+        - hours
+        - team
+        - result
+        - delivery
+        - extras
+        - cancellation
+        - reschedule
+      properties:
+        hours:
+          type: string
+          nullable: true
+          maxLength: 2000
+        team:
+          type: string
+          nullable: true
+          maxLength: 2000
+        result:
+          type: string
+          nullable: true
+          maxLength: 2000
+        delivery:
+          type: string
+          nullable: true
+          maxLength: 2000
+        extras:
+          type: string
+          nullable: true
+          maxLength: 2000
+        cancellation:
+          type: string
+          nullable: true
+          maxLength: 2000
+        reschedule:
+          type: string
+          nullable: true
+          maxLength: 2000
+    AvailabilityObservation:
+      type: object
+      nullable: true
+      additionalProperties: false
+      description: Время чтения существующей DATE-занятости в текущем native SELECT, а не время обновления провайдера или обещание свободного ресурса; null означает отсутствие такого наблюдения.
+      required:
+        - source
+        - date
+        - checkedAt
+      properties:
+        source:
+          type: string
+          enum:
+            - legacy_day
+        date:
+          type: string
+          format: date
+        checkedAt:
+          type: string
+          format: date-time
     Offer:
       description: |
         Точная публичная форма одной версии ответа: оба варианта имеют ровно
-        девять полей. У `decline` поля предложения равны только `null`, а
+        десять полей. У `decline` поля предложения равны только `null`, а
         `includes` строго пуст; у `offer` название, положительная цена и срок
         не могут быть `null`.
       oneOf:
@@ -12152,6 +12253,7 @@ components:
             - includes
             - message
             - validUntil
+            - comparisonTerms
           additionalProperties: false
           properties:
             id:
@@ -12184,6 +12286,8 @@ components:
               type: string
               maxLength: 2000
               nullable: true
+            comparisonTerms:
+              $ref: '#/components/schemas/OfferComparisonTerms'
             validUntil:
               type: string
               format: date
@@ -12200,6 +12304,7 @@ components:
             - includes
             - message
             - validUntil
+            - comparisonTerms
           additionalProperties: false
           properties:
             id:
@@ -12238,6 +12343,11 @@ components:
               type: string
               minLength: 1
               maxLength: 2000
+            comparisonTerms:
+              type: object
+              nullable: true
+              enum:
+                - null
             validUntil:
               type: string
               format: date
@@ -12335,6 +12445,8 @@ components:
             message:
               type: string
               maxLength: 2000
+            comparisonTerms:
+              $ref: '#/components/schemas/OfferComparisonTermsInput'
             validUntil:
               type: string
               format: date
@@ -12367,6 +12479,8 @@ components:
             message:
               type: string
               maxLength: 2000
+            comparisonTerms:
+              $ref: '#/components/schemas/OfferComparisonTermsInput'
             validUntil:
               type: string
               format: date
@@ -13259,6 +13373,8 @@ components:
         externalPhone:
           type: string
           nullable: true
+        comparisonTerms:
+          $ref: '#/components/schemas/OfferComparisonTerms'
         packageName:
           type: string
           nullable: true

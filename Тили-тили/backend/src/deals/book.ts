@@ -8,6 +8,8 @@ import { holdVendorDate } from './repo.js'
 import { lockOrderPrincipal } from '../orders/context.js'
 import { assertLegacyDateBookingAllowed } from '../resources/booking-boundary.js'
 
+import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
+
 export interface BookingActorInput { weddingId: string; actorId: string; sessionId?: string; policyVersion?: string }
 /** Access-only replay guard. A cancelled position can now be empty; check its
  * actual scope and current principal without repeating the original action. */
@@ -54,6 +56,7 @@ export type BookingPerformer =
       packageId: string | null
       packageTitle: string
       packageIncludes: string[]
+      comparisonTerms?: OfferComparisonTerms | null
     }
   | { kind: 'external'; name: string; phone?: string }
 
@@ -237,8 +240,8 @@ export async function bookVendor(
     await client.query(
       `insert into deals (
          id, wedding_id, slot_id, vendor_id, state, price, currency, booked_at,
-         package_id, package_title_snapshot, package_includes_snapshot)
-       values ($1, $2, $3, $4, 'booked', $5, 'RUB', now(), $6, $7, $8)`,
+         package_id, package_title_snapshot, package_includes_snapshot, offer_comparison_terms_snapshot)
+       values ($1, $2, $3, $4, 'booked', $5, 'RUB', now(), $6, $7, $8, $9::jsonb)`,
       [
         dealId,
         context.weddingId,
@@ -248,6 +251,8 @@ export async function bookVendor(
         packageId,
         terms?.name ?? null,
         terms ? JSON.stringify(terms.items) : null,
+        input.performer.kind === 'offer' && input.performer.comparisonTerms != null
+          ? JSON.stringify(input.performer.comparisonTerms) : null,
       ],
     )
   } else {
