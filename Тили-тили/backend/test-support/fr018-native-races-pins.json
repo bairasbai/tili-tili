@@ -1,0 +1,506 @@
+{
+  "effective": [
+    {
+      "path": "Тили-тили/backend/src/routes/vendorCabinet.ts",
+      "sha256": "80FB33430260AA9EED96F7B00B0869ED9E4C492CCF770DEF6CB660856C6D1B13"
+    },
+    {
+      "path": "Тили-тили/backend/src/routes/offers.ts",
+      "sha256": "D20F2977251075EB192E4661D70D19E926467DD4CAD160C22583D86A04C7E207"
+    },
+    {
+      "path": "Тили-тили/backend/src/deals/book.ts",
+      "sha256": "B749D2072E9AE1D8BAC12A9EC073368F4B4DBD811F82D95269E203D26331BFF0"
+    },
+    {
+      "path": "Тили-тили/backend/src/deals/repo.ts",
+      "sha256": "1668386EBC3D8C801850E09AD538CE2623DB6A0E19C8FFEC85C65FB02423EACD"
+    },
+    {
+      "path": "Тили-тили/backend/src/routes/shortlist.ts",
+      "sha256": "7C1EDB6624437227358B539C12D21D83E71A81B17EF78AA15A7906DC4A5BF551"
+    },
+    {
+      "path": "Тили-тили/backend/src/routes/users.ts",
+      "sha256": "791831827FD3BD71FFD3C0ECE39732711BFB21E45A1C7B165ABC5290F190C1CF"
+    },
+    {
+      "path": "Тили-тили/backend/src/orders/terms.ts",
+      "sha256": "A222A8A2978E9670FB37B2B00C39461A4F64DFDB83E28E272B378C2D2586CBAF"
+    },
+    {
+      "path": "Тили-тили/backend/src/offers/comparison-terms.ts",
+      "sha256": "356161F64531513C358F01A7BAE5559905D2F92BED439169DC13414BD4CCAD65"
+    },
+    {
+      "path": "Тили-тили/backend/migrations/1763825000000_offer_comparison_terms.cjs",
+      "sha256": "F682B9156C28792A70F4539BBCF1799E39FED0BE71D7CFA741BAB53D2A9275BA"
+    },
+    {
+      "path": "Тили-тили/Тили-тили_API_openapi.yaml",
+      "sha256": "BC0A33A969041AFB201A379969B637B03225098DAA2750244C9F03C1F40356B5"
+    }
+  ],
+  "data": [
+    {
+      "path": "Тили-тили/backend/migrations/data/categories.json",
+      "sha256": "9FF447728CE1A2C00B681E73407F216C5D4258BC297D8261EC6F81AF776E9212"
+    },
+    {
+      "path": "Тили-тили/backend/migrations/data/cities.json",
+      "sha256": "3646863DF60BCFB89EB119E5855AF02506C2BFE4EBFC7C5238FA895F43F7F332"
+    }
+  ],
+  "oldMigrations": [
+    {
+      "name": "1757000000000_bootstrap",
+      "sha256": "D6B362095372F834B441F6AEFCF435B0E91FD850D7B844572E93D27CFDD548D3"
+    },
+    {
+      "name": "1757100000000_auth_and_geo",
+      "sha256": "E2180DE98A15B981B54F23A693B12401DC3D121A19AEF0383E73DE34ECE92DE8"
+    },
+    {
+      "name": "1757200000000_weddings_and_team",
+      "sha256": "96A4B9614D492924F01AB54274D1B8122B8B0EBEB32E4A28585B1DDECEB40CCE"
+    },
+    {
+      "name": "1757300000000_session_rotation",
+      "sha256": "AE0914B1414A0950F3E94FC73E8DB2A9E58471FF30FFF9A6A618360C2C4B8FC6"
+    },
+    {
+      "name": "1757400000000_catalog",
+      "sha256": "387F8CF323D258CFBE5218343FEFAD35C276A16346B90B185C85885D9FAE9934"
+    },
+    {
+      "name": "1757500000000_deals_and_money",
+      "sha256": "8CC3778777260469739363383DA6809168AA65D697CF8B8BC2D853E4A8985060"
+    },
+    {
+      "name": "1757600000000_guests_and_day",
+      "sha256": "FD9E62B88AB7383B71B78212ED15A0897548BE782A34704C6CCF3FF06FE2A932"
+    },
+    {
+      "name": "1757700000000_seat_counters",
+      "sha256": "F71F597D1B3FF43EFEC4C9EA72E03135EEC25FBF912C0F5255A91652716221E8"
+    },
+    {
+      "name": "1757800000000_gifts_and_funds",
+      "sha256": "05B209FF58308885F43E857A47F122019DB816605DC0C46791B1F5ABE8828304"
+    },
+    {
+      "name": "1757900000000_chats_and_notifications",
+      "sha256": "55FC1A5F9FA6789EA4595101104C1C3F4B0B05B7543FFDA97BA185FB1A55F468"
+    },
+    {
+      "name": "1758000000000_dayx_and_reminders",
+      "sha256": "5E576F1840752410E971307A5B511C836CA43124CCB4AE06028F3469F940C45E"
+    },
+    {
+      "name": "1758100000000_notification_matrix",
+      "sha256": "6239F51AEA46F0D694F0A27609C48ED5356B760318815552D9BECAC5844D73A3"
+    },
+    {
+      "name": "1758200000000_leads_reviews_moderation",
+      "sha256": "3DD6073AD47493F3D52958C3BAE7AC38409D75E9804F687BD1D841B15194284D"
+    },
+    {
+      "name": "1758300000000_city_timezones",
+      "sha256": "1BEA0D869DC96E2CC0F0A6652737D7D2781367D2235AA83992E268C40C0CBAB3"
+    },
+    {
+      "name": "1758400000000_external_vendor_chat",
+      "sha256": "31D64FAE976C5D7AF4A356D6BDCDAA179405883FE8908725D2F7C9043FA4F268"
+    },
+    {
+      "name": "1758500000000_planb_checklist",
+      "sha256": "4825446EB736D07E53D87C260661AEF40BDE2798556B18FCD767FEF0E2742EFB"
+    },
+    {
+      "name": "1758600000000_deal_price_and_inspiration",
+      "sha256": "F48A96646513CA0FD88C839AE46DC417838E22C3457AC7672C92D9FAA61D1777"
+    },
+    {
+      "name": "1758700000000_vendor_updates",
+      "sha256": "9363B34419D6E9AE3337F0EA707A0311CEB24C0B6444E1B70E5F195CF94DADCD"
+    },
+    {
+      "name": "1758800000000_crew_chat",
+      "sha256": "5C63BC5F61A3EA62762CD95A70B0F61369E8D4441E8F25C6CA7E6D21BED8F911"
+    },
+    {
+      "name": "1758900000000_vendor_phone",
+      "sha256": "8D6CCD25A34B8BFB9E778FF682A19CFE1079985EEBDB7C8B9CD0DCDB05F5B4D2"
+    },
+    {
+      "name": "1759000000000_dress_code",
+      "sha256": "BCDDAF7B574DEB03887CD590911B006E196EB178FC9C826A7900622D3DB43E85"
+    },
+    {
+      "name": "1759100000000_guest_reminders",
+      "sha256": "E6444E6230B0BBBEE420F29914040C2492B53BD446ECC25821F49901D9B480B8"
+    },
+    {
+      "name": "1759200000000_chat_by_deal",
+      "sha256": "499669C09B2089444CA2F5417CD029FC94CE84DBC4C11FB8707ED411146FFB25"
+    },
+    {
+      "name": "1759300000000_bus_seats_by_persons",
+      "sha256": "19A8893E2886A557DB61B157EECCF13889E3666AFC7C433A07099572D9245F04"
+    },
+    {
+      "name": "1759400000000_review_by_guest",
+      "sha256": "8D554C72105300159F088CF702939719DD68168EB54007BC090A2F37EEE347D1"
+    },
+    {
+      "name": "1759500000000_deal_package",
+      "sha256": "2CDF552B04A53304E61DC5693BF7FAD80510BE142F52282DCA544D4303653DA1"
+    },
+    {
+      "name": "1759600000000_complaint_resolution_by_target",
+      "sha256": "2BDDA764CEFBD19BE658C17CDFBB7154DAE076C1157BA165A6E459838397258A"
+    },
+    {
+      "name": "1759700000000_verification_constraints",
+      "sha256": "9380AC3492CEB9C5BA40C47165B9292EEDC29084679ACFD4ECB5281150517519"
+    },
+    {
+      "name": "1759800000000_couple_reviews_count",
+      "sha256": "B00AC38A6FA16835555A840627AB43CE0B78F021B7CCACDC1E33BFA600A6FCD3"
+    },
+    {
+      "name": "1759900000000_bus_route_deal",
+      "sha256": "F27668461CFF9F4BF51569F32D488DEC4F85BCB76EF278769BFBF5B149771E1E"
+    },
+    {
+      "name": "1760000000000_timeline_for_guests",
+      "sha256": "5C74D79C884A41B3510AB0864C84CDA3F564981818F675ECA43E7B94EF66E7E5"
+    },
+    {
+      "name": "1760100000000_message_guest",
+      "sha256": "D2AB85B6EF2978A56CCCB1C32048AC1B8B7F0C5A545006423E999F44E55854A6"
+    },
+    {
+      "name": "1760200000000_tilly_usage",
+      "sha256": "1DE008C3A030077C8D9902DAFAFF3C2BB167D060A2D63A9C9821F7A1EE5C9C03"
+    },
+    {
+      "name": "1760300000000_notes",
+      "sha256": "6778C2565DB922EF58545C6B7EC99EEF6E94F03DA946C061293DD89FC15DCB2D"
+    },
+    {
+      "name": "1760400000000_vendor_update_transport",
+      "sha256": "62931D82F6EC046046BFA63EB23EDAE63B562B0915F50FF08C88EB9E45F0F94B"
+    },
+    {
+      "name": "1760500000000_review_keeps_after_purge",
+      "sha256": "9AC987439C599995267C24D1C026E94AA05587129BBC15ADE893F172D3217A24"
+    },
+    {
+      "name": "1760600000000_validate_checks",
+      "sha256": "A0E9AB95A1E9AE5A3CD5DA2534F417D95F12574923BDE1B1A94D013FFA5E0B84"
+    },
+    {
+      "name": "1760700000000_consent_adult_media_rights_job_marks",
+      "sha256": "80AB7294D7728E230A99426816EC4012F3C8A429B71A7402E0D8BD6FADECED39"
+    },
+    {
+      "name": "1760800000000_category_descriptions",
+      "sha256": "926E1721CA12B60AD9542AAC043FD31CE944BFF78304592EE54FC0E6FA45F95D"
+    },
+    {
+      "name": "1760900000000_currency_rub_everywhere",
+      "sha256": "8BE67B230769B06AFF50026FFC3FB98F6919BA6100396A9403AB47D35B9AD1E6"
+    },
+    {
+      "name": "1761000000000_task_ownership_and_deadlines",
+      "sha256": "EF38659FF00BBD95C9AB49A7761182E0BB7A8B2D4C87C980A2C938340067E9AC"
+    },
+    {
+      "name": "1761100000000_task_assignment_lifecycle",
+      "sha256": "37CF6E2A925BCBA97114CAA487FC79449E43EF52DC2C0134ECF6D040EE83AF9C"
+    },
+    {
+      "name": "1761200000000_task_reminders",
+      "sha256": "5A1AA6BB06FEB84FFFD8E01B5260CA4C97114382D6978A2791264103C331D6B3"
+    },
+    {
+      "name": "1761300000000_quiz_answers_matter",
+      "sha256": "0810283C5D40B631C35CDAB322C9D645A42463E594EEF904E1F46577C8FE19A5"
+    },
+    {
+      "name": "1761310000000_payment_schedule",
+      "sha256": "C319DA3CFE7966BE8D05462D1DB0335065B84BB02FE79C925869A4C2FDDF69BA"
+    },
+    {
+      "name": "1761400000000_budget_controls_receipts",
+      "sha256": "9C653F18D17105837518EA8D298853C57D46A21A2A00F77111AD6F9BD03535EC"
+    },
+    {
+      "name": "1761500000000_shortlist_offers",
+      "sha256": "85BB17DC5595D5C37758410918CAB52522F089F927FE5BD18D1F0DCFA059B69E"
+    },
+    {
+      "name": "1761600000000_family_guest_parties",
+      "sha256": "15623E70CA31B8410325ED54B7ED508B1879D4F55DC57940FD8D1D5A18F9A44A"
+    },
+    {
+      "name": "1761700000000_payment_methods_privacy",
+      "sha256": "B5D8AD1A9A31A8178AB8F30D065EE2840CB283D7F19F75CBF191E9BAF4E4F01A"
+    },
+    {
+      "name": "1761800000000_timeline_versions",
+      "sha256": "5554D155305E088941AEBE34E3FE172212F6DA1E6E5ACCC53CE59312186D0220"
+    },
+    {
+      "name": "1761900000000_timeline_planning",
+      "sha256": "646CD0D40665647BCCB75B2F726E12A9E80E7F41ED18FC4EF1F91DDA0EDF3D7A"
+    },
+    {
+      "name": "1762000000000_timeline_origins",
+      "sha256": "BA120611656494D2732A9F46A7A43F82A31A360116B9BA12D4C199A013C91DB9"
+    },
+    {
+      "name": "1762100000000_wedding_events",
+      "sha256": "392F41E35D9FD537F9396D4461B3BC953DF35A2670A664A781FA910AF064FAA8"
+    },
+    {
+      "name": "1762200000000_vendor_program_ack",
+      "sha256": "0B36143CF313AA1F412947E2E665A992F1D73415BE9A52C33A34D5F4D795D37A"
+    },
+    {
+      "name": "1762300000000_external_program_ack",
+      "sha256": "0F9A6883D1C1E34E0E23A7866F7EA87A01359A0FBBDE4B8DF9788FCCA0658FF3"
+    },
+    {
+      "name": "1762400000000_external_program_current",
+      "sha256": "A9B4ECBBDCA03E39586FB9B9275F7AE5E7D5B9C97F20A0AAC80DD7ADE947466E"
+    },
+    {
+      "name": "1762500000000_event_invitations",
+      "sha256": "F6E9FAB9065422ED7FA7F10A3B41ECA4EAF90A909F3DEC9DD702337EA039F2AF"
+    },
+    {
+      "name": "1763000000000_notification_deliveries",
+      "sha256": "AC7A57DB91EF7B7B8F29D1179950F6D72FDF0257FEF918D06CFBD972ADF701B6"
+    },
+    {
+      "name": "1763100000000_wedding_attention",
+      "sha256": "52119119196FF2A97725F26C9F7CF51369DAAADBC5105B0EDFDC60C85C18747B"
+    },
+    {
+      "name": "1763200000000_notification_push_disposition",
+      "sha256": "FEE541EA078F9E6A7BA5F3C3DA9727524986053E664E0CFFB4FD396B3902BE7F"
+    },
+    {
+      "name": "1763250000000_notification_timezone",
+      "sha256": "D96F176FEF3ED773CF14995C48293008AD6313508B8F1345AA369ECCD250CD0E"
+    },
+    {
+      "name": "1763260000000_attention_selection_invalidation",
+      "sha256": "48391F15BF9AAFB0B11D389CD266FEE0F90F83C8F322C5E07AB1489E4FEC8DEB"
+    },
+    {
+      "name": "1763300000000_order_structure",
+      "sha256": "CCDA9C7705D7C89AAABA2A00EAA19DC56109CB7F75363E17DDC842091D1B6AA3"
+    },
+    {
+      "name": "1763310000000_order_erase_deferred",
+      "sha256": "8D6D130D3C844AD8C8F7E57BB898B5BBD223BA894299BC5C84C13DB243FF9571"
+    },
+    {
+      "name": "1763320000000_notification_comment_rollback",
+      "sha256": "C99639FE27C511321102EE3C2230960E123580DD680D14974296BD2128168EC0"
+    },
+    {
+      "name": "1763400000000_order_terms",
+      "sha256": "DE9257C1FE1F8D1C652568B0274EBFDA981FE045DD946457B0DA4DCF2140AAD2"
+    },
+    {
+      "name": "1763410000000_terms_receipt_digest",
+      "sha256": "D04E060F9C605C33D8DEC873E12066C33B11009DE4B150ADC84753506EA7841F"
+    },
+    {
+      "name": "1763450000000_vendor_staff",
+      "sha256": "A94ADC973A8C6B1C281DDB78732FF8B6E4E3DA002E6199B0033FD23E47316BB5"
+    },
+    {
+      "name": "1763500000000_vendor_resources",
+      "sha256": "8DDC2FCFEC2A76FF8F5CA0DE2A5E8D962B2ED4C23516D0B69E9230947E28C14D"
+    },
+    {
+      "name": "1763510000000_staff_duty_event_scope",
+      "sha256": "A8E1D7474673544E42FA44C01BF9CD6C4549770794B4A5F26747E67D684D7C74"
+    },
+    {
+      "name": "1763550000000_staff_invitation_identity",
+      "sha256": "02C6B5FC8360E88C1DAD66D32B02E3843E3353ED1F5323C1344442D228F8110A"
+    },
+    {
+      "name": "1763600000000_order_resource_plan",
+      "sha256": "B7316709240D27D2191EBC3C61E783F53DA2AFBB27523617748655C3F3AE6670"
+    },
+    {
+      "name": "1763610000000_resource_plan_head_integrity",
+      "sha256": "4FC19DA1172FA6ECBC92B6AD5DEA109DEC5B3D397388D81AD72ED8ED320EDDF2"
+    },
+    {
+      "name": "1763650000000_resource_commitments",
+      "sha256": "D8AC93B539C1037504749F3F56AD75AE832A46A757FADC3E3CA7497845EF8409"
+    },
+    {
+      "name": "1763660000000_commitment_proof_guard",
+      "sha256": "34DBF7821D3937A09CBCE9B59E019ABB27CC89361B6C16D0EB37187A103FB494"
+    },
+    {
+      "name": "1763670000000_commitment_trigger_records",
+      "sha256": "A95B7FE076D4444E7C07E6001B126DC209ECD1E355DEBF471BF9FF5FCDCEB1E7"
+    },
+    {
+      "name": "1763680000000_commitment_history_cascade",
+      "sha256": "92BF0F71D930CA8F7BB9000BF95CC65C0ADAC47443EA7B1F59E042DA95D2C29F"
+    },
+    {
+      "name": "1763690000000_allocation_release_proof",
+      "sha256": "4874875A032B7A3CF6BFED950F7D2AF09E57A40CDE1EEADDDC5DB20F265C9899"
+    },
+    {
+      "name": "1763700000000_event_rsvp_deadlines",
+      "sha256": "547F6FAA6F1E229A73CAC488423D1CB005946378BDAB1501F4FD4C26160F3B65"
+    },
+    {
+      "name": "1763800000000_legacy_calendar_sources",
+      "sha256": "E05F80B9FA0719506E7011B81619C9B79B93D66621559A99EAE2B6879624EA0C"
+    },
+    {
+      "name": "1763810000000_legacy_calendar_day_recovery",
+      "sha256": "26AFCD80459DF1E115BB1E32A719A34A2D81694A892DEF889F9E4F7ECE633E44"
+    },
+    {
+      "name": "1763820000000_planb_system_template_keys",
+      "sha256": "F7813C7CDC89672156E5414139CE5560A2AD4227B985D786B9505B2FCDA3B8EB"
+    }
+  ],
+  "external": [
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-migration-order-v1/SOURCE-OVERRIDE.json",
+      "sha256": "C6C2A6F1DBD90A640EB847B7780E624BDF9E05080C73DB433A6CD18B82172799"
+    },
+    {
+      "path": "C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend/test-support/fr018-pre83-migrations.json",
+      "sha256": "432E733FAECFECEAFE64741760E2F9E99E95B52B52CBED3164DDB827E06D8655"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-root-createdb.json",
+      "sha256": "EE4AD8798962C71426E1750E11AC4F88D2E2BE0B91B571D9C03B3B6ED633D459"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-root-schema382.json",
+      "sha256": "38D635CD12A4AA38441C2E5D03C696C92BBD0651AB3EBFE468E24733EB66BD65"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-backend-v1/MODEL.md",
+      "sha256": "DC92A459DC740D6E72717436BC67793751A0A858B53FBB86D6E20CADBB52038E"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-acceptance-v1/ACCEPTANCE.md",
+      "sha256": "C0FDEDF05C5C93E76FA78AE780AB2A47F484D5764D9C03D870C995F464B5F450"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-backend-v2/HANDOFF.md",
+      "sha256": "60ABECDBA38D9CF6AC3FB81A2174D03301FFC81D477FA14D78EFEE79DDFDCC7C"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-backend-v2-fresh-review-v1/REVIEW.md",
+      "sha256": "E23E5BA614DA0F399DC7ED2B48323ACC94ED04DA5DDE5823160E0453E97E8EBD"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-migration-order-fresh-review-v1/REVIEW.md",
+      "sha256": "5C4DA281B7950555BDAB3FFD5F6E2D39A019AA24A559C850DE5392FDDAD416C2"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-ui-v1/HANDOFF.md",
+      "sha256": "44626243F5D64CFAC7459127FFABF595FE089A1B0389CEC7F435CCBC521F72C0"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-generated-v2/schema.ts",
+      "sha256": "06136E094343E5E1C8AE82F38B31A5799763D5049D4DC16116E12A3146ADEFCE"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-generated-v2/RECEIPT.json",
+      "sha256": "744A02844A30E1387C0D1C2A35646B2E953BFD193D5B1688B0B8E1EA087123A0"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-route-tests-v1/HANDOFF.md",
+      "sha256": "28F98B5EF76E32FBD395172578AE69338C697AA380FD8D331C0F58DA127BBA63"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-route-tests-v1/candidate/Тили-тили/backend/test-isolated/fr018OfferInputRoutes.test.ts",
+      "sha256": "A1554FA2D5D2545445D930FE7A2498D530373CD7B0CA9C52C3F492F771107555"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-migration-drill-v1/HANDOFF.md",
+      "sha256": "BC145F7858EA61D4FD591FBD0DE80F43359D2E1256AB943B3217322A0DFECC9E"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003/wp00-fr018-migration-drill-fresh-review-v1/REVIEW.md",
+      "sha256": "832B9DDB7577C91DF708F1F9BBBD23660F7CAB5FF0FFE6CE32C2158482A780AC"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v2\\candidate\\Тили-тили\\backend\\src\\routes\\vendorCabinet.ts",
+      "sha256": "80FB33430260AA9EED96F7B00B0869ED9E4C492CCF770DEF6CB660856C6D1B13"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\candidate\\Тили-тили\\backend\\src\\routes\\offers.ts",
+      "sha256": "D20F2977251075EB192E4661D70D19E926467DD4CAD160C22583D86A04C7E207"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\candidate\\Тили-тили\\backend\\src\\deals\\book.ts",
+      "sha256": "B749D2072E9AE1D8BAC12A9EC073368F4B4DBD811F82D95269E203D26331BFF0"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\candidate\\Тили-тили\\backend\\src\\deals\\repo.ts",
+      "sha256": "1668386EBC3D8C801850E09AD538CE2623DB6A0E19C8FFEC85C65FB02423EACD"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\candidate\\Тили-тили\\backend\\src\\routes\\shortlist.ts",
+      "sha256": "7C1EDB6624437227358B539C12D21D83E71A81B17EF78AA15A7906DC4A5BF551"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\candidate\\Тили-тили\\backend\\src\\routes\\users.ts",
+      "sha256": "791831827FD3BD71FFD3C0ECE39732711BFB21E45A1C7B165ABC5290F190C1CF"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\candidate\\Тили-тили\\backend\\src\\orders\\terms.ts",
+      "sha256": "A222A8A2978E9670FB37B2B00C39461A4F64DFDB83E28E272B378C2D2586CBAF"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\backend-v2\\Тили-тили\\backend\\src\\offers\\comparison-terms.ts",
+      "sha256": "356161F64531513C358F01A7BAE5559905D2F92BED439169DC13414BD4CCAD65"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-migration-order-v1\\candidate\\Тили-тили\\backend\\migrations\\1763825000000_offer_comparison_terms.cjs",
+      "sha256": "79B1082CACCA0E5E1AA17A481E54D58BF96BCF48F8DC7190302182CFC20E34E3"
+    },
+    {
+      "path": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\wp00-fr018-backend-v1\\openapi-v4\\Тили-тили\\Тили-тили_API_openapi.yaml",
+      "sha256": "BC0A33A969041AFB201A379969B637B03225098DAA2750244C9F03C1F40356B5"
+    }
+  ],
+  "nativeFKs": [
+    {
+      "oid": "631648",
+      "tgname": "RI_ConstraintTrigger_c_631648",
+      "tgenabled": "O",
+      "tgisinternal": true,
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_631648\" AFTER INSERT ON public.idempotency_keys FROM users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_ins\"()"
+    },
+    {
+      "oid": "631649",
+      "tgname": "RI_ConstraintTrigger_c_631649",
+      "tgenabled": "O",
+      "tgisinternal": true,
+      "definition": "CREATE CONSTRAINT TRIGGER \"RI_ConstraintTrigger_c_631649\" AFTER UPDATE ON public.idempotency_keys FROM users NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION \"RI_FKey_check_upd\"()"
+    }
+  ]
+}

@@ -49,10 +49,10 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function assertJournal(actual,expected){assert.equal(expected.length,82);assert.equal(new Set(expected).size,82);assert.deepEqual(expected,[...expected].sort());assert.equal(expected.at(-1),'1763820000000_planb_system_template_keys');assert.deepEqual(actual,expected)}
+export function assertJournal(actual,expected){assert.equal(expected.length,83);assert.equal(new Set(expected).size,83);assert.deepEqual(expected,[...expected].sort());assert.equal(expected.at(-1),'1763825000000_offer_comparison_terms');assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  assert.equal(source.kind,'c04_c05_current_source_v1');assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  assert.equal(source.kind,'c04_c05_current_source83_v1');assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   const expected=readJSON(join(backend,'test-support/c04-c05-migrations.json'))
@@ -60,13 +60,56 @@ export function verifySource(source){
   verifyTestInverses()
   return expected.map(f=>f.name)
 }
+// Local83 requires one independently root-qualified preserving transition; no82/83 runtime union.
+export function assertLocalUpgrade83(u,before,after,upgradeSource,portable82,currentSource,p,creation){
+  assert.equal(p.mode,'local');assertCreation(creation,p)
+  assert.equal(u.kind,'root_actual_preserving_C04_C05_local_82_to_83_v1');assert.equal(u.runtime,'ACTUAL_NATIVE');assert.equal(u.overall,'PASSED')
+  assert.equal(u.targetURL,p.targetURL);assert.equal(u.targetName,p.targetName);assert.equal(u.databaseOID,p.fixedOID);assert.equal(u.creationSHA256,fileSHA(localBase+'/a12-c04-root-createdb.json'))
+  assert.equal(u.migration.name,'1763825000000_offer_comparison_terms');assert.equal(u.migration.sha256,'F682B9156C28792A70F4539BBCF1799E39FED0BE71D7CFA741BAB53D2A9275BA')
+  assert.equal(u.nativeMigration.exitCode,0);assert.equal(u.nativeMigration.signal,null);assert.equal(u.nativeMigration.timedOut,false);assert.equal(u.nativeMigration.spawnError,null);assert.equal(u.nativeMigration.checkOrder,true)
+  assert.deepEqual(u.nativeMigration.argv,['node_modules/node-pg-migrate/bin/node-pg-migrate.js','-m','migrations','up'])
+  assert(Number.isFinite(Date.parse(u.startedAt))&&Date.parse(u.finishedAt)>=Date.parse(u.startedAt))
+  assert.equal(upgradeSource.kind,'c04_c05_current_source83_v1');for(const field of ['backend','repo','checkoutSHA','files'])assert.deepEqual(upgradeSource[field],currentSource[field])
+  assert.equal(u.sourceSHA256,sha(JSON.stringify(upgradeSource,null,2)+'\n'))
+  assert.equal(u.beforeSHA256,sha(JSON.stringify(before,null,2)+'\n'));assert.equal(u.afterSHA256,sha(JSON.stringify(after,null,2)+'\n'))
+  assert.equal(u.portable82FinalProofSHA256,sha(JSON.stringify(portable82,null,2)+'\n'))
+  assertIdentity(before.identity,p,creation);assertIdentity(after.identity,p,creation)
+  for(const key of ['journalNames','triggers','schemaCatalog','counts','audits','otherSessions','locks'])assert.deepEqual(before[key],portable82[key])
+  assert.equal(before.journalNames.length,82);assert.equal(before.journalNames.at(-1),'1763820000000_planb_system_template_keys')
+  assertJournal(after.journalNames,currentSource.files.filter(f=>/^Тили-тили\/backend\/migrations\/[0-9]{13}_[^/]+\.cjs$/.test(f.path)).map(f=>f.path.split('/').at(-1).slice(0,-4)).sort())
+  assert.deepEqual(after.journalNames.slice(0,-1),before.journalNames);assertFKs(before.triggers);assert.deepEqual(after.triggers,before.triggers)
+  assert.equal(before.audits.length,6);assert.deepEqual(after.audits,before.audits);assert.deepEqual(after.counts,before.counts);assert(Object.values(before.counts).every(v=>v==='0'))
+  for(const snapshot of [before,after]){assert.deepEqual(snapshot.otherSessions,[]);assert.deepEqual(snapshot.locks,[]);assert.deepEqual(snapshot.ownedCatalog,[])}
+  const newColumns=[['offers','comparison_terms'],['deals','offer_comparison_terms_snapshot']]
+  const addedColumns=after.schemaCatalog.columns.filter(c=>newColumns.some(([table,name])=>c.table_name===table&&c.column_name===name));assert.equal(addedColumns.length,2);assert(addedColumns.every(c=>c.udt_name==='jsonb'&&c.is_nullable==='YES'))
+  assert.deepEqual(after.schemaCatalog.columns.filter(c=>!newColumns.some(([table,name])=>c.table_name===table&&c.column_name===name)),before.schemaCatalog.columns)
+  const expectedChecks=[{"table":"deals","name":"deals_offer_comparison_terms_canonical","definitionSHA256":"E0C885165E8E315F1B7FAF686F8B7BC7308068B124BF9E22545F3A9F753415B9"},{"table":"offers","name":"offers_comparison_terms_canonical","definitionSHA256":"0D3F1D0D8B9792075D35D12E4DC4B62669565139A020B217BAB1061934E804CE"},{"table":"offers","name":"offers_decline_no_comparison_terms","definitionSHA256":"66816F719D0ECC9BDADA271ADE5D85F6DA0107CA4B8F4A0CB7B2C455AFC38614"}];const newChecks=expectedChecks.map(c=>c.name);const addedChecks=after.schemaCatalog.constraints.filter(c=>newChecks.includes(c.name));assert.deepEqual(addedChecks.map(c=>({table:c.table,name:c.name,definitionSHA256:sha(c.definition)})).sort((a,b)=>(a.table+'/'+a.name).localeCompare(b.table+'/'+b.name)),expectedChecks)
+  assert.deepEqual(after.schemaCatalog.constraints.filter(c=>!newChecks.includes(c.name)),before.schemaCatalog.constraints);assert.deepEqual(after.schemaCatalog.indexes,before.schemaCatalog.indexes)
+  assert.equal(before.publicTables.length,after.publicTables.length);assert.equal(new Set(before.publicTables.map(t=>t.table)).size,before.publicTables.length)
+  assert(before.publicTables.some(t=>t.table==='audit_log'));assert(before.publicTables.some(t=>t.table==='pgmigrations'))
+  for(const snapshot of [before,after]){const names=[...new Set(snapshot.schemaCatalog.columns.map(c=>c.table_name))].sort();assert.deepEqual(snapshot.publicTables.map(t=>t.table).sort(),names);for(const table of snapshot.publicTables){assert.deepEqual(table.columns,snapshot.schemaCatalog.columns.filter(c=>c.table_name===table.table).sort((a,b)=>a.ordinal_position-b.ordinal_position).map(c=>c.column_name));for(const row of table.rows)assert.deepEqual(Object.keys(row).sort(),[...table.columns].sort())}}
+  for(const old of before.publicTables){const next=after.publicTables.find(t=>t.table===old.table);assert(next);assert.deepEqual(next.columns.filter(c=>!newColumns.some(([table,name])=>table===old.table&&name===c)),old.columns)
+    const rows=next.rows.map(row=>Object.fromEntries(Object.entries(row).filter(([key])=>!newColumns.some(([table,name])=>table===old.table&&name===key))))
+    if(old.table==='pgmigrations'){const added=rows.filter(r=>r.name==='1763825000000_offer_comparison_terms');assert.equal(added.length,1);assert.deepEqual(rows.filter(r=>r.name!=='1763825000000_offer_comparison_terms'),old.rows)}else assert.deepEqual(rows,old.rows)
+  }
+  assert.equal(u.publicRowsPreserved,true);assert.equal(u.auditCountBefore,6);assert.equal(u.auditCountAfter,6)
+  return after
+}
+export function loadLocalUpgrade83(env=process.env){
+  const path=env.C04_C05_LOCAL83_UPGRADE,expected=env.C04_C05_LOCAL83_UPGRADE_SHA256;assert(path&&expected,'A NEW actual root preserving83 receipt is mandatory')
+  assert.match(expected,/^[A-F0-9]{64}$/);assert.equal(dirname(realpathSync(path)),realpathSync(localBase));assert(/^a12-c04-schema83-preserving-root-[a-z0-9_-]+\.json$/.test(path.slice(path.lastIndexOf('/')+1).split('\\').at(-1)));assert(!lstatSync(path).isSymbolicLink());assert.equal(fileSHA(path),expected)
+  const upgrade=readJSON(path),load=key=>{const ref=upgrade.files[key];assert(ref);const rel=relative(realpathSync(localBase),realpathSync(ref.path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));assert(!lstatSync(ref.path).isSymbolicLink());assert.equal(fileSHA(ref.path),ref.sha256);return readJSON(ref.path)}
+  for(const name of ['migrationStdout','migrationStderr']){const ref=upgrade.files[name];assert(ref);const rel=relative(realpathSync(localBase),realpathSync(ref.path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));assert(!lstatSync(ref.path).isSymbolicLink());assert.equal(fileSHA(ref.path),ref.sha256)}
+  return {upgrade,before:load('before'),after:load('after'),source:load('source')}
+}
+
 export function assertFKs(rows){assert.equal(rows.length,2);for(const r of rows){assert.equal(r.tgenabled,'O');assert.equal(r.tgisinternal,true);assert(r.definition.includes('RI_FKey_check_'))}}
 const entryShape=entry=>({name:entry.name,kind:entry.isSymbolicLink()?'symlink':entry.isFile()?'file':entry.isDirectory()?'directory':'other'})
 const sortedEntries=entries=>entries.map(entryShape).sort((a,b)=>a.name.localeCompare(b.name))
 export function assertMigrationFiles(actual,expected){
   assertJournal(expected.map(f=>f.name),expected.map(f=>f.name))
   const entries=[...expected.map(f=>({name:f.name+'.cjs',kind:'file'})),{name:'data',kind:'directory'}].sort((a,b)=>a.name.localeCompare(b.name))
-  assert.deepEqual(sortedEntries(actual),entries,'Only exact82 reviewed migration files and the required data directory are admitted')
+  assert.deepEqual(sortedEntries(actual),entries,'Only exact83 reviewed migration files and the required data directory are admitted')
 }
 export function verifyMigrationDirectory(directory,expected){
   const root=lstatSync(directory);assert(root.isDirectory()&&!root.isSymbolicLink(),'Migration root must be a real directory')
@@ -114,13 +157,14 @@ export function readAdmission(stage,env=process.env){
   assert(file,'Parent-generated admission bundle required');const phase=stage==='barrier'?'barrier':env.C04_C05_ADMISSION_PHASE;assert(['barrier','c04','worker'].includes(phase));const directory=realpathSync(dirname(resolve(file)));assert.equal(resolve(file),join(directory,phase+'-admission.json'))
   if(profile.mode==='github-ci')assert.equal(directory,realpathSync(join(backend,'.ci/c04-c05-native',profile.context.runID+'-'+profile.context.attempt)))
   else{assert.equal(realpathSync(backend),realpathSync('C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend'));assert.equal(dirname(directory),realpathSync(localBase));assert.match(directory.slice(dirname(directory).length+1),/^c04-c05-ported-local-[0-9a-f-]{36}$/)}
-  const bundle=readJSON(file);assert.equal(bundle.kind,'c04_c05_native_admission_v1');assert.equal(bundle.stage,stage);assert.equal(bundle.phase,phase);assert.equal(bundle.profile,profile.mode)
+  const bundle=readJSON(file);assert.equal(bundle.kind,'c04_c05_native_admission83_v1');assert.equal(bundle.stage,stage);assert.equal(bundle.phase,phase);assert.equal(bundle.profile,profile.mode)
   const load=name=>{const f=bundle.files[name];assert(f);assert.equal(fileSHA(inside(directory,f.path)),f.sha256);return readJSON(inside(directory,f.path))}
   const creation=load('creation'),schema=load('schema'),source=load('source'),sourceSHA256=bundle.files.source.sha256
-  assert.equal(schema.kind,'c04_c05_actual_schema_v1')
-  assertCreation(creation,profile);const names=verifySource(source);assert.equal(schema.sourceSHA256,sourceSHA256);assert.equal(schema.creationSHA256,bundle.files.creation.sha256);assertJournal(schema.journalNames,names);assert.equal(schema.migrationCount,82);assertFKs(schema.triggers)
+  assert.equal(schema.kind,'c04_c05_actual_schema83_v1')
+  assertCreation(creation,profile);const names=verifySource(source);assert.equal(schema.sourceSHA256,sourceSHA256);assert.equal(schema.creationSHA256,bundle.files.creation.sha256);assertJournal(schema.journalNames,names);assert.equal(schema.migrationCount,83);assertFKs(schema.triggers)
   assert.equal(schema.identity.oid,creation.databaseOID);assert.equal(schema.identity.name,profile.targetName);assert.equal(schema.identity.username,profile.username);assert.equal(schema.identity.port,profile.port)
   if(profile.mode==='github-ci'){assert.equal(creation.source.inputsSHA256,sourceSHA256);assert.equal(schema.identity.address,creation.actualAdmin.address);assert.equal(schema.identity.ownerRoleOID,creation.targetOwnerRoleOID);assert.equal(source.checkoutSHA,profile.context.checkoutSHA)}
+  if(profile.mode==='local'){const upgrade=load('upgrade'),before=load('upgradeBefore'),after=load('upgradeAfter'),upgradeSource=load('upgradeSource'),portable=load('portable82');assertLocalUpgrade83(upgrade,before,after,upgradeSource,portable,source,profile,creation);assert.deepEqual(schema.catalog,after.schemaCatalog);assert.deepEqual(schema.triggers,after.triggers);for(const audit of after.audits)assert.deepEqual(schema.retainedAudits.find(r=>r.id===audit.id),audit)}
   const admission={profile,creation,schema,source,sourceSHA256,directory,files:bundle.files,targetName:profile.targetName,targetURL:profile.targetURL,oid:creation.databaseOID,stage}
   if(stage==='tests'){const control=load('control');assertControl(control,admission);admission.control=control;assertTestURLs(env,profile);assert.equal(env.C04_BATCH_BARRIER_NAMESPACE_ADMITTED,String(NAMESPACE))}
   return admission

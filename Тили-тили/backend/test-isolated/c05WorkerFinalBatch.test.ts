@@ -70,7 +70,7 @@ describe('isolated native corrected worker final batch (provider calls forbidden
     const obsURL=new URL(DATABASE);obsURL.searchParams.set('application_name','c05wo_'+randomUUID());observer=new pg.Client({connectionString:obsURL.href});await observer.connect();note({event:'actual-preflight',identity:await identity(observer)})
     await assertNativeAdmission(observer,admission)
     const appURL=new URL(DATABASE);appURL.searchParams.set('application_name',APP);raw=createDb(appURL.href);await identity(raw)
-    const schema=admission.schema;assert.equal(schema.migrationCount,82)
+    const schema=admission.schema;assert.equal(schema.migrationCount,83)
     const names=(await raw.query<{name:string}>('select name from pgmigrations order by name')).rows.map(r=>r.name);assert.deepEqual(names,[...schema.journalNames].sort())
     const others=(await observer.query('select pid from pg_stat_activity where datname=$1 and pid<>pg_backend_pid() and application_name<>$2',[TARGET,APP])).rows;assert.deepEqual(others,[],'HARNESS_ADMISSION exclusive isolated worker lane required')
     const empty=(await raw.query<{users:string;keys:string;notices:string;subscriptions:string;deliveries:string}>(`select (select count(*)::text from users) as users,(select count(*)::text from idempotency_keys) as keys,

@@ -4587,6 +4587,7 @@ export interface paths {
                                 price?: components["schemas"]["Money"] | null;
                                 /** @description снимок принятого названия; не зависит от удаления живого пакета */
                                 packageName?: string | null;
+                                comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
                                 /** @description снимок принятого состава; null — состав не был известен */
                                 packageIncludes?: string[] | null;
                                 /** @enum {string} */
@@ -13368,6 +13369,7 @@ export interface components {
              *     заблокирована или сменила категорию; `null` — обезличенный tombstone.
              */
             available: boolean | null;
+            availabilityObservation: components["schemas"]["AvailabilityObservation"];
             /**
              * @description Занятость на дату свадьбы. `null` — дата не выбрана, анкета стёрта или компания использует план ресурсов;
              *     своя бронь этой свадьбы считается `free`.
@@ -13411,9 +13413,38 @@ export interface components {
             /** @enum {string} */
             currency: "RUB";
         };
+        /** @description Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения. */
+        OfferComparisonTermsInput: {
+            hours?: string | null;
+            team?: string | null;
+            result?: string | null;
+            delivery?: string | null;
+            extras?: string | null;
+            cancellation?: string | null;
+            reschedule?: string | null;
+        } | null;
+        /** @description Явно введённые условия предложения; null означает, что условия не указаны. Тексты не являются вычисленными суммами, датами или фактом исполнения. */
+        OfferComparisonTerms: {
+            hours: string | null;
+            team: string | null;
+            result: string | null;
+            delivery: string | null;
+            extras: string | null;
+            cancellation: string | null;
+            reschedule: string | null;
+        } | null;
+        /** @description Время чтения существующей DATE-занятости в текущем native SELECT, а не время обновления провайдера или обещание свободного ресурса; null означает отсутствие такого наблюдения. */
+        AvailabilityObservation: {
+            /** @enum {string} */
+            source: "legacy_day";
+            /** Format: date */
+            date: string;
+            /** Format: date-time */
+            checkedAt: string;
+        } | null;
         /**
          * @description Точная публичная форма одной версии ответа: оба варианта имеют ровно
-         *     девять полей. У `decline` поля предложения равны только `null`, а
+         *     десять полей. У `decline` поля предложения равны только `null`, а
          *     `includes` строго пуст; у `offer` название, положительная цена и срок
          *     не могут быть `null`.
          */
@@ -13430,6 +13461,7 @@ export interface components {
             price: components["schemas"]["PositiveMoney"];
             includes: string[];
             message: string | null;
+            comparisonTerms: components["schemas"]["OfferComparisonTerms"];
             /** Format: date */
             validUntil: string;
         } | {
@@ -13450,6 +13482,8 @@ export interface components {
             price: never | null;
             includes: string[];
             message: string;
+            /** @enum {object|null} */
+            comparisonTerms: never | null;
             /**
              * Format: date
              * @enum {string|null}
@@ -13487,6 +13521,7 @@ export interface components {
             packageId: string;
             price: components["schemas"]["PositiveMoney"];
             message?: string;
+            comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
             /** Format: date */
             validUntil?: string;
         } | {
@@ -13496,6 +13531,7 @@ export interface components {
             price: components["schemas"]["PositiveMoney"];
             includes: string[];
             message?: string;
+            comparisonTerms?: components["schemas"]["OfferComparisonTermsInput"];
             /** Format: date */
             validUntil?: string;
         } | {
@@ -13993,6 +14029,7 @@ export interface components {
             /** @description имя своего подрядчика */
             externalName?: string | null;
             externalPhone?: string | null;
+            comparisonTerms?: components["schemas"]["OfferComparisonTerms"];
             /**
              * @description Снимок принятого названия, только couple: текст может содержать цену.
              *     Удаление живого пакета/предложения не меняет его. null — название неизвестно.

@@ -1,3 +1,4 @@
+import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import { createHash } from 'node:crypto'
 import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
@@ -83,8 +84,8 @@ async function actualSource(client: Queryable, input: OrderInput, context: Order
     if ((p.kind !== 'deliverable' && p.assignmentId === null) || (p.assignmentId !== null && !assignments.some(a => a.id === p.assignmentId))) throw validationFailed({ parts: 'Часть ссылается на недействующее назначение' })
     return { id: p.id, kind: p.kind, version: p.version, source: p.source, title: p.title, assignmentId: p.assignmentId, details: validatePartDetails(p.kind, p.details) }
   })
-  const economics = await client.query<{ price: string | null; currency: string; package_id: string | null; package_title_snapshot: string | null; package_includes_snapshot: unknown;
-    external_name: string | null; external_phone: string | null }>('select price::text,currency,package_id,package_title_snapshot,package_includes_snapshot,external_name,external_phone from deals where wedding_id=$1 and id=$2', [input.weddingId, input.dealId])
+  const economics = await client.query<{ price: string | null; currency: string; package_id: string | null; package_title_snapshot: string | null; package_includes_snapshot: unknown; offer_comparison_terms_snapshot: OfferComparisonTerms | null;
+    external_name: string | null; external_phone: string | null }>('select price::text,currency,package_id,package_title_snapshot,package_includes_snapshot,offer_comparison_terms_snapshot,external_name,external_phone from deals where wedding_id=$1 and id=$2', [input.weddingId, input.dealId])
   const economic = economics.rows[0]; if (!economic) throw notFound('Источник заказа не найден')
   let vendor: { id: string; userId: string; name: string; categoryId: string } | null = null, performerAvailable = true
   if (context.vendorId) {
@@ -108,7 +109,8 @@ async function actualSource(client: Queryable, input: OrderInput, context: Order
     brief: order.brief, assignments, parts, ...(resourcePlan.plan === null ? {} : { resourcePlan: resourcePlan.plan }),
     economics: { amount: economic.price, amountKnown: economic.price !== null, currency: economic.currency,
       performer: { vendor, externalName: economic.external_name, externalPhone: economic.external_phone },
-      package: { id: economic.package_id, titleSnapshot: economic.package_title_snapshot, includesSnapshot: economic.package_includes_snapshot } } }
+      package: { id: economic.package_id, titleSnapshot: economic.package_title_snapshot, includesSnapshot: economic.package_includes_snapshot,
+        ...(economic.offer_comparison_terms_snapshot == null ? {} : { comparisonTerms: economic.offer_comparison_terms_snapshot }) } } }
   const canonical = canonicalTermsJson(snapshot)
   return { snapshot, canonical, fingerprint: hash(canonical), performerAvailable, resourcePlanId: resourcePlan.plan?.planRevisionId ?? null }
 }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { X, Clock, Send, Star, TrendingUp, Eye, MessageCircle, CalendarCheck, ChevronRight } from 'lucide-react'
 import { Bar, Tile, TopBar } from '@/components/chrome'
@@ -17,6 +17,8 @@ import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { newIdempotencyKey } from '@/lib/api/client'
 import { OfferSummary } from '@/components/OfferSummary'
+import { OfferComparisonTerms } from '@/components/OfferComparisonTerms'
+import { comparisonTermsDraft, normalizeComparisonTerms, OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { VendorPaymentHistory } from '@/components/VendorPaymentHistory'
 import type { components } from '@/lib/api/schema'
 
@@ -82,6 +84,8 @@ function VendorOfferEditor({ request, packages, onSaved }: {
   const [price, setPrice] = useState(firstPackage?.price ? paymentRubles(firstPackage.price.amount) : '')
   const [message, setMessage] = useState('')
   const [validUntil, setValidUntil] = useState('')
+  const [quotedTerms, setQuotedTerms] = useState(() => comparisonTermsDraft(request.offer?.comparisonTerms))
+  const conditionsHintId = useId()
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
@@ -100,12 +104,19 @@ function VendorOfferEditor({ request, packages, onSaved }: {
       if (!message.trim()) { setError(t('Напишите причину отказа')); return }
       body = { kind: 'decline', message: message.trim() }
     } else {
+      const normalized = normalizeComparisonTerms(quotedTerms)
+      if (!normalized.ok) {
+        const field = OFFER_COMPARISON_FIELDS.find(item => item.name === normalized.field)!
+        setError(`${t(field.label)}: ${t(normalized.message)}`)
+        return
+      }
       const amount = parsePaymentRubles(price)
       if (amount === null) { setError(t('Введите цену больше нуля')); return }
       if (mode === 'package') {
         if (!packageId) { setError(t('Выберите пакет')); return }
         body = {
           kind: 'offer', packageId, price: { amount, currency: 'RUB' },
+          ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
           ...(message.trim() ? { message: message.trim() } : {}),
           ...(validUntil ? { validUntil } : {}),
         }
@@ -114,6 +125,7 @@ function VendorOfferEditor({ request, packages, onSaved }: {
         if (!title.trim() || parts.length === 0) { setError(t('Заполните название и состав предложения')); return }
         body = {
           kind: 'offer', title: title.trim(), includes: parts, price: { amount, currency: 'RUB' },
+          ...(normalized.terms === null ? {} : { comparisonTerms: normalized.terms }),
           ...(message.trim() ? { message: message.trim() } : {}),
           ...(validUntil ? { validUntil } : {}),
         }
@@ -177,6 +189,16 @@ function VendorOfferEditor({ request, packages, onSaved }: {
           <input type="date" value={validUntil} onChange={event => setValidUntil(event.target.value)} aria-label={t('Действует до')} className="w-full h-11 rounded-[14px] bg-[var(--bg)] px-3 text-[11px] outline-none" />
         </div>
       )}
+      {mode !== 'decline' && <fieldset className="space-y-2.5 min-w-0">
+        <legend className="text-[11px] font-semibold">{t('Условия предложения')}</legend>
+        <p id={conditionsHintId} className="text-[10px] text-[var(--soft)]">{t('До 2000 символов на условие. Пустое поле означает, что условие неизвестно.')}</p>
+        {OFFER_COMPARISON_FIELDS.map(({ name, label }) => <label key={name} className="block text-[11px] min-w-0">
+          <span className="block mb-1 font-medium">{t(label)}</span>
+          <textarea value={quotedTerms[name]} aria-describedby={conditionsHintId}
+            onChange={event => setQuotedTerms(previous => ({ ...previous, [name]: event.target.value }))}
+            className="w-full min-h-16 rounded-[14px] bg-[var(--bg)] px-3 py-2.5 text-[12px] outline-none resize-y" />
+        </label>)}
+      </fieldset>}
       <textarea
         value={message}
         onChange={event => setMessage(event.target.value)}
@@ -256,6 +278,7 @@ export function VendorDealCard() {
               </div>
               {d.packageName && <p className="text-[12px] mt-2">{t('Пакет:')} <b>{d.packageName}</b></p>}
               {d.packageIncludes && d.packageIncludes.length > 0 && <ul className="mt-2 list-disc pl-4 text-[11px] text-[var(--ink2)]">{d.packageIncludes.map((part, index) => <li key={index}>{part}</li>)}</ul>}
+              <OfferComparisonTerms terms={d.comparisonTerms} />
               {d.holdUntil && <p className="text-[11px] text-[var(--honey-deep)] mt-1">{t('держим до')} {new Date(d.holdUntil).toLocaleString(locale, { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</p>}
               {/* Только раскрытые подрядчику известные суммы; без ответа — прочерк. */}
               <div className="grid grid-cols-3 gap-2 mt-4">

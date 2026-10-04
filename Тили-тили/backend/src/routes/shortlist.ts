@@ -1,3 +1,4 @@
+import type { OfferComparisonTerms } from '../offers/comparison-terms.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, unauthorized, validationFailed } from '../errors.js'
 import { isUuid, UUID_ID, uuidv7 } from '../ids.js'
@@ -38,6 +39,8 @@ interface ShortlistRow {
   profile_live: boolean | null
   available: boolean | null
   occupancy: Occupancy
+  availability_date: string | null
+  availability_checked_at: Date
   request_id: string | null
   request_status: 'open' | 'closed' | null
   request_close_reason:
@@ -64,6 +67,7 @@ interface ShortlistRow {
   offer_includes: string[] | null
   offer_message: string | null
   offer_valid_until: string | null
+  offer_comparison_terms: OfferComparisonTerms | null
 }
 
 interface OfferView {
@@ -76,6 +80,7 @@ interface OfferView {
   includes: string[]
   message: string | null
   validUntil: string | null
+  comparisonTerms: OfferComparisonTerms | null
 }
 
 interface OfferRequestView {
@@ -98,6 +103,7 @@ export interface ShortlistEntry {
   createdAt: string
   available: boolean | null
   occupancy: Occupancy
+  availabilityObservation: { source: 'legacy_day'; date: string; checkedAt: string } | null
   vendor: {
     id: string
     name: string
@@ -158,6 +164,9 @@ function toEntry(row: ShortlistRow, role: Role): ShortlistEntry {
     createdAt: row.shortlisted_at.toISOString(),
     available: row.available,
     occupancy: row.occupancy,
+    availabilityObservation: publicProfile && row.available === true && row.booking_mode === 'legacy_day'
+      && row.availability_date && row.occupancy !== null
+      ? { source: 'legacy_day', date: row.availability_date, checkedAt: row.availability_checked_at.toISOString() } : null,
     vendor,
   }
   if (row.request_id && row.request_status && row.request_created_at) {
@@ -177,6 +186,7 @@ function toEntry(row: ShortlistRow, role: Role): ShortlistEntry {
             includes: row.offer_includes ?? [],
             message: row.offer_message,
             validUntil: row.offer_valid_until,
+            comparisonTerms: row.offer_comparison_terms ?? null,
           }
         : undefined
       const full: OfferRequestView = {
@@ -276,6 +286,7 @@ export async function loadShortlist(
               ) then 'held'
               else 'free'
             end as occupancy,
+             w.date::text as availability_date, clock_timestamp() as availability_checked_at,
             request.id as request_id, request.status as request_status,
             request.close_reason as request_close_reason,
             request.wedding_date::text as request_wedding_date,
@@ -288,7 +299,7 @@ export async function loadShortlist(
             answer.package_id as offer_package_id, answer.title as offer_title,
             answer.price::text as offer_price, answer.currency as offer_currency,
             answer.includes as offer_includes, answer.message as offer_message,
-            answer.valid_until::text as offer_valid_until
+            answer.valid_until::text as offer_valid_until, answer.comparison_terms as offer_comparison_terms
        from slot_shortlist ss
        join slots s on s.id = ss.slot_id
        join weddings w on w.id = s.wedding_id
@@ -305,7 +316,7 @@ export async function loadShortlist(
        ) request on true
        left join lateral (
          select o.id, o.kind, o.package_id, o.title, o.price, o.currency,
-                o.includes, o.message, o.valid_until
+                o.includes, o.message, o.valid_until, o.comparison_terms
            from offers o
           where o.request_id = request.id and o.superseded_at is null
           order by o.created_at desc, o.id desc

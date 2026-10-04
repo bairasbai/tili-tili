@@ -27,6 +27,8 @@ import { fmt } from '@/lib/money'
 import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { listMyWeddings } from '@/lib/api/wedding'
 import { OfferSummary } from '@/components/OfferSummary'
+import { OfferAvailabilityObservation } from '@/components/OfferComparisonTerms'
+import { OFFER_COMPARISON_FIELDS } from '@/lib/offerComparisonTerms'
 import { readSeating } from '@/lib/useSeating'
 
 /*
@@ -86,6 +88,7 @@ type CompareItem = {
   vendor: CompareVendor | null
   available: boolean | null
   occupancy: ShortlistEntry['occupancy']
+  availabilityObservation?: ShortlistEntry['availabilityObservation']
   request?: ShortlistEntry['request']
 }
 
@@ -94,6 +97,8 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
   acceptance?: { weddingId: string; canAccept: boolean; onChanged: () => void }
 }) {
   const nav = useNavigate()
+  const quote = (item: CompareItem) => item.request && 'id' in item.request && item.request.offer?.kind === 'offer' ? item.request.offer : undefined
+  const showsQuotedConditions = items.some(item => quote(item)?.comparisonTerms !== undefined)
   const rows: [string, (item: CompareItem) => ReactNode][] = [
     [t('Цена «от»'), ({ vendor }) => vendor?.priceFrom?.amount != null ? fmt(vendor.priceFrom.amount) : '—'],
     [t('Рейтинг'), ({ vendor }) => vendor?.rating != null ? `★ ${vendor.rating}` : '—'],
@@ -102,6 +107,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
     [t('Свободен на вашу дату'), ({ occupancy, vendor }) => vendor?.bookingMode !== 'legacy_day' ? '—' : occupancy === 'free' ? t('Свободен')
       : occupancy === 'held' ? t('Идут переговоры с другой парой')
       : occupancy === 'busy' ? t('Занят на вашу дату') : '—'],
+    [t('Актуальность доступности'), item => <OfferAvailabilityObservation observation={item.availabilityObservation} />],
     [t('Пакеты и цены'), ({ vendor }) => vendor?.packages?.length ? (
       <div className="space-y-2 text-left">
         {vendor.packages.map((p, index) => <div key={p.id ?? `${index}-${p.name}`} className="rounded-lg bg-[var(--bg)] p-2">
@@ -112,7 +118,7 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
       </div>
     ) : '—'],
     [t('Предложение'), item => <>
-      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} compact />
+      <OfferSummary request={item.request} currentWeddingDate={weddingDate} weddingTz={weddingTz} compact showComparisonTerms={false} />
       {acceptance && <OfferAcceptance
         key={`${acceptance.weddingId}:${item.request && 'id' in item.request ? item.request.offer?.id ?? item.request.id : item.id}`}
         weddingId={acceptance.weddingId} request={item.request} currentWeddingDate={weddingDate ?? null} weddingTz={weddingTz}
@@ -120,6 +126,16 @@ function CompareTable({ items, icons, weddingDate, weddingTz, acceptance }: {
         onChanged={acceptance.onChanged}
       />}
     </>],
+    ...(showsQuotedConditions ? [
+      [t('Состав услуги в предложении'), (item: CompareItem) => {
+        const offer = quote(item)
+        return offer?.comparisonTerms !== undefined ? <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{offer.includes.length ? offer.includes.join('\n') : t('Неизвестно')}</span> : '—'
+      }],
+      ...OFFER_COMPARISON_FIELDS.map(({ name, label }): [string, (item: CompareItem) => ReactNode] => [t(label), item => {
+        const terms = quote(item)?.comparisonTerms
+        return terms !== undefined ? <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{terms?.[name] ?? t('Неизвестно')}</span> : '—'
+      }]),
+    ] as [string, (item: CompareItem) => ReactNode][] : []),
     [t('Видео-визитка'), ({ vendor }) => vendor?.hasVideo ? t('▶ Есть') : '—'],
     [t('Проверен'), ({ vendor }) => vendor?.verified ? t('✓ Да') : '—'],
   ]
@@ -188,7 +204,7 @@ export function Compare() {
   const slotEntries = (shortlist.data ?? [])
     .filter(entry => requested.includes(entry.id) && entry.slotId === slotId)
     .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-  const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy, request: entry.request }))
+  const slotItems: CompareItem[] = slotEntries.map(entry => ({ id: entry.id, vendor: entry.vendor, available: entry.available, occupancy: entry.occupancy, availabilityObservation: entry.availabilityObservation, request: entry.request }))
   const favoriteItems: CompareItem[] = (details.data ?? []).filter(v => selectedIds.includes(v.id ?? '')).map(v => ({ id: v.id!, vendor: v, available: true, occupancy: null }))
   const slotCurrent = ready(shortlist) && !shortlist.refreshing
   const detailsCurrent = ready(details) && !details.refreshing

@@ -56,6 +56,7 @@ interface OfferResponse {
   includes: string[]
   message: string | null
   validUntil: string | null
+  comparisonTerms: null
 }
 
 interface VendorRequest {
@@ -366,7 +367,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
 
   function offerOf(response: { json: () => unknown }): OfferResponse {
     const body = response.json()
-    const keys = ['id', 'requestId', 'kind', 'packageId', 'title', 'price', 'includes', 'message', 'validUntil']
+    const keys = ['id', 'requestId', 'kind', 'packageId', 'title', 'price', 'includes', 'message', 'validUntil', 'comparisonTerms']
     if (!isRecord(body) || !hasExactKeys(body, keys)) {
       throw new Error('успешный ответ подрядчика обязан вернуть точную форму Offer')
     }
@@ -382,6 +383,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       || !body.includes.every((item) => typeof item === 'string')
       || (body.message !== null && typeof body.message !== 'string')
       || (body.validUntil !== null && typeof body.validUntil !== 'string')
+      || body.comparisonTerms !== null
     ) {
       throw new Error('Offer содержит поле неверного типа')
     }
@@ -932,6 +934,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       includes: ['8 часов', 'Ретушь'],
       message: 'Готовы снимать',
       validUntil: `${TEST_YEAR}-06-01`,
+      comparisonTerms: null,
     })
     const afterOffer = await notifications(wedding.id)
     expect(afterOffer).toHaveLength(before + 1)
@@ -953,6 +956,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       includes: [],
       message: 'Дата не подходит',
       validUntil: null,
+      comparisonTerms: null,
     })
     const afterDecline = await notifications(wedding.id)
     expect(afterDecline).toHaveLength(before + 2)
@@ -1131,6 +1135,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       includes: ['Пункт 1'],
       message: 'Сообщение 1',
       validUntil: `${TEST_YEAR}-06-01`,
+      comparisonTerms: null,
     })
     const replayBody = createdOfferOf(replay, requestId, 'offer')
     expect(replay.headers['idempotent-replay']).toBe('true')
@@ -1629,6 +1634,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       includes: [],
       message: declineCanary,
       validUntil: null,
+      comparisonTerms: null,
     })
 
     const [coupleResponded, helperResponded, coordinatorResponded] = await Promise.all([
@@ -1674,6 +1680,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
       includes: [offerIncludesCanary],
       message: offerMessageCanary,
       validUntil: `${TEST_YEAR}-06-01`,
+      comparisonTerms: null,
     })
 
     const [coupleOffered, helperOffered, coordinatorOffered] = await Promise.all([

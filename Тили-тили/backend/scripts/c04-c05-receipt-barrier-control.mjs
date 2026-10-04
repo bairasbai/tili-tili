@@ -17,7 +17,7 @@ export function assertIdentity(row) {
   assert(Number.isInteger(row.pid) && row.pid > 0)
 }
 export function assertJournal(actual, expected) {
-  assert.equal(expected.length, 82); assert.equal(expected.at(-1), '1763820000000_planb_system_template_keys')
+  assert.equal(expected.length, 83); assert.equal(expected.at(-1), '1763825000000_offer_comparison_terms')
   assert.deepEqual(actual, expected)
 }
 export function assertNativeTriggers(actual, expected) {

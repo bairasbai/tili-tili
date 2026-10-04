@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, lstatSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
@@ -25,7 +25,7 @@ const DATABASES = [
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
-const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, LATEST = 1763820000000
+const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, LATEST = 1763825000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend']
@@ -54,6 +54,7 @@ const expectedOwn = [
   '1763800000000_legacy_calendar_sources',
   '1763810000000_legacy_calendar_day_recovery',
   '1763820000000_planb_system_template_keys',
+  '1763825000000_offer_comparison_terms',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -71,27 +72,570 @@ function validateUrl(raw) {
 const databaseUrl = validateUrl(process.env.DATABASE_URL)
 assert.equal(validateUrl(process.env.TEST_DATABASE_URL), databaseUrl, 'Do not mix application and test databases')
 const DATABASE = decodeURIComponent(new URL(databaseUrl).pathname.slice(1))
+const APPROVED_NATIVE_CLI_SHA = "bc29ecfd409c134285649dd094450b46e2c67de26bf837233571947346bd9739"
+const APPROVED_MIGRATION_INPUTS = [
+  {
+    "name": "1757000000000_bootstrap.cjs",
+    "kind": "migration",
+    "sha256": "d6b362095372f834b441f6aefcf435b0e91fd850d7b844572e93d27cfdd548d3"
+  },
+  {
+    "name": "1757100000000_auth_and_geo.cjs",
+    "kind": "migration",
+    "sha256": "e2180de98a15b981b54f23a693b12401dc3d121a19aef0383e73de34ece92de8"
+  },
+  {
+    "name": "1757200000000_weddings_and_team.cjs",
+    "kind": "migration",
+    "sha256": "96a4b9614d492924f01ab54274d1b8122b8b0ebeb32e4a28585b1ddeceb40cce"
+  },
+  {
+    "name": "1757300000000_session_rotation.cjs",
+    "kind": "migration",
+    "sha256": "ae0914b1414a0950f3e94fc73e8db2a9e58471ff30fff9a6a618360c2c4b8fc6"
+  },
+  {
+    "name": "1757400000000_catalog.cjs",
+    "kind": "migration",
+    "sha256": "387f8cf323d258cfbe5218343fefad35c276a16346b90b185c85885d9fae9934"
+  },
+  {
+    "name": "1757500000000_deals_and_money.cjs",
+    "kind": "migration",
+    "sha256": "8cc3778777260469739363383da6809168aa65d697cf8b8bc2d853e4a8985060"
+  },
+  {
+    "name": "1757600000000_guests_and_day.cjs",
+    "kind": "migration",
+    "sha256": "fd9e62b88ab7383b71b78212ed15a0897548be782a34704c6ccf3ff06fe2a932"
+  },
+  {
+    "name": "1757700000000_seat_counters.cjs",
+    "kind": "migration",
+    "sha256": "f71f597d1b3ff43efec4c9ea72e03135eec25fbf912c0f5255a91652716221e8"
+  },
+  {
+    "name": "1757800000000_gifts_and_funds.cjs",
+    "kind": "migration",
+    "sha256": "05b209ff58308885f43e857a47f122019db816605dc0c46791b1f5abe8828304"
+  },
+  {
+    "name": "1757900000000_chats_and_notifications.cjs",
+    "kind": "migration",
+    "sha256": "55fc1a5f9fa6789ea4595101104c1c3f4b0b05b7543ffda97ba185fb1a55f468"
+  },
+  {
+    "name": "1758000000000_dayx_and_reminders.cjs",
+    "kind": "migration",
+    "sha256": "5e576f1840752410e971307a5b511c836ca43124ccb4ae06028f3469f940c45e"
+  },
+  {
+    "name": "1758100000000_notification_matrix.cjs",
+    "kind": "migration",
+    "sha256": "6239f51aea46f0d694f0a27609c48ed5356b760318815552d9becac5844d73a3"
+  },
+  {
+    "name": "1758200000000_leads_reviews_moderation.cjs",
+    "kind": "migration",
+    "sha256": "3dd6073ad47493f3d52958c3bae7ac38409d75e9804f687bd1d841b15194284d"
+  },
+  {
+    "name": "1758300000000_city_timezones.cjs",
+    "kind": "migration",
+    "sha256": "1bea0d869dc96e2cc0f0a6652737d7d2781367d2235aa83992e268c40c0cbab3"
+  },
+  {
+    "name": "1758400000000_external_vendor_chat.cjs",
+    "kind": "migration",
+    "sha256": "31d64fae976c5d7af4a356d6bdcdaa179405883fe8908725d2f7c9043fa4f268"
+  },
+  {
+    "name": "1758500000000_planb_checklist.cjs",
+    "kind": "migration",
+    "sha256": "4825446eb736d07e53d87c260661aef40bde2798556b18fcd767fef0e2742efb"
+  },
+  {
+    "name": "1758600000000_deal_price_and_inspiration.cjs",
+    "kind": "migration",
+    "sha256": "f48a96646513ca0fd88c839ae46dc417838e22c3457ac7672c92d9faa61d1777"
+  },
+  {
+    "name": "1758700000000_vendor_updates.cjs",
+    "kind": "migration",
+    "sha256": "9363b34419d6e9ae3337f0ea707a0311ceb24c0b6444e1b70e5f195cf94dadcd"
+  },
+  {
+    "name": "1758800000000_crew_chat.cjs",
+    "kind": "migration",
+    "sha256": "5c63bc5f61a3ea62762cd95a70b0f61369e8d4441e8f25c6ca7e6d21bed8f911"
+  },
+  {
+    "name": "1758900000000_vendor_phone.cjs",
+    "kind": "migration",
+    "sha256": "8d6ccd25a34b8bfb9e778ff682a19cfe1079985eebdb7c8b9cd0dcdb05f5b4d2"
+  },
+  {
+    "name": "1759000000000_dress_code.cjs",
+    "kind": "migration",
+    "sha256": "bcddaf7b574deb03887cd590911b006e196eb178fc9c826a7900622d3db43e85"
+  },
+  {
+    "name": "1759100000000_guest_reminders.cjs",
+    "kind": "migration",
+    "sha256": "e6444e6230b0bbbee420f29914040c2492b53bd446ecc25821f49901d9b480b8"
+  },
+  {
+    "name": "1759200000000_chat_by_deal.cjs",
+    "kind": "migration",
+    "sha256": "499669c09b2089444ca2f5417cd029fc94ce84dbc4c11fb8707ed411146ffb25"
+  },
+  {
+    "name": "1759300000000_bus_seats_by_persons.cjs",
+    "kind": "migration",
+    "sha256": "19a8893e2886a557db61b157eeccf13889e3666afc7c433a07099572d9245f04"
+  },
+  {
+    "name": "1759400000000_review_by_guest.cjs",
+    "kind": "migration",
+    "sha256": "8d554c72105300159f088cf702939719dd68168eb54007bc090a2f37eee347d1"
+  },
+  {
+    "name": "1759500000000_deal_package.cjs",
+    "kind": "migration",
+    "sha256": "2cdf552b04a53304e61dc5693bf7fad80510be142f52282dca544d4303653da1"
+  },
+  {
+    "name": "1759600000000_complaint_resolution_by_target.cjs",
+    "kind": "migration",
+    "sha256": "2bdda764cefbd19be658c17cdfbb7154dae076c1157ba165a6e459838397258a"
+  },
+  {
+    "name": "1759700000000_verification_constraints.cjs",
+    "kind": "migration",
+    "sha256": "9380ac3492ceb9c5ba40c47165b9292eedc29084679acfd4ecb5281150517519"
+  },
+  {
+    "name": "1759800000000_couple_reviews_count.cjs",
+    "kind": "migration",
+    "sha256": "b00ac38a6fa16835555a840627ab43ce0b78f021b7ccacdc1e33bfa600a6fcd3"
+  },
+  {
+    "name": "1759900000000_bus_route_deal.cjs",
+    "kind": "migration",
+    "sha256": "f27668461cff9f4bf51569f32d488dec4f85bcb76ef278769bfbf5b149771e1e"
+  },
+  {
+    "name": "1760000000000_timeline_for_guests.cjs",
+    "kind": "migration",
+    "sha256": "5c74d79c884a41b3510ab0864c84cda3f564981818f675eca43e7b94ef66e7e5"
+  },
+  {
+    "name": "1760100000000_message_guest.cjs",
+    "kind": "migration",
+    "sha256": "d2ab85b6ef2978a56cccb1c32048ac1b8b7f0c5a545006423e999f44e55854a6"
+  },
+  {
+    "name": "1760200000000_tilly_usage.cjs",
+    "kind": "migration",
+    "sha256": "1de008c3a030077c8d9902dafaff3c2bb167d060a2d63a9c9821f7a1ee5c9c03"
+  },
+  {
+    "name": "1760300000000_notes.cjs",
+    "kind": "migration",
+    "sha256": "6778c2565db922ef58545c6b7ec99eef6e94f03da946c061293dd89fc15dcb2d"
+  },
+  {
+    "name": "1760400000000_vendor_update_transport.cjs",
+    "kind": "migration",
+    "sha256": "62931d82f6ec046046bfa63eb23edae63b562b0915f50ff08c88eb9e45f0f94b"
+  },
+  {
+    "name": "1760500000000_review_keeps_after_purge.cjs",
+    "kind": "migration",
+    "sha256": "9ac987439c599995267c24d1c026e94aa05587129bbc15ade893f172d3217a24"
+  },
+  {
+    "name": "1760600000000_validate_checks.cjs",
+    "kind": "migration",
+    "sha256": "a0e9ab95a1e9ae5a3cd5da2534f417d95f12574923bde1b1a94d013ffa5e0b84"
+  },
+  {
+    "name": "1760700000000_consent_adult_media_rights_job_marks.cjs",
+    "kind": "migration",
+    "sha256": "80ab7294d7728e230a99426816ec4012f3c8a429b71a7402e0d8bd6fadeced39"
+  },
+  {
+    "name": "1760800000000_category_descriptions.cjs",
+    "kind": "migration",
+    "sha256": "926e1721ca12b60ad9542aac043fd31ce944bff78304592ee54fc0e6fa45f95d"
+  },
+  {
+    "name": "1760900000000_currency_rub_everywhere.cjs",
+    "kind": "migration",
+    "sha256": "8be67b230769b06aff50026ffc3fb98f6919ba6100396a9403ab47d35b9ad1e6"
+  },
+  {
+    "name": "1761000000000_task_ownership_and_deadlines.cjs",
+    "kind": "migration",
+    "sha256": "ef38659ff00bbd95c9ab49a7761182e0bb7a8b2d4c87c980a2c938340067e9ac"
+  },
+  {
+    "name": "1761100000000_task_assignment_lifecycle.cjs",
+    "kind": "migration",
+    "sha256": "37cf6e2a925bcba97114caa487fc79449e43ef52dc2c0134ecf6d040ee83af9c"
+  },
+  {
+    "name": "1761200000000_task_reminders.cjs",
+    "kind": "migration",
+    "sha256": "5a1aa6bb06feb84fffd8e01b5260ca4c97114382d6978a2791264103c331d6b3"
+  },
+  {
+    "name": "1761300000000_quiz_answers_matter.cjs",
+    "kind": "migration",
+    "sha256": "0810283c5d40b631c35cdab322c9d645a42463e594eef904e1f46577c8fe19a5"
+  },
+  {
+    "name": "1761310000000_payment_schedule.cjs",
+    "kind": "migration",
+    "sha256": "c319da3cfe7966be8d05462d1db0335065b84bb02fe79c925869a4c2fddf69ba"
+  },
+  {
+    "name": "1761400000000_budget_controls_receipts.cjs",
+    "kind": "migration",
+    "sha256": "9c653f18d17105837518ea8d298853c57d46a21a2a00f77111ad6f9bd03535ec"
+  },
+  {
+    "name": "1761500000000_shortlist_offers.cjs",
+    "kind": "migration",
+    "sha256": "85bb17dc5595d5c37758410918cab52522f089f927fe5bd18d1f0dcfa059b69e"
+  },
+  {
+    "name": "1761600000000_family_guest_parties.cjs",
+    "kind": "migration",
+    "sha256": "15623e70ca31b8410325ed54b7ed508b1879d4f55dc57940fd8d1d5a18f9a44a"
+  },
+  {
+    "name": "1761700000000_payment_methods_privacy.cjs",
+    "kind": "migration",
+    "sha256": "b5d8ad1a9a31a8178ab8f30d065ee2840cb283d7f19f75cbf191e9baf4e4f01a"
+  },
+  {
+    "name": "1761800000000_timeline_versions.cjs",
+    "kind": "migration",
+    "sha256": "5554d155305e088941aebe34e3fe172212f6da1e6e5accc53ce59312186d0220"
+  },
+  {
+    "name": "1761900000000_timeline_planning.cjs",
+    "kind": "migration",
+    "sha256": "646cd0d40665647bccb75b2f726e12a9e80e7f41ed18fc4ef1f91dda0edf3d7a"
+  },
+  {
+    "name": "1762000000000_timeline_origins.cjs",
+    "kind": "migration",
+    "sha256": "ba120611656494d2732a9f46a7a43f82a31a360116b9ba12d4c199a013c91db9"
+  },
+  {
+    "name": "1762100000000_wedding_events.cjs",
+    "kind": "migration",
+    "sha256": "392f41e35d9fd537f9396d4461b3bc953df35a2670a664a781fa910af064faa8"
+  },
+  {
+    "name": "1762200000000_vendor_program_ack.cjs",
+    "kind": "migration",
+    "sha256": "0b36143cf313aa1f412947e2e665a992f1d73415be9a52c33a34d5f4d795d37a"
+  },
+  {
+    "name": "1762300000000_external_program_ack.cjs",
+    "kind": "migration",
+    "sha256": "0f9a6883d1c1e34e0e23a7866f7ea87a01359a0fbbde4b8df9788fcca0658ff3"
+  },
+  {
+    "name": "1762400000000_external_program_current.cjs",
+    "kind": "migration",
+    "sha256": "a9b4ecbbdca03e39586fb9b9275f7ae5e7d5b9c97f20a0aac80dd7ade947466e"
+  },
+  {
+    "name": "1762500000000_event_invitations.cjs",
+    "kind": "migration",
+    "sha256": "f6e9fab9065422ed7fa7f10a3b41eca4eaf90a909f3dec9dd702337ea039f2af"
+  },
+  {
+    "name": "1763000000000_notification_deliveries.cjs",
+    "kind": "migration",
+    "sha256": "ac7a57db91ef7b7b8f29d1179950f6d72fdf0257fef918d06cfbd972adf701b6"
+  },
+  {
+    "name": "1763100000000_wedding_attention.cjs",
+    "kind": "migration",
+    "sha256": "52119119196ff2a97725f26c9f7cf51369daaadbc5105b0edfdc60c85c18747b"
+  },
+  {
+    "name": "1763200000000_notification_push_disposition.cjs",
+    "kind": "migration",
+    "sha256": "fee541ea078f9e6a7ba5f3c3da9727524986053e664e0cffb4fd396b3902be7f"
+  },
+  {
+    "name": "1763250000000_notification_timezone.cjs",
+    "kind": "migration",
+    "sha256": "d96f176fef3ed773cf14995c48293008ad6313508b8f1345aa369eccd250cd0e"
+  },
+  {
+    "name": "1763260000000_attention_selection_invalidation.cjs",
+    "kind": "migration",
+    "sha256": "48391f15bf9aafb0b11d389cd266fee0f90f83c8f322c5e07ab1489e4fec8deb"
+  },
+  {
+    "name": "1763300000000_order_structure.cjs",
+    "kind": "migration",
+    "sha256": "ccda9c7705d7c89aaaba2a00eaa19dc56109cb7f75363e17ddc842091d1b6aa3"
+  },
+  {
+    "name": "1763310000000_order_erase_deferred.cjs",
+    "kind": "migration",
+    "sha256": "8d6d130d3c844ad8c8f7e57bb898b5bbd223ba894299bc5c84c13db243ff9571"
+  },
+  {
+    "name": "1763320000000_notification_comment_rollback.cjs",
+    "kind": "migration",
+    "sha256": "c99639fe27c511321102ee3c2230960e123580dd680d14974296bd2128168ec0"
+  },
+  {
+    "name": "1763400000000_order_terms.cjs",
+    "kind": "migration",
+    "sha256": "de9257c1fe1f8d1c652568b0274ebfda981fe045dd946457b0da4dcf2140aad2"
+  },
+  {
+    "name": "1763410000000_terms_receipt_digest.cjs",
+    "kind": "migration",
+    "sha256": "d04e060f9c605c33d8dec873e12066c33b11009de4b150adc84753506ea7841f"
+  },
+  {
+    "name": "1763450000000_vendor_staff.cjs",
+    "kind": "migration",
+    "sha256": "a94adc973a8c6b1c281ddb78732ff8b6e4e3da002e6199b0033fd23e47316bb5"
+  },
+  {
+    "name": "1763500000000_vendor_resources.cjs",
+    "kind": "migration",
+    "sha256": "8ddc2fcfec2a76ff8f5ca0de2a5e8d962b2ed4c23516d0b69e9230947e28c14d"
+  },
+  {
+    "name": "1763510000000_staff_duty_event_scope.cjs",
+    "kind": "migration",
+    "sha256": "a8e1d7474673544e42fa44c01bf9cd6c4549770794b4a5f26747e67d684d7c74"
+  },
+  {
+    "name": "1763550000000_staff_invitation_identity.cjs",
+    "kind": "migration",
+    "sha256": "02c6b5fc8360e88c1dad66d32b02e3843e3353ed1f5323c1344442d228f8110a"
+  },
+  {
+    "name": "1763600000000_order_resource_plan.cjs",
+    "kind": "migration",
+    "sha256": "b7316709240d27d2191ebc3c61e783f53da2afbb27523617748655c3f3ae6670"
+  },
+  {
+    "name": "1763610000000_resource_plan_head_integrity.cjs",
+    "kind": "migration",
+    "sha256": "4fc19da1172fa6ecbc92b6ad5dea109dec5b3d397388d81ad72ed8ed320eddf2"
+  },
+  {
+    "name": "1763650000000_resource_commitments.cjs",
+    "kind": "migration",
+    "sha256": "d8ac93b539c1037504749f3f56ad75ae832a46a757fadc3e3ca7497845ef8409"
+  },
+  {
+    "name": "1763660000000_commitment_proof_guard.cjs",
+    "kind": "migration",
+    "sha256": "34dbf7821d3937a09cbce9b59e019abb27cc89361b6c16d0eb37187a103fb494"
+  },
+  {
+    "name": "1763670000000_commitment_trigger_records.cjs",
+    "kind": "migration",
+    "sha256": "a95b7fe076d4444e7c07e6001b126dc209ecd1e355debf471bf9ff5fcdceb1e7"
+  },
+  {
+    "name": "1763680000000_commitment_history_cascade.cjs",
+    "kind": "migration",
+    "sha256": "92bf0f71d930ca8f7bb9000bf95cc65c0adac47443ea7b1f59e042da95d2c29f"
+  },
+  {
+    "name": "1763690000000_allocation_release_proof.cjs",
+    "kind": "migration",
+    "sha256": "4874875a032b7a3cf6bfed950f7d2af09e57a40cde1eeadddc5db20f265c9899"
+  },
+  {
+    "name": "1763700000000_event_rsvp_deadlines.cjs",
+    "kind": "migration",
+    "sha256": "547f6faa6f1e229a73cac488423d1cb005946378bdab1501f4fd4c26160f3b65"
+  },
+  {
+    "name": "1763800000000_legacy_calendar_sources.cjs",
+    "kind": "migration",
+    "sha256": "e05f80b9fa0719506e7011b81619c9b79b93d66621559a99eae2b6879624ea0c"
+  },
+  {
+    "name": "1763810000000_legacy_calendar_day_recovery.cjs",
+    "kind": "migration",
+    "sha256": "26afcd80459df1e115bb1e32a719a34a2d81694a892def889f9e4f7ece633e44"
+  },
+  {
+    "name": "1763820000000_planb_system_template_keys.cjs",
+    "kind": "migration",
+    "sha256": "f7813c7cdc89672156e5414139ce5560a2ad4227b985d786b9505b2fcda3b8eb"
+  },
+  {
+    "name": "1763825000000_offer_comparison_terms.cjs",
+    "kind": "migration",
+    "sha256": "f682b9156c28792a70f4539bbcf1799e39fed0be71d7cfa741bab53d2a9275ba"
+  },
+  {
+    "name": "data/categories.json",
+    "kind": "data",
+    "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
+  },
+  {
+    "name": "data/cities.json",
+    "kind": "data",
+    "sha256": "3646863df60bcfb89eb119e5855af02506c2bfe4ebfc7c5238fa895f43f7f332"
+  }
+]
+function assertMigrationInventory(entries, approved) {
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 83 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 83)
+  assert.equal(entries.filter(row => row.kind === 'data').length, 2)
+  const files = entries.filter(row => row.kind === 'migration')
+  assert.equal(files.at(-1).name, '1763825000000_offer_comparison_terms.cjs')
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= LATEST))
+}
 function migrationManifest() {
-  const files = readdirSync(migrationsDir).filter(name => /^\d{13}_.+\.cjs$/.test(name)).sort()
-  assert(files.length > 0)
-  assert(files.every(name => Number(name.slice(0, 13)) <= LATEST), 'Later migrations require a new reviewed drill')
-  const own = files.filter(name => Number(name.slice(0, 13)) >= FIRST).map(name => name.slice(0, -4))
+  assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
+  const entries = []
+  for (const name of readdirSync(migrationsDir).sort()) {
+    const location = resolve(migrationsDir, name), stat = lstatSync(location)
+    assert(!stat.isSymbolicLink(), 'Symlink/reparse migration input is forbidden')
+    if (name === 'data') {
+      assert(stat.isDirectory(), 'The sole reviewed migration data directory must be a directory')
+      for (const dataName of readdirSync(location).sort()) {
+        const dataFile = resolve(location, dataName), dataStat = lstatSync(dataFile)
+        assert(dataStat.isFile() && !dataStat.isSymbolicLink(), 'Nested directories, symlinks or executable migration data are forbidden')
+        entries.push({ name: `data/${dataName}`, kind: 'data', sha256: createHash('sha256').update(readFileSync(dataFile)).digest('hex') })
+      }
+    } else {
+      assert(stat.isFile(), 'Unknown directories or non-regular migration files are forbidden')
+      entries.push({ name, kind: 'migration', sha256: createHash('sha256').update(readFileSync(location)).digest('hex') })
+    }
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name))
+  assertMigrationInventory(entries, APPROVED_MIGRATION_INPUTS)
+  const files = entries.filter(row => row.kind === 'migration')
+  const own = files.filter(row => Number(row.name.slice(0, 13)) >= FIRST).map(row => row.name.slice(0, -4))
   assert.deepEqual(own, expectedOwn, 'Unknown or missing migration in the approved range')
-  return files.map(name => ({ name: name.slice(0, -4), digest: createHash('sha256').update(readFileSync(resolve(migrationsDir, name))).digest('hex') }))
+  return files.map(row => ({ name: row.name.slice(0, -4), digest: row.sha256 }))
 }
 const manifest = migrationManifest()
 const db = new pg.Client({ connectionString: databaseUrl, statement_timeout: 20_000, connectionTimeoutMillis: 5000 })
 await db.connect()
-async function safety() {
+let drillIdentity
+const ownedPids = new Set()
+function assertNativeDrillIdentity(identity, previous, expectedName, port, sessions, allowedPids) {
+  assert.equal(identity.name, expectedName); assert.equal(identity.principal, 'codex_test'); assert.equal(identity.owner, 'codex_test')
+  assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(identity.address)); assert.equal(identity.port, Number(port))
+  assert.equal(identity.encoding, 'UTF8'); assert(/^16\./.test(identity.version))
+  assert(/^[1-9]\d*$/.test(identity.oid)); assert(Number.isSafeInteger(identity.pid) && identity.pid > 0)
+  if (previous) assert.deepEqual(identity, previous, 'The live native target identity cannot change during the drill')
+  assert.equal(sessions.filter(row => !allowedPids.has(row.pid)).length, 0, 'Unexpected database session; refuse without terminating it')
+}
+async function nativeIdentity(client) {
+  return (await client.query(`select current_database() name,current_user principal,host(inet_server_addr()) address,inet_server_port() port,pg_backend_pid() pid,
+    d.oid::text oid,pg_get_userbyid(d.datdba) owner,current_setting('server_encoding') encoding,current_setting('server_version') version
+    from pg_database d where d.datname=current_database()`)).rows[0]
+}
+async function registerOwnedConnection(client) {
+  const identity = await nativeIdentity(client)
+  assertNativeDrillIdentity(identity, undefined, DATABASE, selectedPort, [], new Set())
+  assert(drillIdentity); assert.equal(identity.oid, drillIdentity.oid)
+  assert(!ownedPids.has(identity.pid)); ownedPids.add(identity.pid)
+  return identity.pid
+}
+function assertReadOnlyDrillInputs() {
   assert.equal(process.env.TILI_DISPOSABLE_PG_PORT ?? '55432', selectedPort, 'Selected disposable port changed during the drill')
   assert.equal(validateUrl(process.env.DATABASE_URL), databaseUrl)
   assert.equal(validateUrl(process.env.TEST_DATABASE_URL), databaseUrl)
-  const identity = (await db.query('select current_database() as name, current_user as principal, host(inet_server_addr()) as address, inet_server_port() as port')).rows[0]
-  assert.equal(identity.name, DATABASE)
-  assert.equal(identity.principal, 'codex_test')
-  assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(identity.address), 'Live server must also be loopback')
-  assert.equal(identity.port, Number(selectedPort))
+  assert(!process.env.NODE_OPTIONS && !process.env.PGOPTIONS, 'Child-loader or PostgreSQL session overrides are forbidden')
   assert.deepEqual(migrationManifest(), manifest, 'Migration source changed during the drill')
+  assert.equal(JSON.parse(readFileSync(resolve(backend, 'node_modules/node-pg-migrate/package.json'), 'utf8')).version, '7.9.1')
+  assert.equal(createHash('sha256').update(readFileSync(cli)).digest('hex'), APPROVED_NATIVE_CLI_SHA)
+}
+// Pure admission decision over one genuine read sample. No PID, backend type,
+// application label or state can make an unowned session acceptable.
+function sessionQuiescenceDecision(identity, previous, expectedName, port, sessions, allowedPids, elapsedMs) {
+  assert.equal(identity.name, expectedName); assert.equal(identity.principal, 'codex_test'); assert.equal(identity.owner, 'codex_test')
+  assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(identity.address)); assert.equal(identity.port, Number(port))
+  assert.equal(identity.encoding, 'UTF8'); assert(/^16\./.test(identity.version))
+  assert(/^[1-9]\d*$/.test(identity.oid)); assert(Number.isSafeInteger(identity.pid) && identity.pid > 0)
+  if (previous) assert.deepEqual(identity, previous, 'The live native target identity cannot change during quiescence')
+  assert(Array.isArray(sessions)); assert(allowedPids instanceof Set)
+  assert([...allowedPids].every(pid => Number.isSafeInteger(pid) && pid > 0))
+  assert(sessions.every(row => row && Number.isSafeInteger(row.pid) && row.pid > 0 && row.pid !== identity.pid))
+  assert.equal(new Set(sessions.map(row => row.pid)).size, sessions.length)
+  assert(Number.isFinite(elapsedMs) && elapsedMs >= 0)
+  const unowned = sessions.filter(row => !allowedPids.has(row.pid))
+  return { unowned, ready: unowned.length === 0 && elapsedMs < 3000, expired: elapsedMs >= 3000 }
+}
+async function safety() {
+  const started = performance.now(), limitMs = 3000
+  let stopped = false, timer, firstIdentity = drillIdentity, lastObservation, hadUnowned = false
+  const deadline = new Promise((resolveDeadline, rejectDeadline) => {
+    timer = setTimeout(() => {
+      stopped = true
+      const error = new Error('Read-only session quiescence reached its fixed 3000ms deadline')
+      error.code = 'DRILL_SESSION_QUIESCENCE_DEADLINE'
+      console.error('DRILL_SESSION_QUIESCENCE_DEADLINE ' + JSON.stringify({ at: new Date().toISOString(), elapsedMs: performance.now() - started, limitMs, lastObservation: lastObservation ?? null }))
+      rejectDeadline(error)
+    }, limitMs)
+  })
+  // The losing read-only branch is always observed by Promise.race; no query
+  // error becomes a zero-session result and no late branch may start a write.
+  const withinDeadline = () => {
+    assert(!stopped && performance.now() - started < limitMs, 'Read-only session quiescence deadline expired; refuse before mutation')
+  }
+  const observe = async () => {
+    for (let sample = 1; ; sample++) {
+      withinDeadline(); assertReadOnlyDrillInputs(); withinDeadline()
+      const identity = await nativeIdentity(db)
+      withinDeadline()
+      // Metadata snapshot invalidation only, never shared-statistics reset.
+      await db.query('select pg_catalog.pg_stat_clear_snapshot()')
+      withinDeadline()
+      const sessions = (await db.query(`select pid,backend_type,usename,application_name,state,backend_start,xact_start,query_start,state_change,
+        wait_event_type,wait_event,host(client_addr) client_address,client_port
+        from pg_catalog.pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() order by pid`)).rows
+      const elapsedMs = performance.now() - started
+      lastObservation = { at: new Date().toISOString(), sample, elapsedMs, identity, sessions, allowedPids: [...ownedPids].sort((a, b) => a - b) }
+      const decision = sessionQuiescenceDecision(identity, firstIdentity, DATABASE, selectedPort, sessions, ownedPids, elapsedMs)
+      firstIdentity ??= identity
+      if (decision.unowned.length) hadUnowned = true
+      if (hadUnowned) console.error('DRILL_SESSION_QUIESCENCE_SAMPLE ' + JSON.stringify({ ...lastObservation, unowned: decision.unowned, ready: decision.ready, expired: decision.expired }))
+      withinDeadline()
+      assert(!decision.expired, 'Read-only session quiescence deadline expired; refuse before mutation')
+      if (decision.ready) {
+        // The unchanged strict assertion receives all actual rows, not a
+        // fabricated empty list or a backend-type-filtered subset.
+        assertNativeDrillIdentity(identity, drillIdentity, DATABASE, selectedPort, sessions, ownedPids)
+        assertReadOnlyDrillInputs(); withinDeadline()
+        drillIdentity ??= identity
+        return
+      }
+      await new Promise(resolvePoll => setTimeout(resolvePoll, Math.min(100, Math.max(1, limitMs - (performance.now() - started)))))
+      withinDeadline()
+    }
+  }
+  try { await Promise.race([observe(), deadline]) }
+  catch (error) {
+    console.error('DRILL_SESSION_QUIESCENCE_FAILED ' + JSON.stringify({ at: new Date().toISOString(), elapsedMs: performance.now() - started, limitMs, error: { name: error.name, message: error.message, code: error.code ?? null }, lastObservation: lastObservation ?? null }))
+    throw error
+  } finally { stopped = true; clearTimeout(timer) }
 }
 async function write(sql, values = []) {
   await safety()
@@ -122,6 +666,7 @@ async function migrate(direction, target, failureMessage, exactFile = false) {
     assert.equal(result.status, 0, `Actual migration command failed:\n${output}`)
     console.log(`Actual migration ${direction} ${target} complete`)
   }
+  return { status: result.status, output }
 }
 const quote = value => `"${value.replaceAll('"', '""')}"`
 async function columns(table) {
@@ -201,7 +746,7 @@ async function assertNoBusinessData() {
   for (const table of ['notification_push_deliveries', 'deal_orders', 'order_assignments', 'order_parts', 'event_guest_participation', 'deal_terms_versions', 'deal_terms_receipts',
     'vendor_staff_members', 'vendor_staff_duties', 'vendor_resources', 'vendor_availability_policy', 'resource_capacity_windows', 'deal_resource_plan_versions',
     'resource_conflict_keys', 'deal_resource_commitments', 'deal_resource_commitment_versions', 'resource_allocations', 'deal_resource_commitment_members',
-    'event_rsvp_requests', 'legacy_calendar_sources', 'legacy_calendar_versions', 'legacy_calendar_version_holders', 'legacy_calendar_heads']) {
+    'event_rsvp_requests', 'legacy_calendar_sources', 'legacy_calendar_versions', 'legacy_calendar_version_holders', 'legacy_calendar_heads', 'offers', 'offer_requests', 'slot_shortlist', 'vendor_packages']) {
     assert.equal((await db.query(`select count(*)::int as count from public.${quote(table)}`)).rows[0].count, 0)
   }
 }
@@ -1253,10 +1798,13 @@ async function recoveryManualRace(foreign, order, phone) {
   const manual = new pg.Client({ connectionString: databaseUrl, statement_timeout: 9000, connectionTimeoutMillis: 5000 })
   const cascade = new pg.Client({ connectionString: databaseUrl, statement_timeout: 9000, connectionTimeoutMillis: 5000 })
   let completion, manualResult, cascadeResult
+  const ownedConnectionPids = []
   try {
     await manual.connect(); await cascade.connect()
     const manualPid = (await manual.query('select pg_backend_pid() pid')).rows[0].pid
     const cascadePid = (await cascade.query('select pg_backend_pid() pid')).rows[0].pid
+    ownedConnectionPids.push(await registerOwnedConnection(manual), await registerOwnedConnection(cascade))
+    assert.deepEqual(ownedConnectionPids, [manualPid, cascadePid])
     await manual.query('begin'); await cascade.query('begin')
     await manual.query('select id from users where id=$1 for share', [own.vendorOwner])
     let held, waiting, pending
@@ -1298,6 +1846,7 @@ async function recoveryManualRace(foreign, order, phone) {
     await Promise.allSettled([manual.query('rollback'), cascade.query('rollback')])
     if (completion) await completion
     await manual.end(); await cascade.end()
+    for (const pid of ownedConnectionPids) ownedPids.delete(pid)
   }
 }
 
@@ -1371,12 +1920,12 @@ async function planbEmptyCycle() {
   assert.deepEqual(down.schema, priorPlanbSchema(before.schema), 'Empty exact382 down must preserve every old catalog row')
   assert.deepEqual(down.data, { ...withoutPlanbKey(before.data), pgmigrations: before.data.pgmigrations.filter(row => row.name !== PLANB_MIGRATION) })
   await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= RECOVERY).map(item => item.name))
-  await migrate('up', LATEST)
+  await migrate('up', PLANB_LATEST)
   const up = await snapshot()
   assertPlanbPreserved(down, up)
   assert.deepEqual(planbReaddedSchema(up.schema), planbReaddedSchema(before.schema))
   await planbCatalog()
-  const repeated = await snapshot(); await migrate('up', LATEST)
+  const repeated = await snapshot(); await migrate('up', PLANB_LATEST)
   assert.deepEqual(await snapshot(), repeated, 'Empty 382 repeat must be an exact no-op')
   console.log('T023 empty exact382 down/re-up/repeat passed with all old metadata preserved')
 }
@@ -1400,12 +1949,14 @@ async function planbNativeDownWait() {
   await safety()
   const before = await snapshot(), tag = `drill382_${randomUUID().replaceAll('-', '')}`
   const holder = new pg.Client({ connectionString: databaseUrl, statement_timeout: 9000, connectionTimeoutMillis: 5000 })
-  let child, completion, settled = false, witness
+  let child, completion, settled = false, witness, holderOwnedPid
   try {
     await holder.connect()
     const identity = (await holder.query('select current_database() name,current_user principal,host(inet_server_addr()) address,inet_server_port() port,pg_backend_pid() pid')).rows[0]
     assert.equal(identity.name, DATABASE); assert.equal(identity.principal, 'codex_test'); assert.equal(identity.port, Number(selectedPort))
     assert(['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(identity.address))
+    holderOwnedPid = await registerOwnedConnection(holder)
+    assert.equal(holderOwnedPid, identity.pid)
     await holder.query('begin')
     assert((await holder.query('select id from tasks where system_template_key is not null limit 1 for share')).rowCount === 1)
     child = spawn(process.execPath, [cli, 'down', PLANB_MIGRATION, '-m', migrationsDir,
@@ -1453,6 +2004,7 @@ async function planbNativeDownWait() {
     if (child && !settled) child.kill()
     if (completion) await completion.catch(() => {})
     await holder.end()
+    if (holderOwnedPid !== undefined) ownedPids.delete(holderOwnedPid)
   }
 }
 async function planbForwardFixture(f) {
@@ -1466,10 +2018,10 @@ async function planbForwardFixture(f) {
       i === 1 ? '2026-09-30T12:34:56.123456Z' : null, 'before', '2027-06-13'])
   }
   const before = await snapshot()
-  await migrate('up', LATEST)
+  await migrate('up', PLANB_LATEST)
   const after = await snapshot(); assertPlanbPreserved(before, after); await planbCatalog()
-  await assertJournal(manifest.map(item => item.name))
-  const repeated = await snapshot(); await migrate('up', LATEST)
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= PLANB_LATEST).map(item => item.name))
+  const repeated = await snapshot(); await migrate('up', PLANB_LATEST)
   assert.deepEqual(await snapshot(), repeated, 'Populated382 repeat must preserve every row and catalog')
   for (const [column, value, constraint] of [
     ['id', randomUUID(), 'tasks_system_planb_identity_immutable'], ['wedding_id', null, 'tasks_system_planb_identity_immutable'],
@@ -1480,7 +2032,7 @@ async function planbForwardFixture(f) {
   // All historical values/IDs/duplicates survive actual exact NULL-history down.
   await migrate('down', PLANB_MIGRATION, undefined, true)
   assert.deepEqual(await snapshot(), before, 'NULL-history down must restore full381 data/journal/catalog exactly')
-  await migrate('up', LATEST)
+  await migrate('up', PLANB_LATEST)
   const reup = await snapshot(); assertPlanbPreserved(before, reup); await planbCatalog()
   assert.deepEqual(planbReaddedSchema(reup.schema), planbReaddedSchema(after.schema))
   const insert = 'insert into tasks(id,wedding_id,title,source,kind,system_template_key) values($1,$2,$3,$4,$5,$6)'
@@ -1522,6 +2074,191 @@ async function planbForwardFixture(f) {
 }
 
 
+// Native migration fixtures are synthetic stored history; registered FR018
+// acceptance, human agreement, provider delivery and the full WP remain separate.
+const FR018_MIGRATION = '1763825000000_offer_comparison_terms'
+const FR018_FIELDS = ['hours', 'team', 'result', 'delivery', 'extras', 'cancellation', 'reschedule']
+const FR018_COLUMNS = { offers: 'comparison_terms', deals: 'offer_comparison_terms_snapshot' }
+const FR018_CHECKS = ['offers_comparison_terms_canonical', 'offers_decline_no_comparison_terms', 'deals_offer_comparison_terms_canonical']
+const FR018_DOWN_MESSAGE = 'stored offer comparison terms or accepted snapshots exist; use a preserving forward migration'
+let fr018SqlRefusals = 0, fr018DownRefusals = 0
+function fr018Terms(overrides = {}) {
+  return { hours: '0', team: null, result: null, delivery: null, extras: null, cancellation: null, reschedule: null, ...overrides }
+}
+function isFr018Check(table, name) {
+  return FR018_CHECKS.includes(name) && table === (name.startsWith('offers_') ? 'offers' : 'deals')
+}
+function fr018PriorState(state, introduced) {
+  const prior = structuredClone(state)
+  for (const [table, column] of Object.entries(FR018_COLUMNS)) {
+    prior.snapshot.data[table] = prior.snapshot.data[table].map(row => {
+      delete row[column]
+      return row
+    }).sort((a, b) => canonicalFixture(a).localeCompare(canonicalFixture(b)))
+  }
+  prior.snapshot.schema.columns = prior.snapshot.schema.columns.filter(row => FR018_COLUMNS[row.table_name] !== row.column_name)
+  prior.snapshot.schema.columnMetadata = prior.snapshot.schema.columnMetadata.filter(row => FR018_COLUMNS[row.relname] !== row.attname)
+  prior.snapshot.schema.constraints = prior.snapshot.schema.constraints.filter(row => !isFr018Check(row.table_name, row.conname))
+  prior.snapshot.data.pgmigrations = prior.snapshot.data.pgmigrations.filter(row => row.name !== FR018_MIGRATION)
+  prior.objects = prior.objects.filter(row => !(row.kind === 'constraint' && isFr018Check(row.table_name, row.name)))
+  prior.attributes = prior.attributes.filter(row => !introduced.has(`${row.table_name}:${row.attnum}`))
+  return prior
+}
+function assertFr018Prior(actual, before, introduced) {
+  assert.deepEqual(fr018PriorState(actual, introduced), fr018PriorState(before, new Set()),
+    'Only the two explicit columns, three constraints, one journal row and observed new-column attribute slots may change; every old row/OID/catalogue/attribute remains')
+}
+async function fr018State() {
+  const visible = await snapshot()
+  const objects = (await db.query(`select 'relation'::text kind,c.relname name,c.relname table_name,c.oid::text oid from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'
+    union all select 'constraint',k.conname,c.relname,k.oid::text from pg_constraint k join pg_namespace n on n.oid=k.connamespace left join pg_class c on c.oid=k.conrelid where n.nspname='public'
+    union all select 'trigger',c.relname||'.'||t.tgname,c.relname,t.oid::text from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'
+    union all select 'function',p.oid::regprocedure::text,null,p.oid::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+    union all select 'type',t.typname,null,t.oid::text from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' order by kind,name,oid`)).rows
+  const attributes = (await db.query(`select c.relname table_name,c.oid::text table_oid,a.attnum,a.attname,a.attisdropped,a.atttypid::text,a.attnotnull,a.atthasdef,a.attidentity,a.attgenerated,a.attacl
+    from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and a.attnum>0 order by c.relname,a.attnum`)).rows
+  return { snapshot: visible, objects, attributes }
+}
+async function fr018Catalog(introduced, previousAttributes) {
+  const state = await fr018State()
+  for (const [table, column] of Object.entries(FR018_COLUMNS)) {
+    const cols = state.snapshot.schema.columns.filter(row => row.table_name === table && row.column_name === column)
+    assert.equal(cols.length, 1); assert.equal(cols[0].data_type, 'jsonb'); assert.equal(cols[0].is_nullable, 'YES'); assert.equal(cols[0].column_default, null)
+    const attrs = state.attributes.filter(row => row.table_name === table && row.attname === column && !row.attisdropped)
+    assert.equal(attrs.length, 1)
+    const oldMax = Math.max(...previousAttributes.filter(row => row.table_name === table).map(row => row.attnum))
+    assert.equal(attrs[0].attnum, oldMax + 1, 'Exactly one newly added physical column slot per table per up')
+    introduced.add(`${table}:${attrs[0].attnum}`)
+  }
+  const checks = state.snapshot.schema.constraints.filter(row => FR018_CHECKS.includes(row.conname))
+  assert.equal(checks.length, 3)
+  for (const check of checks) {
+    assert.equal(check.contype, 'c'); assert.equal(check.convalidated, true)
+    assert.equal(check.condeferrable, false); assert.equal(check.condeferred, false)
+    assert.equal(check.table_name, check.conname.startsWith('offers_') ? 'offers' : 'deals')
+  }
+  return { state, checks }
+}
+async function fr018SqlRefusal(sql, values, constraint) {
+  const before = await fr018State()
+  await write('begin')
+  let caught
+  try { await write(sql, values) } catch (error) { caught = error }
+  finally { await db.query('rollback') }
+  assert(caught, 'A real native CHECK refusal is required')
+  assert.equal(caught.code, '23514'); assert.equal(caught.constraint, constraint)
+  assert.deepEqual(await fr018State(), before, 'Native CHECK refusal preserves whole public rows/journal/OIDs/catalogue')
+  fr018SqlRefusals++
+}
+async function fr018GuardedDown(label) {
+  const before = await fr018State()
+  const outcome = await migrate('down', FR018_MIGRATION, FR018_DOWN_MESSAGE, true)
+  assert(/code:\s*['"]23514['"]/.test(outcome.output), 'Actual CLI refusal must expose SQLSTATE 23514')
+  assert(outcome.output.includes('offer_comparison_terms_down_preservation'))
+  assert.deepEqual(await fr018State(), before, `${label}: guarded down preserves every row, journal id/run_on, OID and catalogue`)
+  fr018DownRefusals++
+  console.log(`FR018_NATIVE_DOWN_GUARD source=${label} sqlstate=23514 allPreserved=true`)
+}
+async function fr018ForwardFixture() {
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= PLANB_LATEST).map(item => item.name))
+  const beforeOwned = await fr018State()
+  const g = await fixture(false, '+1999000000')
+  const own = Object.fromEntries(['request', 'declineRequest', 'offer', 'decline'].map(key => [key, randomUUID()]))
+  await write(`insert into offer_requests(id,slot_id,vendor_id,status,close_reason,closed_at,wedding_date,created_by)
+    values($1,$2,$3,'closed','booked',now(),'2027-06-14',$4),($5,$6,$3,'open',null,null,'2027-06-14',$4)`,
+  [own.request, g.slot, g.vendor, g.owner, own.declineRequest, g.externalSlot])
+  await write(`insert into offers(id,request_id,kind,title,price,includes,valid_until,accepted_at,deal_id,created_by)
+    values($1,$2,'offer','Historical package',123456789,'["Full day","Gallery"]','2027-06-14',now(),$3,$4)`,
+  [own.offer, own.request, g.deal, g.vendorOwner])
+  await write("insert into offers(id,request_id,kind,created_by) values($1,$2,'decline',$3)", [own.decline, own.declineRequest, g.vendorOwner])
+  const under82 = await fr018State(), introduced = new Set()
+  assert(!under82.snapshot.schema.columns.some(row => FR018_COLUMNS[row.table_name] === row.column_name))
+  await migrate('up', LATEST)
+  const initial = await fr018Catalog(introduced, under82.attributes)
+  assertFr018Prior(initial.state, under82, introduced)
+  await assertJournal(manifest.map(item => item.name))
+  assert((await db.query('select comparison_terms from offers')).rows.every(row => row.comparison_terms === null))
+  assert((await db.query('select offer_comparison_terms_snapshot from deals')).rows.every(row => row.offer_comparison_terms_snapshot === null))
+  assert.equal((await db.query('select price::text price from offers where id=$1', [own.offer])).rows[0].price, '123456789')
+  const full = fr018Terms({ team: 'Synthetic team', result: 'Gallery', delivery: 'Literal delivery', extras: '0', cancellation: 'Literal cancellation', reschedule: 'Literal reschedule' })
+  assert.equal((await write('update offers set comparison_terms=$2::jsonb where id=$1', [own.offer, JSON.stringify(full)])).rowCount, 1)
+  assert.deepEqual((await db.query('select comparison_terms from offers where id=$1', [own.offer])).rows[0].comparison_terms, full)
+  const nonNullOffer = await fr018State(); await migrate('up', LATEST)
+  assert.deepEqual(await fr018State(), nonNullOffer, 'Repeated up with stored quote preserves all literal rows and catalogue')
+  await fr018GuardedDown('offer-only')
+  for (const field of FR018_FIELDS) await fr018SqlRefusal('update offers set comparison_terms=$2::jsonb where id=$1',
+    [own.offer, JSON.stringify(fr018Terms({ [field]: 0 }))], 'offers_comparison_terms_canonical')
+  for (const bad of [Object.fromEntries(FR018_FIELDS.map(field => [field, null])), { ...full, unexpected: 'x' },
+    Object.fromEntries(Object.entries(full).filter(([key]) => key !== 'hours')), fr018Terms({ hours: '' }), fr018Terms({ hours: 'Ж'.repeat(2001) })]) {
+    await fr018SqlRefusal('update offers set comparison_terms=$2::jsonb where id=$1', [own.offer, JSON.stringify(bad)], 'offers_comparison_terms_canonical')
+  }
+  await fr018SqlRefusal('update offers set comparison_terms=$2::jsonb where id=$1', [own.decline, JSON.stringify(full)], 'offers_decline_no_comparison_terms')
+  await fr018SqlRefusal('update deals set offer_comparison_terms_snapshot=$2::jsonb where id=$1', [g.deal, JSON.stringify(fr018Terms({ hours: false }))], 'deals_offer_comparison_terms_canonical')
+  const beforeMaximum = await fr018State()
+  await write('begin')
+  try {
+    const maximum = fr018Terms({ hours: 'Ж'.repeat(2000) })
+    await write('update offers set comparison_terms=$2::jsonb where id=$1', [own.offer, JSON.stringify(maximum)])
+    await write('update deals set offer_comparison_terms_snapshot=$2::jsonb where id=$1', [g.deal, JSON.stringify(maximum)])
+    assert.equal((await db.query("select char_length(comparison_terms->>'hours') as n from offers where id=$1", [own.offer])).rows[0].n, 2000)
+    assert.equal((await db.query("select char_length(offer_comparison_terms_snapshot->>'hours') as n from deals where id=$1", [g.deal])).rows[0].n, 2000)
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await fr018State(), beforeMaximum)
+  // A genuine native selected-row copy into the already booked synthetic deal,
+  // not a registered HTTP acceptance or invented human agreement.
+  await write('begin')
+  try {
+    assert.equal((await write(`update deals set offer_comparison_terms_snapshot=(select comparison_terms from offers where id=$2 and deal_id=$1)
+      where id=$1`, [g.deal, own.offer])).rowCount, 1)
+    assert.equal((await write('update offers set comparison_terms=null where id=$1', [own.offer])).rowCount, 1)
+    await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  assert.deepEqual((await db.query('select offer_comparison_terms_snapshot from deals where id=$1', [g.deal])).rows[0].offer_comparison_terms_snapshot, full)
+  assert.equal((await db.query('select count(*)::int n from offers where comparison_terms is not null')).rows[0].n, 0)
+  const nonNullAccepted = await fr018State(); await migrate('up', LATEST)
+  assert.deepEqual(await fr018State(), nonNullAccepted, 'Repeated up preserves selected accepted snapshot after quote is NULL')
+  await fr018GuardedDown('accepted-snapshot-only')
+  // Clear only this drill's synthetic row, never unknown or real commercial terms.
+  assert.equal((await write('update deals set offer_comparison_terms_snapshot=null where id=$1', [g.deal])).rowCount, 1)
+  assert.equal((await db.query('select count(*)::int n from deals where offer_comparison_terms_snapshot is not null')).rows[0].n, 0)
+  const beforeDown = await fr018State()
+  await migrate('down', FR018_MIGRATION, undefined, true)
+  const under82Again = await fr018State()
+  assertFr018Prior(under82Again, under82, introduced)
+  assert(!under82Again.snapshot.schema.columns.some(row => FR018_COLUMNS[row.table_name] === row.column_name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= PLANB_LATEST).map(item => item.name))
+  await migrate('up', LATEST)
+  const readded = await fr018Catalog(introduced, under82Again.attributes)
+  assert.deepEqual(readded.checks, initial.checks, 'Re-added constraints retain exact native definitions')
+  assertFr018Prior(readded.state, under82, introduced)
+  assert.equal((await db.query('select comparison_terms from offers where id=$1', [own.offer])).rows[0].comparison_terms, null)
+  assert.equal((await db.query('select offer_comparison_terms_snapshot from deals where id=$1', [g.deal])).rows[0].offer_comparison_terms_snapshot, null)
+  // Compare the exact NULL-state visible catalogue, allowing only the known
+  // new columns' physical slots and new constraints' intentionally recreated OIDs.
+  const normalized = state => {
+    const value = structuredClone(state)
+    value.objects = value.objects.filter(row => !(row.kind === 'constraint' && isFr018Check(row.table_name, row.name)))
+    value.attributes = value.attributes.filter(row => !introduced.has(`${row.table_name}:${row.attnum}`))
+    value.snapshot.data.pgmigrations = value.snapshot.data.pgmigrations.filter(row => row.name !== FR018_MIGRATION)
+    for (const row of value.snapshot.schema.columns) if (FR018_COLUMNS[row.table_name] === row.column_name) { row.ordinal_position = 0; row.dtd_identifier = 'OWN_FR018_COLUMN' }
+    return value
+  }
+  assert.deepEqual(normalized(readded.state), normalized(beforeDown))
+  const repeated = await fr018State(); await migrate('up', LATEST)
+  assert.deepEqual(await fr018State(), repeated, 'Re-up83 repeat is a true preserving native no-op')
+  await write('begin')
+  try {
+    assert.equal((await write('delete from weddings where id=$1', [g.wedding])).rowCount, 1)
+    assert.equal((await write('delete from users where id=any($1::uuid[])', [[g.owner, g.vendorOwner, g.coordinator]])).rowCount, 3)
+    await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  const cleaned = await fr018State()
+  assertFr018Prior(cleaned, beforeOwned, introduced)
+  await assertJournal(manifest.map(item => item.name))
+  assert.equal(fr018SqlRefusals, 14); assert.equal(fr018DownRefusals, 2)
+  console.log(`FR018_MIGRATION_PRESERVATION_PASSED nativeChecks=${fr018SqlRefusals} guardedDowns=${fr018DownRefusals} legacyNull=true literalZero=true unicode2000=true unicode2001Refused=true ownFixtureCleanup=true noHumanAcceptance=true`)
+}
+
 try {
   await safety()
   assert.equal((await db.query("select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public'")).rows[0].count, 0, 'Initial public schema must be empty, including pgmigrations')
@@ -1531,10 +2268,10 @@ try {
   const inheritedNames = manifest.filter(item => Number(item.name.slice(0, 13)) < FIRST).map(item => item.name)
   await migrate('up', Number(inheritedNames.at(-1).slice(0, 13)))
   const inheritedSchema = (await snapshot()).schema
-  await migrate('up', LATEST)
+  await migrate('up', PLANB_LATEST)
   assert.deepEqual((await db.query('select singleton,installed_btree_gist from ecosystem_resource_schema')).rows, [{ singleton: true, installed_btree_gist: true }], 'This fresh database has no preexisting btree_gist')
   assert.equal((await db.query("select extversion from pg_extension where extname='btree_gist'")).rows[0].extversion, '1.7', 'Measure the exact local extension version; this is not a production claim')
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= PLANB_LATEST).map(item => item.name))
   await planbEmptyCycle()
   const clean = await fixture(false)
   assert.deepEqual((await db.query('select attention_mode,attention_version::text,attention_coordinator_user_id from weddings where id=$1', [clean.wedding])).rows[0], { attention_mode: 'essential', attention_version: '1', attention_coordinator_user_id: null })
@@ -1551,7 +2288,7 @@ try {
   await write('delete from users where id=any($1::uuid[])', [[clean.owner, clean.vendorOwner, clean.coordinator]])
   await assertNoBusinessData()
   const cleanSnapshot = await snapshot()
-  await migrate('up', LATEST)
+  await migrate('up', PLANB_LATEST)
   assert.deepEqual(await snapshot(), cleanSnapshot, 'Repeated clean up must be a real no-op')
   await migrate('down', FIRST)
   await assertJournal(inheritedNames)
@@ -1565,7 +2302,7 @@ try {
   // migration. It must preserve its definition, identity, ownership and members.
   await write('create extension btree_gist')
   const preexistingSchema = (await snapshot()).schema
-  await migrate('up', LATEST)
+  await migrate('up', PLANB_LATEST)
   assert.deepEqual((await db.query('select singleton,installed_btree_gist from ecosystem_resource_schema')).rows, [{ singleton: true, installed_btree_gist: false }])
   await assertNoBusinessData()
   await migrate('down', FIRST)
@@ -1726,6 +2463,7 @@ try {
   await eventRsvpDeadlineFixture(f)
   await inventoryForwardFixture(f)
   await planbForwardFixture(f)
+  await fr018ForwardFixture()
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))

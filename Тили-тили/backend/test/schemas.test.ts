@@ -33,12 +33,16 @@ describe('схемы контракта', () => {
       createdAt: '2026-09-27T01:00:00.000Z',
       available: null,
       occupancy: null,
+      availabilityObservation: null,
       vendor: null,
     }
     expect((await app.inject({ method: 'POST', url: '/shortlist', payload: tombstone })).statusCode).toBe(200)
     const missingVendor: Omit<typeof tombstone, 'vendor'> & { vendor?: null } = { ...tombstone }
     delete missingVendor.vendor
     expect((await app.inject({ method: 'POST', url: '/shortlist', payload: missingVendor })).statusCode).toBe(400)
+    const missingObservation: Omit<typeof tombstone, 'availabilityObservation'> & { availabilityObservation?: null } = { ...tombstone }
+    delete missingObservation.availabilityObservation
+    expect((await app.inject({ method: 'POST', url: '/shortlist', payload: missingObservation })).statusCode).toBe(400)
     await app.close()
   })
 
