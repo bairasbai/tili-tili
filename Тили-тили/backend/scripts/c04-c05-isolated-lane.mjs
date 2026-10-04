@@ -132,7 +132,7 @@ async function main(){
     for(const [phase,config,count,prefix] of [['c04','vitest.c04-isolated.config.ts',30,'C04_BATCH_WITNESS '],['worker','vitest.c05-worker-isolated.config.ts',19,'C05_WORKER_WITNESS ']]){
       if(phase==='worker'){schema={...schema,retainedAudits:lastAudits};schemaRef=save('worker-schema.json',schema)}
       const receipt=bundle('tests',phase,controlRef),start=await nativeClean();assert.deepEqual(start.audits,lastAudits);save(phase+'/preflight.json',start)
-      const result=await child(phase,['node_modules/vitest/vitest.mjs','run','--config',config,'--reporter=json','--outputFile='+join(directory,phase,'result.json')],{DATABASE_URL:profile.targetURL,TEST_DATABASE_URL:profile.targetURL,C04_C05_ADMISSION:join(directory,receipt.path),C04_C05_ADMISSION_PHASE:phase,C04_BATCH_BARRIER_NAMESPACE_ADMITTED:String(NAMESPACE)},180000)
+      const result=await child(phase,['node_modules/vitest/vitest.mjs','run','--config',config,'--reporter=default','--reporter=json','--outputFile='+join(directory,phase,'result.json')],{DATABASE_URL:profile.targetURL,TEST_DATABASE_URL:profile.targetURL,C04_C05_ADMISSION:join(directory,receipt.path),C04_C05_ADMISSION_PHASE:phase,C04_BATCH_BARRIER_NAMESPACE_ADMITTED:String(NAMESPACE)},180000)
       assert.equal(result.signal,null);assert.equal(result.timedOut,false);assert.equal(result.spawnError,null)
       const json=readJSON(join(directory,phase,'result.json')),summary=qualifyJSON(json,count)
       const log=readFileSync(join(directory,phase,'stdout.log'),'utf8')+'\n'+readFileSync(join(directory,phase,'stderr.log'),'utf8');assert(!/Unhandled Errors|unhandledRejection|Test timed out|Hook timed out/.test(log))
