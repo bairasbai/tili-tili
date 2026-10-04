@@ -127,6 +127,8 @@ info:
 
     - `resource_source_changed` (409) — владелец компании изменился.
 
+    - `push_subscription_scope_changed` (409) — подписка, её владелец или подготовленные источники изменились во время ожидания; действие целиком откатилось, обновите данные и повторите его.
+
     - `resource_booking_conflict` (409) — ресурс или прежняя дневная занятость пересекаются с выбранным интервалом.
 
     - `resource_booking_required` (409) — дневная бронь недоступна: нужен согласованный заказ с бронью ресурсов.
@@ -6333,6 +6335,10 @@ paths:
         подписку и промолчать значило бы показать «уведомления включены» там,
         где их не будет. Уведомления при этом приходят в приложении —
         `GET /notifications` работает всегда.
+
+        При изменении найденной подписки, её владельца или подготовленных источников
+        во время ожидания отвечает 409 `push_subscription_scope_changed`; действие
+        целиком откатывается. Обновите данные и повторите действие.
       security:
         - bearerAuth: []
       requestBody:
@@ -6369,6 +6375,8 @@ paths:
       responses:
         '201':
           description: Создано
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Validation'
         '501':
@@ -6394,6 +6402,8 @@ paths:
       responses:
         '204':
           description: OK
+        '409':
+          $ref: '#/components/responses/Conflict'
     get:
       tags:
         - notifications

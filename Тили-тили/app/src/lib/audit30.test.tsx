@@ -478,12 +478,18 @@ describe('RF-08: обмен refresh из двух вкладок', () => {
     c.headers.authorization === 'Bearer a' ? withStatus(401, 'token_expired', 'Срок действия токена истёк') : { id: 'u1' }
 
   it('проигравшая вкладка при refresh_superseded ждёт пару соседки из хранилища, а не стирает его', async () => {
+    // Unsigned fixture claims preserve one user/session across both tab instances.
+    const credential = (revision: number) => 'header.' + btoa(JSON.stringify({ sub: 'user-a', sid: 'session-a', fixtureRevision: revision })) + '.synthetic'
+    const initial = { accessToken: credential(1), refreshToken: 'r' }
+    const renewed = { accessToken: credential(2), refreshToken: 'r2' }
+    localStorage.setItem('tt_auth', JSON.stringify(initial))
     let refreshes = 0
     const calls = serve({
-      '/users/me': meByToken,
+      '/users/me': (c: Call) => c.headers.authorization === 'Bearer ' + initial.accessToken
+        ? withStatus(401, 'token_expired', 'Срок действия токена истёк') : { id: 'u1' },
       /* Победившая вкладка получает пару с задержкой; проигравшей сервер отвечает сразу. */
       '/auth/refresh': () => (++refreshes === 1
-        ? delayed(80, { accessToken: 'a2', refreshToken: 'r2' })
+        ? delayed(80, renewed)
         : withStatus(401, 'refresh_superseded', 'Токен обновления уже обменян — возьмите новый из хранилища')),
     })
     /* Две вкладки — два экземпляра модуля с общим localStorage: у каждой свой `refreshing`. */
@@ -499,9 +505,9 @@ describe('RF-08: обмен refresh из двух вкладок', () => {
     expect(resB, 'вторая вкладка выброшена на вход: «сессия истекла»').not.toBeInstanceOf(Error)
     expect(resB).toEqual({ id: 'u1' })
     expect(resA).toEqual({ id: 'u1' })
-    expect(storedTokens()).toEqual({ accessToken: 'a2', refreshToken: 'r2' })
+    expect(storedTokens()).toEqual(renewed)
     /* Обе вкладки повторили запрос по паре, которую положила победившая. */
-    expect(calls.filter(c => c.path === '/users/me' && c.headers.authorization === 'Bearer a2').length).toBe(2)
+    expect(calls.filter(c => c.path === '/users/me' && c.headers.authorization === 'Bearer ' + renewed.accessToken).length).toBe(2)
     expect(refreshes).toBe(2)
   })
 

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
+import type { QueryResultRow } from 'pg'
 import webpush from 'web-push'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -173,11 +174,26 @@ describe.skipIf(!DB)('017-B: task reminders, delivery guards and transactional a
   })
   it('notification failure rolls back the reminder mark; retry is safe',async()=>{
     const w=await setup();const id=await make(w);const db=app.db!;const original=db.tx.bind(db)
-    vi.spyOn(db,'tx').mockImplementationOnce(fn=>original(c=>fn({query:async(text,values)=>{
-      if(text.includes('insert into notifications')) throw new Error('controlled notification failure')
-      return c.query(text,values)
+    let inserted = false, marked = false, sqlstate: string | undefined
+    let insertIdentity: {pid:number;txid:string} | undefined
+    const spy = vi.spyOn(db,'tx').mockImplementation(fn=>original(c=>fn({query:async <T extends QueryResultRow = QueryResultRow>(text: string,values?: readonly unknown[])=>{
+      const result = await c.query<T>(text,values)
+      if (text.includes('insert into notifications') && values?.[8] === id && values?.[10] === 'reminder') {
+        inserted = true
+        insertIdentity = (await c.query<{pid:number;txid:string}>('select pg_backend_pid() pid,txid_current()::text txid')).rows[0]
+        expect((await c.query("select id from notifications where task_id=$1 and task_event='reminder'",[id])).rowCount).toBe(1)
+      }
+      if (inserted && text.trim() === 'update tasks set reminded_version=notice_version where id=$1' && values?.[0] === id) {
+        marked = true
+        expect((await c.query('select reminded_version=notice_version marked from tasks where id=$1',[id])).rows[0]?.marked).toBe(true)
+        expect((await c.query<{pid:number;txid:string}>('select pg_backend_pid() pid,txid_current()::text txid')).rows[0]).toEqual(insertIdentity)
+        try { await c.query('select 1/0') } catch (error) { sqlstate=(error as {code?:string}).code; throw error }
+      }
+      return result
     }})))
-    await expect(sendTaskReminders(app,AT)).rejects.toThrow('task-reminders')
+    try { await expect(sendTaskReminders(app,AT)).rejects.toThrow('task-reminders') }
+    finally { spy.mockRestore() }
+    expect(inserted).toBe(true); expect(marked).toBe(true); expect(sqlstate).toBe('22012')
     expect((await db.query('select reminded_version from tasks where id=$1',[id])).rows[0]?.reminded_version).toBeNull()
     expect(await notices(id)).toHaveLength(0)
     await sendTaskReminders(app,AT);expect(await notices(id)).toHaveLength(1)

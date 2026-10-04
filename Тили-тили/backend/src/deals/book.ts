@@ -1,3 +1,4 @@
+import type { EnrolledEmission } from '../notify/enrolled.js'
 import { AppError, conflict, forbidden, notFound, unauthorized } from '../errors.js'
 import { UUID_ID, isUuid, uuidv7 } from '../ids.js'
 import { notifyVendorOfferEvent } from '../offers/notify.js'
@@ -159,7 +160,7 @@ async function liveCatalogTerms(
 async function closeSlotRequests(
   client: Queryable,
   context: BookingContext,
-  selectedVendorId: string | null,
+  selectedVendorId: string | null, emissions?: EnrolledEmission
 ): Promise<void> {
   const { rows } = await client.query<{
     id: string
@@ -188,7 +189,7 @@ async function closeSlotRequests(
 
   for (const row of rows) {
     if (row.close_reason !== 'booked_other' || !row.vendor_user_id) continue
-    await notifyVendorOfferEvent(client, row.vendor_user_id, context.weddingTz, 'booked_other')
+    await notifyVendorOfferEvent(client, row.vendor_user_id, context.weddingTz, 'booked_other', emissions)
   }
 }
 
@@ -199,7 +200,7 @@ async function closeSlotRequests(
 export async function bookVendor(
   client: Queryable,
   context: BookingContext,
-  input: { performer: BookingPerformer; price: number },
+  input: { performer: BookingPerformer; price: number }, emissions?: EnrolledEmission
 ): Promise<string> {
   // Defensive check for callers holding a context from before assignment creation.
   await assertLegacyBookingSlotReady(client, context)
@@ -228,7 +229,7 @@ export async function bookVendor(
   if (input.performer.kind !== 'external') {
     await assertLegacyDateBookingAllowed(client, input.performer.vendorId)
   }
-  await closeSlotRequests(client, context, input.performer.kind === 'external' ? null : input.performer.vendorId)
+  await closeSlotRequests(client, context, input.performer.kind === 'external' ? null : input.performer.vendorId, emissions)
 
   const dealId = uuidv7()
 

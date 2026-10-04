@@ -1,3 +1,4 @@
+import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt, locateVendorReplyFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { ref } from '../contract/schemas.generated.js'
 import { withIdempotency } from '../deals/idempotency.js'
@@ -216,7 +217,7 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
        * успеха запрос могли закрыть, а пятая версия — заполнить квоту;
        * оба события не отменяют уже сохранённый ответ. */
       return withIdempotency(db(), request, reply, 'vendor.offer-response', (tx) =>
-        tx(async (client) => {
+        tx(async (client) => runEnrolledFanout(client, { owner: 'vendor.offers.reply', request, ...(await locateVendorReplyFanout(client, request, requestId)), afterReceipt: true }, async (emissions) => {
           /* Запрос FOR UPDATE сериализует ответы, будущий accept, квоту
            * и смену активной версии. Сам offer здесь не запираем: правка
            * анкеты сначала держит vendor, а удаление пакета через FK
@@ -377,15 +378,10 @@ export async function vendorCabinetRoutes(app: FastifyInstance): Promise<void> {
           )
 
           // Только пара; ни помощникам, ни координатору деньги и тексты не уходят.
-          await notifyCoupleOfferEvent(
-            client,
-            offerRequest.wedding_id,
-            offerRequest.slot_id,
-            offerRequest.wedding_tz,
-            body.kind,
+          await notifyCoupleOfferEvent(client, offerRequest.wedding_id, offerRequest.slot_id, offerRequest.wedding_tz, body.kind, emissions
           )
           return { status: 201, body: toOffer(inserted[0]!) }
-        }),
+        }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
       )
     },
   )

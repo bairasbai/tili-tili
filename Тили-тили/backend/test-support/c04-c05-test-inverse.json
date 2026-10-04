@@ -1,0 +1,105 @@
+{
+  "kind": "Only explicit admission guards changed; entire other bytes invert to frozen30/19",
+  "ledger": [
+    {
+      "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c04-independent-v2\\c04FanoutAdmission.test.ts",
+      "target": "backend/test-isolated/c04FanoutAdmission.test.ts",
+      "originalSHA256": "E7D300AEE242A3249382A09AC602667B4B828E6F11A0F369256CF22605436629",
+      "candidateSHA256": "344D9214D5A7CBABCA01FD1BB0B04508C152CBD2AF513866F40642A63E105A30",
+      "replacements": [
+        {
+          "first": 3,
+          "last": 3,
+          "old": "import { readFileSync } from 'node:fs'\n",
+          "new": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'\n"
+        },
+        {
+          "first": 15,
+          "last": 16,
+          "old": "const TARGET = 'tili_ecosystem_c04batch_20261003_test'\nconst URL = `postgres://codex_test@127.0.0.1:15432/${TARGET}`\n",
+          "new": "const admission = readAdmission('tests')\nconst TARGET = admission.targetName\nconst URL = admission.targetURL\n"
+        },
+        {
+          "first": 65,
+          "last": 66,
+          "old": "    assert.equal(r.name, TARGET); assert.equal(r.username, 'codex_test'); assert.equal(r.port, 15432)\n    assert(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(r.address)); assert.equal(r.oid, '616406'); return r\n",
+          "new": "    assertIdentity(r, admission.profile, admission.creation); return r\n"
+        },
+        {
+          "first": 95,
+          "last": 100,
+          "old": "    assert.equal(process.env.TEST_DATABASE_URL, URL); assert.equal(process.env.DATABASE_URL, URL)\n    const proof = JSON.parse(readFileSync(process.env.C04_BATCH_CREATION_ATTESTATION ?? 'C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c04-root-createdb.json', 'utf8'))\n    assert.equal(proof.kind, 'root_actual_absent_before_create'); assert.equal(proof.absentBeforeCreate, true); assert.equal(proof.beforeRowCount, 0)\n    assert.equal(proof.targetURL, URL); assert.equal(proof.targetName, TARGET); assert.equal(proof.databaseOID, '616406')\n    assert.equal(proof.actualMain, '03f41a0f12bbd369450501fb30e2381972b15b0c')\n    assert.equal(proof.actualAdmin.username, 'codex_test'); assert.equal(proof.actualAdmin.address, '127.0.0.1'); assert.equal(proof.actualAdmin.port, 15432)\n",
+          "new": "    assertTestURLs(process.env, admission.profile)\n"
+        },
+        {
+          "first": 102,
+          "last": 102,
+          "old": "    observer = new pg.Client({ connectionString: u.href.replace(APP, 'c04obs_' + randomUUID()) }); await observer.connect(); note({ event: 'actual-preflight', identity: await identity(observer) })\n",
+          "new": "    observer = new pg.Client({ connectionString: u.href.replace(APP, 'c04obs_' + randomUUID()) }); await observer.connect(); note({ event: 'actual-preflight', identity: await identity(observer) })\n    await assertNativeAdmission(observer, admission)\n"
+        }
+      ],
+      "inverseByteEqual": true
+    },
+    {
+      "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\c05WorkerFinalBatch.test.ts",
+      "target": "backend/test-isolated/c05WorkerFinalBatch.test.ts",
+      "originalSHA256": "53B81479D2FBBE6EC6507A561B336F5E0EAB02DE515375FDE16DEA9C7538DF96",
+      "candidateSHA256": "6EAF89740AA667CEFACC8348442326169B03CD99769EAB29597A5FAA9AE90A01",
+      "replacements": [
+        {
+          "first": 3,
+          "last": 3,
+          "old": "import { readFileSync } from 'node:fs'\n",
+          "new": "import { readAdmission, assertTestURLs, assertIdentity, assertNativeAdmission } from '../test-support/c04-c05-native-admission.mjs'\n"
+        },
+        {
+          "first": 12,
+          "last": 12,
+          "old": "const TARGET='tili_ecosystem_c04batch_20261003_test', DATABASE='postgres://codex_test@127.0.0.1:15432/'+TARGET, OID='616406'\n",
+          "new": "const admission=readAdmission('tests')\nconst TARGET=admission.targetName, DATABASE=admission.targetURL\n"
+        },
+        {
+          "first": 43,
+          "last": 43,
+          "old": "    assert.equal(row.name,TARGET);assert.equal(row.username,'codex_test');assert.equal(row.port,15432);assert(['127.0.0.1','::1','::ffff:127.0.0.1'].includes(row.address));assert.equal(row.oid,OID);return row}\n",
+          "new": "    assertIdentity(row,admission.profile,admission.creation);return row}\n"
+        },
+        {
+          "first": 68,
+          "last": 71,
+          "old": "    assert.equal(process.env.DATABASE_URL,DATABASE);assert.equal(process.env.TEST_DATABASE_URL,DATABASE)\n    const creation=JSON.parse(readFileSync(process.env.C05_WORKER_CREATION_ATTESTATION??'C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c04-root-createdb.json','utf8'))\n    assert.equal(creation.kind,'root_actual_absent_before_create');assert.equal(creation.absentBeforeCreate,true);assert.equal(creation.beforeRowCount,0);assert.equal(creation.targetURL,DATABASE);assert.equal(creation.targetName,TARGET);assert.equal(creation.databaseOID,OID)\n    assert.equal(creation.actualMain,'03f41a0f12bbd369450501fb30e2381972b15b0c');assert.equal(creation.actualAdmin.username,'codex_test');assert.equal(creation.actualAdmin.port,15432);assert.equal(creation.actualAdmin.address,'127.0.0.1')\n",
+          "new": "    assertTestURLs(process.env,admission.profile)\n"
+        },
+        {
+          "first": 72,
+          "last": 72,
+          "old": "    const obsURL=new URL(DATABASE);obsURL.searchParams.set('application_name','c05wo_'+randomUUID());observer=new pg.Client({connectionString:obsURL.href});await observer.connect();note({event:'actual-preflight',identity:await identity(observer)})\n",
+          "new": "    const obsURL=new URL(DATABASE);obsURL.searchParams.set('application_name','c05wo_'+randomUUID());observer=new pg.Client({connectionString:obsURL.href});await observer.connect();note({event:'actual-preflight',identity:await identity(observer)})\n    await assertNativeAdmission(observer,admission)\n"
+        },
+        {
+          "first": 74,
+          "last": 74,
+          "old": "    const schema=JSON.parse(readFileSync(process.env.C05_WORKER_SCHEMA_ATTESTATION??'C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c04-root-schema382.json','utf8'));assert.equal(schema.identity.oid,OID);assert.equal(schema.identity.name,TARGET);assert.equal(schema.migrationCount,82)\n",
+          "new": "    const schema=admission.schema;assert.equal(schema.migrationCount,82)\n"
+        }
+      ],
+      "inverseByteEqual": true
+    },
+    {
+      "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c04-independent-v2\\vitest.c04-isolated.config.ts",
+      "target": "backend/vitest.c04-isolated.config.ts",
+      "originalSHA256": "A6E04C24385EB3956B2688749057C67C11B3EEB109E4CEAE715A4574CADDBB0B",
+      "candidateSHA256": "A6E04C24385EB3956B2688749057C67C11B3EEB109E4CEAE715A4574CADDBB0B",
+      "inverseByteEqual": true,
+      "replacements": []
+    },
+    {
+      "input": "C:\\Тили-тили\\.unlazy\\codex-planb-20261003\\a12-c05-worker-independent-v1\\vitest.c05-worker-isolated.config.ts",
+      "target": "backend/vitest.c05-worker-isolated.config.ts",
+      "originalSHA256": "A7ED2624198A76367260F7325962835AE827E49BF219ABB5B680F998117305D1",
+      "candidateSHA256": "A7ED2624198A76367260F7325962835AE827E49BF219ABB5B680F998117305D1",
+      "inverseByteEqual": true,
+      "replacements": []
+    }
+  ]
+}

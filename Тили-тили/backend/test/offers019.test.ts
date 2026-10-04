@@ -1249,6 +1249,40 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
     expect(notices.slice(before).every((notice) => notice.link === `/wedding/slot/${slotId}`)).toBe(true)
   }, 60_000)
 
+  async function observeReplyBlockingTree(client: Queryable, root: number) {
+    type Row = {pid:number; query:string; blockers:number[]; wait_event_type:string|null; wait_event:string|null}
+    const normalize = (sql:string) => sql.trim().replace(/\s+/g,' ')
+    const weddingCommand = 'select id from weddings where id=$1 for update'
+    const requestCommand = 'select r.id from offer_requests r join slots s on s.id=r.slot_id where s.wedding_id=$1 order by r.id for update of r'
+    let observed: (Row & {path:number[]})[] = []
+    for (let attempt=0;attempt<200;attempt++) {
+      await client.query('select pg_stat_clear_snapshot()')
+      const rows=(await client.query<Row>(`select pid,query,pg_blocking_pids(pid) blockers,wait_event_type,wait_event
+        from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock'`)).rows
+      const byPid=new Map(rows.map(row=>[row.pid,row]))
+      const pathToRoot=(pid:number,visited:ReadonlySet<number>):number[]|null=>{
+        if(pid===root)return[root]
+        if(visited.has(pid)||visited.size>=64)return null
+        const row=byPid.get(pid)
+        if(!row||![weddingCommand,requestCommand].includes(normalize(row.query)))return null
+        const next=new Set(visited);next.add(pid)
+        for(const blocker of row.blockers){const path=pathToRoot(blocker,next);if(path)return[pid,...path]}
+        return null
+      }
+      observed=rows.flatMap(row=>{const path=pathToRoot(row.pid,new Set<number>());return path?[{...row,path}]:[]})
+      if(observed.length===2)break
+      await new Promise<void>(resolve=>setTimeout(resolve,25))
+    }
+    expect(observed,'two exact replies in the native blocking tree of the owned request').toHaveLength(2)
+    expect(new Set(observed.map(row=>row.pid)).size).toBe(2)
+    const request=observed.find(row=>normalize(row.query)===requestCommand)!
+    const wedding=observed.find(row=>normalize(row.query)===weddingCommand)!
+    expect(request).toBeDefined();expect(wedding).toBeDefined()
+    expect(request.path).toEqual([request.pid,root])
+    expect(wedding.path).toEqual([wedding.pid,request.pid,root])
+    process.stdout.write(`OFFERS_REPLY_NATIVE_BLOCKING_TREE ${JSON.stringify({root,observed})}\n`)
+  }
+
   it('два ответа после четырёх: под замком запроса ровно 201+429, 5 строк и одна новость', async () => {
     const wedding = await newWedding()
     const vendor = await newVendor()
@@ -1283,8 +1317,7 @@ describe.skipIf(!live)('019 / US2: запросы и предложения', ()
           answer(vendor, requestId, customOffer(5)),
           answer(vendor, requestId, customOffer(6)),
         ].map(response => Promise.resolve(response))
-        const blocked = await waitForBlockedBy(client, holder!.pid, 2)
-        expect(blocked.every((query) => query.toLocaleLowerCase('en-US').includes('offer_requests'))).toBe(true)
+        await observeReplyBlockingTree(client, holder!.pid)
       })
     } catch (error) {
       probeError = error

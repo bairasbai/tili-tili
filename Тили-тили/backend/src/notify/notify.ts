@@ -67,12 +67,13 @@ const NOTIFY_LIMIT_LOCK = 4_210_005
 /** Пул умеет `tx`, клиент внутри транзакции — нет. Отличаем по этому. */
 const hasTx = (db: Queryable): db is Db => typeof (db as Partial<Db>).tx === 'function'
 
-export async function notify(
-  db: Queryable,
-  item: NewNotification,
-  now = new Date(),
-  weddingTz: string | null = null,
-): Promise<string | null> {
+export interface CapturedNotification {
+  item: NewNotification; now: Date; tz: string; pushRequested: boolean; startAt: Date
+}
+
+/** Internal capture shared by immediate and explicitly enrolled emitters. */
+export async function captureNotification(db: Queryable, item: NewNotification, now: Date,
+  weddingTz: string | null): Promise<CapturedNotification | null> {
   const column = PREF_COLUMN[item.kind]
   const { rows } = await db.query<Prefs>(
     `select coalesce(${column ? `p.${column}` : 'true'}, true) as enabled,
@@ -95,22 +96,19 @@ export async function notify(
   const pushRequested = prefs.enabled && item.push !== false
   const startAt = deliverAfter(now, tz, { from: prefs.quiet_from, to: prefs.quiet_to }, false)
 
-  /*
-   * Поиск места и вставка — В ОДНОЙ транзакции за замком по человеку
-   * (F-RL3-04, класс ERR-0271 / R-271). Раньше это были «посчитал» и
-   * «вставил» двумя отдельными запросами: две новости, пришедшие
-   * одновременно, обе видели `planned < PUSH_LIMIT_PER_DAY` и обе
-   * вставлялись — дневной лимит существовал только на бумаге, а человек
-   * получал лишние звонки ровно в тот день, когда новостей и так много.
-   *
-   * Замок advisory: строки, которую можно было бы запереть, ещё нет —
-   * запирается сам человек как ключ. Тихая информация не занимает квоту.
-   */
-  const place = async (client: Queryable): Promise<string> => {
+
+  return { item, now, tz, pushRequested, startAt }
+}
+
+/** Internal placement. Enrolled owners already hold the complete sorted key batch. */
+export async function placeCapturedNotification(client: Queryable, captured: CapturedNotification,
+  keysAlreadyHeld = false): Promise<string> {
+  const { item, now, tz, pushRequested, startAt } = captured
+
     let after = startAt
     let placed = pushRequested
     if (pushRequested) {
-      await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [NOTIFY_LIMIT_LOCK, item.userId])
+      if (!keysAlreadyHeld) await client.query('select pg_advisory_xact_lock($1::int, hashtext($2))', [NOTIFY_LIMIT_LOCK, item.userId])
       /* Лимит считается по УЖЕ ЗАПЛАНИРОВАННЫМ на эти сутки, а не по
        * отправленным: иначе три уведомления, отложенные до утра, утром
        * разбудят человека все три сразу и лимит окажется бумажным.
@@ -161,15 +159,14 @@ export async function notify(
         placed ? 'planned' : 'inbox_only',tz],
     )
     return id
-  }
+}
 
-  /*
-   * Вызывают `notify()` и с пулом, и (в будущем) изнутри чужой транзакции.
-   * С пулом открываем свою — иначе `pg_advisory_xact_lock` освободится сразу
-   * же, в конце собственного запроса, и не защитит ничего. Изнутри чужой
-   * транзакции клиент `.tx` не имеет: там замок берётся прямо на нём и живёт
-   * до конца ТОЙ транзакции — то, что и нужно. Ни один вызывающий не меняется.
-   */
+/** Public immediate API: still returns the committed/transactional notice ID. */
+export async function notify(db: Queryable, item: NewNotification, now = new Date(),
+  weddingTz: string | null = null): Promise<string | null> {
+  const captured = await captureNotification(db, item, now, weddingTz)
+  if (!captured) return null
+  const place = (client: Queryable) => placeCapturedNotification(client, captured)
   return hasTx(db) ? db.tx(place) : place(db)
 }
 

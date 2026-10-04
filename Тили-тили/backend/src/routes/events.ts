@@ -1,3 +1,4 @@
+import { runEnrolledFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
@@ -131,7 +132,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
     const patch = request.body as EventPatch
     validate(patch)
     const expected = expectedTimelineVersion(request.headers['if-match'])
-    return db().tx(async client => {
+    return db().tx(async client => runEnrolledFanout(client, { owner: 'events.patch', weddingId: request.member!.weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
       const weddingId = request.member!.weddingId, id = (request.params as { eventId: string }).eventId
       const snapshot = await lockTimelineForRequest(client, request, true)
       if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — обновите её')
@@ -157,7 +158,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
       await setTimelineActor(client, request.caller!.userId)
       if (before.is_main) {
         if (patch.date === null && before.date !== null) throw validationFailed({ date: 'назначенную основную дату нельзя снять; используйте перенос' })
-        if (patch.date !== undefined && patch.date !== null) await rescheduleWedding(client, weddingId, patch.date, request.caller!.userId)
+        if (patch.date !== undefined && patch.date !== null) await rescheduleWedding(client, weddingId, patch.date, request.caller!.userId, emissions)
         if (patch.timeZone !== undefined) await client.query('update weddings set tz=$2 where id=$1', [weddingId, patch.timeZone])
         if (patch.location !== undefined) await client.query('update weddings set venue=$2 where id=$1', [weddingId, patch.location])
       }
@@ -170,7 +171,7 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
           patch.rsvpDeadline !== undefined ? patch.rsvpDeadline : current.rsvp_deadline])
       sendTimelineVersion(reply, await lockTimeline(client, weddingId, true))
       return project(await event(client, weddingId, id))
-    })
+    }))
   })
   app.delete('/weddings/:weddingId/events/:eventId', { schema: {
     params: { type: 'object', required: ['weddingId', 'eventId'], properties: { weddingId: UUID_ID, eventId: UUID_ID } },

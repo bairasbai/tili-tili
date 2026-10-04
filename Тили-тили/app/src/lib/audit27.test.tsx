@@ -633,11 +633,11 @@ function fakeBrowserPush(subscribed: boolean) {
   const subscription = {
     endpoint: 'https://push.example/abc',
     toJSON: () => ({ endpoint: 'https://push.example/abc', keys: { p256dh: 'p256', auth: 'auth' } }),
-    unsubscribe: async () => { stats.unsubscribed += 1; return true },
+    unsubscribe: async () => { stats.unsubscribed += 1; subscribed = false; return true },
   }
   const pushManager = {
     getSubscription: async () => (subscribed ? subscription : null),
-    subscribe: async () => subscription,
+    subscribe: async () => { subscribed = true; return subscription },
   }
   Object.defineProperty(navigator, 'serviceWorker', { value: { ready: Promise.resolve({ pushManager }) }, configurable: true })
   vi.stubGlobal('PushManager', function PushManager() { /* признак поддержки */ })

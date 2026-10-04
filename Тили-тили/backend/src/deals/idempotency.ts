@@ -148,6 +148,7 @@ export interface IdempotentResult<T> {
  */
 export type IdempotentTx = <T>(
   action: (client: Queryable) => Promise<IdempotentResult<T>>,
+  options?: { afterReceipt?: (client: Queryable) => Promise<void> },
 ) => Promise<IdempotentResult<T>>
 
 /**
@@ -177,7 +178,11 @@ export async function withIdempotency<T>(
   const userId = request.caller!.userId
   const clientKey = readKeyHeader(request, required)
   if (!clientKey) {
-    const result = await action((fn) => db.tx(fn))
+    const result = await action((fn, options) => db.tx(async client => {
+      const result = await fn(client)
+      await options?.afterReceipt?.(client)
+      return result
+    }))
     return reply.code(result.status).send(result.body)
   }
   const replayed = await replayOrClaim(db, userId, route, clientKey, request.url, request.body)
@@ -196,10 +201,11 @@ export async function withIdempotency<T>(
     }
     claimFinalized = true
   }
-  const tx: IdempotentTx = (fn) =>
+  const tx: IdempotentTx = (fn, options) =>
     db.tx(async (client) => {
       const result = await fn(client)
       await finalizeClaim(client, result)
+      await options?.afterReceipt?.(client)
       return result
     })
   try {

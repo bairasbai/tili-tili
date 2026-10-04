@@ -1,3 +1,4 @@
+import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt } from '../notify/enrolled.js'
 import { closeWeddingOfferRequests } from '../offers/close.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
@@ -69,10 +70,10 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         /* Вся работа — в одной транзакции: между освобождением старых дат
          * и захватом новых другая пара успевает занять подрядчика. Ответ —
          * из неё же, вместе с записью идемпотентности (D2-13). */
-        tx(async (client) => ({
+        tx(async (client) => runEnrolledFanout(client, { owner: 'weddings.reschedule', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true }, async (emissions) => { return ({
           status: 200,
-          body: await rescheduleWedding(client, weddingId, date, request.caller!.userId),
-        })),
+          body: await rescheduleWedding(client, weddingId, date, request.caller!.userId, emissions),
+        }) }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
       )
     },
   )
@@ -82,7 +83,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
     const weddingId = request.member!.weddingId
     const userId = request.caller!.userId
 
-    return db().tx(async (client) => {
+    return db().tx(async (client) => runEnrolledFanout(client, { owner: 'weddings.cancel', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
       const { rows } = await client.query<{
         cancel_requested_by: string | null
         cancel_requested_at: Date | null
@@ -148,7 +149,7 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         return { state: 'confirmation_required' as const, requestedBy: userId }
       }
 
-      await closeWeddingOfferRequests(client, weddingId, w.tz, 'wedding_cancelled')
+      await closeWeddingOfferRequests(client, weddingId, w.tz, 'wedding_cancelled', emissions)
 
       /* Отбор броней под блокировкой строк, до отмены: from_state в
        * deal_events пишет cancelDeal() (F1) из своего собственного select
@@ -181,6 +182,6 @@ export async function weddingLifecycleRoutes(app: FastifyInstance): Promise<void
         [userId, weddingId],
       )
       return { state: 'cancelled' as const, cancelledDeals: cancelled.length }
-    })
+    }))
   })
 }

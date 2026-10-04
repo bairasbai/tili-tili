@@ -1,4 +1,4 @@
-import { api } from './api/client'
+import { api, beginLocalSessionAction } from './api/client'
 import { t } from './i18n'
 
 /*
@@ -147,7 +147,8 @@ export async function enableDevicePush(): Promise<void> {
  * браузера и есть то, что закрывает доставку сюда; серверная запись без
  * живого endpoint удалится сама по 404/410 от push-службы.
  */
-export async function disableDevicePush(): Promise<void> {
+export async function disableDevicePush({ confirmServerFirst = false, onConfirmed }: { confirmServerFirst?: boolean; onConfirmed?: () => void } = {}): Promise<void> {
+  if (confirmServerFirst) return removeConfirmedDevicePush(false, onConfirmed)
   if (!pushSupported()) return
   const reg = await swRegistration()
   if (!reg) return
@@ -156,4 +157,53 @@ export async function disableDevicePush(): Promise<void> {
   const endpoint = sub.endpoint
   await sub.unsubscribe().catch(() => undefined)
   await api.delete(`/users/me/push-subscriptions?endpoint=${encodeURIComponent(endpoint)}` as '/users/me/push-subscriptions')
+}
+
+/** Settings-only action. Claims supply a local privacy fence, not authority. */
+async function removeConfirmedDevicePush(allDevices: boolean, onConfirmed?: () => void): Promise<void> {
+  const action = beginLocalSessionAction(t('Аккаунт или сессия изменились — повторите действие'))
+  try {
+    const finish = () => { action.assertCurrent(); onConfirmed?.() }
+    action.assertCurrent()
+    const initialRegistration = pushSupported() ? await swRegistration() : null
+    action.assertCurrent()
+    const initialSubscription = initialRegistration ? await initialRegistration.pushManager.getSubscription() : null
+    action.assertCurrent()
+    const endpoint = initialSubscription?.endpoint ?? null
+    if (!allDevices && !initialSubscription) { finish(); return }
+    if (allDevices) {
+      await api.delete('/users/me/push-subscriptions', { assertCurrent: action.assertCurrent })
+    } else {
+      await api.delete(('/users/me/push-subscriptions?endpoint=' + encodeURIComponent(endpoint!)) as '/users/me/push-subscriptions',
+        { assertCurrent: action.assertCurrent })
+    }
+    action.assertCurrent()
+
+    // Fresh reads validate the captured endpoint; they never supply an object
+    // to unsubscribe. A replacement, even for the same account, stays intact.
+    const currentRegistration = pushSupported() ? await swRegistration() : null
+    action.assertCurrent()
+    const currentSubscription = currentRegistration ? await currentRegistration.pushManager.getSubscription() : null
+    action.assertCurrent()
+    if (currentSubscription && currentSubscription.endpoint !== endpoint) throw new Error(t('Подписка этого устройства изменилась — повторите действие'))
+    if (!initialSubscription || !currentSubscription) { finish(); return }
+    await initialSubscription.unsubscribe()
+    action.assertCurrent()
+    const finalRegistration = pushSupported() ? await swRegistration() : null
+    action.assertCurrent()
+    const remaining = finalRegistration ? await finalRegistration.pushManager.getSubscription() : null
+    action.assertCurrent()
+    if (remaining) throw new Error(t('Не удалось выключить push на этом устройстве — попробуйте ещё раз'))
+    finish()
+  } catch (error) {
+    action.assertCurrent()
+    throw error
+  } finally {
+    action.close()
+  }
+}
+
+/** Captures this device before the global HTTP action, including no-sub cases. */
+export async function disableAllDevicePush(onConfirmed?: () => void): Promise<void> {
+  await removeConfirmedDevicePush(true, onConfirmed)
 }

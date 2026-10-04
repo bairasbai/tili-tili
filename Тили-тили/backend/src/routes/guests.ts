@@ -1,3 +1,4 @@
+import { runEnrolledFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, gone, notFound } from '../errors.js'
 import { UUID_ID, uuidv7, isUuid } from '../ids.js'
@@ -1483,8 +1484,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { guestId: string; requestedStatus: 'attending' | 'declined'; comment?: string }
       const idempotencyKey = readKeyHeader(request, true)!
       const initial = await guestByToken(db(), guestToken)
-      const result = await db().tx((client) =>
-        createLateRequest(client, {
+      const result = await db().tx(async (client) =>
+        runEnrolledFanout(client, { owner: 'rsvp.request', weddingId: initial.weddingId, actorId: null, request, afterReceipt: false, guest: { token: guestToken, partyId: initial.partyId } }, async (emissions) => { return createLateRequest(client, {
           weddingId: initial.weddingId,
           partyId: initial.partyId,
           token: guestToken,
@@ -1493,7 +1494,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           requestedStatus: body.requestedStatus,
           comment: body.comment ?? null,
           idempotencyKey,
-        }),
+        }, emissions) }),
       )
       return reply.code(201).send(result)
     },

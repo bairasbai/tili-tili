@@ -1,3 +1,4 @@
+import type { EnrolledEmission } from '../notify/enrolled.js'
 import type { Queryable } from '../plugins/db.js'
 import { conflict, notFound, unauthorized, validationFailed } from '../errors.js'
 import { guestByToken } from '../guests/access.js'
@@ -291,7 +292,7 @@ export async function answerGuestRsvp(client: Queryable, input: AnswerInput): Pr
 
 export interface LateRequestInput extends GuestScope { eventId: string; guestId: string; requestedStatus: 'attending' | 'declined'; comment: string | null; idempotencyKey: string }
 /** `POST /rsvp/{guestToken}/events/{eventId}/requests` — только после срока; Idempotency-Key — тот же 201 на повтор. */
-export async function createLateRequest(client: Queryable, input: LateRequestInput): Promise<RequestDto> {
+export async function createLateRequest(client: Queryable, input: LateRequestInput, emissions?: EnrolledEmission): Promise<RequestDto> {
   checkEntityId(input.eventId, 'eventId'); checkEntityId(input.guestId, 'guestId')
   await lockAndRecheckGuestParty(client, input)
   // P2-3: чужой guestId не отличаем здесь — ниже notFound ловит его тем же
@@ -336,7 +337,7 @@ export async function createLateRequest(client: Queryable, input: LateRequestInp
     [row.id, JSON.stringify({ weddingId: input.weddingId, programEventId: input.eventId, guestId: input.guestId, requestedStatus: input.requestedStatus })],
   )
   const name = (await client.query<{ name: string }>('select name from guests where id=$1', [input.guestId])).rows[0]!.name
-  await notifyWedding(client, input.weddingId, null,
+  await (emissions ? emissions.emitWedding : notifyWedding)(client, input.weddingId, null,
     { kind: 'guest', title: 'Просьба изменить ответ', body: `${name} просит организатора изменить ответ на дополнительное мероприятие` },
     new Date(), false, ['couple'])
   return projectRequest(row)

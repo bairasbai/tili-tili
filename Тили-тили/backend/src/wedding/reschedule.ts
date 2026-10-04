@@ -1,3 +1,4 @@
+import type { EnrolledEmission } from '../notify/enrolled.js'
 import { closeWeddingOfferRequests } from '../offers/close.js'
 import { AppError, conflict } from '../errors.js'
 import type { Queryable } from '../plugins/db.js'
@@ -31,7 +32,7 @@ export async function rescheduleWedding(
   weddingId: string,
   date: string,
   /** Кто перенёс: ему самому новость не шлём. */
-  actorId: string | null = null,
+  actorId: string | null = null, emissions?: EnrolledEmission
 ): Promise<RescheduleReport> {
   /* `for update` на строке свадьбы: два переноса подряд с двух устройств
    * (календарь не блокирует дни, пока запрос идёт) иначе оба читали одну
@@ -56,7 +57,7 @@ export async function rescheduleWedding(
   await setTimelineActor(client, actorId)
 
   // In the same transaction: a later team_busy refusal also rolls this back.
-  await closeWeddingOfferRequests(client, weddingId, tz, 'date_changed')
+  await closeWeddingOfferRequests(client, weddingId, tz, 'date_changed', emissions)
 
   /* Кто из забронированной команды свободен на новую дату, а кто нет.
    * Ответ нужен целиком: пара решает, отменять ли занятого, а не получает
@@ -220,7 +221,7 @@ export async function rescheduleWedding(
    * свадьбы — из тех новостей, которые не ждут утра (§18.6). */
   const human = date.split('-').reverse().join('.')
   await noteVendorUpdate(client, weddingId, 'timeline', `Свадьба перенесена на ${human}: тайминг обновлён; фиксированные блоки не сдвинуты`)
-  await notifyWedding(
+  await (emissions ? emissions.emitWedding : notifyWedding)(
     client,
     weddingId,
     actorId,

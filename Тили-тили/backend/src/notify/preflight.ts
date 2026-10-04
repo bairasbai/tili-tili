@@ -1,18 +1,19 @@
 import type { Db, Queryable } from '../plugins/db.js'
 import { deliverAfter, knownTimeZone, localDayBounds } from './quiet.js'
 import { PUSH_LIMIT_PER_DAY, PUSH_SPILL_DAYS } from './notify.js'
+import { runNoticeTransaction } from './notice-transactions.js'
 
-const NOTIFY_LIMIT_LOCK = 4_210_005
+// Existing N parents and quota keys are prepared by the explicit owned adapter.
 interface ReadyRow { user_id: string; kind: string; deliver_after: Date; expires_at: Date | null;
   disposition: string; cancelled_at: Date | null; pushed_at: Date | null; deleted_at: Date | null;
   tz: string | null; delivery_time_zone: string | null; enabled: boolean; quiet_from: string; quiet_to: string; now: Date }
 
 /** Current channel/quiet state immediately before I/O. Does not infer incident urgency. */
-export async function notificationPushReady(db: Queryable, id: string): Promise<boolean> {
+export async function notificationPushReady(db: Db, id: string): Promise<boolean> {
   const check = async (client: Queryable) => {
     const initial = await client.query<{user_id:string}>('select user_id from notifications where id=$1',[id])
     if (!initial.rows[0]) return false
-    await client.query('select pg_advisory_xact_lock($1::int,hashtext($2))',[NOTIFY_LIMIT_LOCK,initial.rows[0].user_id])
+    // The original user quota key is already held after the sorted N prefix.
     const { rows } = await client.query<ReadyRow>(`select n.user_id,n.kind,n.deliver_after,n.expires_at,
       n.push_disposition as disposition,n.cancelled_at,n.pushed_at,u.deleted_at,u.tz,n.delivery_time_zone,
       case n.kind when 'chat' then coalesce(p.chats,true) when 'deal' then coalesce(p.deals,true)
@@ -47,6 +48,5 @@ export async function notificationPushReady(db: Queryable, id: string): Promise<
     } else await client.query('update notifications set deliver_after=$2 where id=$1',[id,after])
     return false
   }
-  const tx = db as Partial<Db>
-  return typeof tx.tx==='function' ? tx.tx(check) : check(db)
+  return runNoticeTransaction(db, { noticeIds: [id] }, check)
 }

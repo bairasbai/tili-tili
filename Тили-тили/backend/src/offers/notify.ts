@@ -1,3 +1,4 @@
+import type { EnrolledEmission } from '../notify/enrolled.js'
 import { notify, notifyWedding } from '../notify/notify.js'
 import type { Queryable } from '../plugins/db.js'
 
@@ -53,9 +54,9 @@ export async function notifyVendorOfferEvent(
   client: Queryable,
   userId: string,
   weddingTz: string | null,
-  event: VendorOfferEvent,
+  event: VendorOfferEvent, emissions?: EnrolledEmission
 ): Promise<void> {
-  await notify(
+  await (emissions ? emissions.emit : notify)(
     client,
     {
       userId,
@@ -79,9 +80,9 @@ export async function notifyCoupleOfferEvent(
   weddingId: string,
   slotId: string,
   _weddingTz: string | null,
-  event: CoupleOfferEvent,
+  event: CoupleOfferEvent, emissions?: EnrolledEmission
 ): Promise<void> {
-  await notifyWedding(
+  await (emissions ? emissions.emitWedding : notifyWedding)(
     client,
     weddingId,
     null,
