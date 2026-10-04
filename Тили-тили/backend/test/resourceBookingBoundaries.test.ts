@@ -377,7 +377,7 @@ describe.skipIf(!DATABASE)('resource policy boundaries on actual registered book
     const outcome = await waitedHttp(f, 'catalog owner binding changed', 'select id from vendors where id=$1 for update', [f.vendorId],
       c => c.query('update vendors set user_id=$2 where id=$1', [f.vendorId, next.userId]), () => book(f, f.pair, key),
       { userId: f.pair.userId, route: 'slots.book', key })
-    expect(outcome.query).toMatch(/select\s+v\.id\s+from\s+vendors\s+v\s+join\s+users\s+u[\s\S]+for\s+share\s+of\s+u,\s*v/i)
+    expect(outcome.query.replace(/\s+/g, ' ')).toBe('select id from vendors where id=any($1::uuid[]) order by id for share')
     error(outcome.response, 'not_found', 404); expect(await snapshot(f)).toEqual(outcome.expected)
     for (const privateId of [f.vendorId, f.owner.userId, next.userId, f.capacity.id, f.window.id]) expect(outcome.response.body).not.toContain(privateId)
   })

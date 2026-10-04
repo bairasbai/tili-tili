@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import type { Queryable } from '../plugins/db.js'
+import type { Db, Queryable } from '../plugins/db.js'
+import { runNoticeTransaction } from './notice-transactions.js'
 import { notify } from './notify.js'
 import { deliverAfter, knownTimeZone } from './quiet.js'
 
@@ -22,13 +23,19 @@ export const TASK_NOTICE_VALID = `n.cancelled_at is null and exists (
     and n.expires_at > $1
 )`
 
-export async function pruneTaskNotifications(db: Queryable, now = new Date(), userId: string | null = null): Promise<void> {
-  await db.query(`update notifications n set cancelled_at=$1 where n.cancelled_at is null and n.task_id is not null and ($2::uuid is null or n.user_id=$2) and not (${TASK_NOTICE_VALID})`, [now, userId])
+export async function pruneTaskNotifications(db: Db, now = new Date(), userId: string | null = null): Promise<void> {
+  const candidates = (await db.query<{ id: string }>(`select n.id from notifications n
+    where n.cancelled_at is null and n.task_id is not null and ($2::uuid is null or n.user_id=$2)
+      and not (${TASK_NOTICE_VALID}) order by n.id`, [now, userId])).rows.map(n => n.id)
+  await runNoticeTransaction(db, { noticeIds: candidates }, async client => {
+    await client.query(`update notifications n set cancelled_at=$1 where n.cancelled_at is null and n.task_id is not null and ($2::uuid is null or n.user_id=$2) and not (${TASK_NOTICE_VALID}) and n.id=any($3::uuid[])`, [now, userId, candidates])
+  })
 }
 
 /** Quiet-hour edits after enqueue are respected too; no lock is held during network I/O. */
-export async function taskPushReady(db: Queryable, noticeId: string, now = new Date()): Promise<boolean> {
-  const { rows } = await db.query<{ tz: string | null; wedding_tz: string | null; quiet_from: string; quiet_to: string; expires_at: Date; enabled: boolean; push_disposition: string }>(
+export async function taskPushReady(db: Db, noticeId: string, now = new Date()): Promise<boolean> {
+  return runNoticeTransaction(db, { noticeIds: [noticeId] }, async client => {
+  const { rows } = await client.query<{ tz: string | null; wedding_tz: string | null; quiet_from: string; quiet_to: string; expires_at: Date; enabled: boolean; push_disposition: string }>(
     `select u.tz,w.tz as wedding_tz,coalesce(p.quiet_from::text,'22:00') as quiet_from,
        coalesce(p.quiet_to::text,'09:00') as quiet_to,n.expires_at,coalesce(p.tasks,true) as enabled,n.push_disposition
      from notifications n join users u on u.id=n.user_id
@@ -38,17 +45,18 @@ export async function taskPushReady(db: Queryable, noticeId: string, now = new D
   const row = rows[0]
   if (!row) return false
   if (!row.enabled) {
-    await db.query("update notifications set push_disposition='inbox_only',pushed_at=coalesce(pushed_at,$2) where id=$1 and cancelled_at is null",[noticeId,now])
+    await client.query("update notifications set push_disposition='inbox_only',pushed_at=coalesce(pushed_at,$2) where id=$1 and cancelled_at is null",[noticeId,now])
     return false
   }
   if (row.push_disposition!=='planned') return false
   const after = deliverAfter(now, knownTimeZone(row.tz || row.wedding_tz), { from: row.quiet_from, to: row.quiet_to }, false)
   if (after > now) {
-    if (after >= row.expires_at) await db.query('update notifications set cancelled_at=$2 where id=$1', [noticeId, now])
-    else await db.query('update notifications set pushed_at=null,deliver_after=$2 where id=$1 and cancelled_at is null', [noticeId, after])
+    if (after >= row.expires_at) await client.query('update notifications set cancelled_at=$2 where id=$1', [noticeId, now])
+    else await client.query('update notifications set pushed_at=null,deliver_after=$2 where id=$1 and cancelled_at is null', [noticeId, after])
     return false
   }
   return true
+  })
 }
 
 /** Database-only work inside the task transaction; no external network operation. */

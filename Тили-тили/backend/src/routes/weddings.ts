@@ -1,3 +1,4 @@
+import { runEnrolledFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { setTimelineActor } from '../timeline/version.js'
 import { AppError, conflict, notFound } from '../errors.js'
@@ -457,9 +458,9 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
        * перенос: до ревью 015 колонка `date` писалась второй раз отдельным
        * запросом, уже без замка свадьбы, — перенос с другого устройства
        * между ними затирался старой датой при сдвинутых задачах (D8). */
-      await db().tx(async (client) => {
+      await db().tx(async (client) => runEnrolledFanout(client, { owner: 'weddings.patch', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
         if (body.date !== undefined) {
-          await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId)
+          await rescheduleWedding(client, weddingId, body.date as string, request.caller!.userId, emissions)
         }
         await setTimelineActor(client, request.caller!.userId)
         await client.query(
@@ -489,7 +490,7 @@ export async function weddingRoutes(app: FastifyInstance): Promise<void> {
             has('dressNote'),
           ],
         )
-      })
+      }))
       return loadWedding(weddingId, request.member!.role)
     },
   )

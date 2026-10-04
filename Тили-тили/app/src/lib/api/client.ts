@@ -61,11 +61,13 @@ export function saveTokens(t: Tokens | null): void {
 // Access-token renewal for the same subject/session keeps an active reader;
 // logout or switching account/session destroys its private in-memory state.
 const scopeObservers = new Set<() => void>()
-function localSessionScope(): string | null {
-  const token = readTokens()?.accessToken
+function tokenSessionScope(token: string | null): string | null {
   if (!token) return null
   const scope = offlineScope(token)
   return scope ? JSON.stringify([scope.userId, scope.sessionId]) : 'unparsed:' + token
+}
+function localSessionScope(): string | null {
+  return tokenSessionScope(readTokens()?.accessToken ?? null)
 }
 export function onSessionChanged(listener: () => void): () => void {
   let scope = localSessionScope()
@@ -73,7 +75,7 @@ export function onSessionChanged(listener: () => void): () => void {
     const current = localSessionScope()
     if (current !== scope) { scope = current; listener() }
   }
-  const storage = (event: StorageEvent) => { if (event.key === TOKENS_KEY || event.key === null) observe() }
+  const storage = (event: StorageEvent) => { if (event.storageArea === localStorage && (event.key === TOKENS_KEY || event.key === null)) observe() }
   scopeObservers.add(observe)
   window.addEventListener('storage', storage)
   window.addEventListener('focus', observe)
@@ -84,6 +86,37 @@ export function onSessionChanged(listener: () => void): () => void {
     window.removeEventListener('focus', observe)
     document.removeEventListener('visibilitychange', observe)
   }
+}
+
+/** Local privacy fence only; decoded claims never authorize a request. */
+function localSessionAction(initial: string | null, message: string) {
+  let stopped = false
+  const stop = onSessionChanged(() => { stopped = true })
+  const scopeOfStored = (raw: string | null): string | null => {
+    try {
+      const tokens = raw ? JSON.parse(raw) as Partial<Tokens> : null
+      return tokens?.accessToken && tokens.refreshToken ? tokenSessionScope(tokens.accessToken) : null
+    } catch { return null }
+  }
+  // Queued storage events retain observed A→B→A evidence even if the current
+  // storage already contains A again. Unobserved transitions are not proven.
+  const observeStorage = (event: StorageEvent) => {
+    if (event.storageArea !== localStorage) return
+    if (event.key === null || (event.key === TOKENS_KEY &&
+      (scopeOfStored(event.oldValue) !== initial || scopeOfStored(event.newValue) !== initial))) stopped = true
+  }
+  window.addEventListener('storage', observeStorage)
+  return {
+    assertCurrent: () => {
+      if (stopped || localSessionScope() !== initial) throw new Error(message)
+    },
+    close: () => { stop(); window.removeEventListener('storage', observeStorage) },
+  }
+}
+
+/** Settings actions capture current local scope; claims never authorize. */
+export function beginLocalSessionAction(message = 'Аккаунт или сессия изменились — повторите действие') {
+  return localSessionAction(localSessionScope(), message)
 }
 
 export function isAuthorized(): boolean {
@@ -318,6 +351,7 @@ type RefreshResult =
   | { ok: true; tokens: Tokens }
   | { ok: false; why: 'expired' }
   | { ok: false; why: 'down'; error: ApiError }
+  | { ok: false; why: 'scope-changed'; error: Error }
 
 /* Обмен refresh идёт один на всех: остальные ждут этот же промис. */
 let refreshing: Promise<RefreshResult> | null = null
@@ -335,63 +369,120 @@ let refreshing: Promise<RefreshResult> | null = null
 const SUPERSEDED_GRACE_MS = 300
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
+type ResponseOwner = {
+  response: Response
+  read: <T>(consume: (response: Response) => Promise<T>) => Promise<T>
+  dispose: () => Promise<void>
+}
+
+function ownResponse(response: Response): ResponseOwner {
+  // A read attempt belongs to this response even for null-body 204/205, where
+  // native bodyUsed remains false. A failed read is not retried or called done.
+  let readAttempted = false
+  const read = async <T>(consume: (response: Response) => Promise<T>): Promise<T> => {
+    readAttempted = true
+    return await consume(response)
+  }
+  return {
+    response, read,
+    dispose: async () => {
+      if (!readAttempted) await read(response => response.arrayBuffer())
+    },
+  }
+}
+
+function responseDisposalFailure(primary: unknown, disposal: unknown): AggregateError {
+  return new AggregateError([primary, disposal], primary instanceof Error ? primary.message : String(primary), { cause: primary })
+}
+
+async function withOwnedResponse<T>(response: Response, work: (owned: ResponseOwner) => Promise<T>, assertCurrent?: () => void): Promise<T> {
+  const owned = ownResponse(response)
+  try {
+    const value = await work(owned)
+    await owned.dispose()
+    assertCurrent?.()
+    return value
+  } catch (primary) {
+    try { await owned.dispose() } catch (disposal) { throw responseDisposalFailure(primary, disposal) }
+    throw primary
+  }
+}
+
 async function refreshTokens(): Promise<RefreshResult> {
   const current = readTokens()
   if (!current) return { ok: false, why: 'expired' }
-  refreshing ??= (async (): Promise<RefreshResult> => {
+  refreshing ??= Promise.resolve().then(async (): Promise<RefreshResult> => {
+    const owner = localSessionAction(tokenSessionScope(current.accessToken), 'Аккаунт или сессия изменились — повторите действие')
+    let expiredHere = false
     /* Тот же потолок ожидания, что у всех запросов (D6-08): зависший на
        прокси refresh без него держал `refreshing` навсегда, и все следующие
        401 ждали тот же промис — приложение «висело» без единой ошибки. */
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS)
     try {
+      owner.assertCurrent()
       const res = await fetch(`${BASE}/auth/refresh`, {
         method: 'POST',
         signal: ctrl.signal,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken: current.refreshToken }),
       })
-      if (!res.ok) {
-        /* Отказ на refresh не всегда значит «вход кончился». Вторая вкладка
-           того же браузера могла обменять токен секундой раньше и уже
-           положить новую пару в общее хранилище — тогда наш refresh просто
-           устарел (сервер отвечает `refresh_superseded`). Стирать хранилище
-           в этот момент значит выкинуть и ту вкладку, у которой всё в
-           порядке. Сначала смотрим, не сменилась ли пара под нами. */
-        const stored = readTokens()
-        if (stored && stored.refreshToken !== current.refreshToken) return { ok: true, tokens: stored }
-        const error = await errorFrom(res)
-        /* Вход кончился, только если сервер отверг сам refresh (401). Всё
-           остальное — 5xx, 429, 403 прокси, 4xx неожиданного вида — сервер не
-           смог ответить по делу: хранилище не трогаем, повтор сделает
-           следующий запрос. */
-        if (res.status !== 401) return { ok: false, why: 'down', error }
-        if (error.code === 'refresh_superseded') {
-          /* Соседняя вкладка обменяла тот же refresh и, возможно, ещё пишет
-             новую пару в хранилище — см. SUPERSEDED_GRACE_MS. */
-          await sleep(SUPERSEDED_GRACE_MS)
-          const later = readTokens()
-          if (later && later.refreshToken !== current.refreshToken) return { ok: true, tokens: later }
+      return await withOwnedResponse<RefreshResult>(res, async owned => {
+        owner.assertCurrent()
+        if (!res.ok) {
+          /* Отказ на refresh не всегда значит «вход кончился». Вторая вкладка
+             того же браузера могла обменять токен секундой раньше и уже
+             положить новую пару в общее хранилище — тогда наш refresh просто
+             устарел (сервер отвечает `refresh_superseded`). Стирать хранилище
+             в этот момент значит выкинуть и ту вкладку, у которой всё в
+             порядке. Сначала смотрим, не сменилась ли пара под нами. */
+          const stored = readTokens()
+          if (stored && stored.refreshToken !== current.refreshToken) return { ok: true, tokens: stored }
+          const error = await owned.read(errorFrom)
+          owner.assertCurrent()
+          /* Вход кончился, только если сервер отверг сам refresh (401). Всё
+             остальное — 5xx, 429, 403 прокси, 4xx неожиданного вида — сервер не
+             смог ответить по делу: хранилище не трогаем, повтор сделает
+             следующий запрос. */
+          if (res.status !== 401) return { ok: false, why: 'down', error }
+          if (error.code === 'refresh_superseded') {
+            /* Соседняя вкладка обменяла тот же refresh и, возможно, ещё пишет
+               новую пару в хранилище — см. SUPERSEDED_GRACE_MS. */
+            await sleep(SUPERSEDED_GRACE_MS)
+            owner.assertCurrent()
+            const later = readTokens()
+            if (later && later.refreshToken !== current.refreshToken) return { ok: true, tokens: later }
+          }
+          owner.assertCurrent()
+          expiredHere = true
+          saveTokens(null)
+          announceSessionExpired()
+          return { ok: false, why: 'expired' }
         }
-        saveTokens(null)
-        announceSessionExpired()
-        return { ok: false, why: 'expired' }
-      }
-      const body = (await res.json()) as Tokens
-      const next = { accessToken: body.accessToken, refreshToken: body.refreshToken }
-      saveTokens(next)
-      return { ok: true, tokens: next }
+        const body = (await owned.read(response => response.json())) as Tokens
+        owner.assertCurrent()
+        const next = { accessToken: body.accessToken, refreshToken: body.refreshToken }
+        owner.assertCurrent()
+        saveTokens(next)
+        return { ok: true, tokens: next }
+      }, () => { if (!expiredHere) owner.assertCurrent() })
     } catch (e) {
+      try { owner.assertCurrent() } catch (changed) {
+        return { ok: false, why: 'scope-changed', error: e instanceof AggregateError ? e : changed instanceof Error ? changed : new Error('Аккаунт или сессия изменились — повторите действие') }
+      }
       /* Сеть отвалилась или мы не дождались — токены не трогаем, попробуем в другой раз. */
       if (e instanceof DOMException && e.name === 'AbortError') {
         return { ok: false, why: 'down', error: new ApiError('timeout', 0, 'timeout', 'Сервер не ответил вовремя') }
       }
-      return { ok: false, why: 'down', error: new ApiError('network', 0, 'network', 'Нет связи с сервером') }
+      const error = new ApiError('network', 0, 'network', 'Нет связи с сервером')
+      error.cause = e
+      return { ok: false, why: 'down', error }
     } finally {
       clearTimeout(timer)
+      owner.close()
       refreshing = null
     }
-  })()
+  })
   return refreshing
 }
 
@@ -418,6 +509,8 @@ interface Options {
   /** Version of the exact snapshot being edited, never a global cached ETag. */
   ifMatch?: string
   onResponse?: (response: Response) => void
+  /** Optional action-local privacy fence; never server authorization. */
+  assertCurrent?: () => void
 }
 
 async function raw(method: Method, path: string, body: unknown, token: string | null, opts?: Options): Promise<Response> {
@@ -441,6 +534,7 @@ async function raw(method: Method, path: string, body: unknown, token: string | 
 }
 
 async function request<T>(method: Method, path: string, body?: unknown, opts?: Options): Promise<T> {
+  opts?.assertCurrent?.()
   const tokens = opts?.auth === false ? null : readTokens()
   let res: Response
   try {
@@ -452,68 +546,87 @@ async function request<T>(method: Method, path: string, body?: unknown, opts?: O
     throw new ApiError('network', 0, 'network', 'Нет связи с сервером')
   }
 
-  /* 401 с токеном на руках — пробуем обновить и повторить ровно один раз. */
-  if (res.status === 401 && tokens) {
-    const refreshed = await refreshTokens()
-    if (refreshed.ok) {
-      try {
-        res = await raw(method, path, body, refreshed.tokens.accessToken, opts)
-      } catch {
-        throw new ApiError('network', 0, 'network', 'Нет связи с сервером')
+  const finalResponse = async (owned: ResponseOwner): Promise<T> => {
+    const res = owned.response
+    opts?.assertCurrent?.()
+    // Final refusals also clear copies when no account token was sent.
+    const dayPath = /^\/weddings\/([^/?]+)(?:\/(?:timeline|events|planb|slots))?\/?$/.exec(path)
+    if (opts?.auth !== false && method === 'GET' && dayPath && [401, 403, 404, 410].includes(res.status)) forgetOfflineDay(decodeURIComponent(dayPath[1]!))
+
+    const responseError = res.ok ? null : await owned.read(errorFrom)
+    opts?.assertCurrent?.()
+    if (responseError && [401, 403, 404, 410].includes(res.status)) {
+      if (opts?.auth !== false && method === 'GET' && path === '/weddings') forgetOfflineSeating(undefined, responseError)
+      const seatingPath = /^\/weddings\/([^/?]+)(?:\/(?:guests|tables|members)(?:\/[^/?]+)?)?\/?$/.exec(path)
+      if (opts?.auth !== false && seatingPath) forgetOfflineSeating(decodeURIComponent(seatingPath[1]!), responseError)
+      const vendorProgram = /^\/vendor\/weddings\/([^/?]+)\/timeline(?:\/ack)?\/?$/.exec(path)
+      if (vendorProgram) forgetOfflinePrograms({ registeredOnly: true, weddingId: decodeURIComponent(vendorProgram[1]!) }, responseError)
+      else if (method === 'GET' && /^\/vendor\/programs(?:\?|$)/.test(path)) forgetOfflinePrograms({ registeredOnly: true }, responseError)
+      const external = /^\/guest-vendor\/([^/?]+)(?:\/(?:timeline(?:\/ack)?|messages))?\/?$/.exec(path)
+      if (external) {
+        const namespace = await externalProgramNamespace(decodeURIComponent(external[1]!))
+        opts?.assertCurrent?.()
+        forgetOfflinePrograms(namespace ? { namespace } : { externalOnly: true }, responseError)
       }
-    } else if (refreshed.why === 'expired') {
-      /* Своими словами, а не исходным 401 (`token_expired`, «Нужен заголовок
-         Authorization: Bearer»): человек должен понять, что надо войти, а не
-         читать служебный текст. Код `session_expired` — для экранов. */
-      throw new ApiError('http', 401, 'session_expired', SESSION_EXPIRED)
-    } else {
-      /* Сервер не смог обменять токен — это его недоступность, не конец входа. */
-      throw refreshed.error
     }
-  }
 
-  // Final refusals also clear copies when no account token was sent.
-  const dayPath = /^\/weddings\/([^/?]+)(?:\/(?:timeline|events|planb|slots))?\/?$/.exec(path)
-  if (opts?.auth !== false && method === 'GET' && dayPath && [401, 403, 404, 410].includes(res.status)) forgetOfflineDay(decodeURIComponent(dayPath[1]!))
-
-  const responseError = res.ok ? null : await errorFrom(res)
-  if (responseError && [401, 403, 404, 410].includes(res.status)) {
-    if (opts?.auth !== false && method === 'GET' && path === '/weddings') forgetOfflineSeating(undefined, responseError)
-    const seatingPath = /^\/weddings\/([^/?]+)(?:\/(?:guests|tables|members)(?:\/[^/?]+)?)?\/?$/.exec(path)
-    if (opts?.auth !== false && seatingPath) forgetOfflineSeating(decodeURIComponent(seatingPath[1]!), responseError)
-    const vendorProgram = /^\/vendor\/weddings\/([^/?]+)\/timeline(?:\/ack)?\/?$/.exec(path)
-    if (vendorProgram) forgetOfflinePrograms({ registeredOnly: true, weddingId: decodeURIComponent(vendorProgram[1]!) }, responseError)
-    else if (method === 'GET' && /^\/vendor\/programs(?:\?|$)/.test(path)) forgetOfflinePrograms({ registeredOnly: true }, responseError)
-    const external = /^\/guest-vendor\/([^/?]+)(?:\/(?:timeline(?:\/ack)?|messages))?\/?$/.exec(path)
-    if (external) {
-      const namespace = await externalProgramNamespace(decodeURIComponent(external[1]!))
-      forgetOfflinePrograms(namespace ? { namespace } : { externalOnly: true }, responseError)
+    /* 401 без токена на руках: служебное «нужен заголовок» — своими словами (см. SIGN_IN_REQUIRED). */
+    if (res.status === 401 && !tokens) {
+      const err = responseError!
+      throw err.message === NO_BEARER ? new ApiError('http', 401, 'unauthorized', SIGN_IN_REQUIRED) : err
     }
+
+    if (!res.ok) {
+      const err = responseError!
+      /* Гейт узнаёт об устаревшем согласии здесь же, а не в каждом экране:
+         иначе первый экран, успевший позвать `request()` после выката новой
+         редакции, ловил бы гейт, а остальные — нет (F4, RL-1). */
+      if (opts?.auth !== false && res.status === 403 && err.code === 'consent_outdated') reportConsentOutdated()
+      throw err
+    }
+
+    /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
+       у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет
+       запрос, который на самом деле прошёл. */
+    opts?.assertCurrent?.()
+    opts?.onResponse?.(res)
+    if (res.status === 204 || res.status === 205) {
+      // Finish the browser-owned response stream before this action settles.
+      await owned.read(response => response.arrayBuffer())
+      opts?.assertCurrent?.()
+      return undefined as T
+    }
+    if (!res.headers.get('content-type')?.includes('json')) return undefined as T
+    const text = await owned.read(response => response.text())
+    opts?.assertCurrent?.()
+    return (text ? JSON.parse(text) : undefined) as T
   }
 
-  /* 401 без токена на руках: служебное «нужен заголовок» — своими словами (см. SIGN_IN_REQUIRED). */
-  if (res.status === 401 && !tokens) {
-    const err = responseError!
-    throw err.message === NO_BEARER ? new ApiError('http', 401, 'unauthorized', SIGN_IN_REQUIRED) : err
-  }
-
-  if (!res.ok) {
-    const err = responseError!
-    /* Гейт узнаёт об устаревшем согласии здесь же, а не в каждом экране:
-       иначе первый экран, успевший позвать `request()` после выката новой
-       редакции, ловил бы гейт, а остальные — нет (F4, RL-1). */
-    if (opts?.auth !== false && res.status === 403 && err.code === 'consent_outdated') reportConsentOutdated()
-    throw err
-  }
-
-  /* Тело есть не у всех успешных ответов: 204 у удаления, 201 без содержимого
-     у фиксации согласия. Разбирать JSON вслепую нельзя — пустое тело роняет
-     запрос, который на самом деле прошёл. */
-  opts?.onResponse?.(res)
-  if (res.status === 204 || res.status === 205) return undefined as T
-  if (!res.headers.get('content-type')?.includes('json')) return undefined as T
-  const text = await res.text()
-  return (text ? JSON.parse(text) : undefined) as T
+  return await withOwnedResponse(res, async owned => {
+    opts?.assertCurrent?.()
+    /* Dispose the actual original 401 before refresh or replacing its owner. */
+    if (res.status === 401 && tokens) {
+      await owned.dispose()
+      opts?.assertCurrent?.()
+      const refreshed = await refreshTokens()
+      opts?.assertCurrent?.()
+      if (refreshed.ok) {
+        opts?.assertCurrent?.()
+        let retry: Response
+        try {
+          retry = await raw(method, path, body, refreshed.tokens.accessToken, opts)
+        } catch {
+          throw new ApiError('network', 0, 'network', 'Нет связи с сервером')
+        }
+        return await withOwnedResponse(retry, finalResponse, opts?.assertCurrent)
+      } else if (refreshed.why === 'expired') {
+        throw new ApiError('http', 401, 'session_expired', SESSION_EXPIRED)
+      } else {
+        throw refreshed.error
+      }
+    }
+    return await finalResponse(owned)
+  }, opts?.assertCurrent)
 }
 
 /* ── Типизированный доступ ───────────────────────────────────────────────

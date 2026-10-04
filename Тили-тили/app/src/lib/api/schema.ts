@@ -8078,6 +8078,10 @@ export interface paths {
          *     подписку и промолчать значило бы показать «уведомления включены» там,
          *     где их не будет. Уведомления при этом приходят в приложении —
          *     `GET /notifications` работает всегда.
+         *
+         *     При изменении найденной подписки, её владельца или подготовленных источников
+         *     во время ожидания отвечает 409 `push_subscription_scope_changed`; действие
+         *     целиком откатывается. Обновите данные и повторите действие.
          */
         post: {
             parameters: {
@@ -8105,6 +8109,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
                 422: components["responses"]["Validation"];
                 501: components["responses"]["NotConfigured"];
             };
@@ -8134,6 +8139,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                409: components["responses"]["Conflict"];
             };
         };
         options?: never;

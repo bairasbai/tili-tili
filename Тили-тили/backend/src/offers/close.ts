@@ -1,3 +1,4 @@
+import type { EnrolledEmission } from '../notify/enrolled.js'
 import type { Queryable } from '../plugins/db.js'
 import { notifyVendorOfferEvent } from './notify.js'
 
@@ -6,7 +7,7 @@ export async function closeWeddingOfferRequests(
   client: Queryable,
   weddingId: string,
   weddingTz: string | null,
-  reason: 'date_changed' | 'wedding_cancelled',
+  reason: 'date_changed' | 'wedding_cancelled', emissions?: EnrolledEmission
 ): Promise<void> {
   const { rows } = await client.query<{ user_id: string | null }>(
     `with targets as (
@@ -20,6 +21,6 @@ export async function closeWeddingOfferRequests(
     [weddingId, reason],
   )
   for (const row of rows) {
-    if (row.user_id) await notifyVendorOfferEvent(client, row.user_id, weddingTz, reason)
+    if (row.user_id) await notifyVendorOfferEvent(client, row.user_id, weddingTz, reason, emissions)
   }
 }

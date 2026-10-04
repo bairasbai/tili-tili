@@ -1,3 +1,4 @@
+import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt } from '../notify/enrolled.js'
 import { randomBytes } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, notFound } from '../errors.js'
@@ -182,7 +183,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       assertPositivePrice(body.price.amount)
 
       return withIdempotency(db(), request, reply, 'slots.book', (tx) =>
-        tx(async (client) => {
+        tx(async (client) => runEnrolledFanout(client, { owner: 'slots.book', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true, extraVendorIds: [body.vendorId], selectedCatalogVendorId: body.vendorId }, async (emissions) => {
           const context = await lockBookingContext(client, {
             weddingId,
             slotId,
@@ -197,9 +198,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
               ...(body.packageId === undefined ? {} : { packageId: body.packageId }),
             },
             price: body.price.amount,
-          })
+          }, emissions)
           return { status: 200, body: (await loadSlot(client, slotId, true))! }
-        }),
+        }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
         true, client => lockBookingReplay(client, { weddingId, slotId, actorId: request.caller!.userId,
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
       )
@@ -226,10 +227,10 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       'vendorId' | 'packageId' | 'expectedPolicyRevision'> & { price: { amount: number } }
     const principal = { weddingId, slotId, actorId: request.caller!.userId,
       sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }
-    return withIdempotency(db(), request, reply, 'slots.replace', tx => tx(async client => {
-      await replaceLegacySlotBooking(client, { ...principal, ...body, price: body.price.amount })
+    return withIdempotency(db(), request, reply, 'slots.replace', tx => tx(async client => runEnrolledFanout(client, { owner: 'slots.replace', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true, extraVendorIds: [body.vendorId] }, async (emissions) => {
+      await replaceLegacySlotBooking(client, { ...principal, ...body, price: body.price.amount }, emissions)
       return { status: 200, body: (await loadSlot(client, slotId, true))! }
-    }), true, client => lockBookingReplay(client, principal))
+    }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), true, client => lockBookingReplay(client, principal))
   })
 
   app.post('/weddings/:weddingId/slots/:slotId/cancel', async (request, reply) => {
@@ -305,7 +306,7 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { vendorName: string; price: { amount: number }; phone?: string }
       assertPositivePrice(body.price.amount)
 
-      return db().tx(async (client) => {
+      return db().tx(async (client) => runEnrolledFanout(client, { owner: 'slots.external', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
         const context = await lockBookingContext(client, {
           weddingId,
           slotId,
@@ -320,9 +321,9 @@ export async function slotRoutes(app: FastifyInstance): Promise<void> {
             ...(body.phone === undefined ? {} : { phone: body.phone }),
           },
           price: body.price.amount,
-        })
+        }, emissions)
         return (await loadSlot(client, slotId, true))!
-      })
+      }))
     },
   )
 

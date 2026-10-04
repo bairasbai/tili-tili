@@ -1,8 +1,8 @@
+import { runEnrolledFanout } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { AppError, conflict, validationFailed } from '../errors.js'
 import { UUID_ID, uuidv7 } from '../ids.js'
 import { readKeyHeader } from '../deals/idempotency.js'
-import { notify } from '../notify/notify.js'
 import { noteVendorUpdate } from '../vendor/updates.js'
 import type { Queryable } from '../plugins/db.js'
 import { expectedTimelineVersion, lockTimeline, lockTimelineForRequest, sendTimelineVersion, setTimelineActor, type TimelineVersion } from './version.js'
@@ -73,7 +73,7 @@ export async function timelineShiftRoutes(app: FastifyInstance): Promise<void> {
     if (clientKey.length > 128) throw new AppError(400, 'idempotency_key_too_long', 'Idempotency-Key длиннее 128 символов')
     const key = `${request.caller!.userId}:timeline-shift-v2:${clientKey}`
     const hash = shiftDigest({ url: request.url, previewToken, version: expected })
-    const result = await db().tx(async client => {
+    const result = await db().tx(async client => runEnrolledFanout(client, { owner: 'timeline.shift', weddingId: request.member!.weddingId, actorId: request.caller!.userId, request, afterReceipt: false }, async (emissions) => {
       const weddingId = request.member!.weddingId
       const snapshot = await lockTimelineForRequest(client, request, true)
       // Replay is authorized under the same current lock as a new command.
@@ -92,6 +92,7 @@ export async function timelineShiftRoutes(app: FastifyInstance): Promise<void> {
       if (snapshot.version !== expected) throw conflict('timeline_conflict', 'Программа уже изменена — получите новый предпросмотр')
       const now = await actualTime(client)
       const claims = await verifyShiftPreview(secret(), previewToken, now)
+      emissions.afterLastWrite(async () => { await verifyShiftPreview(secret(), previewToken, await actualTime(client)) })
       if (claims.weddingId !== weddingId || claims.userId !== request.caller!.userId || claims.sessionId !== request.caller!.sessionId || claims.version !== expected) {
         throw validationFailed({ previewToken: 'предпросмотр относится к другой сессии или версии' })
       }
@@ -117,13 +118,14 @@ export async function timelineShiftRoutes(app: FastifyInstance): Promise<void> {
       const commanders = (await client.query<{ user_id: string }>("select user_id from wedding_members where wedding_id=$1 and role in ('couple','coordinator') order by user_id", [weddingId])).rows
       const recipients = new Set([...commanders.map(r => r.user_id), ...plan.affectedMemberIds, ...plan.vendorUserIds])
       recipients.delete(request.caller!.userId)
-      for (const userId of [...recipients].sort()) await notify(client, { userId, kind: 'system', title: 'Тайминг сдвинут', body: text, link: '/dayx', critical: true }, now, plan.scope.timeZone)
+      for (const userId of [...recipients].sort()) await emissions.emit(client, { userId, kind: 'system', title: 'Тайминг сдвинут', body: text, link: '/dayx', critical: true }, now, plan.scope.timeZone)
       const accepted = await lockTimeline(client, weddingId, true)
       const receipt: StoredReceipt = { sessionId: request.caller!.sessionId, body: { minutes: claims.minutes, shiftedBlocks: ids.length, guestsAffected: plan.guestsAffected },
         snapshot: { version: accepted.version, updated_at: accepted.updated_at?.toISOString() ?? null, updated_by: accepted.updated_by } }
+      await emissions.flush()
       await client.query('update idempotency_keys set status=200,body=$2 where key=$1', [key, JSON.stringify(receipt)])
       return receipt
-    })
+    }))
     sendTimelineVersion(reply, snapshotFromStored(result))
     return result.body
   })

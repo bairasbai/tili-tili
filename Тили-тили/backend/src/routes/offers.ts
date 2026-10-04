@@ -1,3 +1,4 @@
+import { runEnrolledFanout, finishEnrolledFanoutAfterReceipt } from '../notify/enrolled.js'
 import type { FastifyInstance } from 'fastify'
 import { assertLegacyBookingSlotReady, bookVendor, lockBookingActor, lockBookingContext, lockBookingReplay } from '../deals/book.js'
 import { loadSlot } from '../deals/repo.js'
@@ -144,7 +145,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
       }
 
       return withIdempotency(db(), request, reply, 'offer-requests.create', (tx) =>
-        tx<unknown>(async (client) => {
+        tx<unknown>(async (client) => runEnrolledFanout(client, { owner: 'offer-requests.create', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true }, async (emissions) => {
           /* Квота принадлежит свадьбе, поэтому эксклюзивный замок свадьбы —
            * первый. Два запроса после девяти увидят 9 и 10 последовательно,
            * а не оба создадут «десятую» строку. */
@@ -256,7 +257,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
                 actorId,
               ],
             )
-            await notifyVendorOfferEvent(client, item.vendor.user_id, wedding.tz, 'created')
+            await notifyVendorOfferEvent(client, item.vendor.user_id, wedding.tz, 'created', emissions)
             requestByEntry.set(item.entryId, requestId)
           }
 
@@ -279,7 +280,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
             }
           }
           return { status: 201, body: { results } }
-        }),
+        }), { afterReceipt: finishEnrolledFanoutAfterReceipt }),
         true, client => lockBookingReplay(client, { weddingId, slotId, actorId,
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion }),
       )
@@ -299,7 +300,7 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       const { offerId } = request.params as { offerId: string }
       const weddingId = request.member!.weddingId
-      return withIdempotency(db(), request, reply, 'offers.accept', tx => tx(async client => {
+      return withIdempotency(db(), request, reply, 'offers.accept', tx => tx(async client => runEnrolledFanout(client, { owner: 'offers.accept', weddingId: weddingId, actorId: request.caller!.userId, request, afterReceipt: true }, async (emissions) => {
         // Resolve only inside the caller's wedding; no lock before the wedding/actor/slot.
         const { rows: located } = await client.query<{ request_id: string; slot_id: string }>(
           `select o.request_id, r.slot_id from offers o
@@ -348,11 +349,18 @@ export async function offerRoutes(app: FastifyInstance): Promise<void> {
           price: Number(offer.price),
           performer: { kind: 'offer', vendorId: incoming.vendor_id, packageId: offer.package_id,
             packageTitle: offer.title, packageIncludes: offer.includes },
-        })
+        }, emissions)
         // Snapshot is already in the deal; the offer link is not its source of truth.
         await client.query('update offers set accepted_at = now(), deal_id = $2 where id = $1', [offerId, dealId])
+        emissions.afterLastWrite(async () => {
+          const current = (await client.query<{ expired: boolean; deal_id: string | null; accepted_at: Date | null }>(
+            `select valid_until < (clock_timestamp() at time zone coalesce($2, 'Europe/Moscow'))::date as expired,
+              deal_id,accepted_at from offers where id=$1`, [offerId, context.weddingTz])).rows[0]
+          if (!current || !current.accepted_at || current.deal_id !== dealId) throw conflict('request_closed', 'Предложение уже принято')
+          if (current.expired) throw conflict('offer_expired', 'Срок предложения истёк — запросите новое')
+        })
         return { status: 200, body: (await loadSlot(client, context.slotId, true))! }
-      }), true, async client => {
+      }), { afterReceipt: finishEnrolledFanoutAfterReceipt }), true, async client => {
         await lockBookingReplay(client, { weddingId, actorId: request.caller!.userId,
           sessionId: request.caller!.sessionId, policyVersion: app.appConfig.policyVersion })
         const scoped = await client.query(

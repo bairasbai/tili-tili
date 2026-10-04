@@ -15,6 +15,8 @@ async function locate(client:Queryable,userId:string):Promise<LocatedErasure> {
     where vendor_id=any($1::uuid[]) or person_user_id=$2 order by id`,[vendors,userId])).rows.map(r=>r.id)
   const weddings=(await client.query<{id:string}>(`select w.id from weddings w where w.owner_id=$1
     or exists(select 1 from wedding_members m where m.wedding_id=w.id and m.user_id=$1)
+    or exists(select 1 from tasks t where t.wedding_id=w.id and t.assignee_id=$1)
+    or exists(select 1 from notifications n join tasks t on t.id=n.task_id where t.wedding_id=w.id and n.user_id=$1)
     or exists(select 1 from deals d where d.wedding_id=w.id and d.vendor_id=any($2::uuid[]))
     or exists(select 1 from offer_requests r join slots s on s.id=r.slot_id
       where s.wedding_id=w.id and r.vendor_id=any($2::uuid[]))
@@ -36,16 +38,22 @@ async function locate(client:Queryable,userId:string):Promise<LocatedErasure> {
 }
 
 async function lockSourceUnion(client:Queryable,weddingIds:string[],resourceIds:string[],extraAccounts:string[],companyIds:string[]) {
-  const located=(await client.query<{id:string;vendor_id:string|null;person_user_id:string|null;kind:string;conflict_identity:string}>(
-    'select id,vendor_id,person_user_id,kind,conflict_identity from vendor_resources where id=any($1::uuid[]) order by id',[resourceIds])).rows
+  const located=(await client.query<{id:string;vendor_id:string|null;person_user_id:string|null;staff_member_id:string|null;kind:string;conflict_identity:string}>(
+    'select id,vendor_id,person_user_id,staff_member_id,kind,conflict_identity from vendor_resources where id=any($1::uuid[]) order by id',[resourceIds])).rows
+  const staff=(await client.query<{id:string;vendor_id:string;user_id:string|null}>(
+    'select id,vendor_id,user_id from vendor_staff_members where id=any($1::uuid[]) order by id',[sorted(located.flatMap(r=>r.staff_member_id?[r.staff_member_id]:[]))])).rows
   const companyOwners=(await client.query<{id:string;user_id:string}>(
-    'select id,user_id from vendors where id=any($1::uuid[]) order by id',[sorted([...companyIds,...located.flatMap(r=>r.vendor_id?[r.vendor_id]:[])])])).rows
+    'select id,user_id from vendors where id=any($1::uuid[]) order by id',[sorted([...companyIds,...located.flatMap(r=>r.vendor_id?[r.vendor_id]:[]),...staff.map(m=>m.vendor_id)])])).rows
   const owners=(await client.query<{owner_id:string}>('select owner_id from weddings where id=any($1::uuid[])',[weddingIds])).rows
-  const accounts=sorted([...extraAccounts,...owners.map(w=>w.owner_id),...companyOwners.map(c=>c.user_id),...located.flatMap(r=>r.person_user_id?[r.person_user_id]:[])])
+  const sourceAccounts=(await client.query<{user_id:string}>(`select user_id from wedding_members where wedding_id=any($1::uuid[])
+    union select assignee_id as user_id from tasks where wedding_id=any($1::uuid[]) and assignee_id is not null
+    union select n.user_id from notifications n join tasks t on t.id=n.task_id where t.wedding_id=any($1::uuid[])`,[weddingIds])).rows
+  const accounts=sorted([...extraAccounts,...owners.map(w=>w.owner_id),...sourceAccounts.map(s=>s.user_id),...companyOwners.map(c=>c.user_id),...located.flatMap(r=>r.person_user_id?[r.person_user_id]:[]),...staff.flatMap(m=>m.user_id?[m.user_id]:[])])
   // Erasure later upgrades to DELETE. Taking UPDATE directly in UUID order
   // avoids two erasers holding SHARE on each other's target accounts.
   await client.query('select id from users where id=any($1::uuid[]) order by id for update',[accounts])
   await client.query('select id from vendors where id=any($1::uuid[]) order by id for update',[companyOwners.map(c=>c.id)])
+  await client.query('select id from vendor_staff_members where id=any($1::uuid[]) order by id for update',[staff.map(m=>m.id)])
   const keys=[...new Map(located.map(r=>[`${r.kind}:${r.conflict_identity}`,{kind:r.kind,identity:r.conflict_identity}])).values()]
     .sort((a,b)=>a.kind.localeCompare(b.kind)||a.identity.localeCompare(b.identity))
   for(const key of keys) {
@@ -54,6 +62,17 @@ async function lockSourceUnion(client:Queryable,weddingIds:string[],resourceIds:
   }
   await client.query('select id from vendor_resources where id=any($1::uuid[]) order by id for update',[resourceIds])
   await client.query('select id from resource_capacity_windows where resource_id=any($1::uuid[]) order by id for update',[resourceIds])
+  const currentResources=(await client.query('select id,vendor_id,person_user_id,staff_member_id,kind,conflict_identity from vendor_resources where id=any($1::uuid[]) order by id',[resourceIds])).rows
+  const currentCompanies=(await client.query('select id,user_id from vendors where id=any($1::uuid[]) order by id',[companyOwners.map(c=>c.id)])).rows
+  const currentStaff=(await client.query('select id,vendor_id,user_id from vendor_staff_members where id=any($1::uuid[]) order by id',[staff.map(m=>m.id)])).rows
+  if(JSON.stringify(located)!==JSON.stringify(currentResources)||JSON.stringify(companyOwners)!==JSON.stringify(currentCompanies)||JSON.stringify(staff)!==JSON.stringify(currentStaff)) {
+    throw conflict('resource_erasure_scope_changed','Область удаления изменилась — повторите транзакцию удаления')
+  }
+  // Resource release must not acquire allocation parents only after historical N.
+  await client.query('select id from resource_allocations where wedding_id=any($1::uuid[]) order by id for update',[weddingIds])
+  await client.query('select id from tasks where wedding_id=any($1::uuid[]) order by id for update',[weddingIds])
+  await client.query(`select n.id from notifications n where n.user_id=any($2::uuid[])
+    or exists(select 1 from tasks t where t.id=n.task_id and t.wedding_id=any($1::uuid[])) order by n.id for update`,[weddingIds,extraAccounts])
 }
 
 /** Called first in actual eraseUser, before request/financial/account changes.

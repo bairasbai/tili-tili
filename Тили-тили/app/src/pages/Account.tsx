@@ -13,12 +13,12 @@ import { api, ApiError, saveTokens, SESSION_EXPIRED } from '@/lib/api/client'
 import { explainError, useApi } from '@/lib/api/useApi'
 import { getPolicy } from '@/lib/api/legal'
 import { LEGAL_TEXT_VERSION, formatRedaction } from '@/lib/legal'
-import { deleteAllPushSubscriptions, endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
+import { endSession, exportMyData, getMe, getPushSubscriptions, getSessions, patchMe, signOutEverywhere, signOutHere, forgetLocally, withdrawConsent, JOIN_CODE_KEY, SESSION_EXPIRED_STATE } from '@/lib/api/auth'
 import { getNotifications, markAllNotificationsRead, markNotificationRead, notificationRoute } from '@/lib/api/notifications'
 import { getVendorProfile } from '@/lib/api/vendor'
 import { cancelWedding, listMyWeddings, pickMyWedding } from '@/lib/api/wedding'
 import { getWedding } from '@/lib/api/weddingData'
-import { devicePushState, disableDevicePush, enableDevicePush, pushSupported, type DevicePushState } from '@/lib/push'
+import { devicePushState, disableDevicePush, disableAllDevicePush, enableDevicePush, pushSupported, type DevicePushState } from '@/lib/push'
 import type { components } from '@/lib/api/schema'
 
 /** Профиль пользователя — как его отдаёт и принимает сервер. */
@@ -633,25 +633,26 @@ function DevicePushRow({ top = true }: { top?: boolean }) {
     setBusy(true)
     setErr(null)
     try {
-      if (state === 'on' || state === 'unverified') { await disableDevicePush(); setState('off') } else { await enableDevicePush(); setState('on') }
-      list.reload()
+      if (state === 'on' || state === 'unverified') {
+        await disableDevicePush({ confirmServerFirst: true, onConfirmed: () => { setState('off'); list.reload() } })
+      } else { await enableDevicePush(); setState('on'); list.reload() }
     } catch (e) {
       /* Сервер без ключей отвечает 501 своим текстом — его и показываем;
          отказ браузера приходит словами из `lib/push.ts`. */
       setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так'))
     } finally { setBusy(false) }
   })()
-  /* Снять везде: сначала подписка этого браузера (иначе он держал бы адрес,
-     о котором сервер уже не знает, — «unverified»), затем все серверные. */
+  /* Сохраняем исходную подписку до ответа сервера; старое действие
+     не снимает подписку нового аккаунта или заменившего её устройства. */
   const removeAll = () => void (async () => {
     setBusy(true)
     setErr(null)
     try {
-      await disableDevicePush().catch(() => undefined)
-      await deleteAllPushSubscriptions()
-      if (state === 'on' || state === 'unverified') setState('off')
-      list.reload()
-    } catch (e) { setErr(explainError(e)) } finally {
+      await disableAllDevicePush(() => {
+        if (state === 'on' || state === 'unverified') setState('off')
+        list.reload()
+      })
+    } catch (e) { setErr(e instanceof ApiError ? explainError(e) : e instanceof Error ? e.message : t('Что-то пошло не так')) } finally {
       setBusy(false)
       // Подтверждение снимается и при отказе — следующий тап снова спрашивает (ревью 015, FA5).
       setConfirmAll(false)

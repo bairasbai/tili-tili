@@ -2,6 +2,37 @@ import type { FastifyInstance } from 'fastify'
 import { AppError, notFound } from '../errors.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { pruneTaskNotifications } from '../notify/task-notifications.js'
+import type { FastifyRequest } from 'fastify'
+import type { Queryable } from '../plugins/db.js'
+import { prepareExistingNoticeScope } from '../notify/notice-transactions.js'
+import { lockOrderPrincipal } from '../orders/context.js'
+import { assertSeatingToken } from '../wedding/access.js'
+import { consentState } from '../auth/consent.js'
+import { unauthorized } from '../errors.js'
+
+const subscriptionChanged = () => new AppError(409, 'push_subscription_scope_changed',
+  'Подписка изменилась — обновите данные и повторите действие')
+interface SubscriptionIdentity { id: string; user_id: string }
+async function subscriptionCaller(client: Queryable, request: FastifyRequest, currentConsent: boolean,
+  pin: boolean): Promise<void> {
+  const caller = request.caller!
+  if (pin && currentConsent) {
+    await lockOrderPrincipal(client, { userId: caller.userId, sessionId: caller.sessionId,
+      policyVersion: request.server.appConfig.policyVersion })
+  } else {
+    const user = (await client.query<{ deleted_at: Date | null }>('select deleted_at from users where id=$1', [caller.userId])).rows[0]
+    if (!user || user.deleted_at) throw unauthorized('Аккаунт удалён')
+    const session = await client.query('select id from sessions where id=$1 and user_id=$2 and revoked_at is null' +
+      (pin ? ' for share' : ''), [caller.sessionId, caller.userId])
+    if (!session.rowCount) throw unauthorized('Сессия завершена')
+    if (currentConsent) {
+      const state = await consentState(client, caller.userId, request.server.appConfig.policyVersion)
+      if (state === 'none') throw new AppError(403, 'forbidden', 'Нужно согласие на обработку персональных данных')
+      if (state === 'outdated') throw new AppError(403, 'consent_outdated', 'Мы обновили документы — подтвердите новую редакцию, чтобы продолжить')
+    }
+  }
+  await assertSeatingToken(request)
+}
 
 export async function notificationRoutes(app: FastifyInstance): Promise<void> {
   const db = () => {
@@ -103,11 +134,32 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
       const body = request.body as { endpoint: string; keys: Record<string, string> }
       // Один и тот же браузер переподписывается тем же endpoint — это
       // не второй телефон, а тот же самый.
-      await db().query(
-        `insert into push_subscriptions (id, user_id, endpoint, keys) values ($1,$2,$3,$4)
-         on conflict (endpoint) do update set user_id = excluded.user_id, keys = excluded.keys`,
-        [uuidv7(), request.caller!.userId, body.endpoint, JSON.stringify(body.keys)],
-      )
+      await db().tx(async client => {
+        const initial = (await client.query<SubscriptionIdentity>(
+          'select id,user_id from push_subscriptions where endpoint=$1', [body.endpoint])).rows[0] ?? null
+        try {
+          const scope = await prepareExistingNoticeScope(client, { noticeIds: [],
+            subscriptionIds: initial ? [initial.id] : [], subscriptionMutation: true,
+            allNoticeUserIds: [request.caller!.userId, ...(initial ? [initial.user_id] : [])],
+            beforeNotices: pinned => subscriptionCaller(pinned, request, true, true) })
+          const current = (await client.query<SubscriptionIdentity>(
+            'select id,user_id from push_subscriptions where endpoint=$1', [body.endpoint])).rows[0] ?? null
+          if (JSON.stringify(current) !== JSON.stringify(initial)) throw subscriptionChanged()
+          await scope.assertParents()
+          const changed = await client.query(
+            `insert into push_subscriptions (id, user_id, endpoint, keys) values ($1,$2,$3,$4)
+             on conflict (endpoint) do update set user_id = excluded.user_id, keys = excluded.keys
+             where push_subscriptions.id=$5::uuid and push_subscriptions.user_id=$6::uuid`,
+            [uuidv7(), request.caller!.userId, body.endpoint, JSON.stringify(body.keys), initial?.id ?? null, initial?.user_id ?? null])
+          if (changed.rowCount !== 1) throw subscriptionChanged()
+          // The conditional unique-conflict wait can happen after preparation.
+          // Do not acquire a discovered owner: reject its unprepared identity.
+          await subscriptionCaller(client, request, true, false)
+        } catch (error) {
+          if (error instanceof AppError && error.code === 'resource_source_changed') throw subscriptionChanged()
+          throw error
+        }
+      })
       return reply.code(201).send()
     },
   )
@@ -136,10 +188,23 @@ export async function notificationRoutes(app: FastifyInstance): Promise<void> {
        * остаётся — общий телефон мог перепривязать endpoint другому. Без
        * параметра — все подписки человека, как при выходе отовсюду. */
       const { endpoint } = request.query as { endpoint?: string }
-      await db().query(
-        'delete from push_subscriptions where user_id = $1 and ($2::text is null or endpoint = $2)',
-        [request.caller!.userId, endpoint ?? null],
-      )
+      await db().tx(async client => {
+        try {
+          const scope = await prepareExistingNoticeScope(client, { noticeIds: [],
+            subscriptionUserIds: [request.caller!.userId], subscriptionMutation: true,
+            allNoticeUserIds: [request.caller!.userId],
+            beforeNotices: pinned => subscriptionCaller(pinned, request, false, true) })
+          await scope.assertParents()
+          await client.query(
+            'delete from push_subscriptions where user_id = $1 and ($2::text is null or endpoint = $2)',
+            [request.caller!.userId, endpoint ?? null])
+          // Outdated consent is still allowed; only current identity is required.
+          await subscriptionCaller(client, request, false, false)
+        } catch (error) {
+          if (error instanceof AppError && error.code === 'resource_source_changed') throw subscriptionChanged()
+          throw error
+        }
+      })
       return reply.code(204).send()
     },
   )

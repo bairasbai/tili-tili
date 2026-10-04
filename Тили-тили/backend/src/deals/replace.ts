@@ -1,3 +1,4 @@
+import type { EnrolledEmission } from '../notify/enrolled.js'
 import type { Queryable } from '../plugins/db.js'
 import { AppError, conflict, notFound, validationFailed } from '../errors.js'
 import { boundedText, checkEntityId, checkVersion, objectValues } from '../orders/model.js'
@@ -53,7 +54,7 @@ async function rejectOldResources(client: Queryable, input: ReplaceLegacySlotInp
 /** Caller supplies ONE transaction: an error must roll back cancellation and
  * booking together. This legacy-only door never converts a resource promise.
  * The existing cancellation and booking kernels own all their side effects. */
-export async function replaceLegacySlotBooking(client: Queryable, supplied: ReplaceLegacySlotInput): Promise<string> {
+export async function replaceLegacySlotBooking(client: Queryable, supplied: ReplaceLegacySlotInput, emissions?: EnrolledEmission): Promise<string> {
   validate(supplied)
   const input: ReplaceLegacySlotInput = { ...supplied, weddingId: supplied.weddingId.toLowerCase(), slotId: supplied.slotId.toLowerCase(),
     actorId: supplied.actorId.toLowerCase(), sessionId: supplied.sessionId.toLowerCase(),
@@ -136,5 +137,5 @@ export async function replaceLegacySlotBooking(client: Queryable, supplied: Repl
   await cancelDeal(client, input.expectedSelectedDealId, { actorId: input.actorId, sessionId: input.sessionId, policyVersion: input.policyVersion })
   const context = await lockBookingContext(client, input)
   return bookVendor(client, context, { performer: { kind: 'catalog', vendorId: input.vendorId,
-    ...(input.packageId === undefined ? {} : { packageId: input.packageId }) }, price: input.price })
+    ...(input.packageId === undefined ? {} : { packageId: input.packageId }) }, price: input.price }, emissions)
 }

@@ -5,6 +5,7 @@ import type { Config } from '../config.js'
 import type { Db, Queryable } from '../plugins/db.js'
 import { pruneTaskNotifications, taskPushReady } from './task-notifications.js'
 import { notificationPushReady } from './preflight.js'
+import { prepareExistingNoticeScope, runNoticeTransaction } from './notice-transactions.js'
 
 export interface PushResult {
   /** Successful provider handoffs; not device delivery or reading. */
@@ -72,19 +73,32 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
         or not exists (select 1 from push_subscriptions s join users u on u.id=s.user_id
           where s.id=d.subscription_id and s.user_id=n.user_id and u.deleted_at is null))`,
   [String(PUSH_MAX_AGE_MS), PUSH_MAX_ATTEMPTS])
-  const stale = await db.query(`update notifications n set pushed_at=now(),push_disposition='processed'
+  const staleIds = (await db.query<{ id: string }>(`select n.id from notifications n
     where n.cancelled_at is null and n.pushed_at is null and n.push_disposition='planned'
       and (n.deliver_after<=now()-($1 || ' milliseconds')::interval or n.expires_at<=now())
       and not exists (select 1 from notification_push_deliveries d
-        where d.notification_id=n.id and d.status='claimed' and d.lease_until>now())`, [String(PUSH_MAX_AGE_MS)])
+        where d.notification_id=n.id and d.status='claimed' and d.lease_until>now())`, [String(PUSH_MAX_AGE_MS)])).rows.map(n => n.id)
+  const stale = await runNoticeTransaction(db, { noticeIds: staleIds }, client => client.query(`update notifications n set pushed_at=now(),push_disposition='processed'
+    where n.cancelled_at is null and n.pushed_at is null and n.push_disposition='planned'
+      and (n.deliver_after<=now()-($1 || ' milliseconds')::interval or n.expires_at<=now())
+      and not exists (select 1 from notification_push_deliveries d
+        where d.notification_id=n.id and d.status='claimed' and d.lease_until>now()) and n.id=any($2::uuid[])`, [String(PUSH_MAX_AGE_MS), staleIds]))
   result.expired = stale.rowCount ?? 0
 
   await db.tx(async client => {
+    const { rows: seeds } = await client.query<{ id: string; user_id: string }>(`select n.id,n.user_id
+      from notifications n where n.cancelled_at is null and n.pushed_at is null and n.push_disposition='planned'
+        and n.deliver_after<=now()
+        and not exists (select 1 from notification_push_deliveries d where d.notification_id=n.id)
+      order by n.deliver_after,n.id limit $1`, [limit])
+    await prepareExistingNoticeScope(client, { noticeIds: seeds.map(n => n.id),
+      subscriptionUserIds: seeds.map(n => n.user_id) })
     const { rows } = await client.query<{ id: string; user_id: string }>(`select n.id,n.user_id
       from notifications n where n.cancelled_at is null and n.pushed_at is null and n.push_disposition='planned'
         and n.deliver_after<=now()
         and not exists (select 1 from notification_push_deliveries d where d.notification_id=n.id)
-      order by n.deliver_after,n.id limit $1 for update of n skip locked`, [limit])
+      and n.id=any($2::uuid[])
+       order by n.deliver_after,n.id limit $1 for update of n skip locked`, [limit, seeds.map(n => n.id)])
     for (const notice of rows) {
       if (performance.now()-started>=PUSH_PASS_BUDGET_MS) break
       const inserted = await client.query(`insert into notification_push_deliveries(notification_id,subscription_id)
@@ -217,7 +231,8 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
         // Destructive side effects require a successful fenced transition.
         // Losing this lease makes a late refusal obsolete. Transition/removal
         // commit together so a DB failure leaves the claim recoverable.
-        result.dropped += await db.tx(async client => {
+        result.dropped += await runNoticeTransaction(db, { noticeIds: [claim.notification_id],
+          subscriptionIds: [claim.subscription_id], subscriptionMutation: true }, async client => {
           if (!await finish('permanent_failure', error, delay, client)) return 0
           const removed = await client.query(`delete from push_subscriptions s using notifications n
             where s.id=$2 and n.id=$1 and s.user_id=n.user_id`, params.slice(0, 2))
@@ -230,12 +245,16 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       } else await finish(permanent || claim.attempts>=PUSH_MAX_ATTEMPTS ? 'permanent_failure' : 'retry_wait', error, delay)
     }
   }
-  const finalized = await db.query<{ expired: boolean }>(`update notifications n set pushed_at=now(),push_disposition='processed'
+  const finalIds = (await db.query<{ id: string }>(`select n.id from notifications n
     where n.pushed_at is null and n.push_disposition='planned'
+    and exists (select 1 from notification_push_deliveries d where d.notification_id=n.id)
+    and not exists (select 1 from notification_push_deliveries d where d.notification_id=n.id and d.status in ${OPEN})`)).rows.map(n => n.id)
+  const finalized = await runNoticeTransaction(db, { noticeIds: finalIds }, client => client.query<{ expired: boolean }>(`update notifications n set pushed_at=now(),push_disposition='processed'
+    where n.id=any($1::uuid[]) and n.pushed_at is null and n.push_disposition='planned'
     and exists (select 1 from notification_push_deliveries d where d.notification_id=n.id)
     and not exists (select 1 from notification_push_deliveries d where d.notification_id=n.id and d.status in ${OPEN})
     returning exists (select 1 from notification_push_deliveries d
-      where d.notification_id=n.id and d.status='expired') as expired`)
+      where d.notification_id=n.id and d.status='expired') as expired`, [finalIds]))
   result.expired += finalized.rows.filter(row => row.expired).length
   return result
 }

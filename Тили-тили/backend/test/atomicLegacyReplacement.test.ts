@@ -355,7 +355,7 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
   async function observeConcurrentWeddingTree(root: number) {
     type Row = { pid: number; state: string; wait_event_type: string | null; wait_event: string | null; blockers: number[]; query: string }
     const normalize = (sql: string) => sql.trim().replace(/\s+/g, ' ')
-    const command = 'select owner_id,date::text from weddings where id=$1 and archived_at is null and cancelled_at is null for update'
+    const command = 'select id from weddings where id=$1 for update'
     let observed: (Row & { path: number[] })[] = []
     for (let attempt = 0; attempt < 120; attempt++) {
       // PostgreSQL can queue the second row-lock request behind the first.

@@ -237,10 +237,27 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
       headers: { ...auth(w.owner), 'if-match': before.headers.etag! } })).statusCode).toBe(204)
   })
 
-  async function observeTransactions(observer: (sql: string) => void, action: () => Promise<void>) {
+  async function observeNativeWeddingWait(holder: number) {
+    let rows: { pid: number; query: string; blockers: number[]; wait_event: string | null }[] = []
+    for (let attempt = 0; attempt < 120; attempt++) {
+      rows = (await app.db!.query<{ pid: number; query: string; blockers: number[]; wait_event: string | null }>(
+        `select pid,query,pg_blocking_pids(pid) blockers,wait_event from pg_stat_activity
+          where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock'
+          and $1=any(pg_blocking_pids(pid))`, [holder])).rows
+      if (rows.length === 1) break
+      await new Promise<void>(resolve => setTimeout(resolve, 25))
+    }
+    expect(rows, 'one actual wedding-lock waiter behind the owned holder').toHaveLength(1)
+    const row = rows[0]!
+    expect(row.blockers).toContain(holder)
+    expect(row.query.replace(/\s+/g, ' ')).toMatch(/from weddings(?: w)? where (?:w\.)?id\s*=\s*\$1.*for (?:update|share)/)
+    process.stdout.write(`BACKEND_FIXTURE_NATIVE_WEDDING_WAIT ${JSON.stringify({holder,...row})}\n`)
+  }
+
+  async function observeTransactions(observer: (sql: string, values?: readonly unknown[]) => void, action: () => Promise<void>) {
     const db = app.db!, original = db.tx
     db.tx = callback => original(c => callback({ query<T extends QueryResultRow = QueryResultRow>(sql: string, values?: readonly unknown[]) {
-      const pending = c.query<T>(sql, values); observer(sql); return pending
+      const pending = c.query<T>(sql, values); observer(sql, values); return pending
     } }))
     try { await action() } finally { db.tx = original }
   }
@@ -248,9 +265,10 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
     (['member_removed', 'role_changed', 'session_revoked', 'consent_withdrawn'] as const).map(revoke => ({ door, revoke })))
   it.each(revocationCases)('real $door rechecks $revoke after waiting for wedding lock', async ({ door, revoke }) => {
     const w = await fixture(), pending = await offer(w, w.slotId), db = app.db!
-    let unlock!: () => void, reached!: () => void, locked!: () => void
+    let unlock!: () => void, reached!: () => void, locked!: () => void, holderPid = 0
     const release = new Promise<void>(r => { unlock = r }), entered = new Promise<void>(r => { reached = r }), acquired = new Promise<void>(r => { locked = r })
     const holder = db.tx(async c => {
+      holderPid = (await c.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
       await c.query('select id from weddings where id=$1 for update', [w.weddingId]); locked(); await release
       if (revoke === 'member_removed') await c.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, w.owner.userId])
       if (revoke === 'role_changed') await c.query("update wedding_members set role='coordinator' where wedding_id=$1 and user_id=$2", [w.weddingId, w.owner.userId])
@@ -258,12 +276,13 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
       if (revoke === 'consent_withdrawn') await c.query('update consents set withdrawn_at=now() where user_id=$1', [w.owner.userId])
     })
     await acquired
-    await observeTransactions(sql => { if (sql.includes('from weddings where id = $1 for share') || sql.includes('for update of w')) reached() }, async () => {
+    await observeTransactions((sql, values) => { /* own revocation boundary */ if (sql.trim() === 'select id from weddings where id=$1 for update' && values?.[0] === w.weddingId) reached() }, async () => {
       const response = (door === 'catalog' ? book(w) : door === 'external' ? external(w, w.slotId) :
         door === 'offer_accept' ? accept(w, pending.offerId) : requestOffer(w, w.slotId, pending.entryId)).then(r => r)
       try {
         const reachedBeforeReply = await Promise.race([entered.then(() => true), response.then(() => false)])
         expect(reachedBeforeReply).toBe(true)
+        await observeNativeWeddingWait(holderPid)
       } finally { unlock() }
       await holder
       error(await response, revoke === 'member_removed' ? 'not_found' : revoke === 'session_revoked' ? 'unauthorized' : 'forbidden', revoke === 'member_removed' ? 404 : revoke === 'session_revoked' ? 401 : 403)
@@ -274,16 +293,17 @@ describe.skipIf(!DB)('structured draft integration with real legacy HTTP booking
 
   it('assignment committed while real HTTP booking waits wins the same-position race', async () => {
     const w = await fixture(), dealId = await root(w), position = await extra(w), db = app.db!
-    let release!: () => void, locked!: () => void, reached!: () => void
+    let release!: () => void, locked!: () => void, reached!: () => void, holderPid = 0
     const go = new Promise<void>(r => { release = r }), acquired = new Promise<void>(r => { locked = r }), entered = new Promise<void>(r => { reached = r })
     const holder = db.tx(async c => {
+      holderPid = (await c.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
       await c.query('select id from weddings where id=$1 for update', [w.weddingId]); locked(); await go
       return createOrderAssignment(c, { ...input(w, dealId), slotId: position.id, programEventId: w.mainId, label: 'Winning draft' })
     })
     await acquired
-    await observeTransactions(sql => { if (sql.includes('from weddings where id = $1 for share')) reached() }, async () => {
+    await observeTransactions((sql, values) => { /* own assignment boundary */ if (sql.trim() === 'select id from weddings where id=$1 for update' && values?.[0] === w.weddingId) reached() }, async () => {
       const response = book(w, position.id).then(r => r)
-      try { expect(await Promise.race([entered.then(() => true), response.then(() => false)])).toBe(true) } finally { release() }
+      try { expect(await Promise.race([entered.then(() => true), response.then(() => false)])).toBe(true); await observeNativeWeddingWait(holderPid) } finally { release() }
       await holder; error(await response, 'slot_assigned')
     })
     expect((await order(w, dealId)).assignments).toHaveLength(1)

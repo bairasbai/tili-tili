@@ -353,6 +353,23 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     expect((await confirmShift(w, preview, key)).statusCode).toBe(200)
   })
 
+  async function observeNativeWeddingWait(holder: number) {
+    let rows: { pid: number; query: string; blockers: number[]; wait_event: string | null }[] = []
+    for (let attempt = 0; attempt < 120; attempt++) {
+      rows = (await app.db!.query<{ pid: number; query: string; blockers: number[]; wait_event: string | null }>(
+        `select pid,query,pg_blocking_pids(pid) blockers,wait_event from pg_stat_activity
+          where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock'
+          and $1=any(pg_blocking_pids(pid))`, [holder])).rows
+      if (rows.length === 1) break
+      await new Promise<void>(resolve => setTimeout(resolve, 25))
+    }
+    expect(rows, 'one actual wedding-lock waiter behind the owned holder').toHaveLength(1)
+    const row = rows[0]!
+    expect(row.blockers).toContain(holder)
+    expect(row.query.replace(/\s+/g, ' ')).toMatch(/from weddings(?: w)? where (?:w\.)?id\s*=\s*\$1.*for (?:update|share)/)
+    process.stdout.write(`BACKEND_FIXTURE_NATIVE_WEDDING_WAIT ${JSON.stringify({holder,...row})}\n`)
+  }
+
   it.each(['preview', 'confirm', 'replay'] as const)('%s rechecks access after waiting for the actual wedding lock', async mode => {
     const w = await wedding()
     await scopedProgram(w)
@@ -360,23 +377,25 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     expect(preview.statusCode, preview.body).toBe(200)
     if (mode === 'replay') expect((await confirmShift(commander, preview, key)).statusCode).toBe(200)
     const before = await read(w), shiftsBefore = (await app.db!.query('select id from timeline_shifts where wedding_id=$1', [w.weddingId])).rowCount
-    let held!: () => void, entered!: () => void, release!: () => void
+    let held!: () => void, entered!: () => void, release!: () => void, holderPid = 0
     const locked = new Promise<void>(resolve => { held = resolve }), waiting = new Promise<void>(resolve => { entered = resolve }), released = new Promise<void>(resolve => { release = resolve })
     const original = app.db!.tx
     const blocker = original(async client => {
+      holderPid = (await client.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
       await client.query('select id from weddings where id=$1 for update', [w.weddingId]); held()
       await released
       await client.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, commander.userId])
     })
     await locked
     app.db!.tx = action => original(client => action({ query: (sql, values) => {
-      if (sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) entered()
+      if (values?.[0] === w.weddingId && ((sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) || sql.trim() === 'select id from weddings where id=$1 for update')) entered()
       return client.query(sql, values)
     } }))
     let response: Promise<Awaited<ReturnType<typeof confirmShift>>> | undefined
     try {
       response = Promise.resolve(mode === 'preview' ? previewShift(commander, { kind: 'day', date: programDate() }) : confirmShift(commander, preview, key))
       await waiting
+      await observeNativeWeddingWait(holderPid)
       release()
       await blocker
       expect((await response).statusCode).toBe(404)
@@ -1281,7 +1300,7 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     const before = await app.inject({ method: 'GET', url: path(w), headers: auth(w) })
     const contexts = await eventList(w)
     const me = await app.inject({ method: 'GET', url: '/users/me', headers: auth(w) })
-    let held!: () => void
+    let held!: () => void, holderPid = 0
     const locked = new Promise<void>(resolve => { held = resolve })
     let entered!: () => void
     const waiting = new Promise<void>(resolve => { entered = resolve })
@@ -1289,6 +1308,7 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     const released = new Promise<void>(resolve => { release = resolve })
     const original = app.db!.tx
     const blocker = original(async client => {
+      holderPid = (await client.query<{pid:number}>('select pg_backend_pid() pid')).rows[0]!.pid
       await client.query('select id from weddings where id=$1 for update', [w.weddingId])
       held()
       await released
@@ -1297,7 +1317,7 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
     await locked
     // Observe the real lock query; no SQL result or access check is mocked.
     app.db!.tx = action => original(client => action({ query: (sql, values) => {
-      if (sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) entered()
+      if (values?.[0] === w.weddingId && ((sql.includes('timeline_version::text') && /for (update|share)/.test(sql)) || sql.trim() === 'select id from weddings where id=$1 for update')) entered()
       return client.query(sql, values)
     } }))
     let save: ReturnType<typeof app.inject> | undefined
@@ -1311,6 +1331,7 @@ describe.skipIf(!DB)('WP03 / FR-036: timeline identity and tenant-safe replaceme
       // app.inject is lazy: start it before waiting for the observed query.
       const response = Promise.resolve(save)
       await waiting
+      await observeNativeWeddingWait(holderPid)
       release()
       await blocker
       expect((await response).statusCode).toBe(404)
