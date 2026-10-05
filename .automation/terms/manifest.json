@@ -1,0 +1,21 @@
+{
+  "base": "4c41e4abceba1750fa3cc388455397c93782fe7f",
+  "base_tree": "b992e2d3a5bb51e07abf7ab83afc6fd31adf7d11",
+  "expected_tree": "164cd7600a8ccc15e012842ae61d76a118a600fa",
+  "patch_sha256": "b078d2ac16e6693625b426155fdc1dddd992daf5e3aa469cbc9933a0ef5bd24a",
+  "entries": [
+    {"path":"JOURNAL.md","mode":"100644","type":"blob","sha":"bcd34696a326d4dbfe6248560fdb9df4d1fbd5d3","sha256":"f1ee82ef1e45200f860dfab3435a6ebf55e54cd3dac7216875244fbb39c572ef"},
+    {"path":"session-handoff.md","mode":"100644","type":"blob","sha":"8801c418909e113624e25d5d26e12827b9ad749d","sha256":"29f5f8d79ddff5a23ef960b7960748f796d1e470494d4bd257f2d26ce6c4ce10"},
+    {"path":"tasks/todo.md","mode":"100644","type":"blob","sha":"1c949ebe3e861a95eebfed2962923a04ca6440d3","sha256":"8850d3f7ae7cfb38da3ba1276852e73328b28bc0ce8a2ba7de3c869b01383621"},
+    {"path":"tasks/wedding-platform-master-plan/WP09-ORDER-TERMS-20261006.md","mode":"100644","type":"blob","sha":"921e842dadbec0208e99cdbe04b00001b89b3ed6","sha256":"23356963752c810e04da19e5ceca0a80ab6734cb4c1e5bfee7b1ca9b48691652"},
+    {"path":"Тили-тили/app/src/components/WeeklyOrderTerms.tsx","mode":"100644","type":"blob","sha":"faadf2f7591c28b77c0821d5b9c22d444094004b","sha256":"8822e7a6a9a037553d80ca0bf8069ddfc399f1b54deb800b92c9280e4d2be33f"},
+    {"path":"Тили-тили/app/src/lib/api/weeklyOrderTerms.ts","mode":"100644","type":"blob","sha":"20036b9dce36d7ea4802863e53d38ca8e17ca134","sha256":"9e3ce8c16bba52e45f3c604f19d13c654eb4bfabeff46510b3c89a1367806286"},
+    {"path":"Тили-тили/app/src/lib/i18n.en.orders.ts","mode":"100644","type":"blob","sha":"8fa26a0bea1ee77d30811808cb32ac03c5f142f7","sha256":"7b5ff9e0d5f4141f76772320ca07ad4e00d79fe419ab6236387a4a40cfe68641"},
+    {"path":"Тили-тили/app/src/lib/weeklyOrderTerms.test.ts","mode":"100644","type":"blob","sha":"123454dd39b4bbfc9ed382cc1749a2b3471b8f66","sha256":"8c099a9286ca0c95ca9fc76360dfb18d0ac5d5fe726356609921b1d14dcd9164"},
+    {"path":"Тили-тили/app/src/lib/weeklyOrderTerms.test.tsx","mode":"100644","type":"blob","sha":"9206642cee031cd10f233a1d82e86154e058494a","sha256":"ff4c032befebd61149a55be7fba66d69519bf016e11deed4e51c3ca3a10e6567"},
+    {"path":"Тили-тили/app/src/lib/weeklyOrderTerms.ts","mode":"100644","type":"blob","sha":"84ca19204741b7da8d8a767673e76ab1bf7c4e9e","sha256":"e7ee291d942a4545c961a85ad8a0f94a6a1c54127754c2f99fff3be7e93baf7a"},
+    {"path":"Тили-тили/app/src/pages/WeeklyAgenda.tsx","mode":"100644","type":"blob","sha":"0d241c98915754df7fc6da236374747565c2a4e1","sha256":"074148541da45e1060a7411932643d6e9a1d1cf7e3a5c1e36bcf09b91c04ad19"},
+    {"path":"Тили-тили/Тили-тили_Карта_кнопок.md","mode":"100644","type":"blob","sha":"7b12b8ca4f3fb9e386d5e6e1330d1a388230fa9f","sha256":"fe86019da305cccecc5f75a808611f8534fc74301fcbe6bd74983a7205b4878e"},
+    {"path":"Тили-тили/Тили-тили_Карта_экранов.md","mode":"100644","type":"blob","sha":"9a67e1b773ca8573fb3fda8d9ec845a36f8e01cd","sha256":"136eb02bb1df6958bfd01c0eb06b4076b63d664628d218d8ec0806f8a2b2b0bb"}
+  ]
+}

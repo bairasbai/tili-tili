@@ -1,0 +1,34 @@
+name: Weekly terms candidate blob transfer
+'on':
+  push:
+    branches: [test/wp09-terms-transfer-20261006]
+    paths: ['.github/workflows/terms-transfer.yml', '.automation/terms/**']
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed transfer inputs outside checkout
+        run: |
+          mkdir -p "$RUNNER_TEMP/terms-transfer"
+          cp .automation/terms/* "$RUNNER_TEMP/terms-transfer/"
+      - uses: actions/checkout@v4
+        with:
+          ref: 4c41e4abceba1750fa3cc388455397c93782fe7f
+          persist-credentials: false
+      - name: Verify exact frontend and documentation tree; transfer only blobs
+        run: python "$RUNNER_TEMP/terms-transfer/transfer.py"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-terms-blob-transfer
+          path: ${{ runner.temp }}/terms-transfer/result/
+          if-no-files-found: error
+          retention-days: 2
