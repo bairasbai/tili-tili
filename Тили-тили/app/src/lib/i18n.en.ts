@@ -6,6 +6,9 @@ import { EN_RESOURCES } from './i18n.en.resources'
 export const EN: Record<string, string> = {
   ...EN_ORDERS,
   ...EN_RESOURCES,
+  'Сначала задачи с известной датой, от ранней к поздней. Без точной даты — после них.': 'Tasks with a known date come first, earliest to latest. Tasks without an exact date follow.',
+  'По известному сроку': 'Ordered by known due date',
+  'Срок требует уточнения': 'Due date needs clarification',
   'Часы и охват услуги': 'Service hours and coverage',
   'Команда в предложении': 'Quoted team',
   'Результат услуги': 'Service result',

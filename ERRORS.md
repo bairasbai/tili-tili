@@ -3545,3 +3545,10 @@ Native V3 run3ba80b11-36d8-47f5-acaf-6d021a4d48f0 прошёл15 gates и отк
 ## ERR-0452 · 2026-10-03 · Обязательный CI drill пока ограничен381
 
 Перед публикацией T023 root обнаружил mandatory ci.yml migration rehearsal и текущий public script ceiling1763810000000, exact own list без382. Source-only выполнение извлечённого без изменения exact manifest function подтвердило отказ «Later migrations require a new reviewed drill» на новом migration382. Это проверка исходника, не фактически запущенный GitHub CI. Public script SHA2e3593b2efb97e557251622ad31917a8cf6045bdb64aa8d766e311112d98c992. Первый read-only DB inventory отказал требованию fresh target: все allowed drill10–20 уже существуют. Он не выполнял DDL/DML и закрыл соединение. Следующее read-only чтение подтвердило только новый exact tili_ecosystem_migration_drill21_20261003_test absent и competing sessions[]. Предыдущие базы/результаты сохранены. Нужны narrow reviewed extension382 с отдельным recovery381 и сохранением всех прежних guards, новый native run и только затем feature delivery. Источники: .github/workflows/ci.yml:109; Тили-тили/backend/scripts/ecosystem-migration-drill.mjs:75; .unlazy/codex-planb-20261003/t023-ci-preflight-root-1.json.
+
+
+## CANDIDATE-WP09-20261005 · ограниченная регрессия
+
+Исходный selector Home выбирал первые три открытые задачи без сортировки по due. Изолированная проверка воспроизвела неверный порядок; новый pure selector проходит её.
+
+Новый код и тесты — кандидат, не закрытая ошибка релиза. Полный frontend/backend/browser gate не запускался. Правило: календарный приоритет проверять до slice; ошибочный ввод сохранять до явного исправления; authored tests не считать выполненными.

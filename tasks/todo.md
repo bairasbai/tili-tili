@@ -1618,3 +1618,12 @@ PortableCI V1 independentreview rejected4execution/uploadblocks+G02rawproofbindi
 BrowserV1 independent source review foundB01 exactcase/origin classifier/parent omission; NEWV2 source correction and expandedstatic-tab observation+separatelytyped genuineAPIRequestContext capture prepared, finalcurrentrebind/freshreview/rootnative stillpending. No browser14/6layouts/provider/device acceptance claimed. [FreshB01review](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c05-browser-fresh-review-v1/REVIEW.md).
 
 Остались currentfull/backend/build, isolatednative49, nativePWA14/6layouts, publicCI/отдельная поставка этого блока и весь исходный WP/FR/SC/NFR/A/U. C01–C08futuregraph/staff/read/lease/erasure/retention иM01/WP11/provider/device/humanrequirements сохраняются. M01/WP11questions ответа пока нет; policy не принимается по истечению времени. Я не могу это подтвердить: завершение любого полногоWP или physicalprovider/device/humanacceptance.
+
+
+## 2026-10-05 · подготовка WP09 без main
+
+- [x] Подготовлен кандидат кода: tasks/wedding-platform-master-plan/CANDIDATE-WP09-20261005.md.
+- [ ] Проверить применение и весь проектный gate на текущем дереве.
+- [ ] Подготовить отдельный feature commit/PR после проверок; не включать auto-merge.
+
+Кандидат подготовлен вне полного checkout. Полный init.sh, Vitest/React, PostgreSQL/Redis, браузер и GitHub CI НЕ ПРОГНАНЫ. Не считать feature/WP принятым; main и production не менять.
