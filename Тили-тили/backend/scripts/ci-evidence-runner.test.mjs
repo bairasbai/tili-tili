@@ -17,7 +17,8 @@ function exercise(mode, settings = {}) {
     }
     write('node_modules/vitest/vitest.mjs', `import {writeFileSync} from 'node:fs';
       const out=process.argv.find(a=>a.startsWith('--outputFile=')).slice('--outputFile='.length);
-      if(process.env.FIXTURE_REPORT!=='absent') writeFileSync(out,process.env.FIXTURE_REPORT==='broken'?'bad-json':JSON.stringify({success:true,numPassedTests:2,testResults:[]}));
+      const reports={null:null,array:[],empty:{},'reported-failure':{success:false,testResults:[]}};
+      if(process.env.FIXTURE_REPORT!=='absent') writeFileSync(out,process.env.FIXTURE_REPORT==='broken'?'bad-json':JSON.stringify(Object.hasOwn(reports,process.env.FIXTURE_REPORT)?reports[process.env.FIXTURE_REPORT]:{success:true,numPassedTests:2,testResults:[]}));
       process.exit(Number(process.env.FIXTURE_EXIT));`)
     write('test-support/c04-c05-native-admission.mjs', `export const selectProfile=()=>({targetName:'tili_c04_c05_123_1_test',adminURL:'postgres://fixture'});`)
     write('node_modules/pg/package.json', '{"type":"module","exports":"./index.js"}')
@@ -70,3 +71,10 @@ test('native: signal exit cannot become a successful diagnostic run', () => {
   const out = exercise('native', { FIXTURE_SIGNAL: 'yes' })
   assert.equal(out.exit, 1); assert.equal(out.result.outcome.signal, 'SIGTERM')
 })
+
+for (const report of ['null', 'array', 'empty', 'reported-failure']) {
+  test(`vitest: ${report} report cannot leave a zero wrapper exit`, () => {
+    const out = exercise('vitest', { FIXTURE_REPORT: report })
+    assert.equal(out.exit, 1)
+  })
+}

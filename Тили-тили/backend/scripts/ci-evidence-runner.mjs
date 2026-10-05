@@ -25,11 +25,19 @@ if (mode === 'vitest') {
     '--reporter=default', '--reporter=json', `--outputFile=${raw}`], { stdio: 'inherit' })
   const exitCode = child.status ?? 1
   let result = null, reportError = null
-  try { result = JSON.parse(readFileSync(raw, 'utf8')) } catch (error) { reportError = { name: error.name, code: error.code ?? null } }
+  try {
+    const parsed = JSON.parse(readFileSync(raw, 'utf8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+      typeof parsed.success !== 'boolean' || !Array.isArray(parsed.testResults)) {
+      throw new TypeError('Invalid Vitest reporter structure')
+    }
+    result = parsed
+  } catch (error) { reportError = { name: error.name, code: error.code ?? null } }
+  const effectiveExitCode = exitCode || (reportError || result?.success !== true ? 1 : 0)
   save('vitest-summary.json', { context, ...vitestSummary(result, exitCode),
-    signal: child.signal, spawnError: child.error?.code ?? null, reportError })
+    signal: child.signal, spawnError: child.error?.code ?? null, reportError, effectiveExitCode })
   // An otherwise successful run without readable evidence fails rather than claiming success.
-  process.exitCode = exitCode || (reportError ? 1 : 0)
+  process.exitCode = effectiveExitCode
 } else {
   const { selectProfile } = await import('../test-support/c04-c05-native-admission.mjs')
   const profile = selectProfile()

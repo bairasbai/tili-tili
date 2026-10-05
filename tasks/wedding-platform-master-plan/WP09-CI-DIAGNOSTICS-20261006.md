@@ -27,3 +27,11 @@ A separate always-upload artifact contains these diagnostics. The original nativ
 ## Next step
 
 Read the exact-head backend diagnostic artifact and correlate native admission failure PID with the sampled process type. A process shorter than the sample interval may not be observed; do not infer its identity. Diagnose the full-suite failure separately when a new test report is present. Resolve the weekly browser fixture only through an allowed write; its previous tool block is not bypassed here. Main remains untouched.
+
+## Follow-up: invalid reporter regression fixed
+
+The first diagnostic commit `e192ac36` had a wrapper edge case: valid JSON null, array or empty object could leave a zero wrapper exit, as could a reporter declaring failure when the process exited zero. Four additional process tests reproduced all four failures (34 PASS / 4 FAIL) before the fix.
+
+The wrapper now validates reporter structure and records an effective exit code separately from the original process exit. Invalid/missing evidence or reported failure makes the wrapper fail; an original nonzero exit remains unchanged. The same frozen 38-test set then passed (38 PASS / 0 FAIL / 0 skipped). This is 24 projection/context cases plus 14 simulated child/driver cases, not a new application or PostgreSQL acceptance count. ESLint passed again for all four diagnostic scripts. Frozen runner-test SHA-256: `af3d1e06fb885c4ab8f16958745edf047df2e0b7a5d73e26a9854144e2725427`.
+
+The weekly browser fixture is unchanged, and its write remains blocked by the tool. Full exact-head CI and the real observer are still pending; previous failed runs remain failed.
