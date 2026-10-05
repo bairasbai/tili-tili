@@ -79,6 +79,9 @@ def apply(feature: str) -> None:
         raise RuntimeError('Cannot load preparation tool')
     prepare = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(prepare)
+    prepare.verify_inputs()
+    from corrections import correct
+    correct(package, repo, feature)
     original, changed, step = prepare.preflight(repo, feature)
     if remote(repo, 'main') != BASE:
         raise RuntimeError('Main advanced; reconcile rather than apply stale source')

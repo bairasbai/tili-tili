@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        feature: [wp09, wp02]
+        feature: [wp02]
     env:
       FEATURE: ${{ matrix.feature }}
     defaults:
@@ -38,7 +38,7 @@ jobs:
           ref: 7c0cb5b60243e135bbc172b1b924eed4e61dd783
           path: source
       - name: Verify exact baseline and prepare one isolated candidate
-        run: python delivery/.automation/publish_candidates.py apply "$FEATURE"
+        run: python delivery/.automation/publish_candidates.py apply "$FEATURE" 2>&1 | tee "$EVIDENCE_DIR/preparation.log"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

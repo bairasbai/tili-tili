@@ -1,0 +1,44 @@
+"""Reviewed corrections after actual candidate gate failures; no baseline bypass."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+
+
+def correct(package: Path, repo: Path, feature: str) -> None:
+    if feature != 'wp02':
+        return
+    source = 'Тили-тили/app/src/pages/Wedding.tsx'
+    expected_blob = 'f047d1a46d3cb971906add2ece0a211b440661d7'
+    blob = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', f'HEAD:{source}'], text=True).strip()
+    if blob != expected_blob:
+        raise RuntimeError('WP02 correction requires the exact reviewed Wedding.tsx blob')
+    text = subprocess.check_output(['git', '-C', str(repo), 'show', f'HEAD:{source}'], text=True)
+    steps_path = package / 'steps.json'
+    original = steps_path.read_bytes()
+    if hashlib.sha256(original).hexdigest() != 'df057f55017683352209140cb45ef509f3a467fc19393f1923c1772906fe919d':
+        raise RuntimeError('Unexpected original preparation specification')
+    steps = json.loads(original)
+    step = next(item for item in steps if item['id'] == 'wp02')
+    matches = [span for span in step['replace_spans'] if span['start'] == '      {bulk && (\n']
+    if len(matches) != 1 or matches[0]['end'] != '      {adding && (\n':
+        raise RuntimeError('Unexpected original WP02 span')
+    span = matches[0]
+    # The old end marker is shared by independent editors in Wedding.tsx.
+    # Include the exact following guest-name input; the entire end anchor is retained.
+    precise_end = '''      {adding && (
+        <div className="px-5 mt-3 fade-up">
+          <div className="card p-4 space-y-2.5">
+            <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder={t('Имя гостя или семьи')} className="w-full h-11 px-4 rounded-full bg-[var(--bg)] text-[13px] outline-none" />
+'''
+    if text.count(span['start']) != 1 or text.count(precise_end) != 1:
+        raise RuntimeError('Corrected guest editor anchors are not unique')
+    if text.index(precise_end) <= text.index(span['start']):
+        raise RuntimeError('Corrected guest editor anchors are reversed')
+    span['end'] = precise_end
+    steps_path.write_text(json.dumps(steps, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    integrity_path = package / 'input-integrity.json'
+    integrity = json.loads(integrity_path.read_text(encoding='utf-8'))
+    integrity['steps.json'] = hashlib.sha256(steps_path.read_bytes()).hexdigest()
+    integrity_path.write_text(json.dumps(integrity, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    print('WP02 preparation correction: expanded ambiguous end marker on exact baseline; original failed run 37293995241 retained')
