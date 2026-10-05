@@ -1,0 +1,42 @@
+name: Recover interrupted WP02 candidate
+'on':
+  push:
+    branches: [test/wp02-finalize-workbench-20261005]
+    paths: [.github/workflows/wp02-recover.yml]
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Recover exact Git blobs without executing their contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, urllib.request
+          parts = ['437c6a26f3b12633b10ac58e86973943b75ceb99', '807fdbeaf224689431e5194ae719a10126b2f16d', 'c76c37702e037434978d3a4592cb932b2eaee154', '8c6a487d77ce895237d335656c986bc46ea54909']
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'recovered'
+          out.mkdir()
+          joined = b''
+          for sha in parts:
+              req = urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs/' + sha, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  item = json.load(response)
+              raw = base64.b64decode(item['content'])
+              assert hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() == sha
+              (out / (sha + '.txt')).write_bytes(raw)
+              joined += raw
+          compressed = base64.b64decode(joined, validate=True)
+          payload = lzma.decompress(compressed, memlimit=134217728)
+          assert len(payload) < 5000000
+          (out / 'recovered-payload.dat').write_bytes(payload)
+          (out / 'manifest.json').write_text(json.dumps({'parts': parts, 'bytes': len(payload), 'sha256': hashlib.sha256(payload).hexdigest()}, indent=2))
+          print('Recovered bytes:', len(payload), 'Prefix:', repr(payload[:100]))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wp02-recovered-candidate
+          path: ${{ runner.temp }}/recovered
+          retention-days: 3
