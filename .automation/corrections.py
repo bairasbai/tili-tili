@@ -61,6 +61,15 @@ def correct(package: Path, repo: Path, feature: str) -> None:
     replacement = Path(__file__).with_name('audit35-import.test.part').read_text(encoding='utf-8')
     if hashlib.sha256(replacement.encode()).hexdigest() != 'fb1aa660c5cf0b2da0e01807c5117bc2e08fa0c3c98eff48c8ea86c2e1ba9bd3':
         raise RuntimeError('Unexpected reviewed import regression replacement')
+    # Existing import contract preserves the entered phone for server normalization.
+    # Busy is a status element; the submit label intentionally stays stable.
+    for before, after in (
+        ("{ name: 'Ира', phone: '+79170001122' }", "{ name: 'Ира', phone: '8 917 000-11-22' }"),
+        ("    const busyButton = button('Добавляем…')", "    expect(screen.getByText('Добавляем…').getAttribute('role')).toBe('status')\n    const busyButton = submit()"),
+    ):
+        if replacement.count(before) != 1:
+            raise RuntimeError('Unexpected WP02 assertion correction anchor')
+        replacement = replacement.replace(before, after, 1)
     step['replace_spans'].append({
         'path': test_source,
         'start': '/* ── T1: гости — «Добавить списком» ──────────────────────────────────────── */',
