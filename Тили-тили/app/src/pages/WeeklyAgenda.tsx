@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { TopBar } from '@/components/chrome'
+import { WeeklyOrderTerms } from '@/components/WeeklyOrderTerms'
 import { AsyncState, ready } from '@/components/AsyncState'
 import { beginLocalSessionAction, isAuthorized, onSessionChanged } from '@/lib/api/client'
 import { noWedding, useApi, type AsyncData } from '@/lib/api/useApi'
@@ -52,6 +53,7 @@ function AgendaSnapshot({ weddingId }: { weddingId: string | null }) {
       <TaskSection weddingId={weddingId} range={q.data} />
       <PaymentSection weddingId={weddingId} range={q.data} />
       <GuestSection weddingId={weddingId} />
+      <WeeklyOrderTerms weddingId={weddingId} />
     </> : <p role="alert" className="text-sm text-[var(--rose-ink)]">{t('Часовой пояс свадьбы не подтверждён. Недельные сроки не рассчитаны.')}</p>)}
   </>
 }

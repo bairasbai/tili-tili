@@ -1,3 +1,16 @@
+# Текущее продолжение PR45 · 2026-10-06
+
+Поручение владельца: готовить отдельные коммиты с тестами; main не сливать, auto-merge/deploy не запускать. Действующая база этой доработки `4c41e4abceba1750fa3cc388455397c93782fe7f`, ветка `candidate/tili-wp09-20261005`. Актуальный статус этого среза: `tasks/wedding-platform-master-plan/WP09-ORDER-TERMS-20261006.md`; исторические записи ниже не отменяют текущий запрет слияния.
+
+Добавлен read-only раздел условий заказов в недельной сводке с проверкой weddingId/роли, отдельными ошибками, ограниченной очередью, очисткой при уходе/смене сессии. Новые тесты выполняются с реальными компонентами/API-клиентом, но управляемыми HTTP-ответами. Полные backend/PostgreSQL/browser-проверки этим не заменяются.
+
+На входном 4c41e4ab Offers browser SUCCESS; общий CI и целевой shift workflow завершились failure с cancelled jobs без шагов. Причина отмены не установлена; логи shift job отсутствуют (BlobNotFound). Недельный browser workflow также FAILED; прежний language fixture остаётся неизменённым после защитной блокировки записи. Все ранее открытые блокеры сохраняются. Локальный Chromium в этой сессии отклонил загрузку страницы ERR_BLOCKED_BY_ADMINISTRATOR; новых успешных браузерных снимков нет.
+
+Следующий шаг: завершить exact-head CI и разрешённую браузерную приёмку; проверить старую native-isolation проблему по фактическим данным. Не объявлять готовым PR, весь WP09 или production по frontend unit/React-гейту.
+
+---
+## Историческая передача
+
 # Current branch-only continuation · 2026-10-05
 
 User instruction supersedes historical merge authorizations below: DO NOT MERGE or change main/production. PR45 and PR46 remain draft. PR46 head d4b2d0dd completed all seven checks, including backend and import recovery real API browser. PR45 weekly agenda extends exact base 7dc3ac93; details and publication evidence: tasks/wedding-platform-master-plan/WP09-WEEKLY-AGENDA-20261005.md. No full-WP or production acceptance is implied.
