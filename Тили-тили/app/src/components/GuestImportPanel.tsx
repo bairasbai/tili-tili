@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { beginLocalSessionAction, onSessionChanged } from '@/lib/api/client'
 import { importGuests } from '@/lib/api/weddingWrite'
 import { explainError } from '@/lib/api/useApi'
 import { t } from '@/lib/i18n'
@@ -68,8 +69,16 @@ function FamilyEditor({ row, onChange, onRemove }: {
   </fieldset>
 }
 
-/** Keep mounted with open=false to retain the draft; parent keys this by weddingId. */
-export function GuestImportPanel({ weddingId, existing, open, onClose, onImported }: Props) {
+/** Closing retains a draft only within the same wedding and local session. */
+export function GuestImportPanel(props: Props) {
+  const [generation, resetSession] = useReducer((value: number) => value + 1, 0)
+  useEffect(() => onSessionChanged(resetSession), [])
+  // The boundary belongs to this component: callers need not remember a key.
+  // Decoded token claims only scope local private data, never authorize an API call.
+  return <SessionGuestImportPanel key={JSON.stringify([props.weddingId, generation])} {...props} />
+}
+
+function SessionGuestImportPanel({ weddingId, existing, open, onClose, onImported }: Props) {
   const [text, setText] = useState('')
   const [rows, setRows] = useState<ImportInvitationDraft[] | null>(null)
   const [confirmBack, setConfirmBack] = useState(false)
@@ -80,7 +89,21 @@ export function GuestImportPanel({ weddingId, existing, open, onClose, onImporte
   const mounted = useRef(false)
   const reload = useRef(onImported)
   useEffect(() => { reload.current = onImported }, [onImported])
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  const lifetime = useRef<ReturnType<typeof beginLocalSessionAction> | null>(null)
+  useEffect(() => {
+    mounted.current = true
+    const action = beginLocalSessionAction()
+    lifetime.current = action
+    return () => {
+      mounted.current = false
+      lifetime.current = null
+      action.close()
+    }
+  }, [])
+  const isCurrent = () => {
+    if (!mounted.current || !lifetime.current) return false
+    try { lifetime.current.assertCurrent(); return true } catch { return false }
+  }
 
   const pasted = useMemo(() => createImportDraft(text), [text])
   const preview = useMemo(() => buildImportPreview(rows ?? pasted, existing), [rows, pasted, existing])
@@ -92,7 +115,9 @@ export function GuestImportPanel({ weddingId, existing, open, onClose, onImporte
     clearFeedback()
   }
   const requestImport = async () => {
-    if (inFlight.current || rows === null) return
+    // Session notifications may be batched before React unmounts the old editor.
+    // Check synchronously before POST and again before every late response effect.
+    if (inFlight.current || rows === null || !isCurrent()) return
     if (!weddingId) { setError(t('Сначала создайте свадьбу — гости живут в ней')); return }
     if (eligible.length === 0 || eligible.length > IMPORT_ROWS_MAX) return
     // A ref, not a rendered disabled attribute alone, closes same-tick double submission.
@@ -102,7 +127,7 @@ export function GuestImportPanel({ weddingId, existing, open, onClose, onImporte
     try {
       const submitted = prepareImport(preview)
       const response = await importGuests(weddingId, submitted.rows)
-      if (!mounted.current) return
+      if (!isCurrent()) return
       const next = reconcileImportResponse(rows, submitted.rowIds, response)
       setRows(next.remaining)
       setResult({ invitations: next.invitations, persons: next.persons, skipped: next.skipped })
@@ -110,7 +135,7 @@ export function GuestImportPanel({ weddingId, existing, open, onClose, onImporte
       setText(next.remaining.map(row => row.raw).join('\n'))
       reload.current()
     } catch (reason) {
-      if (!mounted.current) return
+      if (!isCurrent()) return
       const invalidResponse = reason instanceof Error && /^(invalid|incomplete)-import-response/.test(reason.message)
       setError(invalidResponse
         ? t('Не удалось подтвердить итог импорта. Обновите список перед повтором; введённые строки сохранены.')
@@ -120,7 +145,7 @@ export function GuestImportPanel({ weddingId, existing, open, onClose, onImporte
       reload.current()
     } finally {
       inFlight.current = false
-      if (mounted.current) setBusy(false)
+      if (isCurrent()) setBusy(false)
     }
   }
 

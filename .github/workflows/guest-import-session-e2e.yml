@@ -1,0 +1,55 @@
+name: Guest import session browser acceptance
+
+on:
+  push:
+    branches: ['candidate/tili-wp02-20261005']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Тили-тили/app/**'
+      - 'Тили-тили/e2e/guest-import-session-browser.py'
+      - '.github/workflows/guest-import-session-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guest-import-session-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guest-import-session-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked frontend dependencies
+        working-directory: Тили-тили/app
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Install browser test tools
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Real Chromium private-state lifecycle in RU and EN
+        env:
+          E2E_RESULT_DIR: ${{ runner.temp }}/guest-import-session
+        run: |
+          mkdir -p "$E2E_RESULT_DIR"
+          git rev-parse HEAD > "$E2E_RESULT_DIR/source-commit.txt"
+          python Тили-тили/e2e/guest-import-session-browser.py
+      - name: Preserve result, source hashes and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guest-import-session-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/guest-import-session/
+          if-no-files-found: error
