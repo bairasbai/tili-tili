@@ -13,6 +13,7 @@ import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
 import { t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
+import { prioritizeTasks } from '@/lib/taskPriorities'
 import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
 
 export default function Home() {
@@ -281,7 +282,7 @@ export default function Home() {
           {ready(tq) && !serverTasks.some(x => !x.done) && (
             <p className="py-4 text-[12px] text-[var(--soft)] text-center">{totalTasks ? tr('Все задачи закрыты ✓') : tr('Чек-лист пуст — добавьте первую задачу')}</p>
           )}
-          {serverTasks.filter(x => !x.done).slice(0, 3).map((t, i, arr) => (
+          {ready(tq) && prioritizeTasks(serverTasks).slice(0, 3).map((t, i, arr) => (
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
               {/* Признака срочности в контракте нет — цветной точки, которая
                   что-то означает, тоже. Срок сервер считает от даты свадьбы:
