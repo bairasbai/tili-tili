@@ -1,7 +1,7 @@
 # WP09: deadline priorities — scoped delivery, 2026-10-05
 
 Base: `7c0cb5b60243e135bbc172b1b924eed4e61dd783`.
-Branch: `feature/wp09-weekly-priorities-20261005`.
+Published branch: `feature/wp09-deadlines-20261005` (PR #44).
 Owner instruction: prepare separate feature commits and verified tests; **do not merge into main or enable auto-merge**.
 
 ## Scope
@@ -22,3 +22,7 @@ The baseline Home source was reconstructed from GitHub reads and verified agains
 At creation, the full repository test/type/lint/build gates have not yet run on this commit. Record actual GitHub Actions results for the exact published SHA before acceptance. A test file is not proof that it passed.
 
 This is a bounded WP09 increment, not completion of FR-006/FR-063 or WP00–WP16. The combined weekly view of payments, pending responses, unconfirmed terms, current assignees, and broader browser/provider/physical-device acceptance remain open. Backend, OpenAPI, migrations, deployment, secrets and main are unchanged.
+
+## Follow-up precision
+
+The first increment guarded initial loading/error/403, not background `refreshing`: `ready(q)` does not include that flag. The second increment explicitly adds the refreshing gate. See `REPORT-WP09-WEEKLY-20261005.md`; do not treat the earlier broad reload wording as verified behavior of the first commit.

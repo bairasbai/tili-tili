@@ -6,6 +6,7 @@ import { isAuthorized } from '@/lib/api/client'
 import { getBudget, getGuests, getTasks, getTips, getWedding } from '@/lib/api/weddingData'
 import { getNotifications } from '@/lib/api/notifications'
 import { AiTip, Bar, SectionHead, Tile } from '@/components/chrome'
+import { TaskWeekPanel } from '@/components/TaskWeekPanel'
 import { PrebookedSlotCard } from '@/components/PrebookedSlot'
 import { useIsCouple } from '@/lib/useIsCouple'
 import { useStore } from '@/lib/store'
@@ -279,10 +280,11 @@ export default function Home() {
           {/* Пустая карточка молчала и при отказе сервера, и при пустом
               чек-листе — человек не отличал «всё сделано» от «не загрузилось». */}
           <AsyncState q={tq} forbiddenText={tr('Чек-лист ведёт пара — у вашей роли к нему доступа нет.')} />
-          {ready(tq) && !serverTasks.some(x => !x.done) && (
+          {tq.refreshing && <p role="status" className="py-3 text-[12px] text-[var(--soft)]">{tr('Загружаем…')}</p>}
+          {ready(tq) && !tq.refreshing && !serverTasks.some(x => !x.done) && (
             <p className="py-4 text-[12px] text-[var(--soft)] text-center">{totalTasks ? tr('Все задачи закрыты ✓') : tr('Чек-лист пуст — добавьте первую задачу')}</p>
           )}
-          {ready(tq) && prioritizeTasks(serverTasks).slice(0, 3).map((t, i, arr) => (
+          {ready(tq) && !tq.refreshing && prioritizeTasks(serverTasks).slice(0, 3).map((t, i, arr) => (
             <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
               {/* Признака срочности в контракте нет — цветной точки, которая
                   что-то означает, тоже. Срок сервер считает от даты свадьбы:
@@ -291,6 +293,9 @@ export default function Home() {
               <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? `${t.period} ${tr('мес')}` : ''}</span>
             </button>
           ))}
+          <TaskWeekPanel key={weddingId} tasks={serverTasks}
+            current={ready(tq) && !tq.refreshing} calendarReady={ready(wq) && !wq.refreshing && wq.data !== null}
+            weddingTz={wq.data?.tz} onOpenChecklist={() => nav('/wedding/checklist')} />
         </div>
       </div>}
 

@@ -24,7 +24,7 @@ const PAIR = /'((?:[^'\\]|\\.)*)':\s*'((?:[^'\\]|\\.)*)'/g
  * но строка по-прежнему обязана быть в словаре — её переведёт место показа. */
 const USED = /\b(?:t|tr|tt|key)\('((?:[^'\\]|\\.)*)'\)/g
 
-const dictFiles = ['src/lib/i18n.en.ts', 'src/lib/i18n.en.data.ts', 'src/lib/i18n.en.orders.ts', 'src/lib/i18n.en.resources.ts']
+const dictFiles = ['src/lib/i18n.en.ts', 'src/lib/i18n.en.data.ts', 'src/lib/i18n.en.orders.ts', 'src/lib/i18n.en.resources.ts', 'src/lib/i18n.en.weekly.ts']
 
 function sources(dir: string): string[] {
   const out: string[] = []

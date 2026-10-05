@@ -1,4 +1,5 @@
 import { EN } from './i18n.en'
+import { EN_WEEKLY } from './i18n.en.weekly'
 
 /*
  * i18n: ключ = русская строка. t() работает без хуков (читает модульный текущий язык),
@@ -11,7 +12,7 @@ export function setI18nLang(l: Lang) { cur = l }
 export function getI18nLang(): Lang { return cur }
 
 export function t(s: string): string {
-  return cur === 'en' ? (EN[s] ?? s) : s
+  return cur === 'en' ? (EN[s] ?? EN_WEEKLY[s] ?? s) : s
 }
 
 /*
