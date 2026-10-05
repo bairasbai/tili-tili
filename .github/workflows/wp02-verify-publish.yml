@@ -1,0 +1,132 @@
+name: WP02 recovered candidate acceptance
+'on':
+  push:
+    branches: [test/wp02-finalize-workbench-20261005]
+    paths: [.github/workflows/wp02-verify-publish.yml]
+permissions:
+  contents: write
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: guest_import_recovery_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d guest_import_recovery_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/guest_import_recovery_test
+      E2E_RESULT_DIR: ${{ runner.temp }}/wp02-acceptance/browser
+      EVIDENCE: ${{ runner.temp }}/wp02-acceptance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b4f9d57ec82694e5b9d90ebb16676ea55bac9068
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Recover inspected candidate with immutable input and tree checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$EVIDENCE"
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          out = pathlib.Path(os.environ['EVIDENCE'])
+          def blob(sha):
+              req = urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs/' + sha, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(req, timeout=30) as r: item = json.load(r)
+              data = base64.b64decode(item['content'])
+              assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha
+              return data
+          parts = ['437c6a26f3b12633b10ac58e86973943b75ceb99','807fdbeaf224689431e5194ae719a10126b2f16d','c76c37702e037434978d3a4592cb932b2eaee154','8c6a487d77ce895237d335656c986bc46ea54909']
+          patch = lzma.decompress(base64.b64decode(b''.join(blob(s) for s in parts), validate=True), memlimit=134217728)
+          assert hashlib.sha256(patch).hexdigest() == 'c9a957a829eb2bb68d1dd0f8e89980bf2cba0f09493f7091d63890975fd6422d'
+          path = out / 'recovered.patch'; path.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(path)],check=True)
+          subprocess.run(['git','apply',str(path)],check=True)
+          script = out / 'supplement.py'; script.write_bytes(blob('d0e4936bdc54ab6fa1d9c85d68c89d52e57dacf2'))
+          subprocess.run(['python3',str(script)],check=True,env={k:v for k,v in os.environ.items() if k!='GH_TOKEN'})
+          subprocess.run(['git','add','.'],check=True)
+          tree = subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert tree == '05dc34e371216f93d3f37ee98ad786cec4ff8198', tree
+          paths = subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0')
+          assert len(paths) == 15
+          manifest = {p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in sorted(paths)}
+          data = json.dumps(manifest,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+          assert hashlib.sha256(data).hexdigest() == 'd0b7054ac14992f2d9ad79d8f1d93dce24af8e68e1985911e3e26ae4647cafe1'
+          (out/'source-before.json').write_bytes(data)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          PY
+      - name: Install locked app and API dependencies
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          for dir in 'Тили-тили/app' 'Тили-тили/backend'; do
+            (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+          done
+      - name: Full frontend types tests lint and build
+        working-directory: Тили-тили/app
+        run: |
+          set -o pipefail
+          node node_modules/typescript/bin/tsc -b 2>&1 | tee "$EVIDENCE/types.log"
+          node node_modules/vitest/vitest.mjs run --reporter=default --reporter=json --outputFile.json="$EVIDENCE/vitest.json" 2>&1 | tee "$EVIDENCE/tests.log"
+          node node_modules/eslint/bin/eslint.js . 2>&1 | tee "$EVIDENCE/lint.log"
+          node node_modules/vite/bin/vite.js build 2>&1 | tee "$EVIDENCE/build.log"
+      - name: Install Chromium tooling
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Actual browser API PostgreSQL response loss and replay
+        run: bash 'Тили-тили/e2e/run-guest-import-recovery.sh'
+      - name: Verify unchanged source and write actual acceptance evidence
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          out=pathlib.Path(os.environ['EVIDENCE'])
+          before=json.loads((out/'source-before.json').read_text())
+          after={p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in before}
+          assert before==after
+          tests=json.loads((out/'vitest.json').read_text())
+          assert tests['numPassedTests']==2242 and tests['numFailedTests']==0 and tests['numPendingTests']==0 and tests['success']
+          browser=json.loads((out/'browser/recovery-result.json').read_text())
+          db=json.loads((out/'browser/db-proof.json').read_text())
+          assert browser['status']=='passed' and len(browser['passed'])==38 and db['persons']==129 and db['parties']==50
+          report={'base':'b4f9d57ec82694e5b9d90ebb16676ea55bac9068','source_tree':'05dc34e371216f93d3f37ee98ad786cec4ff8198','run_url':'https://github.com/bairasbai/tili-tili/actions/runs/'+os.environ['GITHUB_RUN_ID'],'frontend':{'passed':tests['numPassedTests'],'failed':tests['numFailedTests'],'pending':tests['numPendingTests'],'types':'passed','lint':'passed','build':'passed'},'browser_cases':len(browser['passed']),'database':db,'source_hashes':after,'pr_ci':'pending until connector advances PR branch','merge':False}
+          path=pathlib.Path('tasks/wedding-platform-master-plan/WP02-IMPORT-GATE-20261005.json')
+          path.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+          (out/'acceptance.json').write_text(path.read_text())
+          PY
+      - name: Publish accepted commit to a NEW isolated branch only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = b4f9d57ec82694e5b9d90ebb16676ea55bac9068
+          git add tasks/wedding-platform-master-plan/WP02-IMPORT-GATE-20261005.json
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(wp02): finalize family import preview and immutable recovery with real API acceptance'
+          TARGET=verified/wp02-recovery-20261005-a
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          if git ls-remote --exit-code --heads origin "$TARGET" >/dev/null; then echo 'Target already exists; refusing replacement'; exit 1; else code=$?; test "$code" = 2; fi
+          git push origin "HEAD:refs/heads/$TARGET"
+          SHA=$(git rev-parse HEAD)
+          test "$(git ls-remote --heads origin "$TARGET" | cut -f1)" = "$SHA"
+          printf '{"sha":"%s","branch":"%s","base":"b4f9d57ec82694e5b9d90ebb16676ea55bac9068"}\n' "$SHA" "$TARGET" > "$EVIDENCE/publication.json"
+          echo "Published isolated verified commit $SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wp02-final-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/wp02-acceptance
+          retention-days: 30
