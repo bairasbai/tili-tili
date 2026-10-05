@@ -26,6 +26,19 @@ def correct(package: Path, repo: Path, feature: str) -> None:
         return
     if feature != 'wp02':
         raise RuntimeError('Unsupported correction feature')
+    # Whitespace-only correction proven by the failed staged diff check in run 37296053636.
+    relative = 'files/Тили-тили/app/src/lib/guestImportDraft.ts'
+    draft_path = package / relative
+    draft = draft_path.read_bytes()
+    if hashlib.sha256(draft).hexdigest() != '6b84414bc1223258fc7a77bc26e250207102be617d2f627dab1ca310e33f6066':
+        raise RuntimeError('Unexpected tested guest import draft source')
+    if not draft.endswith(b'\n\n') or draft.endswith(b'\n\n\n'):
+        raise RuntimeError('Unexpected guest import draft final newline')
+    draft_path.write_bytes(draft[:-1])
+    integrity_path = package / 'input-integrity.json'
+    integrity = json.loads(integrity_path.read_text(encoding='utf-8'))
+    integrity[relative] = hashlib.sha256(draft_path.read_bytes()).hexdigest()
+    integrity_path.write_text(json.dumps(integrity, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     source = 'Тили-тили/app/src/pages/Wedding.tsx'
     expected_blob = 'f047d1a46d3cb971906add2ece0a211b440661d7'
     blob = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', f'HEAD:{source}'], text=True).strip()
