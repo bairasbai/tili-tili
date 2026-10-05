@@ -1,0 +1,43 @@
+name: WP02 isolated workbench
+'on':
+  push:
+    branches: [test/wp02-finalize-workbench-20261005]
+    paths: [.github/workflows/wp02-workbench.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: b4f9d57ec82694e5b9d90ebb16676ea55bac9068
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Export exact tracked source, no Git credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/wp02-workbench/source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/wp02-workbench/source"
+          git rev-parse HEAD > "$RUNNER_TEMP/wp02-workbench/SOURCE_SHA"
+      - name: Install locked frontend test dependencies
+        working-directory: Тили-тили/app
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          tar -czf "$RUNNER_TEMP/wp02-workbench/frontend-dependencies.tgz" node_modules
+      - name: Pack source
+        run: |
+          cd "$RUNNER_TEMP/wp02-workbench"
+          tar -czf source.tgz source
+          rm -rf source
+          sha256sum source.tgz frontend-dependencies.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wp02-workbench
+          path: ${{ runner.temp }}/wp02-workbench
+          retention-days: 1
+          compression-level: 0
