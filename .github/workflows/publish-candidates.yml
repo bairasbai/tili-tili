@@ -1,0 +1,68 @@
+name: Prepare isolated WP09 and WP02 candidates
+on:
+  push:
+    branches: ['automation/publish-candidates-20261005']
+    paths: ['.automation/**', '.github/workflows/publish-candidates.yml']
+permissions:
+  contents: read
+concurrency:
+  group: candidate-publication-20261005
+  cancel-in-progress: false
+jobs:
+  candidate:
+    name: prepare-${{ matrix.feature }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [wp09, wp02]
+    env:
+      FEATURE: ${{ matrix.feature }}
+      EVIDENCE_DIR: ${{ runner.temp }}/evidence-${{ matrix.feature }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: delivery
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 7c0cb5b60243e135bbc172b1b924eed4e61dd783
+          path: source
+      - name: Verify exact baseline and prepare one isolated candidate
+        run: python delivery/.automation/publish_candidates.py apply "$FEATURE"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked frontend dependencies
+        working-directory: source/Тили-тили/app
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted 2>&1 | tee "$EVIDENCE_DIR/frontend-install.log"
+      - name: Frontend TypeScript
+        working-directory: source/Тили-тили/app
+        run: node node_modules/typescript/bin/tsc -b 2>&1 | tee "$EVIDENCE_DIR/frontend-types.log"
+      - name: Complete frontend Vitest suite
+        working-directory: source/Тили-тили/app
+        run: node node_modules/vitest/vitest.mjs run 2>&1 | tee "$EVIDENCE_DIR/frontend-tests.log"
+      - name: Frontend ESLint
+        working-directory: source/Тили-тили/app
+        run: node node_modules/eslint/bin/eslint.js . 2>&1 | tee "$EVIDENCE_DIR/frontend-lint.log"
+      - name: Frontend production build
+        working-directory: source/Тили-тили/app
+        run: node node_modules/vite/bin/vite.js build 2>&1 | tee "$EVIDENCE_DIR/frontend-build.log"
+      - name: Publish only the verified candidate branch
+        run: python delivery/.automation/publish_candidates.py publish "$FEATURE"
+      - name: Retain actual source and gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ matrix.feature }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
