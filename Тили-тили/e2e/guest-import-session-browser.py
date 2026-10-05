@@ -76,7 +76,8 @@ async def scenario(browser, lang, width, report):
             await response_gate.wait()
         size = 2 if len(calls) == 1 else 1
         await route.fulfill(status=201, json={'created': [{'id': f'fixture-{len(calls)}', 'name': 'Test', 'partySize': size}], 'skipped': []})
-    await context.route('**/api/**', command)
+    # Match the API root only; /src/lib/api/client.ts is a Vite source asset.
+    await context.route(BASE + '/api/**', command)
     try:
         await page.goto(BASE + '/ci-import-session.html?lang=' + lang)
         await page.get_by_test_id('renew').wait_for()
