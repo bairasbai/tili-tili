@@ -33,7 +33,7 @@ const ROUTES = [
   '/guest-vendor/tok1',
   '/home', '/notifications', '/settings', '/support', '/legal/offer', '/legal/privacy',
   '/search', '/search/photo', '/vendor/v1',
-  '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/payments', '/wedding/checklist',
+  '/wedding', '/wedding/week', '/wedding/slot/s1', '/wedding/budget', '/wedding/payments', '/wedding/checklist',
   '/wedding/timeline', '/wedding/events', '/wedding/events/e1/invitations', '/wedding/events/e1/rsvp', '/wedding/guests', '/wedding/documents', '/wedding/documents/new',
   '/wedding/invites', '/wedding/seating', '/wedding/wishlist', '/gifts', '/wedding/album',
   '/wedding/logistics', '/wedding/catering', '/wedding/planb',
@@ -82,6 +82,7 @@ const MOCK_TRACES = [
 const FORBIDDEN_WHEN_DOWN: Record<string, string[]> = {
   '/home': ['0%', '0/0', ' подтвердили', 'ждут ответа', 'Добавьте гостей', 'Все задачи закрыты', 'Чек-лист пуст', 'Пока никто не забронирован'],
   '/wedding': ['0 забронировано', '0 из 0'],
+  '/wedding/week': ['Открытых задач с датой до конца недели нет.', 'Открытых этапов оплаты до конца недели нет.', '0 персон', 'Осталось по этапу:'],
   '/wedding/budget': ['запланировано'],
   '/wedding/payments': ['Итоги по активным сделкам', 'Нет этапов по выбранному фильтру', 'Отметок оплат пока нет', '0 ₽'],
   '/wedding/checklist': ['Всё сделано', '0 из 0', 'Чек-лист пуст'],

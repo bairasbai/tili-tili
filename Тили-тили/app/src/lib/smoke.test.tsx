@@ -8,7 +8,7 @@ const ROUTES = [
   '/', '/quiz', '/invite', '/auth', '/join/ДРУГ-7F3K', '/invite/day-chat',
   '/home', '/notifications', '/settings', '/support',
   '/search', '/search/photo', '/vendor/v1',
-  '/wedding', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',
+  '/wedding', '/wedding/week', '/wedding/slot/s1', '/wedding/budget', '/wedding/checklist',
   '/wedding/timeline', '/wedding/guests', '/wedding/documents', '/wedding/documents/new',
   '/wedding/invites', '/wedding/seating', '/wedding/wishlist', '/gifts', '/wedding/album', '/wedding/logistics', '/wedding/catering', '/wedding/planb',
   '/us', '/us/chats', '/us/chats/ch1', '/us/team',

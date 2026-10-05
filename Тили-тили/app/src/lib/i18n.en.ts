@@ -4,6 +4,33 @@ import { EN_RESOURCES } from './i18n.en.resources'
 
 /* Английский словарь. Ключ = русская строка-источник. */
 export const EN: Record<string, string> = {
+  // WP09: weekly agenda
+  'Без названия': 'Untitled',
+  'На этой неделе': 'This week',
+  'Срез на момент открытия. После изменений обновите сводку.': 'Snapshot taken when opened. Refresh the agenda after changes.',
+  'Обновить сводку': 'Refresh agenda',
+  'Часовой пояс свадьбы:': 'Wedding time zone:',
+  'Часовой пояс свадьбы не подтверждён. Недельные сроки не рассчитаны.': 'Wedding time zone is unconfirmed. Weekly deadlines could not be calculated.',
+  'Задачи этой недели': 'Tasks this week',
+  'Включены незавершённые задачи до воскресенья и все просроченные.': 'Includes unfinished tasks due by Sunday and all overdue tasks.',
+  'Открытых задач с датой до конца недели нет.': 'No open dated tasks due by the end of the week.',
+  'Срок нужно уточнить': 'Dates need clarification',
+  'Ответственный не указан': 'No assignee specified',
+  'Открыть чек-лист': 'Open checklist',
+  'Платежи этой недели': 'Payments this week',
+  'Остатки взяты из графика оплат. Это не проверка банковского перевода.': 'Remaining amounts come from the payment schedule. This does not verify a bank transfer.',
+  'Осталось по этапу:': 'Remaining for this installment:',
+  'Есть отметки оплаты с неизвестной суммой.': 'Some recorded payments have an unknown amount.',
+  'Открытых этапов оплаты до конца недели нет.': 'No open payment installments due by the end of the week.',
+  'Открыть график оплат': 'Open payment schedule',
+  'Ожидаемые ответы гостей': 'Pending guest replies',
+  'Срок ответа не указан в этих данных. Список не ограничен текущей неделей.': 'These data do not specify a reply deadline. This list is not limited to the current week.',
+  'персона ждёт ответа': 'person awaiting a reply',
+  'персоны ждут ответа': 'people awaiting replies',
+  'персон ждут ответа': 'people awaiting replies',
+  'Открыть список гостей': 'Open guest list',
+  'Открыть недельную сводку': 'Open weekly agenda',
+
   ...EN_ORDERS,
   ...EN_RESOURCES,
   'Сначала задачи с известной датой, от ранней к поздней. Без точной даты — после них.': 'Tasks with a known date come first, earliest to latest. Tasks without an exact date follow.',

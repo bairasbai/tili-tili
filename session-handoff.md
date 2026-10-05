@@ -1,3 +1,9 @@
+# Current branch-only continuation · 2026-10-05
+
+User instruction supersedes historical merge authorizations below: DO NOT MERGE or change main/production. PR45 and PR46 remain draft. PR46 head d4b2d0dd completed all seven checks, including backend and import recovery real API browser. PR45 weekly agenda extends exact base 7dc3ac93; details and publication evidence: tasks/wedding-platform-master-plan/WP09-WEEKLY-AGENDA-20261005.md. No full-WP or production acceptance is implied.
+
+---
+
 # Active continuation · WP00–WP16 · 2026-10-03
 
 Goal active/unbounded: реализовать весь WP00–WP16 end-to-end с meaningful tests/scenarios, поэтапной документацией, отдельными feature commits/push/CI/main. Не останавливаться на nginx/A13 milestone. Scope: tasks/wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md. Production/human consent/provider/physical-device acceptance не выполнены этими локальными проверками.

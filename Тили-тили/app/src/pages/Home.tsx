@@ -256,6 +256,13 @@ export default function Home() {
         </div>
       </div>}
 
+      {weddingId && <div className="px-5 mt-4">
+        <button type="button" onClick={() => nav('/wedding/week')}
+          className="press card w-full min-h-11 p-4 text-left text-sm font-semibold">
+          {tr('Открыть недельную сводку')} →
+        </button>
+      </div>}
+
       {/* Быстрые действия */}
       <div className="px-5 mt-4 grid grid-cols-3 md:grid-cols-6 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
         {([

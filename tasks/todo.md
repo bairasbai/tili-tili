@@ -1627,3 +1627,10 @@ BrowserV1 independent source review foundB01 exactcase/origin classifier/parent 
 - [ ] Подготовить отдельный feature commit/PR после проверок; не включать auto-merge.
 
 Кандидат подготовлен вне полного checkout. Полный init.sh, Vitest/React, PostgreSQL/Redis, браузер и GitHub CI НЕ ПРОГНАНЫ. Не считать feature/WP принятым; main и production не менять.
+
+
+## WP09 · недельная сводка · 2026-10-05
+
+- [x] WP09: реализовать read-only недельную сводку и тесты календаря, прав, частичного отказа, изоляции, навигации и RU/EN.
+- [ ] Опубликовать отдельным коммитом, завершить exact-head CI и реальный browser/API/PostgreSQL сценарий.
+- [ ] Полный FR-006/WP09: неподтверждённые условия, зависимости задач/согласования/делегирование остаются открытыми.
