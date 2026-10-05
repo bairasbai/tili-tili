@@ -6,8 +6,26 @@ import subprocess
 
 
 def correct(package: Path, repo: Path, feature: str) -> None:
-    if feature != 'wp02':
+    if feature == 'wp09':
+        relative = 'files/Тили-тили/app/src/lib/homeTaskPriority.test.tsx'
+        test_path = package / relative
+        original = test_path.read_bytes()
+        if hashlib.sha256(original).hexdigest() != '2f13f7e1a96d804c0e9625345434d1600b45190ae742002c4b48584469c31934':
+            raise RuntimeError('Unexpected original WP09 English fixture')
+        old = "    setI18nLang('en')\n    tasks = ["
+        new = "    localStorage.setItem('tt_lang', 'en')\n    setI18nLang('en')\n    tasks = ["
+        text = original.decode('utf-8')
+        if text.count(old) != 1:
+            raise RuntimeError('English fixture anchor is not unique')
+        test_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+        integrity_path = package / 'input-integrity.json'
+        integrity = json.loads(integrity_path.read_text(encoding='utf-8'))
+        integrity[relative] = hashlib.sha256(test_path.read_bytes()).hexdigest()
+        integrity_path.write_text(json.dumps(integrity, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        print('WP09 fixture correction: persist English preference before StoreProvider mounts; all assertions retained; failed run 37293995241 retained')
         return
+    if feature != 'wp02':
+        raise RuntimeError('Unsupported correction feature')
     source = 'Тили-тили/app/src/pages/Wedding.tsx'
     expected_blob = 'f047d1a46d3cb971906add2ece0a211b440661d7'
     blob = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', f'HEAD:{source}'], text=True).strip()

@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        feature: [wp02]
+        feature: [wp09]
     env:
       FEATURE: ${{ matrix.feature }}
     defaults:
