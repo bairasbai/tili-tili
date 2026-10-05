@@ -1,0 +1,83 @@
+name: Shift notification regression
+'on':
+  pull_request:
+    paths:
+      - 'Тили-тили/backend/test/audit7.test.ts'
+      - 'Тили-тили/backend/test/audit7c.test.ts'
+      - 'Тили-тили/backend/test/stage7.test.ts'
+      - 'Тили-тили/backend/test/shiftWindow.test.ts'
+      - 'Тили-тили/backend/test/helpers/shift-window.ts'
+      - 'Тили-тили/backend/src/timeline/**'
+      - '.github/workflows/shift-fixture-regression.yml'
+permissions:
+  contents: read
+jobs:
+  shift-notification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili_shift_fixture_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U tili -d tili_shift_fixture_test'
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_shift_fixture_test
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_shift_fixture_test
+    defaults:
+      run:
+        working-directory: Тили-тили/backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked backend dependencies
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Check backend types
+        run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+      - name: Migrate disposable PostgreSQL
+        run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Existing notification and shift suites against PostgreSQL
+        run: |
+          status=0
+          node node_modules/vitest/vitest.mjs run test/audit7.test.ts test/audit7c.test.ts test/stage7.test.ts test/shiftWindow.test.ts test/timelineShift.test.ts --reporter=default --reporter=json --outputFile="$RUNNER_TEMP/shift-tests-raw.json" || status=$?
+          SHIFT_TEST_EXIT="$status" node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
+          import {join} from 'node:path';
+          import {vitestSummary} from './scripts/ci-evidence.mjs';
+          const dir=join(process.env.RUNNER_TEMP,'shift-evidence'); mkdirSync(dir,{recursive:true});
+          const code=Number(process.env.SHIFT_TEST_EXIT);
+          const report=JSON.parse(readFileSync(join(process.env.RUNNER_TEMP,'shift-tests-raw.json'),'utf8'));
+          const summary={workflowSha:process.env.GITHUB_SHA,...vitestSummary(report,code)};
+          writeFileSync(join(dir,'result.json'),JSON.stringify(summary,null,2));
+          assert.equal(code,0); assert.equal(report.success,true);
+          assert(report.numTotalTests>0); assert.equal(report.numPendingTests,0); assert.equal(report.numTodoTests,0);
+          JS
+      - name: Lint changed test files
+        run: node node_modules/eslint/bin/eslint.js test/audit7.test.ts test/audit7c.test.ts test/stage7.test.ts test/shiftWindow.test.ts test/helpers/shift-window.ts
+      - name: Preserve exact checkout and redacted result
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/shift-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/shift-evidence/source-commit.txt"
+          sha256sum test/audit7.test.ts test/audit7c.test.ts test/stage7.test.ts test/shiftWindow.test.ts test/helpers/shift-window.ts src/timeline/shift.ts > "$RUNNER_TEMP/shift-evidence/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shift-notification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/shift-evidence
+          if-no-files-found: error
+          retention-days: 7

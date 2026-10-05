@@ -6,6 +6,7 @@ import { hashCode } from '../src/auth/otp.js'
 import { deliverAfter, knownTimeZone } from '../src/notify/quiet.js'
 import { PUSH_LIMIT_PER_DAY } from '../src/notify/notify.js'
 import { prepareShift } from './helpers/shift.js'
+import { futureShiftStart } from './helpers/shift-window.js'
 
 /**
  * Перепроверка этапа 7 по ОПИСАНИЮ, а не по критериям (R-56).
@@ -120,6 +121,7 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
       ),
     })
     expect(w.statusCode).toBe(201)
+    expect(w.json().tz).toBe('Europe/Moscow')
     return { token, weddingId: w.json().id as string }
   }
 
@@ -247,9 +249,9 @@ describe.skipIf(!live)('перепроверка этапа 7', () => {
     await app.inject({ method: 'POST', url: `/invites/${invite.json().code}/accept`, headers: auth(helper) })
 
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
+      `update timeline_events set starts_at = $2::timestamptz, ends_at = $2::timestamptz + interval '1 hour', duration_minutes=60
         where wedding_id = $1`,
-      [w.weddingId],
+      [w.weddingId, futureShiftStart()],
     )
     const assigned = (await app.inject({ method: 'GET', url: '/users/me', headers: auth(helper) })).json().id
     await app.db!.query(`insert into timeline_assignments(wedding_id,event_id,role,kind,reference_id)

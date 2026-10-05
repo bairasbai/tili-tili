@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { prepareShift } from './helpers/shift.js'
+import { futureShiftStart } from './helpers/shift-window.js'
 import { hashCode } from '../src/auth/otp.js'
 import { deliverAfter, parseTime } from '../src/notify/quiet.js'
 
@@ -153,6 +154,7 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       },
     })
     expect(w.statusCode).toBe(201)
+    expect(w.json().tz).toBe('Europe/Moscow')
     return { token, weddingId: w.json().id as string }
   }
 
@@ -464,9 +466,9 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
       [w.weddingId],
     )
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
+      `update timeline_events set starts_at = $2::timestamptz, ends_at = $2::timestamptz + interval '1 hour', duration_minutes=60
         where wedding_id = $1 and sort > (select min(sort) from timeline_events where wedding_id = $1)`,
-      [w.weddingId],
+      [w.weddingId, futureShiftStart()],
     )
 
     const before = await app.db!.query<{ starts_at: Date }>(
@@ -494,9 +496,9 @@ describe.skipIf(!live)('этап 7: чаты, уведомления, день X
   it('повтор сдвига с тем же ключом не двигает дважды', async () => {
     const w = await newWedding()
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
+      `update timeline_events set starts_at = $2::timestamptz, ends_at = $2::timestamptz + interval '1 hour', duration_minutes=60
         where wedding_id = $1`,
-      [w.weddingId],
+      [w.weddingId, futureShiftStart()],
     )
     const headers = { ...auth(w.token), ...key() }
     const confirmation = await prepareShift(app, w.weddingId, headers, 15)
