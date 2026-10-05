@@ -21,6 +21,8 @@ export interface ParsedGuest {
   name: string
   /** Телефон как написан: к `+7XXXXXXXXXX` приводит сервер. */
   phone?: string
+  /** Preserve malformed input for correction instead of silently dropping it. */
+  invalidPhone?: string
   plusOne: boolean
   /** `name` — имени нет или оно короче двух знаков; `phone` — цифры есть, но это не российский номер. */
   error?: 'name' | 'phone'
@@ -70,7 +72,10 @@ function parseLine(raw: string, index: number): ParsedGuest {
     if (looksLikePhone(field)) {
       /* Первый телефон в строке — телефон гостя; второй некуда писать. */
       if (row.phone !== undefined || row.error === 'phone') continue
-      if (normalizeRuPhone(field) === null) row.error = 'phone'
+      if (normalizeRuPhone(field) === null) {
+        row.error = 'phone'
+        row.invalidPhone = field
+      }
       else row.phone = field
       continue
     }

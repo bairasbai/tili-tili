@@ -123,7 +123,9 @@ const alerts = () => screen.queryAllByRole('alert').map(e => e.textContent).join
 const button = (name: string | RegExp) => screen.getByRole('button', { name })
 
 /* ── T1: гости — «Добавить списком» ──────────────────────────────────────── */
-
+/* WP02: the old network/validation regressions now traverse the explicit review step.
+ * Count invitations separately from persons; missing server partySize remains unknown.
+ * T2 and T3 below are preserved without changes. */
 describe('T1: «Добавить списком» — предпросмотр, один POST …/guests/import, итог словами сервера', () => {
   beforeEach(couple)
   afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -134,11 +136,14 @@ describe('T1: «Добавить списком» — предпросмотр, 
   const openGuests = () => renderAt('/wedding/guests', <Route path="/wedding/guests" element={<Guests />} />)
   const openPanel = async (r: ReturnType<typeof renderAt>, settledText: string) => {
     await waitFor(() => expect(text(r)).toContain(settledText), { timeout: 4000 })
-    fireEvent.click(screen.getByLabelText('Добавить списком'))
+    fireEvent.click(button('Добавить списком'))
     return screen.getByLabelText('Список гостей') as HTMLTextAreaElement
   }
+  const review = () => fireEvent.click(button('Проверить и дополнить'))
+  const submit = () => button('Импортировать приглашения')
+  const namesInDraft = () => screen.getAllByLabelText('Основной человек').map(input => (input as HTMLInputElement).value)
 
-  it('три строки → предпросмотр: имя · телефон · «с +1», «Марк» помечен «уже в списке»; «Добавить 2 гостей» → один POST с двумя строками → список перечитан, «Добавлено 2 · пропущено 0»', async () => {
+  it('предпросмотр различает 2 приглашения и 3 персоны; один POST с чистыми строками, перечитывание и итог только из ответа', async () => {
     let guests: unknown[] = [MARK]
     const calls = serve(base({
       '/weddings/w1/guests': () => guests,
@@ -147,24 +152,30 @@ describe('T1: «Добавить списком» — предпросмотр, 
     const r = openGuests()
     const area = await openPanel(r, 'Марк')
     fireEvent.change(area, { target: { value: 'Анна Петрова, +79170001111, +1\nМарк\nОльга и Сергей' } })
-    expect(text(r)).toContain('Анна Петрова · +79170001111 · с +1')
+    expect(posts(calls, IMPORT)).toHaveLength(0)
+    review()
+    expect(namesInDraft()).toEqual(['Анна Петрова', 'Марк', 'Ольга и Сергей'])
+    expect((screen.getAllByLabelText('Телефон основного человека')[0] as HTMLInputElement).value).toBe('+79170001111')
+    expect(text(r)).toContain('Человек без указанного имени (+1)')
     expect(text(r)).toContain('уже в списке')
-    expect(text(r), 'итог до ответа сервера').not.toContain('Добавлено')
-    const btn = button('Добавить 2 гостей')
-    expect(btn.hasAttribute('disabled')).toBe(false)
-    fireEvent.click(btn)
-    await waitFor(() => expect(posts(calls, IMPORT).length).toBe(1), { timeout: 4000 })
+    expect(text(r)).toContain('К отправке: 2 приглашения · 3 персоны')
+    expect(text(r), 'итог до ответа сервера').not.toContain('Создано приглашений:')
+    expect(submit().matches(':disabled')).toBe(false)
+    fireEvent.click(submit())
+    await waitFor(() => expect(posts(calls, IMPORT)).toHaveLength(1), { timeout: 4000 })
     expect(posts(calls, IMPORT)[0]!.body).toEqual({ guests: [
       { name: 'Анна Петрова', phone: '+79170001111', plusOne: true },
       { name: 'Ольга и Сергей' },
     ] })
-    await waitFor(() => expect(text(r)).toContain('Добавлено 2 · пропущено 0'), { timeout: 4000 })
-    await waitFor(() => expect(gets(calls, '/weddings/w1/guests').length).toBe(2), { timeout: 4000 })
+    await waitFor(() => expect(text(r)).toContain('Создано приглашений: 2'), { timeout: 4000 })
+    expect(text(r)).toContain('Число персон уточняется после обновления списка')
+    await waitFor(() => expect(gets(calls, '/weddings/w1/guests')).toHaveLength(2), { timeout: 4000 })
     await waitFor(() => expect(text(r)).toContain('Ольга и Сергей'), { timeout: 4000 })
-    expect(posts(calls, IMPORT).length, 'второй импорт').toBe(1)
+    expect(namesInDraft()).toEqual(['Марк'])
+    expect(posts(calls, IMPORT), 'второй импорт').toHaveLength(1)
   })
 
-  it('итог — из ответа сервера, не из предпросмотра: сервер пропустил двоих → «Добавлено 1 · пропущено 2», причины словами', async () => {
+  it('частичный ответ: создано 1 приглашение, обе пропущенные строки сохранены; invalid не выдается за доказанную ошибку телефона', async () => {
     const calls = serve(base({
       '/weddings/w1/guests': [],
       [IMPORT]: { created: created('Анна'), skipped: [{ index: 1, name: 'Денис', reason: 'duplicate' }, { index: 2, name: 'Ира', reason: 'invalid' }] },
@@ -172,58 +183,81 @@ describe('T1: «Добавить списком» — предпросмотр, 
     const r = openGuests()
     const area = await openPanel(r, 'Список пуст')
     fireEvent.change(area, { target: { value: 'Анна\nДенис\nИра, 8 917 000-11-22' } })
-    fireEvent.click(button('Добавить 3 гостей'))
-    await waitFor(() => expect(posts(calls, IMPORT).length).toBe(1), { timeout: 4000 })
-    await waitFor(() => expect(text(r)).toContain('Добавлено 1 · пропущено 2'), { timeout: 4000 })
+    review()
+    expect(text(r)).toContain('К отправке: 3 приглашения · 3 персоны')
+    fireEvent.click(submit())
+    await waitFor(() => expect(posts(calls, IMPORT)).toHaveLength(1), { timeout: 4000 })
+    expect(posts(calls, IMPORT)[0]!.body).toEqual({ guests: [{ name: 'Анна' }, { name: 'Денис' }, { name: 'Ира', phone: '8 917 000-11-22' }] })
+    await waitFor(() => expect(text(r)).toContain('Создано приглашений: 1'), { timeout: 4000 })
     expect(text(r)).toContain('Денис — уже в списке')
-    expect(text(r)).toContain('Ира — телефон не распознан')
+    expect(text(r)).toContain('Ира — Строка не принята сервером: проверьте поля')
+    expect(namesInDraft()).toEqual(['Денис', 'Ира'])
+    expect(text(r)).toContain('Число персон уточняется после обновления списка')
+    expect(posts(calls, IMPORT)).toHaveLength(1)
   })
 
-  it('строки с ошибками и дубликаты помечены и не уходят; N считает только чистые; при N = 0 кнопка закрыта', async () => {
+  it('невалидные строки и дубликаты не уходят; пустой набор блокирует импорт; явный возврат к вставке сохраняет фильтрацию', async () => {
     const calls = serve(base({ '/weddings/w1/guests': [MARK], [IMPORT]: { created: created('Ольга'), skipped: [] } }))
     const r = openGuests()
     const area = await openPanel(r, 'Марк')
     fireEvent.change(area, { target: { value: 'А\nАнна, 12345\nМарк' } })
-    expect(text(r)).toContain('нет имени')
+    review()
+    expect(text(r)).toContain('Проверьте имена: от 2 до 120 символов.')
     expect(text(r)).toContain('телефон не распознан')
     expect(text(r)).toContain('уже в списке')
-    expect(button('Добавить 0 гостей').hasAttribute('disabled'), 'кнопка открыта без единой чистой строки').toBe(true)
-    fireEvent.change(area, { target: { value: 'А\nАнна, 12345\nМарк\nОльга' } })
-    const btn = button('Добавить 1 гостя')
-    expect(btn.hasAttribute('disabled')).toBe(false)
-    fireEvent.click(btn)
-    await waitFor(() => expect(posts(calls, IMPORT).length).toBe(1), { timeout: 4000 })
+    expect(submit().matches(':disabled'), 'импорт без единой чистой строки').toBe(true)
+    expect(posts(calls, IMPORT)).toHaveLength(0)
+    fireEvent.click(button('Вернуться к вставке'))
+    fireEvent.click(button('Сбросить правки'))
+    const originalPaste = screen.getByLabelText('Список гостей') as HTMLTextAreaElement
+    expect(originalPaste.value).toBe('А\nАнна, 12345\nМарк')
+    fireEvent.change(originalPaste, { target: { value: 'А\nАнна, 12345\nМарк\nОльга' } })
+    review()
+    expect(text(r)).toContain('К отправке: 1 приглашение · 1 персона')
+    expect(submit().matches(':disabled')).toBe(false)
+    fireEvent.click(submit())
+    await waitFor(() => expect(posts(calls, IMPORT)).toHaveLength(1), { timeout: 4000 })
     expect(posts(calls, IMPORT)[0]!.body, 'ушли строки с ошибками или дубликат').toEqual({ guests: [{ name: 'Ольга' }] })
+    await waitFor(() => expect(text(r)).toContain('Создано приглашений: 1'), { timeout: 4000 })
+    expect(namesInDraft()).toEqual(['А', 'Анна', 'Марк'])
   })
 
-  it('кнопка закрыта на время запроса; отказ сервера — его текст role=alert, панель остаётся, итога нет', async () => {
+  it('повторное нажатие не создаёт второй POST; отказ 422 виден, поля сохраняются и форма снова доступна', async () => {
     const g = gate()
     const calls = serve(base({ '/weddings/w1/guests': [], [IMPORT]: g.reply }))
     const r = openGuests()
     const area = await openPanel(r, 'Список пуст')
     fireEvent.change(area, { target: { value: 'Анна' } })
-    fireEvent.click(button('Добавить 1 гостя'))
-    await waitFor(() => expect(posts(calls, IMPORT).length).toBe(1), { timeout: 4000 })
-    expect(button(/Добавляем|Добавить 1 гостя/).hasAttribute('disabled'), 'кнопка открыта, пока запрос в пути').toBe(true)
+    review()
+    fireEvent.click(submit())
+    await waitFor(() => expect(posts(calls, IMPORT)).toHaveLength(1), { timeout: 4000 })
+    expect(screen.getByText('Добавляем…').getAttribute('role')).toBe('status')
+    const busyButton = submit()
+    expect(busyButton.matches(':disabled'), 'кнопка открыта, пока запрос в пути').toBe(true)
+    fireEvent.click(busyButton)
+    expect(posts(calls, IMPORT)).toHaveLength(1)
     g.release(withStatus(422, 'validation_failed', 'Запрос не прошёл проверку'))
     await waitFor(() => expect(alerts()).toContain('Запрос не прошёл проверку'), { timeout: 4000 })
-    expect(screen.getByLabelText('Список гостей')).toBeTruthy()
-    expect(text(r), 'итог без ответа 201').not.toContain('Добавлено')
+    expect(namesInDraft()).toEqual(['Анна'])
+    expect(submit().matches(':disabled')).toBe(false)
+    expect(text(r), 'итог без подтверждённого ответа').not.toContain('Создано приглашений:')
+    expect(posts(calls, IMPORT)).toHaveLength(1)
   })
 
   it('без свадьбы — «Сначала создайте свадьбу — гости живут в ней», запроса нет', async () => {
     signedIn()
     const calls = serve({ '/weddings': [], '/me/favorites': [], '/users/me': ME })
     const r = openGuests()
-    /* Без свадьбы список — не «пуст», а «свадьбы нет» (ревью 015, FB6): ноль — не «неизвестно». */
     await waitFor(() => expect(text(r)).toContain('Свадьбы пока нет — заведите её'), { timeout: 4000 })
     expect(text(r)).not.toContain('Список пуст')
-    fireEvent.click(screen.getByLabelText('Добавить списком'))
+    fireEvent.click(button('Добавить списком'))
     fireEvent.change(screen.getByLabelText('Список гостей'), { target: { value: 'Анна' } })
-    fireEvent.click(button('Добавить 1 гостя'))
+    review()
+    fireEvent.click(submit())
     await settle()
     expect(text(r)).toContain('Сначала создайте свадьбу — гости живут в ней')
-    expect(calls.filter(c => c.method === 'POST').length).toBe(0)
+    expect(calls.filter(c => c.method === 'POST')).toHaveLength(0)
+    expect(namesInDraft()).toEqual(['Анна'])
   })
 })
 

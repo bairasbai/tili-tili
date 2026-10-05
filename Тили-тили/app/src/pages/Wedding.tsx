@@ -9,8 +9,8 @@ import { formatTime, formatWeddingDate, isoAtWeddingTime, shortWeddingDate } fro
 import { AsyncState, num, ready } from '@/components/AsyncState'
 import { getBudget, getDocuments, getGuests, getMembers, getSlots, getTasks, getTimelineSnapshot, getTips, getWedding } from '@/lib/api/weddingData'
 import { getAlbum, setAlbumApproved, setPhotoApproved } from '@/lib/api/gifts'
-import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, importGuests, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type GuestImportRow, type TimelineDraft } from '@/lib/api/weddingWrite'
-import { guestNameKey, normalizeRuPhone, parseGuestList } from '@/lib/guestsImport'
+import { addBudgetItem, addGuest, addGuestMember, addTask as addTaskApi, autogenTimeline, deleteBudgetItem, deleteGuest, deleteTask, patchGuest, patchTask, putTimeline, remindGuests, renameTask, resetBudgetCategoryLimit, setBudgetCategoryLimit, setBudgetReserve, setTaskDone, toTimelineDraft, type TimelineDraft } from '@/lib/api/weddingWrite'
+import { GuestImportPanel } from '@/components/GuestImportPanel'
 import { listMyWeddings, setBudgetTotal } from '@/lib/api/wedding'
 import { getShortlist, removeShortlistCandidate } from '@/lib/api/shortlist'
 import { rub } from '@/lib/money'
@@ -1438,9 +1438,6 @@ interface GuestRow {
 /** Ровно десять цифр после +7 — так контракт описывает телефон. */
 const PHONE_DIGITS = 10
 
-/** Потолок одного импорта — `maxItems` контракта: больше сервер отвечает 422 без имён. */
-const IMPORT_MAX = 300
-
 /** Подписи ограничений по еде: ключ словаря — русская строка (R-07). */
 const DIET_LABEL: Record<string, string> = {
   vegetarian: 'вегетарианец',
@@ -1508,43 +1505,6 @@ export function Guests() {
    * (инвариант §5.13). Отказ — его словами, здесь же, под кнопкой.
    */
   const [bulk, setBulk] = useState(false)
-  const [bulkText, setBulkText] = useState('')
-  const [bulkErr, setBulkErr] = useState<string | null>(null)
-  const [bulkResult, setBulkResult] = useState<{ created: number; skipped: { name: string; reason: 'duplicate' | 'invalid' }[] } | null>(null)
-  /* Пометка «уже в списке» — тем же правилом, что у сервера: имя без регистра
-     и пробелов, телефон как `+7…`. Повтор внутри вставленного текста — тоже
-     дубликат, сервер завёл бы лишь первого. Список не пришёл — пометок нет,
-     дедупликацию сделает сервер и назовёт её в `skipped`. */
-  const preview = useMemo(() => {
-    const names = new Set(list.map(g => guestNameKey(g.name)))
-    const phones = new Set(list.map(g => g.phone).filter((p): p is string => !!p))
-    return parseGuestList(bulkText).map(row => {
-      const phone = row.phone ? normalizeRuPhone(row.phone) : null
-      const dup = !row.error && (names.has(guestNameKey(row.name)) || (!!phone && phones.has(phone)))
-      if (!row.error && !dup) { names.add(guestNameKey(row.name)); if (phone) phones.add(phone) }
-      return { ...row, dup }
-    })
-  }, [bulkText, list])
-  const clean = preview.filter(r => !r.error && !r.dup)
-  const importList = async () => {
-    /* Без свадьбы записывать некуда — те же слова, что у добавления одного. */
-    if (!weddingId) { setBulkErr(t('Сначала создайте свадьбу — гости живут в ней')); return }
-    /* Предел сервера — 300 строк за раз (`maxItems`): длиннее — 422 на весь
-       список без единого добавленного; лучше сказать до запроса (ревью 015). */
-    if (clean.length > 300) { setBulkErr(t('За один раз — не больше 300 гостей: вставьте список частями')); return }
-    setBusyId('import')
-    setBulkErr(null)
-    setBulkResult(null)
-    try {
-      const rows: GuestImportRow[] = clean.map(r => ({ name: r.name, ...(r.phone ? { phone: r.phone } : {}), ...(r.plusOne ? { plusOne: true } : {}) }))
-      const res = await importGuests(weddingId, rows)
-      /* 201 без тела — не «добавлено 0»: итог без ответа не называем. */
-      if (!res) throw new Error('пустой ответ')
-      setBulkResult({ created: res.created.length, skipped: res.skipped })
-      setBulkText('')
-      q.reload()
-    } catch (e) { setBulkErr(explainError(e)) } finally { setBusyId(null) }
-  }
   /*
    * Своя роль — из списка свадеб, как на экране команды (D1-25). «Напомнить
    * не ответившим» тратит SMS-лимит свадьбы, и сервер отдаёт её только паре
@@ -1618,50 +1578,9 @@ export function Guests() {
         </div>
       } />
       <AsyncState q={q} />
-      {bulk && (
-        <div className="px-5 mt-3 fade-up">
-          <div className="card p-4 space-y-2.5">
-            <p className="text-[12.5px] font-semibold">{t('Добавить списком')}</p>
-            <textarea autoFocus value={bulkText} onChange={e => setBulkText(e.target.value)} rows={5} aria-label={t('Список гостей')}
-              placeholder={t('Каждый гость — с новой строки. В строке через запятую: имя, телефон, +1')}
-              className="w-full rounded-2xl bg-[var(--bg)] px-4 py-3 text-[13px] outline-none placeholder:text-[var(--soft2)] resize-y" />
-            <p className="text-[10.5px] text-[var(--soft2)]">{t('Например: Анна Петрова, +7 917 000-11-22, +1')}</p>
-            {/* Предпросмотр: строка с ошибкой показывается как написана, чтобы
-                было видно, что именно не разобралось. */}
-            {preview.length > 0 && (
-              <ul className="space-y-1">
-                {preview.map(r => (
-                  <li key={r.index} className="flex items-center gap-2 text-[12px]">
-                    <span className={cn('flex-1 min-w-0 truncate', (r.error || r.dup) && 'text-[var(--soft)]')}>
-                      {r.error ? r.raw : [r.name, r.phone, r.plusOne ? t('с +1') : null].filter(Boolean).join(' · ')}
-                    </span>
-                    {r.error === 'name' && <span className="text-[10px] font-bold text-[var(--rose-ink)] shrink-0">{t('нет имени')}</span>}
-                    {r.error === 'phone' && <span className="text-[10px] font-bold text-[var(--rose-ink)] shrink-0">{t('телефон не распознан')}</span>}
-                    {r.dup && <span className="text-[10px] font-bold text-[var(--honey-ink)] shrink-0">{t('уже в списке')}</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {clean.length > IMPORT_MAX && <p className="text-[11px] text-[var(--rose-ink)]">{t('За раз — не больше 300 гостей: разделите список')}</p>}
-            {bulkErr && <p role="alert" className="text-[11.5px] text-[var(--rose-ink)] leading-relaxed">{bulkErr}</p>}
-            {bulkResult && (
-              <div className="text-[11.5px] text-[var(--ink2)] leading-relaxed">
-                <p className="font-semibold">{t('Добавлено')} {bulkResult.created} · {t('пропущено')} {bulkResult.skipped.length}</p>
-                {bulkResult.skipped.map((s, i) => (
-                  <p key={i} className="text-[var(--soft)]">{s.name} — {s.reason === 'duplicate' ? t('уже в списке') : t('телефон не распознан')}</p>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <div className="flex-1" />
-              <button onClick={() => setBulk(false)} className="press px-4 py-2 text-[12px] font-semibold text-[var(--soft)]">{t('Закрыть')}</button>
-              <button disabled={busyId === 'import' || clean.length === 0 || clean.length > IMPORT_MAX} onClick={() => void importList()} className="press px-5 py-2 rounded-full grad text-[var(--on-grad)] text-[12px] font-bold disabled:opacity-50">
-                {busyId === 'import' ? t('Добавляем…') : `${t('Добавить')} ${clean.length} ${plural(clean.length, t('гостя'), t('гостей'), t('гостей'))}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GuestImportPanel key={weddingId ?? 'no-wedding'} weddingId={weddingId ?? null}
+        existing={ready(q) ? list : undefined} open={bulk}
+        onClose={() => setBulk(false)} onImported={q.reload} />
       {adding && (
         <div className="px-5 mt-3 fade-up">
           <div className="card p-4 space-y-2.5">

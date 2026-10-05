@@ -1,0 +1,39 @@
+{
+  "base": "b4f9d57ec82694e5b9d90ebb16676ea55bac9068",
+  "source_tree": "cd11a565c60704b366f6e0d1a56fe641f3e5ac1c",
+  "run_url": "https://github.com/bairasbai/tili-tili/actions/runs/37329885894",
+  "frontend": {
+    "passed": 2242,
+    "failed": 0,
+    "pending": 0,
+    "types": "passed",
+    "lint": "passed",
+    "build": "passed"
+  },
+  "browser_cases": 38,
+  "database": {
+    "persons": 129,
+    "parties": 50,
+    "expectedPersons": 129,
+    "expectedParties": 50
+  },
+  "source_hashes": {
+    ".github/workflows/guest-import-recovery-e2e.yml": "e87a7d9cfed47b47f98226a9b7373b8fce8b46837994598e18ddc790fef2e5af",
+    "ERRORS.md": "1acec1fcd6bad60b22b4d12dbad71c49c0905dd95ae64bc6ee229d6e6cb7a526",
+    "JOURNAL.md": "36150efc21473debb1d120c3b30e003b755d99acc12cf1b71340c62b83161f38",
+    "session-handoff.md": "222177543affbcf41bb05c48159f3f2a7f96033687506a706500766426fa05ae",
+    "tasks/todo.md": "77dc80e0d99aa1f36a113b8bbfacd887fa1a29b3440a14f8a16c4aec7a4bdc8d",
+    "tasks/wedding-platform-master-plan/WP02-IMPORT-ACCEPTANCE-20261005.md": "8c59ad610fe9347058b14064f283b0ede8c585d0280cea371fb4328a6075e228",
+    "Тили-тили/app/src/components/GuestImportPanel.tsx": "9a58634e4bc90c5b5ce85a2ac75c874d00a30adecb9b1c60659f09d00b4b3261",
+    "Тили-тили/app/src/lib/audit35.test.tsx": "2eca55971181534b3c782832689ee7e95fdff615f529e4ddc389cf29978b498a",
+    "Тили-тили/app/src/lib/guestImportDraft.ts": "ab9af3c127422b072a3c7f17b78e87343456b31fd15372a427145beebf41b740",
+    "Тили-тили/app/src/lib/guestImportFinalization.test.tsx": "1570eda757e33dae5ffb557eb3607aee35d3180b03c896d6c03b262a0b5079a8",
+    "Тили-тили/app/src/lib/i18n.en.ts": "8c40840cefa4881592dd2b39951d25732edcfd62685ec766ddb8ec3061831897",
+    "Тили-тили/e2e/guest-import-recovery-browser.py": "a04c331f6e618e45c60351e93cd7deef59e0aa92d29840e687dc44249ef50ef1",
+    "Тили-тили/e2e/run-guest-import-recovery.sh": "8130da5fc2f0e0bad03045a173357c3077608aad0902c352c1d9989944a2cd80",
+    "Тили-тили/Тили-тили_Карта_кнопок.md": "9fd2ba964165be1abed710ac101aa0e6e09e329cc422fa0c3f28ce7b3f81c97e",
+    "Тили-тили/Тили-тили_Карта_экранов.md": "793b76f14f7b4b121f1d3a4afb361333df88b486de2168a54177eeca1429ac07"
+  },
+  "pr_ci": "pending until connector advances PR branch",
+  "merge": false
+}

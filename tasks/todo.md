@@ -3,6 +3,14 @@
 Одна активная задача за раз. Пункты отмечать по ходу, не в конце.
 Готово = типы + тесты + линт + сборка прогнаны, вывод показан.
 
+## WP02 / FR-032 / SC-007 · 2026-10-05 · без слияния
+
+Текущая работа: закончить именованный семейный импорт в PR46. Main и PR45 не менять.
+- [x] Согласовать предпросмотр дублей со всей семьёй, включая legacy +1; поправить RU/EN формы счётчиков.
+- [x] После неизвестного результата сохранять неизменяемую попытку и повторять только явной кнопкой, без изменения имён до подтверждённого ответа.
+- [ ] Проверить полный сценарий в Chromium с настоящим API/PostgreSQL, потерей ответа после commit, повтором и частичным результатом.
+- [ ] Прогнать весь frontend/backend CI, сохранить доказательства, обновить карты и итоговую приёмку.
+
 ## Актуальная граница · Codex, 2026-10-03
 
 Новое поручение: продолжить весь WP00–WP16 end-to-end, поэтапно проверять, документировать и публиковать в main. Свежий fetch: main `58349e0`, черновик Claude `de414fa` (модуль уже добавлен в `93028a2`). Работа идёт в отдельной `codex/030-380-inventory-completion`, исходные checkout/ветка сохранены.
@@ -1618,3 +1626,12 @@ PortableCI V1 independentreview rejected4execution/uploadblocks+G02rawproofbindi
 BrowserV1 independent source review foundB01 exactcase/origin classifier/parent omission; NEWV2 source correction and expandedstatic-tab observation+separatelytyped genuineAPIRequestContext capture prepared, finalcurrentrebind/freshreview/rootnative stillpending. No browser14/6layouts/provider/device acceptance claimed. [FreshB01review](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c05-browser-fresh-review-v1/REVIEW.md).
 
 Остались currentfull/backend/build, isolatednative49, nativePWA14/6layouts, publicCI/отдельная поставка этого блока и весь исходный WP/FR/SC/NFR/A/U. C01–C08futuregraph/staff/read/lease/erasure/retention иM01/WP11/provider/device/humanrequirements сохраняются. M01/WP11questions ответа пока нет; policy не принимается по истечению времени. Я не могу это подтвердить: завершение любого полногоWP или physicalprovider/device/humanacceptance.
+
+
+## 2026-10-05 · подготовка WP02 без main
+
+- [x] Подготовлен кандидат кода: tasks/wedding-platform-master-plan/CANDIDATE-WP02-20261005.md.
+- [ ] Проверить применение и весь проектный gate на текущем дереве.
+- [ ] Подготовить отдельный feature commit/PR после проверок; не включать auto-merge.
+
+Кандидат подготовлен вне полного checkout. Полный init.sh, Vitest/React, PostgreSQL/Redis, браузер и GitHub CI НЕ ПРОГНАНЫ. Не считать feature/WP принятым; main и production не менять.

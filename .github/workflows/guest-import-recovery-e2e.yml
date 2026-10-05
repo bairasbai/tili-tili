@@ -1,0 +1,63 @@
+name: Guest import recovery real API E2E
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Тили-тили/app/**'
+      - 'Тили-тили/backend/**'
+      - 'Тили-тили/e2e/**'
+      - '.github/workflows/guest-import-recovery-e2e.yml'
+permissions:
+  contents: read
+concurrency:
+  group: guest-import-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  guest-import-recovery-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: guest_import_recovery_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d guest_import_recovery_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/guest_import_recovery_test
+    steps:
+      - name: Set runner evidence directory
+        run: echo "E2E_RESULT_DIR=$RUNNER_TEMP/guest-import-recovery" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked app and API dependencies
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          for dir in 'Тили-тили/app' 'Тили-тили/backend'; do
+            (cd "$dir" && printf '\nminimum-release-age=0\n' >> .npmrc && pnpm install --frozen-lockfile --node-linker=hoisted)
+          done
+      - name: Install isolated Chromium tooling
+        run: |
+          python -m pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Real API response loss, retry and partial import
+        run: |
+          mkdir -p "$E2E_RESULT_DIR"
+          git rev-parse HEAD > "$E2E_RESULT_DIR/source-commit.txt"
+          bash 'Тили-тили/e2e/run-guest-import-recovery.sh'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guest-import-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/guest-import-recovery/
+          retention-days: 30
+          if-no-files-found: error
