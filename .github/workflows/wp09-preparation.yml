@@ -1,0 +1,44 @@
+name: WP09 isolated preparation
+
+on:
+  push:
+    branches: [work/wp09-verified-preparation-20261005]
+    paths: [.github/workflows/wp09-preparation.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 7c0cb5b60243e135bbc172b1b924eed4e61dd783
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
+      - name: Export immutable tracked source (no Git credentials or environment files)
+        run: |
+          mkdir -p /tmp/wp09-export
+          git archive --format=tar.gz HEAD > /tmp/wp09-export/source.tar.gz
+          git rev-parse HEAD > /tmp/wp09-export/BASE_SHA.txt
+      - name: Install existing locked frontend dependencies
+        working-directory: Тили-тили/app
+        run: |
+          printf 'minimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Export frontend dependencies and checksums
+        run: |
+          tar -czf /tmp/wp09-export/frontend-dependencies.tar.gz -C Тили-тили/app node_modules
+          cd /tmp/wp09-export
+          sha256sum source.tar.gz frontend-dependencies.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wp09-pinned-source-and-dependencies
+          path: /tmp/wp09-export/
+          if-no-files-found: error
+          retention-days: 3
