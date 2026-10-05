@@ -1,3 +1,11 @@
+# Актуальное продолжение · 2026-10-05 · PR46 / WP02, без слияния
+
+Последняя команда владельца: «Доделай до конца» после «Сливать пока не надо, просто доделывай». Это не разрешение merge. Текущий реализованный срез — семейный импорт и восстановление неизвестного ответа FR-032 / SC-007. Рабочая ветка `candidate/tili-wp02-20261005`, исходный head `b4f9d57ec82694e5b9d90ebb16676ea55bac9068`. Main на старте `7c0cb5b60243e135bbc172b1b924eed4e61dd783`. Перед продолжением перечитать GitHub, не откатывать движущийся HEAD.
+
+[Приёмка импорта](tasks/wedding-platform-master-plan/WP02-IMPORT-ACCEPTANCE-20261005.md) перечисляет изменения, повторное RED→GREEN и точные границы; полный текущий gate подтверждается отдельно. Фактический облачный gate записывается в WP02-IMPORT-GATE-20261005.json; итоговый PR CI и head — в PR46. Старые gate внизу не доказывают новые изменения. PR45 / WP09 отдельный, не смешивать ветки. Production и широкие permission/security audit не входят в эту доработку.
+
+## Исторический handoff до текущего поручения
+
 # Active continuation · WP00–WP16 · 2026-10-03
 
 Goal active/unbounded: реализовать весь WP00–WP16 end-to-end с meaningful tests/scenarios, поэтапной документацией, отдельными feature commits/push/CI/main. Не останавливаться на nginx/A13 milestone. Scope: tasks/wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md. Production/human consent/provider/physical-device acceptance не выполнены этими локальными проверками.

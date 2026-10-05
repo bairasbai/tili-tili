@@ -31,6 +31,7 @@ export type ExistingImportGuest = { name: string; phone?: string | null }
 export type ImportPreviewRow = ImportInvitationDraft & {
   issues: ImportIssue[]
   duplicate: boolean
+  duplicateReason: 'family' | 'existing' | 'batch' | null
   persons: number
 }
 
@@ -94,25 +95,37 @@ export function buildImportPreview(
 ): ImportPreviewRow[] {
   // undefined означает, что существующий список ещё неизвестен.
   // Дубликаты внутри текущей вставки всё равно обнаруживаются.
-  const names = new Set((existing ?? []).map(g => guestNameKey(g.name)))
-  const phones = new Set((existing ?? []).flatMap(g => {
+  const existingNames = new Set((existing ?? []).map(g => guestNameKey(g.name)))
+  const existingPhones = new Set((existing ?? []).flatMap(g => {
     const phone = g.phone ? normalizeRuPhone(g.phone) : null
     return phone ? [phone] : []
   }))
+  const batchNames = new Set<string>()
+  const batchPhones = new Set<string>()
   return rows.map(row => {
     const issues = validateImportDraft(row)
     const phone = row.phone.trim() ? normalizeRuPhone(row.phone) : null
-    const duplicate = issues.length === 0 && (
-      names.has(guestNameKey(row.name)) || (!!phone && phones.has(phone))
-    )
-    if (issues.length === 0 && !duplicate) {
-      names.add(guestNameKey(row.name))
-      if (phone) phones.add(phone)
+    // Match the existing server import policy for every person, not just the
+    // primary. Rejected rows reserve nothing for later rows in this batch.
+    const companions = row.mode === 'legacy-plus-one'
+      ? [`Спутник ${row.name.trim().replace(/\s+/g, ' ')}`]
+      : row.members.map(member => member.name)
+    const keys = [row.name, ...companions].map(guestNameKey)
+    let duplicateReason: ImportPreviewRow['duplicateReason'] = null
+    if (issues.length === 0) {
+      if (new Set(keys).size !== keys.length) duplicateReason = 'family'
+      else if (keys.some(key => existingNames.has(key)) || (phone && existingPhones.has(phone))) duplicateReason = 'existing'
+      else if (keys.some(key => batchNames.has(key)) || (phone && batchPhones.has(phone))) duplicateReason = 'batch'
+      if (!duplicateReason) {
+        for (const key of keys) batchNames.add(key)
+        if (phone) batchPhones.add(phone)
+      }
     }
     return {
       ...row,
       issues,
-      duplicate,
+      duplicate: duplicateReason !== null,
+      duplicateReason,
       persons: row.mode === 'legacy-plus-one' ? 2 : 1 + row.members.length,
     }
   })
