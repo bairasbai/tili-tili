@@ -66,6 +66,8 @@ jobs:
       - run: corepack enable && corepack prepare pnpm@10.34.5 --activate
       - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Test diagnostic projections
+        run: node --test scripts/ci-evidence*.test.mjs
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
       - name: Миграции на живой базе
         run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
@@ -101,7 +103,7 @@ jobs:
       - name: Ecosystem migrations and all backend tests
         run: |
           node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
-          node node_modules/vitest/vitest.mjs run
+          node scripts/ci-evidence-runner.mjs vitest
         env:
           TILI_DISPOSABLE_PG_PORT: '15432'
           DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_full_20260930_test
@@ -116,7 +118,7 @@ jobs:
           TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
       # Insert after existing backend full + migration-rehearsal steps; retain all old bytes.
       - name: Isolated C04 C05 native feature admission
-        run: node scripts/c04-c05-isolated-lane.mjs --github-ci --run-approved-native
+        run: node scripts/ci-evidence-runner.mjs native
         env:
           C04_C05_NATIVE_PROFILE: github-ci
           C04_C05_CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
@@ -130,3 +132,11 @@ jobs:
           if-no-files-found: error
       - run: node node_modules/eslint/bin/eslint.js .
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json
+      - name: Preserve backend failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tili-backend-evidence-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: warn
+          retention-days: 7
