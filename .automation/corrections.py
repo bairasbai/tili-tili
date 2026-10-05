@@ -54,6 +54,19 @@ def correct(package: Path, repo: Path, feature: str) -> None:
     if text.index(precise_end) <= text.index(span['start']):
         raise RuntimeError('Corrected guest editor anchors are reversed')
     span['end'] = precise_end
+    test_source = 'Тили-тили/app/src/lib/audit35.test.tsx'
+    test_blob = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', f'HEAD:{test_source}'], text=True).strip()
+    if test_blob != 'f030aaee2cda7c0e73417c83605944592425e0be':
+        raise RuntimeError('WP02 regression update requires the exact reviewed audit35 test blob')
+    replacement = Path(__file__).with_name('audit35-import.test.part').read_text(encoding='utf-8')
+    if hashlib.sha256(replacement.encode()).hexdigest() != 'fb1aa660c5cf0b2da0e01807c5117bc2e08fa0c3c98eff48c8ea86c2e1ba9bd3':
+        raise RuntimeError('Unexpected reviewed import regression replacement')
+    step['replace_spans'].append({
+        'path': test_source,
+        'start': '/* ── T1: гости — «Добавить списком» ──────────────────────────────────────── */',
+        'end': '/* ── T2: категория с пустой выдачей — заявка консьержу ───────────────────── */',
+        'new': replacement,
+    })
     steps_path.write_text(json.dumps(steps, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     integrity_path = package / 'input-integrity.json'
     integrity = json.loads(integrity_path.read_text(encoding='utf-8'))
