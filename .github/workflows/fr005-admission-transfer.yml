@@ -1,0 +1,58 @@
+name: FR005 contract admission blob transfer
+'on':
+  push:
+    branches: [test/wp09-task-dependencies-workbench-20261006]
+    paths: [.github/workflows/fr005-admission-transfer.yml, .automation/fr005/admission-fix.xz.b64]
+permissions:
+  contents: read
+jobs:
+  transfer:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed input
+        run: |
+          mkdir -p "$RUNNER_TEMP/fr005-admission"
+          cp .automation/fr005/admission-fix.xz.b64 "$RUNNER_TEMP/fr005-admission-input.b64"
+      - uses: actions/checkout@v4
+        with:
+          ref: 2e728fe4c258a963d852f8e7f3b25446ce932076
+          persist-credentials: false
+      - name: Verify seven exact paths and tree before transferring blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,pathlib,subprocess,urllib.request
+          temp=pathlib.Path(os.environ['RUNNER_TEMP']);base='2e728fe4c258a963d852f8e7f3b25446ce932076'
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==base
+          assert subprocess.check_output(['git','status','--porcelain'])==b''
+          patch=lzma.decompress(base64.b64decode((temp/'fr005-admission-input.b64').read_text(),validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='dd0df43163842921f09103979dc74cd672a71eda7bd41294736e81efce8a883e'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+          tree=subprocess.check_output(['git','write-tree']).decode().strip();assert tree=='77fc789fc680b085ee4368d64745ac0545de478d'
+          paths=['.github/workflows/task-dependency-preservation.yml','tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md','Тили-тили/app/src/lib/api/schema.ts','Тили-тили/backend/src/contract/api.generated.ts','Тили-тили/backend/test/audit55.test.ts','Тили-тили/backend/vitest.serial.json','Тили-тили/Тили-тили_API_openapi.yaml']
+          assert sorted(subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0'))==sorted(paths)
+          files=[]
+          for path in paths:
+            p=pathlib.Path(path);assert p.is_file() and not p.is_symlink()
+            data=p.read_bytes();expected=subprocess.check_output(['git','hash-object',path]).decode().strip()
+            req=urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs',data=json.dumps({'content':base64.b64encode(data).decode(),'encoding':'base64'}).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},method='POST')
+            with urllib.request.urlopen(req,timeout=30) as response: received=json.load(response)
+            assert received['sha']==expected
+            files.append({'path':path,'sha':expected,'sha256':hashlib.sha256(data).hexdigest()})
+          (temp/'fr005-admission/manifest.json').write_text(json.dumps({'base':base,'tree':tree,'patchSHA256':hashlib.sha256(patch).hexdigest(),'files':files},ensure_ascii=False,indent=2))
+          print('Seven reviewed blobs transferred; no product ref or commit written.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fr005-admission-blobs
+          path: ${{ runner.temp }}/fr005-admission
+          retention-days: 7
+          if-no-files-found: error
