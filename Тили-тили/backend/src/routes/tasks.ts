@@ -6,6 +6,8 @@ import { ref } from '../contract/schemas.generated.js'
 import type { components } from '../contract/api.generated.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { notifyTaskAssignment } from '../notify/task-notifications.js'
+import { assertSeatingToken, lockGuestReadAccess, lockSeatingAccess } from '../wedding/access.js'
+import { DEPENDENCY_COLUMNS, dependencyError, prepareDependencyCompletion, replaceDependencies } from '../tasks/dependencies.js'
 
 type TaskWrite = components['schemas']['TaskPatch']
 type TaskCreate = components['schemas']['TaskCreate']
@@ -15,11 +17,14 @@ interface TaskRow {
   kind: string; due: string | null; due_mode: DueMode
   assignee_id: string | null; assignee_name: string | null
   reminder_days_before: number | null; reminder_time: string
+  dependency_version: string; dependencies: components['schemas']['TaskDependency'][]
+  dependency_override: { reason: string; at: string } | null
 }
 const COLUMNS = `t.id, t.title, t.period, t.done_at, t.source, t.kind, t.due::text as due,
-  t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time`
+  t.due_mode, t.assignee_id, u.name as assignee_name, t.reminder_days_before, left(t.reminder_time::text,5) as reminder_time, ${DEPENDENCY_COLUMNS}`
 const toTask = (r: TaskRow) => ({
   id: r.id, title: r.title, period: r.period, done: r.done_at !== null,
+  dependencies: r.dependencies, dependencyVersion: r.dependency_version, dependencyOverride: r.dependency_override,
   custom: r.source !== 'system', due: r.due, dueMode: r.due_mode,
   assignee: r.assignee_id ? { userId: r.assignee_id, name: r.assignee_name } : null,
   reminderDaysBefore: r.reminder_days_before, reminderTime: r.reminder_time,
@@ -42,6 +47,7 @@ function monthsOf(period: string | null): number | null {
  * Проверка до транзакции не защищала от назначения уже удалённому человеку.
  */
 async function lockContext(client: Queryable, request: FastifyRequest, assigneeId?: string | null) {
+  await lockSeatingAccess(client, request)
   const weddingId = request.member!.weddingId
   const caller = request.caller!.userId
   const { rows: weddings } = await client.query<{ date: string | null }>(
@@ -100,11 +106,15 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     type: 'object', additionalProperties: false, properties: { mine: { type: 'boolean', default: false } },
   } } }, async request => {
     const { mine = false } = request.query as { mine?: boolean }
-    const { rows } = await db().query<TaskRow>(
+    return db().tx(async client => {
+      await lockGuestReadAccess(client, request)
+      const { rows } = await client.query<TaskRow>(
       `select ${COLUMNS} from tasks t left join users u on u.id=t.assignee_id
         where t.wedding_id=$1 and t.kind='checklist' and (not $2::boolean or t.assignee_id=$3)
         order by t.sort,t.title`, [request.member!.weddingId, mine, request.caller!.userId])
+    await assertSeatingToken(request)
     return rows.map(toTask)
+    })
   })
   app.post('/weddings/:weddingId/tasks', { schema: { body: ref('TaskCreate') } }, async (request, reply) => {
     const body = request.body as TaskCreate
@@ -125,9 +135,12 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
          values ($1,$2,$3,$4,'user',(select coalesce(max(sort),-1)+1 from tasks where wedding_id=$2),$5::date,$6,$7,$8,$9::time)`,
         [id, weddingId, title, body.period, plan.due, plan.mode, body.assigneeId ?? null,
           body.reminderDaysBefore ?? null, body.reminderTime ?? '09:00'])
+      if (body.dependsOn !== undefined) await replaceDependencies(client, request, id, body.dependsOn)
       await notifyTaskAssignment(client, id, request.caller!.userId, null)
-      return load(client, weddingId, id)
-    })
+      const result = await load(client, weddingId, id)
+      await assertSeatingToken(request)
+      return result
+    }).catch(dependencyError)
     return reply.code(201).send(result)
   })
   app.patch('/weddings/:weddingId/tasks/:taskId', { schema: { body: ref('TaskPatch') } }, async request => {
@@ -135,16 +148,21 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     if (!isUuid(taskId)) throw notFound('Задача не найдена')
     const body = request.body as TaskWrite
     if (body.title !== undefined && !body.title.trim()) throw validationFailed({ title: 'название не может быть пустым' })
+    if (body.dependsOn !== undefined && (body.dependencyVersion === undefined || body.done !== undefined)) {
+      throw validationFailed({ dependsOn: 'Связи сохраняются отдельно с текущей версией зависимостей' })
+    }
     return db().tx(async client => {
       const weddingId = request.member!.weddingId
       const date = await lockContext(client, request, body.assigneeId)
       const { rows } = await client.query<TaskRow>(
-        'select id,kind,due::text as due,due_mode,period,assignee_id,reminder_days_before from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
+        'select id,kind,done_at,dependency_version::text as dependency_version,due::text as due,due_mode,period,assignee_id,reminder_days_before from tasks where id=$1 and wedding_id=$2 for update', [taskId, weddingId])
       const previous = rows[0]
       if (!previous) throw notFound('Задача не найдена')
-      if (previous.kind !== 'checklist' && (has(body, 'due') || has(body, 'dueMode') || has(body, 'assigneeId') || has(body, 'reminderDaysBefore') || has(body, 'reminderTime'))) {
+      if (previous.kind !== 'checklist' && (has(body, 'due') || has(body, 'dueMode') || has(body, 'assigneeId') || has(body, 'reminderDaysBefore') || has(body, 'reminderTime') || has(body, 'dependsOn') || has(body, 'dependencyOverride'))) {
         throw validationFailed({ taskId: 'назначение и сроки доступны только задачам чек-листа' })
       }
+      if (body.dependsOn !== undefined) await replaceDependencies(client, request, taskId, body.dependsOn, body.dependencyVersion)
+      await prepareDependencyCompletion(client, request, taskId, previous, body)
       const plan = await deadline(client, body, date, previous)
       const assignee = has(body, 'assigneeId') ? body.assigneeId : previous.assignee_id
       if (body.reminderDaysBefore != null && (!plan.due || !assignee)) {
@@ -160,8 +178,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         [taskId, weddingId, body.title?.trim() ?? null, body.done ?? null, plan.due, plan.mode, has(body, 'assigneeId'), body.assigneeId ?? null,
           has(body, 'reminderDaysBefore'), body.reminderDaysBefore ?? null, body.reminderTime ?? null])
       await notifyTaskAssignment(client, taskId, request.caller!.userId, previous.assignee_id)
-      return load(client, weddingId, taskId)
-    })
+      const result = await load(client, weddingId, taskId)
+      await assertSeatingToken(request)
+      return result
+    }).catch(dependencyError)
   })
   app.delete('/weddings/:weddingId/tasks/:taskId', async (request, reply) => {
     const { taskId } = request.params as { taskId: string }
@@ -174,7 +194,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       if (!rows[0]) throw notFound('Задача не найдена')
       if (rows[0].source === 'system') throw conflict('system_task', 'Задачу из шаблона удалить нельзя — её можно только отметить')
       await client.query('delete from tasks where id=$1 and wedding_id=$2', [taskId, weddingId])
-    })
+      await assertSeatingToken(request)
+    }).catch(dependencyError)
     return reply.code(204).send()
   })
 }

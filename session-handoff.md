@@ -1,3 +1,9 @@
+# Активная передача FR005 · 2026-10-06
+
+Новая отдельная stacked-поставка от5b88c326. PR45 принят (8jobs/7workflow), остаётся draft; его старые blocked/pending записи ниже исторические. Main7c0cb5b6 не менять. Контракт, границы, выполненные40/2360frontend/78PG/50node и пока непроверенные full/drill/browser: `tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md`. Сначала перечитать фактический remote/CI. Никаких merge/auto-merge/deploy. Local83 receipt не допускает84: новый локальный preserving receipt обязателен; не переносить GitHub-ci допуск на общую БД.
+
+---
+
 # Продолжение PR45 · 2026-10-06 · observed active order state
 
 Работать только в feature-ветках: main, merge, auto-merge и production запрещены владельцем. База этой доработки c2354d76, ветка candidate/tili-wp09-20261005. Новый срез: tasks/wedding-platform-master-plan/WP09-ACTIVE-ORDER-20261006.md.

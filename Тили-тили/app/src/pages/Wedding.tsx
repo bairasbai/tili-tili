@@ -1,4 +1,4 @@
-import { createElement, useMemo, useRef, useState } from 'react'
+import { createElement, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Wallet, ListChecks, Clock3, Users, FileText, Plus, Send, Download, Armchair, Heart, NotebookPen, Wine, Gift, Camera, Bus, UtensilsCrossed, ShieldCheck, ListPlus, RefreshCw, Pencil, LockKeyhole } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -23,7 +23,7 @@ import { useBusy } from '@/lib/useBusy'
 import { catIcon } from '@/lib/icons'
 import { cn, copyText, pct, plural } from '@/lib/utils'
 import { chatRouteForVendor } from '@/lib/api/chats'
-import { ApiError, isAuthorized } from '@/lib/api/client'
+import { ApiError, beginLocalSessionAction, isAuthorized, onSessionChanged } from '@/lib/api/client'
 import { getI18nLang, t, key } from '@/lib/i18n'
 import { getMe } from '@/lib/api/auth'
 import { parseReservePercent, parseWholeRubles } from '@/lib/paymentAmount'
@@ -33,6 +33,7 @@ import { OfferAcceptance } from '@/components/OfferAcceptance'
 import { OfferSummary } from '@/components/OfferSummary'
 import { TimelinePlanningEditor, type TimelineChoice } from '@/components/TimelinePlanning'
 import { TimelineAcknowledgments } from '@/components/TimelineAcknowledgments'
+import { TaskDependencies } from '@/components/TaskDependencies'
 
 /* Навигация раздела «Свадьба» */
 function WeddingNav() {
@@ -855,6 +856,8 @@ export function Budget() {
 const PERIOD_LABEL: Record<string, string> = { '9': 'За 9 мес', '6': 'За 6 мес', '3': 'За 3 мес', '1': 'За 1 мес' }
 
 export function Checklist() {
+  const [generation, reset] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => onSessionChanged(reset), [])
   const store = useStore()
   const [params] = useSearchParams()
   const linkedWedding = params.get('wedding')
@@ -863,7 +866,7 @@ export function Checklist() {
   // A second notification can change only the query string on this same route.
   // Key the editor session by its target so filters and drafts cannot point at
   // the previous task/wedding. Reloading the URL uses the same initial target.
-  return <ChecklistContent key={JSON.stringify([weddingId, linkedTask])}
+  return <ChecklistContent key={JSON.stringify([weddingId, linkedTask, generation])}
     weddingId={weddingId} linkedWedding={linkedWedding} linkedTask={linkedTask} />
 }
 
@@ -891,6 +894,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
   const members = membersQ.data ?? []
   const membersReady = ready(membersQ) && !membersQ.refreshing
   const meReady = ready(meQ) && !!meQ.data?.id
+  const canManageDependencies = membersReady && meReady && members.some(m => m.user?.id === meQ.data!.id && m.role === 'couple')
   /* Пока запись идёт, строка не отзывается на повторные нажатия: два быстрых
      тапа по галочке — это две записи, и вторая отменяла бы первую. */
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -914,6 +918,7 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
      контракте по-прежнему нет: цветной точки на строке не будет. */
   const allTasks = (q.data ?? []).map(x => ({
     id: x.id ?? '', title: x.title ?? '', period: x.period ?? '', done: !!x.done, custom: !!x.custom,
+    dependencies: x.dependencies, dependencyVersion: x.dependencyVersion, dependencyOverride: x.dependencyOverride,
     due: x.due ?? null,
     dueMode: x.dueMode ?? 'relative',
     assignee: x.assignee ?? null,
@@ -935,11 +940,19 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
     writing.current = true
     setBusyId(id)
     setErr(null)
-    try { await fn(); q.reload(); return true }
-    catch (e) { setErr({ id, text: explainError(e) }); return false }
-    finally { writing.current = false; setBusyId(null) }
+    const scope = beginLocalSessionAction()
+    try { scope.assertCurrent(); await fn(); scope.assertCurrent(); q.reload(); return true }
+    catch (e) {
+      try { scope.assertCurrent() } catch { return false }
+      setErr({ id, text: explainError(e) }); return false
+    }
+    finally { scope.close(); writing.current = false; setBusyId(null) }
   }
-  const toggle = (id: string, isDone: boolean) => void write(() => setTaskDone(weddingId!, id, !isDone), id)
+  const toggle = (id: string, isDone: boolean) => {
+    const task = allTasks.find(tk => tk.id === id)
+    if (!isDone && task?.dependencies?.some(d => !d.done)) { setOpenId(id); return }
+    void write(() => setTaskDone(weddingId!, id, !isDone), id)
+  }
   /* Удалить можно только свою задачу: шаблонные сервер удалять не даёт (409
      `system_task`), и кнопки у них нет — кнопка с заведомым отказом равна
      кнопке без действия (R-176). Переименовать даёт любую. */
@@ -1072,6 +1085,9 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
                     {planningId === task.id && <TaskPlanningEditor key={task.id} task={task} members={members} membersReady={membersReady}
                       hasWeddingDate={!!weddingDate} disabled={!!busyId || q.refreshing}
                       onSave={patch => write(() => patchTask(weddingId!, task.id, patch), task.id)} onCancel={() => setPlanningId(null)} />}
+                    {weddingId && <TaskDependencies task={task} tasks={allTasks} weddingId={weddingId}
+                      canManage={canManageDependencies} disabled={!!busyId || q.refreshing || !ready(q)}
+                      onSave={patch => write(() => patchTask(weddingId, task.id, patch), task.id)} onRefresh={q.reload} />}
                     {renaming === task.id ? (
                       <div className="flex items-center gap-2 mt-2">
                         <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && rename(task.id)} aria-label={t('Название задачи')}

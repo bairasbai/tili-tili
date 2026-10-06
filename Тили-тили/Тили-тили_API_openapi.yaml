@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.70.0
+  version: 0.71.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3206,6 +3206,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '409':
+          description: Незавершённые предпосылки, конфликт версии, цикл либо попытка добавить предпосылку завершённой задаче. Обновите список перед новым решением.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Изменение связей и ручной обход доступны только паре; остальные разрешённые действия команды сохранены.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '422':
           description: Неверная дата или ответственный; планирование задач плана Б не поддерживается.
           content:
@@ -3216,7 +3228,7 @@ paths:
       tags:
         - tasks
       summary: Удалить свою задачу
-      description: Системную задачу (заведённую сервером, не парой) удалить нельзя — 409 `system_task`.
+      description: Системную задачу удалить нельзя — 409 `system_task`. Используемую предпосылку нельзя удалить до явного снятия связей — 409 `task_dependency_in_use`.
       security:
         - bearerAuth: []
       parameters:
@@ -12956,6 +12968,35 @@ components:
           type: array
           items:
             type: string
+    TaskDependency:
+      type: object
+      required: [id, title, done]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        done:
+          type: boolean
+    TaskDependencyOverride:
+      type: object
+      additionalProperties: false
+      required: [reason, prerequisiteIds]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        prerequisiteIds:
+          type: array
+          minItems: 1
+          maxItems: 64
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+      description: Только пара; точный увиденный список незавершённых предпосылок и причина осознанного завершения. Записывается атомарно, не является общим отключением проверок.
     TaskCreate:
       type: object
       additionalProperties: false
@@ -12963,6 +13004,14 @@ components:
         - title
         - period
       properties:
+        dependsOn:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+          description: Явные предпосылки чек-листа этой свадьбы. Только пара. Пустой список снимает связи; циклы запрещены.
         title:
           type: string
           minLength: 1
@@ -13005,6 +13054,20 @@ components:
       type: object
       additionalProperties: false
       properties:
+        dependsOn:
+          type: array
+          maxItems: 64
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+          description: Явные предпосылки чек-листа этой свадьбы. Только пара. Пустой список снимает связи; циклы запрещены.
+        dependencyVersion:
+          type: string
+          pattern: '^(0|[1-9][0-9]{0,18})$'
+          description: Версия набора зависимостей из последнего чтения; обязательна при изменении связей и ручном завершении.
+        dependencyOverride:
+          $ref: '#/components/schemas/TaskDependencyOverride'
         title:
           type: string
           minLength: 1
@@ -13044,6 +13107,26 @@ components:
     Task:
       type: object
       properties:
+        dependencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskDependency'
+          description: Текущие явные предпосылки, включая выполненные. Повторное открытие предпосылки не отменяет уже выполненную задачу автоматически.
+        dependencyOverride:
+          type: object
+          nullable: true
+          required: [reason, at]
+          properties:
+            reason:
+              type: string
+            at:
+              type: string
+              format: date-time
+          description: Причина ручного решения для текущего завершения; после снятия отметки null. Неизменяемая историческая запись остаётся в audit_log.
+        dependencyVersion:
+          type: string
+          pattern: '^(0|[1-9][0-9]{0,18})$'
+          description: Версия набора зависимостей из последнего чтения; обязательна при изменении связей и ручном завершении.
         id:
           type: string
         title:
