@@ -1,0 +1,37 @@
+name: FR005 locked backend tooling
+'on':
+  push:
+    branches: [test/wp09-task-dependencies-workbench-20261006]
+    paths: [.github/workflows/wp09-backend-dependencies.yml]
+permissions:
+  contents: read
+jobs:
+  tooling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5b88c3261f8dda29d90a5d360e450588cf17745d
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install exact backend lockfile
+        working-directory: Тили-тили/backend
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          mkdir -p "$RUNNER_TEMP/fr005-tooling"
+          tar -czf "$RUNNER_TEMP/fr005-tooling/backend-dependencies.tgz" node_modules
+          sha256sum package.json pnpm-lock.yaml > "$RUNNER_TEMP/fr005-tooling/LOCK_SHA256SUMS"
+          git rev-parse HEAD > "$RUNNER_TEMP/fr005-tooling/SOURCE_SHA"
+          cd "$RUNNER_TEMP/fr005-tooling"
+          sha256sum backend-dependencies.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fr005-backend-tooling
+          path: ${{ runner.temp }}/fr005-tooling
+          retention-days: 1
+          compression-level: 0
