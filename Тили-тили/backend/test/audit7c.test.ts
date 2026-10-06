@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { prepareShift } from './helpers/shift.js'
+import { futureShiftStart } from './helpers/shift-window.js'
 import { hashCode } from '../src/auth/otp.js'
 import { uuidv7 } from '../src/ids.js'
 import { announceDealEvents, rsvpDigest } from '../src/jobs/index.js'
@@ -103,6 +104,7 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
       },
     })
     expect(w.statusCode).toBe(201)
+    expect(w.json().tz).toBe('Europe/Moscow')
     return { ...user, weddingId: w.json().id as string }
   }
 
@@ -168,9 +170,9 @@ describe.skipIf(!live)('третий проход по этапу 7: матри�
     const vendor = await newVendor('Ведущий Артём')
     await book(w, vendor.vendorId)
     await app.db!.query(
-      `update timeline_events set starts_at = now() + interval '2 hours', ends_at = now() + interval '3 hours', duration_minutes=60
+      `update timeline_events set starts_at = $2::timestamptz, ends_at = $2::timestamptz + interval '1 hour', duration_minutes=60
         where wedding_id = $1`,
-      [w.weddingId],
+      [w.weddingId, futureShiftStart()],
     )
     await app.db!.query(`insert into timeline_assignments(wedding_id,event_id,role,kind,reference_id)
       select $1,t.id,'responsible','deal',d.id from timeline_events t join deals d on d.wedding_id=t.wedding_id

@@ -1,6 +1,33 @@
 /** Translations only. Applicable fields, roles and service kinds remain in
  * server metadata; wording does not grant authority or confirm readiness. */
 export const EN_ORDERS: Readonly<Record<string, string>> = {
+  'Заказ завершён — обновите список активных заказов.': 'The order is completed. Refresh the active order list.',
+  'Заказ отменён — обновите список активных заказов.': 'The order is cancelled. Refresh the active order list.',
+  'Состояние заказа не подтверждено — обновите проверку.': 'The order state is unconfirmed. Refresh the check.',
+
+  // Optional weekly order terms reader.
+  'Условия заказов': 'Order terms',
+  'Редакция условий ещё не опубликована': 'No terms revision has been published yet',
+  'Текущая редакция согласована обеими сторонами': 'The current revision is agreed by both parties',
+  'Описание заказа изменилось — условия нужно обновить': 'The order description changed — update the terms',
+  'Исполнитель недоступен для нового согласования': 'The performer is unavailable for a new agreement',
+  'Актуальность условий не подтверждена': 'The current validity of the terms is unconfirmed',
+  'Ожидается подтверждение пары и исполнителя': 'Awaiting confirmation from the couple and performer',
+  'Ожидается подтверждение пары': 'Awaiting confirmation from the couple',
+  'Ожидается подтверждение исполнителя': 'Awaiting confirmation from the performer',
+  'Проверка активных сделок в текущих слотах. Сроки подтверждения не указаны, поэтому список не ограничен неделей.': 'Checks active deals in current slots. Confirmation deadlines are not provided, so this list is not limited to the week.',
+  'Отметки о найденном подрядчике без карточки сделки сюда не входят.': 'Prebooked marks without a deal card are not included.',
+  'Проверить условия заказов': 'Check order terms',
+  'Активных сделок в текущих слотах нет.': 'There are no active deals in the current slots.',
+  'Заказ без названия': 'Unnamed order',
+  'Прежнее согласование не подтверждает новую редакцию.': 'An earlier agreement does not confirm the new revision.',
+  'Внешний контакт не является подтверждением исполнителя в приложении.': 'An external contact is not a performer confirmation in the app.',
+  'Открыть заказ для проверки условий': 'Open order to review terms',
+  'Состояние условий не подтверждено:': 'Terms status is unconfirmed:',
+  'Есть непроверенные заказы. Ошибка чтения не означает согласование.': 'Some orders could not be checked. A read error does not mean agreement.',
+  'Сводка не принимает условия. Проверьте актуальную редакцию в карточке заказа.': 'The agenda does not accept terms. Review the current revision in the order card.',
+  'Обновить проверку условий': 'Refresh terms check',
+
   'Выбранный заказ изменился — обновите позицию': 'The selected order changed. Refresh the position.',
   'Способ бронирования изменился — обновите анкету': 'The booking method changed. Refresh the profile.',
   'Для замены нужно согласовать ресурсы.': 'Replacing this booking requires agreed resources.',

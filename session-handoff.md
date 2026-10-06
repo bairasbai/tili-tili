@@ -1,3 +1,33 @@
+# Продолжение PR45 · 2026-10-06 · observed active order state
+
+Работать только в feature-ветках: main, merge, auto-merge и production запрещены владельцем. База этой доработки c2354d76, ветка candidate/tili-wp09-20261005. Новый срез: tasks/wedding-platform-master-plan/WP09-ACTIVE-ORDER-20261006.md.
+
+Серверный CI базы 37391755196 полностью SUCCESS: 3280 backend tests, native C04/C05, миграции, lint/build; frontend также SUCCESS. Это доказательство базы, не автоматически нового HEAD. Старый weekly browser остаётся FAILED и его ранее заблокированный language fixture здесь не меняется.
+
+Устранён игнор нового catalog.dealState после старого slot DTO: до чтения условий проверяются активные состояния. Локально 70 целевых и 2336/2336 полного frontend, types/lint/build PASS. 15 новых React-кейсов; отдельные 7 пока не выполненных API/PostgreSQL кейсов связывают реальные DTO и фронтовую проекцию. Подробные локальные/облачные статусы фиксируются в PR после их выполнения. Новый read-only workflow сохраняет exact-head metadata evidence. Следующий шаг: окончательные результаты нового полного CI и разрешённая полная браузерная приёмка; остальные требования WP09 не объявлять закрытыми.
+
+---
+## Историческая передача
+
+# Текущее продолжение PR45 · 2026-10-06
+
+Поручение владельца: готовить отдельные коммиты с тестами; main не сливать, auto-merge/deploy не запускать. Действующая база этой доработки `4c41e4abceba1750fa3cc388455397c93782fe7f`, ветка `candidate/tili-wp09-20261005`. Актуальный статус этого среза: `tasks/wedding-platform-master-plan/WP09-ORDER-TERMS-20261006.md`; исторические записи ниже не отменяют текущий запрет слияния.
+
+Добавлен read-only раздел условий заказов в недельной сводке с проверкой weddingId/роли, отдельными ошибками, ограниченной очередью, очисткой при уходе/смене сессии. Новые тесты выполняются с реальными компонентами/API-клиентом, но управляемыми HTTP-ответами. Полные backend/PostgreSQL/browser-проверки этим не заменяются.
+
+На входном 4c41e4ab Offers browser SUCCESS; общий CI и целевой shift workflow завершились failure с cancelled jobs без шагов. Причина отмены не установлена; логи shift job отсутствуют (BlobNotFound). Недельный browser workflow также FAILED; прежний language fixture остаётся неизменённым после защитной блокировки записи. Все ранее открытые блокеры сохраняются. Локальный Chromium в этой сессии отклонил загрузку страницы ERR_BLOCKED_BY_ADMINISTRATOR; новых успешных браузерных снимков нет.
+
+Следующий шаг: завершить exact-head CI и разрешённую браузерную приёмку; проверить старую native-isolation проблему по фактическим данным. Не объявлять готовым PR, весь WP09 или production по frontend unit/React-гейту.
+
+---
+## Историческая передача
+
+# Current branch-only continuation · 2026-10-05
+
+User instruction supersedes historical merge authorizations below: DO NOT MERGE or change main/production. PR45 and PR46 remain draft. PR46 head d4b2d0dd completed all seven checks, including backend and import recovery real API browser. PR45 weekly agenda extends exact base 7dc3ac93; details and publication evidence: tasks/wedding-platform-master-plan/WP09-WEEKLY-AGENDA-20261005.md. No full-WP or production acceptance is implied.
+
+---
+
 # Active continuation · WP00–WP16 · 2026-10-03
 
 Goal active/unbounded: реализовать весь WP00–WP16 end-to-end с meaningful tests/scenarios, поэтапной документацией, отдельными feature commits/push/CI/main. Не останавливаться на nginx/A13 milestone. Scope: tasks/wedding-platform-master-plan/CONTINUATION-AUDIT-20261003.md. Production/human consent/provider/physical-device acceptance не выполнены этими локальными проверками.
@@ -537,3 +567,12 @@ FR018: собрана отдельная композиция backend/UI/OpenAPI
 Это часть WP00: целых WP00–WP16 подтверждено 0/17 (17=16−0+1); FR002 и прочие критерии полной приёмки остаются. По указанию владельца после текущей публикации работу остановить, новые WP не начинать. Подробности: tasks/wedding-platform-master-plan/FR018-PUBLICATION-20261004.md.
 
 Последний Chromium-прогон завершил 7 функциональных сценариев, 6 раскладок RU/EN и 12 снимков, но общий статус FAILED: финальная проверка console не приняла четыре HTTP403 для helper budget/tips и два HTTP404 для couple vendor/profile. Приёмка остаётся открытой; PR сохраняется draft.
+
+
+## 2026-10-05 · дополнение кандидата WP09
+
+Актуальное поручение владельца: новые фичи и тесты только отдельными коммитами; main самостоятельно сливает владелец. Исторические разрешения merge не действуют для этой поставки.
+
+Кандидат подготовлен вне полного checkout. Полный init.sh, Vitest/React, PostgreSQL/Redis, браузер и GitHub CI НЕ ПРОГНАНЫ. Не считать feature/WP принятым; main и production не менять.
+
+Следующий шаг: tasks/wedding-platform-master-plan/CANDIDATE-WP09-20261005.md; запустить все необходимые проектные проверки перед повышением статуса.

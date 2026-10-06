@@ -1,3 +1,15 @@
+## Продолжение PR45 · 2026-10-06 · текущий статус заказа
+
+Поручение: отдельный проверенный коммит, без merge/auto-merge/deploy. База c2354d76.
+
+- [x] Проверить серверный CI базы: frontend/backend SUCCESS, включая C04/C05.
+- [x] Воспроизвести чтение условий из устаревшего списка, если order/catalog уже сообщает done/cancelled.
+- [x] Перед чтением истории учитывать подтверждённое состояние заказа, сохранить правила доступа и отдельные ошибки.
+- [x] 70 целевых и полный frontend 2336/2336, types/lint/build PASS; карты и handoff обновлены.
+- [ ] Подтвердить 7 новых API/проекция тестов с PostgreSQL и exact-head CI после публикации.
+
+---
+
 # Текущий план
 
 Одна активная задача за раз. Пункты отмечать по ходу, не в конце.
@@ -1618,3 +1630,25 @@ PortableCI V1 independentreview rejected4execution/uploadblocks+G02rawproofbindi
 BrowserV1 independent source review foundB01 exactcase/origin classifier/parent omission; NEWV2 source correction and expandedstatic-tab observation+separatelytyped genuineAPIRequestContext capture prepared, finalcurrentrebind/freshreview/rootnative stillpending. No browser14/6layouts/provider/device acceptance claimed. [FreshB01review](/C:/Тили-тили/.unlazy/codex-planb-20261003/a12-c05-browser-fresh-review-v1/REVIEW.md).
 
 Остались currentfull/backend/build, isolatednative49, nativePWA14/6layouts, publicCI/отдельная поставка этого блока и весь исходный WP/FR/SC/NFR/A/U. C01–C08futuregraph/staff/read/lease/erasure/retention иM01/WP11/provider/device/humanrequirements сохраняются. M01/WP11questions ответа пока нет; policy не принимается по истечению времени. Я не могу это подтвердить: завершение любого полногоWP или physicalprovider/device/humanacceptance.
+
+
+## 2026-10-05 · подготовка WP09 без main
+
+- [x] Подготовлен кандидат кода: tasks/wedding-platform-master-plan/CANDIDATE-WP09-20261005.md.
+- [ ] Проверить применение и весь проектный gate на текущем дереве.
+- [ ] Подготовить отдельный feature commit/PR после проверок; не включать auto-merge.
+
+Кандидат подготовлен вне полного checkout. Полный init.sh, Vitest/React, PostgreSQL/Redis, браузер и GitHub CI НЕ ПРОГНАНЫ. Не считать feature/WP принятым; main и production не менять.
+
+
+## WP09 · недельная сводка · 2026-10-05
+
+- [x] WP09: реализовать read-only недельную сводку и тесты календаря, прав, частичного отказа, изоляции, навигации и RU/EN.
+- [ ] Опубликовать отдельным коммитом, завершить exact-head CI и реальный browser/API/PostgreSQL сценарий.
+- [ ] Полный FR-006/WP09: неподтверждённые условия, зависимости задач/согласования/делегирование остаются открытыми.
+
+
+## WP09 · условия заказов · 2026-10-06
+
+- [x] Реализовать раздел условий и выполнить 55 новых / 2321 полных frontend-тестов, типы, lint/build. План `wedding-platform-master-plan/WP09-ORDER-TERMS-20261006.md`.
+- [ ] Завершить exact-head CI и разрешённую браузерную приёмку; прежние блокеры остаются. Только отдельные коммиты, без main.

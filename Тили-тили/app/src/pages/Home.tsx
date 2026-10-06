@@ -13,7 +13,8 @@ import { AsyncState, ready, num } from '@/components/AsyncState'
 import { cn } from '@/lib/utils'
 import { t as tr } from '@/lib/i18n'
 import { fmt } from '@/lib/money'
-import { countdownTo, daysUntil, formatWeddingDate, shortWeddingDate } from '@/lib/weddingDate'
+import { selectHomeTaskPreview } from '@/lib/homeTaskPriority'
+import { countdownTo, daysUntil, formatWeddingDate } from '@/lib/weddingDate'
 
 export default function Home() {
   const nav = useNavigate()
@@ -67,6 +68,7 @@ export default function Home() {
     serverGuests.filter(g => (g.status ?? 'pending') === status).reduce((a, g) => a + 1 + (g.plusOne ? 1 : 0), 0)
 
   const serverTasks = tq.data ?? []
+  const nextTasks = ready(tq) ? selectHomeTaskPreview(serverTasks) : []
   const doneCount = serverTasks.filter(x => x.done).length
   const totalTasks = serverTasks.length
   const donePct = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0
@@ -254,6 +256,13 @@ export default function Home() {
         </div>
       </div>}
 
+      {weddingId && <div className="px-5 mt-4">
+        <button type="button" onClick={() => nav('/wedding/week')}
+          className="press card w-full min-h-11 p-4 text-left text-sm font-semibold">
+          {tr('Открыть недельную сводку')} →
+        </button>
+      </div>}
+
       {/* Быстрые действия */}
       <div className="px-5 mt-4 grid grid-cols-3 md:grid-cols-6 gap-2.5 fade-up" style={{ animationDelay: '.18s' }}>
         {([
@@ -274,22 +283,37 @@ export default function Home() {
       {/* Ближайшие дедлайны */}
       {weddingId && <div className="px-5 fade-up" style={{ animationDelay: '.22s' }}>
         <SectionHead title={tr('Ближайшие дедлайны')} link={tr('Чек-лист →')} onLink={() => nav('/wedding/checklist')} />
-        <div className="card px-4 py-1.5 mt-2">
-          {/* Пустая карточка молчала и при отказе сервера, и при пустом
-              чек-листе — человек не отличал «всё сделано» от «не загрузилось». */}
+        <div role="group" aria-label={tr('Ближайшие дедлайны')} className="card px-4 py-1.5 mt-2">
           <AsyncState q={tq} forbiddenText={tr('Чек-лист ведёт пара — у вашей роли к нему доступа нет.')} />
           {ready(tq) && !serverTasks.some(x => !x.done) && (
             <p className="py-4 text-[12px] text-[var(--soft)] text-center">{totalTasks ? tr('Все задачи закрыты ✓') : tr('Чек-лист пуст — добавьте первую задачу')}</p>
           )}
-          {serverTasks.filter(x => !x.done).slice(0, 3).map((t, i, arr) => (
-            <button key={t.id} onClick={() => nav('/wedding/checklist')} className={`press w-full flex items-center gap-3 py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
-              {/* Признака срочности в контракте нет — цветной точки, которая
-                  что-то означает, тоже. Срок сервер считает от даты свадьбы:
-                  показываем его, пока даты нет — период («за 9 месяцев»). */}
-              <span className="flex-1 text-[12.5px] font-medium truncate">{t.title}</span>
-              <span className="text-[10px] font-bold shrink-0 text-[var(--soft)]">{t.due ? shortWeddingDate(t.due) : t.period ? `${t.period} ${tr('мес')}` : ''}</span>
-            </button>
-          ))}
+          {nextTasks.length > 0 && <p className="py-2 text-[10.5px] leading-relaxed text-[var(--soft)]">
+            {tr('Сначала задачи с известной датой, от ранней к поздней. Без точной даты — после них.')}
+          </p>}
+          {nextTasks.map(({ task, sourceIndex, due }, i, arr) => {
+            const assigneeName = task.assignee?.name?.trim()
+            // YYYY-MM-DD is already calendar-validated; preserve the day literally.
+            const dateLabel = due.state === 'known'
+              ? `${due.date.slice(8, 10)}.${due.date.slice(5, 7)}.${due.date.slice(0, 4)}`
+              : null
+            return (
+              <button key={task.id ?? sourceIndex} onClick={() => nav('/wedding/checklist')}
+                className={`press w-full py-3 text-left ${i !== arr.length - 1 ? 'border-b border-[var(--track)]' : ''}`}>
+                <span className="block text-[12.5px] font-medium break-words">{task.title}</span>
+                <span className="block mt-1 text-[10.5px] leading-relaxed text-[var(--soft)] break-words">
+                  {due.state === 'known'
+                    ? <>{tr('По известному сроку')} · <time dateTime={due.date}>{dateLabel}</time></>
+                    : due.state === 'missing'
+                      ? <>{tr('Срок не задан')}{task.period ? ` · ${task.period} ${tr('мес')}` : ''}</>
+                      : tr('Срок требует уточнения')}
+                </span>
+                {assigneeName && <span className="block mt-1 text-[10.5px] text-[var(--soft)] break-words">
+                  {tr('Ответственный:')} {assigneeName}
+                </span>}
+              </button>
+            )
+          })}
         </div>
       </div>}
 
