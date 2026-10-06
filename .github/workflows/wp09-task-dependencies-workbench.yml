@@ -41,6 +41,18 @@ jobs:
         run: |
           git apply --check "$RUNNER_TEMP/feature.patch"
           git apply "$RUNNER_TEMP/feature.patch"
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('Тили-тили/app/src/lib/taskDependenciesUi.test.tsx')
+          s=p.read_text()
+          s=s.replace("function open() { return render(<MemoryRouter><StoreProvider><Checklist /></StoreProvider></MemoryRouter>) }\nfunction row(title: string)", "function open() { return render(<MemoryRouter><StoreProvider><Checklist /></StoreProvider></MemoryRouter>) }\nasync function openAll() {\n  open()\n  fireEvent.click(screen.getByRole('button', { name: 'Все задачи' }))\n  await screen.findByRole('button', { name: /^Утвердить меню/ })\n}\nfunction row(title: string)")
+          s=s.replace("tasks = [task('t1', 'Собрать ответы гостей', '6'), task('t2', 'Утвердить меню', '3')]", "tasks = [task('t1', 'Собрать ответы гостей', '9'), task('t2', 'Утвердить меню', '6')]")
+          s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ }); fireEvent.click(row('Утвердить меню'))", "await openAll(); fireEvent.click(row('Утвердить меню'))")
+          s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ })\n    const checks", "await openAll()\n    const checks")
+          s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ })\n    fireEvent.click(screen.getAllByLabelText('Отметить выполненной')[1]!)", "await openAll()\n    fireEvent.click(screen.getAllByLabelText('Отметить выполненной')[1]!)")
+          s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ })\n    const next", "await openAll()\n    const next")
+          p.write_text(s)
+          PY
           git diff --check
       - uses: actions/setup-node@v4
         with:
