@@ -1,0 +1,98 @@
+name: FR005 reviewed candidate PostgreSQL
+'on':
+  push:
+    branches: [test/wp09-task-dependencies-workbench-20261006]
+    paths: [.github/workflows/fr005-review.yml, .automation/fr005/**]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/fr005-input" "$RUNNER_TEMP/fr005-evidence"
+          cp .automation/fr005/part*.b64 "$RUNNER_TEMP/fr005-input/"
+      - uses: actions/checkout@v4
+        with:
+          ref: 5b88c3261f8dda29d90a5d360e450588cf17745d
+          persist-credentials: false
+      - name: Verify exact patch and candidate tree
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, lzma, os, pathlib, subprocess, json
+          source=pathlib.Path(os.environ['RUNNER_TEMP'])/'fr005-input'
+          patch=lzma.decompress(base64.b64decode(''.join((source/f'part{i}.b64').read_text() for i in range(3))))
+          assert hashlib.sha256(patch).hexdigest()=='9059fbe211b8486cfb86c6c7938ec74bb34b6cd0ed589136a5def70a8524eb3a'
+          paths=['tasks/todo.md','Тили-тили/app/src/components/TaskDependencies.test.tsx','Тили-тили/app/src/components/TaskDependencies.tsx','Тили-тили/app/src/lib/api/schema.ts','Тили-тили/app/src/lib/i18n.en.ts','Тили-тили/app/src/lib/taskDependenciesJourney.test.tsx','Тили-тили/app/src/pages/Wedding.tsx','Тили-тили/backend/migrations/1763830000000_task_dependencies.cjs','Тили-тили/backend/src/contract/api.generated.ts','Тили-тили/backend/src/contract/paths.generated.ts','Тили-тили/backend/src/contract/schemas.generated.ts','Тили-тили/backend/src/routes/tasks.ts','Тили-тили/backend/src/tasks/dependencies.ts','Тили-тили/backend/test/taskDependencies.test.ts','Тили-тили/Тили-тили_API_openapi.yaml']
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()=='5b88c3261f8dda29d90a5d360e450588cf17745d'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+          assert sorted(subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0'))==sorted(paths)
+          tree=subprocess.check_output(['git','write-tree']).decode().strip()
+          assert tree=='34dbb7261f8eeab15251811716b5135cf2e9ef6d'
+          manifest={'base':'5b88c3261f8dda29d90a5d360e450588cf17745d','tree':tree,'patchSHA256':hashlib.sha256(patch).hexdigest(),'files':[{'path':p,'sha':subprocess.check_output(['git','hash-object',p]).decode().strip(),'sha256':hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()} for p in paths]}
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'fr005-evidence'
+          (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+          (out/'candidate.patch').write_bytes(patch)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked backend dependencies
+        working-directory: Тили-тили/backend
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Start owned loopback PostgreSQL
+        run: |
+          docker run -d --network host --name "fr005-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" -e POSTGRES_USER=codex_test -e POSTGRES_DB=tili_ecosystem_task_dependencies_20261006_test -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine -p 15432 -c listen_addresses=127.0.0.1
+          for i in $(seq 1 60); do
+            if docker exec "fr005-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" pg_isready -U codex_test -p 15432 -d tili_ecosystem_task_dependencies_20261006_test; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Types and real migration
+        working-directory: Тили-тили/backend
+        env:
+          DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_task_dependencies_20261006_test
+        run: |
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Dependency and existing planning regressions
+        working-directory: Тили-тили/backend
+        env:
+          TILI_DISPOSABLE_PG_PORT: '15432'
+          DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_task_dependencies_20261006_test
+          TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_task_dependencies_20261006_test
+        run: |
+          status=0
+          node node_modules/vitest/vitest.mjs run test/taskDependencies.test.ts test/taskPlanning.test.ts test/taskReminders.test.ts test/contract-sync.test.ts --reporter=default --reporter=json --outputFile="$RUNNER_TEMP/fr005-raw.json" || status=$?
+          TEST_EXIT="$status" node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {vitestSummary} from './scripts/ci-evidence.mjs';
+          const r=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/fr005-raw.json','utf8'));
+          const code=Number(process.env.TEST_EXIT);
+          writeFileSync(process.env.RUNNER_TEMP+'/fr005-evidence/result.json',JSON.stringify(vitestSummary(r,code),null,2));
+          assert.equal(code,0); assert.equal(r.success,true); assert(r.numTotalTests>0); assert.equal(r.numPendingTests,0); assert.equal(r.numTodoTests,0);
+          JS
+      - name: Lint changed server sources
+        working-directory: Тили-тили/backend
+        run: node node_modules/eslint/bin/eslint.js src/tasks/dependencies.ts src/routes/tasks.ts test/taskDependencies.test.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fr005-reviewed-native
+          path: ${{ runner.temp }}/fr005-evidence
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove only owned disposable container
+        if: always()
+        run: |
+          if docker inspect "fr005-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1; then docker rm -f "fr005-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"; fi
