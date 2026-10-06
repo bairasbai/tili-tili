@@ -1,4 +1,4 @@
-name: WP09 task dependencies workbench
+name: WP09 task dependencies validation
 'on':
   push:
     branches: [test/wp09-task-dependencies-workbench-20261006]
@@ -6,23 +6,99 @@ name: WP09 task dependencies workbench
 permissions:
   contents: read
 jobs:
-  source:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tili
+          POSTGRES_PASSWORD: tili
+          POSTGRES_DB: tili_task_dependencies_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U tili -d tili_task_dependencies_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_task_dependencies_test
+      TEST_DATABASE_URL: postgres://tili:tili@127.0.0.1:5432/tili_task_dependencies_test
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed patch outside checkout
+        run: |
+          cat .automation/wp09deps/part{0,1,2,3,4,5} > "$RUNNER_TEMP/patch.xz.b64"
+          base64 -d "$RUNNER_TEMP/patch.xz.b64" | xz -d > "$RUNNER_TEMP/feature.patch"
+          test "$(sha256sum "$RUNNER_TEMP/feature.patch" | cut -d' ' -f1)" = c7cf421643ab09fed5638f1d05ad63ec6f640f41f7bbf1f196e46c24fa053d85
       - uses: actions/checkout@v4
         with:
           ref: 5b88c3261f8dda29d90a5d360e450588cf17745d
           persist-credentials: false
-      - name: Pack exact tracked source
+          clean: true
+      - name: Apply reviewed patch
         run: |
-          mkdir -p "$RUNNER_TEMP/wp09-dependencies"
-          git rev-parse HEAD > "$RUNNER_TEMP/wp09-dependencies/SOURCE_SHA"
-          git archive HEAD | gzip -n > "$RUNNER_TEMP/wp09-dependencies/source.tar.gz"
-          sha256sum "$RUNNER_TEMP/wp09-dependencies/source.tar.gz" > "$RUNNER_TEMP/wp09-dependencies/SHA256SUMS"
-      - uses: actions/upload-artifact@v4
+          git apply --check "$RUNNER_TEMP/feature.patch"
+          git apply "$RUNNER_TEMP/feature.patch"
+          git diff --check
+      - uses: actions/setup-node@v4
         with:
-          name: wp09-task-dependencies-source
-          path: ${{ runner.temp }}/wp09-dependencies
-          retention-days: 1
+          node-version: 22
+      - name: Install locked backend dependencies
+        working-directory: Тили-тили/backend
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Generate contract and both TypeScript clients
+        working-directory: Тили-тили/backend
+        run: |
+          pnpm run gen
+          node node_modules/openapi-typescript/bin/cli.js ../Тили-тили_API_openapi.yaml -o ../app/src/lib/api/schema.ts
+          cmp src/contract/api.generated.ts ../app/src/lib/api/schema.ts
+      - name: Install locked frontend dependencies
+        working-directory: Тили-тили/app
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Backend types and fresh migration
+        working-directory: Тили-тили/backend
+        run: |
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Dependency API and contract regression
+        working-directory: Тили-тили/backend
+        run: node node_modules/vitest/vitest.mjs run test/taskDependencies.test.ts test/contract-sync.test.ts
+      - name: Backend lint changed files
+        working-directory: Тили-тили/backend
+        run: node node_modules/eslint/bin/eslint.js src/routes/tasks.ts test/taskDependencies.test.ts
+      - name: Frontend dependency tests and types
+        working-directory: Тили-тили/app
+        run: |
+          node node_modules/typescript/bin/tsc -b
+          node node_modules/vitest/vitest.mjs run src/lib/taskDependencies.test.ts src/lib/taskDependenciesUi.test.tsx
+          node node_modules/eslint/bin/eslint.js src/components/TaskDependencies.tsx src/lib/taskDependencies.ts src/lib/taskDependencies.test.ts src/lib/taskDependenciesUi.test.tsx src/pages/Wedding.tsx src/lib/i18n.en.ts
+      - name: Full frontend tests and build
+        working-directory: Тили-тили/app
+        run: |
+          node node_modules/vitest/vitest.mjs run
+          node node_modules/vite/bin/vite.js build
+      - name: Preserve generated exact tree
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          git status --short > "$RUNNER_TEMP/evidence/status.txt"
+          git diff --binary > "$RUNNER_TEMP/evidence/final.patch"
+          git diff --check > "$RUNNER_TEMP/evidence/diff-check.txt"
+          sha256sum "$RUNNER_TEMP/evidence/final.patch" > "$RUNNER_TEMP/evidence/SHA256SUMS"
+          git diff --name-only > "$RUNNER_TEMP/evidence/files.txt"
+          tar --exclude='./app/node_modules' --exclude='./backend/node_modules' --exclude='./app/dist' --exclude='./backend/dist' -czf "$RUNNER_TEMP/evidence/patched-source.tgz" -C Тили-тили .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wp09-task-dependencies-validation
+          path: ${{ runner.temp }}/evidence
+          retention-days: 2
           compression-level: 0
