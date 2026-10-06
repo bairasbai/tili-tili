@@ -1,0 +1,87 @@
+diff --git a/.github/workflows/task-planning-e2e.yml b/.github/workflows/task-planning-e2e.yml
+index 803ea2f..d722c3a 100644
+--- a/.github/workflows/task-planning-e2e.yml
++++ b/.github/workflows/task-planning-e2e.yml
+@@ -86,7 +86,7 @@ jobs:
+         python - <<'PYCODE'
+         import json,os,pathlib
+         r=json.loads((pathlib.Path(os.environ['E2E_RESULT_DIR'])/'browser-result.json').read_text())
+-        assert len(r['passed'])==14 and not r['page_errors'] and 'error' not in r
++        assert len(r['passed'])==19 and not r['page_errors'] and 'error' not in r
+         PYCODE
+     - uses: actions/upload-artifact@v4
+       if: always()
+diff --git "a/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/backend/scripts/task-e2e-browser.py" "b/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/backend/scripts/task-e2e-browser.py"
+index 562296a..8186557 100644
+--- "a/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/backend/scripts/task-e2e-browser.py"
++++ "b/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/backend/scripts/task-e2e-browser.py"
+@@ -91,6 +91,69 @@ with sync_playwright() as p:
+         h.reload(wait_until='networkidle');h.get_by_role('button',name='Мои задачи',exact=True).click()
+         expect(h.get_by_role('button',name=re.compile('^E2E — отправить меню'))).to_have_count(0)
+         results.append('second-user-sees-unassignment')
++
++        # WP09 / FR-005: dependencies explain the next step, reject implicit
++        # completion, allow an explicit couple override, and trust current
++        # server state when another member completed a predecessor meanwhile.
++        page.goto('http://127.0.0.1:3000/wedding/checklist',wait_until='networkidle')
++        page.get_by_role('button',name='Все задачи',exact=True).click()
++        def add_plain_task(title):
++            page.get_by_role('button',name='+ Задача',exact=True).click()
++            form=page.get_by_role('group',name='Новая задача',exact=True)
++            form.get_by_placeholder('Новая задача…').fill(title)
++            form.get_by_role('button',name='Добавить',exact=True).click()
++            expect(page.get_by_role('button',name=re.compile('^'+re.escape(title)))).to_be_visible()
++        def link_dependency(target, predecessor):
++            row=page.get_by_role('button',name=re.compile('^'+re.escape(target)))
++            row.click()
++            page.get_by_role('button',name='Зависимости',exact=True).click()
++            editor=page.get_by_role('group',name='Зависимости задачи',exact=True)
++            editor.get_by_role('checkbox',name=re.compile(re.escape(predecessor))).check()
++            editor.get_by_role('button',name='Сохранить зависимости',exact=True).click()
++            expect(page.get_by_text('Не завершено',exact=True)).to_be_visible()
++
++        dep_a='E2E — ответы для меню A'; target_a='E2E — финальное меню A'
++        add_plain_task(dep_a); add_plain_task(target_a); link_dependency(target_a,dep_a)
++        results.append('dependency-editor-persists-predecessor')
++        target_row=page.get_by_role('button',name=re.compile('^'+re.escape(target_a)))
++        target_row.locator('..').get_by_label('Отметить выполненной').click()
++        override=page.get_by_role('group',name='Ручной обход зависимостей',exact=True)
++        expect(override.get_by_text(dep_a,exact=True)).to_be_visible()
++        expect(target_row.locator('..').get_by_label('Снять отметку')).to_have_count(0)
++        results.append('blocked-completion-requires-explicit-override')
++
++        h.goto('http://127.0.0.1:3000/wedding/checklist',wait_until='networkidle')
++        h.get_by_role('button',name='Все задачи',exact=True).click()
++        htarget=h.get_by_role('button',name=re.compile('^'+re.escape(target_a)))
++        htarget.locator('..').get_by_label('Отметить выполненной').click()
++        hoverride=h.get_by_role('group',name='Ручной обход зависимостей',exact=True)
++        expect(hoverride.get_by_text('Только пара может подтвердить ручной обход.',exact=True)).to_be_visible()
++        expect(hoverride.get_by_role('button',name='Завершить несмотря на зависимости',exact=True)).to_have_count(0)
++        results.append('helper-cannot-override-dependency')
++
++        override.get_by_placeholder('Опишите, почему задачу можно завершить сейчас').fill('Меню подтверждено вручную на встрече')
++        override.get_by_role('button',name='Завершить несмотря на зависимости',exact=True).click()
++        expect(target_row.locator('..').get_by_label('Снять отметку')).to_be_visible()
++        page.reload(wait_until='networkidle');page.get_by_role('button',name='Все задачи',exact=True).click()
++        expect(page.get_by_role('button',name=re.compile('^'+re.escape(target_a))).locator('..').get_by_label('Снять отметку')).to_be_visible()
++        results.append('couple-override-persists')
++
++        dep_b='E2E — ответы для меню B'; target_b='E2E — финальное меню B'
++        add_plain_task(dep_b); add_plain_task(target_b); link_dependency(target_b,dep_b)
++        # Owner still renders the blocker. The helper completes the predecessor
++        # in another context; the owner's completion must use server truth and
++        # must not force a stale manual-override flow.
++        h.reload(wait_until='networkidle');h.get_by_role('button',name='Все задачи',exact=True).click()
++        hdep=h.get_by_role('button',name=re.compile('^'+re.escape(dep_b)))
++        hdep.locator('..').get_by_label('Отметить выполненной').click()
++        expect(hdep.locator('..').get_by_label('Снять отметку')).to_be_visible()
++        owner_target=page.get_by_role('button',name=re.compile('^'+re.escape(target_b)))
++        owner_target.locator('..').get_by_label('Отметить выполненной').click()
++        expect(owner_target.locator('..').get_by_label('Снять отметку')).to_be_visible()
++        expect(page.get_by_role('group',name='Ручной обход зависимостей',exact=True)).to_have_count(0)
++        page.screenshot(path=str(out/'task-dependencies-mobile.png'),full_page=True)
++        results.append('stale-rendered-blocker-defers-to-current-server-state')
++
+         # Existing budget creation must remain usable; no task-only controls appear there.
+         page.goto('http://127.0.0.1:3000/wedding/budget',wait_until='networkidle')
+         expect(page).to_have_url('http://127.0.0.1:3000/wedding/budget')
