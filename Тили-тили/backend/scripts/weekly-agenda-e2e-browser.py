@@ -15,6 +15,7 @@ out = pathlib.Path(os.environ['E2E_RESULT_DIR']); out.mkdir(parents=True, exist_
 f = json.loads(pathlib.Path(os.environ['E2E_FIXTURE_FILE']).read_text())
 wid = f['weddingId']; api = 'http://127.0.0.1:3001'; ui = 'http://127.0.0.1:3000'
 passed, errors, http_errors, writes = [], [], [], []
+order_reads, order_terms_checks = [], []
 with sync_playwright() as pw:
     options = {'headless': True}
     if os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE'):
@@ -38,11 +39,16 @@ with sync_playwright() as pw:
         return c
     def observe(p):
         p.on('pageerror', lambda e: errors.append(str(e)))
+        p.on('request', lambda r: order_reads.append(r.url.split('?')[0]) if re.search(r'/api/deals/[^/]+/order/(catalog|terms)$', r.url.split('?')[0]) else None)
         p.on('request', lambda r: writes.append({'path':r.url.split('?')[0],'method':r.method}) if '/api/' in r.url and r.method not in ('GET','HEAD','OPTIONS') else None)
         p.on('response', lambda r: http_errors.append({'path':r.url.split('?')[0],'status':r.status}) if r.status >= 400 else None)
+    def terms_proof():
+        view = req('GET', f'/deals/{deal}/order/terms')
+        # Keep only stable nonfinancial metadata, never readToken or snapshots.
+        return {key: view[key] for key in ('revision', 'proposedTermsId', 'agreedTermsId')}
     def proof():
         s = req('GET',f'/weddings/{wid}/payment-schedule?from={start}&to={end}&includeOverdue=true&includeCancelled=false')
-        return {'tasks':sorted((x['id'],x['done'],x['due']) for x in req('GET',f'/weddings/{wid}/tasks')),
+        return {'orderTerms': terms_proof(), 'tasks':sorted((x['id'],x['done'],x['due']) for x in req('GET',f'/weddings/{wid}/tasks')),
             'guests':sorted((x['id'],x['partyId'],x['status']) for x in req('GET',f'/weddings/{wid}/guests')),
             'installments':sorted((x['id'],x['status'],x['remaining']['amount']) for x in s['allInstallments']),
             'payments':sorted((x['id'],x['amountKnown'],x['version']) for x in s['payments'])}
@@ -63,9 +69,11 @@ with sync_playwright() as pw:
         before=proof()
         for lang in ('ru','en'):
             labels={'open':'Открыть недельную сводку','payments':'Платежи этой недели','refresh':'Обновить сводку','retry':'Повторить','people':'3 персоны ждут ответа'} if lang=='ru' else {
-                'open':'Open weekly agenda','payments':'Payments this week','refresh':'Refresh agenda','retry':'Retry','people':'3 people awaiting replies'}
+                'open':'Open weekly agenda','payments':'Payments this week','refresh':'Refresh agenda','retry':'Try again','people':'3 people awaiting replies'}
+            terms_labels = {'region':'Условия заказов','check':'Проверить условия заказов','unpublished':'Редакция условий ещё не опубликована','refresh':'Обновить проверку условий','open':'Открыть заказ для проверки условий'} if lang=='ru' else {
+                'region':'Order terms','check':'Check order terms','unpublished':'No terms revision has been published yet','refresh':'Refresh terms check','open':'Open order to review terms'}
             for width in (320,390,1280):
-                c=context(f['owner'],lang,width);page=c.new_page();observe(page)
+                c=context(f['owner'],lang,width);page=c.new_page();observe(page); first_order_read=len(order_reads)
                 page.goto(ui+'/home',wait_until='networkidle')
                 assert page.evaluate("localStorage.getItem('tt_lang')")==lang, 'Fixture language must use the raw persisted setting'
                 page.get_by_role('button',name=re.compile('^'+labels['open'])).click()
@@ -78,6 +86,19 @@ with sync_playwright() as pw:
                 payments=page.get_by_role('region',name=labels['payments'],exact=True)
                 assert re.search(r'1\s000,99',payments.inner_text()),payments.inner_text()
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth+1'),f'overflow {lang}/{width}'
+                terms_region=page.get_by_role('region',name=terms_labels['region'],exact=True)
+                expect(terms_region.get_by_role('button',name=terms_labels['check'],exact=True)).to_be_visible()
+                assert order_reads[first_order_read:]==[], 'Order terms must not load automatically'
+                terms_region.get_by_role('button',name=terms_labels['check'],exact=True).click()
+                expect(terms_region.get_by_text(terms_labels['unpublished'],exact=True)).to_be_visible()
+                expect(terms_region.get_by_role('link',name=terms_labels['open'],exact=True)).to_have_attribute('href',f'/deal/{deal}')
+                assert ui+f'/api/deals/{deal}/order/catalog' in order_reads[first_order_read:]
+                assert ui+f'/api/deals/{deal}/order/terms' in order_reads[first_order_read:]
+                with page.expect_response(lambda response: response.status==200 and response.url==ui+f'/api/deals/{deal}/order/terms'):
+                    terms_region.get_by_role('button',name=terms_labels['refresh'],exact=True).click()
+                expect(terms_region.get_by_text(terms_labels['unpublished'],exact=True)).to_be_visible()
+                assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth+1'),f'terms overflow {lang}/{width}'
+                order_terms_checks.append(f'{lang}-{width}: explicit real API read, unpublished state, action link, refresh and layout')
                 page.screenshot(path=str(out/f'{lang}-{width}-weekly.png'),full_page=True)
                 passed.append(f'{lang}-{width}: actual data, week, person count, amount and layout')
                 for title,route in [('Weekly overdue fixture','/wedding/checklist'),('Weekly payment fixture','/wedding/payments'),('Weekly second person','/wedding/guests')]:
@@ -103,18 +124,30 @@ with sync_playwright() as pw:
         expect(payments.get_by_role('link')).to_have_count(0);expect(payments.get_by_role('button',name='Повторить',exact=True)).to_have_count(0)
         expect(page.get_by_text('Weekly overdue fixture',exact=True)).to_be_visible()
         assert any(r['status']==403 and r['path'].endswith('/payment-schedule') for r in http_errors)
+        terms_region=page.get_by_role('region',name='Условия заказов',exact=True)
+        first_helper_order_read=len(order_reads)
+        helper_denial_paths={ui+f'/api/weddings/{wid}/slots',ui+f'/api/deals/{deal}/order/catalog'}
+        with page.expect_response(lambda response: response.status==403 and response.url.split('?')[0] in helper_denial_paths):
+            terms_region.get_by_role('button',name='Проверить условия заказов',exact=True).click()
+        expect(terms_region.get_by_text('Загружаем…',exact=True)).to_have_count(0)
+        expect(terms_region.get_by_role('link')).to_have_count(0)
+        expect(terms_region.get_by_role('button')).to_have_count(0)
+        expect(terms_region.get_by_text('Редакция условий ещё не опубликована',exact=True)).to_have_count(0)
+        assert ui+f'/api/deals/{deal}/order/terms' not in order_reads[first_helper_order_read:]
+        order_terms_checks.append('helper: real 403, no terms fetch, agreement or retry action')
         page.screenshot(path=str(out/'helper-390-weekly.png'),full_page=True);c.close()
         passed.append('real helper financial refusal with accessible tasks')
         after=proof();assert before==after,'Reader mutated domain data';assert not writes,writes;assert not errors,errors
-        assert all(r['path'].endswith('/payment-schedule') and r['status'] in (403,503) for r in http_errors),http_errors
+        assert all((r['path']==ui+f'/api/weddings/{wid}/payment-schedule' and r['status'] in (403,503)) or (r['path'] in helper_denial_paths and r['status']==403) for r in http_errors),http_errors
+        assert len(order_terms_checks)==7, order_terms_checks
         passed.append('unchanged domain IDs, states, amounts; no browser writes')
-        result={'passed':passed,'page_errors':errors,'http_errors':http_errors,'browser_writes':writes,'before':before,'after':after,
+        result={'order_terms_checks':order_terms_checks,'passed':passed,'page_errors':errors,'http_errors':http_errors,'browser_writes':writes,'before':before,'after':after,
                 'browser':browser.version,'range':{'from':start,'to':end,'timeZone':wedding['tz']},'limits':'Actual API/PostgreSQL; two controlled HTTP503 injections; Chromium viewports, not physical devices.'}
         (out/'weekly-result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2))
-        print(json.dumps({'passed':len(passed),'page_errors':errors,'browser_writes':writes}))
+        print(json.dumps({'passed':len(passed),'order_terms_checks':len(order_terms_checks),'page_errors':errors,'browser_writes':writes}))
     except Exception:
         error=re.sub(r'eyJ[\w-]+\.[\w-]+\.[\w-]+','[redacted-token]',traceback.format_exc())
-        (out/'weekly-result.json').write_text(json.dumps({'passed':passed,'page_errors':errors,'http_errors':http_errors,'error':error},ensure_ascii=False,indent=2))
+        (out/'weekly-result.json').write_text(json.dumps({'passed':passed,'order_terms_checks':order_terms_checks,'page_errors':errors,'http_errors':http_errors,'error':error},ensure_ascii=False,indent=2))
         if page and not page.is_closed(): page.screenshot(path=str(out/'weekly-failure.png'),full_page=True)
         raise
     finally:
