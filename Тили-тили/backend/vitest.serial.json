@@ -60,6 +60,5 @@
   "test/c04ProfilePrefsAtomicity.test.ts",
   "test/c04ProfileDefaultOrders.test.ts",
   "test/orderLegacyIntegration.test.ts",
-  "test/timeline021.test.ts",
-  "test/weeklyOrderTermsApi.test.ts"
+  "test/timeline021.test.ts"
 ]
