@@ -60,7 +60,7 @@ describe.skipIf(!DB)('weekly order metadata with actual API and PostgreSQL', () 
     await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [wedding, owner.id])
     await app.db!.query("insert into vendors(id,user_id,category_id,name,published_at) values($1,$2,'photo','Synthetic weekly studio',now())", [vendor, performer.id])
     await app.db!.query("insert into slots(id,wedding_id,category_id,label) values($1,$2,'photo','Photographer')", [slot, wedding])
-    await app.db!.query("insert into deals(id,wedding_id,slot_id,vendor_id,state,price,package_title_snapshot) values($1,$2,$3,$4,'booked',9007199254740993,'Private frozen package')", [deal, wedding, slot, vendor])
+    await app.db!.query("insert into deals(id,wedding_id,slot_id,vendor_id,state,price,package_title_snapshot,package_includes_snapshot) values($1,$2,$3,$4,'booked',9007199254740993,'Private frozen package',$5::jsonb)", [deal, wedding, slot, vendor, JSON.stringify(['Frozen gallery'])])
     await app.db!.query('update slots set deal_id=$2 where id=$1', [slot, deal])
     return { wedding, slot, deal, owner, performer, path: `/deals/${deal}/order/terms` }
   }
