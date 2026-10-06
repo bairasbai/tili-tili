@@ -26,7 +26,7 @@ jobs:
           python3 - <<'PY'
           import hashlib, json, os, pathlib, subprocess, urllib.request
           def git(*args):
-              return subprocess.check_output(['git', *args]).decode().strip()
+              return subprocess.check_output(['git', '-c', 'core.quotePath=false', *args]).decode().strip()
           base = '2e728fe4c258a963d852f8e7f3b25446ce932076'
           tree = '5e6dcfe3393dbc742bc8e28faf4889b2883c89a1'
           patch = pathlib.Path(os.environ['RUNNER_TEMP']) / 'fr005-ci-repair.patch'
