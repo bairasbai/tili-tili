@@ -1,0 +1,28 @@
+name: WP09 task dependencies workbench
+'on':
+  push:
+    branches: [test/wp09-task-dependencies-workbench-20261006]
+    paths: [.github/workflows/wp09-task-dependencies-workbench.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5b88c3261f8dda29d90a5d360e450588cf17745d
+          persist-credentials: false
+      - name: Pack exact tracked source
+        run: |
+          mkdir -p "$RUNNER_TEMP/wp09-dependencies"
+          git rev-parse HEAD > "$RUNNER_TEMP/wp09-dependencies/SOURCE_SHA"
+          git archive HEAD | gzip -n > "$RUNNER_TEMP/wp09-dependencies/source.tar.gz"
+          sha256sum "$RUNNER_TEMP/wp09-dependencies/source.tar.gz" > "$RUNNER_TEMP/wp09-dependencies/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wp09-task-dependencies-source
+          path: ${{ runner.temp }}/wp09-dependencies
+          retention-days: 1
+          compression-level: 0
