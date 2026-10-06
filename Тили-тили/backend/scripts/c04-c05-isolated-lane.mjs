@@ -40,7 +40,7 @@ function captureSource(profile){
   const paths=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard'],{cwd:repo,encoding:'utf8',timeout:10000}).split('\0').filter(Boolean)
     .filter(p=>!p.includes('/.ci/')&&!p.includes('/node_modules/')&&!p.includes('/dist/'))
   const files=[...new Set(paths)].sort().map(path=>({path,sha256:fileSHA(join(repo,path))}))
-  const source={kind:'c04_c05_current_source83_v1',at:new Date().toISOString(),backend:realpathSync(backend),repo:realpathSync(repo),checkoutSHA:head,files};verifySource(source);return source
+  const source={kind:'c04_c05_current_source84_v1',at:new Date().toISOString(),backend:realpathSync(backend),repo:realpathSync(repo),checkoutSHA:head,files};verifySource(source);return source
 }
 function witnesses(log,prefix){return log.split(/\r?\n/).filter(line=>line.includes(prefix)).map(line=>JSON.parse(line.slice(line.indexOf(prefix)+prefix.length)))}
 export function qualifyWitnesses(phase,rows){
@@ -86,7 +86,7 @@ async function main(){
   async function connect(url,tag){const c=new Client({connectionString:url,application_name:tag,connectionTimeoutMillis:5000,statement_timeout:15000,query_timeout:18000});try{await c.connect();return c}catch(e){await c.end().catch(()=>{});throw e}}
   const admission=()=>({profile,creation,schema,source,sourceSHA256:sourceRef.sha256,directory,oid:creation.databaseOID})
   async function nativeClean(){const c=await connect(profile.targetURL,'c04ci_post_'+randomUUID());try{return await inspectNative(c,admission())}finally{await c.end()}}
-  function bundle(stage,phase,control){return save(phase+'-admission.json',{kind:'c04_c05_native_admission83_v1',stage,phase,profile:profile.mode,files:{creation:creationRef,schema:schemaRef,source:sourceRef,...(localUpgrade?localUpgrade.refs:{}),...(control?{control}: {})}})}
+  function bundle(stage,phase,control){return save(phase+'-admission.json',{kind:'c04_c05_native_admission84_v1',stage,phase,profile:profile.mode,files:{creation:creationRef,schema:schemaRef,source:sourceRef,...(localUpgrade?localUpgrade.refs:{}),...(control?{control}: {})}})}
   try{
     save('invocation.json',{kind:'c04_c05_explicit_native_invocation',at:new Date().toISOString(),profile:profile.mode,context:profile.context??null,argv:expected,automaticAdmission:false})
     source=captureSource(profile);sourceRef=save('source.json',source)
@@ -132,7 +132,7 @@ async function main(){
       const audits=(await c.query(AUDITS)).rows.map(r=>({...r,at:r.at.toISOString()}));assert.deepEqual(audits,lastAudits)
       const catalog=(await c.query(SCHEMA_CATALOG)).rows[0]
       if(localUpgrade)assert.deepEqual(catalog,localUpgrade.after.schemaCatalog)
-      schema={kind:'c04_c05_actual_schema83_v1',at:new Date().toISOString(),sourceSHA256:sourceRef.sha256,creationSHA256:creationRef.sha256,identity,migrationCount:83,journalNames,triggers,columns,catalog,retainedAudits:audits}
+      schema={kind:'c04_c05_actual_schema84_v1',at:new Date().toISOString(),sourceSHA256:sourceRef.sha256,creationSHA256:creationRef.sha256,identity,migrationCount:84,journalNames,triggers,columns,catalog,retainedAudits:audits}
       const current=await inspectNative(c,admission());schema.nativePreflight=current;schemaRef=save('schema.json',schema)
     }finally{await c.end()}
     const barrier=bundle('barrier','barrier')
@@ -159,7 +159,7 @@ async function main(){
   finally{
     if(creation&&schema&&sourceRef)try{const current=await nativeClean();if(lastAudits.length)for(const r of lastAudits)assert.deepEqual(current.audits.find(a=>a.id===r.id),r);save('final-native-postflight.json',current);finalProof=current}catch(e){save('final-postflight-failure.json',err(e));if(!primaryError)primaryError=err(e)}
     const passed=!primaryError&&phaseResults.c04?.passed===true&&phaseResults.worker?.passed===true&&finalProof!==null
-    save('final.json',{kind:'c04_c05_isolated_native_lane83_v1',runtime:'ACTUAL_NATIVE',profile:profile.mode,context:profile.context??null,overall:passed?'PASSED':'FAILED',targetName:profile.targetName,databaseOID:creation?.databaseOID??null,source:sourceRef??null,phaseResults,c04:phaseResults.c04?'EXECUTED':'UNRUN',worker:phaseResults.worker?'EXECUTED':'UNRUN',primaryError,childRecords,finalProof,limits:['Finite30+19 feature acceptance only','No provider/device/M01/fullA12 acceptance','No database drop/reuse or global/audit erasure']})
+    save('final.json',{kind:'c04_c05_isolated_native_lane84_v1',runtime:'ACTUAL_NATIVE',profile:profile.mode,context:profile.context??null,overall:passed?'PASSED':'FAILED',targetName:profile.targetName,databaseOID:creation?.databaseOID??null,source:sourceRef??null,phaseResults,c04:phaseResults.c04?'EXECUTED':'UNRUN',worker:phaseResults.worker?'EXECUTED':'UNRUN',primaryError,childRecords,finalProof,limits:['Finite30+19 feature acceptance only','No provider/device/M01/fullA12 acceptance','No database drop/reuse or global/audit erasure']})
     const index=[];function tree(dir,prefix=''){for(const f of readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){const rel=prefix+f.name;if(f.isDirectory())tree(join(dir,f.name),rel+'/');else index.push({path:rel,sha256:fileSHA(join(dir,f.name))})}}tree(directory);save('SHA256SUMS.json',index)
     process.stdout.write(JSON.stringify({overall:passed?'PASSED':'FAILED',directory,c04:phaseResults.c04??'UNRUN',worker:phaseResults.worker??'UNRUN'})+'\n');if(!passed)process.exitCode=1
   }

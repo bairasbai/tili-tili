@@ -1,3 +1,46 @@
+# FR005 native84 bindings · 2026-10-06
+
+- [x] Diagnose exact native barrier84!=83 failure, retain failed artifact.
+- [x] Fix strict child bindings; preserve frozen30/19 behavioral cases through inverse hashes.
+- [x] Four regressions and54node tests passed; full backend types/lint passed.
+- [ ] Complete exact-head full/native/browser checks; leave PR47 draft and main/PR45 untouched.
+
+---
+
+# FR005 preserving drill follow-up · 2026-10-06
+
+- [x] Confirm exact3318 backend test pass, preserving step failure, and browser19 pass on788ff313.
+- [x] Independently reproduce the erroneous inline import; retain parent qualification and real erasure assertions.
+- [x] Three new module regressions; local42PASS/3PG-onlySKIP, backend types/lint passed.
+- [ ] Complete corrected exact-head preserving83to84/native/full CI and browser acceptance.
+- [ ] Record final results in PR47 without merging main or changing PR45.
+
+---
+
+# FR005 CI repair · 2026-10-06
+
+- [x] Read the actual failed run3310PASS/3FAIL and reproduce all three failures.
+- [x] Keep lock witnesses; register the unchanged suite in the serial group.
+- [x] Synchronize strict0.71.0 assertion and operation-specific conflict documentation; five regressions.
+- [x] Regenerate contract outputs; local39PASS/3PG-onlySKIP, backend types/lint passed.
+- [ ] Complete exact-head full PostgreSQL/Redis, preserving83→84, native and browser checks.
+- [ ] Record final results in PR47, leaving PR45/main and deployment untouched.
+
+---
+
+# FR-005 — зависимости задач · активное продолжение 2026-10-06
+
+База: PR45 `5b88c326`, отдельная feature-ветка; main/PR45 не менять.
+- [x] Прочитаны текущие задачи, контракт, ограничения и история проверок.
+- [x] Явные task→task зависимости одной свадьбы: без циклов и без молчаливого удаления предпосылки.
+- [x] Обычное завершение ждёт предпосылки; только пара может явно завершить с причиной по показанному составу препятствий.
+- [x] Причина фиксируется атомарно с завершением, повтор не создаёт второй обход; прежние уведомления отменяются штатным lifecycle.
+- [x] Редактор, переводы, frontend2360 и PostgreSQL78; типы/lint/build выполнены в указанных границах.
+- [ ] Полная preserving83→84/native/browser приёмка итогового дерева.
+- [ ] Scoped commit и exact-head CI. Ниже — исторический план, не новый merge/deploy допуск.
+
+---
+
 ## Продолжение PR45 · 2026-10-06 · текущий статус заказа
 
 Поручение: отдельный проверенный коммит, без merge/auto-merge/deploy. База c2354d76.

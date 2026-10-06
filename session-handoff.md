@@ -1,3 +1,27 @@
+# FR005 latest continuation · native84 bindings · 2026-10-06
+
+PR47 only, base3133a27e. Full3321 tests/preserving/browser19 passed; native barrier failed84!=83 before30/19 suites. Strict child bindings repaired without loosening manifests or local receipts; inverse hashes unchanged. Local54node tests/types/lint pass; exact-head native/full CI pending. Read `tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md` and latest PR47. No main/PR45 merge/deploy.
+
+---
+
+# FR005 preserving drill follow-up · 2026-10-06
+
+PR47 only; base788ff313. Full3318 server tests and browser19 passed, but preserving rehearsal failed. Independently reproduced and removed accidental parent-helper import from inline privacy child; parent83to84 and all database guards remain. Added3tests:42PASS/3PG-onlySKIP in local combined audits, backend types/lint pass. Native full-CI acceptance remains pending; refer to `tasks/wedding-platform-master-plan/FR005-DRILL-IMPORT-REPAIR-20261006.md` and latest PR47 checks. Main/PR45 unchanged; no merge/deploy.
+
+---
+
+# FR005 continuation · CI repair · 2026-10-06
+
+Work only in PR47 `candidate/tili-task-dependencies-20261006`, based on2e728fe4. PR45/main must not be modified. Three full-CI failures reproduced and repaired; five added response-code checks, strict audit53 unchanged. Local39PASS/3PG-onlySKIP and backend types/lint passed. Remote full/native/preserving/browser outcomes must be read on the new HEAD before acceptance. Details: `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge/auto-merge/deploy.
+
+---
+
+# Активная передача FR005 · 2026-10-06
+
+Новая отдельная stacked-поставка от5b88c326. PR45 принят (8jobs/7workflow), остаётся draft; его старые blocked/pending записи ниже исторические. Main7c0cb5b6 не менять. Контракт, границы, выполненные40/2360frontend/78PG/50node и пока непроверенные full/drill/browser: `tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md`. Сначала перечитать фактический remote/CI. Никаких merge/auto-merge/deploy. Local83 receipt не допускает84: новый локальный preserving receipt обязателен; не переносить GitHub-ci допуск на общую БД.
+
+---
+
 # Продолжение PR45 · 2026-10-06 · observed active order state
 
 Работать только в feature-ветках: main, merge, auto-merge и production запрещены владельцем. База этой доработки c2354d76, ветка candidate/tili-wp09-20261005. Новый срез: tasks/wedding-platform-master-plan/WP09-ACTIVE-ORDER-20261006.md.

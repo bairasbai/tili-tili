@@ -1,3 +1,9 @@
+## FR005: проверяемый допуск новой схемы · 2026-10-06
+
+Не расширять строгий83-list условием «>=83» и не считать local83 receipt доказательством84. Добавлены точное84 имя/hash и отрицательные тесты; legacy83 локальный профиль до новой квалификации останавливается до БД. Полная миграционная проверка сравнивает вложенные значения audit.diff, не JSON.stringify с whitelist только верхнего уровня. Исходный библиотечный session scope поддерживает assertCurrent/close, не isCurrent; найденная при types ошибка исправлена. Логи ограничений среды и красных регрессий сохранены, успехи не выдуманы. `tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md`.
+
+---
+
 # ERRORS.md — журнал ошибок и правил
 
 Append-only. Читать **до** правок в затронутой области (план ч. 15.3).
@@ -3557,3 +3563,13 @@ Native V3 run3ba80b11-36d8-47f5-acaf-6d021a4d48f0 прошёл15 gates и отк
 ## WP09 review · 2026-10-06 · закрытый заказ в активной сводке
 
 Предыдущий readWeeklyOrderTerms учитывал состояние из старого списка слотов, но игнорировал более новый catalog.dealState. История условий доступна и после закрытия заказа; её agreement не доказывает активность. Добавлена проверка подтверждённого состояния до terms GET, отдельные сообщения RU/EN и регрессии. Серверные правила, история, платежи и права не меняются. Граница: последовательные GET не объявляются единым атомарным снимком. Подробности — tasks/wedding-platform-master-plan/WP09-ACTIVE-ORDER-20261006.md.
+
+
+## FR005 · 2026-10-06 · targeted acceptance is not full-CI acceptance
+
+A target suite passed but its pg_stat_activity/pg_blocking_pids witness was not registered in the shared-state serial list. New error codes and the exact API version also lacked full contract-audit synchronization. Register the unchanged suite, keep strict version/code checks, and test response-specific documentation. Five added regressions fail before and pass after the repair; original full-CI failure is retained. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`.
+
+
+## FR005 edit scope: parent source versus inline child · 2026-10-06
+
+A global import edit also changed a template containing a separate child module. The child has a different working directory, so a scripts-relative import cannot be copied into it. Parse and resolve child imports from the actual cwd; retain parent qualification and real privacy assertions. Source reproduction does not invent the exception of a blocked log.

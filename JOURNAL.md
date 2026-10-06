@@ -1,3 +1,9 @@
+## FR005: явные зависимости и решение пары · 2026-10-06
+
+В чек-лист добавлены явные task→task предпосылки, версионная запись, SQL-защита от циклов/чужой свадьбы/скрытого удаления и атомарный audit ручного завершения с причиной. Исторические задачи не получают выдуманных связей, готовые задачи не переоткрываются автоматически. Схема84/контракт0.71.0. Проверки и остающиеся границы: `tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md`. Отдельная ветка/PR, без изменения main/PR45.
+
+---
+
 # JOURNAL.md — журнал решений
 
 Append-only. Запись после каждой значимой задачи (план ч. 15.2).
@@ -4225,3 +4231,18 @@ WP09: отдельная read-only недельная сводка из суще
 ## 2026-10-06 · WP09: состояние заказа проверяется перед историей условий
 
 При чтении недельных условий более новый catalog.dealState имеет приоритет над состоянием старого slot DTO. done/cancelled/неизвестное состояние дают отдельный отказ по заказу с явным перечитыванием списка; остальные заказы не скрываются. Не меняем серверную доступность истории и не добавляем финансовых команд. Добавлены 15 React-регрессий и 7 API/PG-кейсов совместимости фактических DTO с фронтенд-проекцией. Фактические прогоны и ограничения — WP09-ACTIVE-ORDER-20261006.md и PR45. Main/deploy не затронуты.
+
+
+## FR005 · 2026-10-06 · full-CI integration repair
+
+Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract version and missing response codes. Preserved the unchanged application/DB guards and audit53; added five response-code regressions and regenerated type comments. Local39PASS/3PG-onlySKIP, backend types/lint passed. Exact-head cloud acceptance remains separate. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge or deploy.
+
+
+## FR005 preserving drill module boundary · 2026-10-06
+
+3318 server tests passed but the preserving step failed. Independently reproduced a misplaced import in the real inline privacy child; remove it only there. Three module regressions, local42PASS/3PG-onlySKIP, backend types/lint pass. Native outcomes remain separate. See FR005-DRILL-IMPORT-REPAIR-20261006.md.
+
+
+## FR005 native84 child synchronization · 2026-10-06
+
+3133 full3321/frontend2360/preserving passed; native barrier still expected83. Reuse exact84 journal verifier, synchronize C05 count with a reversible ledger, retain all original30/19 cases. Four regressions; local54PASS/types/lint. Native actual acceptance remains pending. See FR005-NATIVE84-BINDINGS-20261006.md.

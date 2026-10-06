@@ -3575,7 +3575,7 @@ export interface paths {
         post?: never;
         /**
          * Удалить свою задачу
-         * @description Системную задачу (заведённую сервером, не парой) удалить нельзя — 409 `system_task`.
+         * @description Системную задачу удалить нельзя — 409 `system_task`. Используемую предпосылку нельзя удалить до явного снятия связей — 409 `task_dependency_in_use`.
          */
         delete: {
             parameters: {
@@ -3596,7 +3596,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description `system_task` — системную задачу удалить нельзя */
+                /** @description `system_task` — системную задачу удалить нельзя; `task_dependency_in_use` — другие задачи используют её как предпосылку. Сначала явно снимите эти связи. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -3635,8 +3635,26 @@ export interface paths {
                         "application/json": components["schemas"]["Task"];
                     };
                 };
+                /** @description Изменение связей и ручной обход доступны только паре; остальные разрешённые действия команды сохранены. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /** @description Задача не найдена в доступной свадьбе. */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `task_dependencies_pending` — обычное завершение при незавершённых предпосылках; `task_dependencies_changed` — версия связей или состав незавершённых предпосылок изменились, в том числе перед ручным решением пары; `task_dependency_cycle` — новая связь создаёт цикл; `task_dependency_completed` — добавление предпосылки уже завершённой задаче. Обновите список перед новым решением. Для добавления связи сначала снимите отметку выполнения. */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -13782,7 +13800,20 @@ export interface components {
             capacity: number;
             guestIds?: string[];
         };
+        TaskDependency: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            done: boolean;
+        };
+        /** @description Только пара; точный увиденный список незавершённых предпосылок и причина осознанного завершения. Записывается атомарно, не является общим отключением проверок. */
+        TaskDependencyOverride: {
+            reason: string;
+            prerequisiteIds: string[];
+        };
         TaskCreate: {
+            /** @description Явные предпосылки чек-листа этой свадьбы. Только пара. Пустой список снимает связи; циклы запрещены. */
+            dependsOn?: string[];
             title: string;
             /** @description Число месяцев 0–120 до свадьбы или произвольная подпись периода без вычисленного срока. */
             period: string;
@@ -13801,6 +13832,11 @@ export interface components {
             reminderTime?: string;
         };
         TaskPatch: {
+            /** @description Явные предпосылки чек-листа этой свадьбы. Только пара. Пустой список снимает связи; циклы запрещены. */
+            dependsOn?: string[];
+            /** @description Версия набора зависимостей из последнего чтения; обязательна при изменении связей и ручном завершении. */
+            dependencyVersion?: string;
+            dependencyOverride?: components["schemas"]["TaskDependencyOverride"];
             title?: string;
             done?: boolean;
             /**
@@ -13824,6 +13860,16 @@ export interface components {
             reminderTime?: string;
         };
         Task: {
+            /** @description Текущие явные предпосылки, включая выполненные. Повторное открытие предпосылки не отменяет уже выполненную задачу автоматически. */
+            dependencies?: components["schemas"]["TaskDependency"][];
+            /** @description Причина ручного решения для текущего завершения; после снятия отметки null. Неизменяемая историческая запись остаётся в audit_log. */
+            dependencyOverride?: {
+                reason: string;
+                /** Format: date-time */
+                at: string;
+            } | null;
+            /** @description Версия набора зависимостей из последнего чтения; обязательна при изменении связей и ручном завершении. */
+            dependencyVersion?: string;
             id?: string;
             title?: string;
             period?: string | null;

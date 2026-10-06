@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
 import pg from 'pg'
+import { taskDependencyMigrationDrill } from './task-dependency-migration-drill.mjs'
 
 // This is a local schema/fixture drill. Historical receipt fixtures are
 // synthetic database history, never proof of real human consent or delivery.
@@ -25,7 +26,7 @@ const DATABASES = [
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
-const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, LATEST = 1763825000000
+const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, FR018_LATEST = 1763825000000, LATEST = 1763830000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend']
@@ -55,6 +56,7 @@ const expectedOwn = [
   '1763810000000_legacy_calendar_day_recovery',
   '1763820000000_planb_system_template_keys',
   '1763825000000_offer_comparison_terms',
+  '1763830000000_task_dependencies',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -490,6 +492,11 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "f682b9156c28792a70f4539bbcf1799e39fed0be71d7cfa741bab53d2a9275ba"
   },
   {
+    "name": "1763830000000_task_dependencies.cjs",
+    "kind": "migration",
+    "sha256": "f217d6ba309cf3f4288a06b447611a2fdb17b5666b4b9787755ea4f34aa7c190"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -501,11 +508,11 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 83 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 83)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 84 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 84)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763825000000_offer_comparison_terms.cjs')
+  assert.equal(files.at(-1).name, '1763830000000_task_dependencies.cjs')
   assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= LATEST))
 }
 function migrationManifest() {
@@ -2173,17 +2180,17 @@ async function fr018ForwardFixture() {
   await write("insert into offers(id,request_id,kind,created_by) values($1,$2,'decline',$3)", [own.decline, own.declineRequest, g.vendorOwner])
   const under82 = await fr018State(), introduced = new Set()
   assert(!under82.snapshot.schema.columns.some(row => FR018_COLUMNS[row.table_name] === row.column_name))
-  await migrate('up', LATEST)
+  await migrate('up', FR018_LATEST)
   const initial = await fr018Catalog(introduced, under82.attributes)
   assertFr018Prior(initial.state, under82, introduced)
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR018_LATEST).map(item => item.name))
   assert((await db.query('select comparison_terms from offers')).rows.every(row => row.comparison_terms === null))
   assert((await db.query('select offer_comparison_terms_snapshot from deals')).rows.every(row => row.offer_comparison_terms_snapshot === null))
   assert.equal((await db.query('select price::text price from offers where id=$1', [own.offer])).rows[0].price, '123456789')
   const full = fr018Terms({ team: 'Synthetic team', result: 'Gallery', delivery: 'Literal delivery', extras: '0', cancellation: 'Literal cancellation', reschedule: 'Literal reschedule' })
   assert.equal((await write('update offers set comparison_terms=$2::jsonb where id=$1', [own.offer, JSON.stringify(full)])).rowCount, 1)
   assert.deepEqual((await db.query('select comparison_terms from offers where id=$1', [own.offer])).rows[0].comparison_terms, full)
-  const nonNullOffer = await fr018State(); await migrate('up', LATEST)
+  const nonNullOffer = await fr018State(); await migrate('up', FR018_LATEST)
   assert.deepEqual(await fr018State(), nonNullOffer, 'Repeated up with stored quote preserves all literal rows and catalogue')
   await fr018GuardedDown('offer-only')
   for (const field of FR018_FIELDS) await fr018SqlRefusal('update offers set comparison_terms=$2::jsonb where id=$1',
@@ -2215,7 +2222,7 @@ async function fr018ForwardFixture() {
   } catch (error) { await db.query('rollback'); throw error }
   assert.deepEqual((await db.query('select offer_comparison_terms_snapshot from deals where id=$1', [g.deal])).rows[0].offer_comparison_terms_snapshot, full)
   assert.equal((await db.query('select count(*)::int n from offers where comparison_terms is not null')).rows[0].n, 0)
-  const nonNullAccepted = await fr018State(); await migrate('up', LATEST)
+  const nonNullAccepted = await fr018State(); await migrate('up', FR018_LATEST)
   assert.deepEqual(await fr018State(), nonNullAccepted, 'Repeated up preserves selected accepted snapshot after quote is NULL')
   await fr018GuardedDown('accepted-snapshot-only')
   // Clear only this drill's synthetic row, never unknown or real commercial terms.
@@ -2227,7 +2234,7 @@ async function fr018ForwardFixture() {
   assertFr018Prior(under82Again, under82, introduced)
   assert(!under82Again.snapshot.schema.columns.some(row => FR018_COLUMNS[row.table_name] === row.column_name))
   await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= PLANB_LATEST).map(item => item.name))
-  await migrate('up', LATEST)
+  await migrate('up', FR018_LATEST)
   const readded = await fr018Catalog(introduced, under82Again.attributes)
   assert.deepEqual(readded.checks, initial.checks, 'Re-added constraints retain exact native definitions')
   assertFr018Prior(readded.state, under82, introduced)
@@ -2244,7 +2251,7 @@ async function fr018ForwardFixture() {
     return value
   }
   assert.deepEqual(normalized(readded.state), normalized(beforeDown))
-  const repeated = await fr018State(); await migrate('up', LATEST)
+  const repeated = await fr018State(); await migrate('up', FR018_LATEST)
   assert.deepEqual(await fr018State(), repeated, 'Re-up83 repeat is a true preserving native no-op')
   await write('begin')
   try {
@@ -2254,7 +2261,7 @@ async function fr018ForwardFixture() {
   } catch (error) { await db.query('rollback'); throw error }
   const cleaned = await fr018State()
   assertFr018Prior(cleaned, beforeOwned, introduced)
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR018_LATEST).map(item => item.name))
   assert.equal(fr018SqlRefusals, 14); assert.equal(fr018DownRefusals, 2)
   console.log(`FR018_MIGRATION_PRESERVATION_PASSED nativeChecks=${fr018SqlRefusals} guardedDowns=${fr018DownRefusals} legacyNull=true literalZero=true unicode2000=true unicode2001Refused=true ownFixtureCleanup=true noHumanAcceptance=true`)
 }
@@ -2464,6 +2471,7 @@ try {
   await inventoryForwardFixture(f)
   await planbForwardFixture(f)
   await fr018ForwardFixture()
+  await taskDependencyMigrationDrill({ db, write, migrate, snapshot, rows, columns, state: fr018State, weddingId: f.wedding, ownerId: f.owner })
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))

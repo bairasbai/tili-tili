@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 156. */
+ * Схем: 158. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -5073,6 +5073,38 @@ export const CONTRACT_SCHEMAS = {
       "Task": {
           "type": "object",
           "properties": {
+              "dependencies": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/TaskDependency"
+                  },
+                  "description": "Текущие явные предпосылки, включая выполненные. Повторное открытие предпосылки не отменяет уже выполненную задачу автоматически."
+              },
+              "dependencyOverride": {
+                  "type": [
+                      "object",
+                      "null"
+                  ],
+                  "required": [
+                      "reason",
+                      "at"
+                  ],
+                  "properties": {
+                      "reason": {
+                          "type": "string"
+                      },
+                      "at": {
+                          "type": "string",
+                          "format": "date-time"
+                      }
+                  },
+                  "description": "Причина ручного решения для текущего завершения; после снятия отметки null. Неизменяемая историческая запись остаётся в audit_log."
+              },
+              "dependencyVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$",
+                  "description": "Версия набора зависимостей из последнего чтения; обязательна при изменении связей и ручном завершении."
+              },
               "id": {
                   "type": "string"
               },
@@ -5148,6 +5180,16 @@ export const CONTRACT_SCHEMAS = {
               "period"
           ],
           "properties": {
+              "dependsOn": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  },
+                  "description": "Явные предпосылки чек-листа этой свадьбы. Только пара. Пустой список снимает связи; циклы запрещены."
+              },
               "title": {
                   "type": "string",
                   "minLength": 1,
@@ -5196,10 +5238,74 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "TaskDependency": {
+          "type": "object",
+          "required": [
+              "id",
+              "title",
+              "done"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "title": {
+                  "type": "string"
+              },
+              "done": {
+                  "type": "boolean"
+              }
+          }
+      },
+      "TaskDependencyOverride": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "reason",
+              "prerequisiteIds"
+          ],
+          "properties": {
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+              },
+              "prerequisiteIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  }
+              }
+          },
+          "description": "Только пара; точный увиденный список незавершённых предпосылок и причина осознанного завершения. Записывается атомарно, не является общим отключением проверок."
+      },
       "TaskPatch": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
+              "dependsOn": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "uniqueItems": true,
+                  "items": {
+                      "type": "string",
+                      "format": "uuid"
+                  },
+                  "description": "Явные предпосылки чек-листа этой свадьбы. Только пара. Пустой список снимает связи; циклы запрещены."
+              },
+              "dependencyVersion": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]{0,18})$",
+                  "description": "Версия набора зависимостей из последнего чтения; обязательна при изменении связей и ручном завершении."
+              },
+              "dependencyOverride": {
+                  "$ref": "contract#/definitions/TaskDependencyOverride"
+              },
               "title": {
                   "type": "string",
                   "minLength": 1,
@@ -8491,6 +8597,8 @@ export type ContractSchemaName =
   | "Table"
   | "Task"
   | "TaskCreate"
+  | "TaskDependency"
+  | "TaskDependencyOverride"
   | "TaskPatch"
   | "TimelineAcknowledgmentStatus"
   | "TimelineAcknowledgments"

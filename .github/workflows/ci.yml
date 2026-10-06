@@ -67,7 +67,7 @@ jobs:
       - run: printf 'minimum-release-age=0\n' >> .npmrc
       - run: pnpm install --frozen-lockfile --node-linker=hoisted
       - name: Test diagnostic projections
-        run: node --test scripts/ci-evidence*.test.mjs
+        run: node --test scripts/ci-evidence*.test.mjs test-support/c04-c05-schema84.test.mjs
       - run: node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
       - name: Миграции на живой базе
         run: node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up

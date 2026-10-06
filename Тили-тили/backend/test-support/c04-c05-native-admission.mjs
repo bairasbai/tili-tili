@@ -20,6 +20,7 @@ const LOOPBACK=['127.0.0.1','::1','::ffff:127.0.0.1']
 export function selectProfile(env=process.env){
   const mode=env.C04_C05_NATIVE_PROFILE
   if(mode==='local'){
+    assert.fail('Schema84 requires a new independently qualified local83-to84 preserving receipt; legacy local83 receipts cannot admit this source')
     assert.notEqual(env.GITHUB_ACTIONS,'true','CI cannot use local admission')
     return {mode,targetName:localName,targetURL:'postgres://codex_test@127.0.0.1:15432/'+localName,username:'codex_test',port:15432,fixedOID:'616406'}
   }
@@ -49,10 +50,10 @@ export function assertCreation(c,p){
 export function assertIdentity(row,p,c){assertCreation(c,p);assert.equal(row.name,p.targetName);assert.equal(row.username,p.username);assert.equal(row.port,p.port);assert.equal(row.oid,c.databaseOID);assert(Number.isInteger(row.pid)&&row.pid>0)
   if(p.mode==='local')assert(LOOPBACK.includes(row.address));else assert.equal(row.address,c.actualAdmin.address)
 }
-export function assertJournal(actual,expected){assert.equal(expected.length,83);assert.equal(new Set(expected).size,83);assert.deepEqual(expected,[...expected].sort());assert.equal(expected.at(-1),'1763825000000_offer_comparison_terms');assert.deepEqual(actual,expected)}
+export function assertJournal(actual,expected){assert.equal(expected.length,84);assert.equal(new Set(expected).size,84);assert.deepEqual(expected,[...expected].sort());assert.equal(expected.at(-1),'1763830000000_task_dependencies');assert.deepEqual(actual,expected)}
 export function inside(root,name){assert.equal(typeof name,'string');assert(!isAbsolute(name));const path=resolve(root,name),rel=relative(realpathSync(root),realpathSync(path));assert(rel&&!rel.startsWith('..')&&!isAbsolute(rel));return path}
 export function verifySource(source){
-  assert.equal(source.kind,'c04_c05_current_source83_v1');assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
+  assert.equal(source.kind,'c04_c05_current_source84_v1');assert.equal(source.backend,realpathSync(backend));assert.equal(source.repo,realpathSync(repo));assert(source.files.length>100)
   const paths=new Set();for(const f of source.files){assert(!paths.has(f.path));paths.add(f.path);assert.equal(fileSHA(inside(repo,f.path)),f.sha256)}
   for(const path of ['Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-native-admission.d.mts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-test-inverse.json','Тили-тили/backend/vitest.c04-isolated.config.ts','Тили-тили/backend/vitest.c05-worker-isolated.config.ts','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs','Тили-тили/backend/test-isolated/c04FanoutAdmission.test.ts','Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts','.github/workflows/ci.yml','init.sh'])assert(paths.has(path))
   const expected=readJSON(join(backend,'test-support/c04-c05-migrations.json'))
@@ -109,7 +110,7 @@ const sortedEntries=entries=>entries.map(entryShape).sort((a,b)=>a.name.localeCo
 export function assertMigrationFiles(actual,expected){
   assertJournal(expected.map(f=>f.name),expected.map(f=>f.name))
   const entries=[...expected.map(f=>({name:f.name+'.cjs',kind:'file'})),{name:'data',kind:'directory'}].sort((a,b)=>a.name.localeCompare(b.name))
-  assert.deepEqual(sortedEntries(actual),entries,'Only exact83 reviewed migration files and the required data directory are admitted')
+  assert.deepEqual(sortedEntries(actual),entries,'Only exact84 reviewed migration files and the required data directory are admitted')
 }
 export function verifyMigrationDirectory(directory,expected){
   const root=lstatSync(directory);assert(root.isDirectory()&&!root.isSymbolicLink(),'Migration root must be a real directory')
@@ -157,11 +158,11 @@ export function readAdmission(stage,env=process.env){
   assert(file,'Parent-generated admission bundle required');const phase=stage==='barrier'?'barrier':env.C04_C05_ADMISSION_PHASE;assert(['barrier','c04','worker'].includes(phase));const directory=realpathSync(dirname(resolve(file)));assert.equal(resolve(file),join(directory,phase+'-admission.json'))
   if(profile.mode==='github-ci')assert.equal(directory,realpathSync(join(backend,'.ci/c04-c05-native',profile.context.runID+'-'+profile.context.attempt)))
   else{assert.equal(realpathSync(backend),realpathSync('C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend'));assert.equal(dirname(directory),realpathSync(localBase));assert.match(directory.slice(dirname(directory).length+1),/^c04-c05-ported-local-[0-9a-f-]{36}$/)}
-  const bundle=readJSON(file);assert.equal(bundle.kind,'c04_c05_native_admission83_v1');assert.equal(bundle.stage,stage);assert.equal(bundle.phase,phase);assert.equal(bundle.profile,profile.mode)
+  const bundle=readJSON(file);assert.equal(bundle.kind,'c04_c05_native_admission84_v1');assert.equal(bundle.stage,stage);assert.equal(bundle.phase,phase);assert.equal(bundle.profile,profile.mode)
   const load=name=>{const f=bundle.files[name];assert(f);assert.equal(fileSHA(inside(directory,f.path)),f.sha256);return readJSON(inside(directory,f.path))}
   const creation=load('creation'),schema=load('schema'),source=load('source'),sourceSHA256=bundle.files.source.sha256
-  assert.equal(schema.kind,'c04_c05_actual_schema83_v1')
-  assertCreation(creation,profile);const names=verifySource(source);assert.equal(schema.sourceSHA256,sourceSHA256);assert.equal(schema.creationSHA256,bundle.files.creation.sha256);assertJournal(schema.journalNames,names);assert.equal(schema.migrationCount,83);assertFKs(schema.triggers)
+  assert.equal(schema.kind,'c04_c05_actual_schema84_v1')
+  assertCreation(creation,profile);const names=verifySource(source);assert.equal(schema.sourceSHA256,sourceSHA256);assert.equal(schema.creationSHA256,bundle.files.creation.sha256);assertJournal(schema.journalNames,names);assert.equal(schema.migrationCount,84);assertFKs(schema.triggers)
   assert.equal(schema.identity.oid,creation.databaseOID);assert.equal(schema.identity.name,profile.targetName);assert.equal(schema.identity.username,profile.username);assert.equal(schema.identity.port,profile.port)
   if(profile.mode==='github-ci'){assert.equal(creation.source.inputsSHA256,sourceSHA256);assert.equal(schema.identity.address,creation.actualAdmin.address);assert.equal(schema.identity.ownerRoleOID,creation.targetOwnerRoleOID);assert.equal(source.checkoutSHA,profile.context.checkoutSHA)}
   if(profile.mode==='local'){const upgrade=load('upgrade'),before=load('upgradeBefore'),after=load('upgradeAfter'),upgradeSource=load('upgradeSource'),portable=load('portable82');assertLocalUpgrade83(upgrade,before,after,upgradeSource,portable,source,profile,creation);assert.deepEqual(schema.catalog,after.schemaCatalog);assert.deepEqual(schema.triggers,after.triggers);for(const audit of after.audits)assert.deepEqual(schema.retainedAudits.find(r=>r.id===audit.id),audit)}
