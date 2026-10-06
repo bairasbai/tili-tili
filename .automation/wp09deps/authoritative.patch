@@ -1,0 +1,70 @@
+diff --git "a/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/lib/taskDependenciesUi.test.tsx" "b/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/lib/taskDependenciesUi.test.tsx"
+index 75ec11c..42bb055 100644
+--- "a/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/lib/taskDependenciesUi.test.tsx"
++++ "b/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/lib/taskDependenciesUi.test.tsx"
+@@ -33,6 +33,9 @@ function serve() {
+     writes.push({ path, body })
+     const current = tasks.find(item => path.endsWith('/' + item.id))
+     if (!current) return json({})
++    if (body.done === true && !body.dependencyOverrideReason && current.dependencies.some(item => !item.done)) {
++      return json({ error: { code: 'task_dependency_blocked', message: 'Сначала завершите зависимые задачи' } }, 409)
++    }
+     if (Array.isArray(body.dependsOnIds)) {
+       current.dependencies = body.dependsOnIds.map(id => {
+         const source = tasks.find(item => item.id === id)!
+@@ -80,7 +83,8 @@ describe('WP09 checklist task dependencies', () => {
+     await openAll()
+     const checks = screen.getAllByLabelText('Отметить выполненной')
+     fireEvent.click(checks[1]!)
+-    expect(writes).toHaveLength(0)
++    await waitFor(() => expect(writes).toHaveLength(1))
++    expect(writes[0]!.body).toEqual({ done: true })
+     const override = screen.getByRole('group', { name: 'Ручной обход зависимостей' })
+     expect(within(override).getByText('Собрать ответы гостей')).toBeTruthy()
+     const button = within(override).getByRole('button', { name: 'Завершить несмотря на зависимости' })
+@@ -97,7 +101,21 @@ describe('WP09 checklist task dependencies', () => {
+     const override = screen.getByRole('group', { name: 'Ручной обход зависимостей' })
+     await within(override).findByText('Только пара может подтвердить ручной обход.')
+     expect(within(override).queryByRole('button', { name: 'Завершить несмотря на зависимости' })).toBeNull()
+-    expect(writes).toHaveLength(0)
++    expect(writes).toHaveLength(1)
++    expect(writes[0]!.body).toEqual({ done: true })
++  })
++
++  it('uses current server dependency state when the rendered blocker became complete elsewhere', async () => {
++    tasks[1]!.dependencies = [{ taskId: 't1', title: 'Собрать ответы гостей', done: false }]
++    await openAll()
++    // Simulate the partner completing the predecessor after this screen snapshot.
++    tasks[0]!.done = true
++    tasks[1]!.dependencies[0]!.done = true
++    fireEvent.click(screen.getAllByLabelText('Отметить выполненной')[1]!)
++    await waitFor(() => expect(writes).toHaveLength(1))
++    expect(writes[0]!.body).toEqual({ done: true })
++    await waitFor(() => expect(screen.queryByRole('group', { name: 'Ручной обход зависимостей' })).toBeNull())
++    await waitFor(() => expect(screen.getAllByLabelText('Снять отметку')).toHaveLength(2))
+   })
+ 
+   it('recommends an executable predecessor instead of a blocked current-period task', async () => {
+diff --git "a/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/pages/Wedding.tsx" "b/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/pages/Wedding.tsx"
+index bbb6e4b..d4446ac 100644
+--- "a/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/pages/Wedding.tsx"
++++ "b/\320\242\320\270\320\273\320\270-\321\202\320\270\320\273\320\270/app/src/pages/Wedding.tsx"
+@@ -953,12 +953,12 @@ function ChecklistContent({ weddingId, linkedWedding, linkedTask }: {
+     finally { writing.current = false; setBusyId(null) }
+   }
+   const toggle = (task: typeof allTasks[number]) => {
+-    if (task.done) { void write(() => setTaskDone(weddingId!, task.id, false), task.id); return }
+-    const blockers = unfinishedTaskDependencies(task)
+-    if (blockers.length) {
+-      setOpenId(task.id); setOverrideTaskId(task.id); setOverrideReason(''); setErr(null); return
+-    }
+-    void write(() => setTaskDone(weddingId!, task.id, true), task.id)
++    // The server is authoritative for dependency state. A predecessor may have
++    // been completed by the partner after this list was loaded: a local-only
++    // blocker check would trap the user in an unnecessary override flow. The
++    // rejected PATCH is transactional; on task_dependency_blocked write()
++    // reloads the current dependency list and opens the explicit override UI.
++    void write(() => setTaskDone(weddingId!, task.id, !task.done), task.id)
+   }
+   const confirmDependencyOverride = (task: typeof allTasks[number]) => void write(async () => {
+     const reason = overrideReason.trim()
