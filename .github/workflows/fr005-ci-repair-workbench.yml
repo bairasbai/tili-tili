@@ -1,0 +1,42 @@
+name: FR005 CI repair workbench
+'on':
+  push:
+    branches: [test/fr005-ci-repair-workbench-20261006]
+    paths: [.github/workflows/fr005-ci-repair-workbench.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 2e728fe4c258a963d852f8e7f3b25446ce932076
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Export tracked source without Git credentials
+        run: |
+          mkdir -p "$RUNNER_TEMP/fr005-repair"
+          git rev-parse HEAD > "$RUNNER_TEMP/fr005-repair/SOURCE_SHA"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/fr005-repair/SOURCE_TREE"
+          git archive HEAD | gzip -n > "$RUNNER_TEMP/fr005-repair/source.tar.gz"
+      - name: Install exact backend lockfile
+        working-directory: Тили-тили/backend
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          tar -czf "$RUNNER_TEMP/fr005-repair/backend-dependencies.tgz" node_modules
+      - name: Record archive hashes
+        run: |
+          cd "$RUNNER_TEMP/fr005-repair"
+          sha256sum source.tar.gz backend-dependencies.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fr005-ci-repair-workbench
+          path: ${{ runner.temp }}/fr005-repair
+          retention-days: 1
+          compression-level: 0
