@@ -14,6 +14,11 @@ function object(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>
 }
 
+/** Only these observed catalog states belong in the active-order reader. */
+export function isActiveOrderState(value: unknown): boolean {
+  return typeof value === 'string' && ['candidate', 'contacted', 'negotiating', 'booked', 'paid_deposit'].includes(value)
+}
+
 export function orderTermsTargets(value: unknown): TermsTarget[] {
   if (!Array.isArray(value)) throw new Error('Unconfirmed slot list')
   const seen = new Set<string>(), targets: TermsTarget[] = []

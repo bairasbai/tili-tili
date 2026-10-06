@@ -1,0 +1,98 @@
+name: Weekly order metadata API regression
+'on':
+  pull_request:
+    paths:
+      - 'Тили-тили/app/src/lib/weeklyOrderTerms.ts'
+      - 'Тили-тили/app/src/lib/api/weeklyOrderTerms.ts'
+      - 'Тили-тили/backend/src/orders/**'
+      - 'Тили-тили/backend/src/routes/orders.ts'
+      - 'Тили-тили/backend/test/weeklyOrderTermsApi.test.ts'
+      - '.github/workflows/weekly-order-metadata.yml'
+permissions:
+  contents: read
+jobs:
+  order-metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Тили-тили/backend
+    env:
+      TILI_DISPOSABLE_PG_PORT: '15432'
+      DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_terms_api_20260930_test
+      TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_terms_api_20260930_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install locked backend dependencies
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+      - name: Start isolated loopback PostgreSQL
+        run: |
+          container_id=$(docker run -d --network host \
+            --name "weekly-terms-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -e POSTGRES_USER=codex_test \
+            -e POSTGRES_DB=tili_ecosystem_terms_api_20260930_test \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            postgres:16-alpine -p 15432 -c listen_addresses=127.0.0.1)
+          echo "WEEKLY_TERMS_PG_ID=$container_id" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 60); do
+            if docker exec "$container_id" pg_isready -h 127.0.0.1 -p 15432 -U codex_test -d tili_ecosystem_terms_api_20260930_test; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$container_id"
+          exit 1
+      - name: Backend types and actual schema
+        run: |
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          node node_modules/node-pg-migrate/bin/node-pg-migrate.js -m migrations up
+      - name: Existing terms API and weekly metadata regression
+        run: |
+          mkdir -p "$RUNNER_TEMP/weekly-metadata"
+          status=0
+          node node_modules/vitest/vitest.mjs run test/orderTermsApi.test.ts test/weeklyOrderTermsApi.test.ts --reporter=default --reporter=json --outputFile="$RUNNER_TEMP/weekly-metadata-raw.json" || status=$?
+          TEST_EXIT="$status" node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { vitestSummary } from './scripts/ci-evidence.mjs';
+          const code = Number(process.env.TEST_EXIT);
+          let report = null;
+          try { report = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'weekly-metadata-raw.json'), 'utf8')); } catch { /* Missing is not passed. */ }
+          writeFileSync(join(process.env.RUNNER_TEMP, 'weekly-metadata/result.json'), JSON.stringify(vitestSummary(report, code), null, 2));
+          assert.equal(code, 0); assert.equal(report?.success, true);
+          assert(report.numTotalTests >= 7); assert.equal(report.numPendingTests, 0); assert.equal(report.numTodoTests, 0);
+          JS
+      - name: Lint regression test
+        run: node node_modules/eslint/bin/eslint.js test/weeklyOrderTermsApi.test.ts
+      - name: Retain source identity
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/weekly-metadata"
+          if git rev-parse --verify HEAD > "$RUNNER_TEMP/weekly-metadata/source-commit.txt"; then
+            git rev-parse HEAD^{tree} > "$RUNNER_TEMP/weekly-metadata/source-tree.txt"
+          else
+            echo 'checkout unavailable' > "$RUNNER_TEMP/weekly-metadata/checkout-unavailable.txt"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weekly-order-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/weekly-metadata
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove only this job's test container
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -n "${WEEKLY_TERMS_PG_ID:-}" ]; then docker rm -f "$WEEKLY_TERMS_PG_ID"; fi

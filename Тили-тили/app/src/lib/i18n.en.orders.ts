@@ -1,6 +1,10 @@
 /** Translations only. Applicable fields, roles and service kinds remain in
  * server metadata; wording does not grant authority or confirm readiness. */
 export const EN_ORDERS: Readonly<Record<string, string>> = {
+  'Заказ завершён — обновите список активных заказов.': 'The order is completed. Refresh the active order list.',
+  'Заказ отменён — обновите список активных заказов.': 'The order is cancelled. Refresh the active order list.',
+  'Состояние заказа не подтверждено — обновите проверку.': 'The order state is unconfirmed. Refresh the check.',
+
   // Optional weekly order terms reader.
   'Условия заказов': 'Order terms',
   'Редакция условий ещё не опубликована': 'No terms revision has been published yet',

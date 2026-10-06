@@ -36,7 +36,7 @@ beforeEach(() => {
     calls.push({ path, method: init?.method ?? 'GET' })
     const override = intercept?.(path); if (override !== undefined) return override
     if (path.endsWith('/slots')) return json(slots)
-    if (path.endsWith('/order/catalog')) return json({ weddingId: catalogWedding, actorRole: catalogRole, draftEditable: true, category: { fields: [] } })
+    if (path.endsWith('/order/catalog')) return json({ weddingId: catalogWedding, actorRole: catalogRole, dealState: 'booked', draftEditable: true, category: { fields: [] } })
     if (path.endsWith('/order/terms')) return json(result)
     if (path === `/weddings/${id(1)}`) return json({ id: id(1), tz: 'Europe/Moscow' })
     if (path.endsWith('/tasks') || path.endsWith('/guests')) return json([])
@@ -105,6 +105,62 @@ describe('weekly terms via real typed HTTP client', () => {
     await act(async () => finish(json(slots)))
     await waitFor(() => expect(screen.getAllByText('Ожидается подтверждение исполнителя')).toHaveLength(2))
   })
+  it.each(['done', 'cancelled'])('does not read history as active conditions after catalog reports %s', async state => {
+    // The slots response is an older snapshot. The newer catalog is authoritative
+    // for the state observed before fetching private terms history.
+    result = terms(['customer', 'performer'])
+    intercept = path => path.endsWith('/order/catalog')
+      ? json({ weddingId: id(1), actorRole: 'couple', dealState: state }) : undefined
+    open(); check()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Обновить проверку условий' })).not.toBeNull())
+    expect(calls.some(c => c.path.endsWith('/order/terms'))).toBe(false)
+    expect(screen.queryByText('Текущая редакция согласована обеими сторонами')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toContain(state === 'done' ? 'Заказ завершён' : 'Заказ отменён')
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+  it.each([undefined, null, 'new_unknown_state', 1])('fails closed on an unconfirmed catalog state %s', async state => {
+    intercept = path => path.endsWith('/order/catalog')
+      ? json({ weddingId: id(1), actorRole: 'couple', dealState: state }) : undefined
+    open(); check()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Обновить проверку условий' })).not.toBeNull())
+    expect(calls.some(c => c.path.endsWith('/order/terms'))).toBe(false)
+    expect(screen.getByRole('alert').textContent).toContain('Состояние заказа не подтверждено')
+  })
+  it('keeps another active order visible and refreshes the authoritative target list after a closed order', async () => {
+    slots = [slot(11), slot(12)]
+    intercept = path => path === `/deals/${id(11)}/order/catalog`
+      ? json({ weddingId: id(1), actorRole: 'couple', dealState: 'cancelled' }) : undefined
+    open(); check()
+    await screen.findByText('Ожидается подтверждение исполнителя')
+    expect(screen.getByRole('alert').textContent).toContain('Заказ отменён')
+    expect(calls.some(c => c.path === `/deals/${id(11)}/order/terms`)).toBe(false)
+    slots = [slot(12)]
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить проверку условий' }))
+    await screen.findByText('Ожидается подтверждение исполнителя')
+    expect(screen.queryByText('Order 11')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(calls.every(c => c.method === 'GET')).toBe(true)
+  })
+
+  it.each(['candidate', 'contacted', 'negotiating', 'booked', 'paid_deposit'])('continues the read for the confirmed active state %s', async state => {
+    intercept = path => path.endsWith('/order/catalog')
+      ? json({ weddingId: id(1), actorRole: 'couple', dealState: state }) : undefined
+    open(); check(); await screen.findByText('Ожидается подтверждение исполнителя')
+    expect(calls.filter(c => c.path.endsWith('/order/terms'))).toHaveLength(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+  it.each([
+    ['done', 'The order is completed. Refresh the active order list.'],
+    ['cancelled', 'The order is cancelled. Refresh the active order list.'],
+    [null, 'The order state is unconfirmed. Refresh the check.'],
+  ])('translates the observed state refusal %s', async (state, message) => {
+    intercept = path => path.endsWith('/order/catalog')
+      ? json({ weddingId: id(1), actorRole: 'couple', dealState: state }) : undefined
+    setI18nLang('en'); open(); fireEvent.click(screen.getByRole('button', { name: 'Check order terms' }))
+    await screen.findByText(`Terms status is unconfirmed: ${message}`)
+    expect(calls.some(c => c.path.endsWith('/order/terms'))).toBe(false)
+  })
+
   it('does not call a malformed terms response agreement', async () => {
     result = {}; open(); check(); await screen.findByRole('alert')
     expect(screen.queryByText('Текущая редакция согласована обеими сторонами')).toBeNull()
@@ -115,7 +171,7 @@ describe('weekly terms via real typed HTTP client', () => {
     intercept = asyncPath => {
       if (!asyncPath.endsWith('/order/catalog')) return undefined
       inFlight++; maximum = Math.max(maximum, inFlight)
-      return new Promise(resolve => setTimeout(() => { inFlight--; resolve(json({ weddingId: id(1), actorRole: 'couple' })) }, 3))
+      return new Promise(resolve => setTimeout(() => { inFlight--; resolve(json({ weddingId: id(1), actorRole: 'couple', dealState: 'booked' })) }, 3))
     }
     const checked = await readWeeklyOrderTerms(id(1), () => undefined)
     expect(maximum).toBe(3); expect(checked.map(x => x.dealId)).toEqual(Array.from({ length: 8 }, (_, i) => id(11 + i)))
@@ -129,7 +185,7 @@ describe('weekly terms via real typed HTTP client', () => {
     if (transition === 'logout') act(() => saveTokens(null))
     if (transition === 'switch account') act(() => saveTokens(token('b', 't')))
     if (transition === 'switch wedding') view.rerender(<MemoryRouter><WeeklyOrderTerms weddingId={id(2)} /><Location /></MemoryRouter>)
-    await act(async () => { for (const complete of finish) complete(json({ weddingId: id(1), actorRole: 'couple' })) })
+    await act(async () => { for (const complete of finish) complete(json({ weddingId: id(1), actorRole: 'couple', dealState: 'booked' })) })
     expect(calls).toHaveLength(4); expect(calls.some(c => c.path.endsWith('/order/terms'))).toBe(false)
     expect(screen.queryByText('Order 11')).toBeNull()
   })
