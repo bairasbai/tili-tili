@@ -32,6 +32,7 @@ jobs:
           cat .automation/wp09deps/part{0,1,2,3,4,5} > "$RUNNER_TEMP/patch.xz.b64"
           base64 -d "$RUNNER_TEMP/patch.xz.b64" | xz -d > "$RUNNER_TEMP/feature.patch"
           test "$(sha256sum "$RUNNER_TEMP/feature.patch" | cut -d' ' -f1)" = c7cf421643ab09fed5638f1d05ad63ec6f640f41f7bbf1f196e46c24fa053d85
+          cp .automation/wp09deps/authoritative.patch "$RUNNER_TEMP/authoritative.patch"
       - uses: actions/checkout@v4
         with:
           ref: 5b88c3261f8dda29d90a5d360e450588cf17745d
@@ -54,6 +55,8 @@ jobs:
           s=s.replace("await screen.findByText('Собрать ответы гостей')\n    expect(screen.getByText('Не завершено')).toBeTruthy()", "await screen.findByText('Не завершено')")
           p.write_text(s)
           PY
+          git apply --check "$RUNNER_TEMP/authoritative.patch"
+          git apply "$RUNNER_TEMP/authoritative.patch"
           git diff --check
       - uses: actions/setup-node@v4
         with:
