@@ -33,7 +33,7 @@ with sync_playwright() as pw:
             localStorage.setItem('tt_auth',JSON.stringify({accessToken:f.tokens.accessToken,refreshToken:f.tokens.refreshToken}));
             localStorage.setItem('tt_onboarded','1');localStorage.setItem('tt_wedding_id',JSON.stringify(%s));
             localStorage.setItem('tt_wedding_date',JSON.stringify('2027-06-14'));
-          } localStorage.setItem('tt_lang',JSON.stringify(%s));
+          } localStorage.setItem('tt_lang',%s);
         })();""" % (json.dumps(person), json.dumps(wid), json.dumps(lang)))
         return c
     def observe(p):
@@ -67,6 +67,7 @@ with sync_playwright() as pw:
             for width in (320,390,1280):
                 c=context(f['owner'],lang,width);page=c.new_page();observe(page)
                 page.goto(ui+'/home',wait_until='networkidle')
+                assert page.evaluate("localStorage.getItem('tt_lang')")==lang, 'Fixture language must use the raw persisted setting'
                 page.get_by_role('button',name=re.compile('^'+labels['open'])).click()
                 expect(page).to_have_url(ui+'/wedding/week')
                 for name in ('Weekly overdue fixture','Weekly undated fixture','Weekly payment fixture',labels['people']):
