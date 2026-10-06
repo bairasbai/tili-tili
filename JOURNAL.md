@@ -4236,3 +4236,8 @@ WP09: отдельная read-only недельная сводка из суще
 ## FR005 · 2026-10-06 · full-CI integration repair
 
 Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract version and missing response codes. Preserved the unchanged application/DB guards and audit53; added five response-code regressions and regenerated type comments. Local39PASS/3PG-onlySKIP, backend types/lint passed. Exact-head cloud acceptance remains separate. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge or deploy.
+
+
+## FR005 preserving drill module boundary · 2026-10-06
+
+3318 server tests passed but the preserving step failed. Independently reproduced a misplaced import in the real inline privacy child; remove it only there. Three module regressions, local42PASS/3PG-onlySKIP, backend types/lint pass. Native outcomes remain separate. See FR005-DRILL-IMPORT-REPAIR-20261006.md.

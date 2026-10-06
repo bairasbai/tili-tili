@@ -1,3 +1,13 @@
+# FR005 preserving drill follow-up · 2026-10-06
+
+- [x] Confirm exact3318 backend test pass, preserving step failure, and browser19 pass on788ff313.
+- [x] Independently reproduce the erroneous inline import; retain parent qualification and real erasure assertions.
+- [x] Three new module regressions; local42PASS/3PG-onlySKIP, backend types/lint passed.
+- [ ] Complete corrected exact-head preserving83to84/native/full CI and browser acceptance.
+- [ ] Record final results in PR47 without merging main or changing PR45.
+
+---
+
 # FR005 CI repair · 2026-10-06
 
 - [x] Read the actual failed run3310PASS/3FAIL and reproduce all three failures.

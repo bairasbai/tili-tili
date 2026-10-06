@@ -1456,8 +1456,7 @@ async function eraseCurrentVendorFixture() {
   // global stale-idempotency prune is permitted only in this isolated namespace.
   const child = `
     import assert from 'node:assert/strict';
-    import pg from 'pg'
-import { taskDependencyMigrationDrill } from './task-dependency-migration-drill.mjs';
+    import pg from 'pg';
     import { eraseUser } from './src/jobs/index.ts';
     import { readResourcePlanSource } from './src/orders/resource-plan.ts';
     const allowed=${JSON.stringify(DATABASES)}, expected=${JSON.stringify(DATABASE)}, port=${JSON.stringify(selectedPort)}, f=${JSON.stringify(f)};

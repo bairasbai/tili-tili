@@ -3568,3 +3568,8 @@ Native V3 run3ba80b11-36d8-47f5-acaf-6d021a4d48f0 прошёл15 gates и отк
 ## FR005 · 2026-10-06 · targeted acceptance is not full-CI acceptance
 
 A target suite passed but its pg_stat_activity/pg_blocking_pids witness was not registered in the shared-state serial list. New error codes and the exact API version also lacked full contract-audit synchronization. Register the unchanged suite, keep strict version/code checks, and test response-specific documentation. Five added regressions fail before and pass after the repair; original full-CI failure is retained. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`.
+
+
+## FR005 edit scope: parent source versus inline child · 2026-10-06
+
+A global import edit also changed a template containing a separate child module. The child has a different working directory, so a scripts-relative import cannot be copied into it. Parse and resolve child imports from the actual cwd; retain parent qualification and real privacy assertions. Source reproduction does not invent the exception of a blocked log.

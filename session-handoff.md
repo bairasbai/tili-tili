@@ -1,3 +1,9 @@
+# FR005 preserving drill follow-up · 2026-10-06
+
+PR47 only; base788ff313. Full3318 server tests and browser19 passed, but preserving rehearsal failed. Independently reproduced and removed accidental parent-helper import from inline privacy child; parent83to84 and all database guards remain. Added3tests:42PASS/3PG-onlySKIP in local combined audits, backend types/lint pass. Native full-CI acceptance remains pending; refer to `tasks/wedding-platform-master-plan/FR005-DRILL-IMPORT-REPAIR-20261006.md` and latest PR47 checks. Main/PR45 unchanged; no merge/deploy.
+
+---
+
 # FR005 continuation · CI repair · 2026-10-06
 
 Work only in PR47 `candidate/tili-task-dependencies-20261006`, based on2e728fe4. PR45/main must not be modified. Three full-CI failures reproduced and repaired; five added response-code checks, strict audit53 unchanged. Local39PASS/3PG-onlySKIP and backend types/lint passed. Remote full/native/preserving/browser outcomes must be read on the new HEAD before acceptance. Details: `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge/auto-merge/deploy.
