@@ -51,6 +51,7 @@ jobs:
           s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ })\n    const checks", "await openAll()\n    const checks")
           s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ })\n    fireEvent.click(screen.getAllByLabelText('Отметить выполненной')[1]!)", "await openAll()\n    fireEvent.click(screen.getAllByLabelText('Отметить выполненной')[1]!)")
           s=s.replace("open(); await screen.findByRole('button', { name: /^Утвердить меню/ })\n    const next", "await openAll()\n    const next")
+          s=s.replace("await screen.findByText('Собрать ответы гостей')\n    expect(screen.getByText('Не завершено')).toBeTruthy()", "await screen.findByText('Не завершено')")
           p.write_text(s)
           PY
           git diff --check
