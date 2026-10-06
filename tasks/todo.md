@@ -1,3 +1,12 @@
+# FR005 native84 bindings · 2026-10-06
+
+- [x] Diagnose exact native barrier84!=83 failure, retain failed artifact.
+- [x] Fix strict child bindings; preserve frozen30/19 behavioral cases through inverse hashes.
+- [x] Four regressions and54node tests passed; full backend types/lint passed.
+- [ ] Complete exact-head full/native/browser checks; leave PR47 draft and main/PR45 untouched.
+
+---
+
 # FR005 preserving drill follow-up · 2026-10-06
 
 - [x] Confirm exact3318 backend test pass, preserving step failure, and browser19 pass on788ff313.

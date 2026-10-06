@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readAdmission, assertIdentity as assertProfileIdentity, backend as laneBackend, AUDITS, fileSHA, sha } from '../test-support/c04-c05-native-admission.mjs'
+import { readAdmission, assertJournal, assertIdentity as assertProfileIdentity, backend as laneBackend, AUDITS, fileSHA, sha } from '../test-support/c04-c05-native-admission.mjs'
 
 const admission = readAdmission('barrier')
 export const TARGET = admission.targetName, URL = admission.targetURL
@@ -16,10 +16,7 @@ export function assertIdentity(row) {
   assertProfileIdentity(row, admission.profile, admission.creation)
   assert(Number.isInteger(row.pid) && row.pid > 0)
 }
-export function assertJournal(actual, expected) {
-  assert.equal(expected.length, 83); assert.equal(expected.at(-1), '1763825000000_offer_comparison_terms')
-  assert.deepEqual(actual, expected)
-}
+export { assertJournal }
 export function assertNativeTriggers(actual, expected) {
   assert.equal(expected.length, 2)
   for (const row of expected) { assert.equal(row.tgenabled, 'O'); assert.equal(row.tgisinternal, true); assert(row.definition.includes('RI_FKey_check_')) }

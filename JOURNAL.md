@@ -4241,3 +4241,8 @@ Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract ve
 ## FR005 preserving drill module boundary · 2026-10-06
 
 3318 server tests passed but the preserving step failed. Independently reproduced a misplaced import in the real inline privacy child; remove it only there. Three module regressions, local42PASS/3PG-onlySKIP, backend types/lint pass. Native outcomes remain separate. See FR005-DRILL-IMPORT-REPAIR-20261006.md.
+
+
+## FR005 native84 child synchronization · 2026-10-06
+
+3133 full3321/frontend2360/preserving passed; native barrier still expected83. Reuse exact84 journal verifier, synchronize C05 count with a reversible ledger, retain all original30/19 cases. Four regressions; local54PASS/types/lint. Native actual acceptance remains pending. See FR005-NATIVE84-BINDINGS-20261006.md.

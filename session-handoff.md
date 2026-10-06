@@ -1,3 +1,9 @@
+# FR005 latest continuation · native84 bindings · 2026-10-06
+
+PR47 only, base3133a27e. Full3321 tests/preserving/browser19 passed; native barrier failed84!=83 before30/19 suites. Strict child bindings repaired without loosening manifests or local receipts; inverse hashes unchanged. Local54node tests/types/lint pass; exact-head native/full CI pending. Read `tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md` and latest PR47. No main/PR45 merge/deploy.
+
+---
+
 # FR005 preserving drill follow-up · 2026-10-06
 
 PR47 only; base788ff313. Full3318 server tests and browser19 passed, but preserving rehearsal failed. Independently reproduced and removed accidental parent-helper import from inline privacy child; parent83to84 and all database guards remain. Added3tests:42PASS/3PG-onlySKIP in local combined audits, backend types/lint pass. Native full-CI acceptance remains pending; refer to `tasks/wedding-platform-master-plan/FR005-DRILL-IMPORT-REPAIR-20261006.md` and latest PR47 checks. Main/PR45 unchanged; no merge/deploy.
