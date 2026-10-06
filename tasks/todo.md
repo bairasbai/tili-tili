@@ -1,3 +1,14 @@
+# FR005 CI repair · 2026-10-06
+
+- [x] Read the actual failed run3310PASS/3FAIL and reproduce all three failures.
+- [x] Keep lock witnesses; register the unchanged suite in the serial group.
+- [x] Synchronize strict0.71.0 assertion and operation-specific conflict documentation; five regressions.
+- [x] Regenerate contract outputs; local39PASS/3PG-onlySKIP, backend types/lint passed.
+- [ ] Complete exact-head full PostgreSQL/Redis, preserving83→84, native and browser checks.
+- [ ] Record final results in PR47, leaving PR45/main and deployment untouched.
+
+---
+
 # FR-005 — зависимости задач · активное продолжение 2026-10-06
 
 База: PR45 `5b88c326`, отдельная feature-ветка; main/PR45 не менять.

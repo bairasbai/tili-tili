@@ -1,3 +1,9 @@
+# FR005 continuation · CI repair · 2026-10-06
+
+Work only in PR47 `candidate/tili-task-dependencies-20261006`, based on2e728fe4. PR45/main must not be modified. Three full-CI failures reproduced and repaired; five added response-code checks, strict audit53 unchanged. Local39PASS/3PG-onlySKIP and backend types/lint passed. Remote full/native/preserving/browser outcomes must be read on the new HEAD before acceptance. Details: `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge/auto-merge/deploy.
+
+---
+
 # Активная передача FR005 · 2026-10-06
 
 Новая отдельная stacked-поставка от5b88c326. PR45 принят (8jobs/7workflow), остаётся draft; его старые blocked/pending записи ниже исторические. Main7c0cb5b6 не менять. Контракт, границы, выполненные40/2360frontend/78PG/50node и пока непроверенные full/drill/browser: `tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md`. Сначала перечитать фактический remote/CI. Никаких merge/auto-merge/deploy. Local83 receipt не допускает84: новый локальный preserving receipt обязателен; не переносить GitHub-ci допуск на общую БД.

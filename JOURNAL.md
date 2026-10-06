@@ -4231,3 +4231,8 @@ WP09: отдельная read-only недельная сводка из суще
 ## 2026-10-06 · WP09: состояние заказа проверяется перед историей условий
 
 При чтении недельных условий более новый catalog.dealState имеет приоритет над состоянием старого slot DTO. done/cancelled/неизвестное состояние дают отдельный отказ по заказу с явным перечитыванием списка; остальные заказы не скрываются. Не меняем серверную доступность истории и не добавляем финансовых команд. Добавлены 15 React-регрессий и 7 API/PG-кейсов совместимости фактических DTO с фронтенд-проекцией. Фактические прогоны и ограничения — WP09-ACTIVE-ORDER-20261006.md и PR45. Main/deploy не затронуты.
+
+
+## FR005 · 2026-10-06 · full-CI integration repair
+
+Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract version and missing response codes. Preserved the unchanged application/DB guards and audit53; added five response-code regressions and regenerated type comments. Local39PASS/3PG-onlySKIP, backend types/lint passed. Exact-head cloud acceptance remains separate. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge or deploy.

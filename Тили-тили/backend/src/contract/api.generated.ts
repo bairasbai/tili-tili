@@ -3596,7 +3596,7 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description `system_task` — системную задачу удалить нельзя */
+                /** @description `system_task` — системную задачу удалить нельзя; `task_dependency_in_use` — другие задачи используют её как предпосылку. Сначала явно снимите эти связи. */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -3653,7 +3653,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Незавершённые предпосылки, конфликт версии, цикл либо попытка добавить предпосылку завершённой задаче. Обновите список перед новым решением. */
+                /** @description `task_dependencies_pending` — обычное завершение при незавершённых предпосылках; `task_dependencies_changed` — версия связей или состав незавершённых предпосылок изменились, в том числе перед ручным решением пары; `task_dependency_cycle` — новая связь создаёт цикл; `task_dependency_completed` — добавление предпосылки уже завершённой задаче. Обновите список перед новым решением. Для добавления связи сначала снимите отметку выполнения. */
                 409: {
                     headers: {
                         [name: string]: unknown;

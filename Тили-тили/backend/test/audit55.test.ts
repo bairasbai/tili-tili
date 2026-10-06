@@ -454,8 +454,22 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.70.0 (022 invitations +030 atomic/resource foundations +T012 rsvp deadlines)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.70.0')
+  it('версия контракта — 0.71.0 (FR005: явные зависимости задач и решение пары)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.71.0')
+  })
+
+  it.each([
+    ['patch', 'task_dependencies_changed'],
+    ['patch', 'task_dependencies_pending'],
+    ['patch', 'task_dependency_cycle'],
+    ['patch', 'task_dependency_completed'],
+    ['delete', 'task_dependency_in_use'],
+  ] as const)('FR005: %s declares %s in its own 409 response', (method, code) => {
+    const op = findOp(ops, method, '/weddings/{weddingId}/tasks/{taskId}')!
+    expect(op, 'The existing task operation must remain present').toBeDefined()
+    const response = op.item.responses?.['409']
+    expect(response, 'Conflict must not be reduced to an undocumented generic error').toBeDefined()
+    expect(namesCode(response?.description ?? '', code)).toBe(true)
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
