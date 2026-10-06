@@ -1,0 +1,29 @@
+name: PR45 tracked source snapshot
+'on':
+  push:
+    branches: [test/wp09-source-snapshot-20261006]
+    paths: [.github/workflows/wp09-source-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c2354d767ff07751192b573aa01828d940c83c86
+          persist-credentials: false
+      - name: Export only tracked files
+        run: |
+          mkdir -p "$RUNNER_TEMP/pr45-source"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/pr45-source/source.tgz"
+          git rev-parse HEAD > "$RUNNER_TEMP/pr45-source/commit.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/pr45-source/tree.txt"
+          cd "$RUNNER_TEMP/pr45-source"
+          sha256sum source.tgz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr45-source-c2354d76
+          path: ${{ runner.temp }}/pr45-source
+          retention-days: 2
