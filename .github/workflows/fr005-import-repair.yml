@@ -1,0 +1,99 @@
+name: FR005 preserving drill repair qualification
+'on':
+  push:
+    branches: [test/fr005-import-repair-20261006]
+    paths: [.github/workflows/fr005-import-repair.yml, .automation/imports-repair.patch, .automation/apply-imports-repair.py]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: cp .automation/imports-repair.patch .automation/apply-imports-repair.py "$RUNNER_TEMP/"
+      - uses: actions/checkout@v4
+        with:
+          ref: 788ff31373e23d60a9321e5815fc04f37fc6ae93
+          persist-credentials: false
+      - run: python3 "$RUNNER_TEMP/apply-imports-repair.py"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install exact backend lockfile and check types and regressions
+        working-directory: Тили-тили/backend
+        run: |
+          corepack enable && corepack prepare pnpm@10.34.5 --activate
+          printf '\nminimum-release-age=0\n' >> .npmrc
+          pnpm install --frozen-lockfile --node-linker=hoisted
+          node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+          node node_modules/vitest/vitest.mjs run test/migrationDrillImports.test.ts
+          node node_modules/eslint/bin/eslint.js .
+      - name: Start owned disposable PostgreSQL
+        run: |
+          docker run -d --network host --name "fr005-drill-${GITHUB_RUN_ID}" \
+            -e POSTGRES_USER=codex_test -e POSTGRES_HOST_AUTH_METHOD=trust \
+            -e POSTGRES_DB=tili_ecosystem_migration_drill12_20260930_test \
+            postgres:16-alpine -p 15432 -c listen_addresses=127.0.0.1
+          for attempt in $(seq 1 60); do
+            if docker exec "fr005-drill-${GITHUB_RUN_ID}" pg_isready -U codex_test -p 15432 -d tili_ecosystem_migration_drill12_20260930_test; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Run unchanged preserving predicates with the repaired child import
+        working-directory: Тили-тили/backend
+        env:
+          TILI_DISPOSABLE_PG_PORT: '15432'
+          DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
+          TEST_DATABASE_URL: postgres://codex_test@127.0.0.1:15432/tili_ecosystem_migration_drill12_20260930_test
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          result = subprocess.run(['node','scripts/ecosystem-migration-drill.mjs'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=420)
+          lines = result.stdout.splitlines()
+          marks = [line for line in lines if 'PASSED' in line or line == 'ACTUAL_ERASE_USER_CURRENT_VENDOR_PRESERVED_PLAN_UNAVAILABLE']
+          out = pathlib.Path(os.environ['RUNNER_TEMP'])/'imports-proof'
+          report = {'exitCode': result.returncode, 'tree': '86543d899afa39681ceb06f1f165f77b804b6666', 'markers': marks, 'failureTail': lines[-24:] if result.returncode else []}
+          (out/'preserving-result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          assert result.returncode == 0
+          assert any(line.startswith('FR005_MIGRATION_PRESERVATION_PASSED ') for line in marks)
+          assert 'ACTUAL_ERASE_USER_CURRENT_VENDOR_PRESERVED_PLAN_UNAVAILABLE' in marks
+          assert 'ECOSYSTEM_MIGRATION_DRILL_PASSED' in marks
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fr005-import-repair-native-proof
+          path: ${{ runner.temp }}/imports-proof
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove only this job's disposable cluster
+        if: always()
+        run: docker rm -f "fr005-drill-${GITHUB_RUN_ID}" >/dev/null 2>&1 || true
+  transfer:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: cp .automation/imports-repair.patch .automation/apply-imports-repair.py "$RUNNER_TEMP/"
+      - uses: actions/checkout@v4
+        with:
+          ref: 788ff31373e23d60a9321e5815fc04f37fc6ae93
+          persist-credentials: false
+      - name: Upload only verified Git blobs after native qualification
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 "$RUNNER_TEMP/apply-imports-repair.py" --upload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fr005-import-repair-verified-blobs
+          path: ${{ runner.temp }}/imports-proof
+          retention-days: 2
