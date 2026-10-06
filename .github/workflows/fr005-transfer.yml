@@ -1,0 +1,64 @@
+name: FR005 exact candidate blob transfer
+'on':
+  push:
+    branches: [test/wp09-task-dependencies-workbench-20261006]
+    paths: [.github/workflows/fr005-transfer.yml, .automation/fr005/overlay*.b64]
+permissions:
+  contents: read
+jobs:
+  transfer:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed transport inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/fr005-input" "$RUNNER_TEMP/fr005-transfer"
+          cp .automation/fr005/*.b64 "$RUNNER_TEMP/fr005-input/"
+      - uses: actions/checkout@v4
+        with:
+          ref: 5b88c3261f8dda29d90a5d360e450588cf17745d
+          persist-credentials: false
+      - name: Verify both patches and exact 30-file candidate; transfer blobs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          root=pathlib.Path(os.environ['GITHUB_WORKSPACE']); source=pathlib.Path(os.environ['RUNNER_TEMP'])/'fr005-input'
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'fr005-transfer'
+          base='5b88c3261f8dda29d90a5d360e450588cf17745d'
+          assert subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()==base
+          assert subprocess.check_output(['git','status','--porcelain'])==b''
+          for prefix,digest,tree in [('part','9059fbe211b8486cfb86c6c7938ec74bb34b6cd0ed589136a5def70a8524eb3a','34dbb7261f8eeab15251811716b5135cf2e9ef6d'),('overlay','3046892196f17e67accc3479376e34087e4ae955a098d14ce15eb5ea42241b62','6f6a767864a61aea333dcfc58cdecd448891d6a8')]:
+            patch=lzma.decompress(base64.b64decode(''.join((source/f'{prefix}{i}.b64').read_text() for i in range(3)),validate=True))
+            assert hashlib.sha256(patch).hexdigest()==digest
+            subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+            subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+            assert subprocess.check_output(['git','write-tree']).decode().strip()==tree
+          paths=['.github/workflows/ci.yml','.github/workflows/task-dependencies-e2e.yml','ERRORS.md','JOURNAL.md','session-handoff.md','tasks/todo.md','tasks/wedding-platform-master-plan/FR005-TASK-DEPENDENCIES-20261006.md','Тили-тили/app/src/components/TaskDependencies.test.tsx','Тили-тили/app/src/components/TaskDependencies.tsx','Тили-тили/app/src/lib/api/schema.ts','Тили-тили/app/src/lib/i18n.en.ts','Тили-тили/app/src/lib/taskDependenciesJourney.test.tsx','Тили-тили/app/src/pages/Wedding.tsx','Тили-тили/backend/migrations/1763830000000_task_dependencies.cjs','Тили-тили/backend/scripts/c04-c05-isolated-lane.mjs','Тили-тили/backend/scripts/ecosystem-migration-drill.mjs','Тили-тили/backend/scripts/task-dependencies-e2e-browser.py','Тили-тили/backend/scripts/task-dependency-migration-drill.mjs','Тили-тили/backend/src/contract/api.generated.ts','Тили-тили/backend/src/contract/paths.generated.ts','Тили-тили/backend/src/contract/schemas.generated.ts','Тили-тили/backend/src/routes/tasks.ts','Тили-тили/backend/src/tasks/dependencies.ts','Тили-тили/backend/test-support/c04-c05-migrations.json','Тили-тили/backend/test-support/c04-c05-native-admission.mjs','Тили-тили/backend/test-support/c04-c05-schema84.test.mjs','Тили-тили/backend/test/taskDependencies.test.ts','Тили-тили/Тили-тили_API_openapi.yaml','Тили-тили/Тили-тили_Карта_кнопок.md','Тили-тили/Тили-тили_Карта_экранов.md']
+          assert sorted(subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0'))==sorted(paths)
+          files=[]
+          for path in paths:
+            p=root/path; assert p.is_file() and not p.is_symlink()
+            data=p.read_bytes(); expected=subprocess.check_output(['git','hash-object',path]).decode().strip()
+            body=json.dumps({'content':base64.b64encode(data).decode(),'encoding':'base64'}).encode()
+            req=urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs',data=body,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Content-Type':'application/json','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},method='POST')
+            with urllib.request.urlopen(req,timeout=30) as response: received=json.load(response)
+            assert received['sha']==expected
+            files.append({'path':path,'sha':expected,'sha256':hashlib.sha256(data).hexdigest()})
+          manifest={'base':base,'tree':'6f6a767864a61aea333dcfc58cdecd448891d6a8','files':files,'scope':'Verified blobs only; no product refs, commits, merges or deployments changed'}
+          (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+          (out/'candidate.patch').write_bytes(subprocess.check_output(['git','diff','--cached','--binary','HEAD']))
+          print('Verified and transferred',len(files),'candidate blobs. No branch or product mutation.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fr005-exact-candidate-blobs
+          path: ${{ runner.temp }}/fr005-transfer
+          retention-days: 7
+          if-no-files-found: error
