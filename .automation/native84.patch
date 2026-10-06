@@ -1,0 +1,141 @@
+diff --git a/JOURNAL.md b/JOURNAL.md
+index 5b99a6a..5abeb87 100644
+--- a/JOURNAL.md
++++ b/JOURNAL.md
+@@ -4243,0 +4244,5 @@ Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract ve
++
++
++## FR005 native84 child synchronization · 2026-10-06
++
++3133 full3321/frontend2360/preserving passed; native barrier still expected83. Reuse exact84 journal verifier, synchronize C05 count with a reversible ledger, retain all original30/19 cases. Four regressions; local54PASS/types/lint. Native actual acceptance remains pending. See FR005-NATIVE84-BINDINGS-20261006.md.
+diff --git a/session-handoff.md b/session-handoff.md
+index 51aeea1..daf58b6 100644
+--- a/session-handoff.md
++++ b/session-handoff.md
+@@ -0,0 +1,6 @@
++# FR005 latest continuation · native84 bindings · 2026-10-06
++
++PR47 only, base3133a27e. Full3321 tests/preserving/browser19 passed; native barrier failed84!=83 before30/19 suites. Strict child bindings repaired without loosening manifests or local receipts; inverse hashes unchanged. Local54node tests/types/lint pass; exact-head native/full CI pending. Read `tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md` and latest PR47. No main/PR45 merge/deploy.
++
++---
++
+diff --git a/tasks/todo.md b/tasks/todo.md
+index 5307381..315b664 100644
+--- a/tasks/todo.md
++++ b/tasks/todo.md
+@@ -0,0 +1,9 @@
++# FR005 native84 bindings · 2026-10-06
++
++- [x] Diagnose exact native barrier84!=83 failure, retain failed artifact.
++- [x] Fix strict child bindings; preserve frozen30/19 behavioral cases through inverse hashes.
++- [x] Four regressions and54node tests passed; full backend types/lint passed.
++- [ ] Complete exact-head full/native/browser checks; leave PR47 draft and main/PR45 untouched.
++
++---
++
+diff --git a/tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md b/tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md
+new file mode 100644
+index 0000000..63f40dd
+--- /dev/null
++++ b/tasks/wedding-platform-master-plan/FR005-NATIVE84-BINDINGS-20261006.md
+@@ -0,0 +1,19 @@
++# FR005 — schema84 native child bindings · 2026-10-06
++
++Base3133a27e / tree86543d8, PR47 only. No merge, main/PR45 change or deployment.
++
++## Observed exact-head result
++
++CI37535361621 completed3321/3321 backend tests, frontend2360/2360 and the preserving rehearsal successfully. The subsequent native step FAILED before either C04 or C05 tests: control/stderr.log records84!==83 in the receipt barrier checker. The artifact11445614266 was downloaded and verified as SHA2564774c6e2446d2a51d52ef48016b1671c33919361d6daf5b53f963ed03b7d756c. C04 and worker are explicitlyUNRUN; final backend lint/build were skipped. This is a new observed failure, not the previously blocked log.
++
++Source inspection additionally found the C05 worker's unchanged hardcoded migrationCount83. That second mismatch was caught before runtime reached it; it is not claimed as an observed C05 failure.
++
++## Narrow repair
++
++The receipt barrier now imports/re-exports the same strict assertJournal used by the parent instead of duplicating an83-only version. It requires exactly84 distinct sorted names, the exact final task-dependencies migration, and an identical actual journal. The full manifest/hash/directory checks, identity, owned namespace and genuine lock-wait witnesses are unchanged.
++
++The C05 entry retains an exact numeric assertion, now84. Its portability ledger appends the explicit83→84 replacement and updates only the candidate hash. All four original independent test/config hashes are unchanged; reverse replacement reproduces those exact original bytes. None of the30 C04 or19 C05 behavioral cases is removed or weakened.
++
++Four added node:test cases inspect the real child entry points (without loading a native entry or granting a receipt) and verify the complete inverse ledger. Original source:13PASS/3FAIL out of16. Repaired source plus the38 prior diagnostics:54PASS/0FAIL/0SKIP. Full backend TypeScript and full ESLint passed. These are structural/manifest/projection tests, not a successful native SQL run.
++
++Old local83 receipts remain refused, no alternative runtime profile or permissive83/84 union is introduced. Application/API/schema/migrations unchanged by this repair. Exact-head native/full-CI/browser acceptance still requires new successful execution; results belong in PR47 after completion. The3321 and2360 previous passes are not automatically outcomes of the next commit.
+diff --git a/Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs b/Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs
+index 03c18d9..27d65f1 100644
+--- a/Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs
++++ b/Тили-тили/backend/scripts/c04-c05-receipt-barrier-control.mjs
+@@ -7 +7 @@ import { pathToFileURL } from 'node:url'
+-import { readAdmission, assertIdentity as assertProfileIdentity, backend as laneBackend, AUDITS, fileSHA, sha } from '../test-support/c04-c05-native-admission.mjs'
++import { readAdmission, assertJournal, assertIdentity as assertProfileIdentity, backend as laneBackend, AUDITS, fileSHA, sha } from '../test-support/c04-c05-native-admission.mjs'
+@@ -19,4 +19 @@ export function assertIdentity(row) {
+-export function assertJournal(actual, expected) {
+-  assert.equal(expected.length, 83); assert.equal(expected.at(-1), '1763825000000_offer_comparison_terms')
+-  assert.deepEqual(actual, expected)
+-}
++export { assertJournal }
+diff --git a/Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts b/Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts
+index bb83675..499c915 100644
+--- a/Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts
++++ b/Тили-тили/backend/test-isolated/c05WorkerFinalBatch.test.ts
+@@ -73 +73 @@ describe('isolated native corrected worker final batch (provider calls forbidden
+-    const schema=admission.schema;assert.equal(schema.migrationCount,83)
++    const schema=admission.schema;assert.equal(schema.migrationCount,84)
+diff --git a/Тили-тили/backend/test-support/c04-c05-schema84.test.mjs b/Тили-тили/backend/test-support/c04-c05-schema84.test.mjs
+index 5e567cd..cb320d2 100644
+--- a/Тили-тили/backend/test-support/c04-c05-schema84.test.mjs
++++ b/Тили-тили/backend/test-support/c04-c05-schema84.test.mjs
+@@ -8 +8,2 @@ import { createHash } from 'node:crypto'
+-import { assertJournal, verifyMigrationDirectory, selectProfile } from './c04-c05-native-admission.mjs'
++import ts from 'typescript'
++import { assertJournal, verifyMigrationDirectory, selectProfile, verifyTestInverses } from './c04-c05-native-admission.mjs'
+@@ -35,0 +37,40 @@ for (const mutation of ['content', 'missing', 'extra']) test(`directory mutation
++
++
++// Examine the real child entry points without loading them: module evaluation would
++// require a native admission receipt. These tests never grant that receipt.
++const barrierSource = readFileSync(new URL('../scripts/c04-c05-receipt-barrier-control.mjs', import.meta.url), 'utf8')
++const barrierAST = ts.createSourceFile('barrier.mjs', barrierSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
++const workerSource = readFileSync(new URL('../test-isolated/c05WorkerFinalBatch.test.ts', import.meta.url), 'utf8')
++const workerAST = ts.createSourceFile('worker.ts', workerSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
++
++test('the actual barrier entry imports and re-exports the single strict journal verifier', () => {
++  const bound = barrierAST.statements.filter(ts.isImportDeclaration).filter(node =>
++    ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === '../test-support/c04-c05-native-admission.mjs')
++    .flatMap(node => ts.isNamedImports(node.importClause?.namedBindings ?? {}) ? node.importClause.namedBindings.elements : [])
++    .filter(node => node.name.text === 'assertJournal' && (!node.propertyName || node.propertyName.text === 'assertJournal'))
++  assert.equal(bound.length, 1)
++  const exported = barrierAST.statements.filter(ts.isExportDeclaration).flatMap(node =>
++    node.exportClause && ts.isNamedExports(node.exportClause) ? node.exportClause.elements : [])
++    .filter(node => node.name.text === 'assertJournal')
++  assert.equal(exported.length, 1)
++})
++test('the barrier cannot shadow the qualified journal checker with a historical schema guard', () => {
++  assert.equal(barrierAST.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'assertJournal').length, 0)
++  const names = barrierAST.statements.filter(ts.isVariableStatement).flatMap(node => [...node.declarationList.declarations])
++    .filter(node => ts.isIdentifier(node.name) && node.name.text === 'assertJournal')
++  assert.equal(names.length, 0)
++})
++test('the actual C05 worker still asserts exactly schema84 rather than a range or old schema', () => {
++  const calls = []
++  function visit(node) {
++    if (ts.isCallExpression(node) && node.expression.getText(workerAST) === 'assert.equal'
++      && node.arguments[0]?.getText(workerAST) === 'schema.migrationCount') calls.push(node)
++    ts.forEachChild(node, visit)
++  }
++  visit(workerAST)
++  assert.equal(calls.length, 1); assert.equal(calls[0].arguments.length, 2)
++  assert(ts.isNumericLiteral(calls[0].arguments[1])); assert.equal(calls[0].arguments[1].text, '84')
++})
++test('schema84 portability reverses to all four frozen independent test/config byte hashes', () => {
++  verifyTestInverses()
++})
+diff --git a/Тили-тили/backend/test-support/c04-c05-test-inverse.json b/Тили-тили/backend/test-support/c04-c05-test-inverse.json
+index 82c6e8e..06516bc 100644
+--- a/Тили-тили/backend/test-support/c04-c05-test-inverse.json
++++ b/Тили-тили/backend/test-support/c04-c05-test-inverse.json
+@@ -47 +47 @@
+-      "candidateSHA256": "A5A25C1D8B540C9D32F81C56C506A9940D0A4A1990FAE433A459167B073501D4",
++      "candidateSHA256": "78D1DD0E7F83B3659BC3F9E276E03C483ADC90F90B39A7589063CCC75C9B00C3",
+@@ -87,0 +88,4 @@
++        },
++        {
++          "old": "assert.equal(schema.migrationCount,83)",
++          "new": "assert.equal(schema.migrationCount,84)"
