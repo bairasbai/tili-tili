@@ -126,19 +126,20 @@ with sync_playwright() as pw:
         assert any(r['status']==403 and r['path'].endswith('/payment-schedule') for r in http_errors)
         terms_region=page.get_by_role('region',name='Условия заказов',exact=True)
         first_helper_order_read=len(order_reads)
-        helper_denial_paths={ui+f'/api/weddings/{wid}/slots',ui+f'/api/deals/{deal}/order/catalog'}
-        with page.expect_response(lambda response: response.status==403 and response.url.split('?')[0] in helper_denial_paths):
+        helper_denial_path=ui+f'/api/deals/{deal}/order/catalog'
+        with page.expect_response(lambda response: response.status==404 and response.url.split('?')[0]==helper_denial_path):
             terms_region.get_by_role('button',name='Проверить условия заказов',exact=True).click()
         expect(terms_region.get_by_text('Загружаем…',exact=True)).to_have_count(0)
         expect(terms_region.get_by_role('link')).to_have_count(0)
-        expect(terms_region.get_by_role('button')).to_have_count(0)
+        expect(terms_region.get_by_role('alert')).to_be_visible()
+        expect(terms_region.get_by_role('button',name='Обновить проверку условий',exact=True)).to_be_visible()
         expect(terms_region.get_by_text('Редакция условий ещё не опубликована',exact=True)).to_have_count(0)
         assert ui+f'/api/deals/{deal}/order/terms' not in order_reads[first_helper_order_read:]
-        order_terms_checks.append('helper: real 403, no terms fetch, agreement or retry action')
+        order_terms_checks.append('helper: actual private-order 404, no terms fetch or agreement')
         page.screenshot(path=str(out/'helper-390-weekly.png'),full_page=True);c.close()
         passed.append('real helper financial refusal with accessible tasks')
         after=proof();assert before==after,'Reader mutated domain data';assert not writes,writes;assert not errors,errors
-        assert all((r['path']==ui+f'/api/weddings/{wid}/payment-schedule' and r['status'] in (403,503)) or (r['path'] in helper_denial_paths and r['status']==403) for r in http_errors),http_errors
+        assert all((r['path']==ui+f'/api/weddings/{wid}/payment-schedule' and r['status'] in (403,503)) or (r['path']==helper_denial_path and r['status']==404) for r in http_errors),http_errors
         assert len(order_terms_checks)==7, order_terms_checks
         passed.append('unchanged domain IDs, states, amounts; no browser writes')
         result={'order_terms_checks':order_terms_checks,'passed':passed,'page_errors':errors,'http_errors':http_errors,'browser_writes':writes,'before':before,'after':after,

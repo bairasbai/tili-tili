@@ -1,14 +1,14 @@
 import { sendTaskReminders } from '../src/notify/task-notifications.js'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
-import { randomInt } from 'node:crypto'
+import { randomBytes, randomInt } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 const databaseUrl = process.env.TEST_DATABASE_URL
 if (!databaseUrl || !process.env.E2E_FIXTURE_FILE) throw new Error('TEST_DATABASE_URL and E2E_FIXTURE_FILE are required')
 const target = new URL(databaseUrl)
 if (!['127.0.0.1', 'localhost'].includes(target.hostname) || !target.pathname.endsWith('_test')) throw new Error('Only disposable local *_test databases are allowed')
 const app = await buildApp({env:'test', databaseUrl, redisUrl:null,
-  jwtAccessSecret:'a'.repeat(48), jwtRefreshSecret:'b'.repeat(48), policyVersion:'2026-09-02',corsOrigins:['http://127.0.0.1:3000']})
+  jwtAccessSecret:randomBytes(48).toString('base64url'), jwtRefreshSecret:'b'.repeat(48), policyVersion:'2026-09-02',corsOrigins:['http://127.0.0.1:3000']})
 let tick: Promise<unknown> | null = null
 const timer: { handle?: ReturnType<typeof setInterval> } = {}
 app.addHook('onClose', async () => { clearInterval(timer.handle); await tick })
