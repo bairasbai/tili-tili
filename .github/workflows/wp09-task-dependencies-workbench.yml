@@ -58,6 +58,14 @@ jobs:
           PY
           git apply --check "$RUNNER_TEMP/authoritative.patch"
           git apply "$RUNNER_TEMP/authoritative.patch"
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('Тили-тили/app/src/lib/taskDependenciesUi.test.tsx')
+          s=p.read_text()
+          s=s.replace("const override = screen.getByRole('group', { name: 'Ручной обход зависимостей' })", "const override = await screen.findByRole('group', { name: 'Ручной обход зависимостей' })")
+          s=s.replace("fireEvent.change(within(override).getByPlaceholderText('Опишите, почему задачу можно завершить сейчас'), { target: { value: 'Меню подтверждено по телефону' } })\n    fireEvent.click(button)", "fireEvent.change(within(override).getByPlaceholderText('Опишите, почему задачу можно завершить сейчас'), { target: { value: 'Меню подтверждено по телефону' } })\n    await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false))\n    fireEvent.click(button)")
+          p.write_text(s)
+          PY
           git apply --check "$RUNNER_TEMP/browser.patch"
           git apply "$RUNNER_TEMP/browser.patch"
           git diff --check
