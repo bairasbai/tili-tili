@@ -1,0 +1,60 @@
+name: Verified active order blob transfer
+'on':
+  push:
+    branches: [test/wp09-source-snapshot-20261006]
+    paths: [.github/workflows/active-order-transfer.yml, .automation/active-order.patch.xz.b64]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed patch outside checkout
+        run: cp .automation/active-order.patch.xz.b64 "$RUNNER_TEMP/active-order.patch.xz.b64"
+      - uses: actions/checkout@v4
+        with:
+          ref: c2354d767ff07751192b573aa01828d940c83c86
+          persist-credentials: false
+      - name: Verify exact allowlisted patch and upload blobs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,pathlib,subprocess,urllib.request
+          def git(*args): return subprocess.check_output(['git',*args]).decode().strip()
+          assert os.environ['GITHUB_REPOSITORY']=='bairasbai/tili-tili'
+          assert git('rev-parse','HEAD')=='c2354d767ff07751192b573aa01828d940c83c86'
+          assert git('rev-parse','HEAD^{tree}')=='0a15dcce6ad0459ad8b65c962a27c2dd5388558a'
+          tmp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          patch=lzma.decompress(base64.b64decode((tmp/'active-order.patch.xz.b64').read_bytes(),validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='2c93b19091da2b3fc1665e17fd48f2ddd31cee2fb48ff2ba7463cbc72178664e'
+          file=tmp/'active-order.patch';file.write_bytes(patch)
+          allow={'.github/workflows/weekly-order-metadata.yml','ERRORS.md','JOURNAL.md','session-handoff.md','tasks/todo.md','tasks/wedding-platform-master-plan/WP09-ACTIVE-ORDER-20261006.md','Тили-тили/app/src/lib/api/weeklyOrderTerms.ts','Тили-тили/app/src/lib/i18n.en.orders.ts','Тили-тили/app/src/lib/weeklyOrderTerms.test.tsx','Тили-тили/app/src/lib/weeklyOrderTerms.ts','Тили-тили/backend/test/weeklyOrderTermsApi.test.ts','Тили-тили/backend/vitest.serial.json','Тили-тили/Тили-тили_Карта_кнопок.md','Тили-тили/Тили-тили_Карта_экранов.md'}
+          # No blocked weekly browser fixture, runtime policies, or product refs are touched.
+          subprocess.run(['git','apply','--index',str(file)],check=True)
+          paths=subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().strip('\0').split('\0')
+          assert set(paths)==allow and len(paths)==14
+          tree=git('write-tree');assert tree=='e031e98e098d83772bfb0cb46180e857ca3233f7'
+          entries=[]
+          for path in paths:
+              data=pathlib.Path(path).read_bytes()
+              assert data==subprocess.check_output(['git','show',':'+path])
+              sha=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+              payload=json.dumps({'encoding':'base64','content':base64.b64encode(data).decode()}).encode()
+              req=urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs',data=payload,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Content-Type':'application/json','Accept':'application/vnd.github+json'},method='POST')
+              with urllib.request.urlopen(req,timeout=30) as response: result=json.load(response)
+              assert result['sha']==sha
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':sha,'sha256':hashlib.sha256(data).hexdigest()})
+          out=tmp/'active-order-transfer';out.mkdir()
+          (out/'manifest.json').write_text(json.dumps({'base':git('rev-parse','HEAD'),'tree':tree,'patch_sha256':hashlib.sha256(patch).hexdigest(),'files':entries},ensure_ascii=False,indent=2))
+          print('Verified and transferred 14 blobs; no commit, branch update, merge or deployment performed.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: active-order-verified-blobs
+          path: ${{ runner.temp }}/active-order-transfer
+          retention-days: 2
