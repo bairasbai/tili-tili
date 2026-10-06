@@ -1,0 +1,73 @@
+name: Verified FR005 repair blob transfer
+'on':
+  push:
+    branches: [test/fr005-ci-repair-workbench-20261006]
+    paths: [.github/workflows/fr005-repair-transfer.yml, .automation/fr005-ci-repair.patch]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed patch outside checkout
+        run: cp .automation/fr005-ci-repair.patch "$RUNNER_TEMP/fr005-ci-repair.patch"
+      - uses: actions/checkout@v4
+        with:
+          ref: 2e728fe4c258a963d852f8e7f3b25446ce932076
+          persist-credentials: false
+      - name: Verify exact repair and transfer only Git blobs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          def git(*args):
+              return subprocess.check_output(['git', *args]).decode().strip()
+          base = '2e728fe4c258a963d852f8e7f3b25446ce932076'
+          tree = '5e6dcfe3393dbc742bc8e28faf4889b2883c89a1'
+          patch = pathlib.Path(os.environ['RUNNER_TEMP']) / 'fr005-ci-repair.patch'
+          patch_hash = 'f9d1ecfbadb66b08107c7047909ae05a6660af91ceaaa0ef01599102e3ab2693'
+          expected = {
+            'ERRORS.md': '5e59a9a5eee9a99eda426dfb9d6ff1972b432c5e',
+            'JOURNAL.md': '5fb56b0d90726685f64cd179b9f34012b02b12e3',
+            'session-handoff.md': 'ea8cc6260b02b6f8800807962eec891c4380a2a9',
+            'tasks/todo.md': 'd95197d957604886eb833256e36314f218c8a7e0',
+            'tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md': 'bbca325fd511bc8d6e8c0951a2481a8c6d4c73b4',
+            'Тили-тили/app/src/lib/api/schema.ts': '7726eec13a81857b7947e7b7ac22ff57327d81d8',
+            'Тили-тили/backend/src/contract/api.generated.ts': '7726eec13a81857b7947e7b7ac22ff57327d81d8',
+            'Тили-тили/backend/test/audit55.test.ts': 'c6a12f81aa9e03446bd0517db010360ef0c4b1f0',
+            'Тили-тили/backend/vitest.serial.json': 'e485817a211112e3df772c03db8193b9d7548e0d',
+            'Тили-тили/Тили-тили_API_openapi.yaml': 'd35c5a51130e5f1cb3f39d198f722804182ac6f1',
+          }
+          assert git('rev-parse', 'HEAD') == base
+          assert git('rev-parse', 'HEAD^{tree}') == '6f6a767864a61aea333dcfc58cdecd448891d6a8'
+          assert not git('status', '--porcelain')
+          assert hashlib.sha256(patch.read_bytes()).hexdigest() == patch_hash
+          subprocess.run(['git', 'apply', '--check', '--index', '--unidiff-zero', str(patch)], check=True)
+          subprocess.run(['git', 'apply', '--index', '--unidiff-zero', str(patch)], check=True)
+          assert set(git('diff', '--cached', '--name-only').splitlines()) == set(expected)
+          assert git('write-tree') == tree
+          for path, sha in expected.items():
+              assert git('rev-parse', ':' + path) == sha
+              assert git('hash-object', path) == sha
+          # No code, tests, migrations or product-ref updates run in this transfer job.
+          for path, sha in expected.items():
+              body = json.dumps({'content': pathlib.Path(path).read_text(), 'encoding': 'utf-8'}).encode()
+              req = urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs', data=body, method='POST', headers={
+                  'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  assert json.load(response)['sha'] == sha
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'fr005-transfer-evidence'
+          output.mkdir()
+          (output / 'verified.json').write_text(json.dumps({'base': base, 'tree': tree, 'patchSha256': patch_hash, 'files': expected}, ensure_ascii=False, indent=2))
+          print('Verified and transferred 10 blobs; no branch references changed.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-fr005-ci-repair
+          path: ${{ runner.temp }}/fr005-transfer-evidence
+          retention-days: 2

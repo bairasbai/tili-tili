@@ -1,0 +1,153 @@
+diff --git a/ERRORS.md b/ERRORS.md
+index 633ed39..5e59a9a 100644
+--- a/ERRORS.md
++++ b/ERRORS.md
+@@ -3565,0 +3566,5 @@ Native V3 run3ba80b11-36d8-47f5-acaf-6d021a4d48f0 прошёл15 gates и отк
++
++
++## FR005 · 2026-10-06 · targeted acceptance is not full-CI acceptance
++
++A target suite passed but its pg_stat_activity/pg_blocking_pids witness was not registered in the shared-state serial list. New error codes and the exact API version also lacked full contract-audit synchronization. Register the unchanged suite, keep strict version/code checks, and test response-specific documentation. Five added regressions fail before and pass after the repair; original full-CI failure is retained. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`.
+diff --git a/JOURNAL.md b/JOURNAL.md
+index bdefd5b..5fb56b0 100644
+--- a/JOURNAL.md
++++ b/JOURNAL.md
+@@ -4233,0 +4234,5 @@ WP09: отдельная read-only недельная сводка из суще
++
++
++## FR005 · 2026-10-06 · full-CI integration repair
++
++Actual full-suite3310PASS/3FAIL traced to serial registration, exact contract version and missing response codes. Preserved the unchanged application/DB guards and audit53; added five response-code regressions and regenerated type comments. Local39PASS/3PG-onlySKIP, backend types/lint passed. Exact-head cloud acceptance remains separate. See `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge or deploy.
+diff --git a/session-handoff.md b/session-handoff.md
+index dc86eff..ea8cc62 100644
+--- a/session-handoff.md
++++ b/session-handoff.md
+@@ -0,0 +1,6 @@
++# FR005 continuation · CI repair · 2026-10-06
++
++Work only in PR47 `candidate/tili-task-dependencies-20261006`, based on2e728fe4. PR45/main must not be modified. Three full-CI failures reproduced and repaired; five added response-code checks, strict audit53 unchanged. Local39PASS/3PG-onlySKIP and backend types/lint passed. Remote full/native/preserving/browser outcomes must be read on the new HEAD before acceptance. Details: `tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md`. No merge/auto-merge/deploy.
++
++---
++
+diff --git a/tasks/todo.md b/tasks/todo.md
+index 6a4bf39..d95197d 100644
+--- a/tasks/todo.md
++++ b/tasks/todo.md
+@@ -0,0 +1,11 @@
++# FR005 CI repair · 2026-10-06
++
++- [x] Read the actual failed run3310PASS/3FAIL and reproduce all three failures.
++- [x] Keep lock witnesses; register the unchanged suite in the serial group.
++- [x] Synchronize strict0.71.0 assertion and operation-specific conflict documentation; five regressions.
++- [x] Regenerate contract outputs; local39PASS/3PG-onlySKIP, backend types/lint passed.
++- [ ] Complete exact-head full PostgreSQL/Redis, preserving83→84, native and browser checks.
++- [ ] Record final results in PR47, leaving PR45/main and deployment untouched.
++
++---
++
+diff --git a/tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md b/tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md
+new file mode 100644
+index 0000000..bbca325
+--- /dev/null
++++ b/tasks/wedding-platform-master-plan/FR005-CI-REPAIR-20261006.md
+@@ -0,0 +1,30 @@
++# FR005 — full-CI contract and test-lane repair · 2026-10-06
++
++Base: `2e728fe4c258a963d852f8e7f3b25446ce932076`, PR47, branch `candidate/tili-task-dependencies-20261006`.
++PR45 is the unchanged base `5b88c326`; main remains outside this delivery. No merge, auto-merge or deployment.
++
++## Observed failure
++
++CI run37454159948 reported 3310 passing and 3 failing tests, zero pending/todo. The downloaded backend-diagnostics artifact11409716962 has SHA-256 `bfc3a0a5fd90c6555b61a215836daa55de9bd1c68c316df0b54e88dae02797ee`.
++
++- audit53 requires taskDependencies.test.ts in the serial group: its real lock-wait witnesses query the database-wide pg_stat_activity/pg_blocking_pids graph.
++- audit55 still expected contract0.70.0 although FR005 intentionally publishes0.71.0.
++- audit55 found four emitted 409 codes absent from OpenAPI: task_dependencies_changed, task_dependencies_pending, task_dependency_cycle and task_dependency_completed.
++
++These three exact failures reproduced locally: 27PASS/3FAIL/3SKIP. The three skipped cases require PostgreSQL and are not called passed. This explains the full-suite failure, not the outcome of migration/native steps skipped after it.
++
++## Repair
++
++Register the unchanged dependencies suite in vitest.serial.json. Keep audit53 and its shared-state detection unchanged. The existing projects select the suite once, now after parallel suites; its real concurrent requests and lock witnesses remain intact.
++
++Update the exact audit55 version assertion to0.71.0, not a loose version range. Name all four dependency conflicts in the task PATCH409 response and task_dependency_in_use in DELETE409 alongside system_task. Add five parameterized checks requiring each code in its own operation's409 response, not merely somewhere in the document.
++
++Run the repository generators for paths, schemas and both API type files. Runtime path/schema output is byte-identical; the two generated type files change documentation comments only. No application behavior, migration, access rule, dependency limit or completion guard is weakened.
++
++## Local verification before publication
++
++With all five new response-code checks present and before the repair: 27PASS/8FAIL/3SKIP. After the repair, the same expanded audits plus the existing four contract-sync checks: 39PASS/0FAIL/3SKIP. Full backend TypeScript and full backend ESLint pass. The first combined validation command hit the environment's execution timeout; successful separate commands, not the interrupted command, provide the recorded results.
++
++The source archive restores Git tree `6f6a767864a61aea333dcfc58cdecd448891d6a8` exactly. This is the real feature tree, not the earlier PR45 source. Locked backend dependencies were restored from an isolated Actions snapshot. No credentials or raw authentication fixtures are exported as evidence.
++
++Full PostgreSQL/Redis CI, schema83→84 preserving rehearsal, C04/C05 and the browser suites still require a completed run on the new published HEAD. Local static success does not stand in for those checks. Final remote results are recorded in PR47 after actual completion; no success is predeclared here.
+diff --git a/Тили-тили/app/src/lib/api/schema.ts b/Тили-тили/app/src/lib/api/schema.ts
+index 0e2d9f9..7726eec 100644
+--- a/Тили-тили/app/src/lib/api/schema.ts
++++ b/Тили-тили/app/src/lib/api/schema.ts
+@@ -3599 +3599 @@ export interface paths {
+-                /** @description `system_task` — системную задачу удалить нельзя */
++                /** @description `system_task` — системную задачу удалить нельзя; `task_dependency_in_use` — другие задачи используют её как предпосылку. Сначала явно снимите эти связи. */
+@@ -3656 +3656 @@ export interface paths {
+-                /** @description Незавершённые предпосылки, конфликт версии, цикл либо попытка добавить предпосылку завершённой задаче. Обновите список перед новым решением. */
++                /** @description `task_dependencies_pending` — обычное завершение при незавершённых предпосылках; `task_dependencies_changed` — версия связей или состав незавершённых предпосылок изменились, в том числе перед ручным решением пары; `task_dependency_cycle` — новая связь создаёт цикл; `task_dependency_completed` — добавление предпосылки уже завершённой задаче. Обновите список перед новым решением. Для добавления связи сначала снимите отметку выполнения. */
+diff --git a/Тили-тили/backend/src/contract/api.generated.ts b/Тили-тили/backend/src/contract/api.generated.ts
+index 0e2d9f9..7726eec 100644
+--- a/Тили-тили/backend/src/contract/api.generated.ts
++++ b/Тили-тили/backend/src/contract/api.generated.ts
+@@ -3599 +3599 @@ export interface paths {
+-                /** @description `system_task` — системную задачу удалить нельзя */
++                /** @description `system_task` — системную задачу удалить нельзя; `task_dependency_in_use` — другие задачи используют её как предпосылку. Сначала явно снимите эти связи. */
+@@ -3656 +3656 @@ export interface paths {
+-                /** @description Незавершённые предпосылки, конфликт версии, цикл либо попытка добавить предпосылку завершённой задаче. Обновите список перед новым решением. */
++                /** @description `task_dependencies_pending` — обычное завершение при незавершённых предпосылках; `task_dependencies_changed` — версия связей или состав незавершённых предпосылок изменились, в том числе перед ручным решением пары; `task_dependency_cycle` — новая связь создаёт цикл; `task_dependency_completed` — добавление предпосылки уже завершённой задаче. Обновите список перед новым решением. Для добавления связи сначала снимите отметку выполнения. */
+diff --git a/Тили-тили/backend/test/audit55.test.ts b/Тили-тили/backend/test/audit55.test.ts
+index 26b56d7..c6a12f8 100644
+--- a/Тили-тили/backend/test/audit55.test.ts
++++ b/Тили-тили/backend/test/audit55.test.ts
+@@ -457,2 +457,16 @@ describe('audit55 — контракт v0.41.0, единственный вла
+-  it('версия контракта — 0.70.0 (022 invitations +030 atomic/resource foundations +T012 rsvp deadlines)', () => {
+-    expect((doc.info as { version: string }).version).toBe('0.70.0')
++  it('версия контракта — 0.71.0 (FR005: явные зависимости задач и решение пары)', () => {
++    expect((doc.info as { version: string }).version).toBe('0.71.0')
++  })
++
++  it.each([
++    ['patch', 'task_dependencies_changed'],
++    ['patch', 'task_dependencies_pending'],
++    ['patch', 'task_dependency_cycle'],
++    ['patch', 'task_dependency_completed'],
++    ['delete', 'task_dependency_in_use'],
++  ] as const)('FR005: %s declares %s in its own 409 response', (method, code) => {
++    const op = findOp(ops, method, '/weddings/{weddingId}/tasks/{taskId}')!
++    expect(op, 'The existing task operation must remain present').toBeDefined()
++    const response = op.item.responses?.['409']
++    expect(response, 'Conflict must not be reduced to an undocumented generic error').toBeDefined()
++    expect(namesCode(response?.description ?? '', code)).toBe(true)
+diff --git a/Тили-тили/backend/vitest.serial.json b/Тили-тили/backend/vitest.serial.json
+index 2a3ce26..e485817 100644
+--- a/Тили-тили/backend/vitest.serial.json
++++ b/Тили-тили/backend/vitest.serial.json
+@@ -63 +63,2 @@
+-  "test/timeline021.test.ts"
++  "test/timeline021.test.ts",
++  "test/taskDependencies.test.ts"
+diff --git a/Тили-тили/Тили-тили_API_openapi.yaml b/Тили-тили/Тили-тили_API_openapi.yaml
+index 779abb2..d35c5a5 100644
+--- a/Тили-тили/Тили-тили_API_openapi.yaml
++++ b/Тили-тили/Тили-тили_API_openapi.yaml
+@@ -3210 +3210,7 @@ paths:
+-          description: Незавершённые предпосылки, конфликт версии, цикл либо попытка добавить предпосылку завершённой задаче. Обновите список перед новым решением.
++          description: >-
++            `task_dependencies_pending` — обычное завершение при незавершённых предпосылках;
++            `task_dependencies_changed` — версия связей или состав незавершённых предпосылок
++            изменились, в том числе перед ручным решением пары;
++            `task_dependency_cycle` — новая связь создаёт цикл;
++            `task_dependency_completed` — добавление предпосылки уже завершённой задаче.
++            Обновите список перед новым решением. Для добавления связи сначала снимите отметку выполнения.
+@@ -3245 +3251,4 @@ paths:
+-          description: '`system_task` — системную задачу удалить нельзя'
++          description: >-
++            `system_task` — системную задачу удалить нельзя;
++            `task_dependency_in_use` — другие задачи используют её как предпосылку.
++            Сначала явно снимите эти связи.
