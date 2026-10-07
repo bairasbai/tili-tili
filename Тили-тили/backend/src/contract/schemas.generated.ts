@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 158. */
+ * Схем: 167. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -3566,6 +3566,241 @@ export const CONTRACT_SCHEMAS = {
               }
           }
       },
+      "PaymentAmendmentActor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "name",
+              "kind"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "name": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              },
+              "kind": {
+                  "type": "string",
+                  "enum": [
+                      "self",
+                      "partner"
+                  ]
+              }
+          }
+      },
+      "PaymentCorrection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "dealId",
+              "beforeVersion",
+              "afterVersion",
+              "createdAt",
+              "actor",
+              "paymentId",
+              "before",
+              "after",
+              "reason"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "beforeVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "afterVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "actor": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/PaymentAmendmentActor"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "paymentId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "before": {
+                  "$ref": "contract#/definitions/PaymentCorrectionState"
+              },
+              "after": {
+                  "$ref": "contract#/definitions/PaymentCorrectionState"
+              },
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+              }
+          },
+          "description": "Реальные before/after одного исправления; версии могут иметь промежутки из-за отдельных операций. История до введения этой функции не восстанавливается. Автор — только self/current couple, иначе null."
+      },
+      "PaymentCorrectionList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentCorrection"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
+      },
+      "PaymentCorrectionResult": {
+          "allOf": [
+              {
+                  "$ref": "contract#/definitions/PaymentRecord"
+              },
+              {
+                  "type": "object",
+                  "required": [
+                      "amendmentId"
+                  ],
+                  "properties": {
+                      "amendmentId": {
+                          "type": [
+                              "string",
+                              "null"
+                          ],
+                          "format": "uuid"
+                      }
+                  }
+              }
+          ]
+      },
+      "PaymentCorrectionState": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "amountKnown",
+              "amount",
+              "paidOn",
+              "paymentMethod"
+          ],
+          "properties": {
+              "amountKnown": {
+                  "type": "boolean"
+              },
+              "amount": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/PositivePaymentMoney"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "paidOn": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "paymentMethod": {
+                  "$ref": "contract#/definitions/PaymentMethod"
+              }
+          }
+      },
+      "PaymentCorrectionWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "version",
+              "amountKnown",
+              "amount",
+              "paidOn",
+              "paymentMethod",
+              "reason"
+          ],
+          "properties": {
+              "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "amountKnown": {
+                  "type": "boolean"
+              },
+              "amount": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/PositivePaymentMoney"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "paidOn": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "paymentMethod": {
+                  "$ref": "contract#/definitions/PaymentMethod"
+              },
+              "reason": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+              }
+          },
+          "description": "Полное намерение исправления ручной recorded deposit/balance без provider_ref. Только RUB payment/deal. amountKnown=false требует amount=null; true — positive Money. Сырые типы не приводятся. reason непустой после trim. ID/статус/вид/приватность/привязка/документы сохраняются."
+      },
       "PaymentDeal": {
           "type": "object",
           "required": [
@@ -3756,6 +3991,15 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer",
                   "minimum": 0,
                   "description": "Факты оплаты этого этапа без сохранённой суммы."
+              },
+              "amendmentId": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "uuid",
+                  "readOnly": true,
+                  "description": "Идентификатор исходной попытки PATCH; null при no-op или legacy receipt."
               }
           }
       },
@@ -3787,6 +4031,94 @@ export const CONTRACT_SCHEMAS = {
               }
           },
           "additionalProperties": false
+      },
+      "PaymentInstallmentEdit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "id",
+              "dealId",
+              "beforeVersion",
+              "afterVersion",
+              "createdAt",
+              "actor",
+              "installmentId",
+              "before",
+              "after"
+          ],
+          "properties": {
+              "id": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "dealId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "beforeVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "afterVersion": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+              },
+              "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+              },
+              "actor": {
+                  "anyOf": [
+                      {
+                          "$ref": "contract#/definitions/PaymentAmendmentActor"
+                      },
+                      {
+                          "type": [
+                              "object",
+                              "null"
+                          ],
+                          "enum": [
+                              null
+                          ]
+                      }
+                  ]
+              },
+              "installmentId": {
+                  "type": "string",
+                  "format": "uuid"
+              },
+              "before": {
+                  "$ref": "contract#/definitions/PaymentInstallmentState"
+              },
+              "after": {
+                  "$ref": "contract#/definitions/PaymentInstallmentState"
+              }
+          },
+          "description": "Реальная правка title/amount/due либо отдельная отмена этапа. Автоматическая версия от оплаты/привязки/изменения сделки не является правкой этапа."
+      },
+      "PaymentInstallmentEditList": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "items",
+              "nextCursor"
+          ],
+          "properties": {
+              "items": {
+                  "type": "array",
+                  "items": {
+                      "$ref": "contract#/definitions/PaymentInstallmentEdit"
+                  }
+              },
+              "nextCursor": {
+                  "type": [
+                      "string",
+                      "null"
+                  ]
+              }
+          }
       },
       "PaymentInstallmentPatch": {
           "type": "object",
@@ -3870,6 +4202,46 @@ export const CONTRACT_SCHEMAS = {
           },
           "additionalProperties": false,
           "description": "Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.\nПри amountKnown=false числовой долг не уменьшается и итог помечается неполным.\n"
+      },
+      "PaymentInstallmentState": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "title",
+              "amount",
+              "due",
+              "cancelledAt",
+              "cancelReason"
+          ],
+          "properties": {
+              "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+              },
+              "amount": {
+                  "$ref": "contract#/definitions/PositivePaymentMoney"
+              },
+              "due": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "cancelledAt": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "format": "date-time"
+              },
+              "cancelReason": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 500
+              }
+          }
       },
       "PaymentInstallmentStatus": {
           "type": "string",
@@ -4000,6 +4372,11 @@ export const CONTRACT_SCHEMAS = {
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 2147483647
+              },
+              "canCorrect": {
+                  "type": "boolean",
+                  "readOnly": true,
+                  "description": "Capability текущей couple financial projection; отсутствие поля означает запрет UI."
               }
           }
       },
@@ -8517,12 +8894,21 @@ export type ContractSchemaName =
   | "OrderTermsAccept"
   | "OrderTermsPublish"
   | "OrderTermsView"
+  | "PaymentAmendmentActor"
+  | "PaymentCorrection"
+  | "PaymentCorrectionList"
+  | "PaymentCorrectionResult"
+  | "PaymentCorrectionState"
+  | "PaymentCorrectionWrite"
   | "PaymentDeal"
   | "PaymentHistoryExport"
   | "PaymentInstallment"
   | "PaymentInstallmentCreate"
+  | "PaymentInstallmentEdit"
+  | "PaymentInstallmentEditList"
   | "PaymentInstallmentPatch"
   | "PaymentInstallmentPay"
+  | "PaymentInstallmentState"
   | "PaymentInstallmentStatus"
   | "PaymentMethod"
   | "PaymentPlanLink"

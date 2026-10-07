@@ -22,6 +22,7 @@
   "test/budgetControlsReceipts.test.ts",
   "test/jobs.test.ts",
   "test/paymentSchedule.test.ts",
+  "test/paymentCorrections.test.ts",
   "test/prod4.test.ts",
   "test/stage8.test.ts",
   "test/stage9.test.ts",

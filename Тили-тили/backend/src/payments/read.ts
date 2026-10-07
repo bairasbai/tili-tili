@@ -4,6 +4,7 @@ import { COMMITTED_WITH_HOLD } from '../deals/state.js'
 import { PAID_SUM } from '../deals/repo.js'
 import { assertRealDate } from '../wedding/dates.js'
 import { asMoney, INSTALLMENT_ORDER, INSTALLMENT_SELECT, positive, stageViews, type InstallmentRow } from './model.js'
+import { canCorrectPayment } from './amendments.js'
 
 export interface ScheduleQuery { from?: string; to?: string; includeOverdue?: boolean; includeCancelled?: boolean }
 export async function financialToday(db: Queryable,weddingId: string) {
@@ -65,9 +66,10 @@ export async function loadPaymentSchedule(db: Queryable,weddingId:string,query:S
   const items=all.filter(i=>(includeCancelled || i.status!=='cancelled') &&
     ((i.due>=from && i.due<=to) || (includeOverdue && i.overdue)))
   const {rows:payments}=await db.query<{id:string;deal_id:string;kind:string;amount:string|null;status:string;created_at:Date;installment_id:string|null;plan_version:number;
-    payment_method:string;visibility:string;amount_known:boolean;paid_on:string}>(
+    payment_method:string;visibility:string;amount_known:boolean;paid_on:string;currency:string;provider_ref:string|null;deal_state:import('../deals/state.js').DealState;deal_price:string|null;deal_currency:string}>(
     `select p.id,p.deal_id,p.kind,p.amount::text as amount,p.status,p.created_at,p.installment_id,p.plan_version,
-        p.payment_method,p.visibility,p.amount_known,p.paid_on::text as paid_on
+        p.payment_method,p.visibility,p.amount_known,p.paid_on::text as paid_on,p.currency,p.provider_ref,
+        d.state as deal_state,d.price::text as deal_price,d.currency as deal_currency
       from payments p join deals d on d.id=p.deal_id where d.wedding_id=$1
       order by p.paid_on desc,p.created_at desc,p.id desc limit 10001`,[weddingId])
   if (payments.length>10000) throw conflict('financial_history_too_large','История оплат слишком велика для одного ответа')
@@ -78,7 +80,8 @@ export async function loadPaymentSchedule(db: Queryable,weddingId:string,query:S
       unknownAmountPayments:i.unknownAmountPayments})),
     payments:payments.map(p=>({id:p.id,dealId:p.deal_id,kind:p.kind,amountKnown:p.amount_known,
       amount:p.amount_known && p.amount!==null?asMoney(p.amount):null,paymentMethod:p.payment_method,visibility:p.visibility,
-      paidOn:p.paid_on,status:p.status,createdAt:p.created_at.toISOString(),installmentId:p.installment_id,version:p.plan_version}))}
+      paidOn:p.paid_on,status:p.status,createdAt:p.created_at.toISOString(),installmentId:p.installment_id,version:p.plan_version,
+      canCorrect:canCorrectPayment(p,{state:p.deal_state,price:p.deal_price,currency:p.deal_currency},cancelled)}))}
 }
 
 /** Spreadsheet formulas are neutralised; CSV text never becomes executable cells. */

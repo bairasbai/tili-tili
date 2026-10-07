@@ -1,3 +1,17 @@
+## Текущая граница FR011 · 2026-10-07T16:08:20.316Z
+
+Полный init.sh: 2262 frontend + 3345 backend = 5607 тестов, 0 failures/skips; все 8 этапов типов, тестов, lint и сборки прошли. Собранные UI/API через nginx: 6 сценариев, 115 запросов и 115 завершений; HTTP>=400, console/page/request errors — 0, журнал Python пуст. Шесть изображений RU/EN при ширине320/390/480 просмотрены root. Native-проверка сохранила payment ID, квитанцию, сделку и состояние ресурсов; две правки100000→125000→NULL и одна правка этапа записаны в истории. Cleanup сохранил 89 прежних audit rows и вернул исходные counts; providers0. Исходники и обе сборки до/после совпали.
+
+Полных WP **0/17**; 17=16−0+1. FR011 — часть WP00, остальные критерии FR/SC/NFR/A/U, M01/WP11, провайдеры, устройства и решения владельца сохраняются. Публикация проверенных фич разрешена пользователем; на границе этого снимка final commit/push/PR/CI/merge ещё ожидаются. Production deployment этой поставкой не выполнялся.
+
+[Текущий отчёт](wp00-fr011/REPORT-20261007.md).
+
+## Текущий снимок FR011 перед публикацией · 2026-10-07T14:30:37.193Z
+
+Frontend 2252 + backend 3327 = 5579 тестов; failures/skips0, все8 этапов types/tests/lint/build прошли. Compiled Chromium/nginx/API: 6 сценариев, 115/115 запросов завершены; HTTP>=400/console/page/request errors0. Шесть PNG RU/EN320/390/480 просмотрены root. Native сохранила ту же запись платежа, квитанцию целиком, сделку и resource/busy состояние; два исправления100000→125000→NULL, одна правка этапа; неизвестная сумма явно даёт incomplete и remaining1000000. Cleanup вернул baseline counts, сохранил 79 прежних immutable audit rows, итог 84; providers0. Source и обе compiled build manifests до/после совпали.
+
+ПолныхWP0/17 (17=16−0+1). FR002 уже [PR50](https://github.com/bairasbai/tili-tili/pull/50)/main406d5e7; FR011 локально принят, publication/CI/main этой поставки ожидаются. [Отчёт](wp00-fr011/REPORT-20261007.md); позднейшая actual публикация — C:/Тили-тили/.unlazy/wp00-fr011-20261007/PUBLICATION.json. Все общие критерии сохраняются.
+
 ## Актуальное продолжение · 2026-10-07T10:37:12.462Z
 
 Пользователь возобновил весь WP00–WP16. FR018403/404 доставлен [PR49](https://github.com/bairasbai/tili-tili/pull/49)/main459b820. Новая поставка FR002 contact локально принята:5470tests/all8stages + built browser5cases/304finished/6viewedPNG/native preserving cleanup. [FR002 отчёт](wp00-fr002/REPORT-20261007.md). Exact-head CI/main новой поставки пока pending.

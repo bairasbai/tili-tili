@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { QueryResultRow } from 'pg'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from '../src/app.js'
 import { signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
@@ -41,18 +41,52 @@ describe.sequential('registered atomic legacy replacement with actual PostgreSQL
     expect(['127.0.0.1', '::1']).toContain(live.address); expect(live.port).toBe(Number(disposablePgPort())); expect(live.name).toBe(target.pathname.slice(1)); expect(live.principal).toBe('codex_test')
     guarded = true
   })
+  afterEach(async () => {
+    if (!guarded) return
+    // Cases own fresh fixtures; keep their IDs for the final survivor oracle.
+    // Drain completed cases within the existing per-hook budget rather than
+    // accumulate every case's foreign-key work in a single afterAll hook.
+    const started = Date.now()
+    await app.db!.query('delete from weddings where id=any($1::uuid[])', [[...weddings]])
+    await app.db!.query('delete from vendor_resources where id=any($1::uuid[])', [[...resources]])
+    await app.db!.query('delete from vendors where id=any($1::uuid[])', [[...vendors]])
+    await app.db!.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
+    const ids = [...users]
+    for (let offset = 0; offset < ids.length; offset += 32) {
+      await app.db!.query('delete from users where id=any($1::uuid[])', [ids.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`ATOMIC_LEGACY_REPLACEMENT_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!app) return
     try {
       if (!guarded) return
       process.stdout.write(`ATOMIC_LEGACY_REPLACEMENT_PG_WAITS count=${waits.length} ${JSON.stringify(waits)}\n`)
       process.stdout.write(`ATOMIC_LEGACY_REPLACEMENT_FIXTURE_MANIFEST ${JSON.stringify({ database: new URL(DATABASE!).pathname.slice(1), users: [...users], vendors: [...vendors], weddings: [...weddings], resources: [...resources] })}\n`)
-      for (const id of weddings) await app.db!.query('delete from weddings where id=$1', [id])
-      await app.db!.query('delete from vendor_resources where id=any($1::uuid[])', [[...resources]])
-      for (const id of vendors) await app.db!.query('delete from vendors where id=$1', [id])
-      await app.db!.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
-      for (const id of users) await app.db!.query('delete from users where id=$1', [id])
-    } finally { await app.close() }
+      // Delete only owned fixture IDs, preserving whole-wedding history cascade.
+      const cleanup = async (stage: string, sql: string, ids: string[], chunkSize = Math.max(ids.length, 1)) => {
+        const started = Date.now()
+        process.stdout.write(`ATOMIC_LEGACY_REPLACEMENT_CLEANUP ${JSON.stringify({ stage, event: 'started', ownedIds: ids.length })}\n`)
+        let removed = 0
+        for (let offset = 0; offset < ids.length; offset += chunkSize) {
+          removed += (await app.db!.query(sql, [ids.slice(offset, offset + chunkSize)])).rowCount ?? 0
+        }
+        process.stdout.write(`ATOMIC_LEGACY_REPLACEMENT_CLEANUP ${JSON.stringify({ stage, event: 'completed', removed, chunks: Math.ceil(ids.length / chunkSize), elapsedMs: Date.now() - started })}\n`)
+      }
+      await cleanup('weddings', 'delete from weddings where id=any($1::uuid[])', [...weddings])
+      await cleanup('resources', 'delete from vendor_resources where id=any($1::uuid[])', [...resources])
+      await cleanup('vendors', 'delete from vendors where id=any($1::uuid[])', [...vendors])
+      await cleanup('conflict-keys', 'delete from resource_conflict_keys where identity=any($1::uuid[])', [...users, ...resources])
+      await cleanup('users', 'delete from users where id=any($1::uuid[])', [...users], 32)
+      for (const [table, ids] of [['weddings', [...weddings]], ['vendor_resources', [...resources]], ['vendors', [...vendors]], ['users', [...users]]] as const) {
+        expect((await app.db!.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
+      expect((await app.db!.query<{ remaining: number }>('select count(*)::int remaining from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])).rows[0]!.remaining).toBe(0)
+    } finally {
+      process.stdout.write('ATOMIC_LEGACY_REPLACEMENT_CLEANUP app-close-started\n')
+      await app.close()
+      process.stdout.write('ATOMIC_LEGACY_REPLACEMENT_CLEANUP app-close-completed\n')
+    }
   })
   async function actor() {
     assert(guarded)

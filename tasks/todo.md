@@ -1,4 +1,16 @@
-# Активно: WP00 / FR002 · 2026-10-07T10:37:12.462Z
+# FR011 · текущая граница · 2026-10-07T16:08:20.316Z
+
+Checkout C:/Тили-тили/tili-orchestrate-publish-20261003; branch codex/wp00-payment-corrections; исходная интеграционная база main322a73632d6a72ddebdb1399f995813072608698/[PR51](https://github.com/bairasbai/tili-tili/pull/51). Featuread07324 и merge6bf9fcc сохранены; финальный коммит ещё ожидается. Полный init.sh: 2262 frontend + 3345 backend = 5607 тестов, 0 failures/skips; все 8 этапов типов, тестов, lint и сборки прошли. Собранные UI/API через nginx: 6 сценариев, 115 запросов и 115 завершений; HTTP>=400, console/page/request errors — 0, журнал Python пуст. Шесть изображений RU/EN при ширине320/390/480 просмотрены root. Native-проверка сохранила payment ID, квитанцию, сделку и состояние ресурсов; две правки100000→125000→NULL и одна правка этапа записаны в истории. Cleanup сохранил 89 прежних audit rows и вернул исходные counts; providers0. Исходники и обе сборки до/после совпали.
+
+Допуск C04/C05 закрыт на ровно83 прежние и85 текущие миграции. Старый список83 сохранён; две новые миграции закреплены по имени и SHA256. Перед чтением файлов валидатор сверяет весь переданный список с закреплённым. Настоящий GitHub job получает85; локальный83 допуск на текущем85 каталоге отклоняется до БД. Обязательные исходники включают регрессионный тест; исходные19 worker cases и остальные native guards сохранены. Целевые18 tests прошли; замечания независимого ревью v1 закрыты v2. Реальный isolated native lane будет подтверждён GitHub CI этой поставки.
+
+Полных WP **0/17**; 17=16−0+1. FR011 — часть WP00, остальные критерии FR/SC/NFR/A/U, M01/WP11, провайдеры, устройства и решения владельца сохраняются. Публикация проверенных фич разрешена пользователем; на границе этого снимка final commit/push/PR/CI/merge ещё ожидаются. Production deployment этой поставкой не выполнялся.
+
+Следующий шаг: проверенный final commit → push/PR → exact-head CI → разрешённое merge/fetch/tree/source equality. Не повторять вопрос о разрешении публикации. Root — единственный владелец PG15432/Redis12/API/browser/GitHub; guard перед GitHub, CI-запросы не чаще3мин,403/429/rate/auth→стоп. Heartbeat30 PAUSED; отчёт вручную каждые30мин активной работы.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v7.json), [browser](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-qualified-v3.json), [native](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-be877291-df26-4a1e-ae84-4b1377a02321/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-be877291-df26-4a1e-ae84-4b1377a02321/cleanup.json), [просмотренные изображения](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-be877291-df26-4a1e-ae84-4b1377a02321/viewed-images.json), [PWA](C:/Тили-тили/.unlazy/wp00-fr011-20261007/pwa-integrated-qualified-v2.json), [допуск CI](C:/Тили-тили/.unlazy/wp00-fr011-20261007/c04-c05-current-preflight-v2.json), [ревью допуска](C:/Тили-тили/.unlazy/wp00-fr011-20261007/C04-C05-FR011-ADMISSION-REVIEW-v2.md), [гейты](C:/Тили-тили/.unlazy/wp00-fr011-20261007/GATES.md).
+
+## Историческая граница FR002 · 2026-10-07T10:37:12.462Z
 
 Пользователь возобновил весь WP00–WP16. Контакт внешней договорённости реализован и локально принят: [задачи](wedding-platform-master-plan/wp00-fr002/tasks.md), [отчёт](wedding-platform-master-plan/wp00-fr002/REPORT-20261007.md). Checkout C:/Тили-тили/tili-orchestrate-publish-20261003, branch codex/wp00-external-agreements, базаmain459b820188ccd35d23a3afadf1eb1fe5c576f6e4/PR49.
 

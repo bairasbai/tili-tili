@@ -4228,6 +4228,52 @@ V11/V12/V13 и неуспешные full попытки сохранены; full
 
 Feature commit/CI/main ещё pending;0/17 wholeWP. Failed попытки сохранены. Next FR011 correction/history остаётся исходным пробелом, не выполненной фичей.
 
+## 2026-10-07 · FR002 опубликован; начат FR011
+
+FR002 contact поставлен в [PR50](https://github.com/bairasbai/tili-tili/pull/50): feature1c6a191ab5a142cd4cce394d197cb580df32e673,7CI SUCCESS, main406d5e7e091c737228995e7657a89bd926c653ca, tree feature/main совпал. [Фактическая публикация](C:/Тили-тили/.unlazy/wp00-fr002-20261007/PUBLICATION.json). Это дополняет прежнюю историческую запись, а не меняет её временную границу.
+
+Следующий source-confirmed gap — FR011: исправление ручной отметки и история настоящих правок этапа. [Spec](tasks/wedding-platform-master-plan/wp00-fr011/spec.md). Actual RED дал3failed/0passed:2PATCH404 и1stage-history GET404; старые create/partial pay/stage edit прошли. [Лог](C:/Тили-тили/.unlazy/tz-full-20261002/logs/vitest-fr011-red-http-v1.log). Backend draft и новая миграция383 ещё не приняты: source review подтверждает проект, DDL/GREEN/full/browser предстоят.
+
+Выбраны typed scoped immutable tables, wedding-only erase cascade/deferred parent FK, неизменные original payment/receipts, одна общая версия включая paidOn/method, actual RUB eligibility без conversion/backfill, fresh private projection после COMMIT. Source review: [storage](C:/Тили-тили/.unlazy/wp00-fr002-20261007/FR011-STORAGE-DESIGN-REVIEW-v1.md), [migration](C:/Тили-тили/.unlazy/wp00-fr011-20261007/MIGRATION-REVIEW-v1.md). Прежние утраченные версии не реконструируются; void/settlement остаются вне этой части.0/17 полных WP.
+
+
+## 2026-10-07T12:10Z · FR011: отчёт за30минут
+
+Backend3P2 закрыты source-review-v2: MAX409/affectedstagepins, account exportself-onlyactor, exact cancellation timestamp. Actual HTTP/PG145/145 (vitest-fr011-http-boundaries-v5) сJWTafterwait/receiptUPDATE/postCOMMITrevoke, rollback/history/audit/key, erase/heir/purge, роли/keyset/races. UI55/55 на границе отчёта; последующие review closures потребовали controlled parent draft/attempt и local API fences. Затем UIv8 получил90/90. Nativev1 отказал на неверном vendor-owner erase fixture; сохранён. Freshtarget23/nativev2 прошёл wholepublicdrill,39новых refusals/down2/cascade. Точный lint alias delta отдельноreviewed; nativev2 bytes отличаются только этим bounded cosmetic delta. Полный init.sh/browser/публикация ещё ожидаются; wholeWP0/17 (17=16−0+1). Источники: C:/Тили-тили/.unlazy/wp00-fr011-20261007/ и C:/Тили-тили/.unlazy/tz-full-20261002/logs/.
+
+## 2026-10-07T12:40UTC · регулярный отчёт FR011
+UI90/90 против55 в прошлом отчёте; HTTP/PG145/145. Reviews backend/UIv3 заморожены. Full-v2 frontend2252PASS/types/lint/build, backend ещё работает, наблюдаемы2failures audit52currency17→19/CHECKnames и audit53receiptpredicateSQLfragment. Новый reviewed preserving orderedCHECKrename + full19probe align + exactscopedpredicate запланированы, до завершения full source не менялся. Browser harness подготовлен, actual приёмка/PNG/cleanup/featureCI/main остаются pending. ПолныеWP0/17,17=16−0+1. Следующий регулярный отчёт13:10UTC/16:10МСК. Доказательства: C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v2.log, BACKEND-REVIEW-v3.md, UI-REVIEW-v3.md; raw focused logs vitest-fr011-http-boundaries-v5.log/vitest-fr011-ui-boundaries-v8.log. Production не принимался.
+
+## 2026-10-07T13:10UTC · регулярный отчёт FR011
+Schema85 реально установлена на exact full517419/browser637080/clean660329 DB15432; currency-up-result-v2.json сохраняет104старые nonjournal таблицы на каждой, включая60stage-history full. NativeV1observer ошибка42809 на public aggregate min сохранена, V2 использует CASEprokind/a и exact receipt/OID pin; storage/functions не менялись кроме2CHECKnames. CurrentHTTP/PG154/154=49+69+27+3+6; cleanup focused95/95=89+6, users32chunks19 elapsed22404ms,5survivorzero/poolclose PASS. Previous failedfull/608batchsource доказательства сохранены. Root scoped cleanup завершил694оставшихся users только по1216ID двух failedfixturemanifests, прежние ownweddings/vendors/resources/conflictkeys уже0. Nativefullcurrent85/drill24 выполняется; full-v3/browser/PNG/featureCI/main ещёpending. ПолныеWP0/17, следующая отчётная граница13:40UTC/16:40МСК. Источники: private FR011namespace currency-up-result-v2.json/cleanup-completed-v1.json; raw vitest-fr011-guards-schema85-v1.log/vitest-fr011-resource-cleanup-v2.log. Actualgitfetchoriginmain12:47 показалmain406d5e7 без новогоupstream; GHguardpauseнет, GitHubmutations в этой части ещё0.
+
+## 2026-10-07T13:40UTC · регулярный отчёт FR011
+
+С прошлого отчёта native24/drill-v3 завершил все прежние gates,39FR011refusals/2guardedlossydowns,3currencycycles/6preservingdowns/final85. Full-v3 дал2252frontend+3327backend=5579успешных test cases, но общий FAILED: atomicLegacyReplacement.afterAll превысил30s после73успешных cases; resource cleanup текущего full завершился и не является этой ошибкой. SourceEqualtrue; backend lint/build не выполнялись после failed suite. Failed proof сохранён, не считать whole full PASS. Root меняет только atomic afterAll на scoped batch/32users/5zero checks/app.close finally,73 test bodies raw-byte equal; timeout/guards прежние. Исправлена только whitespace пустой OpenAPI строки. Actual focused79 и независимый read-only delta review ещё выполняются. Затем нужен новый full-v4, actual compiled browser/native/6viewedPNG/strict0errors/cleanup/source/build/provider, commit/push/exact-headCI/main. WholeWP0/17 (17=16−0+1), production/device/provider не принимаются. Следующий отчёт14:10UTC/17:10MSK.
+
+Источники: C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v3.json/full-v3.log/atomic-cleanup-source-v1.json; native raw C:/Тили-тили/.unlazy/tz-full-20261002/logs/drill-fr011-native-v3.log; focused текущий session85688/tagfr011-atomic-cleanup-v1.
+
+## 2026-10-07T14:10UTC · регулярный отчёт FR011
+
+С13:40 atomic afterAll-only focused79PASS подтвердил27.344s фаз при30s budget; затем обе suites очищают owned completed case fixtures через native wedding cascade/users32. Все89+73=162test bodies, прежние afterAll/five survivor checks/close/timers сохранены, Sets сохраняют всеID для финального oracle/privateFree. Actualfocused168/168=89+73+6; maxcasecleanup718/698ms, final five phases13/9ms/removed0/closesPASS. Finalindependent ATOMIC-CLEANUP-REVIEW-v2 SHA C836E9F3D7C5137265119363AE00EF9E9C39D436F919AF6D4B1C2907BB7C26EA подтвердил обеrawinverseцепочки, отсутствиеintentionalsharedfixture/concurrentcase/неожидаемогоactorwriter, все54links/12hashesmatch; reviewerruntimeне запускал. Only2spacesOASblankline removed; parsedOASsame,4generated unchanged. Full-v4 session20224 с13:54:12UTC: frontend2252types/tests/lint/buildPASS/backtypesPASS/backtests running, sourcefrozen. Actualcompiledbrowser/native/6viewedRUENPNG/strict0errors/scopedcleanup/source/build/provider0/featureCI/main ещёpending. WholeWP0/17 (17=16−0+1). Следующий регулярный отчёт14:40UTC/17:40MSK.
+
+Источники: C:/Тили-тили/.unlazy/wp00-fr011-20261007/case-cleanup-qualified-v1.json/ATOMIC-CLEANUP-REVIEW-v2.md/full-v4.log; raw vitest-fr011-atomic-cleanup-v1.log/vitest-fr011-case-cleanup-v1.log. Failedfull-v3 сохраняется отдельно и не принят какwholePASS, production/device/liveprovider не проверены этой поставкой.
+
+## 2026-10-07T14:30:37.193Z · FR011: локальная приёмка перед публикацией
+
+Frontend 2252 + backend 3327 = 5579 тестов; failures/skips0, все8 этапов types/tests/lint/build прошли. Compiled Chromium/nginx/API: 6 сценариев, 115/115 запросов завершены; HTTP>=400/console/page/request errors0. Шесть PNG RU/EN320/390/480 просмотрены root. Native сохранила ту же запись платежа, квитанцию целиком, сделку и resource/busy состояние; два исправления100000→125000→NULL, одна правка этапа; неизвестная сумма явно даёт incomplete и remaining1000000. Cleanup вернул baseline counts, сохранил 79 прежних immutable audit rows, итог 84; providers0. Source и обе compiled build manifests до/после совпали.
+
+Выбрана правка исходной ручной записи с неизменными receipt/id и общей версией; отдельная замещающая операция не создаётся. История хранит typed before/after, reason/actor и теряет actor identity при законном erase, сохраняя историю до wedding cascade. Native lossy downgrade383 запрещён при истории; отдельный383500 rollback сохраняет её. Full/browser/scopedcleanup не ослаблены ради earlier failures.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v4.json), [browser](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-qualified-v1.json), [native](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-3c5c1265-4099-48ed-b5fd-1567e6809fbb/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-3c5c1265-4099-48ed-b5fd-1567e6809fbb/cleanup.json), [viewed PNG](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-3c5c1265-4099-48ed-b5fd-1567e6809fbb/viewed-images.json), [migration drill](C:/Тили-тили/.unlazy/tz-full-20261002/logs/drill-fr011-native-v3.log), [upgrade](C:/Тили-тили/.unlazy/wp00-fr011-20261007/currency-up-result-v2.json), [гейты](C:/Тили-тили/.unlazy/wp00-fr011-20261007/GATES.md).
+
+Exact-headCI/main pending на границе снимка, wholeWP0/17.
+
+## 2026-10-07T14:32:44.338Z · FR011: актуальный upstream требует повторной приёмки
+
+Guard пауза нет; serial fetch показал origin/main322a73632d6a72ddebdb1399f995813072608698, PR51 PWA. FR011 полная5579 и браузер6/115/6PNG приняты на прежнем406d5e7/source0E5061C8. Эти proof сохраняются как проверка до интеграции. Перед публикацией объединить свежий main, сохранить все его PWA/docs, повторить полный гейт и compiled browser на итоговом коде. Backend/migrations изменения upstream отсутствуют по local git diff. ЦелыхWP0/17.
+
+
 
 ## 2026-10-07 · Инструкция агента и PWA
 
@@ -4237,3 +4283,33 @@ Feature commit/CI/main ещё pending;0/17 wholeWP. Failed попытки сох
 ## 2026-10-07 · PWA: браузерная приёмка и разрешение merge
 
 После поручения владельца «Можешь надо вливать?» выполнены8actual Chromium PWA scenarios, PASSED; pageErrors0. Standalone static fixture: API намеренно503, offline network errors сохранены; серверные права/сессии не принимались. В main handoff сохраняется историческая FR002-приёмка и основная задача FR011 другого worktree; не подменять основной план веткой PWA. Frontend source после full2202 не менялся. [Browser evidence](PWA-BROWSER-20261007.json), [отчёт](PWA-REVIEW-20261007.md).
+
+## 2026-10-07T14:33:45.161Z · FR011: интеграция main322a736 / PR51
+
+39owned files saved in feature commitad07324; upstream merged, append-only ERRORS/JOURNAL обе стороны сохранены полностью, текущий FR011 handoff и весь upstream snapshot сохранены с явно исторической границей. Source delta строго3PWA files из main; весь backend/migrations/FR011 unchanged. Повтор full/browser обязателен из-за нового worker source, прежняя приёмка5579/6cases115requests остаётся beforeintegration.
+
+## 2026-10-07T14:40:29Z · отчёт пользователю за30мин
+
+С прошлого отчёта14:10UTC: full-v4 завершён2252+3327=5579/all8/source0E506; browser3c5c принят6cases/115requests=115finished/strictHTTPconsolepageRequesterrors0/emptyPythonlog/6rootviewedPNG/native/scopedcleanup. Первый locator timeout и второй4unretrievedTargetclosed сохранены без whole-PASS. Featuread07324 сохранён, послеguard/fetch обнаруженmain322a736/PR51, интеграция6bf9fcc сохраняет3upstreamPWAfiles/весьbackendraw/обаdocsuffixes. Currentfull-v5: front2262/types/lint/build PASS, backendtests выполняются; итогfull не подтверждён. Остались currentcompiledbrowser/finaldocscommit/push/PR/exactCI/merge/fetch/tree. WholeWP0/17,17=16-0+1, всепрочие FR/SC/NFR/A/U/provider/tariffs/device/human сохраняются. Источники: C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v4.json, browser-qualified-v1.json, integration-main51-v1.json, full-v5.log и master CONTINUATION-AUDIT. Следующий отчёт15:10UTC/18:10MSK.
+
+## 2026-10-07T15:15:24Z · отчёт пользователю за 30 минут
+
+С отчёта14:40UTC: integrated full-v5 PASS5589=2262front+3327back/all8/no fails/skips; core browser70e PASS6cases/115requests=finished/strict errors0/emptyPythonlog/6root-viewedPNG/native/scopedcleanup. Отдельный staticPWA8 PASS с ожидаемыми отсутствующими API/offline console errors, без wholeapp/device claim. Доpush найден реальный C04/C05 source83 gate against85: read-onlyRED85!==83, new16 meaningfultests4FAIL12PASS then16PASS. Closed github85 descriptor+exact2pins, local83 preserved/refuses actual85 before DB, golden19inverse retained; types/lint and actual verifySource/inverses PASS. Current sourceBE0F79 no longer uses full-v5/browser-v2 as current acceptance. Publication/remoteCI/merge pending. WholeWP0/17,17=16-0+1; public master package criteria remain. Sources: C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v5.json,browser-qualified-v2.json,pwa-integrated-qualified-v1.json,c04-c05-schema85-preflight-red-v1.json,c04-c05-current-preflight-v1.json; focused logs in tz-full-20261002/logs. Следующий отчёт15:45UTC/18:45MSK.
+
+## 2026-10-07T15:40:57.925Z · FR011 final CI source closure
+
+Previous full-v6 finished5605/all8/no failures/skips; after cleanup two independent review findings closed by2regressions RED2/16 then GREEN18/18, minimal helper exact pinned descriptors and required CPU source. Types/lint/preflight pass. Frozen current source01A97A072523B2A2BBDC4832FD24CD00B7BF7A915602CA7DCB58A2CF532CAC6D; current full-v7 starts now. Source review-v2/current core/PWA/exact-headCI/publish/main pending. Latest serialguard/fetch15:32UTC main322a736 unchanged. WholeWP0/17 confirmed by wp-count-v1.json/current17-row acceptance table.
+
+## 2026-10-07T15:44:38Z · отчёт пользователю за 30 минут
+
+С15:15UTC: actual full-v6 completed2262+3343=5605/all8/no failures/skips/sourceBE0F. Independent review-v1 F01/F02 caller-rehashed-tail and omitted CPU test source closure reproduced; after native full cleanup2committed tests actualRED2FAIL16PASS then GREEN18PASS; minimal helper/types closure, backendtypes/lint and source-preflight-v2 PASS. Current source01A97 frozen for full-v7: frontend2262/types/lint/buildPASS, backendrunning. Reviewer has source-backed closure/no further confirmed blocker, finalv2freeze pending at report. Main guard/fetch15:32UTC322a736 unchanged. Current compiledbrowser/staticPWA/exact-headCI/push/PR/merge still pending. WholeWP0/17 confirmed by17-row delivery table/wp-count-v1.json;17=16-0+1. Sources C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v6.json,full-v7.log,c04-c05-current-preflight-v2.json,wp-count-v1.json; focused review RED/GREEN logs in tz-full-20261002/logs. Следующий отчёт16:15UTC/19:15MSK.
+
+## 2026-10-07T16:08:20.316Z · FR011: итоговая локальная проверка
+
+Полный init.sh: 2262 frontend + 3345 backend = 5607 тестов, 0 failures/skips; все 8 этапов типов, тестов, lint и сборки прошли. Собранные UI/API через nginx: 6 сценариев, 115 запросов и 115 завершений; HTTP>=400, console/page/request errors — 0, журнал Python пуст. Шесть изображений RU/EN при ширине320/390/480 просмотрены root. Native-проверка сохранила payment ID, квитанцию, сделку и состояние ресурсов; две правки100000→125000→NULL и одна правка этапа записаны в истории. Cleanup сохранил 89 прежних audit rows и вернул исходные counts; providers0. Исходники и обе сборки до/после совпали.
+
+Допуск C04/C05 закрыт на ровно83 прежние и85 текущие миграции. Старый список83 сохранён; две новые миграции закреплены по имени и SHA256. Перед чтением файлов валидатор сверяет весь переданный список с закреплённым. Настоящий GitHub job получает85; локальный83 допуск на текущем85 каталоге отклоняется до БД. Обязательные исходники включают регрессионный тест; исходные19 worker cases и остальные native guards сохранены. Целевые18 tests прошли; замечания независимого ревью v1 закрыты v2. Реальный isolated native lane будет подтверждён GitHub CI этой поставки.
+
+Полных WP **0/17**; 17=16−0+1. FR011 — часть WP00, остальные критерии FR/SC/NFR/A/U, M01/WP11, провайдеры, устройства и решения владельца сохраняются. Публикация проверенных фич разрешена пользователем; на границе этого снимка final commit/push/PR/CI/merge ещё ожидаются. Production deployment этой поставкой не выполнялся.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v7.json), [browser](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-qualified-v3.json), [native](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-be877291-df26-4a1e-ae84-4b1377a02321/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-be877291-df26-4a1e-ae84-4b1377a02321/cleanup.json), [просмотренные изображения](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-be877291-df26-4a1e-ae84-4b1377a02321/viewed-images.json), [PWA](C:/Тили-тили/.unlazy/wp00-fr011-20261007/pwa-integrated-qualified-v2.json), [допуск CI](C:/Тили-тили/.unlazy/wp00-fr011-20261007/c04-c05-current-preflight-v2.json), [ревью допуска](C:/Тили-тили/.unlazy/wp00-fr011-20261007/C04-C05-FR011-ADMISSION-REVIEW-v2.md), [гейты](C:/Тили-тили/.unlazy/wp00-fr011-20261007/GATES.md).

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.71.0
+  version: 0.72.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -8949,6 +8949,183 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Validation'
+  /weddings/{weddingId}/payments/{paymentId}:
+    patch:
+      tags:
+        - budget
+      summary: Исправить ручную отметку оплаты с причиной и историей
+      description: >-
+        Только действующая пара своей неархивной/неотменённой свадьбы, booked/paid_deposit/done с известной
+        положительной RUB ценой. recorded deposit/balance, provider_ref NULL, RUB. Это исправление учётной
+        отметки, без перевода денег. Реальное изменение повышает общую payment version один раз; no-op не
+        создаёт событие. Проверяется projected net сделки 0..price и связанного этапа 0..amount при денежном
+        изменении. 409: stale_payment_plan, payment_version_exhausted, payment_currency_unsupported,
+        payment_not_correctable, payment_over_price, installment_overpay, not_booked, no_price,
+        wedding_cancelled, idempotency_key_reused/idempotency_in_progress. Replay сохраняет amendmentId,
+        получает свежую проекцию под текущими правами после COMMIT; успешная receipt не теряется при отказе
+        ответа.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCorrectionWrite'
+      responses:
+        '200':
+          description: Текущая разрешённая проекция
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCorrectionResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          description: Некорректное намерение, сумма, дата или причина
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: 'payment_receipt_missing: атомарная запись результата не состоялась; эффект и история откатываются.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /weddings/{weddingId}/payments/{paymentId}/history:
+    get:
+      tags:
+        - budget
+      summary: История исправлений ручной отметки
+      description: >-
+        Только текущая пара. История отменённой свадьбы/сделки доступна для чтения; архивная/чужая свадьба —404.
+        Текущие principal/session/consent/member и JWT проверяются под lock. Нет сохранённых событий — items[].
+        Пагинация по (created_at,id) DESC, курсор с PG microseconds. Чужие/недоступные личности не копируются в
+        снимок.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Текущая разрешённая проекция
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentCorrectionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /weddings/{weddingId}/payment-schedule/{installmentId}/history:
+    get:
+      tags:
+        - budget
+      summary: История правок и отмены этапа
+      description: >-
+        Только текущая пара. История отменённой свадьбы/сделки доступна для чтения; архивная/чужая свадьба —404.
+        Текущие principal/session/consent/member и JWT проверяются под lock. Нет сохранённых событий — items[].
+        Пагинация по (created_at,id) DESC, курсор с PG microseconds. Чужие/недоступные личности не копируются в
+        снимок.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/WeddingId'
+        - name: installmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Текущая разрешённая проекция
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentInstallmentEditList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /weddings/{weddingId}/payments/{paymentId}/receipts:
     get:
       tags:
@@ -9310,13 +9487,14 @@ paths:
         - budget
       summary: Изменить или отменить плановый этап
       description: >-
-        Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой свадьбой
-        запрещены.
+        Только couple своей свадьбы. Чужая свадьба — 404, другие роли — 403. Финансовые действия с отменённой
+        свадьбой запрещены.
 
-        Коды: 422 validation_failed (в том числе не календарный срок — поле `due`), bad_date (срок вне 2000–2100); 409
-        stale_payment_plan (устаревшая версия), installment_cancelled, not_booked, no_price, plan_below_paid (сумма
-        меньше оплаченного), plan_over_price, wedding_cancelled; 400 idempotency_key_required; 409
-        idempotency_key_reused (тот же ключ, другое тело), idempotency_in_progress.
+        Коды: 422 validation_failed (в том числе не календарный срок — поле `due`), bad_date (срок вне
+        2000–2100); 409 stale_payment_plan (устаревшая версия), installment_cancelled, not_booked, no_price,
+        plan_below_paid (сумма меньше оплаченного), plan_over_price, wedding_cancelled; 400
+        idempotency_key_required; 409 idempotency_key_reused (тот же ключ, другое тело),
+        idempotency_in_progress.
       security:
         - bearerAuth: []
       parameters:
@@ -9352,6 +9530,12 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           description: Некорректные поля, дата или период
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: 'payment_receipt_missing: атомарная запись результата не состоялась; эффект и история откатываются.'
           content:
             application/json:
               schema:
@@ -15275,6 +15459,12 @@ components:
           type: integer
           minimum: 0
           description: Факты оплаты этого этапа без сохранённой суммы.
+        amendmentId:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+          description: Идентификатор исходной попытки PATCH; null при no-op или legacy receipt.
     PaymentInstallmentStatus:
       type: string
       enum:
@@ -15348,6 +15538,10 @@ components:
           type: integer
           minimum: 1
           maximum: 2147483647
+        canCorrect:
+          type: boolean
+          readOnly: true
+          description: Capability текущей couple financial projection; отсутствие поля означает запрет UI.
     VendorPaymentRecord:
       allOf:
         - $ref: '#/components/schemas/PaymentRecord'
@@ -15638,6 +15832,251 @@ components:
       description: |
         Tili-tili фиксирует оплату вне приложения. Способ не влияет на арифметику.
         При amountKnown=false числовой долг не уменьшается и итог помечается неполным.
+    PaymentCorrectionWrite:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - amountKnown
+        - amount
+        - paidOn
+        - paymentMethod
+        - reason
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        amountKnown:
+          type: boolean
+        amount:
+          anyOf:
+            - $ref: '#/components/schemas/PositivePaymentMoney'
+            - type: object
+              nullable: true
+              enum: [null]
+        paidOn:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      description: >-
+        Полное намерение исправления ручной recorded deposit/balance без provider_ref. Только RUB payment/deal.
+        amountKnown=false требует amount=null; true — positive Money. Сырые типы не приводятся. reason непустой
+        после trim. ID/статус/вид/приватность/привязка/документы сохраняются.
+    PaymentCorrectionState:
+      type: object
+      additionalProperties: false
+      required:
+        - amountKnown
+        - amount
+        - paidOn
+        - paymentMethod
+      properties:
+        amountKnown:
+          type: boolean
+        amount:
+          anyOf:
+            - $ref: '#/components/schemas/PositivePaymentMoney'
+            - type: object
+              nullable: true
+              enum: [null]
+        paidOn:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+    PaymentInstallmentState:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - amount
+        - due
+        - cancelledAt
+        - cancelReason
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        amount:
+          $ref: '#/components/schemas/PositivePaymentMoney'
+        due:
+          type: string
+          format: date
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancelReason:
+          type: string
+          nullable: true
+          maxLength: 500
+    PaymentAmendmentActor:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - kind
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        kind:
+          type: string
+          enum:
+            - self
+            - partner
+    PaymentCorrection:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - dealId
+        - beforeVersion
+        - afterVersion
+        - createdAt
+        - actor
+        - paymentId
+        - before
+        - after
+        - reason
+      properties:
+        id:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        beforeVersion:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        afterVersion:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          anyOf:
+            - $ref: '#/components/schemas/PaymentAmendmentActor'
+            - type: object
+              nullable: true
+              enum: [null]
+        paymentId:
+          type: string
+          format: uuid
+        before:
+          $ref: '#/components/schemas/PaymentCorrectionState'
+        after:
+          $ref: '#/components/schemas/PaymentCorrectionState'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      description: >-
+        Реальные before/after одного исправления; версии могут иметь промежутки из-за отдельных операций. История
+        до введения этой функции не восстанавливается. Автор — только self/current couple, иначе null.
+    PaymentInstallmentEdit:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - dealId
+        - beforeVersion
+        - afterVersion
+        - createdAt
+        - actor
+        - installmentId
+        - before
+        - after
+      properties:
+        id:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        beforeVersion:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        afterVersion:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          anyOf:
+            - $ref: '#/components/schemas/PaymentAmendmentActor'
+            - type: object
+              nullable: true
+              enum: [null]
+        installmentId:
+          type: string
+          format: uuid
+        before:
+          $ref: '#/components/schemas/PaymentInstallmentState'
+        after:
+          $ref: '#/components/schemas/PaymentInstallmentState'
+      description: >-
+        Реальная правка title/amount/due либо отдельная отмена этапа. Автоматическая версия от
+        оплаты/привязки/изменения сделки не является правкой этапа.
+    PaymentCorrectionList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentCorrection'
+        nextCursor:
+          type: string
+          nullable: true
+    PaymentInstallmentEditList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentInstallmentEdit'
+        nextCursor:
+          type: string
+          nullable: true
+    PaymentCorrectionResult:
+      allOf:
+        - $ref: '#/components/schemas/PaymentRecord'
+        - type: object
+          required:
+            - amendmentId
+          properties:
+            amendmentId:
+              type: string
+              format: uuid
+              nullable: true
     PaymentPlanLink:
       type: object
       required:

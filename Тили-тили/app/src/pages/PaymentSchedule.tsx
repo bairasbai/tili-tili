@@ -8,7 +8,8 @@ import { t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { fmt } from '@/lib/money'
 import { noWedding, useApi, explainError } from '@/lib/api/useApi'
-import { ApiError, newIdempotencyKey } from '@/lib/api/client'
+import { ApiError, newIdempotencyKey, onSessionChanged, onSessionExpired } from '@/lib/api/client'
+import { PaymentAmendmentHistory, PaymentCorrectionEditor, type PaymentCorrectionAttempt, type PaymentCorrectionDraft } from '@/components/PaymentAmendments'
 import { parsePaymentRubles, paymentRubles } from '@/lib/paymentAmount'
 import { addPaymentReceipt, createPaymentInstallment, deletePaymentReceipt, exportPaymentHistory, getPaymentReceipt, getPaymentSchedule, linkPaymentPlan, listPaymentReceipts, payInstallment,
   updatePaymentInstallment, type PaymentInstallment, type PaymentRecord, type PaymentScheduleData, type ScheduleFilter } from '@/lib/api/paymentSchedule'
@@ -41,6 +42,9 @@ function saveFile(blob: Blob, filename: string) {
 
 export default function PaymentSchedule() {
   const { weddingId } = useStore()
+  const [expired, setExpired] = useState(false)
+  useEffect(() => { const clear = () => setExpired(true), a = onSessionChanged(clear), b = onSessionExpired(clear); return () => { a(); b() } }, [])
+  if (expired) return <p role="alert" className="p-5 text-sm">{t('Сессия изменилась — откройте финансовый раздел снова')}</p>
   // Changing weddings must not carry an old financial form or idempotency key over.
   return <ScheduleSession key={weddingId ?? 'none'} weddingId={weddingId} />
 }
@@ -54,6 +58,15 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [denied, setDenied] = useState(false)
+  const [correctionAttempts,setCorrectionAttempts]=useState<Record<string,PaymentCorrectionAttempt>>({})
+  const [correctionDrafts,setCorrectionDrafts]=useState<Record<string,PaymentCorrectionDraft>>({})
+  const rememberCorrection=(id:string,attempt:PaymentCorrectionAttempt|null)=>setCorrectionAttempts(old=>{
+    const next={...old};if(attempt)next[id]=attempt;else delete next[id];return next
+  })
+  const rememberDraft=(id:string,draft:PaymentCorrectionDraft|null)=>setCorrectionDrafts(old=>{
+    const next={...old};if(draft)next[id]=draft;else delete next[id];return next
+  })
   const writing = useRef(false)
   const retries = useRef(new Map<string, string>())
   /* Действия, получившие 409 «график изменился»: данные перечитаны, черновик остался в
@@ -61,7 +74,13 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
      (ревью 018, F-05). Пара видит обновлённую карточку до повторного «Сохранить». */
   const staleSeen = useRef(new Set<string>())
   const formRef = useRef<HTMLFormElement>(null)
-  const data = ready(q) ? q.data : null
+  const data = !denied && ready(q) ? q.data : null
+  const revoke = () => { setDenied(true); setEditor(null); setDraft(empty); setCorrectionAttempts({}); setCorrectionDrafts({}); retries.current.clear(); q.reload() }
+  useEffect(()=>{
+    if(q.failure&&[401,403,404].includes(q.failure.status)){
+      setDenied(true);setEditor(null);setDraft(empty);setCorrectionAttempts({});setCorrectionDrafts({});retries.current.clear()
+    }
+  },[q.failure])
   const disabled = busy || q.refreshing || !data || data.readOnly
   /* Форма рисуется над списком: без прокрутки «Отметить оплату» у нижней карточки
      выглядело нерабочим (ревью 018, F-10). */
@@ -104,6 +123,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
       }
       setEditor(null); setNotice(t('Изменение сохранено')); q.reload()
     } catch (e) {
+      if(e instanceof ApiError&&[401,403,404].includes(e.status)){revoke();return}
       if (e instanceof ApiError && e.code === 'stale_payment_plan') {
         staleSeen.current.add(tag)
         q.reload()
@@ -170,6 +190,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
     <TopBar back fallback="/wedding/budget" title={t('График платежей')} sub={t('Сроки платежей по сделкам')} />
     <div className="px-5 space-y-4 mt-3">
       <AsyncState q={q} forbiddenText={t('Финансовый раздел доступен только паре')} />
+      {denied && <p role="alert" className="text-sm">{t('Доступ к финансовой истории изменился — откройте раздел снова')}</p>}
       {/* Отказ по периоду прятал и сам фильтр — выбраться можно было только уходом с
           экрана (ревью 018, F-02). */}
       {!data && !q.loading && Object.keys(filter).length > 0 && <button className={button + ' bg-[var(--card)]'} onClick={() => setFilter({})}>{t('Сбросить период')}</button>}
@@ -243,6 +264,7 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
             <button className={button} aria-label={`${t('Изменить')}: ${item.title}`} disabled={disabled} onClick={() => open({ mode: 'edit', item })}>{t('Изменить')}</button>
             <button className={button} aria-label={`${t('Отменить этап')}: ${item.title}`} disabled={disabled} onClick={() => open({ mode: 'cancel', item })}>{t('Отменить этап')}</button>
           </div>}
+          <PaymentAmendmentHistory weddingId={weddingId!} id={item.id} type="installment" revision={item.version} denied={revoke} />
         </section>)}
         <details className="card p-4"><summary className="cursor-pointer font-bold py-1">{t('История оплат')} · {data.payments.length}</summary>
           <p className="text-xs text-[var(--soft)] my-3">{t('Все отметки по сделкам, в том числе отменённым. Возвраты вычитаются, отменённые отметки не входят в итог.')}</p>
@@ -253,6 +275,10 @@ function ScheduleSession({ weddingId }: { weddingId: string | null }) {
             <p className="text-xs text-[var(--soft)]">{t(p.status === 'cancelled' ? 'Отметка отменена' : p.kind === 'refund' ? 'Возврат' : 'Оплачено вне приложения')}</p>
             <p className="text-xs">{data.allInstallments.find(i => i.id === p.installmentId)?.title ?? t('Без привязки')}</p>
             {p.status !== 'cancelled' && <button className={button} disabled={disabled} onClick={() => open({ mode: 'link', payment: p })}>{t('Привязать оплату')}</button>}
+            <PaymentCorrectionEditor weddingId={weddingId!} payment={p} disabled={disabled} reload={q.reload} denied={revoke}
+              attempt={correctionAttempts[p.id]??null} onAttempt={attempt=>rememberCorrection(p.id,attempt)}
+              savedDraft={correctionDrafts[p.id]??null} onDraft={draft=>rememberDraft(p.id,draft)} />
+            <PaymentAmendmentHistory weddingId={weddingId!} id={p.id} type="payment" revision={p.version} denied={revoke} />
             <ReceiptPanel weddingId={weddingId!} paymentId={p.id} disabled={disabled} />
           </div>)}
         </details>

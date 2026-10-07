@@ -9,7 +9,7 @@
  *
  * T1 — сторож схемы: список таблиц с `currency` выводится из
  * `information_schema` (а не зашит явно — ловит и будущую таблицу), и его
- * длина обязана быть 15. На каждой из них обязана быть РОВНО ОДНА проверенная
+ * длина обязана быть 19. На каждой из них обязана быть РОВНО ОДНА проверенная
  * (`convalidated`) CHECK с ТОЧНЫМ определением `currency = 'RUB'`
  * (`pg_get_constraintdef(...) = "CHECK ((currency = 'RUB'::bpchar))"`),
  * завязанная только на колонку `currency` (`conkey`), и названная
@@ -22,8 +22,9 @@
  * откатывается сама (см. `updateRolledBack`) — до миграции запрос ещё
  * проходит без ошибки, и голый неоформленный запрос в этом случае просто
  * закоммитился бы, оставив чужую валюту в общей базе навсегда.
- * T3 — то же поведение на всех 15 (G6 evidence F2-G6.txt P3c: T2 покрывал
- * только 3/15). Минимальный `INSERT` с `currency = 'USD'` на каждой из 15
+ * T3 — то же поведение на всех 19. Первоначальные 15 probes дополнены
+ * двумя таблицами 018 и двумя typed FR011 histories; их список сверяется
+ * с текущей схемой. Минимальный `INSERT` с `currency = 'USD'` на каждой из 19
  * таблиц, внутри одной внешней транзакции с SAVEPOINT на таблицу. Внешние
  * ключи — заведомо несуществующие uuid: PostgreSQL проверяет их
  * AFTER-триггером ПОСЛЕ `ExecConstraints` (NOT NULL/CHECK), так что
@@ -171,7 +172,7 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
   }
 
   describe("T1 · сторож схемы: каждая таблица с currency несёт проверенную CHECK currency = 'RUB'", () => {
-    it('информационная схема: ровно 17 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
+    it('информационная схема: ровно 19 таблиц с currency, у каждой — ровно одна точная CHECK', async () => {
       const { rows: tables } = await app.db!.query<{ table_name: string }>(
         `select table_name
            from information_schema.columns
@@ -181,8 +182,8 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
       // Список выводится из схемы, а не зашит явно — сам подхватит будущую
       // таблицу. Но количество — часть проверки: молчаливое появление новой
       // денежной таблицы обязано остановить тест, а не проскочить незамеченным.
-      // 14-я и 15-я — offer_requests и offers из 019; 16-я и 17-я — payment_installments и budget_category_limits из 018-A/B.
-      expect(tables.map((r) => r.table_name)).toHaveLength(17)
+      // 14–15: offers; 16–17: installments/limits; 18–19: typed FR011 histories.383500 only names their existing checks.
+      expect(tables.map((r) => r.table_name)).toHaveLength(19)
 
       const EXACT_DEF = "CHECK ((currency = 'RUB'::bpchar))"
       const { rows: allChecks } = await app.db!.query<{
@@ -309,9 +310,9 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
     })
   })
 
-  describe('T3 · поведение на всех 15: минимальный INSERT с валютой ≠ RUB — своя CHECK, ничего не остаётся', () => {
+  describe('T3 · поведение на всех 19: минимальный INSERT с валютой ≠ RUB — своя CHECK, ничего не остаётся', () => {
     /**
-     * Одна минимальная строка на каждую из 15 таблиц: `currency` сразу
+     * Одна минимальная строка на каждую из 19 таблиц: `currency` сразу
      * 'USD', остальные колонки — ровно то, что нужно, чтобы упасть могла
      * ТОЛЬКО проверка валюты (амаунты положительные, kind/category —
      * допустимые, `deals_has_performer` закрыт через `external_name`).
@@ -400,12 +401,36 @@ describe.skipIf(!live)("F2 · F-RL-2-03: CHECK (currency = 'RUB') на всех 
           sql: `insert into offers (id, request_id, kind, title, price, currency, valid_until) values ($1, $2, 'offer', 'F2 probe', 100, 'USD', '2027-01-01')`,
           params: [id(), id()],
         },
+        {
+          table: 'payment_installments',
+          sql: "insert into payment_installments(id,deal_id,title,amount,currency,due) values($1,$2,'F2 probe',100,'USD','2027-01-01')",
+          params: [id(), id()],
+        },
+        {
+          table: 'budget_category_limits',
+          sql: "insert into budget_category_limits(wedding_id,category_id,amount,currency) values($1,'b4',100,'USD')",
+          params: [id()],
+        },
+        {
+          table: 'payment_corrections',
+          sql: "insert into payment_corrections(id,wedding_id,deal_id,payment_id,before_version,after_version,currency,before_amount_known,after_amount_known,before_amount,after_amount,before_paid_on,after_paid_on,before_payment_method,after_payment_method,reason) values($1,$2,$3,$4,1,2,'USD',true,true,100,200,'2026-10-01','2026-10-02','cash','bank_transfer','F2 probe')",
+          params: [id(), id(), id(), id()],
+        },
+        {
+          table: 'payment_installment_edits',
+          sql: "insert into payment_installment_edits(id,wedding_id,deal_id,installment_id,before_version,after_version,currency,before_title,after_title,before_amount,after_amount,before_due,after_due) values($1,$2,$3,$4,1,2,'USD','F2 before','F2 after',100,200,'2027-01-01','2027-01-02')",
+          params: [id(), id(), id(), id()],
+        },
       ]
     }
 
-    it('на каждой из 15 таблиц — 23514 и своя CHECK, вся транзакция откатывается', async () => {
+    it('на каждой из 19 таблиц — 23514 и своя CHECK, вся транзакция откатывается', async () => {
       const list = probes()
-      expect(list).toHaveLength(15)
+      expect(list).toHaveLength(19)
+      const currencyTables = (await app.db!.query<{ table_name: string }>(
+        "select table_name from information_schema.columns where table_schema='public' and column_name='currency' order by table_name",
+      )).rows.map(row => row.table_name)
+      expect(list.map(probe => probe.table).sort()).toEqual(currencyTables)
       const rollbackSentinel = new Error('audit52: intentional rollback (T3)')
       const results: Array<{ table: string; result: PgError }> = []
       try {

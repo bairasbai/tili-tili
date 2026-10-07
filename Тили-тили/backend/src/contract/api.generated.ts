@@ -11164,6 +11164,183 @@ export interface paths {
         };
         trace?: never;
     };
+    "/weddings/{weddingId}/payments/{paymentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Исправить ручную отметку оплаты с причиной и историей
+         * @description Только действующая пара своей неархивной/неотменённой свадьбы, booked/paid_deposit/done с известной положительной RUB ценой. recorded deposit/balance, provider_ref NULL, RUB. Это исправление учётной отметки, без перевода денег. Реальное изменение повышает общую payment version один раз; no-op не создаёт событие. Проверяется projected net сделки 0..price и связанного этапа 0..amount при денежном изменении. 409: stale_payment_plan, payment_version_exhausted, payment_currency_unsupported, payment_not_correctable, payment_over_price, installment_overpay, not_booked, no_price, wedding_cancelled, idempotency_key_reused/idempotency_in_progress. Replay сохраняет amendmentId, получает свежую проекцию под текущими правами после COMMIT; успешная receipt не теряется при отказе ответа.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PaymentCorrectionWrite"];
+                };
+            };
+            responses: {
+                /** @description Текущая разрешённая проекция */
+                200: {
+                    headers: {
+                        /** @description no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentCorrectionResult"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+                /** @description Некорректное намерение, сумма, дата или причина */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description payment_receipt_missing: атомарная запись результата не состоялась; эффект и история откатываются. */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payments/{paymentId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * История исправлений ручной отметки
+         * @description Только текущая пара. История отменённой свадьбы/сделки доступна для чтения; архивная/чужая свадьба —404. Текущие principal/session/consent/member и JWT проверяются под lock. Нет сохранённых событий — items[]. Пагинация по (created_at,id) DESC, курсор с PG microseconds. Чужие/недоступные личности не копируются в снимок.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    paymentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Текущая разрешённая проекция */
+                200: {
+                    headers: {
+                        /** @description no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentCorrectionList"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weddings/{weddingId}/payment-schedule/{installmentId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * История правок и отмены этапа
+         * @description Только текущая пара. История отменённой свадьбы/сделки доступна для чтения; архивная/чужая свадьба —404. Текущие principal/session/consent/member и JWT проверяются под lock. Нет сохранённых событий — items[]. Пагинация по (created_at,id) DESC, курсор с PG microseconds. Чужие/недоступные личности не копируются в снимок.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    weddingId: components["parameters"]["WeddingId"];
+                    installmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Текущая разрешённая проекция */
+                200: {
+                    headers: {
+                        /** @description no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PaymentInstallmentEditList"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/weddings/{weddingId}/payments/{paymentId}/receipts": {
         parameters: {
             query?: never;
@@ -11542,6 +11719,15 @@ export interface paths {
                 409: components["responses"]["Conflict"];
                 /** @description Некорректные поля, дата или период */
                 422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description payment_receipt_missing: атомарная запись результата не состоялась; эффект и история откатываются. */
+                500: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -15063,6 +15249,11 @@ export interface components {
             cancelReason: string | null;
             /** @description Факты оплаты этого этапа без сохранённой суммы. */
             unknownAmountPayments: number;
+            /**
+             * Format: uuid
+             * @description Идентификатор исходной попытки PATCH; null при no-op или legacy receipt.
+             */
+            readonly amendmentId?: string | null;
         };
         /**
          * @description paid — привязанные отметки закрыли этап; covered — закрыт неразнесёнными деньгами
@@ -15093,6 +15284,8 @@ export interface components {
             /** Format: uuid */
             installmentId: string | null;
             version: number;
+            /** @description Capability текущей couple financial projection; отсутствие поля означает запрет UI. */
+            readonly canCorrect?: boolean;
         };
         VendorPaymentRecord: components["schemas"]["PaymentRecord"] & {
             receipts: {
@@ -15200,6 +15393,84 @@ export interface components {
             visibility: components["schemas"]["PaymentVisibility"];
             /** Format: date */
             paidOn?: string;
+        };
+        /** @description Полное намерение исправления ручной recorded deposit/balance без provider_ref. Только RUB payment/deal. amountKnown=false требует amount=null; true — positive Money. Сырые типы не приводятся. reason непустой после trim. ID/статус/вид/приватность/привязка/документы сохраняются. */
+        PaymentCorrectionWrite: {
+            version: number;
+            amountKnown: boolean;
+            amount: components["schemas"]["PositivePaymentMoney"] | (never | null);
+            /** Format: date */
+            paidOn: string;
+            paymentMethod: components["schemas"]["PaymentMethod"];
+            reason: string;
+        };
+        PaymentCorrectionState: {
+            amountKnown: boolean;
+            amount: components["schemas"]["PositivePaymentMoney"] | (never | null);
+            /** Format: date */
+            paidOn: string;
+            paymentMethod: components["schemas"]["PaymentMethod"];
+        };
+        PaymentInstallmentState: {
+            title: string;
+            amount: components["schemas"]["PositivePaymentMoney"];
+            /** Format: date */
+            due: string;
+            /** Format: date-time */
+            cancelledAt: string | null;
+            cancelReason: string | null;
+        };
+        PaymentAmendmentActor: {
+            /** Format: uuid */
+            id: string;
+            name: string | null;
+            /** @enum {string} */
+            kind: "self" | "partner";
+        };
+        /** @description Реальные before/after одного исправления; версии могут иметь промежутки из-за отдельных операций. История до введения этой функции не восстанавливается. Автор — только self/current couple, иначе null. */
+        PaymentCorrection: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dealId: string;
+            beforeVersion: number;
+            afterVersion: number;
+            /** Format: date-time */
+            createdAt: string;
+            actor: components["schemas"]["PaymentAmendmentActor"] | (never | null);
+            /** Format: uuid */
+            paymentId: string;
+            before: components["schemas"]["PaymentCorrectionState"];
+            after: components["schemas"]["PaymentCorrectionState"];
+            reason: string;
+        };
+        /** @description Реальная правка title/amount/due либо отдельная отмена этапа. Автоматическая версия от оплаты/привязки/изменения сделки не является правкой этапа. */
+        PaymentInstallmentEdit: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            dealId: string;
+            beforeVersion: number;
+            afterVersion: number;
+            /** Format: date-time */
+            createdAt: string;
+            actor: components["schemas"]["PaymentAmendmentActor"] | (never | null);
+            /** Format: uuid */
+            installmentId: string;
+            before: components["schemas"]["PaymentInstallmentState"];
+            after: components["schemas"]["PaymentInstallmentState"];
+        };
+        PaymentCorrectionList: {
+            items: components["schemas"]["PaymentCorrection"][];
+            nextCursor: string | null;
+        };
+        PaymentInstallmentEditList: {
+            items: components["schemas"]["PaymentInstallmentEdit"][];
+            nextCursor: string | null;
+        };
+        PaymentCorrectionResult: components["schemas"]["PaymentRecord"] & {
+            /** Format: uuid */
+            amendmentId: string | null;
         };
         /** @description Привязывает существующую запись целиком к одному этапу своей сделки или снимает привязку. Не создаёт оплату. Возвраты должны быть распределены так, чтобы нетто этапа не стало отрицательным. */
         PaymentPlanLink: {

@@ -208,6 +208,12 @@ function withIdempotencyRequired(slice: string): boolean {
 
 /** Механически из кода: обработчик читает `Idempotency-Key`? Если да — с каким `required`. */
 function idempotencyUsage(slice: string): { reads: boolean; required: boolean } {
+  if (/\bamendAndRead\(/.test(slice)) {
+    // FR011 has an atomic scope-before-claim adapter. Verify its real mandatory reader,
+    // so removing that read does not silently exempt either financial PATCH.
+    const adapter = fs.readFileSync(path.join(SRC_DIR, 'payments', 'amendments.ts'), 'utf8')
+    return { reads: /const clientKey = readKeyHeader\(request, true\)!/.test(adapter), required: true }
+  }
   if (/\bguestKey\(/.test(slice)) return { reads: true, required: true }
   if (/\bwithIdempotency\(/.test(slice)) return { reads: true, required: withIdempotencyRequired(slice) }
   if (/\breadKeyHeader\(\s*request\s*,/.test(slice)) return { reads: true, required: true }
@@ -454,8 +460,8 @@ describe('audit55 — контракт v0.41.0, единственный вла�
     expect(ops.length).toBeGreaterThan(100)
   })
 
-  it('версия контракта — 0.71.0 (022/030 foundations + FR002 external contact)', () => {
-    expect((doc.info as { version: string }).version).toBe('0.71.0')
+  it('версия контракта — 0.72.0 (022/030 foundations + FR002 contact + FR011 amendment history)', () => {
+    expect((doc.info as { version: string }).version).toBe('0.72.0')
   })
 
   describe('019: shortlist, запросы предложений и принятие', () => {
