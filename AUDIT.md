@@ -706,3 +706,8 @@ passed (353)` · `✓ built in 5.96s`, предупреждений 0 · eslint 
 
 **Что выпуску мешает — только за владельцем:** `RELEASE-BLOCKERS.md` №1–6 (SMS, Redis, хранилище, ключи Web Push,
 юрист, Роскомнадзор). Всё остальное в списке — решения о продукте, у каждого написано, что код делает сейчас.
+
+
+## 2026-10-07 · FR011: текущая локальная граница
+
+0.72.0/миграция84, новая manual correction и доступная typed immutable история. Real HTTP/PG145/145, UI90/90, native public drill-v2 passed39refusals/down2/oldrows/cascade; source review ограниченной lint alias delta сохраняет поведение. Это ещё не full/browser/publication PASS новой функции. [Приёмка](tasks/wedding-platform-master-plan/wp00-fr011/tasks.md). FR002 уже опубликованPR50/main406d5e7; wholeWP0/17.

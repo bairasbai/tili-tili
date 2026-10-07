@@ -7,6 +7,7 @@ import { clientIp } from './auth.js'
 import type { Queryable } from '../plugins/db.js'
 import { lockProfileMutation } from '../auth/profile-access.js'
 import { assertSeatingToken } from '../wedding/access.js'
+import { financialAmendmentExport } from '../payments/amendments.js'
 
 interface ProfileRow {
   id: string
@@ -747,6 +748,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       payments,
       paymentInstallments,
       paymentReceipts,
+      ...await financialAmendmentExport(db(), { ...request.caller!, policyVersion: app.appConfig.policyVersion }, () => assertSeatingToken(request)),
       budget,
       budgetSettings,
       budgetLimits,

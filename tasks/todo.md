@@ -1,4 +1,18 @@
-# Активно: WP00 / FR002 · 2026-10-07T10:37:12.462Z
+# FR011 · снимок перед публикацией · 2026-10-07T14:30:37.193Z
+
+Checkout C:/Тили-тили/tili-orchestrate-publish-20261003; branch codex/wp00-payment-corrections; база main406d5e7e091c737228995e7657a89bd926c653ca/[PR50](https://github.com/bairasbai/tili-tili/pull/50). Исправления ручных отметок и typed private history реализованы и локально приняты; feature commit/exact-headCI/main на этой временной границе ещё ожидаются.
+
+Frontend 2252 + backend 3327 = 5579 тестов; failures/skips0, все8 этапов types/tests/lint/build прошли. Compiled Chromium/nginx/API: 6 сценариев, 115/115 запросов завершены; HTTP>=400/console/page/request errors0. Шесть PNG RU/EN320/390/480 просмотрены root. Native сохранила ту же запись платежа, квитанцию целиком, сделку и resource/busy состояние; два исправления100000→125000→NULL, одна правка этапа; неизвестная сумма явно даёт incomplete и remaining1000000. Cleanup вернул baseline counts, сохранил 79 прежних immutable audit rows, итог 84; providers0. Source и обе compiled build manifests до/после совпали.
+
+Final native drill-v3 fresh24/OID678212/schema85:39newrefusals/2guardedlossydowns/alloldgates,3currencycycles/6preservingdowns. Full-v1/v2, native22 и failed browser runs сохраняются. Никакой failed functional sub-case не объявляется whole PASS. Spec/plan/tasks, OpenAPI0.72.0/4generated, maps/business/README и independent source reviews актуальны. [Отчёт](C:/Тили-тили/tili-orchestrate-publish-20261003/tasks/wedding-platform-master-plan/wp00-fr011/REPORT-20261007.md).
+
+Следующий шаг: inspected staged feature → commit/push/PR → exact-head CI → разрешённый merge/fetch/tree/source equality. Фактический позднейший результат записывается в [PUBLICATION.json](C:/Тили-тили/.unlazy/wp00-fr011-20261007/PUBLICATION.json) и private FINAL-REPORT.md; этот handoff — снимок до публикации. Не повторять вопрос о разрешении публикации: пользователь уже разрешил verified WP00–WP16. Root serial PG15432/Redis12/API/browser/GitHub, guard обязателен/CI≥2–3мин/403/429/rate/auth→стоп. Browser ownfixture очищена/процессы закрыты. Production5432/deployment не разрешён.
+
+Полных WP0/17 (17=16−0+1); остальные FR/SC/NFR/A/U и M01/WP11/provider/device/human открыты. После поставки продолжить общий реестр. Heartbeat30 PAUSED; регулярный отчёт вручную каждые30мин активной работы, формальные отчёты вручную каждые30мин активной работы; актуальные границы и результаты — последние записи JOURNAL.md.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr011-20261007/full-v4.json), [browser](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-qualified-v1.json), [native](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-3c5c1265-4099-48ed-b5fd-1567e6809fbb/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-3c5c1265-4099-48ed-b5fd-1567e6809fbb/cleanup.json), [viewed PNG](C:/Тили-тили/.unlazy/wp00-fr011-20261007/browser-3c5c1265-4099-48ed-b5fd-1567e6809fbb/viewed-images.json), [migration drill](C:/Тили-тили/.unlazy/tz-full-20261002/logs/drill-fr011-native-v3.log), [upgrade](C:/Тили-тили/.unlazy/wp00-fr011-20261007/currency-up-result-v2.json), [гейты](C:/Тили-тили/.unlazy/wp00-fr011-20261007/GATES.md).
+
+## Историческая граница FR002 · 2026-10-07T10:37:12.462Z
 
 Пользователь возобновил весь WP00–WP16. Контакт внешней договорённости реализован и локально принят: [задачи](wedding-platform-master-plan/wp00-fr002/tasks.md), [отчёт](wedding-platform-master-plan/wp00-fr002/REPORT-20261007.md). Checkout C:/Тили-тили/tili-orchestrate-publish-20261003, branch codex/wp00-external-agreements, базаmain459b820188ccd35d23a3afadf1eb1fe5c576f6e4/PR49.
 

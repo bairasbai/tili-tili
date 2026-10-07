@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import type { QueryResultRow } from 'pg'
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { disposablePgPort } from './disposablePgPort.js'
 import { createDb, type Db, type Queryable } from '../src/plugins/db.js'
 import type { OrderActor } from '../src/orders/context.js'
@@ -43,6 +43,22 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
     expect(live.name).toBe(target.pathname.slice(1)); expect(live.principal).toBe('codex_test')
     expect(['127.0.0.1', '::1']).toContain(live.address); expect(live.port).toBe(Number(disposablePgPort()))
   })
+  afterEach(async () => {
+    if (!db) return
+    // Cases own fresh fixtures; keep their IDs for the final survivor oracle.
+    // Drain completed cases within the existing per-hook budget rather than
+    // accumulate every case's foreign-key work in a single afterAll hook.
+    const started = Date.now()
+    await db.query('delete from weddings where id=any($1::uuid[])', [[...weddings]])
+    await db.query('delete from vendor_resources where id=any($1::uuid[])', [[...resources]])
+    await db.query('delete from vendors where id=any($1::uuid[])', [[...vendors]])
+    await db.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...users, ...resources]])
+    const ids = [...users]
+    for (let offset = 0; offset < ids.length; offset += 32) {
+      await db.query('delete from users where id=any($1::uuid[])', [ids.slice(offset, offset + 32)])
+    }
+    process.stdout.write(`RESOURCE_COMMITMENTS_CASE_CLEANUP ${JSON.stringify({ completed: true, elapsedMs: Date.now() - started })}\n`)
+  })
   afterAll(async () => {
     if (!db) return
     try {
@@ -51,12 +67,31 @@ describe.skipIf(!DATABASE)('actual PostgreSQL resource commitments kernel; synth
         users: [...users], vendors: [...vendors], weddings: [...weddings], resources: [...resources] })}\n`)
       // Immutable history is removed only through actual whole-wedding cascade.
       // No triggers, constraints, sessions of others or global tables are changed.
-      for (const id of weddings) await db.query('delete from weddings where id=$1', [id])
-      await db.query('delete from vendor_resources where id=any($1::uuid[])', [[...resources]])
-      for (const id of vendors) await db.query('delete from vendors where id=$1', [id])
-      await db.query('delete from resource_conflict_keys where identity=any($1::uuid[])', [[...resources, ...users]])
-      for (const id of users) await db.query('delete from users where id=$1', [id])
-    } finally { await db.close() }
+      const cleanup = async (stage: string, sql: string, ids: string[], chunkSize = Math.max(ids.length, 1)) => {
+        const started = Date.now()
+        process.stdout.write(`RESOURCE_COMMITMENTS_CLEANUP ${JSON.stringify({ stage, event: 'started', ownedIds: ids.length })}\n`)
+        let removed = 0
+        for (let offset = 0; offset < ids.length; offset += chunkSize) {
+          const result = await db.query(sql, [ids.slice(offset, offset + chunkSize)])
+          removed += result.rowCount ?? 0
+        }
+        process.stdout.write(`RESOURCE_COMMITMENTS_CLEANUP ${JSON.stringify({ stage, event: 'completed', removed, chunks: Math.ceil(ids.length / chunkSize), elapsedMs: Date.now() - started })}\n`)
+      }
+      await cleanup('weddings', 'delete from weddings where id=any($1::uuid[])', [...weddings])
+      await cleanup('resources', 'delete from vendor_resources where id=any($1::uuid[])', [...resources])
+      await cleanup('vendors', 'delete from vendors where id=any($1::uuid[])', [...vendors])
+      await cleanup('conflict-keys', 'delete from resource_conflict_keys where identity=any($1::uuid[])', [...resources, ...users])
+      // A rollback-contained native witness measured32 IDs without exceeding the statement budget.
+      await cleanup('users', 'delete from users where id=any($1::uuid[])', [...users], 32)
+      for (const [table, ids] of [['weddings', [...weddings]], ['vendor_resources', [...resources]], ['vendors', [...vendors]], ['users', [...users]]] as const) {
+        expect((await db.query<{ remaining: number }>(`select count(*)::int remaining from ${table} where id=any($1::uuid[])`, [ids])).rows[0]!.remaining, table).toBe(0)
+      }
+      expect((await db.query<{ remaining: number }>('select count(*)::int remaining from resource_conflict_keys where identity=any($1::uuid[])', [[...resources, ...users]])).rows[0]!.remaining).toBe(0)
+    } finally {
+      process.stdout.write('RESOURCE_COMMITMENTS_CLEANUP pool-close-started\n')
+      await db.close()
+      process.stdout.write('RESOURCE_COMMITMENTS_CLEANUP pool-close-completed\n')
+    }
   })
 
   async function actor(): Promise<OrderActor> {

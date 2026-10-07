@@ -9,6 +9,8 @@ import { withIdempotency } from '../deals/idempotency.js'
 import { assertDue,assertPayable,assertVersion,asMoney,dealStageRows,financeAudit,installment,lockDeal,lockFinanceAccess,recordPayment,stalePlan,stageViews } from '../payments/model.js'
 import { financialExport,financialToday,loadPaymentSchedule,type ScheduleQuery } from '../payments/read.js'
 import type { Queryable } from '../plugins/db.js'
+import { paymentAmendmentRoutes } from './paymentAmendments.js'
+import { amendAndRead, assertVersionCapacity, lockAmendmentContext } from '../payments/amendments.js'
 
 const DATE={type:'string',pattern:'^\\d{4}-\\d{2}-\\d{2}$'} as const
 type Schemas = components['schemas']
@@ -16,6 +18,7 @@ type Schemas = components['schemas']
 export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
   // Authorize even malformed requests before schema validation, including guest-token queries.
   app.addHook('preValidation', weddingAccessHook(app))
+  await paymentAmendmentRoutes(app)
   const db=()=>{if(!app.db)throw new AppError(503,'db_unavailable','База недоступна');return app.db}
   /* Этап в ответе считается так же, как в графике: вместе с остальными этапами сделки,
      на которые ложатся её неразнесённые известные деньги. */
@@ -56,13 +59,15 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
     if(body.title!==undefined&&!body.title.trim())throw validationFailed({title:'Введите название этапа'})
     if(body.cancelled && (body.title!==undefined || body.amount!==undefined || body.due!==undefined)) throw validationFailed({cancelled:'Отмена выполняется отдельно от изменения суммы, названия и срока'})
     if(body.reason!==undefined&&!body.cancelled)throw validationFailed({reason:'Причина указывается при отмене'})
-    return withIdempotency(db(),request,reply,'payment-schedule.patch',tx=>tx(async client=>{
-      await lockFinanceAccess(client,wid,uid)
+    reply.header('cache-control','no-store')
+    return amendAndRead(db(),request,reply,'payment-schedule.patch',
+      (client,write)=>lockAmendmentContext(client,wid,{...request.caller!,policyVersion:app.appConfig.policyVersion},{type:'installment',id},write),async(client,context)=>{
       const found=await installment(client,wid,id)
-      const deal=await lockDeal(client,wid,found.deal_id)
+      const deal=context.deal
       const current=await installment(client,wid,id)
       assertVersion(current.version,body.version)
       if(current.cancelled_at)throw conflict('installment_cancelled','Этап платежа отменён')
+      assertVersionCapacity(current.version)
       if(!body.cancelled){
         assertPayable(deal)
         const amount=BigInt(body.amount?.amount??current.amount)
@@ -71,16 +76,28 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
         const before=BigInt(rows[0]!.amount),after=before-BigInt(current.amount)+amount
         if(after>BigInt(deal.price!)&&after>=before)throw conflict('plan_over_price','Сумма активных этапов превысила цену сделки')
       }
-      const updated=await client.query(`update payment_installments set title=coalesce($2,title),amount=coalesce($3,amount),due=coalesce($4::date,due),
+      const updated=await client.query<{title:string;amount:string;due:string;cancelled_at:string|null;cancel_reason:string|null;currency:string;version:number}>(`update payment_installments set title=coalesce($2,title),amount=coalesce($3,amount),due=coalesce($4::date,due),
         cancelled_at=case when $5 then now() else cancelled_at end,cancel_reason=case when $5 then $6 else cancel_reason end,
-        version=version+1,updated_at=now() where id=$1 and version=$7`,[id,body.title?.trim()??null,body.amount?.amount??null,body.due??null,!!body.cancelled,body.reason?.trim()||null,current.version])
+        version=version+1,updated_at=now() where id=$1 and version=$7
+        returning title,amount::text,due::text,cancelled_at::text,cancel_reason,currency,version`,[id,body.title?.trim()??null,body.amount?.amount??null,body.due??null,!!body.cancelled,body.reason?.trim()||null,current.version])
       if(updated.rowCount!==1)throw stalePlan()
+      const after=updated.rows[0]!
+      let eventId:string|null=null
+      if(current.title!==after.title || current.amount!==after.amount || current.due!==after.due
+        || after.cancelled_at!==null || current.cancel_reason!==after.cancel_reason){
+        eventId=uuidv7()
+        await client.query(`insert into payment_installment_edits(id,wedding_id,deal_id,installment_id,actor_id,session_id,before_version,after_version,currency,
+          before_title,after_title,before_amount,after_amount,before_due,after_due,before_cancelled_at,after_cancelled_at,before_cancel_reason,after_cancel_reason)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+        [eventId,wid,deal.id,id,uid,request.caller!.sessionId,current.version,after.version,after.currency,current.title,after.title,current.amount,after.amount,current.due,after.due,current.cancelled_at,after.cancelled_at,current.cancel_reason,after.cancel_reason])
+      }
       await financeAudit(client,uid,'payment_installment',id,body.cancelled?'payment_plan.cancelled':'payment_plan.updated',{
         previousVersion:current.version,
+        ...(eventId?{amendmentId:eventId}:{}),
         changed:(['title','amount','due','reason'] as const).filter(k=>body[k]!==undefined),
         ...(body.amount!==undefined?{amount:body.amount.amount}:{}),...(body.due!==undefined?{due:body.due}:{})})
-      return {status:200,body:await output(client,wid,id)}
-    }))
+      return {body:await output(client,wid,found.id),eventId}
+    },client=>output(client,wid,id))
   })
 
   app.post('/weddings/:weddingId/payment-schedule/:installmentId/pay', { schema: { body: ref('PaymentInstallmentPay') } }, async(request,reply)=>{
@@ -115,16 +132,23 @@ export async function paymentScheduleRoutes(app:FastifyInstance):Promise<void> {
       const p=rows[0]!
       assertVersion(p.plan_version,body.version)
       if(p.status==='cancelled')throw conflict('payment_cancelled','Отметка оплаты отменена')
+      const changesLink=p.installment_id!==body.installmentId
+      if(changesLink)assertVersionCapacity(p.plan_version)
       const signed=p.amount_known && p.amount!==null ? BigInt(p.amount)*(p.kind==='refund'?-1n:1n) : 0n
+      if(body.installmentId!==null&&!isUuid(body.installmentId))throw notFound('Этап не найден')
+      if(changesLink)await client.query('select id from payment_installments where deal_id=$1 and id=any($2::uuid[]) order by id for update',
+        [deal.id,[p.installment_id,body.installmentId].filter((stageId):stageId is string=>stageId!==null)])
       if(body.installmentId!==null){
         const target=await installment(client,wid,body.installmentId)
         if(target.deal_id!==deal.id)throw validationFailed({installmentId:'Этап относится к другой сделке'})
         if(target.cancelled_at)throw conflict('installment_cancelled','Этап платежа отменён')
+        if(changesLink)assertVersionCapacity(target.version)
         const projected=BigInt(target.paid)+(p.installment_id===target.id?0n:signed)
         if(projected>BigInt(target.amount)||projected<0n)throw conflict('installment_overpay','Отметка не помещается в остаток этапа. Одна отметка привязывается целиком')
       }
       if(p.installment_id && p.installment_id!==body.installmentId){
         const old=await installment(client,wid,p.installment_id)
+        assertVersionCapacity(old.version)
         const rest=BigInt(old.paid)-signed
         if(rest<0n)throw conflict('payment_refund_link','Сначала перенесите связанные возвраты, чтобы не получить отрицательный итог этапа')
         if(rest>BigInt(old.amount))throw conflict('installment_overpay','Без этого возврата оплаты этапа превысят его сумму')

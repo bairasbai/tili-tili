@@ -120,3 +120,10 @@ TEST_DATABASE_URL=postgres://tili:tili@localhost:5432/tili TEST_REDIS_URL=redis:
 Только переменные окружения. В репозитории лежит `.env.example` без значений;
 `.env` в `.gitignore`. Секреты подписи токенов генерировать
 `openssl rand -base64 48`, разные для access и refresh.
+
+
+## WP00 / FR011 · исправление ручных оплат
+
+Контракт0.72.0:195путей/251операция/167схем; миграция176383 добавляет payment_corrections и payment_installment_edits, immutable scoped историю и общий version increment payment tuple. Новая PATCH payments/{paymentId} исправляет существующую recorded deposit/balance без provider_ref; дата/способ/known-null/сумма/обязательная причина. Перед денежным изменением проверяется signed projectedDeal/stage. GET payment/history и installment/history доступны текущей паре; actor удалённого пользователя null. Ответ и replay получают новую авторизованную проекцию после COMMIT, успешная receipt сохраняется при позднем отказе ответа. Перепривязка /plan проверяет MAX версий при реальном изменении и блокирует затронутые этапы в порядке ID. Account export включает обе истории, но чужую identity не выгружает.
+
+Native down миграции176383 с заполненной любой историей отказывается до DDL; пустой восстанавливает прежнюю функцию. Отдельная176383500 только переименовывает существующие RUB CHECK двух таблиц истории после точной структурной проверки; её обратное переименование сохраняет заполненную историю. Сторож currency проверяет точное ограничение и реальный отказ USD на всех19 денежных таблицах. Upgrade не выдумывает прошлые редакции. Документы остаются на прежнем payment ID. Источники и текущая приёмка: [spec](../../tasks/wedding-platform-master-plan/wp00-fr011/spec.md), [plan](../../tasks/wedding-platform-master-plan/wp00-fr011/plan.md), [tasks](../../tasks/wedding-platform-master-plan/wp00-fr011/tasks.md). Публикация/production из наличия этого кода не следуют.

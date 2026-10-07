@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router'
 import PaymentSchedule from '@/pages/PaymentSchedule'
 import type { PaymentScheduleData } from './api/paymentSchedule'
 import { setI18nLang } from './i18n'
-vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: 'w1' }) }))
+import { saveTokens } from './api/client'
+const scope=vi.hoisted(()=>({weddingId:'w1'}))
+vi.mock('@/lib/store', () => ({ useStore: () => scope }))
 const money = (amount: number) => ({ amount, currency: 'RUB' as const })
 const stage = { id: 'i1', dealId: 'd1', title: 'Аванс', amount: money(400000), paid: money(0), allocated: money(0), remaining: money(400000), due: '2027-05-01', version: 3, status: 'pending' as const, overdue: false, cancelReason: null, cancelledAt: null, unknownAmountPayments: 0 }
 let state: PaymentScheduleData
@@ -15,6 +17,7 @@ let receipts: { id: string; filename: string; mimeType: string; sizeBytes: numbe
 let release: (() => void) | null = null
 let delayWrite = false
 let uploadEnabled = true
+let correctionResponse:'ok'|'network'|'body'|'denied'='ok',historyStatus=200,historyPaging=false,historyActor:'partner'|'self'|'unknown'='partner'
 /* Ответ на загрузку чека: ok — 201; network — обрыв без ответа; поле — 422 с причиной сервера. */
 let receiptPost: 'ok' | 'network' | 'field' = 'ok'
 let receiptDelete: 204 | 404 = 204
@@ -24,6 +27,11 @@ function serve() {
     const path = String(input).replace(/^\/api/, '')
     if (!init?.method || init.method === 'GET') {
       reads.push(path)
+      if(path.includes('/history')&&historyStatus!==200)return json({error:{code:'forbidden',message:'Нет доступа'}},historyStatus)
+      if (path.includes('/history')) return json({ items: [{ id: path.includes('cursor=')?'h2':'h1', paymentId: 'p1', dealId: 'd1', beforeVersion: 1, afterVersion: 2,
+        createdAt: '2027-01-02T12:00:00Z', actor: historyActor==='unknown'?null:{ id: 'u1', name: historyActor==='partner'?null:'Synthetic self', kind: historyActor }, reason: 'Уточнили дату перевода',
+        before: { amountKnown: true, amount: money(100000), paymentMethod: 'cash', paidOn: '2027-01-01' },
+        after: { amountKnown: true, amount: money(100000), paymentMethod: 'cash', paidOn: '2027-01-02' } }], nextCursor: historyPaging&&!path.includes('cursor=')?'history-next':null })
       if (path.endsWith('/payments/p1/receipts')) return json({ items: receipts, uploadEnabled })
       if (path.includes('/payments/p1/receipts/') && path.endsWith('/content')) return json({ filename: 'чек.png', mimeType: 'image/png', contentBase64: 'iVBORw0KGgo=' })
       return status === 200 ? json(state) : json({ error: { code: status === 403 ? 'forbidden' : 'db_unavailable', message: 'Нет доступа или сервер недоступен' } }, status)
@@ -40,8 +48,14 @@ function serve() {
       receipts.push({ id: 'r' + (receipts.length + 2), filename: String(body.filename), mimeType: String(body.mimeType), sizeBytes: 9, createdAt: '2027-01-01T12:00:00.000Z' }); return json(receipts.at(-1), 201)
     }
     if (delayWrite) await new Promise<void>(resolve => { release = resolve })
+    if(path.endsWith('/payments/p1')&&init.method==='PATCH'){
+      if(correctionResponse==='network'){correctionResponse='ok';throw new TypeError('Failed to fetch')}
+      if(correctionResponse==='body'){correctionResponse='ok';return new Response('{"broken"',{status:200,headers:{'content-type':'application/json'}})}
+      if(correctionResponse==='denied')return json({error:{code:'forbidden',message:'Нет доступа'}},403)
+    }
     if (stale) return json({ error: { code: 'stale_payment_plan', message: 'График изменился' } }, 409)
     if (failSave) return json({ error: { code: 'validation_failed', message: 'Сумма отклонена' } }, 422)
+    if(path.endsWith('/payments/p1')&&init.method==='PATCH')state.payments[0]={...state.payments[0]!,version:Number(body.version)+1}
     if (path.endsWith('/payment-schedule') && init.method === 'POST') state.items.push({ ...stage, id: 'new', title: String(body.title) })
     return json(stage, path.endsWith('/payment-schedule') ? 201 : 200)
   }))
@@ -56,6 +70,7 @@ async function newForm() {
   return form
 }
 beforeEach(() => {
+  scope.weddingId='w1';correctionResponse='ok';historyStatus=200;historyPaging=false;historyActor='partner'
   setI18nLang('ru'); localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' }))
   state = { range: { from: '2027-01-01', to: '2027-12-31', today: '2027-01-01', timeZone: 'Asia/Yekaterinburg', includeOverdue: true, includeCancelled: false }, readOnly: false,
     summary: { committed: money(1000000), recorded: money(100000), remaining: money(900000), unallocated: money(100000), inactiveDealRecorded: money(0), unknownPrices: 0, unknownAmountPayments: 0, amountIncomplete: false },
@@ -68,6 +83,128 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); setI18nLang('ru') })
 describe('018-A: график платежей в интерфейсе', () => {
+  it('FR011: исправляет ту же ручную отметку с полным намерением и причиной', async () => {
+    state.payments[0] = { ...state.payments[0]!, canCorrect: true }
+    open(); fireEvent.click(await screen.findByText(/^История оплат/)); fireEvent.click(await screen.findByRole('button', { name: 'Исправить отметку' }))
+    const form = screen.getByRole('form', { name: 'Исправление отметки' })
+    fireEvent.change(within(form).getByLabelText('Сумма, ₽'), { target: { value: '1 250,00' } })
+    fireEvent.change(within(form).getByLabelText('Причина исправления'), { target: { value: 'Уточнили сумму перевода' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0]).toMatchObject({ path: '/weddings/w1/payments/p1', body: { version: 2, amountKnown: true, amount: money(125000), paidOn: '2027-01-01', paymentMethod: 'other', reason: 'Уточнили сумму перевода' } })
+    expect(writes[0]!.key).toBeTruthy()
+    await screen.findByText('Исправление сохранено')
+  })
+  it('FR011: загружает историю исправлений по отдельному запросу и показывает реальные before/after', async () => {
+    open(); fireEvent.click(await screen.findByText(/^История оплат/)); const control = await screen.findByText('История исправлений')
+    expect(reads.some(p => p.includes('/history'))).toBe(false)
+    const details = control.closest('details')!
+    details.open = true; fireEvent(details, new Event('toggle'))
+    await screen.findByText(/Уточнили дату перевода/)
+    expect(reads.filter(p => p.includes('/history'))).toEqual(['/weddings/w1/payments/p1/history'])
+    expect(screen.getByText('Было')).toBeTruthy(); expect(screen.getByText('Стало')).toBeTruthy()
+  })
+  it.each(['network','body'] as const)('FR011: потерянный %s ответ сохраняет точное намерение и ключ даже после закрытия и перечитывания',async(failure)=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};correctionResponse=failure
+    open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    let form=screen.getByRole('form',{name:'Исправление отметки'})
+    fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Частная неизменная причина'}});fireEvent.submit(form)
+    await screen.findByText('Ответ не получен. Повторите ту же попытку, чтобы узнать результат.')
+    expect((within(form).getByLabelText('Причина исправления') as HTMLTextAreaElement).disabled).toBe(true)
+    const first=writes[0];fireEvent.click(within(form).getByRole('button',{name:'Закрыть'}))
+    state.payments[0]={...state.payments[0]!,version:3,amount:money(150000),canCorrect:false}
+    fireEvent.click(screen.getByRole('button',{name:'Обновить данные'}));await waitFor(()=>expect(reads.length).toBeGreaterThan(1))
+    fireEvent.click(await screen.findByRole('button',{name:'Вернуться к попытке исправления'}));form=screen.getByRole('form',{name:'Исправление отметки'})
+    fireEvent.click(within(form).getByRole('button',{name:'Повторить ту же попытку'}))
+    await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toEqual(first);await screen.findByText('Исправление сохранено')
+  })
+  it('FR011: stale сохраняет черновик, новая версия требует явного принятия и нового ключа',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};stale=true
+    open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'})
+    fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Сохранённый черновик'}})
+    state.payments[0]={...state.payments[0]!,version:3,amount:money(180000)};fireEvent.submit(form)
+    await screen.findByText('Отметка изменилась. Проверьте текущие сведения перед повторной записью.')
+    expect((within(form).getByLabelText('Причина исправления') as HTMLTextAreaElement).value).toBe('Сохранённый черновик')
+    expect((within(form).getByRole('button',{name:'Сохранить исправление'}) as HTMLButtonElement).disabled).toBe(true)
+    await waitFor(()=>expect(reads.length).toBeGreaterThan(1));stale=false
+    fireEvent.click(within(form).getByRole('button',{name:'Принять текущую версию'}));fireEvent.submit(form)
+    await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]!.body).toMatchObject({version:3,amount:money(100000),reason:'Сохранённый черновик'});expect(writes[1]!.key).not.toBe(writes[0]!.key)
+  })
+  it('FR011: смена сессии уничтожает частный черновик и не показывает поздний ответ',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};delayWrite=true
+    open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Частный черновик прежней сессии'}});fireEvent.submit(form)
+    await waitFor(()=>expect(release).toBeTruthy());act(()=>saveTokens({accessToken:'new-session-token',refreshToken:'new-refresh'}))
+    await screen.findByText('Сессия изменилась — откройте финансовый раздел снова');expect(screen.queryByRole('form',{name:'Исправление отметки'})).toBeNull()
+    await act(async()=>{release!();await new Promise(resolve=>setTimeout(resolve,0))});expect(screen.queryByText('Исправление сохранено')).toBeNull();expect(screen.queryByText('Частный черновик прежней сессии')).toBeNull()
+  })
+  it('FR011: другая свадьба не наследует незавершённую попытку',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};correctionResponse='network'
+    const view=open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Частный черновик другой свадьбы'}});fireEvent.submit(form)
+    await screen.findByText('Ответ не получен. Повторите ту же попытку, чтобы узнать результат.')
+    scope.weddingId='w2';view.rerender(<MemoryRouter><PaymentSchedule/></MemoryRouter>);await waitFor(()=>expect(reads.some(path=>path.startsWith('/weddings/w2/'))).toBe(true))
+    expect(screen.queryByRole('form',{name:'Исправление отметки'})).toBeNull();expect(screen.queryByRole('button',{name:'Вернуться к попытке исправления'})).toBeNull()
+  })
+  it.each(['writer','history'] as const)('FR011: текущий отказ %s немедленно скрывает финансовые данные',async(boundary)=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};open();fireEvent.click(await screen.findByText(/^История оплат/))
+    if(boundary==='writer'){correctionResponse='denied';fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}));const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Скрытая причина'}});fireEvent.submit(form)}
+    else{historyStatus=403;const details=(await screen.findByText('История исправлений')).closest('details')!;details.open=true;fireEvent(details,new Event('toggle'))}
+    await waitFor(()=>expect(screen.queryByText(/^История оплат/)).toBeNull());expect(screen.queryByRole('form',{name:'Исправление отметки'})).toBeNull();expect(screen.queryByRole('region',{name:'Аванс'})).toBeNull()
+  })
+  it('FR011: курсор истории добавляет следующую страницу явным действием',async()=>{
+    historyPaging=true;open();fireEvent.click(await screen.findByText(/^История оплат/));const details=(await screen.findByText('История исправлений')).closest('details')!;details.open=true;fireEvent(details,new Event('toggle'))
+    fireEvent.click(await screen.findByRole('button',{name:'Ещё исправления'}));await waitFor(()=>expect(reads.some(path=>path.includes('cursor=history-next'))).toBe(true));await waitFor(()=>expect(screen.getAllByText('Было')).toHaveLength(2));expect(screen.queryByRole('button',{name:'Ещё исправления'})).toBeNull()
+  })
+  it('FR011: раскрытая история перечитывается после успешного исправления',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};open();fireEvent.click(await screen.findByText(/^История оплат/))
+    const details=(await screen.findByText('История исправлений')).closest('details')!;details.open=true;fireEvent(details,new Event('toggle'));await screen.findByText(/Уточнили дату перевода/)
+    fireEvent.click(screen.getByRole('button',{name:'Исправить отметку'}));const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Новая причина'}});fireEvent.submit(form)
+    await waitFor(()=>expect(reads.filter(path=>path.includes('/history'))).toHaveLength(2));expect(details.open).toBe(true)
+  })
+  it('FR011: смена периода и ошибка перечитывания не теряют неизвестную попытку',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};correctionResponse='network';open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Точная попытка после периода'}});fireEvent.submit(form);await screen.findByText('Ответ не получен. Повторите ту же попытку, чтобы узнать результат.');const original=writes[0]
+    status=500;fireEvent.change(screen.getByLabelText('С даты'),{target:{value:'2027-01-02'}});fireEvent.submit(screen.getByRole('form',{name:'Период платежей'}))
+    await waitFor(()=>expect(screen.queryByText(/^История оплат/)).toBeNull());status=200;fireEvent.click(screen.getByRole('button',{name:'Сбросить период'}))
+    fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Вернуться к попытке исправления'}));fireEvent.submit(screen.getByRole('form',{name:'Исправление отметки'}));await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toEqual(original)
+  })
+  it('FR011: stale черновик переживает503 и требует явной новой версии после восстановления',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};stale=true;open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Stale частный черновик'}});status=503;fireEvent.submit(form)
+    await waitFor(()=>expect(screen.queryByText(/^История оплат/)).toBeNull());state.payments[0]={...state.payments[0]!,version:3};status=200;stale=false
+    fireEvent.click(screen.getByRole('button',{name:'Повторить'}));fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const resumed=screen.getByRole('form',{name:'Исправление отметки'});expect((within(resumed).getByLabelText('Причина исправления') as HTMLTextAreaElement).value).toBe('Stale частный черновик')
+    expect((within(resumed).getByRole('button',{name:'Сохранить исправление'}) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(within(resumed).getByRole('button',{name:'Принять текущую версию'}));fireEvent.submit(resumed);await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]!.body).toMatchObject({version:3,reason:'Stale частный черновик'})
+  })
+  it('FR011: поздний403 после смены фильтра уничтожает попытку и частные данные родителя',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};delayWrite=true;correctionResponse='denied';open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Поздно отозванный черновик'}});fireEvent.submit(form);await waitFor(()=>expect(release).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('С даты'),{target:{value:'2027-01-02'}});fireEvent.submit(screen.getByRole('form',{name:'Период платежей'}));await waitFor(()=>expect(reads).toHaveLength(2))
+    await act(async()=>{release!();await new Promise(resolve=>setTimeout(resolve,0))});await screen.findByText('Доступ к финансовой истории изменился — откройте раздел снова');expect(screen.queryByText(/^История оплат/)).toBeNull();expect(screen.queryByRole('button',{name:'Вернуться к попытке исправления'})).toBeNull()
+  })
+  it('FR011: отказ existing stage writer скрывает уже прочитанную историю',async()=>{
+    open();fireEvent.click(await screen.findByText(/^История оплат/));const details=(await screen.findByText('История исправлений')).closest('details')!;details.open=true;fireEvent(details,new Event('toggle'));await screen.findByText(/Уточнили дату перевода/)
+    const originalFetch=fetch;vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>init?.method==='PATCH'?json({error:{code:'forbidden',message:'Роль отозвана'}},403):originalFetch(input,init)))
+    fireEvent.click(screen.getByRole('button',{name:'Изменить: Аванс'}));const form=screen.getByRole('form',{name:'Редактор платежа'});fireEvent.change(within(form).getByLabelText('Название этапа'),{target:{value:'Закрытая правка'}});fireEvent.submit(form)
+    await screen.findByText('Доступ к финансовой истории изменился — откройте раздел снова');expect(screen.queryByText(/Уточнили дату перевода/)).toBeNull();expect(screen.queryByRole('form',{name:'Редактор платежа'})).toBeNull()
+  })
+  it('FR011: поздний403 свёрнутой истории закрывает частный родительский раздел',async()=>{
+    const original=fetch;let finish!:(response:Response)=>void
+    vi.stubGlobal('fetch',vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>String(input).includes('/history')?new Promise<Response>(resolve=>{finish=resolve}):original(input,init)))
+    open();fireEvent.click(await screen.findByText(/^История оплат/));const details=(await screen.findByText('История исправлений')).closest('details')!;details.open=true;fireEvent(details,new Event('toggle'));await waitFor(()=>expect(finish).toBeTruthy())
+    details.open=false;fireEvent(details,new Event('toggle'));await act(async()=>{finish(json({error:{code:'forbidden',message:'Роль отозвана'}},403));await new Promise(resolve=>setTimeout(resolve,0))})
+    await screen.findByText('Доступ к финансовой истории изменился — откройте раздел снова');expect(screen.queryByText(/^История оплат/)).toBeNull()
+  })
+  it.each([['self','You'],['partner','Partner'],['unknown','Author unavailable']] as const)('FR011: EN history actor %s has translated identity',async(actor,label)=>{
+    setI18nLang('en');historyActor=actor;open();fireEvent.click(await screen.findByText(/^Payment history/));const details=(await screen.findByText('Correction history')).closest('details')!;details.open=true;fireEvent(details,new Event('toggle'));await screen.findByText(new RegExp(label));expect(screen.queryByText(/Участник пары|Автор недоступен/)).toBeNull()
+  })
+  it('FR011: unknown amount correction sendsnull and preserves incompleteness copy',async()=>{
+    state.payments[0]={...state.payments[0]!,canCorrect:true};open();fireEvent.click(await screen.findByText(/^История оплат/));fireEvent.click(await screen.findByRole('button',{name:'Исправить отметку'}))
+    const form=screen.getByRole('form',{name:'Исправление отметки'});fireEvent.click(within(form).getByLabelText('Сумма не сохранена'));fireEvent.change(within(form).getByLabelText('Причина исправления'),{target:{value:'Сумма неизвестна'}});expect(within(form).getByText('Числовой остаток не учитывает неизвестную сумму.')).toBeTruthy();fireEvent.submit(form);await waitFor(()=>expect(writes).toHaveLength(1));expect(writes[0]!.body).toMatchObject({amountKnown:false,amount:null,reason:'Сумма неизвестна'})
+  })
   it('создаёт этап с точной суммой и ключом, без вызова оплаты', async () => {
     open(); const form = await newForm(); fireEvent.submit(form)
     await waitFor(() => expect(writes).toHaveLength(1))

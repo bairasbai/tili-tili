@@ -1,3 +1,9 @@
+## Текущий снимок FR011 перед публикацией · 2026-10-07T14:30:37.193Z
+
+Frontend 2252 + backend 3327 = 5579 тестов; failures/skips0, все8 этапов types/tests/lint/build прошли. Compiled Chromium/nginx/API: 6 сценариев, 115/115 запросов завершены; HTTP>=400/console/page/request errors0. Шесть PNG RU/EN320/390/480 просмотрены root. Native сохранила ту же запись платежа, квитанцию целиком, сделку и resource/busy состояние; два исправления100000→125000→NULL, одна правка этапа; неизвестная сумма явно даёт incomplete и remaining1000000. Cleanup вернул baseline counts, сохранил 79 прежних immutable audit rows, итог 84; providers0. Source и обе compiled build manifests до/после совпали.
+
+ПолныхWP0/17 (17=16−0+1). FR002 уже [PR50](https://github.com/bairasbai/tili-tili/pull/50)/main406d5e7; FR011 локально принят, publication/CI/main этой поставки ожидаются. [Отчёт](wp00-fr011/REPORT-20261007.md); позднейшая actual публикация — C:/Тили-тили/.unlazy/wp00-fr011-20261007/PUBLICATION.json. Все общие критерии сохраняются.
+
 ## Актуальное продолжение · 2026-10-07T10:37:12.462Z
 
 Пользователь возобновил весь WP00–WP16. FR018403/404 доставлен [PR49](https://github.com/bairasbai/tili-tili/pull/49)/main459b820. Новая поставка FR002 contact локально принята:5470tests/all8stages + built browser5cases/304finished/6viewedPNG/native preserving cleanup. [FR002 отчёт](wp00-fr002/REPORT-20261007.md). Exact-head CI/main новой поставки пока pending.

@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.71.0).
- * Операций: 248. Путей: 192. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.72.0).
+ * Операций: 251. Путей: 195. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -219,8 +219,11 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"График платежей, актуальные итоги и отметки оплат","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule","url":"/weddings/:weddingId/payment-schedule","operationId":null,"summary":"Создать этап платежа","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}","url":"/weddings/:weddingId/payment-schedule/:installmentId","operationId":null,"summary":"Изменить или отменить плановый этап","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}/history","url":"/weddings/:weddingId/payment-schedule/:installmentId/history","operationId":null,"summary":"История правок и отмены этапа","tag":"budget"},
   {"method":"POST","openapi":"/weddings/{weddingId}/payment-schedule/{installmentId}/pay","url":"/weddings/:weddingId/payment-schedule/:installmentId/pay","operationId":null,"summary":"Отметить полную или частичную оплату этапа","tag":"budget"},
   {"method":"GET","openapi":"/weddings/{weddingId}/payment-schedule/export","url":"/weddings/:weddingId/payment-schedule/export","operationId":null,"summary":"Выгрузить историю планов и оплат в CSV","tag":"budget"},
+  {"method":"PATCH","openapi":"/weddings/{weddingId}/payments/{paymentId}","url":"/weddings/:weddingId/payments/:paymentId","operationId":null,"summary":"Исправить ручную отметку оплаты с причиной и историей","tag":"budget"},
+  {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/history","url":"/weddings/:weddingId/payments/:paymentId/history","operationId":null,"summary":"История исправлений ручной отметки","tag":"budget"},
   {"method":"PATCH","openapi":"/weddings/{weddingId}/payments/{paymentId}/plan","url":"/weddings/:weddingId/payments/:paymentId/plan","operationId":null,"summary":"Привязать существующую оплату к этапу без новой записи","tag":"budget"},
   {"method":"GET","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts","url":"/weddings/:weddingId/payments/:paymentId/receipts","operationId":null,"summary":"Приватные подтверждения оплаты","tag":"payments"},
   {"method":"POST","openapi":"/weddings/{weddingId}/payments/{paymentId}/receipts","url":"/weddings/:weddingId/payments/:paymentId/receipts","operationId":null,"summary":"Прикрепить приватное подтверждение оплаты","tag":"payments"},

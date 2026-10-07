@@ -22,10 +22,13 @@ const DATABASES = [
   'tili_ecosystem_migration_drill19_20260930_test',
   'tili_ecosystem_migration_drill20_20260930_test',
   'tili_ecosystem_migration_drill21_20261003_test',
+  'tili_ecosystem_migration_drill22_20261007_test',
+  'tili_ecosystem_migration_drill23_20261007_test',
+  'tili_ecosystem_migration_drill24_20261007_test',
 ]
 const selectedPort = process.env.TILI_DISPOSABLE_PG_PORT ?? '55432'
 assert(['55432', '15432'].includes(selectedPort), 'Only the explicitly approved disposable cluster ports are allowed')
-const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, LATEST = 1763825000000
+const FIRST = 1763000000000, PRE_IDENTITY = 1763510000000, PREPLAN = 1763550000000, PRECOMMITMENT = 1763610000000, PRE_INVENTORY = 1763700000000, PRE_RECOVERY = 1763800000000, RECOVERY = 1763810000000, PLANB_LATEST = 1763820000000, FR018_LATEST = 1763825000000, FR011_LATEST = 1763830000000, LATEST = 1763835000000
 const backend = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Local disposable runs: the original isolated clone and, after the 030 merge, the main checkout.
 const localCheckout = ['C:/Тили-тили/ecosystem-local-20260930/Тили-тили/backend', 'C:/Тили-тили/Тили-тили_код_и_документация/Тили-тили/backend', 'C:/Тили-тили/tili-orchestrate-publish-20261003/Тили-тили/backend']
@@ -55,6 +58,8 @@ const expectedOwn = [
   '1763810000000_legacy_calendar_day_recovery',
   '1763820000000_planb_system_template_keys',
   '1763825000000_offer_comparison_terms',
+  '1763830000000_payment_amendment_history',
+  '1763835000000_payment_amendment_currency_names',
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -490,6 +495,16 @@ const APPROVED_MIGRATION_INPUTS = [
     "sha256": "f682b9156c28792a70f4539bbcf1799e39fed0be71d7cfa741bab53d2a9275ba"
   },
   {
+    "name": "1763830000000_payment_amendment_history.cjs",
+    "kind": "migration",
+    "sha256": "ccae6362830da438d3a724e4f51dc18601b453cac1d381747f26d70b0eea5696"
+  },
+  {
+    "name": "1763835000000_payment_amendment_currency_names.cjs",
+    "kind": "migration",
+    "sha256": "c879ba7da3a2667014640ef792aee059e7001d2499b3b9fdc5cd25a5aa447e38"
+  },
+  {
     "name": "data/categories.json",
     "kind": "data",
     "sha256": "9ff447728ce1a2c00b681e73407f216c5d4258bc297d8261ec6f81af776e9212"
@@ -501,11 +516,11 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 83 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 83)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 85 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 85)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, '1763825000000_offer_comparison_terms.cjs')
+  assert.equal(files.at(-1).name, '1763835000000_payment_amendment_currency_names.cjs')
   assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= LATEST))
 }
 function migrationManifest() {
@@ -2173,17 +2188,17 @@ async function fr018ForwardFixture() {
   await write("insert into offers(id,request_id,kind,created_by) values($1,$2,'decline',$3)", [own.decline, own.declineRequest, g.vendorOwner])
   const under82 = await fr018State(), introduced = new Set()
   assert(!under82.snapshot.schema.columns.some(row => FR018_COLUMNS[row.table_name] === row.column_name))
-  await migrate('up', LATEST)
+  await migrate('up', FR018_LATEST)
   const initial = await fr018Catalog(introduced, under82.attributes)
   assertFr018Prior(initial.state, under82, introduced)
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR018_LATEST).map(item => item.name))
   assert((await db.query('select comparison_terms from offers')).rows.every(row => row.comparison_terms === null))
   assert((await db.query('select offer_comparison_terms_snapshot from deals')).rows.every(row => row.offer_comparison_terms_snapshot === null))
   assert.equal((await db.query('select price::text price from offers where id=$1', [own.offer])).rows[0].price, '123456789')
   const full = fr018Terms({ team: 'Synthetic team', result: 'Gallery', delivery: 'Literal delivery', extras: '0', cancellation: 'Literal cancellation', reschedule: 'Literal reschedule' })
   assert.equal((await write('update offers set comparison_terms=$2::jsonb where id=$1', [own.offer, JSON.stringify(full)])).rowCount, 1)
   assert.deepEqual((await db.query('select comparison_terms from offers where id=$1', [own.offer])).rows[0].comparison_terms, full)
-  const nonNullOffer = await fr018State(); await migrate('up', LATEST)
+  const nonNullOffer = await fr018State(); await migrate('up', FR018_LATEST)
   assert.deepEqual(await fr018State(), nonNullOffer, 'Repeated up with stored quote preserves all literal rows and catalogue')
   await fr018GuardedDown('offer-only')
   for (const field of FR018_FIELDS) await fr018SqlRefusal('update offers set comparison_terms=$2::jsonb where id=$1',
@@ -2215,7 +2230,7 @@ async function fr018ForwardFixture() {
   } catch (error) { await db.query('rollback'); throw error }
   assert.deepEqual((await db.query('select offer_comparison_terms_snapshot from deals where id=$1', [g.deal])).rows[0].offer_comparison_terms_snapshot, full)
   assert.equal((await db.query('select count(*)::int n from offers where comparison_terms is not null')).rows[0].n, 0)
-  const nonNullAccepted = await fr018State(); await migrate('up', LATEST)
+  const nonNullAccepted = await fr018State(); await migrate('up', FR018_LATEST)
   assert.deepEqual(await fr018State(), nonNullAccepted, 'Repeated up preserves selected accepted snapshot after quote is NULL')
   await fr018GuardedDown('accepted-snapshot-only')
   // Clear only this drill's synthetic row, never unknown or real commercial terms.
@@ -2227,7 +2242,7 @@ async function fr018ForwardFixture() {
   assertFr018Prior(under82Again, under82, introduced)
   assert(!under82Again.snapshot.schema.columns.some(row => FR018_COLUMNS[row.table_name] === row.column_name))
   await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= PLANB_LATEST).map(item => item.name))
-  await migrate('up', LATEST)
+  await migrate('up', FR018_LATEST)
   const readded = await fr018Catalog(introduced, under82Again.attributes)
   assert.deepEqual(readded.checks, initial.checks, 'Re-added constraints retain exact native definitions')
   assertFr018Prior(readded.state, under82, introduced)
@@ -2244,7 +2259,7 @@ async function fr018ForwardFixture() {
     return value
   }
   assert.deepEqual(normalized(readded.state), normalized(beforeDown))
-  const repeated = await fr018State(); await migrate('up', LATEST)
+  const repeated = await fr018State(); await migrate('up', FR018_LATEST)
   assert.deepEqual(await fr018State(), repeated, 'Re-up83 repeat is a true preserving native no-op')
   await write('begin')
   try {
@@ -2254,9 +2269,297 @@ async function fr018ForwardFixture() {
   } catch (error) { await db.query('rollback'); throw error }
   const cleaned = await fr018State()
   assertFr018Prior(cleaned, beforeOwned, introduced)
-  await assertJournal(manifest.map(item => item.name))
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR018_LATEST).map(item => item.name))
   assert.equal(fr018SqlRefusals, 14); assert.equal(fr018DownRefusals, 2)
   console.log(`FR018_MIGRATION_PRESERVATION_PASSED nativeChecks=${fr018SqlRefusals} guardedDowns=${fr018DownRefusals} legacyNull=true literalZero=true unicode2000=true unicode2001Refused=true ownFixtureCleanup=true noHumanAcceptance=true`)
+}
+
+const FR011_MIGRATION = '1763830000000_payment_amendment_history'
+const FR011_TABLES = ['payment_corrections', 'payment_installment_edits']
+const FR011_KEY = 'payments_id_deal_history_key'
+let fr011SqlRefusals = 0, fr011DownRefusals = 0
+async function fr011Catalog(before) {
+  const state = await fr018State()
+  const relations = new Set([...FR011_TABLES, FR011_KEY,
+    ...state.snapshot.schema.indexes.filter(row => FR011_TABLES.includes(row.tablename)).map(row => row.indexname)])
+  const riOids = new Set((await db.query(`select t.oid::text as oid from pg_trigger t join pg_constraint k on k.oid=t.tgconstraint
+    where k.conrelid in ('payment_corrections'::regclass,'payment_installment_edits'::regclass) and t.tgisinternal`)).rows.map(row => row.oid))
+  const link = (await db.query("select prosrc from pg_proc where oid='payment_link_version()'::regprocedure")).rows[0].prosrc
+  const migration = readFileSync(resolve(migrationsDir, FR011_MIGRATION + '.cjs'), 'utf8')
+  assert.equal(link, /create or replace function payment_link_version\(\) returns trigger language plpgsql as \$\$([\s\S]*?)\$\$/.exec(migration)[1])
+  const paymentKeys = state.snapshot.schema.constraints.filter(row => row.table_name === 'payments' && row.conname === FR011_KEY)
+  assert.equal(paymentKeys.length, 1); assert.equal(paymentKeys[0].definition, 'UNIQUE (id, deal_id)')
+  for (const table of FR011_TABLES) {
+    const fks = state.snapshot.schema.constraints.filter(row => row.table_name === table && row.contype === 'f')
+    assert.equal(fks.length, 5)
+    assert.equal(fks.filter(row => row.condeferrable && row.condeferred).length, 2)
+    assert.equal(fks.filter(row => row.definition.includes('REFERENCES weddings(id) ON DELETE CASCADE')).length, 1)
+    assert.equal(state.snapshot.schema.triggers.filter(row => row.table_name === table).length, 2)
+  }
+  const prior = structuredClone(state)
+  for (const table of FR011_TABLES) delete prior.snapshot.data[table]
+  prior.snapshot.data.pgmigrations = prior.snapshot.data.pgmigrations.filter(row => row.name !== FR011_MIGRATION)
+  const schema = prior.snapshot.schema
+  schema.relations = schema.relations.filter(row => !relations.has(row.relname))
+  schema.columns = schema.columns.filter(row => !FR011_TABLES.includes(row.table_name))
+  schema.columnMetadata = schema.columnMetadata.filter(row => !relations.has(row.relname))
+  schema.constraints = schema.constraints.filter(row => !FR011_TABLES.includes(row.table_name) && !(row.table_name === 'payments' && row.conname === FR011_KEY))
+  schema.indexes = schema.indexes.filter(row => !FR011_TABLES.includes(row.tablename) && row.indexname !== FR011_KEY)
+  schema.triggers = schema.triggers.filter(row => !FR011_TABLES.includes(row.table_name))
+  schema.types = schema.types.filter(row => ![...FR011_TABLES, ...FR011_TABLES.map(name => '_' + name)].includes(row.typname))
+  schema.functions = schema.functions.filter(row => row.proname !== 'protect_payment_amendment_history')
+  const oldLink = before.snapshot.schema.functions.find(row => row.proname === 'payment_link_version')
+  const newLink = schema.functions.find(row => row.proname === 'payment_link_version')
+  assert.deepEqual({ ...newLink, definition: oldLink.definition }, oldLink, 'Only reviewed payment version function text can change, never owner/ACL/comment/signature')
+  newLink.definition = oldLink.definition
+  prior.attributes = prior.attributes.filter(row => !relations.has(row.table_name))
+  prior.objects = prior.objects.filter(row => !relations.has(row.name) && !FR011_TABLES.includes(row.table_name)
+    && !((row.kind === 'type' && [...FR011_TABLES, ...FR011_TABLES.map(name => '_' + name)].includes(row.name))
+      || (row.kind === 'function' && row.name === 'protect_payment_amendment_history()')
+      || (row.kind === 'constraint' && row.table_name === 'payments' && row.name === FR011_KEY)
+      || (row.kind === 'trigger' && riOids.has(row.oid))))
+  assert.deepEqual(prior, before, '383 preserves every inherited row/journal/OID/attribute/catalogue, projecting only exact owned additions and reviewed function text')
+  return state
+}
+async function fr011EmptyCycle() {
+  await assertNoBusinessData()
+  assert.equal((await db.query('select count(*)::int n from payment_installments')).rows[0].n, 0)
+  await migrate('up', FR018_LATEST)
+  const before = await fr018State()
+  await migrate('up', FR011_LATEST)
+  const after = await fr011Catalog(before)
+  for (const table of FR011_TABLES) assert.deepEqual(after.snapshot.data[table], [])
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR011_LATEST).map(item => item.name))
+  await migrate('up', FR011_LATEST); assert.deepEqual(await fr018State(), after)
+  await migrate('down', FR011_MIGRATION, undefined, true)
+  assert.deepEqual(await fr018State(), before, 'Empty383 down restores exact83 including old function/OID/ACL')
+  await migrate('up', FR011_LATEST)
+  const again = await fr011Catalog(before)
+  const withoutOwnJournal = value => {
+    const copy = structuredClone(value.snapshot)
+    copy.data.pgmigrations = copy.data.pgmigrations.filter(row => row.name !== FR011_MIGRATION)
+    return copy
+  }
+  assert.deepEqual(withoutOwnJournal(again), withoutOwnJournal(after), 'Re-up recreates definitions and empty rows; only the exact383 journal entry is recreated')
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR011_LATEST).map(item => item.name))
+  await migrate('up', FR011_LATEST); assert.deepEqual(await fr018State(), again)
+  console.log('FR011_EMPTY_CYCLE_PASSED')
+}
+async function fr011Refusal(label, sql, values, code = '23514', message, commit = false) {
+  await expectSqlRefusal('fr011', label, sql, values, code, message, commit)
+  fr011SqlRefusals++
+}
+async function fr011DownRefusal() {
+  const before = await fr018State()
+  const result = await migrate('down', FR011_MIGRATION, 'Cannot discard payment amendment history', true)
+  assert(/P0001/.test(result.output), 'Require the native down guard SQLSTATE, not an unrelated CLI failure')
+  assert.deepEqual(await fr018State(), before)
+  fr011DownRefusals++
+}
+async function fr011ForwardFixture() {
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR018_LATEST).map(item => item.name))
+  const unowned = await fr018State()
+  let f = await fixture(false, '+1555011000')
+  const stage = randomUUID(), payment = randomUUID(), correction = randomUUID(), edit = randomUUID()
+  await write("insert into payment_installments(id,deal_id,title,amount,due) values($1,$2,'Synthetic advance',500000,'2027-05-01')", [stage, f.externalDeal])
+  await write("insert into payments(id,deal_id,kind,amount,status,installment_id,payment_method,visibility,paid_on) values($1,$2,'deposit',100000,'recorded',$3,'cash','private','2026-10-01')", [payment, f.externalDeal, stage])
+  const before = await fr018State()
+  await migrate('up', FR011_LATEST)
+  const installed = await fr011Catalog(before)
+  for (const table of FR011_TABLES) assert.deepEqual(installed.snapshot.data[table], [])
+  await migrate('up', FR011_LATEST); assert.deepEqual(await fr018State(), installed)
+  const paymentSql = `insert into payment_corrections(id,wedding_id,deal_id,payment_id,actor_id,session_id,before_version,after_version,currency,
+    before_amount_known,after_amount_known,before_amount,after_amount,before_paid_on,after_paid_on,before_payment_method,after_payment_method,reason)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`
+  const paymentValues = () => [correction, f.wedding, f.externalDeal, payment, f.coordinator, f.session, 1, 2, 'RUB', true, true, 100000, 120000, '2026-10-01', '2026-10-02', 'cash', 'bank_transfer', 'Synthetic correction']
+  const stageSql = `insert into payment_installment_edits(id,wedding_id,deal_id,installment_id,actor_id,session_id,before_version,after_version,currency,
+    before_title,after_title,before_amount,after_amount,before_due,after_due)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`
+  const stageValues = () => [edit, f.wedding, f.externalDeal, stage, f.coordinator, f.session, 2, 3, 'RUB', 'Synthetic advance', 'Synthetic revised advance', 500000, 550000, '2027-05-01', '2027-05-02']
+  // Native metadata/control updates are not HTTP correction acceptance or invented automatic history.
+  const metadataBefore = await snapshot()
+  await write('begin')
+  try {
+    const old = (await db.query('select plan_version from payments where id=$1', [payment])).rows[0].plan_version
+    const stageBefore = await rows('payment_installments')
+    await write("update payments set paid_on='2026-10-02',payment_method='card' where id=$1", [payment])
+    assert.equal((await db.query('select plan_version from payments where id=$1', [payment])).rows[0].plan_version, old + 1)
+    assert.deepEqual(await rows('payment_installments'), stageBefore)
+    await write('update payments set amount=120000 where id=$1', [payment])
+    assert.equal((await db.query('select plan_version from payments where id=$1', [payment])).rows[0].plan_version, old + 2)
+    assert.equal((await db.query('select paid::text from payment_installments where id=$1', [stage])).rows[0].paid, '120000')
+    await write('update payments set amount_known=false,amount=null where id=$1', [payment])
+    assert.deepEqual((await db.query('select plan_version,amount::text,amount_known from payments where id=$1', [payment])).rows[0], { plan_version: old + 3, amount: null, amount_known: false })
+    assert.equal((await db.query('select paid::text from payment_installments where id=$1', [stage])).rows[0].paid, '0')
+    await write('update payments set amount_known=true,amount=90000 where id=$1', [payment])
+    assert.equal((await db.query('select plan_version from payments where id=$1', [payment])).rows[0].plan_version, old + 4)
+    await write("update payment_installments set cancelled_at='2026-10-07T10:00:00.123456Z',cancel_reason='Synthetic cancellation',version=version+1 where id=$1", [stage])
+    assert.equal((await db.query("select to_char(cancelled_at at time zone 'UTC','YYYY-MM-DD HH24:MI:SS.US') value from payment_installments where id=$1", [stage])).rows[0].value, '2026-10-07 10:00:00.123456')
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), metadataBefore)
+  await fr011Refusal('native payment version max', async () => {
+    await write('update payments set plan_version=2147483647 where id=$1', [payment])
+    await write("update payments set paid_on='2026-10-03' where id=$1", [payment])
+  }, [], '23514', 'Payment version exhausted')
+  const maxNoopBefore = await snapshot()
+  await write('begin')
+  try {
+    await write('update payments set plan_version=2147483647 where id=$1', [payment])
+    await write('update payments set paid_on=paid_on,payment_method=payment_method where id=$1', [payment])
+    assert.equal((await db.query('select plan_version from payments where id=$1', [payment])).rows[0].plan_version, 2147483647)
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), maxNoopBefore)
+  const invalidPayment = [[8, 'USD'], [7, 3], [9, false], [11, null], [12, 0], [13, '1999-12-31'], [16, 'invalid'], [17, ' '], [17, 'x'.repeat(501)]]
+  for (const [index, value] of invalidPayment) {
+    const values = paymentValues(); values[index] = value
+    await fr011Refusal('typed payment field ' + index, paymentSql, values)
+  }
+  const unchanged = paymentValues(); unchanged[12] = unchanged[11]; unchanged[14] = unchanged[13]; unchanged[16] = unchanged[15]
+  await fr011Refusal('payment correction must change a tuple', paymentSql, unchanged)
+  const wrongPaymentScope = paymentValues(); wrongPaymentScope[2] = f.deal
+  await fr011Refusal('payment scoped parent actual deferred COMMIT', paymentSql, wrongPaymentScope, '23503', undefined, true)
+  const wrongWedding = paymentValues(); wrongWedding[1] = randomUUID()
+  await fr011Refusal('payment wedding parent absent', paymentSql, wrongWedding, '23503')
+  // Only payment history populated: its own native down guard must refuse independently.
+  await write('begin')
+  try {
+    await write("update payments set amount=120000,paid_on='2026-10-02',payment_method='bank_transfer' where id=$1", [payment])
+    assert.equal((await db.query('select plan_version from payments where id=$1', [payment])).rows[0].plan_version, 2)
+    await write(paymentSql, paymentValues()); await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  await fr011DownRefusal()
+  const duplicate = paymentValues(); duplicate[0] = randomUUID()
+  await fr011Refusal('unique payment after-version', paymentSql, duplicate, '23505')
+  for (const sql of ["update payment_corrections set reason='rewritten' where id=$1", 'delete from payment_corrections where id=$1',
+    'update payment_corrections set actor_id=null where id=$1', 'update payment_corrections set session_id=null where id=$1']) {
+    await fr011Refusal('immutable payment history', sql, [correction], '23514', sql.startsWith('delete') ? 'only be erased with its wedding' : 'history is immutable')
+  }
+  await fr011Refusal('no payment history truncate', 'truncate payment_corrections', [], '23514', 'cannot be truncated')
+  await fr011Refusal('no standalone payment deletion', 'delete from payments where id=$1', [payment], '23503', undefined, true)
+  // Erase the whole first owned wedding legitimately, then independently populate only stage history.
+  await write('delete from weddings where id=$1', [f.wedding])
+  await write('delete from users where id=any($1::uuid[])', [[f.owner, f.vendorOwner, f.coordinator]])
+  await fr011Catalog(unowned)
+  f = await fixture(false, '+1555011010')
+  await write("insert into payment_installments(id,deal_id,title,amount,due) values($1,$2,'Synthetic advance',500000,'2027-05-01')", [stage, f.externalDeal])
+  await write("insert into payments(id,deal_id,kind,amount,status,installment_id,payment_method,visibility,paid_on) values($1,$2,'deposit',100000,'recorded',$3,'cash','private','2026-10-01')", [payment, f.externalDeal, stage])
+  for (const [index, value] of [[8, 'USD'], [7, 4], [9, ' '], [12, 0], [14, '2101-01-01']]) {
+    const values = stageValues(); values[index] = value
+    await fr011Refusal('typed installment field ' + index, stageSql, values)
+  }
+  const stageWrong = stageValues(); stageWrong[2] = f.deal
+  await fr011Refusal('installment scoped parent actual deferred COMMIT', stageSql, stageWrong, '23503', undefined, true)
+  const unchangedStage = stageValues(); unchangedStage[10] = unchangedStage[9]; unchangedStage[12] = unchangedStage[11]; unchangedStage[14] = unchangedStage[13]
+  await fr011Refusal('installment amendment must change a tuple', stageSql, unchangedStage)
+  await write('begin')
+  try {
+    await write("update payment_installments set title='Synthetic revised advance',amount=550000,due='2027-05-02',version=version+1 where id=$1", [stage])
+    assert.equal((await db.query('select version from payment_installments where id=$1', [stage])).rows[0].version, 3)
+    await write(stageSql, stageValues()); await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  assert.equal((await db.query('select count(*)::int n from payment_corrections')).rows[0].n, 0)
+  await fr011DownRefusal()
+  const duplicateStage = stageValues(); duplicateStage[0] = randomUUID()
+  await fr011Refusal('unique installment after-version', stageSql, duplicateStage, '23505')
+  for (const sql of ["update payment_installment_edits set after_title='rewritten' where id=$1", 'delete from payment_installment_edits where id=$1',
+    'update payment_installment_edits set actor_id=null where id=$1', 'update payment_installment_edits set session_id=null where id=$1']) {
+    await fr011Refusal('immutable installment history', sql, [edit], '23514', sql.startsWith('delete') ? 'only be erased with its wedding' : 'history is immutable')
+  }
+  await fr011Refusal('no installment history truncate', 'truncate payment_installment_edits', [], '23514', 'cannot be truncated')
+  await fr011Refusal('no standalone installment deletion', 'delete from payment_installments where id=$1', [stage], '23503', undefined, true)
+  // Both real parent revisions now coexist; arithmetic updates are not invented stage amendments.
+  await write('begin')
+  try {
+    await write("update payments set amount=120000,paid_on='2026-10-02',payment_method='bank_transfer' where id=$1", [payment])
+    await write(paymentSql, paymentValues()); await write('commit')
+  } catch (error) { await db.query('rollback'); throw error }
+  for (const table of FR011_TABLES) {
+    const expectedId = table === 'payment_corrections' ? correction : edit
+    assert.deepEqual((await db.query(`select id from ${table} where wedding_id=$1`, [f.wedding])).rows, [{ id: expectedId }])
+  }
+  await currencyCycle('both-histories-populated')
+  for (const table of FR011_TABLES) {
+    const parent = table === 'payment_corrections' ? correction : edit
+    await fr011Refusal('no actor reassignment ' + table, `update ${table} set actor_id=$2 where id=$1`, [parent, f.owner], '23514', 'history is immutable')
+    await fr011Refusal('no scoped history rebind ' + table, `update ${table} set deal_id=$2 where id=$1`, [parent, f.deal], '23514', 'history is immutable')
+  }
+  const wrongExistingWedding = paymentValues()
+  wrongExistingWedding[0] = randomUUID(); wrongExistingWedding[7] = 3; wrongExistingWedding[6] = 2
+  wrongExistingWedding[1] = (await db.query('select id from weddings where id<>$1 order by id limit 1', [f.wedding])).rows[0].id
+  await fr011Refusal('existing wedding cannot borrow another parent', paymentSql, wrongExistingWedding, '23503', undefined, true)
+  const lifecycleBefore = await snapshot()
+  await write('begin')
+  try {
+    await write('delete from sessions where id=$1', [f.session])
+    for (const table of FR011_TABLES) assert.equal((await db.query(`select session_id from ${table} where wedding_id=$1`, [f.wedding])).rows[0].session_id, null)
+    const retained = Object.fromEntries(await Promise.all(FR011_TABLES.map(async table => [table, (await rows(table)).map(({ actor_id: _actorId, session_id: _sessionId, ...row }) => row)])))
+    await write('delete from users where id=$1', [f.coordinator])
+    for (const table of FR011_TABLES) {
+      assert.equal((await db.query(`select actor_id from ${table} where wedding_id=$1`, [f.wedding])).rows[0].actor_id, null)
+      assert.deepEqual((await rows(table)).map(({ actor_id: _actorId, session_id: _sessionId, ...row }) => row), retained[table], 'Legal author erasure retains the actual amendment tuple')
+    }
+    await write('delete from weddings where id=$1', [f.wedding]); await write('set constraints all immediate')
+    for (const table of FR011_TABLES) assert.equal((await db.query(`select count(*)::int n from ${table} where wedding_id=$1`, [f.wedding])).rows[0].n, 0)
+  } finally { await db.query('rollback') }
+  assert.deepEqual(await snapshot(), lifecycleBefore)
+  await write('delete from weddings where id=$1', [f.wedding])
+  await write('delete from users where id=any($1::uuid[])', [[f.owner, f.vendorOwner, f.coordinator]])
+  const cleaned = await fr011Catalog(unowned)
+  for (const table of FR011_TABLES) assert.deepEqual(cleaned.snapshot.data[table], [])
+  await migrate('up', FR011_LATEST); assert.deepEqual(await fr018State(), cleaned)
+  assert.equal(fr011SqlRefusals, 39); assert.equal(fr011DownRefusals, 2)
+  console.log(`FR011_POPULATED_PRESERVATION_PASSED nativeRefusals=${fr011SqlRefusals} exactGuardedDowns=${fr011DownRefusals} metadataVersionOnce=true ownCascade=true oldRowsIntact=true`)
+}
+
+const CURRENCY_MIGRATION = '1763835000000_payment_amendment_currency_names'
+let currencyCycles = 0, currencyDowns = 0
+async function currencyChecks() {
+  return (await db.query("select c.oid::text oid,c.conrelid::text relation_oid,r.relname table_name,c.conname,c.contype,c.convalidated,c.condeferrable,c.condeferred,c.conkey::text column_keys,pg_get_constraintdef(c.oid,false) definition,pg_get_expr(c.conbin,c.conrelid,false) expression,a.attnum::text currency_column from pg_constraint c join pg_class r on r.oid=c.conrelid join pg_attribute a on a.attrelid=r.oid and a.attname='currency' and not a.attisdropped where r.relnamespace='public'::regnamespace and r.relname in ('payment_corrections','payment_installment_edits') and c.conname in (r.relname||'_currency_check',r.relname||'_currency_rub') order by r.relname")).rows
+}
+function alignCurrencyArray(actual, expected, key) {
+  assert.equal(actual.length, expected.length)
+  const byKey = new Map(actual.map(row => [key(row), row]))
+  assert.equal(byKey.size, actual.length); assert.equal(new Set(expected.map(key)).size, expected.length)
+  return expected.map(row => { assert(byKey.has(key(row))); return byKey.get(key(row)) })
+}
+async function currencyInstalled(before, oldChecks) {
+  const after = await fr018State(), current = await currencyChecks()
+  assert.deepEqual(current, oldChecks.map(row => ({ ...row, conname: row.table_name + '_currency_rub' })), 'Rename preserves exact CHECK OID/expression/key/validation/deferral')
+  await assertJournal(manifest.map(item => item.name))
+  const own = after.snapshot.data.pgmigrations.filter(row => row.name === CURRENCY_MIGRATION)
+  assert.equal(own.length, 1)
+  const expected = structuredClone(before)
+  expected.snapshot.data.pgmigrations.push(own[0])
+  for (const check of oldChecks) {
+    const constraints = expected.snapshot.schema.constraints.filter(row => row.table_name === check.table_name && row.conname === check.conname)
+    assert.equal(constraints.length, 1); constraints[0].conname = check.table_name + '_currency_rub'
+    const objects = expected.objects.filter(row => row.kind === 'constraint' && row.oid === check.oid && row.table_name === check.table_name && row.name === check.conname)
+    assert.equal(objects.length, 1); objects[0].name = check.table_name + '_currency_rub'
+  }
+  const actual = structuredClone(after)
+  // rows() orders JSON text, so inserting the one new journal ID can reorder its position.
+  actual.snapshot.data.pgmigrations = alignCurrencyArray(actual.snapshot.data.pgmigrations, expected.snapshot.data.pgmigrations, row => String(row.id))
+  actual.snapshot.schema.constraints = alignCurrencyArray(actual.snapshot.schema.constraints, expected.snapshot.schema.constraints, row => row.table_name + ':' + row.conname)
+  actual.objects = alignCurrencyArray(actual.objects, expected.objects, row => row.kind + ':' + row.oid)
+  assert.deepEqual(actual, expected, 'Only two CHECK name fields and the one new journal row may change; all rows/catalogues/OIDs/attributes remain exact')
+  return after
+}
+async function currencyCycle(label) {
+  await assertJournal(manifest.filter(item => Number(item.name.slice(0, 13)) <= FR011_LATEST).map(item => item.name))
+  const before = await fr018State(), oldChecks = await currencyChecks()
+  assert.equal(oldChecks.length, 2)
+  for (const row of oldChecks) {
+    assert.equal(row.conname, row.table_name + '_currency_check'); assert.equal(row.contype, 'c'); assert(row.convalidated); assert.equal(row.condeferrable, false); assert.equal(row.condeferred, false)
+    assert.equal(row.column_keys, '{' + row.currency_column + '}'); assert.equal(row.definition, "CHECK ((currency = 'RUB'::bpchar))")
+  }
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await migrate('up', LATEST); const after = await currencyInstalled(before, oldChecks)
+    await migrate('up', LATEST); assert.deepEqual(await fr018State(), after)
+    await migrate('down', CURRENCY_MIGRATION, undefined, true); currencyDowns++
+    assert.deepEqual(await fr018State(), before, 'Inverse rename restores exact84 even with both immutable histories populated')
+    assert.deepEqual(await currencyChecks(), oldChecks)
+  }
+  currencyCycles++; console.log('FR011_CURRENCY_CYCLE_PASSED label=' + label + ' actualUps=2 exactRepeats=2 preservingDowns=2')
 }
 
 try {
@@ -2290,6 +2593,9 @@ try {
   const cleanSnapshot = await snapshot()
   await migrate('up', PLANB_LATEST)
   assert.deepEqual(await snapshot(), cleanSnapshot, 'Repeated clean up must be a real no-op')
+  await fr011EmptyCycle()
+  for (const table of FR011_TABLES) assert.equal((await db.query(`select count(*)::int n from ${table}`)).rows[0].n, 0)
+  await currencyCycle('empty')
   await migrate('down', FIRST)
   await assertJournal(inheritedNames)
   assert.deepEqual((await snapshot()).schema, inheritedSchema, 'Empty rollback must restore inherited definitions, comments and ownership')
@@ -2465,6 +2771,13 @@ try {
   await planbForwardFixture(f)
   await fr018ForwardFixture()
   await eraseCurrentVendorFixture()
+  await fr011ForwardFixture()
+  await currencyCycle('retained-legacy')
+  const beforeCurrencyFinal = await fr018State(), finalOldChecks = await currencyChecks()
+  await migrate('up', LATEST); const finalCurrency = await currencyInstalled(beforeCurrencyFinal, finalOldChecks)
+  await migrate('up', LATEST); assert.deepEqual(await fr018State(), finalCurrency)
+  assert.equal(currencyCycles, 3); assert.equal(currencyDowns, 6)
+  console.log('FR011_CURRENCY_PRESERVATION_PASSED cycles=3 preservingDowns=6 finalSchema=85')
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
   await assertJournal(manifest.map(item => item.name))
   assert.equal(termsNegativeCount + staffNegativeCount + resourceNegativeCount + invitationNegativeCount + planNegativeCount + commitmentNegativeCount,
