@@ -4227,3 +4227,13 @@ V11/V12/V13 и неуспешные full попытки сохранены; full
 Источники: [full](C:/Тили-тили/.unlazy/wp00-fr002-20261007/full-v3.json), [browser qualification](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-qualified-v1.json), [raw browser](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/browser-result.json), [native](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/cleanup.json), [production review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v1.md), [final source delta review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v2.md).
 
 Feature commit/CI/main ещё pending;0/17 wholeWP. Failed попытки сохранены. Next FR011 correction/history остаётся исходным пробелом, не выполненной фичей.
+
+
+## 2026-10-07 · Инструкция агента и PWA
+
+По поручению владельца обновлены CLAUDE.md (актуальное состояние, отсутствие повторной работы, порядок проверок, правила PWA) и runtime cache worker. Работа изолирована от FR011, зависимости и backend не менялись. Types/lint/build exit0; полный frontend2202/2202 в115файлах; targeted32/32. Browser/physical install/production не подтверждены: CUA browsers[]. Правки подготовлены отдельно, main не изменён. [Полный отчёт и источники](PWA-REVIEW-20261007.md).
+
+
+## 2026-10-07 · PWA: браузерная приёмка и разрешение merge
+
+После поручения владельца «Можешь надо вливать?» выполнены8actual Chromium PWA scenarios, PASSED; pageErrors0. Standalone static fixture: API намеренно503, offline network errors сохранены; серверные права/сессии не принимались. В main handoff сохраняется историческая FR002-приёмка и основная задача FR011 другого worktree; не подменять основной план веткой PWA. Frontend source после full2202 не менялся. [Browser evidence](PWA-BROWSER-20261007.json), [отчёт](PWA-REVIEW-20261007.md).

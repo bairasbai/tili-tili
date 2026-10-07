@@ -3573,3 +3573,13 @@ Native V3 run3ba80b11-36d8-47f5-acaf-6d021a4d48f0 прошёл15 gates и отк
 Full-v2 дал2192front+3277back PASS и1FAILaudit55: строгая ожидаемая версия0.70 устарела при контракте0.71. Исправлены только имя теста и exact literal; full-v3 затем5470/5470. Первый browser setup SQL ошибочно использовал prebooked вместо фактической prebooked_at (migration176130:39); cleanup прошёл. Второй browser overallFAILED из-за1 slots GET ERR_ABORTED, хотя5функциональных cases прошли; не считать функциональные cases общим PASS. Перед собственной навигацией стенд ждёт networkidle; запрет request failures сохранён. Последний runbrowser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0 actual304/304finished/ошибок0. Root просмотрел6PNG; сохранены все failed runs. Продукт после полного запуска не менялся.
 
 Источники: [full](C:/Тили-тили/.unlazy/wp00-fr002-20261007/full-v3.json), [browser qualification](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-qualified-v1.json), [raw browser](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/browser-result.json), [native](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/cleanup.json), [production review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v1.md), [final source delta review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v2.md).
+
+
+## 2026-10-07 · PWA-RUNTIME-CACHE: незавершённая запись и redirect
+
+Runtime static cache write не был связан с event.waitUntil; quota failure давал unhandled rejection. Ответ после redirect сохранялся под исходным URL файла сборки. Новые swRuntimeCache.test.ts дали до фикса2failed/8passed и1unhandled; после фикса10passed. Worker удерживает запись, её отказ обработан, redirected ответы не сохраняются. Правило: фоновые операции worker связывать с lifetime события и проверять поведение при отказе хранилища. [Отчёт](PWA-REVIEW-20261007.md).
+
+
+## 2026-10-07 · PWA browser harness readiness
+
+Первый реальный browser run остановился: кнопка обновления имеет accessible name «Обновить приложение», а не видимое «Обновить». Второй прочитал Suspense/nav до загрузки lazy-калькулятора. Исправлены только selectors/readiness; полный продуктовый прогон не повторялся без изменения продукта. Последний Chromiumrun8scenarios PASS. Не принимать наличие общей навигации за готовность lazy-экрана. [Evidence](PWA-BROWSER-20261007.json).

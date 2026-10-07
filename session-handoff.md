@@ -1,3 +1,13 @@
+# WP00 / FR011 · отдельная поставка PWA · 2026-10-07
+
+Основной план WP00–WP16 сохраняется. FR002 уже опубликован PR50/main406d5e7; следующий основной блок — FR011 correction/history, незакоммиченный код находится в C:/Тили-тили/tili-orchestrate-publish-20261003, branch codex/wp00-payment-corrections. Эта PWA-ветка его не изменяет и не принимает; не повторять FR002 и уже пройденную PWA-проверку.
+
+По отдельному поручению владельца обновлён CLAUDE.md и runtime cache worker (waitUntil, отказ записи, запрет redirect-cache). Commit реализации53a2218, checkout C:/Тили-тили/pwa-review-20261007, branch codex/pwa-practices-20261007. Frontend2202/2202 (115файлов), targeted32/32, types/lint/build/syntax exit0, Chromium8scenarios PASSED; source/build неизменны после full. [Отчёт](PWA-REVIEW-20261007.md), [browser evidence](PWA-BROWSER-20261007.json). Physical install/push/production/серверный logout не проверены. Backend/DB/Redis не запускались; общие службы активного root сохранены.
+
+Пользователь разрешил merge. Перед публикацией main406d5e7 проверен GitHub+fetch. Следующий шаг этой поставки — CI опубликованного SHA → merge/main сверка; результат публикации проверять по GitHub, а не по исторической записи ниже. Затем продолжать FR011 из его текущего worktree с новым main, сохранив незакоммиченное. Production deployment не разрешён.
+
+## Историческая приёмка FR002 (сохранена, публикационный статус ниже устарел)
+
 # Активно: WP00 / FR002 · 2026-10-07T10:37:12.462Z
 
 Пользователь возобновил весь WP00–WP16. Контакт внешней договорённости реализован и локально принят: [задачи](tasks/wedding-platform-master-plan/wp00-fr002/tasks.md), [отчёт](tasks/wedding-platform-master-plan/wp00-fr002/REPORT-20261007.md). Checkout C:/Тили-тили/tili-orchestrate-publish-20261003, branch codex/wp00-external-agreements, базаmain459b820188ccd35d23a3afadf1eb1fe5c576f6e4/PR49.
