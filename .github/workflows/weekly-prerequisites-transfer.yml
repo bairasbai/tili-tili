@@ -1,0 +1,59 @@
+name: Verified weekly dependency blob transfer
+'on':
+  push:
+    branches: [test/weekly-dependencies-source-20261007]
+    paths: [.github/workflows/weekly-prerequisites-transfer.yml, .automation/weekly-prerequisites.0.b64, .automation/weekly-prerequisites.1.b64]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve reviewed transport input
+        run: cat .automation/weekly-prerequisites.0.b64 .automation/weekly-prerequisites.1.b64 > "$RUNNER_TEMP/weekly-prerequisites.patch.xz.b64"
+      - uses: actions/checkout@v4
+        with:
+          ref: 1d1ae36edf34f8f58bb6e14788f1cdf3f3a5d189
+          persist-credentials: false
+      - name: Verify exact source tree and upload only reviewed blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PYTHON'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          def git(*args):
+              return subprocess.check_output(['git', *args]).decode().strip()
+          assert os.environ['GITHUB_REPOSITORY'] == 'bairasbai/tili-tili'
+          assert git('rev-parse', 'HEAD') == '1d1ae36edf34f8f58bb6e14788f1cdf3f3a5d189'
+          assert git('rev-parse', 'HEAD^{tree}') == '62faedd3749527682a3184d2d6a287e95125d491'
+          temp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          patch=lzma.decompress(base64.b64decode((temp/'weekly-prerequisites.patch.xz.b64').read_text(), validate=True))
+          assert hashlib.sha256(patch).hexdigest() == '7fd841c5495196c008ce02bf38dd39cac3b7c905df2e2a26eaba50ac89670d15'
+          subprocess.run(['git','apply','--index','--whitespace=error-all','-'], input=patch, check=True)
+          names=subprocess.check_output(['git','diff','--cached','--name-only','-z']).decode().split('\0')[:-1]
+          allowed=[".github/workflows/weekly-agenda-e2e.yml", "ERRORS.md", "JOURNAL.md", "session-handoff.md", "tasks/todo.md", "tasks/wedding-platform-master-plan/WEEKLY-DEPENDENCIES-20261007.md", "Тили-тили/app/src/components/WeeklyTaskPrerequisites.tsx", "Тили-тили/app/src/lib/i18n.en.orders.ts", "Тили-тили/app/src/lib/weeklyAgenda.test.tsx", "Тили-тили/app/src/lib/weeklyTaskDependencies.test.ts", "Тили-тили/app/src/lib/weeklyTaskDependencies.ts", "Тили-тили/app/src/pages/WeeklyAgenda.tsx", "Тили-тили/backend/scripts/weekly-agenda-e2e-browser.py", "Тили-тили/Тили-тили_Карта_кнопок.md", "Тили-тили/Тили-тили_Карта_экранов.md"]
+          assert sorted(names) == sorted(allowed), names
+          assert git('write-tree') == '2f859e16d462a0152b26fdfa96c3028581541596'
+          manifest={'base':'1d1ae36edf34f8f58bb6e14788f1cdf3f3a5d189','baseTree':'62faedd3749527682a3184d2d6a287e95125d491','tree':'2f859e16d462a0152b26fdfa96c3028581541596','patchSHA256':'7fd841c5495196c008ce02bf38dd39cac3b7c905df2e2a26eaba50ac89670d15','files':[]}
+          for name in names:
+              content=pathlib.Path(name).read_bytes()
+              expected=git('hash-object',name)
+              payload=json.dumps({'content':base64.b64encode(content).decode(),'encoding':'base64'}).encode()
+              request=urllib.request.Request('https://api.github.com/repos/bairasbai/tili-tili/git/blobs',data=payload,method='POST',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','X-GitHub-Api-Version':'2022-11-28'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  result=json.load(response)
+              assert result['sha'] == expected, name
+              manifest['files'].append({'path':name,'sha':expected,'sha256':hashlib.sha256(content).hexdigest()})
+          out=temp/'weekly-prerequisites-transfer'; out.mkdir()
+          (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+          print('VERIFIED_BLOBS',len(manifest['files']),manifest['tree'])
+          PYTHON
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weekly-prerequisites-verified-blobs
+          path: ${{ runner.temp }}/weekly-prerequisites-transfer
+          retention-days: 2
