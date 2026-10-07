@@ -1,5 +1,5 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:schemas`.
- * Схем: 156. */
+ * Схем: 158. */
 
 export const CONTRACT_SCHEMA_ID = "contract"
 
@@ -2943,6 +2943,55 @@ export const CONTRACT_SCHEMAS = {
                   "enum": [
                       false
                   ]
+              }
+          }
+      },
+      "OrderExternalContact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "name",
+              "phone"
+          ],
+          "properties": {
+              "name": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 120
+              },
+              "phone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 32
+              }
+          }
+      },
+      "OrderExternalContactWrite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+              "expectedVersion",
+              "name",
+              "phone"
+          ],
+          "properties": {
+              "expectedVersion": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,18}$"
+              },
+              "name": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 120
+              },
+              "phone": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 32
               }
           }
       },
@@ -7602,6 +7651,15 @@ export const CONTRACT_SCHEMAS = {
               "parts"
           ],
           "properties": {
+              "externalContact": {
+                  "allOf": [
+                      {
+                          "$ref": "contract#/definitions/OrderExternalContact"
+                      }
+                  ],
+                  "readOnly": true,
+                  "description": "Только для внешней сделки; данные пары, не принятие условий исполнителем"
+              },
               "dealId": {
                   "type": "string",
                   "format": "uuid"
@@ -8446,6 +8504,8 @@ export type ContractSchemaName =
   | "OrderBriefWrite"
   | "OrderCatalog"
   | "OrderCategoryBrief"
+  | "OrderExternalContact"
+  | "OrderExternalContactWrite"
   | "OrderPartCancel"
   | "OrderPartCreate"
   | "OrderPartPatch"

@@ -11992,6 +11992,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deals/{dealId}/order/external-contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Дописать или исправить контакт внешнего подрядчика
+         * @description Сведения текущей пары о внешней договорённости, не подтверждение исполнителя. Только external deal booked или paid_deposit; каталожная сделка этим действием не меняется. Обновляет имя/телефон того же deal и существующую версию заказа. Не меняет цену, оплаты, календарь, ресурсы или опубликованные снимки/receipts. Прежний снимок с другим контактом становится устаревшим источником по существующим правилам условий. После ожидания блокировок проверяются текущие права, сессия, согласие и JWT. Повтор ключа требует живого доступа, не пишет повторно и возвращает актуальную разрешённую проекцию заказа; ответ также перечитывается с авторизацией после COMMIT.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    dealId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OrderExternalContactWrite"];
+                };
+            };
+            responses: {
+                /** @description Актуальный заказ и записанный парой внешний контакт */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WeddingOrder"];
+                    };
+                };
+                /** @description Нужны Idempotency-Key и корректное тело запроса */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Сессия или срок JWT не действуют */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                /** @description Устарела версия заказа или ключ использован с другим телом */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["Validation"];
+            };
+        };
+        trace?: never;
+    };
     "/deals/{dealId}/order/brief": {
         parameters: {
             query?: never;
@@ -15526,6 +15597,8 @@ export interface components {
             readToken: string;
         };
         WeddingOrder: {
+            /** @description Только для внешней сделки; данные пары, не принятие условий исполнителем */
+            readonly externalContact?: components["schemas"]["OrderExternalContact"];
             /** Format: uuid */
             dealId: string;
             version: string;
@@ -15670,6 +15743,15 @@ export interface components {
                 /** Format: date-time */
                 cancelledAt: string | null;
             })[];
+        };
+        OrderExternalContact: {
+            name: string;
+            phone: string | null;
+        };
+        OrderExternalContactWrite: {
+            expectedVersion: string;
+            name: string;
+            phone: string | null;
         };
         OrderBriefWrite: {
             expectedVersion: string;

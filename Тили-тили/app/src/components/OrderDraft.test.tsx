@@ -62,6 +62,61 @@ const denied = (status = 403): Reply => ({ status, body: { error: { code: 'forbi
 beforeEach(() => { localStorage.clear(); localStorage.setItem('tt_auth', JSON.stringify({ accessToken: 'a', refreshToken: 'r' })); setI18nLang('ru') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); setI18nLang('ru') })
 
+describe('FR002 external agreement contact through the real HTTP client', () => {
+  const external = (version = '1', name = 'Внешний фотограф', phone: string | null = '+79990000000') => order({ version, externalContact: { name, phone } })
+  const authority = () => catalog({ dealState: 'booked', vendorId: null })
+  it('saves contact on that order, rereads it and notifies the parent after fresh confirmation', async () => {
+    const changed = vi.fn(), h = harness(external(), authority(), () => {
+      h.state.current = external('2', 'Новое имя', null); return { body: h.state.current }
+    })
+    render(<MemoryRouter><OrderDraft dealId="d1" onExternalContactChanged={changed} /></MemoryRouter>); await open()
+    expect(screen.getByText('Сведения внесены парой. Подтверждения исполнителя нет.')).toBeTruthy()
+    change('Имя внешнего исполнителя', 'Новое имя'); change('Телефон внешнего исполнителя', '')
+    click('Сохранить внешний контакт'); await screen.findByText('Внешний контакт сохранён')
+    expect(writeAt(h.calls)).toMatchObject({ path: '/deals/d1/order/external-contact', method: 'PATCH', body: { expectedVersion: '1', name: 'Новое имя', phone: null } })
+    expect(changed).toHaveBeenCalledTimes(1); expect(h.calls.filter(c => c.method === 'GET')).toHaveLength(4)
+    expect((screen.getByLabelText('Имя внешнего исполнителя') as HTMLInputElement).value).toBe('Новое имя')
+  })
+  it('lost reply retries the exact original body and key even when the user changes the visible form', async () => {
+    let down = true
+    const h = harness(external(), authority(), () => down ? { down: true } : { body: external('2', 'Первый ввод') })
+    render(view()); await open(); change('Имя внешнего исполнителя', 'Первый ввод'); click('Сохранить внешний контакт')
+    await screen.findByText('Ответ не получен. Повторите тот же запрос, чтобы проверить сохранение.')
+    change('Имя внешнего исполнителя', 'Другой ввод'); down = false; h.state.current = external('2', 'Первый ввод')
+    click('Проверить сохранение'); await screen.findByText('Внешний контакт сохранён')
+    expect(writes(h.calls)).toHaveLength(2)
+    expect(writeAt(h.calls, 1).body).toEqual(writeAt(h.calls, 0).body)
+    expect(writeAt(h.calls, 1).headers.get('Idempotency-Key')).toBe(writeAt(h.calls, 0).headers.get('Idempotency-Key'))
+  })
+  it('conflict retains edited name, rebases untouched phone, then submits only after review with fresh version', async () => {
+    let conflict = true
+    const h = harness(external(), authority(), () => {
+      if (conflict) { h.state.current = external('2', 'Имя партнёра', '+79992223344'); return { status: 409, body: { error: { code: 'order_version_conflict', message: 'Заказ изменился' } } } }
+      h.state.current = external('3', 'Мой ввод', '+79992223344'); return { body: h.state.current }
+    })
+    render(view()); await open(); change('Имя внешнего исполнителя', 'Мой ввод'); click('Сохранить внешний контакт')
+    await screen.findByText('Заказ изменился. Ваш ввод сохранён — проверьте свежие данные перед сохранением.')
+    expect((screen.getByLabelText('Имя внешнего исполнителя') as HTMLInputElement).value).toBe('Мой ввод')
+    expect((screen.getByLabelText('Телефон внешнего исполнителя') as HTMLInputElement).value).toBe('+79992223344')
+    expect((screen.getByRole('button', { name: 'Сохранить внешний контакт' }) as HTMLButtonElement).disabled).toBe(true)
+    conflict = false; click('Проверил изменения, продолжить'); click('Сохранить внешний контакт')
+    await screen.findByText('Внешний контакт сохранён')
+    expect(writeAt(h.calls, 1).body).toEqual({ expectedVersion: '2', name: 'Мой ввод', phone: '+79992223344' })
+  })
+  it('a denied write removes the private contact and an uncertain operation disappears on logout', async () => {
+    const h = harness(external(), authority(), () => denied(404))
+    render(view()); await open(); click('Сохранить внешний контакт'); await screen.findByText('Доступ закрыт')
+    expect(screen.queryByLabelText('Имя внешнего исполнителя')).toBeNull()
+    cleanup(); h.state.current = external(); harness(external(), authority(), () => ({ down: true }))
+    render(view()); await open(); click('Сохранить внешний контакт'); await screen.findByText('Проверить сохранение')
+    act(() => saveTokens(null)); expect(screen.queryByLabelText('Имя внешнего исполнителя')).toBeNull(); expect(screen.queryByText('Проверить сохранение')).toBeNull()
+  })
+  it.each(['done', 'cancelled'] as const)('%s external order displays contact without a save action', async dealState => {
+    harness(external(), catalog({ ...authority(), dealState })); render(view()); await open()
+    expect(screen.getByText(/Внешний фотограф · \+79990000000/)).toBeTruthy(); expect(screen.queryByRole('button', { name: 'Сохранить внешний контакт' })).toBeNull()
+  })
+})
+
 describe('optional private order draft through the real HTTP client', () => {
   it('does not fetch or assert work until the collapsed section is opened, and does not poll', async () => {
     const h = harness(); render(view()); await act(async () => {})

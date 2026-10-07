@@ -1,6 +1,6 @@
 /* СГЕНЕРИРОВАНО. Не править руками — правится контракт, потом `pnpm run gen:contract`.
- * Источник: Тили-тили_API_openapi.yaml (версия 0.70.0).
- * Операций: 247. Путей: 191. */
+ * Источник: Тили-тили_API_openapi.yaml (версия 0.71.0).
+ * Операций: 248. Путей: 192. */
 
 export interface ContractOperation {
   /** HTTP-метод в верхнем регистре. */
@@ -55,6 +55,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {"method":"POST","openapi":"/deals/{dealId}/order/assignments/{assignmentId}/cancel","url":"/deals/:dealId/order/assignments/:assignmentId/cancel","operationId":null,"summary":"Отменить одно назначение черновика","tag":"bookings"},
   {"method":"PATCH","openapi":"/deals/{dealId}/order/brief","url":"/deals/:dealId/order/brief","operationId":null,"summary":"Изменить применимый бриф","tag":"bookings"},
   {"method":"GET","openapi":"/deals/{dealId}/order/catalog","url":"/deals/:dealId/order/catalog","operationId":null,"summary":"Применимые поля и виды работы для этого заказа","tag":"bookings"},
+  {"method":"PATCH","openapi":"/deals/{dealId}/order/external-contact","url":"/deals/:dealId/order/external-contact","operationId":null,"summary":"Дописать или исправить контакт внешнего подрядчика","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/parts","url":"/deals/:dealId/order/parts","operationId":null,"summary":"Добавить часть заказа","tag":"bookings"},
   {"method":"PATCH","openapi":"/deals/{dealId}/order/parts/{partId}","url":"/deals/:dealId/order/parts/:partId","operationId":null,"summary":"Изменить часть заказа","tag":"bookings"},
   {"method":"POST","openapi":"/deals/{dealId}/order/parts/{partId}/cancel","url":"/deals/:dealId/order/parts/:partId/cancel","operationId":null,"summary":"Отменить одну часть черновика","tag":"bookings"},

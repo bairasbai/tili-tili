@@ -1,4 +1,16 @@
-# FR018 browser correction · 2026-10-07T08:46:46.260Z
+# Активно: WP00 / FR002 · 2026-10-07T10:37:12.462Z
+
+Пользователь возобновил весь WP00–WP16. Контакт внешней договорённости реализован и локально принят: [задачи](tasks/wedding-platform-master-plan/wp00-fr002/tasks.md), [отчёт](tasks/wedding-platform-master-plan/wp00-fr002/REPORT-20261007.md). Checkout C:/Тили-тили/tili-orchestrate-publish-20261003, branch codex/wp00-external-agreements, базаmain459b820188ccd35d23a3afadf1eb1fe5c576f6e4/PR49.
+
+Полный init.sh: frontend 2192 + backend 3278 = 5470 тестов; ошибок/пропусков0, все8 этапов types/tests/lint/build прошли. Actual compiled Chromium/nginx/API: 5 сценариев, 304/304 запросов завершены, HTTP>=400/console/page/request failures0;6 PNG RU/EN320/390/480 просмотрены root. Native fixture сохранила существующие платежи/снимки/receipt; исполнитель не подтверждал условия. Cleanup восстановил baseline counts, сохранил69 прежних audit rows, итог72; provider calls0. Source/build до и после совпали. Это проверка тестового стенда, не production/физического устройства или installed/offline PWA.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr002-20261007/full-v3.json), [browser qualification](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-qualified-v1.json), [raw browser](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/browser-result.json), [native](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/cleanup.json), [production review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v1.md), [final source delta review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v2.md).
+
+Следующий шаг: feature commit/push/PR → exact-head CI → разрешённый merge/fetch/сверка main; на этой границе публикация ещё не выполнена. Root единолично управляет PG15432/Redis12/browser/GitHub. Schema83/существующие тестовые БД сохраняются, DDL/drop/reset нет.
+
+Полные WP0/17 (17=16−0+1); FR002 contact не закрывает пакет. Следующий source-confirmed пробел — FR011 correction/visible history, без void/провайдерских переводов. M01/WP11/provider/device/human и все прочие критерии общего реестра сохраняются. Публикация проверенных фич разрешена, production deployment — нет. Heartbeat30 фактически PAUSED, инструмент не подтвердил update; отчёты вручную во время работы. [Ledger](C:/Тили-тили/.unlazy/wp00-fr002-20261007/GATES.md).
+
+## Историческая передача FR018 · 2026-10-07T08:46:46.260Z
 
 Активная узкая задача: закончить исправление browser 403/404 и его разрешённую публикацию. Широкая цель WP00–WP16 и heartbeat30 на паузе; ответа о продолжении всех пакетов после исправления пока нет. Этот handoff фиксируется перед feature commit.
 

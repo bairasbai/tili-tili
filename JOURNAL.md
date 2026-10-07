@@ -4214,3 +4214,16 @@ FR018: собрана отдельная композиция backend/UI/OpenAPI
 Источники: [полный запуск](C:/Тили-тили/.unlazy/codex-planb-20261003/fr018-browser-fix-evidence-v7/full.json), [фактическая браузерная квалификация](C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-pwa-v14-qualified-root.json), [независимый source review](C:/Тили-тили/.unlazy/codex-planb-20261003/wp00-fr018-pwa-sc004-v14-fresh-review-v1/REVIEW.md).
 
 V11/V12/V13 и неуспешные full попытки сохранены; full v6 и targeted budgetControls обнаружили исправленные проблемы fixture/DOM. Полные WP: 0/17. Документы фиксируются до публикации; CI и merge относятся к конкретному будущему feature head.
+
+## 2026-10-07 · продолжение WP00/FR002
+
+После PR49/main459b820 пользователь возобновил полный WP00–WP16. Source audit нашёл конкретный пробел FR002: внешний контакт уже записывался при создании сделки, но не редактировался. Использованы существующие deal/order и OrderDraft/OrderTerms; отдельная модель условий и DB migration не добавлены. Новая операция проверяет версию, raw типы до AJV coercion, живые права на replay, JWT после ожиданий и доступ к ответу после COMMIT. Первый backend RED20failed/1passed и UI RED6failed/50passed сохранены. Полная приёмка и публикация этой поставки на момент записи ещё открыты; 0/17 полных WP. Источник: tasks/wedding-platform-master-plan/wp00-fr002/tasks.md.
+
+
+## 2026-10-07T10:37:12.462Z · FR002: локальная приёмка контакта
+
+Полный init.sh: frontend 2192 + backend 3278 = 5470 тестов; ошибок/пропусков0, все8 этапов types/tests/lint/build прошли. Actual compiled Chromium/nginx/API: 5 сценариев, 304/304 запросов завершены, HTTP>=400/console/page/request failures0;6 PNG RU/EN320/390/480 просмотрены root. Native fixture сохранила существующие платежи/снимки/receipt; исполнитель не подтверждал условия. Cleanup восстановил baseline counts, сохранил69 прежних audit rows, итог72; provider calls0. Source/build до и после совпали. Это проверка тестового стенда, не production/физического устройства или installed/offline PWA.
+
+Источники: [full](C:/Тили-тили/.unlazy/wp00-fr002-20261007/full-v3.json), [browser qualification](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-qualified-v1.json), [raw browser](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/browser-result.json), [native](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/native-verified.json), [cleanup](C:/Тили-тили/.unlazy/wp00-fr002-20261007/browser-ac1aed8c-5bb4-4ff5-8390-0f6fcba190f0/cleanup.json), [production review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v1.md), [final source delta review](C:/Тили-тили/.unlazy/wp00-fr002-20261007/REVIEW-v2.md).
+
+Feature commit/CI/main ещё pending;0/17 wholeWP. Failed попытки сохранены. Next FR011 correction/history остаётся исходным пробелом, не выполненной фичей.

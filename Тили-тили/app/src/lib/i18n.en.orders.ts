@@ -1,6 +1,14 @@
 /** Translations only. Applicable fields, roles and service kinds remain in
  * server metadata; wording does not grant authority or confirm readiness. */
 export const EN_ORDERS: Readonly<Record<string, string>> = {
+  'Внешняя договорённость': 'External agreement',
+  'Сведения внесены парой. Подтверждения исполнителя нет.': 'Details entered by the couple. The vendor has not confirmed them.',
+  'Условия и контакт': 'Terms and contact',
+  'Имя внешнего исполнителя': 'External vendor name',
+  'Телефон внешнего исполнителя': 'External vendor phone',
+  'Сохранить внешний контакт': 'Save external contact',
+  'Внешний контакт сохранён': 'External contact saved',
+  'Проверьте имя и телефон внешнего исполнителя': 'Check the external vendor name and phone',
   'Выбранный заказ изменился — обновите позицию': 'The selected order changed. Refresh the position.',
   'Способ бронирования изменился — обновите анкету': 'The booking method changed. Refresh the profile.',
   'Для замены нужно согласовать ресурсы.': 'Replacing this booking requires agreed resources.',

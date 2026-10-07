@@ -142,6 +142,7 @@ function DealRoutes({ dealId }: { dealId: string }) {
 
 function DealView({ s }: { s: Slot }) {
   const nav = useNavigate()
+  const [searchParams] = useSearchParams()
   const { weddingId, paySlot, cancelBooking, advanceDealTo, refreshSlots } = useStore()
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -305,7 +306,7 @@ function DealView({ s }: { s: Slot }) {
         {/* `revision` — состояние и оплаченное: после действия на этом же
             экране журнал обязан перечитаться, иначе он показывает историю до
             последнего шага и выглядит так, будто шага не было. */}
-        {money && s.dealId && <OrderDraft dealId={s.dealId} />}
+      {money && s.dealId && <OrderDraft dealId={s.dealId} initiallyOpen={s.external && searchParams.get('agreement') === '1'} onExternalContactChanged={refreshSlots} />}
         {money && s.dealId && <OrderResourcePlan dealId={s.dealId} />}
         {money && s.dealId && <OrderTerms dealId={s.dealId} />}
         {money && s.dealId && <OrderResourceCommitments dealId={s.dealId} onChanged={refreshSlots} openRequest={resourceOpenRequest} />}
